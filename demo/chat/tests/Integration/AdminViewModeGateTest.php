@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -237,6 +239,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
     {
         $actions = self::refusedActions();
         self::assertSame(self::REFUSED_ACTIONS, array_keys($actions));
+        self::assertSame(MaintenanceCirclePage::class, $actions[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD]);
+        self::assertSame(MaintenanceCirclePage::class, $actions[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE]);
 
         foreach ($actions as $action => $pageClass) {
             foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
@@ -275,7 +279,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
 
     public function testAViewerSubscribesToAnAdminPageOfTheFrameworkAndOfTheProject(): void
     {
-        foreach ([UsersPage::class, AdminBotsPage::class] as $pageClass) {
+        foreach ([UsersPage::class, AdminBotsPage::class, MaintenanceCirclePage::class] as $pageClass) {
             foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
                 self::assertAnsweredWithThePage($this->subscribe($pageClass, $acceptKey), "{$pageClass} for {$acceptKey}");
             }
@@ -286,7 +290,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
     {
         $this->switchMode(false);
 
-        foreach ([UsersPage::class, AdminBotsPage::class] as $pageClass) {
+        foreach ([UsersPage::class, AdminBotsPage::class, MaintenanceCirclePage::class] as $pageClass) {
             self::assertSame(401, $this->subscriptionError($this->subscribe($pageClass, self::ANONYMOUS_KEY))->httpCode, $pageClass);
             self::assertSame(403, $this->subscriptionError($this->subscribe($pageClass, self::VISITOR_KEY))->httpCode, $pageClass);
         }

@@ -4,9 +4,10 @@ import { shownByTestId } from './table.js'
 
 // Maintenance section steps shared by all three SDKs, whose data-id controls match,
 // and the manual-window checks all three kits must meet alike; the scenarios stay
-// in each demo's spec. The steps expect the operator's page on /hilos/maintenance,
-// except the code's entry, which is the maintenance screen's own. Only an address
-// somebody has confirmed can be named to the verifier circle.
+// in each demo's spec. Circle steps require the SDK's table page already open:
+// Circle in Vue, Overview in React/Angular until their own moves. Manual steps
+// require Overview; code entry uses the maintenance screen itself. No step
+// navigates. Only an address somebody has confirmed can be named to the circle.
 
 // How many rows the circle is emptied of before the attempt is called broken. Every
 // removal takes one row out, so the count is what ends that loop; this only makes a
@@ -28,6 +29,81 @@ export const CIRCLE_OFFLINE = 'not signed in'
  * source, so the literal is kept beside the steps and checks that expect it.
  */
 export const MAINTENANCE_PATH = '/hilos/maintenance'
+
+/**
+ * The Circle tab's address, copied verbatim from HilosPages.MAINTENANCE_CIRCLE in
+ * core/src/routing/hilosPages.ts; available in Vue until the other SDKs move.
+ */
+export const MAINTENANCE_CIRCLE_PATH = '/hilos/maintenance/circle'
+
+/**
+ * The shared Maintenance head on Overview or Circle: one h1, the owner's trail,
+ * the two real links with only the rendered page current, and no child cards.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on Maintenance Overview or Circle in an SDK building both.
+ * @param currentPage The key of the page on screen.
+ */
+export async function expectMaintenancePageHead(
+  expect: Expect,
+  page: Page,
+  currentPage: 'hilos_maintenance' | 'hilos_maintenance_circle',
+): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toHaveCount(1)
+  await expect(head).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Maintenance')
+  await expect(head.getByRole('heading', { level: 1 })).toHaveCount(1)
+
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveCount(1)
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.getByRole('listitem').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Maintenance'])
+  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const lastCrumb = crumbs.locator('[aria-current]')
+  await expect(lastCrumb).toHaveCount(1)
+  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  await expect(lastCrumb.locator('a')).toHaveCount(0)
+  await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
+
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveCount(1)
+  await expect(tabs).toHaveAccessibleName('Maintenance pages')
+  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Circle'])
+  for (const [key, path] of [
+    ['hilos_maintenance', MAINTENANCE_PATH],
+    ['hilos_maintenance_circle', MAINTENANCE_CIRCLE_PATH],
+  ] as const) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(tab).toHaveAttribute('href', path)
+    if (key === currentPage) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+}
 
 /**
  * The operation the manual window stands under, copied verbatim from
@@ -61,7 +137,7 @@ export const MAINTENANCE_ON_NOTICE =
 /**
  * Names one address to the verifier circle through the maintenance section's own modal.
  *
- * @param page The operator's page, already on the maintenance section.
+ * @param page The operator's page, already on this SDK's circle table page.
  * @param identifier The address to name.
  */
 export async function addToMaintenanceCircle(
@@ -121,7 +197,7 @@ export async function confirmMaintenanceCircleRemoval(
  * search is scoped to the circle table, and to the copy on screen, so the modal's
  * own confirm button, and the hidden card's, cannot be taken for a row's.
  *
- * @param page The operator's page, already on the maintenance section.
+ * @param page The operator's page, already on this SDK's circle table page.
  */
 export async function clearMaintenanceCircle(page: Page): Promise<void> {
   const table = page.getByTestId('hilos-maintenance-circle-table')
@@ -154,7 +230,7 @@ export async function clearMaintenanceCircle(page: Page): Promise<void> {
  * names every row at once the moment a second person is in it, which is every run after
  * the first.
  *
- * @param page The operator's page, on the maintenance section.
+ * @param page The operator's page, on this SDK's circle table page.
  * @param identifier The address the member was named by.
  */
 export function maintenanceCircleRow(page: Page, identifier: string): Locator {
@@ -166,7 +242,7 @@ export function maintenanceCircleRow(page: Page, identifier: string): Locator {
 /**
  * The presence mark of one circle row, named by the handle its own cell carries.
  *
- * @param page The operator's page, on the maintenance section.
+ * @param page The operator's page, on this SDK's circle table page.
  * @param identifier The address the member was named by.
  */
 export function maintenanceCircleOnline(
@@ -191,7 +267,7 @@ async function press(control: Locator): Promise<void> {
 /**
  * Closes the system to visitors from the section's open banner, confirmed in its dialog.
  *
- * @param page The operator's page, on the maintenance section of an open node.
+ * @param page The operator's page, on Maintenance Overview of an open node.
  */
 export async function turnOnMaintenance(page: Page): Promise<void> {
   await press(page.getByTestId('hilos-maintenance-enable'))
@@ -207,7 +283,7 @@ export async function turnOnMaintenance(page: Page): Promise<void> {
  * Issues a code from the manual card, reads it off its one showing, and closes the
  * result — which forgets the code on the page.
  *
- * @param page The operator's page, on the maintenance section of the manual window.
+ * @param page The operator's page, on Maintenance Overview of the manual window.
  * @returns The code, as the result dialog showed it.
  */
 export async function issueMaintenanceCode(page: Page): Promise<string> {
@@ -235,7 +311,7 @@ export async function issueMaintenanceCode(page: Page): Promise<string> {
  * too, and the document may go before the ack lands. A spec waits for the state it
  * expects on the reloaded page instead.
  *
- * @param page An admitted operator's page, on the maintenance section of the manual window.
+ * @param page An admitted operator's page, on Maintenance Overview of the manual window.
  */
 export async function turnOffMaintenance(page: Page): Promise<void> {
   await press(page.getByTestId('hilos-maintenance-disable'))
@@ -260,12 +336,13 @@ export async function presentMaintenanceCode(
 }
 
 /**
- * The operator's page right after {@link turnOnMaintenance}: the notice raised once,
- * the manual card and the circle on screen, no way to turn it on again, and the page
- * still live on its socket — the operator stays inside the window they opened.
+ * The operator's Overview right after {@link turnOnMaintenance}: the notice raised
+ * once, the manual card on screen, no way to turn it on again, and the page still
+ * live on its socket — the operator stays inside the window they opened. Circle
+ * presence is checked separately on this SDK's table page.
  *
  * @param expect The spec's expect.
- * @param page The page that turned the manual window on, on the maintenance section.
+ * @param page The page that turned the manual window on, on Maintenance Overview.
  */
 export async function expectManualMaintenanceOn(
   expect: Expect,
@@ -282,7 +359,6 @@ export async function expectManualMaintenanceOn(
     'ready',
   )
   await expect(page.getByTestId('hilos-maintenance-state-manual')).toBeVisible()
-  await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
   await expect(page.getByTestId('hilos-maintenance-pass-count')).toHaveText('0')
   await expect(page.getByTestId('hilos-maintenance-enable')).toHaveCount(0)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -317,7 +393,7 @@ export async function expectHeldByManualMaintenance(
  * code is gone from the page with its result, and no notice ever carried it.
  *
  * @param expect The spec's expect.
- * @param page The page that issued the code, on the maintenance section.
+ * @param page The page that issued the code, on Maintenance Overview.
  * @param code The code the step returned.
  * @param passes How many codes the window has issued so far.
  */
@@ -339,7 +415,7 @@ export async function expectMaintenanceCodeIssued(
  * section settled on its manual card.
  *
  * @param expect The spec's expect.
- * @param page The page the code was presented on, on the section's address.
+ * @param page The page the code was presented on, on the Overview address.
  * @param passes How many codes the window has issued so far; omitted when the
  *   scenario does not count them.
  */
@@ -366,7 +442,7 @@ export async function expectAdmittedToManualMaintenance(
  * page the lift reloaded: the open banner, and no way to turn the window off.
  *
  * @param expect The spec's expect.
- * @param page An administrator's page on the maintenance section.
+ * @param page An administrator's page on Maintenance Overview.
  */
 export async function expectMaintenanceOpen(
   expect: Expect,

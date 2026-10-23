@@ -5,13 +5,16 @@ import {
   CIRCLE_OFFLINE,
   CIRCLE_ONLINE,
   MAINTENANCE_PATH,
+  MAINTENANCE_CIRCLE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
+  countSentFrames,
   dismissToasts,
   expectAdmittedToManualMaintenance,
   expectHeldByManualMaintenance,
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
+  expectMaintenancePageHead,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   maintenanceCircleOnline,
@@ -20,6 +23,7 @@ import {
   shownByTestId,
   turnOffMaintenance,
   turnOnMaintenance,
+  watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -90,15 +94,84 @@ test.afterEach(async () => {
   await openProtectedModeIfAny()
 })
 
+test('Maintenance Overview and Circle share one head through links, history, direct entry and reload', async ({
+  page,
+}) => {
+  // No circle request can leave Overview: viewport, focus and rendered frames
+  // all name the existing table key. Arm before the first socket opens.
+  const circleRequests = countSentFrames(page, 'hilosVerifierCircle')
+  await grantAdminToSelf(page)
+  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expectMaintenanceOpen(expect, page)
+  await expect(page.getByTestId('hilos-maintenance-circle-table')).toHaveCount(
+    0,
+  )
+  expect(circleRequests()).toBe(0)
+
+  const overview = page.getByTestId('hilos-page-tab-hilos_maintenance')
+  const circle = page.getByTestId('hilos-page-tab-hilos_maintenance_circle')
+  const document = await watchClientDocument(page)
+  await circle.focus()
+  await expect(circle).toBeFocused()
+  await circle.press('Enter')
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectPageReady(page)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  const table = page.getByTestId('hilos-maintenance-circle-table')
+  await expect(table).toBeVisible()
+  await shownByTestId(table, 'hilos-table-loading').waitFor({ state: 'hidden' })
+  await expect(
+    table.locator(
+      'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " card ")]',
+    ),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('hilos-maintenance-state-open')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-maintenance-enable')).toHaveCount(0)
+  await document.unchanged()
+  await document.dispose()
+
+  await page.reload()
+  await expectPageReady(page)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expect(table).toBeVisible()
+
+  const reloadedDocument = await watchClientDocument(page)
+  await overview.click()
+  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+  await expectPageReady(page)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expectMaintenanceOpen(expect, page)
+  await expect(table).toHaveCount(0)
+
+  await page.goBack()
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectPageReady(page)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expect(table).toBeVisible()
+  await page.goForward()
+  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+  await expectPageReady(page)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expect(table).toHaveCount(0)
+  await reloadedDocument.unchanged()
+  await reloadedDocument.dispose()
+
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expect(table).toBeVisible()
+})
+
 test('two administrators close the system by hand, one lets the other in with a code, and that one opens it', async ({
   page,
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
+  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
@@ -107,6 +180,9 @@ test('two administrators close the system by hand, one lets the other in with a 
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)
+    await expect(
+      page.getByTestId('hilos-maintenance-circle-table'),
+    ).toHaveCount(0)
     await expectHeldByManualMaintenance(expect, other)
 
     await dismissToasts(page)
@@ -134,8 +210,9 @@ test('a code issued in Maintenance admits two independent browsers and is shown 
 }) => {
   test.slow() // Three independent sessions enter through the production manual window and its code reply.
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   await clearMaintenanceCircle(page)
+  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
   const secondContext = await browser.newContext()
   const thirdContext = await browser.newContext()
   const second = await secondContext.newPage()
@@ -923,8 +1000,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // against the confirmed identities. Registering proves it - the code the
   // registration mails out confirms the address it was sent to (HIL-825).
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH)
-  await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
+  await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
   await clearMaintenanceCircle(page)
   const operatorSession = await sessionToken(page)
 
@@ -1042,7 +1119,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await markDocument(page)
   expect(await openProtectedMode()).toBe('inactive')
   await expectSelfReload(page)
-  await gotoPage(page, MAINTENANCE_PATH)
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await clearMaintenanceCircle(page)
 
@@ -1059,7 +1136,7 @@ test('a circle member who was away when the node froze is named and still outsid
   // leaf could quietly start letting anybody named through on a later connection, which
   // is a session resolved against a database the restore has already replaced.
   await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH)
+  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
   await clearMaintenanceCircle(page)
   const operatorSession = await sessionToken(page)
 
@@ -1229,9 +1306,9 @@ test.describe('the maintenance section in the admin view mode', () => {
     browser,
   }) => {
     await grantAdminToSelf(page)
-    await gotoPage(page, MAINTENANCE_PATH)
+    await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
     await expect(
-      page.getByTestId('hilos-maintenance-circle-panel'),
+      page.getByTestId('hilos-maintenance-circle-table'),
     ).toBeVisible()
     await clearMaintenanceCircle(page)
 
@@ -1245,9 +1322,9 @@ test.describe('the maintenance section in the admin view mode', () => {
 
     const guestContext = await browser.newContext()
     const guest = await guestContext.newPage()
-    await gotoPage(guest, MAINTENANCE_PATH, PAGE_READY)
+    await gotoPage(guest, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
     await expect(
-      guest.getByTestId('hilos-maintenance-circle-panel'),
+      guest.getByTestId('hilos-maintenance-circle-table'),
     ).toBeVisible()
     await expect(guest.getByTestId('page-error')).toHaveCount(0)
 

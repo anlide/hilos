@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
   expectDataFreeDeparture,
+  expectMaintenancePageHead,
   leaveSecondAdmin,
   shownByTestId,
   watchFirstRowTop,
@@ -386,7 +387,14 @@ test('points to the verifier circle in Maintenance', async ({ page }) => {
 
   await page.getByTestId('hilos-backup-circle-pointer-open').click()
   await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expect(page.getByTestId('hilos-maintenance-circle-table')).toHaveCount(
+    0,
+  )
+  await page.getByTestId('hilos-page-tab-hilos_maintenance_circle').click()
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
 })
 
 test('creates a backup, shows it as a completed row, and deletes it', async ({

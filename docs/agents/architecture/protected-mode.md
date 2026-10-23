@@ -855,6 +855,28 @@ one rather than a re-subscribe, is the client half in
 
 ## Manual Maintenance: The Window Without An Operation (HIL-1291)
 
+The section has an Overview page, `hilos_maintenance` at
+`/hilos/maintenance`, and a child Circle page, `hilos_maintenance_circle` at
+`/hilos/maintenance/circle`. `AbstractHilosMaintenancePage` still owns the
+Overview state frame, subscriber tracking, and the manual enable, disable and
+pass handovers described below. `AbstractHilosMaintenanceCirclePage` is a
+separate page served by the same index agent; it owns the circle add/remove
+actions, their DTOs, validation, refusals and acknowledgements, and the
+`HilosVerifierCircleTable` row actions and viewport. Its row copy, `Hideable`
+identifier, member id, focus, dialog and online-presence behavior stay the same,
+without a card wrapper. It has no manual-state hook, subscriber or timer. The
+shared catalog head identifies the owner as Hilos › Maintenance and provides
+Overview/Circle tabs in the existing page response, without child cards or new
+wire fields or signals.
+
+All six demo backends register the Circle page and its table binding. In the
+current frontend transition, only Vue builds the Circle view. React and Angular
+keep the table on Overview and mark Circle unbuilt, so its tab is hidden and a
+direct Circle address returns `not_served`; their Overview `PAGE_TABLES` entry
+remains until HIL-1681 and HIL-1682. Circle add/remove actions are already owned
+by the Circle page, and dispatch does not require a subscription to it, so the
+existing React and Angular Overview UI continues to work.
+
 An agent requesting `verification_window` takes the row from `inactive` straight
 to `verifying`, skipping `activating` and `active`: no agents stop or restart and
 no unstopped writer is silenced. The window already permits agent starts
@@ -961,8 +983,8 @@ Restore under the manual window is refused as a foreign freeze; disable manual
 maintenance first, accepting the visitor gap before restore freezes the node
 (owner decision, 2026-10-04); manual entry under another freeze is refused too.
 
-Maintenance shows open / manually closed (since when, button or CLI, not who) /
-operation running, the last without manual controls. The page sends a
+The Overview page shows open / manually closed (since when, button or CLI, not
+who) / operation running, the last without manual controls. It sends a
 `subscription_page_hilos_maintenance` state frame before `page_response` and
 pushes changed frames after protected-mode RT sync through the index agent's tick;
 locked-out subscribers receive none. The frame counts passes and the captured
@@ -1210,15 +1232,25 @@ Refuse loudly and before any trace of entry, as above.
   browser: enter, the live window showing the stub with the operation the caller
   named, leave, the window working again, and the verifier circle walking in on
   the tab it had open. It freezes the whole node, so its teardown lifts
-  unconditionally; the runner is serialized (`CI=1`). The manual window from the
-  Maintenance section runs as one scenario in each kit's `protected-mode.spec.ts`
-  (binance-btc-tracker Vue, ecommerce-shop React, online-testing Angular), its
-  checks in `framework/frontend/e2e/maintenance.ts`; only binance-btc-tracker runs
-  the console entry, one code for two browsers and every page reloading itself.
-  The teardown turns a manual window off too: the test open refuses one.
+  unconditionally; the runner is serialized (`CI=1`). It also covers Maintenance
+  Overview and Circle navigation by direct address, reload, Back and Forward; the
+  shared Hilos › Maintenance head, one h1 and the current tab; the table on Circle
+  and no circle/table-controller traffic on Overview; and the live window,
+  admission, view mode and cleanup. `backup.spec.ts` keeps its pointer on Overview
+  and then selects the Circle tab. The Circle view is currently built only in Vue.
+  The manual window runs as one scenario in each kit's `protected-mode.spec.ts`
+  (binance-btc-tracker Vue, ecommerce-shop React, online-testing Angular), with
+  checks in `framework/frontend/e2e/maintenance.ts`; those helpers use Overview.
+  Only binance-btc-tracker runs the console entry, one code for two browsers and
+  every page reloading itself. The teardown turns a manual window off too: the
+  test open refuses one.
 - `demo/binance-btc-tracker` cluster scenarios 23 and 25 — drive the freeze and
   verification window through the live peer mesh and repeated quiesce rounds.
 - `demo/binance-btc-tracker` cluster scenario 38 — enables manual maintenance on
   one follower master, mints a pass from a slave and disables on another follower
   master. Every master reads `verifying` with no stopped agents and an open
   agent-start gate, then one pass, then `inactive` with no passes.
+- `demo/binance-btc-tracker` cluster/live `protected-mode.spec.ts` — keeps its
+  existing assertions and parked F-016 cases; circle setup and cleanup use the
+  Circle address and return to Overview before manual or document marks. Scenario
+  38 is the active manual cluster check; F-016 remains parked and unverified.

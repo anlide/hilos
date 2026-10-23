@@ -26,7 +26,7 @@ import {
 import { z } from 'zod'
 import { elapsedSecondsSince } from '../backup/hilosBackups.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
-import { HilosPages } from '../../routing/hilosPages.js'
+import { HilosPages, type HilosPageKey } from '../../routing/hilosPages.js'
 import {
   readBoolean,
   readHideableString,
@@ -542,29 +542,31 @@ function circleFrame(view: HilosMaintenanceCircleTableView): HilosTableFrame {
  *
  * @param context The project context (connection and scope stores).
  * @param view What the view lends the table: the press of its main action.
+ * @param page The page scope the table belongs to; defaults to maintenance for existing consumers.
  */
 export function createHilosMaintenanceCircleTable(
   context: HilosMaintenanceContext,
   view: HilosMaintenanceCircleTableView,
+  page: HilosPageKey = HilosPages.MAINTENANCE,
 ): HilosMaintenanceCircleTable {
   const controller = new TableViewportController<HilosMaintenanceCircleRow>({
     resolve: resolveHilosMaintenanceCircleRow,
     frame: circleFrame(view),
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.MAINTENANCE,
+        page,
         HILOS_MAINTENANCE_CIRCLE_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.MAINTENANCE,
+        page,
         HILOS_MAINTENANCE_CIRCLE_TABLE,
         rendered,
       ),
     sendFocus: (rowKey) =>
       context.connection.sendTableRowFocus(
-        HilosPages.MAINTENANCE,
+        page,
         HILOS_MAINTENANCE_CIRCLE_TABLE,
         rowKey,
       ),
@@ -579,7 +581,7 @@ export function createHilosMaintenanceCircleTable(
           context.connection,
           context.scopes,
           {
-            page: HilosPages.MAINTENANCE,
+            page,
             tableKey: HILOS_MAINTENANCE_CIRCLE_TABLE,
           },
           controller,

@@ -59,18 +59,37 @@ The project:
 A framework-owned section may have no on-switch at all: the mechanism under it
 is unconditional, and a feature case for it is banned
 ([protected-mode.md](protected-mode.md), *Anti-Patterns*). The project activates
-such a section by registering its page and table in the topology, with no line
-in `FEATURES`; the first one is `hilos_maintenance`
-(`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`), which shows the
-verifier circle through the framework's `HilosVerifierCircleTable`. It is also
-where an admin closes the system to visitors by hand: its `maintenance_enable`
-action hands entry to the index agent and waits for confirmation
+such a section by registering its pages and table in the topology, with no line
+in `FEATURES`; the first one is `hilos_maintenance`. Its Overview page
+(`hilos_maintenance`, `/hilos/maintenance`,
+`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`) retains the state
+frame and the manual `maintenance_enable`, `maintenance_disable` and
+`maintenance_pass` actions. Its child Circle page
+(`hilos_maintenance_circle`, `/hilos/maintenance/circle`,
+`Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage`) owns the
+verifier-circle add/remove actions and uses `HilosVerifierCircleTable`; the same
+index agent serves both, and the circle belongs to the freeze, not Backups.
+`HilosPageCatalog` opts Maintenance into the shared page head and declares Circle
+as its child, so the existing `page_response` carries Hilos › Maintenance and
+Overview/Circle tabs without child cards or new wire fields or signals.
+
+All six demo backends register Circle and bind its table to that page. The
+frontend is transitional: Vue renders Circle and scopes its table there; React
+and Angular still render the circle table on Overview, and their Circle page is
+unbuilt, so its tab is hidden and its direct address returns `not_served`. Those
+four demos keep the Overview page's `PAGE_TABLES` entry until HIL-1681 and
+HIL-1682. Circle actions are already owned by the Circle page, but dispatch does
+not require a subscription to it, so the transitional Overview UI can still send
+them.
+
+Manual maintenance remains on Overview: its `maintenance_enable` action hands
+entry to the index agent and waits for confirmation
 ([protected-mode.md](protected-mode.md), *Manual Maintenance*). The open-state
 banner offers a confirmation with no visitor-message field, the same in all three
-SDKs. It stays mounted
-through state pushes, closes only on its tracked success, and holds refusals in
-the dialog; timeout or disconnect asks the administrator to check Maintenance
-before trying again. A view-mode viewer finds the enable button disabled.
+SDKs. It stays mounted through state pushes, closes only on its tracked success,
+and holds refusals in the dialog; timeout or disconnect asks the administrator to
+check Maintenance before trying again. A view-mode viewer finds the enable button
+disabled.
 
 The manual card offers **Turn off maintenance** to an admitted admin, with a
 confirmation explaining opening to everyone, automatic reload of every page and

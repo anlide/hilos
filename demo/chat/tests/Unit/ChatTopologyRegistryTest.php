@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
+
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
 
@@ -747,6 +755,27 @@ final class ChatTopologyRegistryTest extends TestCase
         parent::tearDown();
     }
 
+    /** Circle alone binds the verifier table and its mutations; Overview keeps the manual actions. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndOwnsTheTableBinding(): void
+    {
+        $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
+        ], MaintenanceCirclePage::ACTIONS);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+        ], MaintenancePage::ACTIONS);
+        $this->assertSame(
+            [ChatTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
@@ -1108,11 +1137,11 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_RESTORE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_REOPEN => PageConstants::HILOS_BACKUP,
-            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => HilosPageConstants::HILOS_MAINTENANCE,
-            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_ENABLE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_DISABLE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_PASS => HilosPageConstants::HILOS_MAINTENANCE,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => HilosPageConstants::HILOS_DAEMON_AGENTS,
             HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => PageConstants::HILOS_LOGS_ROTATIONS,
             HilosSignalConstants::LOGS_TAKEOUT_UNDO => PageConstants::HILOS_LOGS_ROTATIONS,
@@ -1201,11 +1230,11 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_RESTORE => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_REOPEN => AgentType::HILOS_INDEX,
-            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => AgentType::HILOS_INDEX,
-            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_ENABLE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_DISABLE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_PASS => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => AgentType::HILOS_DAEMON,
             HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => AgentType::HILOS_LOGS,
             HilosSignalConstants::LOGS_TAKEOUT_UNDO => AgentType::HILOS_LOGS,

@@ -11,6 +11,7 @@ import {
   HILOS_ROUTE_DECLARATIONS,
 } from '../../src/routing/hilosPages.js'
 import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
+import { hilosTabLinks } from '../../src/routing/hilosAdmin.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import { ROUTE_NOT_FOUND_ERROR } from '../../src/routing/pageError.js'
 import {
@@ -131,6 +132,57 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
+  it('serves Circle in Vue and keeps its direct address and links closed in React and Angular', () => {
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      const { env } = fakeEnvironment('/hilos/maintenance/circle')
+      const { pages, calls, refused } = fakePages()
+      const navigator = createHilosRouter(
+        createPageRouter(HILOS_ROUTE_DECLARATIONS),
+        pages,
+        env,
+        undefined,
+        hilosUnbuiltPages(layer),
+      )
+      navigator.start()
+
+      expect(navigator.currentRoute.get()).toEqual({
+        page: HilosPages.MAINTENANCE_CIRCLE,
+        params: {},
+        admin: true,
+      })
+      const tabs = [
+        { page: HilosPages.MAINTENANCE, label: 'Overview' },
+        { page: HilosPages.MAINTENANCE_CIRCLE, label: 'Circle' },
+      ]
+      if (layer === 'vue') {
+        expect(refused).toEqual([])
+        expect(calls).toEqual([
+          { page: HilosPages.MAINTENANCE_CIRCLE, params: {} },
+        ])
+        expect(navigator.resolvePath(HilosPages.MAINTENANCE_CIRCLE)).toBe(
+          '/hilos/maintenance/circle',
+        )
+        expect(hilosTabLinks(tabs, {}, navigator.resolvePath)).toEqual([
+          { ...tabs[0], to: '/hilos/maintenance' },
+          { ...tabs[1], to: '/hilos/maintenance/circle' },
+        ])
+      } else {
+        expect(refused).toEqual([HilosPages.MAINTENANCE_CIRCLE])
+        expect(calls).toEqual([])
+        expect(
+          navigator.resolvePath(HilosPages.MAINTENANCE_CIRCLE),
+        ).toBeUndefined()
+        expect(hilosTabLinks(tabs, {}, navigator.resolvePath)).toEqual([
+          { ...tabs[0], to: '/hilos/maintenance' },
+        ])
+      }
+      expect(navigator.resolvePath(HilosPages.MAINTENANCE)).toBe(
+        '/hilos/maintenance',
+      )
+      navigator.stop()
+    }
+  })
+
   it('serves the eight i18n URLs in every view layer and keeps translation closed', () => {
     const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     for (const layer of ['vue', 'react', 'angular'] as const) {

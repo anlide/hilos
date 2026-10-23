@@ -61,7 +61,13 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
@@ -334,6 +340,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
+            MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             DaemonPage::PAGE => DaemonPage::class,
             DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
             DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -363,6 +370,30 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PrivacyPage::PAGE => PrivacyPage::class,
             LicensePage::PAGE => LicensePage::class,
         ], Hilos::PAGES);
+    }
+
+    /** Both addresses keep the table until the view moves, while Circle alone owns its mutations. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
+    {
+        $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
+        ], MaintenanceCirclePage::ACTIONS);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+        ], MaintenancePage::ACTIONS);
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
@@ -550,6 +581,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DashboardPage::class,
             BackupPage::class,
             MaintenancePage::class,
+            MaintenanceCirclePage::class,
             SettingsPage::class,
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
@@ -957,11 +989,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
         $this->assertSame(

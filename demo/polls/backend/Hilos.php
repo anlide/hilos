@@ -80,6 +80,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\AppearancePage;
@@ -302,6 +303,7 @@ final class Hilos extends HilosFacade
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -619,6 +621,9 @@ final class Hilos extends HilosFacade
             PollsTableContext::hilosAppearanceSettings => [],
         ],
         MaintenancePage::PAGE => [
+            PollsTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceCirclePage::PAGE => [
             PollsTableContext::hilosVerifierCircle => [],
         ],
         LogsKeysPage::PAGE => [

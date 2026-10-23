@@ -112,7 +112,13 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\AppearancePage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
@@ -511,6 +517,30 @@ final class TasksTopologyRegistryTest extends TestCase
         ] as $key => $entry) {
             self::assertSame($entry, $catalog[$key]);
         }
+    }
+
+    /** Both addresses keep the table until the view moves, while Circle alone owns its mutations. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
+    {
+        $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
+        ], MaintenanceCirclePage::ACTIONS);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+        ], MaintenancePage::ACTIONS);
+        $this->assertSame(
+            [TasksTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
@@ -1121,6 +1151,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 AppearancePage::PAGE,
                 BackupPage::PAGE,
                 MaintenancePage::PAGE,
+                MaintenanceCirclePage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -1283,11 +1314,11 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
         $this->assertSame(

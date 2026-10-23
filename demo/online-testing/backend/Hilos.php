@@ -55,6 +55,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
@@ -245,6 +246,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -462,6 +464,9 @@ final class Hilos extends HilosFacade
             OnlineTestingTableContext::hilosAppearanceSettings => [],
         ],
         MaintenancePage::PAGE => [
+            OnlineTestingTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceCirclePage::PAGE => [
             OnlineTestingTableContext::hilosVerifierCircle => [],
         ],
         LogsKeysPage::PAGE => [

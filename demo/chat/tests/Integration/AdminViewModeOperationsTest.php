@@ -8,6 +8,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
@@ -34,6 +35,7 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\BackupHistory;
@@ -166,6 +168,9 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
      */
     protected function tearDown(): void
     {
+        foreach ([self::ADMIN_KEY, self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+            MaintenancePage::removeSubscriber($acceptKey);
+        }
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
         RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         Hilos::initBrowser();
@@ -198,6 +203,54 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
         parent::tearDown();
     }
 
+    /** Overview and Circle share one head for admins and viewers; only Circle sends a table window. */
+    public function testMaintenanceOverviewAndCircleShareTheHeadButOnlyCircleHasTheWindow(): void
+    {
+        foreach ([self::ADMIN_KEY, self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $overview = self::payloads($this->subscribe(MaintenancePage::class, [], $acceptKey));
+            $circle = self::payloads($this->subscribe(MaintenanceCirclePage::class, [], $acceptKey, [
+                ChatTableContext::hilosVerifierCircle => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
+            ]));
+            self::assertCount(1, $overview);
+            self::assertCount(1, $circle);
+            self::assertSame(MaintenancePage::PAGE, $overview[0][PageResponseSignalData::page]);
+            self::assertSame(MaintenanceCirclePage::PAGE, $circle[0][PageResponseSignalData::page]);
+            self::assertArrayNotHasKey(PagePayload::windows, $overview[0][PageResponseSignalData::payload]);
+            self::assertSame(
+                [ChatTableContext::hilosVerifierCircle],
+                array_keys($circle[0][PageResponseSignalData::payload][PagePayload::windows]),
+            );
+            $overviewData = $overview[0][PageResponseSignalData::payload][PagePayload::data];
+            $circleData = $circle[0][PageResponseSignalData::payload][PagePayload::data];
+            self::assertSame('Maintenance', $overviewData[PageCatalogConstants::WIRE_PAGE_LABEL]);
+            self::assertSame('Circle', $circleData[PageCatalogConstants::WIRE_PAGE_LABEL]);
+            self::assertSame([
+                'page' => MaintenancePage::PAGE,
+                'label' => 'Maintenance',
+                'lead' => 'Node freeze under a destructive operation and manual maintenance: '
+                    . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
+                'icon' => 'bi-tools',
+            ], $overviewData[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
+            self::assertSame([
+                ['page' => 'hilos', 'label' => 'Hilos'],
+                ['page' => MaintenancePage::PAGE, 'label' => 'Maintenance'],
+            ], $overviewData[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+            self::assertSame([
+                ['page' => MaintenancePage::PAGE, 'label' => 'Overview'],
+                ['page' => MaintenanceCirclePage::PAGE, 'label' => 'Circle'],
+            ], $overviewData[PageCatalogConstants::WIRE_PAGE_TABS]);
+            self::assertSame([], $overviewData[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
+            foreach ([
+                PageCatalogConstants::WIRE_PAGE_HEAD_OWNER,
+                PageCatalogConstants::WIRE_PAGE_BREADCRUMB,
+                PageCatalogConstants::WIRE_PAGE_TABS,
+                PageCatalogConstants::WIRE_PAGE_CHILDREN,
+            ] as $field) {
+                self::assertSame($overviewData[$field], $circleData[$field]);
+            }
+        }
+    }
+
     /**
      * A viewer sees the verifier circle with hidden address and unmasked presence equal to an admin's.
      *
@@ -205,9 +258,14 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
      */
     public function testAViewerSeesTheVerifierCircleWithHiddenIdentifierAndUnmaskedPresence(): void
     {
-        $adminFrames = $this->subscribe(MaintenancePage::class, [], self::ADMIN_KEY, [
+        $adminFrames = $this->subscribe(MaintenanceCirclePage::class, [], self::ADMIN_KEY, [
             ChatTableContext::hilosVerifierCircle => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
         ]);
+        self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($adminFrames, 'name'));
+        self::assertSame(
+            MaintenanceCirclePage::PAGE,
+            $adminFrames[0]['data']->toArray()[PageResponseSignalData::page],
+        );
         $adminRows = $this->window($adminFrames, ChatTableContext::hilosVerifierCircle)[TableWindowSignalData::rows];
         $adminMember = null;
         foreach ($adminRows as $row) {
@@ -220,9 +278,11 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
         self::assertNotNull($adminMember);
 
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(MaintenancePage::class, [], $acceptKey, [
+            $frames = $this->subscribe(MaintenanceCirclePage::class, [], $acceptKey, [
                 ChatTableContext::hilosVerifierCircle => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]);
+            self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 'name'));
+            self::assertSame(MaintenanceCirclePage::PAGE, $frames[0]['data']->toArray()[PageResponseSignalData::page]);
             $rows = $this->window($frames, ChatTableContext::hilosVerifierCircle)[TableWindowSignalData::rows];
             $memberRow = null;
             foreach ($rows as $row) {
@@ -417,7 +477,7 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
     public function testAnAdminIsSentThePagesWithoutASingleMark(): void
     {
         $frames = [
-            ...$this->subscribe(MaintenancePage::class, [], self::ADMIN_KEY, [
+            ...$this->subscribe(MaintenanceCirclePage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::hilosVerifierCircle => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
             ...$this->subscribe(CommunicationsDeliveriesPage::class, [], self::ADMIN_KEY, [

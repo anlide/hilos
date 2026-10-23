@@ -454,6 +454,12 @@ final class HilosPageCatalog
                 . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Circle',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who will check the system after an operation.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
         ],
 
         // — Automation & intelligence —

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import {
   CIRCLE_ONLINE,
+  MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
   MANUAL_MAINTENANCE_OPERATION,
   addToMaintenanceCircle,
@@ -160,7 +161,7 @@ test.fixme("the named circle walks in on a follower master with the tab it alrea
   const bystander = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
     await grantAdminToSelf(operator)
-    await gotoPage(operator, '/hilos/maintenance')
+    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
     const operatorSession = await sessionToken(operator)
 
@@ -203,7 +204,7 @@ test.fixme("the named circle walks in on a follower master with the tab it alrea
     await expectSelfReload(operator)
     await expectSelfReload(member)
     await expectSelfReload(bystander)
-    await gotoPage(operator, '/hilos/maintenance')
+    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
   } finally {
     await operator.context().close()
@@ -314,6 +315,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       await gotoPage(admin, MAINTENANCE_PATH)
       await expectMaintenanceOpen(expect, admin)
     }
+    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
     circlePrepared = true
     const memberEmail = await signUp(member)
@@ -333,6 +335,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
     for (const watcher of upgrades) await watcher.assert()
 
+    await gotoPage(operator, MAINTENANCE_PATH)
     const navigations = new Map<Page, number>()
     for (const page of [operator, member]) {
       await markDocument(page)
@@ -457,7 +460,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
             })
         }
         if (circlePrepared) {
-          await gotoPage(pages[0], MAINTENANCE_PATH)
+          await gotoPage(pages[0], MAINTENANCE_CIRCLE_PATH)
           await dismissToasts(pages[0])
           await clearMaintenanceCircle(pages[0])
         }

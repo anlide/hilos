@@ -55,6 +55,7 @@ use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
@@ -216,6 +217,7 @@ final class Hilos extends HilosFacade
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -452,6 +454,9 @@ final class Hilos extends HilosFacade
             EcommerceShopTableContext::hilosBackups => [],
         ],
         MaintenancePage::PAGE => [
+            EcommerceShopTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceCirclePage::PAGE => [
             EcommerceShopTableContext::hilosVerifierCircle => [],
         ],
         SettingsPage::PAGE => [

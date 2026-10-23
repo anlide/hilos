@@ -44,6 +44,22 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
+  it('keeps only React and Angular Circle views unbuilt', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_CIRCLE]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_CIRCLE)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_CIRCLE)).toBe(
+      true,
+    )
+    expect(
+      hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_CIRCLE),
+    ).toBe(true)
+  })
+
   it('opens the Daemon environment page in all three view layers', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(false)

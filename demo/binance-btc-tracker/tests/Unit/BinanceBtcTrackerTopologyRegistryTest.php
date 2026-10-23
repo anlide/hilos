@@ -72,7 +72,13 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
@@ -347,6 +353,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
+            MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
@@ -382,6 +389,27 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             PrivacyPage::PAGE => PrivacyPage::class,
             LicensePage::PAGE => LicensePage::class,
         ], Hilos::PAGES);
+    }
+
+    /** Circle alone binds the verifier table and its mutations; Overview keeps the manual actions. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndOwnsTheTableBinding(): void
+    {
+        $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
+        ], MaintenanceCirclePage::ACTIONS);
+        $this->assertSame([
+            HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+        ], MaintenancePage::ACTIONS);
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
@@ -592,6 +620,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             DashboardPage::class,
             BackupPage::class,
             MaintenancePage::class,
+            MaintenanceCirclePage::class,
             SettingsPage::class,
             AppearancePage::class,
             UsersPage::class,
@@ -653,14 +682,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosVerifierCircle => []],
-            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+            Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
         );
         $this->assertSame(
-            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
         $this->assertSame(

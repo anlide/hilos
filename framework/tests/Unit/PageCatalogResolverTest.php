@@ -242,6 +242,63 @@ final class PageCatalogResolverTest extends TestCase
         );
     }
 
+    public function testOverviewAndCircleShareTheExactMaintenanceHead(): void
+    {
+        MaintenancePageHeadTestHilos::initBrowser();
+
+        self::assertSame([
+            'label' => 'Circle',
+            'lead' => 'Who will check the system after an operation.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_MAINTENANCE_CIRCLE));
+        $heads = [];
+        foreach ([HilosPageConstants::HILOS_MAINTENANCE, HilosPageConstants::HILOS_MAINTENANCE_CIRCLE] as $page) {
+            self::assertSame(HilosPageConstants::HILOS_MAINTENANCE, PageCatalogResolver::rowOwner($page));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Maintenance'],
+            ], PageCatalogResolver::breadcrumb($page));
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head);
+            $heads[] = $head;
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_MAINTENANCE,
+                    'label' => 'Maintenance',
+                    'lead' => 'Node freeze under a destructive operation and manual maintenance: '
+                        . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
+                    'icon' => 'bi-tools',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Maintenance'],
+                ],
+                'pageTabs' => [
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE, 'label' => 'Circle'],
+                ],
+                'pageChildren' => [],
+            ], $head->toArray());
+        }
+        self::assertNotSame($heads[0], $heads[1]);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
+                'label' => 'Circle', 'lead' => 'Who will check the system after an operation.'],
+        ], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE));
+        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE_CIRCLE));
+    }
+
+    public function testAnUnregisteredCircleDoesNotBecomeAMaintenanceTab(): void
+    {
+        MaintenanceOverviewHeadTestHilos::initBrowser();
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_MAINTENANCE, new PageRouteParams([]));
+
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Overview'],
+        ], $head->pageTabs);
+        self::assertSame([], $head->toArray()['pageChildren']);
+    }
+
     public function testCountryAndNamesShareTheExactHeadWithoutChangingTheirIdentity(): void
     {
         CountryPageHeadTestHilos::initBrowser();
@@ -561,6 +618,23 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** The Maintenance owner is registered without its optional Circle view. */
+abstract class MaintenanceOverviewHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_MAINTENANCE => PageHeadTestPage::class,
+    ];
+}
+
+/** The same owner with both Maintenance pages registered. */
+abstract class MaintenancePageHeadTestHilos extends MaintenanceOverviewHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => PageHeadTestPage::class,
+    ];
 }
 
 /** The framework catalog with both country pages registered. */

@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 86;
+    private const int CATALOG_ENTRIES = 87;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -233,7 +233,24 @@ final class HilosPageCatalogTest extends TestCase
         }
     }
 
-    public function testOnlyCountryAdoptsTheSharedHead(): void
+    public function testCircleSharesTheAdoptedMaintenanceHead(): void
+    {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Circle',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who will check the system after an operation.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Maintenance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation and manual maintenance: '
+                . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MAINTENANCE]);
+    }
+
+    public function testCountryAndMaintenanceAdoptTheSharedHead(): void
     {
         $adopted = [];
         $entities = [];
@@ -246,7 +263,7 @@ final class HilosPageCatalogTest extends TestCase
             }
         }
 
-        self::assertSame([HilosPageConstants::HILOS_I18N_COUNTRY], $adopted);
+        self::assertSame([HilosPageConstants::HILOS_I18N_COUNTRY, HilosPageConstants::HILOS_MAINTENANCE], $adopted);
         self::assertSame([HilosPageConstants::HILOS_I18N_COUNTRY], $entities);
         self::assertSame(
             'Country',

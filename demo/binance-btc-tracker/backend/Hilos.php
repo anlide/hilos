@@ -62,6 +62,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
@@ -249,6 +250,7 @@ final class Hilos extends HilosFacade
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
@@ -501,7 +503,7 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosBackups => [],
         ],
-        MaintenancePage::PAGE => [
+        MaintenanceCirclePage::PAGE => [
             BinanceBtcTrackerTableContext::hilosVerifierCircle => [],
         ],
         SettingsPage::PAGE => [

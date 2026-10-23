@@ -138,6 +138,9 @@ final class HilosPageConstants
     /** @var string Hilos maintenance section - the freeze and the verifier circle (HIL-1119) */
     public const string HILOS_MAINTENANCE = 'hilos_maintenance';
 
+    /** @var string Verifier circle in the maintenance section */
+    public const string HILOS_MAINTENANCE_CIRCLE = 'hilos_maintenance_circle';
+
     /** @var string Hilos daemon dashboard */
     public const string HILOS_DAEMON = 'hilos_daemon';
 

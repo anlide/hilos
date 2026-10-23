@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { resolveHilosPath } from '../../src/routing/hilosAdmin.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
@@ -10,6 +11,35 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('addresses Circle without params under Maintenance with the PHP key', () => {
+    const page = HilosPages.MAINTENANCE_CIRCLE
+    const path = '/hilos/maintenance/circle'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_maintenance_circle')
+    expect(php).toContain(`HILOS_MAINTENANCE_CIRCLE = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    expect(router.match('/hilos/maintenance')).toEqual({
+      page: HilosPages.MAINTENANCE,
+      params: {},
+      admin: true,
+    })
+    expect(router.match(`${path}/7`).page).toBeNull()
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    for (const layer of ['react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    }
+  })
+
   it('addresses all five i18n detail pages by code', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const addresses = [

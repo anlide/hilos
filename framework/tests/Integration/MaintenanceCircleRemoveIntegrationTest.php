@@ -21,7 +21,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 
 /**
@@ -245,7 +245,7 @@ final class MaintenanceCircleRemoveIntegrationTest extends HilosSessionIntegrati
 /**
  * Concrete maintenance page: the abstract one carries the whole behavior.
  */
-final class MaintenanceCircleRemoveTestPage extends AbstractHilosMaintenancePage
+final class MaintenanceCircleRemoveTestPage extends AbstractHilosMaintenanceCirclePage
 {
 }
 

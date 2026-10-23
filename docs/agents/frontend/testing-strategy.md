@@ -554,27 +554,41 @@ the shared framework form is driven.
 
 ### The verifier circle — name, confirm removal, clear
 
-`addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and `clearMaintenanceCircle`
-drive the Maintenance section's dialogs and settle on their closing. They expect the
-operator's page on `/hilos/maintenance`. `maintenanceCircleRow` and
-`maintenanceCircleOnline` locate the row and its presence mark; `CIRCLE_ONLINE` and
-`CIRCLE_OFFLINE` are that mark's words. Only an address somebody has confirmed can be
-named: a phone signed into by SMS code, or an email proven by its registration code or
-confirmed through the profile (HIL-825). The database list outlives a scenario, so
-start every circle scenario with `clearMaintenanceCircle`. Assertions stay in the demo.
+`MAINTENANCE_PATH` is the Overview address, `/hilos/maintenance`; the child
+Circle address is `MAINTENANCE_CIRCLE_PATH`, `/hilos/maintenance/circle`.
+`expectMaintenancePageHead(expect, page, currentPage)` checks the shared
+Hilos › Maintenance head, the Overview/Circle links with only the current page
+marked, and the absence of child cards. It applies where the SDK builds both
+pages; Circle is currently built only in Vue.
 
-Their file, `framework/frontend/e2e/maintenance.ts`, also drives the section's
-manual window. `turnOnMaintenance` presses **Turn on maintenance** on the open
+`addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and
+`clearMaintenanceCircle` drive the circle dialogs and settle on their closing.
+The helpers do not navigate: their page must already show the SDK's circle table.
+Vue uses the Circle page; React and Angular still show the table on Overview under
+the transitional `PAGE_TABLES` binding until HIL-1681 and HIL-1682.
+`confirmMaintenanceCircleRemoval` also expects the removal dialog to be open.
+`maintenanceCircleRow` and
+`maintenanceCircleOnline` locate a row and its presence mark; `CIRCLE_ONLINE` and
+`CIRCLE_OFFLINE` are that mark's words. Only an address somebody has confirmed can
+be named: a phone signed into by SMS code, or an email proven by its registration
+code or confirmed through the profile (HIL-825). The database list outlives a
+scenario, so start every circle scenario with `clearMaintenanceCircle`. Assertions
+stay in the demo.
+
+The same file, `framework/frontend/e2e/maintenance.ts`, drives the manual window
+on Overview. `turnOnMaintenance` presses **Turn on maintenance** on the open
 banner, confirms, and settles on the dialog's closing, which only the ack brings.
 `issueMaintenanceCode` issues a code from the manual card, reads it off its one
 showing and closes the result, which forgets it on the page; it returns the code.
 `turnOffMaintenance` confirms **Turn off maintenance** and does not wait for the
-dialog: the lift reloads every open page, this one too, so the spec waits for the
-state it expects on the reloaded page. `presentMaintenanceCode` types a code into
-the maintenance screen and submits it. The first three expect the operator's page
-on `/hilos/maintenance`. A spec's teardown — `openProtectedModeIfAny` in the
-demo's `helpers/protectedMode.ts` — turns a manual window off too, because the
-test open refuses one; a test carries no cleanup of its own.
+dialog: the lift reloads every open page, this one too, so wait for the expected
+state on the reloaded page before navigating. `presentMaintenanceCode` types a
+code into the maintenance screen and submits it. The first three expect the
+operator's page on `/hilos/maintenance`. The demo's
+`helpers/protectedMode.ts` teardown uses `openProtectedModeIfAny` to turn a
+manual window off because the test open refuses one; individual specs need no
+cleanup. `expectManualMaintenanceOn` proves the manual state on Overview; circle
+membership is proved separately on the SDK's table page.
 
 `MAINTENANCE_PATH`, the manual copy (`MANUAL_STUB_TITLE`, `MANUAL_STUB_MESSAGE`,
 `MAINTENANCE_ON_NOTICE`) and `MANUAL_MAINTENANCE_OPERATION`;

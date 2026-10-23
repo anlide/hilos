@@ -42,6 +42,7 @@ export const HilosPages = {
   ROLES: 'hilos_roles',
   BACKUP: 'hilos_backup',
   MAINTENANCE: 'hilos_maintenance',
+  MAINTENANCE_CIRCLE: 'hilos_maintenance_circle',
   GUARDIAN: 'hilos_guardian',
   GUARDIAN_AGENT: 'hilos_guardian_agent',
   I18N: 'hilos_i18n',
@@ -167,6 +168,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.ROLES]: { path: '/hilos/roles', admin: true },
   [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },
   [HilosPages.MAINTENANCE]: { path: '/hilos/maintenance', admin: true },
+  [HilosPages.MAINTENANCE_CIRCLE]: {
+    path: '/hilos/maintenance/circle',
+    admin: true,
+  },
   [HilosPages.GUARDIAN]: { path: '/hilos/guardian', admin: true },
   [HilosPages.GUARDIAN_AGENT]: {
     path: '/hilos/guardian/{agentId}',

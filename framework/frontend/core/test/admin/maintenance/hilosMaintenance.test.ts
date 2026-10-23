@@ -23,10 +23,18 @@ import {
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
 import type { ActionSuccessSignal } from '../../../src/protocol/parseSignal.js'
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
-import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { Emitter } from '../../../src/connection/events.js'
+import {
+  type HilosConnection,
+  type HilosConnectionEventMap,
+  type TableViewportDescriptor,
+  type TableWindowDescriptorSource,
+} from '../../../src/connection/HilosConnection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
+import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../../src/protocol/constants.js'
 
 /** A view whose main action records that it was pressed. */
 function circleView(pressed: string[] = []): HilosMaintenanceCircleTableView {
@@ -43,6 +51,160 @@ function circleRow(
   slot: Record<string, unknown> | undefined,
 ): TableRow {
   return { rowKey, slots: slot === undefined ? {} : { verifierCircle: slot } }
+}
+
+/** The row includes an entity slot so page-scope normalization is observable. */
+function circleRowWithMember(
+  rowKey: string,
+  memberId: number,
+  online: boolean,
+): TableRow {
+  return {
+    rowKey,
+    slots: {
+      verifierCircle: {
+        identityType: 'password',
+        identifier: 'ann@example.test',
+        online,
+      },
+      member: { id: memberId, name: 'Ann' },
+    },
+  }
+}
+
+/** A connection event source that records the factory's outgoing table frames. */
+class MaintenanceCircleConnection {
+  private readonly emitter = new Emitter<HilosConnectionEventMap>()
+  private activeListeners = 0
+
+  readonly registered = new Map<string, TableWindowDescriptorSource>()
+  readonly viewports: Array<{
+    page: string
+    tableKey: string
+    descriptor: TableViewportDescriptor
+  }> = []
+  readonly rendered: Array<{
+    page: string
+    tableKey: string
+    fields: readonly string[]
+  }> = []
+  readonly focus: Array<{
+    page: string
+    tableKey: string
+    rowKey: string
+  }> = []
+  readonly connection: HilosConnection
+
+  constructor() {
+    this.connection = {
+      on: this.on.bind(this),
+      registerTableWindow: (
+        tableKey: string,
+        source: TableWindowDescriptorSource,
+      ) => {
+        this.registered.set(tableKey, source)
+      },
+      unregisterTableWindow: (
+        tableKey: string,
+        source?: TableWindowDescriptorSource,
+      ) => {
+        if (source === undefined || this.registered.get(tableKey) === source) {
+          this.registered.delete(tableKey)
+        }
+      },
+      sendTableViewport: (
+        page: string,
+        tableKey: string,
+        descriptor: TableViewportDescriptor,
+      ) => {
+        this.viewports.push({ page, tableKey, descriptor })
+        return true
+      },
+      sendTableRendered: (
+        page: string,
+        tableKey: string,
+        fields: readonly string[],
+      ) => {
+        this.rendered.push({ page, tableKey, fields })
+        return true
+      },
+      sendTableRowFocus: (page: string, tableKey: string, rowKey: string) => {
+        this.focus.push({ page, tableKey, rowKey })
+        return true
+      },
+    } as unknown as HilosConnection
+  }
+
+  /** Publish one parsed connection event to the table's real binder. */
+  emit<K extends keyof HilosConnectionEventMap>(
+    event: K,
+    payload: HilosConnectionEventMap[K],
+  ): void {
+    this.emitter.emit(event, payload)
+  }
+
+  /** Publish a page response with one first table window. */
+  emitPageResponse(page: string, row: TableRow): void {
+    this.emit('projectSignal', {
+      kind: 'project',
+      type: SIGNAL_TYPE_PAGE_RESPONSE,
+      data: {
+        page,
+        payload: {
+          windows: {
+            hilosVerifierCircle: {
+              rows: [row],
+              sort: [],
+              limit: 10,
+              totalCount: 1,
+              totalExact: true,
+              firstAnchor: null,
+              lastAnchor: null,
+            },
+          },
+        },
+      },
+      envelope: {},
+    } as unknown as HilosConnectionEventMap['projectSignal'])
+  }
+
+  /** Publish a live value update addressed to the given page. */
+  emitRowUpdate(page: string, row: TableRow): void {
+    this.emit('tableViewportDelta', {
+      kind: 'tableViewportDelta',
+      data: {
+        page,
+        tableKey: 'hilosVerifierCircle',
+        kind: 'row_updated',
+        rowKey: row.rowKey,
+        row,
+      },
+      envelope: {},
+    } as unknown as HilosConnectionEventMap['tableViewportDelta'])
+  }
+
+  /** Count active listeners held by the table binder. */
+  listenerCount(): number {
+    return this.activeListeners
+  }
+
+  private on<K extends keyof HilosConnectionEventMap>(
+    event: K,
+    listener: (payload: HilosConnectionEventMap[K]) => void,
+  ): () => void {
+    const unsubscribe = this.emitter.on(event, listener)
+    this.activeListeners += 1
+    let subscribed = true
+
+    return () => {
+      if (!subscribed) {
+        return
+      }
+      subscribed = false
+      this.activeListeners -= 1
+      unsubscribe()
+    }
+  }
 }
 
 describe('resolveHilosMaintenanceCircleRow', () => {
@@ -85,6 +247,144 @@ describe('resolveHilosMaintenanceCircleRow', () => {
 })
 
 describe('createHilosMaintenanceCircleTable', () => {
+  it('defaults every circle table address to maintenance', () => {
+    const connection = new MaintenanceCircleConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.MAINTENANCE)
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection: connection.connection,
+        scopes,
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(),
+    )
+
+    circle.start()
+    circle.controller.refresh()
+    connection.emitPageResponse(
+      HilosPages.MAINTENANCE,
+      circleRow('7', {
+        identityType: 'password',
+        identifier: 'ann@example.test',
+        online: true,
+      }),
+    )
+
+    expect(circle.controller.focusRow('7')?.identifier).toBe('ann@example.test')
+    circle.controller.releaseFocus()
+    expect(connection.viewports.at(-1)).toMatchObject({
+      page: HilosPages.MAINTENANCE,
+      tableKey: 'hilosVerifierCircle',
+    })
+    expect(connection.rendered.at(-1)).toMatchObject({
+      page: HilosPages.MAINTENANCE,
+      tableKey: 'hilosVerifierCircle',
+    })
+    expect(
+      connection.focus.map(({ page, rowKey }) => ({ page, rowKey })),
+    ).toEqual([
+      { page: HilosPages.MAINTENANCE, rowKey: '7' },
+      { page: HilosPages.MAINTENANCE, rowKey: '' },
+    ])
+
+    circle.dispose()
+    expect(connection.listenerCount()).toBe(0)
+    expect(connection.registered.size).toBe(0)
+  })
+
+  it('uses a selected page for every address and keeps windows and deltas in that scope', () => {
+    const connection = new MaintenanceCircleConnection()
+    const scopes = new ScopeManager()
+    const maintenanceScope = scopes.openPage(HilosPages.MAINTENANCE)
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection: connection.connection,
+        scopes,
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(),
+      HilosPages.MAINTENANCE_CIRCLE,
+    )
+
+    circle.start()
+    circle.controller.refresh()
+    connection.emitPageResponse(
+      HilosPages.MAINTENANCE_CIRCLE,
+      circleRowWithMember('7', 91, true),
+    )
+
+    expect(circle.controller.rows.get()).toEqual([])
+    expect(
+      maintenanceScope.entities.signal({ type: 'member', id: 91 }).get(),
+    ).toBeUndefined()
+
+    const circleScope = scopes.openPage(HilosPages.MAINTENANCE_CIRCLE)
+    connection.emitPageResponse(
+      HilosPages.MAINTENANCE,
+      circleRowWithMember('7', 92, true),
+    )
+    expect(
+      circleScope.entities.signal({ type: 'member', id: 92 }).get(),
+    ).toBeUndefined()
+    expect(circle.controller.rows.get()).toEqual([])
+
+    connection.emitPageResponse(
+      HilosPages.MAINTENANCE_CIRCLE,
+      circleRowWithMember('7', 93, true),
+    )
+    expect(circle.controller.rows.get()[0]?.row?.online).toBe(true)
+    expect(
+      circleScope.entities.signal({ type: 'member', id: 93 }).get()?.fields
+        .name,
+    ).toBe('Ann')
+    expect(connection.viewports.at(-1)).toMatchObject({
+      page: HilosPages.MAINTENANCE_CIRCLE,
+      tableKey: 'hilosVerifierCircle',
+    })
+    expect(connection.rendered.at(-1)).toMatchObject({
+      page: HilosPages.MAINTENANCE_CIRCLE,
+      tableKey: 'hilosVerifierCircle',
+    })
+
+    expect(circle.controller.focusRow('7')?.identifier).toBe('ann@example.test')
+    circle.controller.releaseFocus()
+    expect(
+      connection.focus.map(({ page, rowKey }) => ({ page, rowKey })),
+    ).toEqual([
+      { page: HilosPages.MAINTENANCE_CIRCLE, rowKey: '7' },
+      { page: HilosPages.MAINTENANCE_CIRCLE, rowKey: '' },
+    ])
+
+    connection.emitRowUpdate(
+      HilosPages.MAINTENANCE,
+      circleRowWithMember('7', 94, false),
+    )
+    expect(circle.controller.rows.get()[0]?.row?.online).toBe(true)
+    expect(
+      circleScope.entities.signal({ type: 'member', id: 94 }).get(),
+    ).toBeUndefined()
+
+    connection.emitRowUpdate(
+      HilosPages.MAINTENANCE_CIRCLE,
+      circleRowWithMember('7', 95, false),
+    )
+    expect(circle.controller.rows.get()[0]?.row?.online).toBe(false)
+    expect(
+      circleScope.entities.signal({ type: 'member', id: 95 }).get()?.fields
+        .name,
+    ).toBe('Ann')
+
+    const resetRequests = vi.spyOn(circle.controller, 'resetWindowRequests')
+    circle.dispose()
+    const resetCountOnDispose = resetRequests.mock.calls.length
+    scopes.openPage(HilosPages.MAINTENANCE)
+
+    expect(resetRequests).toHaveBeenCalledTimes(resetCountOnDispose)
+    expect(connection.listenerCount()).toBe(0)
+    expect(connection.registered.size).toBe(0)
+  })
+
   it('holds its window on the maintenance page under the circle table key', () => {
     const registered: string[] = []
     const sent: Array<{ page: string; tableKey: string }> = []

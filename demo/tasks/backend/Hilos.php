@@ -84,6 +84,7 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
@@ -284,6 +285,7 @@ final class Hilos extends HilosFacade
         CountryNamesPage::PAGE => CountryNamesPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -596,6 +598,9 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosBackups => [],
         ],
         MaintenancePage::PAGE => [
+            TasksTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceCirclePage::PAGE => [
             TasksTableContext::hilosVerifierCircle => [],
         ],
         LogsKeysPage::PAGE => [
