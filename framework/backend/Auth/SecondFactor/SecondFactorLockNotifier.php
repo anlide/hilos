@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\SecondFactor;
 
+use DateTimeImmutable;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Announces the lock wrong app codes put on a person's second factor (HIL-1285).
@@ -23,7 +30,7 @@ use Hilos\Notification\NotificationSeverity;
 final class SecondFactorLockNotifier
 {
     /** Date form the end of a lock is written in. */
-    private const string DATE_FORMAT = 'Y-m-d H:i';
+    private const string DATE_FORMAT = 'Y-m-d H:i P (e)';
 
     /** Title of the announcement. */
     private const string TITLE = 'Two-step verification codes locked';
@@ -38,7 +45,12 @@ final class SecondFactorLockNotifier
      * @param int $userId Person whose app codes are locked
      * @param int $misses Wrong app codes that put the lock
      * @param int $untilSec End of the lock (Unix seconds)
-     * @throws InvalidArgumentException When the emit signal cannot be named or queued
+     * @throws InvalidArgumentException When the recipient View is invalid or the emit signal cannot be queued
+     * @throws EnvException When the server text configuration cannot be read
+     * @throws EnvInvalidValueException When the server text mode is invalid
+     * @throws ItemNotFoundException When the required recipient no longer exists
+     * @throws DatabaseException When loading the recipient fails
+     * @throws LogicException When the users collection is not configured
      */
     public static function locked(int $userId, int $misses, int $untilSec): void
     {
@@ -47,7 +59,11 @@ final class SecondFactorLockNotifier
             type: SecondFactorNotificationType::APP_CODES_LOCKED,
             title: self::TITLE,
             severity: NotificationSeverity::WARNING,
-            body: sprintf(self::BODY, $misses, date(self::DATE_FORMAT, $untilSec)),
+            body: sprintf(
+                self::BODY,
+                $misses,
+                new DateTimeImmutable('@' . $untilSec)->setTimezone(TimeHelper::serverTextTimeZone($userId))->format(self::DATE_FORMAT),
+            ),
             data: null,
         ));
     }

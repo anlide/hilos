@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use DateTimeImmutable;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
@@ -12,11 +13,13 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -161,6 +164,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      * initiator is then found gone says so, because it is a stronger statement about the same node.
      *
      * @param int $now Epoch seconds to judge against
+     * @throws HilosException When the server text policy cannot be resolved
      */
     public function tick(int $now): void
     {
@@ -642,17 +646,15 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
     }
 
     /**
-     * A moment as a person reads it, in UTC.
-     *
-     * UTC and not the node's local zone: the alert may be read from anywhere, and two nodes writing
-     * their own local time into one operator's mailbox is how an incident timeline gets misread.
+     * A moment in the server text policy's zone for an operator without a personal recipient.
      *
      * @param int $timestamp Epoch seconds
      * @return string Timestamp rendered for a human
      */
     private static function timestampText(int $timestamp): string
     {
-        return gmdate('j M Y H:i:s', $timestamp) . ' UTC';
+        return new DateTimeImmutable('@' . $timestamp)
+            ->setTimezone(TimeHelper::serverTextTimeZone())->format('j M Y H:i:s P (e)');
     }
 
     /**

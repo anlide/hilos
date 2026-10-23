@@ -256,13 +256,44 @@ later change that reads the same personal-field verdict.
 
 ## Server Text And Human-Readable Exports
 
-Choose the server text mode in env: **`recipient` (default), `project`, or
-`utc`**. In `recipient`, resolve **the person's own zone → the last browser zone
-stored on that person → the project zone → UTC**. This differs from the browser
-screen, which uses its current browser. With no human recipient, use the
-project zone; `project` always uses that zone, and `utc` always uses UTC, even
-without a recipient. Server text and notifications name the zone they use.
-Leave the standard SMTP `Date` header unchanged. (not in the code yet — HIL-1578)
+Configure the server's choice for human-readable text with the exact environment
+value `HILOS_SERVER_TEXT_TIME_ZONE_MODE`: **`recipient` (default), `project`, or
+`utc`**. `EntrypointPrelude::run()` validates it after loading the environment
+and test override, before persistence starts. An absent value uses the default;
+an explicitly empty value, different casing, surrounding whitespace, or any
+other value is invalid and raises `EnvInvalidValueException`. The environment
+accessor can also raise `EnvException`. The CLI's `initEnvironment()` path does
+not perform this validation, so it remains available to repair the environment.
+
+Select a zone with
+`TimeHelper::serverTextTimeZone(?int $recipientUserId = null, ?string
+$browserTimeZone = null): DateTimeZone`. In `recipient` mode, an account
+recipient requires its row in `Hilos::$db->users[$recipientUserId]`. The order
+is the person's `timeZone`, `lastBrowserTimeZone` on that same person row, the
+project zone, then UTC. These fields are read directly from the person, without
+searching sessions; session expiry or cleanup does not affect the last browser
+zone. This uses the person's last saved browser report, not the current
+browser-zone resolver used by a live page. A missing recipient row raises
+`ItemNotFoundException` instead of silently falling back, and database or
+collection access failures propagate. A supplied `$browserTimeZone` is ignored
+when a recipient ID is present. With no account, recipient mode checks the
+supplied saved browser zone, then the project zone, then UTC. For example,
+`TimeHelper::serverTextTimeZone(browserTimeZone: $savedBrowserTimeZone)`.
+
+`project` mode uses the project zone, then UTC; `utc` returns UTC without
+reading the project zone. Both modes ignore personal arguments. The no-account,
+`project`, and `utc` paths do not read DB or RT. The helper reads the policy on
+each call, does not change the process clock, and does not cache a zone.
+
+Candidates must exactly match
+`DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC)`. Unusable candidates
+are skipped, and accepted IANA aliases keep their original name. The helper
+selects and returns a `DateTimeZone`; callers preserve the original moment by
+applying it with `DateTimeImmutable::setTimezone()`. Include both the numeric
+offset and zone name in human-readable text such as notification bodies: use
+`format('Y-m-d H:i P (e)')`, or use `$timeZone->getName()` when naming the zone
+separately. The exports below keep their stated format.
+Leave the standard SMTP `Date` header unchanged.
 
 Use that same mode for the personal data archive, a person's analytics export
 and the acceptances CSV. The CSV's recipient is the administrator who requested

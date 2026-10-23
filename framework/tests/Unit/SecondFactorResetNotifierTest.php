@@ -6,6 +6,9 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
+use Hilos\Constants\EnvConstants;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationDraft;
@@ -51,23 +54,32 @@ final class SecondFactorResetNotifierTest extends TestCase
     {
         $capture = new SecondFactorResetNotifierCapture();
         Hilos::$notify = $capture;
+        $previousEnv = Hilos::$env;
+        $previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
+        try {
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=utc');
 
-        SecondFactorResetNotifier::requested(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
-        SecondFactorResetNotifier::reminder(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
+            SecondFactorResetNotifier::requested(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
+            SecondFactorResetNotifier::reminder(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
 
-        self::assertCount(2, $capture->drafts);
-        $requested = $capture->drafts[0];
-        $reminder = $capture->drafts[1];
-        $url = SecondFactorResetNotifier::cancelUrl(self::TOKEN);
-        self::assertSame(SecondFactorNotificationType::RESET_REQUESTED, $requested->type);
-        self::assertSame(SecondFactorNotificationType::RESET_REMINDER, $reminder->type);
-        self::assertIsArray($requested->data);
-        self::assertIsArray($reminder->data);
-        self::assertSame($url, $requested->data['url']);
-        self::assertSame($url, $reminder->data['url']);
-        self::assertStringContainsString($url, (string)$requested->body);
-        self::assertStringContainsString($url, (string)$reminder->body);
-        self::assertStringContainsString(self::TOKEN, $url);
+            self::assertCount(2, $capture->drafts);
+            $requested = $capture->drafts[0];
+            $reminder = $capture->drafts[1];
+            $url = SecondFactorResetNotifier::cancelUrl(self::TOKEN);
+            self::assertSame(SecondFactorNotificationType::RESET_REQUESTED, $requested->type);
+            self::assertSame(SecondFactorNotificationType::RESET_REMINDER, $reminder->type);
+            self::assertIsArray($requested->data);
+            self::assertIsArray($reminder->data);
+            self::assertSame($url, $requested->data['url']);
+            self::assertSame($url, $reminder->data['url']);
+            self::assertStringContainsString($url, (string)$requested->body);
+            self::assertStringContainsString($url, (string)$reminder->body);
+            self::assertStringContainsString(self::TOKEN, $url);
+        } finally {
+            Hilos::$env = $previousEnv;
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
+        }
     }
 }
 

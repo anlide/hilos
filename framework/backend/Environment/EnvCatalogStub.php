@@ -251,6 +251,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 TimeConstants::UTC_TIME_ZONE,
                 emptyIsMissing: false,
             ),
+            EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                ServerTextTimeZoneMode::RECIPIENT->value,
+                emptyIsMissing: false,
+            ),
             EnvConstants::HILOS_ADMIN_VIEW_MODE_ENABLED->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 false,

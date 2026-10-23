@@ -311,6 +311,9 @@ enum EnvConstants
      */
     case HILOS_PROJECT_TIME_ZONE;
 
+    /** Server text time zone policy: recipient (default), project or utc. */
+    case HILOS_SERVER_TEXT_TIME_ZONE_MODE;
+
     /**
      * Whether a non-admin may open the admin section to look and change nothing (HIL-1249).
      *

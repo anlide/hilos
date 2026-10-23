@@ -24,6 +24,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
 use Hilos\Utils\LogLevel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -572,6 +573,60 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->assertSame([], $mailer->sent);
         $this->assertSame('', $this->written());
+    }
+
+    /** @return iterable<string, array{string, string, string}> Fixed freeze and lift times under each operator policy */
+    public static function operatorTimestamps(): iterable
+    {
+        yield 'recipient without person' => [
+            'recipient', '14 Nov 2023 17:13:20 -05:00 (America/New_York)', '14 Nov 2023 17:14:21 -05:00 (America/New_York)',
+        ];
+        yield 'project' => [
+            'project', '14 Nov 2023 17:13:20 -05:00 (America/New_York)', '14 Nov 2023 17:14:21 -05:00 (America/New_York)',
+        ];
+        yield 'utc' => ['utc', '14 Nov 2023 22:13:20 +00:00 (UTC)', '14 Nov 2023 22:14:21 +00:00 (UTC)'];
+    }
+
+    /**
+     * @param string $mode Server text policy
+     * @param string $frozenSince Expected fixed freeze moment in the alert
+     * @param string $liftedAt Expected fixed release moment in the all-clear
+     */
+    #[DataProvider('operatorTimestamps')]
+    public function testOperatorMailUsesThePolicyAndPreservesDurations(string $mode, string $frozenSince, string $liftedAt): void
+    {
+        $previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
+        $previousProject = getenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        $previousTimezone = date_default_timezone_get();
+        try {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=' . $mode);
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=America/New_York');
+            $mailer = $this->mailTo('ops@example.com');
+            $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+            $watchdog = new ProtectedModeWatchdog();
+            $watchdog->onAgentStopped(self::INITIATOR_ID);
+            $watchdog->tick(self::STARTED_AT + 1);
+
+            $this->assertCount(1, $mailer->sent);
+            $stuck = $mailer->sent[0]['params'];
+            $this->assertSame($frozenSince, $stuck[ProtectedModeStuckMailTemplate::PARAM_FROZEN_SINCE]);
+            $this->assertSame('less than a minute', $stuck[ProtectedModeStuckMailTemplate::PARAM_FROZEN_FOR]);
+            $this->assertStringContainsString($frozenSince, new ProtectedModeStuckMailTemplate()->render($stuck, null)->text);
+
+            $this->lift();
+            $watchdog->tick(self::STARTED_AT + 61);
+
+            $this->assertCount(2, $mailer->sent);
+            $cleared = $mailer->sent[1]['params'];
+            $this->assertSame($liftedAt, $cleared[ProtectedModeClearedMailTemplate::PARAM_LIFTED_AT]);
+            $this->assertSame('1 minute', $cleared[ProtectedModeClearedMailTemplate::PARAM_HELD_FOR]);
+            $this->assertSame('1 minute', $cleared[ProtectedModeClearedMailTemplate::PARAM_STUCK_FOR]);
+            $this->assertStringContainsString($liftedAt, new ProtectedModeClearedMailTemplate()->render($cleared, null)->text);
+            $this->assertSame($previousTimezone, date_default_timezone_get());
+        } finally {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . ($previousProject === false ? '' : '=' . $previousProject));
+        }
     }
 
     public function testAManualMaintenanceWindowIsExemptFromSilenceAlerts(): void

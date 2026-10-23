@@ -40,4 +40,38 @@ API and component reference documentation.
    - CliCommands, DaemonConstants, EnvConstants, ExitCode, WorkerConstants
    - DaemonStatusDTO, WorkerRegisterDTO, SignalDTO, WebSocket\*, etc.
 
+## Server text time zones
+
+Use `TimeHelper::serverTextTimeZone()` to select the zone for server-generated
+human-readable text. It returns a `DateTimeZone`; see the
+[time-zone policy](agents/architecture/time-zones.md#server-text-and-human-readable-exports)
+for its modes, precedence, and errors. Apply the zone to the original moment
+with `DateTimeImmutable::setTimezone()` so the instant stays unchanged. Include
+the offset and zone name when rendering a message timestamp, and use `getName()`
+when a separate zone label is needed:
+
+```php
+use Hilos\Utils\Helpers\TimeHelper;
+
+$moment = new DateTimeImmutable('2026-10-23T12:00:00Z');
+
+// Account recipient: own zone, last browser zone, project, then UTC.
+$accountZone = TimeHelper::serverTextTimeZone($userId);
+$accountTime = $moment->setTimezone($accountZone);
+$accountText = $accountTime->format('Y-m-d H:i P (e)');
+$accountZoneName = $accountZone->getName();
+
+// No-account recipient: saved browser zone, project, then UTC.
+$guestZone = TimeHelper::serverTextTimeZone(browserTimeZone: $savedBrowserTimeZone);
+$guestTime = $moment->setTimezone($guestZone);
+$guestText = $guestTime->format('Y-m-d H:i P (e)');
+$guestZoneName = $guestZone->getName();
+
+// Operator without a human recipient: project, then UTC.
+$operatorZone = TimeHelper::serverTextTimeZone();
+$operatorTime = $moment->setTimezone($operatorZone);
+$operatorText = $operatorTime->format('Y-m-d H:i P (e)');
+$operatorZoneName = $operatorZone->getName();
+```
+
 > TODO(hilos-refactor): remove remaining legacy Idea-class references from generated/compatibility sections.

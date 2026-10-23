@@ -167,8 +167,11 @@ administrator can remove a subscriber. Throttle by address and IP. Keep all
 addresses, confirmation/unsubscribe tokens and session time zones out of the
 public files. Subscriber delivery uses the universal recipient-zone choice in
 [Server Text And Human-Readable Exports](time-zones.md#server-text-and-human-readable-exports)
-(HIL-1578), not a Status-specific time-zone policy. Exact records and guest
-action forms belong to the subscriber implementation.
+(HIL-1578), not a Status-specific time-zone policy. For a no-account recipient
+with a saved browser zone, select it with
+`TimeHelper::serverTextTimeZone(browserTimeZone: $savedBrowserTimeZone)` and
+render the text with the selected zone's offset and name. Exact records and
+guest action forms belong to the subscriber implementation.
 (not in the code yet — HIL-1691)
 
 Scheduling, changing or canceling works publishes the announcement change and

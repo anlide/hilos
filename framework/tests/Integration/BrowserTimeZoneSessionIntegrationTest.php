@@ -47,6 +47,7 @@ use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateSessionConnection;
 use Hilos\Runtime\State\Item\RtState;
@@ -106,6 +107,7 @@ final class BrowserTimeZoneSessionIntegrationTest extends HilosSessionIntegratio
     private BrowserTimeZoneSessionTestHost $host;
     private ?SignalRouter $previousRouter = null;
     private ?RtContext $previousRuntime = null;
+    private ?HilosNotifier $previousNotify = null;
     private string $boundAppClass;
 
     public function testTheFirstGuestHandshakeWritesTheSessionWithNobodyInIt(): void
@@ -440,6 +442,9 @@ final class BrowserTimeZoneSessionIntegrationTest extends HilosSessionIntegratio
         $this->boundAppClass = Hilos::appClass();
         $this->previousRouter = Hilos::$sr;
         $this->previousRuntime = Hilos::$rt;
+        $this->previousNotify = Hilos::$notify;
+        // This fixture mounts no notifications library; sign-in notices have their own integration cases.
+        Hilos::$notify = null;
         Hilos::$sr = new BrowserTimeZoneSessionTestRouter();
         Hilos::$rt = new BrowserTimeZoneSessionTestRuntime();
         Hilos::$rt->mountFeatureRuntime([]);
@@ -470,6 +475,7 @@ final class BrowserTimeZoneSessionIntegrationTest extends HilosSessionIntegratio
         SourceChangeBus::reset();
         Hilos::$sr = $this->previousRouter;
         Hilos::$rt = $this->previousRuntime;
+        Hilos::$notify = $this->previousNotify;
         self::bindAppClass($this->boundAppClass);
 
         parent::tearDown();

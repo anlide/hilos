@@ -19,6 +19,7 @@ use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Environment\ServerTextTimeZoneMode;
 use Hilos\Fs\Exception\LfsPointerException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
@@ -30,7 +31,7 @@ use RecursiveIteratorIterator;
 use ReflectionProperty;
 
 /**
- * The shared start sets this process to UTC and judges the project zone only on run().
+ * The shared start sets this process to UTC and judges the project zone and server text mode only on run().
  *
  * No second process: date_default_timezone_set is the clock this PHP already has.
  * A child would only repeat what this process can already observe.
@@ -62,6 +63,8 @@ final class EntrypointPreludeTest extends TestCase
 
     private string|false $previousZone;
 
+    private string|false $previousMode;
+
     /** Saves process globals and isolates each scenario from an earlier prepared startup. */
     protected function setUp(): void
     {
@@ -78,6 +81,7 @@ final class EntrypointPreludeTest extends TestCase
         $this->previousTimezone = date_default_timezone_get();
         $this->previousTz = getenv('TZ');
         $this->previousZone = getenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        $this->previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
         $this->saved = true;
 
         $this->root = sys_get_temp_dir() . '/hilos-entrypoint-prelude-' . bin2hex(random_bytes(4));
@@ -90,6 +94,7 @@ final class EntrypointPreludeTest extends TestCase
 
         Hilos::$env = null;
         putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
         putenv('TZ=' . self::CONTAINER_TZ);
         date_default_timezone_set(self::CONTAINER_TZ);
         $this->assertNotSame('+00:00', date('P'));
@@ -117,6 +122,8 @@ final class EntrypointPreludeTest extends TestCase
             } else {
                 putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=' . $this->previousZone);
             }
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name
+                . ($this->previousMode === false ? '' : '=' . $this->previousMode));
         }
         $this->removeRoot();
         parent::tearDown();
@@ -225,6 +232,85 @@ final class EntrypointPreludeTest extends TestCase
         } catch (EnvInvalidValueException $refusal) {
             $this->assertSame(
                 "Environment variable 'HILOS_PROJECT_TIME_ZONE' must name an IANA time zone; got '+02:00'",
+                $refusal->getMessage(),
+            );
+        }
+
+        $this->assertFalse($called);
+        $this->assertClockIsUtc();
+    }
+
+    public function testInitEnvironmentAllowsAnInvalidServerTextModeForRepair(): void
+    {
+        $this->writeEnv("HILOS_SERVER_TEXT_TIME_ZONE_MODE=recipient\n", "HILOS_SERVER_TEXT_TIME_ZONE_MODE=invalid\n");
+
+        EntrypointPrelude::initEnvironment(EntrypointPreludeTestHilos::class, $this->root());
+
+        $this->assertSame('invalid', Hilos::$env[EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE]->string());
+        $this->assertClockIsUtc();
+    }
+
+    public function testRunRefusesAnInvalidServerTextModeFromDotenv(): void
+    {
+        $previousAppEnv = getenv(EnvConstants::APP_ENV->name);
+        putenv('APP_ENV=dev');
+        try {
+            $this->writeEnv("HILOS_SERVER_TEXT_TIME_ZONE_MODE=invalid\n", "HILOS_SERVER_TEXT_TIME_ZONE_MODE=recipient\n");
+            $this->assertServerTextModeRefusesPersistence();
+        } finally {
+            putenv(EnvConstants::APP_ENV->name . ($previousAppEnv === false ? '' : '=' . $previousAppEnv));
+        }
+    }
+
+    public function testRunRefusesAnInvalidServerTextModeFromTheTestOverride(): void
+    {
+        $this->writeEnv("HILOS_SERVER_TEXT_TIME_ZONE_MODE=recipient\n", "HILOS_SERVER_TEXT_TIME_ZONE_MODE=invalid\n");
+
+        $this->assertServerTextModeRefusesPersistence();
+    }
+
+    public function testRunParsesTheModeAfterTheTestOverride(): void
+    {
+        $this->writeEnv("HILOS_SERVER_TEXT_TIME_ZONE_MODE=invalid\n", "HILOS_SERVER_TEXT_TIME_ZONE_MODE=project\n");
+        $this->writeFrameworkSources();
+        $called = false;
+
+        EntrypointPrelude::run(EntrypointPreludeTestHilos::class, $this->root(), function () use (&$called): void {
+            $called = true;
+            $this->assertSame(ServerTextTimeZoneMode::PROJECT, ServerTextTimeZoneMode::fromEnv());
+            $this->assertClockIsUtc();
+        });
+
+        $this->assertTrue($called);
+    }
+
+    public function testRunAcceptsTheMissingModeCatalogDefault(): void
+    {
+        $this->writeEnv("HILOS_SERVER_TEXT_TIME_ZONE_MODE=invalid\n", "APP_ENV=test\n");
+        $this->writeFrameworkSources();
+        $called = false;
+
+        EntrypointPrelude::run(EntrypointPreludeTestHilos::class, $this->root(), function () use (&$called): void {
+            $called = true;
+            $this->assertSame(ServerTextTimeZoneMode::RECIPIENT, ServerTextTimeZoneMode::fromEnv());
+            $this->assertClockIsUtc();
+        });
+
+        $this->assertTrue($called);
+    }
+
+    /** Confirms a bad policy fails before migrations and persistence and still sets PHP to UTC. */
+    private function assertServerTextModeRefusesPersistence(): void
+    {
+        $called = false;
+        try {
+            EntrypointPrelude::run(EntrypointPreludeTestHilos::class, $this->root(), function () use (&$called): void {
+                $called = true;
+            });
+            $this->fail('An invalid server text time zone mode was accepted');
+        } catch (EnvInvalidValueException $refusal) {
+            $this->assertSame(
+                "Environment variable 'HILOS_SERVER_TEXT_TIME_ZONE_MODE' must be recipient, project or utc; got 'invalid'",
                 $refusal->getMessage(),
             );
         }

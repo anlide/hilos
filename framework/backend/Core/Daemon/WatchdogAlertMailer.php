@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -18,6 +20,7 @@ use Hilos\Mail\MailTransportFactory;
 use Hilos\Mail\MailTransportInterface;
 use Hilos\Mail\SmtpSecurity;
 use Hilos\ProtectedMode\ProtectedModeAlertNotifier;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -77,11 +80,13 @@ final class WatchdogAlertMailer
      * @param MailTransportInterface $transport Transport the alert is pumped through
      * @param string $toAddress The single operator address the alert goes to
      * @param int $timeoutMs How long one send may take before it is abandoned
+     * @param DateTimeZone $timeZone Already selected zone for this mailer's alert bodies
      */
     public function __construct(
         private readonly MailTransportInterface $transport,
         private readonly string $toAddress,
         private readonly int $timeoutMs,
+        private readonly DateTimeZone $timeZone,
     ) {
     }
 
@@ -129,7 +134,9 @@ final class WatchdogAlertMailer
                 timeoutMs: $timeoutMs,
             );
 
-            return new self(new MailTransportFactory()->create($config), $toAddress, $timeoutMs);
+            $timeZone = TimeHelper::serverTextTimeZone();
+
+            return new self(new MailTransportFactory()->create($config), $toAddress, $timeoutMs, $timeZone);
         } catch (Throwable $e) {
             Logger::error(
                 'Watchdog alert mail could not be set up, so no incident will be mailed: ' . $e->getMessage(),
@@ -257,7 +264,7 @@ final class WatchdogAlertMailer
     private function header(string $node): string
     {
         return "Node:   {$node}\n"
-            . 'Time:   ' . gmdate('Y-m-d H:i:s') . " UTC\n"
+            . 'Time:   ' . new DateTimeImmutable()->setTimezone($this->timeZone)->format('Y-m-d H:i:s P (e)') . "\n"
             . "\n";
     }
 
