@@ -418,9 +418,6 @@ test('re-decides an open admin page when the person signs out, in place', async 
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   expect(new URL(page.url()).pathname).toBe('/hilos/users')
   expect(fullLoads).toBe(0)
-
-  // Revoke so the shared-DB user does not stay admin for later specs.
-  await setAdmin(userId, false)
 })
 
 test('re-decides an open profile when the person signs out, in place', async ({

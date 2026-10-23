@@ -589,6 +589,34 @@ idempotent: the channel's switch is a setting of the whole stand, so a channel
 another test switched on is left alone. The emit that makes a notification exist
 and the sign-in that makes its recipient are the demo's; so are the assertions.
 
+### `leaveSecondAdmin(browser, grantAdmin, contextOptions)` — an administrator to stay behind
+
+The server refuses to take the administrator flag from the last administrator,
+and no seed holds one. A test that revokes the flag therefore needs another
+administrator to exist, and without one it passed only when an earlier test of the
+same run had happened to leave one. `leaveSecondAdmin` is how such a test brings
+that administrator itself, before its revoke, so it also passes pointed alone on a
+fresh stand. It is a tool of those tests; it is not a rule for the others.
+
+It takes three arguments: the `browser` of the test; `grantAdmin`, a function that
+makes the visitor on the `Page` it is handed an administrator and returns that
+person's user id; and `contextOptions`, the project's `baseURL` and
+`ignoreHTTPSErrors` from `test.info().project.use`. A context made off the
+`browser` fixture inherits none of them, the tolerance for the stand's
+self-signed certificate included, so the caller passes them on. The grant runs in
+a browser context of its own, not in a second tab of the test's page: identity is
+the session cookie, and two tabs of one context are one person. The context closes
+whether the grant succeeds or throws, and a failed grant is not swallowed — the
+scenario does not go on without its second administrator. Nothing revokes the new
+account, deletes it or remembers it for the next test: it stays on the stand until
+the stand is reset.
+
+The grant itself stays in the demo, because each demo reaches its own
+command-channel address and signs its visitor up its own way. Most demos pass
+`grantAdminToSelf` from their `helpers/adminGrant.ts`; chat passes `signUpAdmin`,
+which also confirms the grant under the view mode; the cluster test wraps it in a
+callback that first points the second page at the follower.
+
 ### The Daemon section — names and checks
 
 `daemon.ts` owns the `DAEMON_*` paths, child and breadcrumb ids, placement types,

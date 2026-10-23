@@ -31,10 +31,11 @@ import {
   type TableGeometryWatch,
   dismissToasts,
   expectHilosUserBlockSettled,
+  leaveSecondAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
-import { clickSubmit, typeInto } from '../helpers/session'
+import { clickSubmit, signUpPerson, typeInto } from '../helpers/session.js'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own granted row is present, search filters the client
@@ -223,8 +224,7 @@ test('opens the refused users admin the moment the grant lands', async ({
   // refusal - not on a page they navigated to after being granted - and the grant
   // has to reach that open page on its own. Before this, a granted visitor kept
   // reading the 403 until they reloaded.
-  const userId = await grantAdminToSelf(page)
-  await setAdmin(userId, false)
+  const { userId } = await signUpPerson(page)
   await gotoPage(page, '/hilos/users', PAGE_REFUSED)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 
@@ -239,13 +239,22 @@ test('opens the refused users admin the moment the grant lands', async ({
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 })
 
-test('a revoked admin loses the gear and the door', async ({ page }) => {
-  // Keeps the framework admin:grant / admin:revoke route walked end to end now
-  // that grantAdminToSelf drives admin:create instead (HIL-609): binance-btc-tracker
-  // also drives admin:grant / admin:revoke (admin-gating), and the revoke here is
-  // the React one. Only the revoke is sent, and that covers the route rather than half
-  // of it — both wire names land on one handler and differ in nothing but the
-  // boolean in the payload, which the framework unit test pins separately.
+test('a revoked admin loses the gear and the door', async ({
+  page,
+  browser,
+}) => {
+  // Keeps the framework admin:revoke route walked end to end now that
+  // grantAdminToSelf drives admin:create instead (HIL-609), and the revoke here is
+  // the React one; admin:grant is walked by the promotion test above and by
+  // binance-btc-tracker's admin-gating. Both wire names land on one handler and
+  // differ in nothing but the boolean in the payload, which the framework unit test
+  // pins separately.
+  // Revocation requires another administrator, even when this test runs alone.
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  await leaveSecondAdmin(browser, grantAdminToSelf, {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
   expectDataFreeDeparture,
+  leaveSecondAdmin,
   shownByTestId,
   watchFirstRowTop,
   watchTableFirstLive,
@@ -316,12 +317,11 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   // used to be reached once and then only re-checked as a gate on delivery, so a
   // revoke left the archive list readable until the person reloaded.
   // Revocation requires another administrator, even when this test runs alone.
-  const otherAdmin = await browser.newContext()
-  try {
-    await grantAdminToSelf(await otherAdmin.newPage())
-  } finally {
-    await otherAdmin.close()
-  }
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  await leaveSecondAdmin(browser, grantAdminToSelf, {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -357,12 +357,11 @@ test('opens the refused backup page the moment admin is granted', async ({
   // to be. The visitor is made an admin and revoked first, so the refused page is
   // a person's who holds an account: the grant is the same re-decision either way.
   // This test prepares its own second administrator before revoking the first.
-  const otherAdmin = await browser.newContext()
-  try {
-    await grantAdminToSelf(await otherAdmin.newPage())
-  } finally {
-    await otherAdmin.close()
-  }
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  await leaveSecondAdmin(browser, grantAdminToSelf, {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const userId = await grantAdminToSelf(page)
   await setAdmin(userId, false)
   await gotoPage(page, '/hilos/backup', PAGE_REFUSED)

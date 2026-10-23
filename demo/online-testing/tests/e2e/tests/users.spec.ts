@@ -2,6 +2,7 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
 import {
   dismissToasts,
   expectHilosUserBlockSettled,
+  leaveSecondAdmin,
   shownByTestId,
   watchTableModalFocus,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -222,11 +223,20 @@ test('a rename in one tab lands at once in another, raising no Apply', async ({
   }
 })
 
-test('a revoked admin loses the gear and the door', async ({ page }) => {
-  // Keep the framework admin:grant / admin:revoke route covered now that
-  // grantAdminToSelf drives admin:create instead (HIL-609). Binance-btc-tracker
-  // exercises the same route. Only the revoke is sent here: both wire names land
-  // on one handler and differ only by the boolean, pinned by a framework unit test.
+test('a revoked admin loses the gear and the door', async ({
+  page,
+  browser,
+}) => {
+  // Keep the framework admin:revoke route covered now that grantAdminToSelf drives
+  // admin:create instead (HIL-609): the revoke is this test's, while admin:grant is
+  // walked by binance-btc-tracker's admin-gating. Both wire names land on one handler
+  // and differ only by the boolean, pinned by a framework unit test.
+  // Revocation requires another administrator, even when this test runs alone.
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  await leaveSecondAdmin(browser, grantAdminToSelf, {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()

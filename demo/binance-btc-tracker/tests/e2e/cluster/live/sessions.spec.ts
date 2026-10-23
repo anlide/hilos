@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { leaveSecondAdmin } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
@@ -74,6 +75,16 @@ test('a change of rights reaches an admin page open on a follower master: a gran
   await expectLeaderUnmoved(before)
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
+    // Revocation requires another administrator, even when this test runs alone.
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    await leaveSecondAdmin(
+      browser,
+      async (secondPage) => {
+        await onMaster(secondPage, CLUSTER_FOLLOWER)
+        return grantAdminToSelf(secondPage)
+      },
+      { baseURL, ignoreHTTPSErrors },
+    )
     const userId = await grantAdminToSelf(page)
     await setAdmin(userId, false)
     await gotoPage(page, '/hilos/backup', PAGE_REFUSED)

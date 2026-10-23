@@ -37,7 +37,4 @@ test('gates the people page for a non-admin, then opens it after a grant', async
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('page-error')).toHaveCount(0)
-
-  // Revoke so the shared-DB user does not stay admin for later specs.
-  await setAdmin(userId, false)
 })

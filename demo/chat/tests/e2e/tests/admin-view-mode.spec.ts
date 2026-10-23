@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
-import { setAdmin } from '../helpers/adminGrant'
+import {
+  leaveSecondAdmin,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdmin, signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page'
 import { signUp } from '../helpers/session'
@@ -142,9 +145,15 @@ test('a viewer sees open framework settings while a project key stays hidden', a
 })
 
 test('a signed-in non-admin views the people, is granted the full section and taken back to the view live', async ({
+  browser,
   page,
 }) => {
   await setAdminViewMode(true)
+  // Revocation requires another administrator, even when this test runs alone.
+  // Made before the people open, that one's row is in the table from its first
+  // answer rather than arriving live in the middle of the scenario.
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  await leaveSecondAdmin(browser, signUpAdmin, { baseURL, ignoreHTTPSErrors })
   const { userId } = await signUp(page)
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toHaveAttribute('data-access', 'view')
