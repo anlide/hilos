@@ -58,7 +58,8 @@ exist today is the sunset rule below.
 
 ## One Container, One Prefix Per Resident
 
-The house is one container for every non-mail channel: `php:8.4-cli` running
+The house is one container for every non-mail channel: PHP 8.4.27, pinned in the
+[gateway Dockerfile](../../framework/docker/stand-gateway/Dockerfile), running
 the framework's own TLS server on port 18000 (HIL-921) —
 `src/StandGatewayTlsServer.php`, an `AbstractTlsServer` whose connections are
 the framework's `HttpClient` routed by its `HttpRouter`, started by

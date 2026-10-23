@@ -50,7 +50,7 @@ services:
         ipv4_address: ${DOCKER_MYSQL_IP:-10.202.0.10}
 
   ecommerce-shop-phpmyadmin-local:
-    image: phpmyadmin:latest
+    image: phpmyadmin:latest@sha256:62a50b1419fe55b9b4c3cd6f5aed03a18f8f5b4a236f24735d76400bea75a5ff
     container_name: ecommerce-shop-phpmyadmin-local
     environment:
       - PMA_HOST=ecommerce-shop-mysql-local

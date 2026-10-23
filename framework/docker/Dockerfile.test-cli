@@ -1,7 +1,7 @@
 # PHP CLI image for Composer + PHPUnit on the Hilos monorepo (Linux; matches platform reqs).
 # Used only via docker compose — do not rely on host PHP version or OS.
 
-FROM php:8.4-cli
+FROM php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810
 
 # libevent-dev is what ext-event compiles against; libssl-dev answers the pecl
 # prompt's default (event-openssl=yes), which otherwise stops the build looking

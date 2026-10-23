@@ -23,7 +23,7 @@
 # The version tracks the framework's own, not the reference mock's: the gateway runs
 # the framework's classes, written in the same PHP as the rest of the repository, and
 # an older image would not parse them - the container would not come up at all.
-FROM php:8.4-cli
+FROM php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810
 
 # libevent-dev and libssl-dev: what the PECL "event" extension is compiled against.
 RUN apt-get update && apt-get install -y --no-install-recommends \

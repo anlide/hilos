@@ -44,7 +44,7 @@ demo/<name>/
     .env.example       # test DB coordinates
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
-    Dockerfile         # php:8.4-cli + sockets/pcntl/posix/mysqli/pdo + pecl event
+    Dockerfile         # php:8.4.27-cli + sockets/pcntl/posix/mysqli/pdo + pecl event
     Dockerfile.nginx   # nginx:alpine + envsubst + self-signed TLS entrypoint
     nginx.conf.template
     docker-entrypoint-nginx.sh
@@ -53,6 +53,9 @@ demo/<name>/
     docker-compose.test.yml
   data/                # mysql datadir bind, daemon logs (gitignored content)
 ```
+
+The exact PHP image digest is pinned in the
+[canonical minimal demo Dockerfile](../../demo/binance-btc-tracker/docker/Dockerfile).
 
 ## Minimal backend file set
 

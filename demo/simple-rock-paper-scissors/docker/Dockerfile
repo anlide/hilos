@@ -2,7 +2,7 @@
 # Base image: PHP 8.4 CLI
 # Suitable for daemon processes and CLI-based services.
 # -----------------------------------------------------------
-FROM php:8.4-cli
+FROM php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810
 
 # -----------------------------------------------------------
 # System dependencies for PECL "event" extension and Composer

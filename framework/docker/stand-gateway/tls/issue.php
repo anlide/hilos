@@ -19,7 +19,8 @@ declare(strict_types=1);
  * config names it - which is why a config file is written below instead of passing a CN alone.
  *
  * Usage, from the repository root:
- *   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/hilos -w /hilos php:8.4-cli \
+ *   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/hilos -w /hilos \
+ *       php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810 \
  *       php framework/docker/stand-gateway/tls/issue.php
  *
  * Writes, next to this script:
