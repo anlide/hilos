@@ -1,8 +1,14 @@
+// @vitest-environment jsdom
+// jsdom, not the package's happy-dom: a control inside a disabled fieldset
+// matches `:disabled` only in jsdom, and that inheritance is what the locked
+// body gives and what the focus trap reads.
+
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
 import HilosModal from './HilosModal.vue'
+import LoadingButton from './LoadingButton.vue'
 
 // HilosModal teleports to <body>, so assertions query the document, not the wrapper.
 const realClipboard = navigator.clipboard
@@ -13,6 +19,7 @@ afterEach(() => {
   document.body.classList.remove('modal-open')
   setClipboard(realClipboard)
   written.length = 0
+  vi.useRealTimers()
 })
 
 // Vitest runs afterEach hooks last-in-first-out: unmount teleporting wrappers
@@ -45,6 +52,20 @@ function layerDepths(selector: string): string[] {
 /** The header close button of the open dialog. */
 function closeButton(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+}
+
+/**
+ * The elements carrying the given data ids, in the order the ids are given.
+ *
+ * @param ids The `data-id` of each element; every one must be in the document.
+ * @returns The elements, one per id.
+ */
+function byIds(ids: string[]): HTMLElement[] {
+  return ids.map((id) => {
+    const element = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+    expect(element).not.toBeNull()
+    return element as HTMLElement
+  })
 }
 
 /**
@@ -348,9 +369,248 @@ describe('HilosModal', () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('is not busy without the input: the close button is enabled', () => {
-    mount(HilosModal, { props: { modelValue: true } })
+  it('is not busy without the input: the close button, Copy and the body are live', () => {
+    recordingClipboard()
+    mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+      slots: { default: '<input data-id="field" />' },
+    })
     expect(closeButton()?.disabled).toBe(false)
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-id="modal-copy"]')
+        ?.disabled,
+    ).toBe(false)
+    expect(
+      document.querySelector<HTMLFieldSetElement>('.modal-body > fieldset')
+        ?.disabled,
+    ).toBe(false)
+    expect(byIds(['field'])[0]?.matches(':disabled')).toBe(false)
+  })
+
+  it('locks the body fields through one fieldset while busy, keeping the nodes and the draft', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: {
+        default: `<form data-id="form">
+          <input data-id="text" />
+          <select data-id="choice">
+            <option value="first">First</option>
+            <option value="second">Second</option>
+          </select>
+          <textarea data-id="note"></textarea>
+          <input type="checkbox" data-id="flag" />
+          <input data-id="own" disabled />
+        </form>`,
+        actions:
+          '<button type="button" data-id="footer-cancel">Cancel</button>',
+      },
+    })
+    const ids = ['text', 'choice', 'note', 'flag']
+    const fields = byIds(ids)
+    const [text, choice, note, flag] = fields as [
+      HTMLInputElement,
+      HTMLSelectElement,
+      HTMLTextAreaElement,
+      HTMLInputElement,
+    ]
+    const [own, footerCancel] = byIds(['own', 'footer-cancel'])
+    text.value = 'draft'
+    choice.value = 'second'
+    note.value = 'a note'
+    flag.checked = true
+    const fieldset = document.querySelector<HTMLFieldSetElement>(
+      '.modal-body > fieldset',
+    )
+    // No border and no spacing: the lock changes nothing on screen.
+    expect(fieldset?.className).toBe('m-0 p-0 border-0')
+    expect(fieldset?.contains(byIds(['form'])[0] ?? null)).toBe(true)
+    expect(fields.map((field) => field.matches(':disabled'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+
+    await wrapper.setProps({ busy: true })
+    expect(
+      document.querySelector<HTMLFieldSetElement>('.modal-body > fieldset'),
+    ).toBe(fieldset)
+    expect(fieldset?.disabled).toBe(true)
+    expect(fields.map((field) => field.matches(':disabled'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ])
+    // Inherited from the fieldset, never written onto the field itself.
+    expect(fields.map((field) => field.hasAttribute('disabled'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+    // The footer stands outside the lock: its owner disables its buttons.
+    expect(footerCancel?.matches(':disabled')).toBe(false)
+
+    await wrapper.setProps({ busy: false })
+    expect(byIds(ids)).toEqual(fields)
+    expect(fields.map((field) => field.matches(':disabled'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+    expect([text.value, choice.value, note.value, flag.checked]).toEqual([
+      'draft',
+      'second',
+      'a note',
+      true,
+    ])
+    // A field disabled for a reason of its own stays disabled.
+    expect(own?.matches(':disabled')).toBe(true)
+  })
+
+  it('draws #body in place of the fieldset, handing it the current busy', async () => {
+    const busy = ref(false)
+    mount({
+      components: { HilosModal },
+      setup: () => ({ busy }),
+      template: `
+        <HilosModal :model-value="true" :busy="busy">
+          <template #header>
+            <h5 class="modal-title mb-0" data-id="head">Theme</h5>
+          </template>
+          <template #default>
+            <p data-id="fallback-only">Never drawn</p>
+          </template>
+          <template #body="{ busy: locked }">
+            <p data-id="said">{{ locked ? 'locked' : 'open' }}</p>
+            <input data-id="field" :disabled="locked" />
+          </template>
+          <template #actions>
+            <button type="button" data-id="footer-cancel">Cancel</button>
+          </template>
+        </HilosModal>
+      `,
+    })
+    await flushPromises()
+    const [said, field] = byIds(['said', 'field'])
+
+    expect(said?.parentElement?.classList.contains('modal-body')).toBe(true)
+    expect(document.querySelectorAll('.modal-body')).toHaveLength(1)
+    expect(document.querySelector('.modal-body fieldset')).toBeNull()
+    expect(document.querySelector('[data-id="fallback-only"]')).toBeNull()
+    expect(said?.textContent).toBe('open')
+
+    busy.value = true
+    await nextTick()
+    expect(said?.textContent).toBe('locked')
+    expect(field?.matches(':disabled')).toBe(true)
+
+    busy.value = false
+    await nextTick()
+    expect(said?.textContent).toBe('open')
+    expect(byIds(['said', 'field'])).toEqual([said, field])
+    expect(field?.matches(':disabled')).toBe(false)
+
+    // The rest of the dialog stands as it did: header, one footer, the
+    // scrollable body, the layer.
+    expect(document.querySelector('[data-id="head"]')).not.toBeNull()
+    const footers = document.querySelectorAll('.modal-footer')
+    expect(footers).toHaveLength(1)
+    expect(
+      footers[0]?.querySelector('[data-id="footer-cancel"]'),
+    ).not.toBeNull()
+    expect(
+      document
+        .querySelector('.modal-dialog')
+        ?.classList.contains('modal-dialog-scrollable'),
+    ).toBe(true)
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0'])
+  })
+
+  it('lets a submitting LoadingButton in #body lock itself, keeping its look and focus until 300 ms', async () => {
+    const busy = ref(false)
+    let sent = 0
+    mount({
+      components: { HilosModal, LoadingButton },
+      setup: () => ({
+        busy,
+        send: () => {
+          sent++
+          busy.value = true
+        },
+      }),
+      template: `
+        <HilosModal :model-value="true" :busy="busy" title="Sign in">
+          <template #body="{ busy: locked }">
+            <input data-id="field" :disabled="locked" />
+            <LoadingButton
+              class="btn-primary"
+              :loading="busy"
+              data-autofocus
+              data-id="send"
+              @click="send"
+              >Continue</LoadingButton
+            >
+          </template>
+        </HilosModal>
+      `,
+    })
+    await flushPromises()
+    const [field, send] = byIds(['field', 'send'])
+    const spinner = () =>
+      document.querySelector('[data-id="loading-button-spinner"]')
+    expect(send?.closest('fieldset')).toBeNull()
+    expect(document.activeElement).toBe(send)
+
+    vi.useFakeTimers()
+    send?.click()
+    await nextTick()
+    expect(sent).toBe(1)
+    expect(field?.matches(':disabled')).toBe(true)
+    expect(send?.getAttribute('aria-busy')).toBe('true')
+    expect(send?.getAttribute('aria-disabled')).toBe('true')
+    expect(send?.matches(':disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+    expect(document.activeElement).toBe(send)
+
+    vi.advanceTimersByTime(299)
+    await nextTick()
+    expect(spinner()).toBeNull()
+    expect(send?.classList.contains('disabled')).toBe(false)
+
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(spinner()).not.toBeNull()
+    expect(send?.classList.contains('disabled')).toBe(true)
+    expect(send?.matches(':disabled')).toBe(false)
+
+    send?.click()
+    await nextTick()
+    expect(sent).toBe(1)
+    expect(document.activeElement).toBe(send)
+  })
+
+  it('turns its own Copy off while busy and back on once idle', async () => {
+    recordingClipboard()
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+    })
+    const copy = () =>
+      document.querySelector<HTMLButtonElement>('[data-id="modal-copy"]')
+
+    await wrapper.setProps({ busy: true })
+    expect(copy()?.disabled).toBe(true)
+    copy()?.click()
+    await flushPromises()
+    expect(written).toEqual([])
+
+    await wrapper.setProps({ busy: false })
+    expect(copy()?.disabled).toBe(false)
+    copy()?.click()
+    await flushPromises()
+    expect(written).toEqual(['hilos restore --archive x'])
   })
 
   it('refuses every close gesture while busy and closes again once idle', async () => {
@@ -419,7 +679,7 @@ describe('HilosModal', () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('keeps the draft, the focus and an open confirm step when busy flips', async () => {
+  it('keeps the draft and an open confirm step when busy flips', async () => {
     const wrapper = mount(HilosModal, {
       props: { modelValue: true, confirmOnClose: true },
       slots: { default: '<input data-autofocus data-id="field" />' },
@@ -432,13 +692,12 @@ describe('HilosModal', () => {
 
     await wrapper.setProps({ busy: true })
     await flushPromises()
-    expect(document.activeElement).toBe(field)
+    expect(field?.matches(':disabled')).toBe(true)
     await wrapper.setProps({ busy: false })
     await flushPromises()
-    expect(document.activeElement).toBe(field)
-    expect(
-      document.querySelector<HTMLInputElement>('[data-id="field"]')?.value,
-    ).toBe('draft')
+    expect(document.querySelector('[data-id="field"]')).toBe(field)
+    expect(field?.matches(':disabled')).toBe(false)
+    expect(field?.value).toBe('draft')
 
     closeButton()?.click()
     await flushPromises()
@@ -455,12 +714,20 @@ describe('HilosModal', () => {
     expect(document.querySelector('[data-id="modal-confirm"]')).toBe(confirm)
     expect(document.activeElement).toBe(confirm)
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(
-      document.querySelector<HTMLInputElement>('[data-id="field"]')?.value,
-    ).toBe('draft')
+    expect(document.querySelector('[data-id="field"]')).toBe(field)
+    expect(field?.value).toBe('draft')
+
+    // Idle again, Discard closes the dialog as it did before.
+    await wrapper.setProps({ busy: false })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('leaves the disabled close button out of the Tab cycle', async () => {
+  it('cycles Tab over the buttons busy leaves available', async () => {
     const wrapper = mount(HilosModal, {
       props: { modelValue: true },
       slots: {
@@ -476,13 +743,41 @@ describe('HilosModal', () => {
     press(save, 'Tab')
     expect(document.activeElement).toBe(closeButton())
 
+    // The close button and the locked field are out of the cycle: the
+    // footer's own button is all that is left to take focus.
     await wrapper.setProps({ busy: true })
+    expect(field?.matches(':disabled')).toBe(true)
     save?.focus()
     press(save, 'Tab')
-    expect(document.activeElement).toBe(field)
-
-    press(field, 'Tab', true)
     expect(document.activeElement).toBe(save)
+    press(save, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+
+    await wrapper.setProps({ busy: false })
+    press(save, 'Tab')
+    expect(document.activeElement).toBe(closeButton())
+    press(closeButton(), 'Tab', true)
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('keeps Tab on the dialog itself when busy leaves nothing to focus', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+
+    await wrapper.setProps({ busy: true })
+    dialog?.focus()
+    const tab = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    dialog?.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(dialog)
   })
 
   it('closes when the parent sets it closed while busy, releasing scroll and focus', async () => {
@@ -495,8 +790,9 @@ describe('HilosModal', () => {
       slots: { default: '<input data-autofocus data-id="field" />' },
     })
     await flushPromises()
+    // The marked field is locked, so the dialog itself takes the focus.
     expect(document.activeElement).toBe(
-      document.querySelector('[data-id="field"]'),
+      document.querySelector('[data-id="modal"]'),
     )
     expect(document.body.classList.contains('modal-open')).toBe(true)
 
@@ -506,6 +802,154 @@ describe('HilosModal', () => {
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     expect(document.querySelector('.modal-backdrop')).toBeNull()
     expect(document.body.classList.contains('modal-open')).toBe(false)
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('puts focus on the marked field again once busy clears with the dialog itself focused', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+    const field = document.querySelector<HTMLElement>('[data-id="field"]')
+
+    await wrapper.setProps({ busy: true })
+    // A step that moved in flight looks for its mark and, the field being
+    // locked, lands on the dialog itself.
+    dialog?.focus()
+    expect(document.activeElement).toBe(dialog)
+
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('leaves focus on the control inside the dialog that holds it when busy clears', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: {
+        default: '<input data-autofocus data-id="field" />',
+        actions: '<button type="button" data-id="save">Save</button>',
+      },
+    })
+    await flushPromises()
+    const save = document.querySelector<HTMLElement>('[data-id="save"]')
+
+    await wrapper.setProps({ busy: true })
+    save?.focus()
+
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('puts focus on the dialog itself when busy clears under initialFocus dialog', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, initialFocus: 'dialog' },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+
+    await wrapper.setProps({ busy: true })
+    dialog?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(dialog)
+  })
+
+  it('puts focus on the marked field again once busy clears with the page body focused', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+    const field = document.querySelector<HTMLElement>('[data-id="field"]')
+
+    await wrapper.setProps({ busy: true })
+    // A disabled field cannot be blurred; focus the dialog and let go of it.
+    dialog?.focus()
+    dialog?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('leaves focus on a modal standing over this one when busy clears', async () => {
+    const lower = mount(HilosModal, {
+      props: { modelValue: true, busy: true },
+      slots: { default: '<input data-autofocus data-id="lower-field" />' },
+    })
+    mount(HilosModal, {
+      props: { modelValue: true },
+      slots: { default: '<input data-autofocus data-id="upper-field" />' },
+    })
+    await flushPromises()
+    const upperField = document.querySelector<HTMLElement>(
+      '[data-id="upper-field"]',
+    )
+    expect(document.activeElement).toBe(upperField)
+
+    await lower.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(upperField)
+  })
+
+  it('leaves focus on a control outside the dialog when busy clears', async () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+
+    await wrapper.setProps({ busy: true })
+    outside.focus()
+    expect(document.activeElement).toBe(outside)
+
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(outside)
+  })
+
+  it('leaves focus on an open confirm step when busy clears', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+    closeButton()?.click()
+    await flushPromises()
+    const confirm = document.querySelector('[data-id="modal-confirm"]')
+    expect(document.activeElement).toBe(confirm)
+
+    await wrapper.setProps({ busy: true })
+    await wrapper.setProps({ busy: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(confirm)
+  })
+
+  it('returns focus to the opener when the parent closes the dialog as busy clears', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, busy: true },
+      slots: { default: '<input data-autofocus data-id="field" />' },
+    })
+    await flushPromises()
+
+    await wrapper.setProps({ modelValue: false, busy: false })
+    await flushPromises()
     expect(document.activeElement).toBe(opener)
   })
 

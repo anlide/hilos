@@ -74,6 +74,7 @@ watch(step, () => {
     :title="title"
     initial-focus="inner"
     :confirm-on-close="asksBeforeClosing"
+    :busy="busy"
   >
     <div
       class="visually-hidden"
@@ -289,6 +290,7 @@ watch(step, () => {
         <button
           type="button"
           class="btn btn-primary"
+          :disabled="busy"
           data-id="profile-password-done"
           @click="requestClose"
         >
@@ -299,6 +301,7 @@ watch(step, () => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="busy"
           data-id="profile-password-cancel"
           @click="requestClose"
         >

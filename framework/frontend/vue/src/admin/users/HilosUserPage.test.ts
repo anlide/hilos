@@ -398,6 +398,21 @@ function saveButton(): HTMLButtonElement {
   return modalEl('hilos-user-save') as HTMLButtonElement
 }
 
+// The fieldset the modal stands its body in; a save in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the dialog: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  modalEl('modal-close')?.click()
+  modalEl('hilos-user-cancel')?.click()
+  modalEl('modal')?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modalEl('modal')?.click()
+}
+
 async function typeDraft(text: string): Promise<void> {
   const input = nameInput()
   input.value = text
@@ -894,6 +909,50 @@ describe('HilosUserPage rename modal', () => {
     await nextTick()
     await nextTick()
     expect(modalEl('modal')).not.toBeNull()
+  })
+
+  it('holds the dialog and locks its body while the rename is in flight, and frees the same field after a refusal', async () => {
+    const { context, renameElsewhere, failRename, sent } = userContext()
+    await openModal(context)
+    await typeDraft('Mine')
+    const field = nameInput()
+    const body = bodyLock()
+    const cancel = modalEl('hilos-user-cancel') as HTMLButtonElement
+    const close = modalEl('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    saveButton().click()
+    await nextTick()
+    expect(sent.map((entry) => entry.action)).toEqual(['hilos_user_update'])
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    field.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('modal-confirm')).toBeNull()
+    expect(sent).toHaveLength(1)
+
+    failRename()
+    await nextTick()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(bodyLock()).toBe(body)
+    expect(nameInput()).toBe(field)
+    expect(field.value).toBe('Mine')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    await typeDraft('Mine again')
+    saveButton().click()
+    await nextTick()
+    expect(sent.at(-1)?.data).toEqual({ id: 1, name: 'Mine again' })
+    renameElsewhere('Mine again')
+    await nextTick()
+    await nextTick()
+    expect(modalEl('modal')).toBeNull()
   })
 
   it('asks before discarding a changed draft', async () => {

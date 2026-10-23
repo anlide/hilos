@@ -1,10 +1,17 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  createSignal,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  type HilosRouter,
+} from '@hilos/core/base'
+import {
   RECONSENT_NOW,
   reconsentContent,
   reconsentPreview,
 } from '../../../core/test/legal/reconsentFixture.js'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosLegalReconsent from './HilosLegalReconsent.vue'
 
 const PERSON = { name: 'Bob', impersonated: false }
@@ -12,6 +19,49 @@ const PERSON = { name: 'Bob', impersonated: false }
 afterEach(() => {
   vi.useRealTimers()
 })
+
+/**
+ * Mount options providing a router that only records where a link went, so a
+ * link that leaves is seen leaving and the document stays where it is.
+ *
+ * @param navigated Where the links went, in order.
+ */
+function recordingRouter(navigated: string[]) {
+  const router = {
+    currentPath: createSignal(''),
+    navigate: (path: string) => navigated.push(path),
+  } as unknown as HilosRouter
+
+  return { provide: { [hilosRouterKey as symbol]: router } }
+}
+
+/**
+ * Whether a disabled fieldset around the element turns it off. happy-dom
+ * matches `:disabled` on an element's own attribute only, so the lock a
+ * fieldset gives is read off the fieldset itself.
+ *
+ * @param element The control to read.
+ */
+function lockedByFieldset(element: Element): boolean {
+  return element.closest('fieldset[disabled]') !== null
+}
+
+/**
+ * Press an element the way a person does: a primary click that can be canceled.
+ *
+ * @param element The element pressed.
+ * @returns The click, to read whether it was canceled.
+ */
+function press(element: Element): MouseEvent {
+  const click = new MouseEvent('click', {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+  })
+  element.dispatchEvent(click)
+
+  return click
+}
 
 describe('the "the terms have changed" screen (HIL-500)', () => {
   it('draws a section per document with its plate, the accepted revision and the changes', () => {
@@ -165,6 +215,142 @@ describe('the "the terms have changed" screen (HIL-500)', () => {
     await accept.trigger('click')
     expect(view.emitted('accept')).toHaveLength(1)
     view.unmount()
+  })
+
+  it('holds the window in place while its acceptance is out, Accept outside the lock (HIL-1763)', async () => {
+    const navigated: string[] = []
+    const view = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'window',
+        content: reconsentContent(),
+        view: { kind: 'changes' },
+        busy: true,
+        person: PERSON,
+        now: RECONSENT_NOW,
+      },
+      global: recordingRouter(navigated),
+    })
+    const lock = view.get('fieldset')
+    expect(lock.attributes('disabled')).toBeDefined()
+    const accept = view.get('[data-id="legal-reconsent-accept"]')
+    expect(lockedByFieldset(accept.element)).toBe(false)
+    expect(accept.attributes('aria-busy')).toBe('true')
+    expect(accept.attributes('disabled')).toBeUndefined()
+    for (const id of [
+      'legal-reconsent-not-you',
+      'legal-reconsent-full-text',
+      'legal-reconsent-compare',
+    ]) {
+      expect(lockedByFieldset(view.get(`[data-id="${id}"]`).element)).toBe(true)
+    }
+    for (const id of ['legal-reconsent-refuse', 'legal-reconsent-later']) {
+      const button = view.get(`[data-id="${id}"]`)
+      expect(lockedByFieldset(button.element)).toBe(false)
+      expect(button.attributes('disabled')).toBeDefined()
+      ;(button.element as HTMLButtonElement).click()
+    }
+
+    await view.setProps({ view: { kind: 'text', document: 'terms' } })
+    expect(
+      lockedByFieldset(view.get('[data-id="legal-reconsent-back"]').element),
+    ).toBe(true)
+
+    await view.setProps({ view: { kind: 'refuse' } })
+    for (const id of ['legal-reconsent-back', 'legal-reconsent-close']) {
+      const button = view.get(`[data-id="${id}"]`)
+      expect(button.attributes('disabled')).toBeDefined()
+      ;(button.element as HTMLButtonElement).click()
+    }
+    const links = [
+      view.get('[data-id="legal-reconsent-data-link"]'),
+      view.get('[data-id="legal-reconsent-delete-link"]'),
+    ]
+    for (const link of links) {
+      expect(link.attributes('aria-disabled')).toBe('true')
+      expect(link.attributes('tabindex')).toBe('-1')
+      expect(press(link.element).defaultPrevented).toBe(true)
+    }
+    expect(view.emitted('later')).toBeUndefined()
+    expect(view.emitted('show')).toBeUndefined()
+    expect(navigated).toEqual([])
+    expect(view.get('fieldset').element).toBe(lock.element)
+
+    await view.setProps({ busy: false })
+    expect(lock.attributes('disabled')).toBeUndefined()
+    for (const link of links) {
+      expect(link.attributes('aria-disabled')).toBeUndefined()
+      expect(link.attributes('tabindex')).toBeUndefined()
+    }
+    press(links[0]!.element)
+    expect(navigated).toEqual([HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]])
+    expect(view.emitted('later')).toHaveLength(1)
+    await view.get('[data-id="legal-reconsent-close"]').trigger('click')
+    expect(view.emitted('later')).toHaveLength(2)
+    await view.get('[data-id="legal-reconsent-back"]').trigger('click')
+    expect(view.emitted('show')).toEqual([[{ kind: 'changes' }]])
+    view.unmount()
+  })
+
+  it('leaves the freeze its exits and the preview its own reasons while busy, as before (HIL-1763)', async () => {
+    const navigated: string[] = []
+    const frozen = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'frozen',
+        content: reconsentContent(),
+        view: { kind: 'changes' },
+        busy: true,
+        person: PERSON,
+        deletionScheduled: true,
+        now: RECONSENT_NOW,
+      },
+      global: recordingRouter(navigated),
+    })
+    expect(frozen.get('fieldset').attributes('disabled')).toBeUndefined()
+    expect(
+      frozen.get('[data-id="legal-reconsent-accept"]').attributes('aria-busy'),
+    ).toBe('true')
+    for (const id of [
+      'legal-reconsent-not-you',
+      'legal-reconsent-keep-account',
+      'legal-reconsent-sign-out',
+    ]) {
+      expect(
+        frozen.get(`[data-id="${id}"]`).attributes('disabled'),
+      ).toBeUndefined()
+    }
+    const data = frozen.get('[data-id="legal-reconsent-data-link"]')
+    expect(data.attributes('aria-disabled')).toBeUndefined()
+    press(data.element)
+    expect(navigated).toEqual([HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]])
+    await frozen
+      .get('[data-id="legal-reconsent-full-text"][data-document="terms"]')
+      .trigger('click')
+    expect(frozen.emitted('show')).toEqual([
+      [{ kind: 'text', document: 'terms' }],
+    ])
+    frozen.unmount()
+
+    const preview = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'preview',
+        content: reconsentPreview('window'),
+        view: { kind: 'changes' },
+        busy: true,
+        now: RECONSENT_NOW,
+      },
+    })
+    expect(preview.get('fieldset').attributes('disabled')).toBeUndefined()
+    expect(
+      preview.get('[data-id="legal-reconsent-refuse"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      preview.get('[data-id="legal-reconsent-later"]').attributes('disabled'),
+    ).toBeDefined()
+    await preview.get('[data-id="legal-reconsent-full-text"]').trigger('click')
+    expect(preview.emitted('show')).toEqual([
+      [{ kind: 'text', document: 'terms' }],
+    ])
+    preview.unmount()
   })
 
   it('holds Accept when nothing is left to accept', () => {

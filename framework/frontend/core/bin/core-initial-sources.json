@@ -184,8 +184,8 @@
     "outputSha256": "29378f376c1723a7891df533629ceb8ae704ef5e6d49526f1d6d6fab4658e7c3"
   },
   "src/dom/focusTrap.ts": {
-    "sourceSha256": "b735e6f7931b8bee59ccb23b50462e8bdf238ccb607a3b3eb0366387e244156b",
-    "outputSha256": "d67d5289f30e26590593b9f67a789b39fedb01360977270f420f524990fe57d1"
+    "sourceSha256": "f0411501c89be4cadb7e836caf83f96f62ed4424dd0145147533d81b1aaef2f5",
+    "outputSha256": "74efd25a747a4dff5f36b3b2db0b5518b903b36a8064cf97af91f387fa7dd4a0"
   },
   "src/dom/modalStack.ts": {
     "sourceSha256": "46784c5166ed420458902b6d0bcbf0f2ab27537cb78e19498d3e1007ecb385f2",

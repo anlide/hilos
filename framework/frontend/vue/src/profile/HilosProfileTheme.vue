@@ -1,5 +1,8 @@
 <!-- The account's live theme choice (HIL-1437). Each click is one tracked
-write, with no draft or Save. Only the server handshake moves the mark. -->
+write, with no draft or Save. Only the server handshake moves the mark. While
+the write is out nothing closes the window (HIL-1763): the positions stand in a
+fieldset the write disables, and the site-default LoadingButton stays outside
+it, keeping its look and focus until its own spinner. -->
 <script setup lang="ts">
 import {
   hilosImpersonation,
@@ -69,65 +72,77 @@ async function choose(pick: ThemePick): Promise<void> {
 </script>
 
 <template>
-  <HilosModal v-model="open" :title="THEME_COPY.menu" initial-focus="dialog">
-    <div data-id="profile-theme-modal">
-      <HilosActionError
-        :action="action"
-        details-title="Couldn't change theme"
-      />
-      <div class="list-group">
-        <button
-          v-for="row in THEME_POSITIONS"
-          :key="row.value"
-          type="button"
-          class="list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative"
-          :class="{ active: row.value === choice?.position }"
-          :aria-current="row.value === choice?.position ? 'true' : undefined"
-          :disabled="busy"
-          :aria-busy="busy && submitted === row.value ? true : undefined"
-          :data-id="`profile-theme-option-${row.value}`"
-          @click="choose(row.value)"
+  <HilosModal
+    v-model="open"
+    :title="THEME_COPY.menu"
+    initial-focus="dialog"
+    :busy="busy"
+  >
+    <template #body="{ busy: modalBusy }">
+      <div data-id="profile-theme-modal">
+        <fieldset class="m-0 p-0 border-0" :disabled="modalBusy">
+          <HilosActionError
+            :action="action"
+            details-title="Couldn't change theme"
+          />
+          <div class="list-group">
+            <button
+              v-for="row in THEME_POSITIONS"
+              :key="row.value"
+              type="button"
+              class="list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative"
+              :class="{ active: row.value === choice?.position }"
+              :aria-current="
+                row.value === choice?.position ? 'true' : undefined
+              "
+              :disabled="busy"
+              :aria-busy="busy && submitted === row.value ? true : undefined"
+              :data-id="`profile-theme-option-${row.value}`"
+              @click="choose(row.value)"
+            >
+              <i class="bi" :class="row.icon" aria-hidden="true"></i>
+              <span class="flex-grow-1">{{ row.label }}</span>
+              <span
+                v-if="row.value === choice?.position && choice.isDefault"
+                class="badge rounded-pill bg-body-tertiary text-body-emphasis border"
+                >{{ THEME_COPY.default }}</span
+              >
+              <i
+                class="bi bi-check2"
+                :class="{
+                  invisible:
+                    row.value !== choice?.position ||
+                    (loading && submitted === row.value),
+                }"
+                aria-hidden="true"
+              ></i>
+              <span
+                v-if="loading && submitted === row.value"
+                class="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
+                role="status"
+                data-id="profile-theme-loading"
+                ><span class="visually-hidden">Loading…</span></span
+              >
+            </button>
+          </div>
+        </fieldset>
+        <hr />
+        <LoadingButton
+          class="btn-outline-secondary w-100"
+          :loading="busy && submitted === null"
+          :disabled="busy && submitted !== null"
+          data-id="profile-theme-default"
+          @click="choose(null)"
         >
-          <i class="bi" :class="row.icon" aria-hidden="true"></i>
-          <span class="flex-grow-1">{{ row.label }}</span>
-          <span
-            v-if="row.value === choice?.position && choice.isDefault"
-            class="badge rounded-pill bg-body-tertiary text-body-emphasis border"
-            >{{ THEME_COPY.default }}</span
-          >
-          <i
-            class="bi bi-check2"
-            :class="{
-              invisible:
-                row.value !== choice?.position ||
-                (loading && submitted === row.value),
-            }"
-            aria-hidden="true"
-          ></i>
-          <span
-            v-if="loading && submitted === row.value"
-            class="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
-            role="status"
-            data-id="profile-theme-loading"
-            ><span class="visually-hidden">Loading…</span></span
-          >
-        </button>
+          {{ THEME_COPY.siteDefault }}
+        </LoadingButton>
       </div>
-      <hr />
-      <LoadingButton
-        class="btn-outline-secondary w-100"
-        :loading="busy && submitted === null"
-        :disabled="busy && submitted !== null"
-        data-id="profile-theme-default"
-        @click="choose(null)"
-      >
-        {{ THEME_COPY.siteDefault }}
-      </LoadingButton>
-    </div>
+    </template>
     <template #actions="{ requestClose }">
       <button
         type="button"
         class="btn btn-outline-secondary"
+        :disabled="busy"
         data-id="profile-theme-close"
         @click="requestClose"
       >

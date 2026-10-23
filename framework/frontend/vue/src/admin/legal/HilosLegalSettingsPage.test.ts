@@ -17,10 +17,17 @@ import {
   type ProjectSignal,
 } from '@hilos/core/base'
 
-/** The live window is real; only its transport and the rejected action are replaced. */
-function harness() {
+/**
+ * The live window is real; only its transport and the rejected action are replaced.
+ *
+ * @param hold Keep each reply in flight until the test settles or refuses it.
+ */
+function harness(hold = false) {
   const listeners: Array<(frame: never) => void> = []
   const calls: Array<{ action: string; payload: unknown }> = []
+  const held: Array<{ settle(): void; refuse(): void }> = []
+  const refusal = () =>
+    new ActionError('legal_setting_set', 'fail', 'Server refused this choice')
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.LEGAL_SETTINGS)
   const context = {
@@ -42,13 +49,14 @@ function harness() {
         return {
           requestId: '1',
           loading: createSignal(false),
-          done: Promise.reject(
-            new ActionError(
-              'legal_setting_set',
-              'fail',
-              'Server refused this choice',
-            ),
-          ),
+          done: hold
+            ? new Promise((resolve, reject) =>
+                held.push({
+                  settle: () => resolve({}),
+                  refuse: () => reject(refusal()),
+                }),
+              )
+            : Promise.reject(refusal()),
         }
       },
     },
@@ -66,6 +74,7 @@ function harness() {
     context,
     router,
     calls,
+    held,
     push(value: unknown) {
       for (const listener of listeners)
         listener({
@@ -141,6 +150,76 @@ describe('legal setting Vue modal', () => {
       expect(
         document.querySelector('[data-id="hilos-action-error"]')?.textContent,
       ).toContain('Server refused this choice')
+    } finally {
+      view.unmount()
+    }
+  })
+
+  it('holds the modal and locks its body while the save is in flight, and frees the same list after a refusal', async () => {
+    const h = harness(true)
+    const view = mount(HilosLegalSettingsPage, {
+      attachTo: document.body,
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+    })
+    try {
+      h.push('checkbox')
+      await nextTick()
+      await view
+        .find('[data-id="legal-setting-edit-legal.consent_form"]')
+        .trigger('click')
+      input().value = 'line'
+      input().dispatchEvent(new Event('change', { bubbles: true }))
+      await nextTick()
+      const field = input()
+      // The fieldset the modal stands its body in; the save in flight disables it.
+      const body = document.querySelector<HTMLFieldSetElement>(
+        '[data-id="modal"] .modal-body > fieldset',
+      )
+      const cancel = document.querySelector<HTMLButtonElement>(
+        '[data-id="legal-setting-cancel"]',
+      )!
+      const close = document.querySelector<HTMLButtonElement>(
+        '[data-id="modal-close"]',
+      )!
+      const modal = document.querySelector<HTMLElement>('[data-id="modal"]')!
+      expect(body?.contains(field)).toBe(true)
+      expect(body?.disabled).toBe(false)
+
+      save().click()
+      await nextTick()
+      expect(h.calls).toHaveLength(1)
+      expect(body?.disabled).toBe(true)
+      expect(cancel.disabled).toBe(true)
+      expect(close.disabled).toBe(true)
+      close.click()
+      cancel.click()
+      modal.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+      modal.click()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBe(modal)
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+      h.held[0]!.refuse()
+      await flushPromises()
+      expect(input()).toBe(field)
+      expect(field.value).toBe('line')
+      expect(body?.disabled).toBe(false)
+      expect(field.disabled).toBe(false)
+      expect(cancel.disabled).toBe(false)
+      expect(close.disabled).toBe(false)
+      expect(
+        document.querySelector('[data-id="hilos-action-error"]')?.textContent,
+      ).toContain('Server refused this choice')
+
+      save().click()
+      await nextTick()
+      expect(h.calls).toHaveLength(2)
+      h.held[1]!.settle()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
     } finally {
       view.unmount()
     }

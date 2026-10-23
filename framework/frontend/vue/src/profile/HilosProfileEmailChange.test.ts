@@ -1,7 +1,8 @@
 // Covers what the email window's view owns (HIL-1169): the step list marking
 // the step on screen, the address in the text of step one, a refusal kept on
 // its step, the send block of each code step asking for another code, and the
-// outcome naming what the address was and is now. The steps
+// outcome naming what the address was and is now, and the window held with its
+// body locked while a step is out (HIL-1763). The steps
 // are the session's record (HIL-1182), so the fake server tells it before it
 // answers, as the session holder does.
 import {
@@ -84,10 +85,31 @@ function frameAfter(action: string, payload: unknown): void {
   if (action === 'profile_change_email_new_confirm') tell(null)
 }
 
-/** A mounted window whose server answers each action from the table; a string refuses. */
-function setup(answers: Record<string, unknown> = {}) {
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  byId('modal-close').click()
+  byId('profile-email-cancel').click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+}
+
+/**
+ * A mounted window whose server answers each action from the table; a string refuses.
+ *
+ * @param answers What each action answers.
+ * @param hold Actions whose reply stays in flight until the test settles or refuses it.
+ */
+function setup(answers: Record<string, unknown> = {}, hold: string[] = []) {
   tell(null)
   const dispatched: Array<{ action: string; payload?: unknown }> = []
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
   const table: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your email' },
     ...answers,
@@ -96,6 +118,19 @@ function setup(answers: Record<string, unknown> = {}) {
     actions: {
       dispatch: (action: string, payload?: unknown) => {
         dispatched.push({ action, payload })
+        if (hold.includes(action))
+          return {
+            done: new Promise((resolve, reject) =>
+              held.push({
+                settle: () => {
+                  frameAfter(action, payload)
+                  resolve({ reply: table[action] ?? [] })
+                },
+                refuse: (reason) =>
+                  reject(new ActionError(action, 'fail', reason)),
+              }),
+            ),
+          }
         if (typeof table[action] === 'string')
           return {
             done: Promise.reject(
@@ -108,7 +143,7 @@ function setup(answers: Record<string, unknown> = {}) {
     } as unknown as ActionLifecycle,
   })
   mount(HilosProfileEmailChange, { props: { flow }, attachTo: document.body })
-  return { flow, dispatched }
+  return { flow, dispatched, held }
 }
 
 async function settle(): Promise<void> {
@@ -175,6 +210,53 @@ describe('HilosProfileEmailChange', () => {
     expect((byId('profile-email-code-current') as HTMLInputElement).value).toBe(
       '000000',
     )
+  })
+
+  it('holds the window and locks the code while its check is out, and frees it after a refusal', async () => {
+    const { flow, held } = setup({}, ['profile_change_email_current_confirm'])
+    await flow.open('old@example.test')
+    await settle()
+    byId('profile-email-send-current').click()
+    await settle()
+    typeInto('profile-email-code-current', '000000')
+    await nextTick()
+    const field = byId('profile-email-code-current') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = byId('profile-email-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    byId('profile-email-confirm-current').click()
+    await settle()
+    expect(held).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    held[0]!.refuse('That code is not right')
+    await settle()
+    expect(byId('profile-email-code-current')).toBe(field)
+    expect(field.value).toBe('000000')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('profile-email-error').textContent).toContain(
+      'That code is not right',
+    )
+
+    typeInto('profile-email-code-current', '111111')
+    await nextTick()
+    byId('profile-email-confirm-current').click()
+    await settle()
+    held[1]!.settle()
+    await settle()
+    expect(byId('profile-email-new')).toBeDefined()
   })
 
   it('draws the send block on both code steps and sends again from each', async () => {

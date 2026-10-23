@@ -307,6 +307,38 @@ describe('language name modal', () => {
     },
   )
 
+  it('stands the field in the modal body the save locks, and frees the same field after a refusal', async () => {
+    const h = harness()
+    await settled()
+    await fill('My draft')
+    const field = input()
+    // The window keeps its own `disabled` on the field; the lock around the
+    // whole body is the modal's.
+    const body = field.closest('fieldset')
+    expect(body?.closest('.modal-body')).not.toBeNull()
+    expect(body?.disabled).toBe(false)
+
+    button('submit').click()
+    await settled()
+    expect(field.closest('fieldset')).toBe(body)
+    expect(body?.disabled).toBe(true)
+    expect(input()).toBe(field)
+    expect(field.value).toBe('My draft')
+
+    h.dispatched[0]!.refuse(
+      new ActionError(
+        'hilos_i18n_language_name_update',
+        'fail',
+        'Could not save.',
+      ),
+    )
+    await settled()
+    expect(body?.disabled).toBe(false)
+    expect(field.disabled).toBe(false)
+    expect(input()).toBe(field)
+    expect(field.value).toBe('My draft')
+  })
+
   it('keeps a tracked failure with details through dirty changes and clears it at a new opening', async () => {
     const h = harness()
     await settled()

@@ -678,33 +678,39 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     <!-- The "the terms have changed" window (HIL-500): over the page, never over
     work in progress — the core raises it on a sign-in in this tab only; after
     that the icon in the header is the way back to it. Focus lands on the dialog,
-    not on Accept, so Enter never accepts the terms by accident. -->
+    not on Accept, so Enter never accepts the terms by accident. While the
+    acceptance is out nothing closes it (HIL-1763) — the reading of the text is
+    no such request. Accept stands inside the body, so the body is the screen's
+    own (#body): it locks its content and leaves Accept outside the lock. -->
     <HilosModal
       :model-value="reconsentOpen && !underMaintenance"
       :aria-label="LEGAL_RECONSENT_COPY.heading"
       initial-focus="dialog"
+      :busy="reconsentBusy"
       @update:model-value="
         (value) => {
           if (!value) closeLegalReconsent()
         }
       "
     >
-      <div data-id="legal-reconsent-modal">
-        <HilosLegalReconsent
-          variant="window"
-          :content="reconsentContent"
-          :view="reconsentView"
-          :loading="reconsentLoading"
-          :error="reconsentError"
-          :busy="reconsentBusy"
-          :person="reconsentPerson"
-          :now="reconsentNow"
-          @accept="onReconsentAccept"
-          @later="closeLegalReconsent"
-          @retry="onReconsentRetry"
-          @show="hilosLegalReconsent.show"
-        />
-      </div>
+      <template #body>
+        <div data-id="legal-reconsent-modal">
+          <HilosLegalReconsent
+            variant="window"
+            :content="reconsentContent"
+            :view="reconsentView"
+            :loading="reconsentLoading"
+            :error="reconsentError"
+            :busy="reconsentBusy"
+            :person="reconsentPerson"
+            :now="reconsentNow"
+            @accept="onReconsentAccept"
+            @later="closeLegalReconsent"
+            @retry="onReconsentRetry"
+            @show="hilosLegalReconsent.show"
+          />
+        </div>
+      </template>
     </HilosModal>
   </div>
 </template>

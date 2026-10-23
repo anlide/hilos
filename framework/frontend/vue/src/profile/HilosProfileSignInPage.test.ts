@@ -1,6 +1,7 @@
 import {
   ActionError,
   bindProfileFlows,
+  cancelOAuthTrip,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   profileFlowsSchema,
@@ -14,11 +15,16 @@ import {
 } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import HilosProfileSignInPage from './HilosProfileSignInPage.vue'
 
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+  delete (navigator as { credentials?: unknown }).credentials
 })
 enableAutoUnmount(afterEach)
 const methods = resolveHilosProfileSignInMethods(
@@ -46,6 +52,14 @@ const PASSWORD_STEP = {
   required: true,
   purpose: 'add a way to sign in',
   method: 'password',
+}
+/** A confirmation by an emailed code whose resend gate is already open. */
+const EMAIL_STEP = {
+  required: true,
+  purpose: 'add a way to sign in',
+  method: 'email_code',
+  destination: 'a@example.test',
+  send: { sent: true, resendAt: Date.now() - 60_000, expiresAt: null },
 }
 /** The methods the session offers: on, ready, in button order. */
 const OFFERED = [
@@ -203,6 +217,64 @@ async function fill(id: string, value: string): Promise<void> {
   input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
   await flushPromises()
+}
+
+/** Make this browser one that can run WebAuthn, so the chooser offers a passkey. */
+function supportPasskeys(): void {
+  ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+    class {}
+  Object.defineProperty(navigator, 'credentials', {
+    configurable: true,
+    value: { create: vi.fn(), get: vi.fn() },
+  })
+}
+
+/**
+ * Whether a disabled fieldset around the element turns it off. happy-dom
+ * matches `:disabled` on an element's own attribute only, so the lock a
+ * fieldset gives is read off the fieldset itself.
+ *
+ * @param element The control to read.
+ */
+function lockedByFieldset(element: Element): boolean {
+  return element.closest('fieldset[disabled]') !== null
+}
+
+/** Every way a person closes the add dialog: the ×, Cancel, Escape and the backdrop. */
+function tryClosing(): void {
+  byId('modal-close').click()
+  byId('profile-sign-in-add-cancel').click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+}
+
+/** Whether the add dialog is still on screen, with no Discard step over it. */
+function addStillOpen(): boolean {
+  return (
+    document.querySelector('[data-id="profile-sign-in-add-modal"]') !== null &&
+    document.querySelector('[data-id="modal-confirm"]') === null
+  )
+}
+
+/**
+ * An answer that stays out until the test settles or refuses it.
+ *
+ * @param action The action the refusal names.
+ */
+function heldReply(action: string) {
+  let settle!: (reply: object) => void
+  let refuse!: (reason: string) => void
+  const done = new Promise<{ reply: object }>((resolve, reject) => {
+    settle = (reply) => resolve({ reply })
+    refuse = (reason) => reject(new ActionError(action, 'fail', reason))
+  })
+  return {
+    handle: () => ({ loading: createSignal(false), done }),
+    settle,
+    refuse,
+  }
 }
 
 describe('profile sign-in page dialogs', () => {
@@ -558,5 +630,236 @@ describe('profile sign-in page passkey-only warning', () => {
         .find('[data-id="profile-sign-in-passkey-only-phone"]')
         .exists(),
     ).toBe(false)
+  })
+})
+
+describe('profile sign-in add dialog in flight', () => {
+  it.each([
+    {
+      way: 'provider',
+      pressed: 'profile-oauth-link-oauth:github',
+      others: [
+        'profile-sign-in-choose-password',
+        'profile-sign-in-choose-phone',
+        'profile-passkey-add',
+      ],
+    },
+    {
+      way: 'passkey',
+      pressed: 'profile-passkey-add',
+      others: [
+        'profile-sign-in-choose-password',
+        'profile-sign-in-choose-phone',
+        'profile-oauth-link-oauth:github',
+      ],
+    },
+  ])(
+    'holds the dialog while the $way is out, its button keeping its look and focus until 300 ms',
+    async (row) => {
+      supportPasskeys()
+      vi.spyOn(window, 'open').mockReturnValue({
+        closed: false,
+        close: vi.fn(),
+        location: { replace: vi.fn() },
+      } as unknown as Window)
+      const world = setup(NO_STEP, passkeyOnly)
+      await world.wrapper
+        .get('[data-id="profile-sign-in-add"]')
+        .trigger('click')
+      await flushPromises()
+      const options = heldReply('hilos_passkey_register_options')
+      world.dispatch.mockImplementationOnce(options.handle)
+      const pressed = byId(row.pressed) as HTMLButtonElement
+      const others = row.others.map((id) => byId(id) as HTMLButtonElement)
+      const cancel = byId('profile-sign-in-add-cancel') as HTMLButtonElement
+      const close = byId('modal-close') as HTMLButtonElement
+      const spinner = () =>
+        pressed.querySelector('[data-id="loading-button-spinner"]')
+      expect(lockedByFieldset(pressed)).toBe(false)
+
+      pressed.focus()
+      vi.useFakeTimers()
+      pressed.click()
+      await nextTick()
+      expect(world.dispatch).toHaveBeenLastCalledWith(
+        row.way === 'provider'
+          ? 'hilos_link_oauth_start'
+          : 'hilos_passkey_register_options',
+        row.way === 'provider'
+          ? expect.objectContaining({ provider: 'oauth:github' })
+          : {},
+        ...(row.way === 'provider' ? [] : [expect.anything()]),
+      )
+      const sent = world.dispatch.mock.calls.length
+      expect(pressed.getAttribute('aria-busy')).toBe('true')
+      expect(pressed.getAttribute('aria-disabled')).toBe('true')
+      expect(pressed.matches(':disabled')).toBe(false)
+      expect(lockedByFieldset(pressed)).toBe(false)
+      expect(spinner()).toBeNull()
+      expect(document.activeElement).toBe(pressed)
+      expect(others.map((button) => button.disabled)).toEqual([
+        true,
+        true,
+        true,
+      ])
+      expect(cancel.disabled).toBe(true)
+      expect(close.disabled).toBe(true)
+      tryClosing()
+      await nextTick()
+      expect(addStillOpen()).toBe(true)
+
+      vi.advanceTimersByTime(299)
+      await nextTick()
+      expect(spinner()).toBeNull()
+      expect(pressed.classList.contains('disabled')).toBe(false)
+      vi.advanceTimersByTime(1)
+      await nextTick()
+      expect(spinner()).not.toBeNull()
+      expect(pressed.classList.contains('disabled')).toBe(true)
+      expect(pressed.matches(':disabled')).toBe(false)
+
+      pressed.click()
+      for (const button of others) button.click()
+      await nextTick()
+      expect(world.dispatch).toHaveBeenCalledTimes(sent)
+      expect(document.activeElement).toBe(pressed)
+
+      // The trip ends in the waiting window, the passkey on a refusal; either
+      // way the chooser stands as it did, and Cancel closes it.
+      if (row.way === 'provider') cancelOAuthTrip()
+      else options.refuse('Passkeys are switched off')
+      await flushPromises()
+      expect(pressed.hasAttribute('aria-busy')).toBe(false)
+      expect(others.map((button) => button.disabled)).toEqual([
+        false,
+        false,
+        false,
+      ])
+      expect(cancel.disabled).toBe(false)
+      cancel.click()
+      await nextTick()
+      expect(
+        document.querySelector('[data-id="profile-sign-in-add-modal"]'),
+      ).toBeNull()
+    },
+  )
+  it('holds the dialog and locks the password while the confirmation is out, and frees them after a refusal', async () => {
+    const world = setup(PASSWORD_STEP)
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    await fill('step-up-password', 'wrong')
+    const confirmation = heldReply('hilos_step_up_confirm')
+    world.dispatch.mockImplementationOnce(confirmation.handle)
+    const field = byId('step-up-password') as HTMLInputElement
+    const confirm = byId(
+      'profile-sign-in-add-step-up-confirm',
+    ) as HTMLButtonElement
+    const cancel = byId('profile-sign-in-add-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(lockedByFieldset(field)).toBe(false)
+
+    byId('profile-sign-in-add-step-up').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    )
+    await nextTick()
+    expect(world.dispatch).toHaveBeenLastCalledWith(
+      'hilos_step_up_confirm',
+      expect.objectContaining({ password: 'wrong' }),
+    )
+    expect(lockedByFieldset(field)).toBe(true)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.matches(':disabled')).toBe(false)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(addStillOpen()).toBe(true)
+
+    confirmation.refuse('That password is not right')
+    await flushPromises()
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('wrong')
+    expect(lockedByFieldset(field)).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('step-up-error').textContent).toContain(
+      'That password is not right',
+    )
+  })
+  it('holds the dialog while the confirmation sends another code, with only the confirmation out', async () => {
+    const world = setup(EMAIL_STEP)
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    const resend = heldReply('hilos_step_up_start')
+    world.dispatch.mockImplementationOnce(resend.handle)
+    const field = byId('step-up-code') as HTMLInputElement
+    const cancel = byId('profile-sign-in-add-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(lockedByFieldset(field)).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    byId('step-up-send-again').click()
+    await nextTick()
+    expect(world.dispatch).toHaveBeenLastCalledWith(
+      'hilos_step_up_start',
+      { operation: 'add_sign_in_method' },
+      expect.anything(),
+    )
+    expect(lockedByFieldset(field)).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(addStillOpen()).toBe(true)
+
+    resend.settle(EMAIL_STEP)
+    await flushPromises()
+    expect(byId('step-up-code')).toBe(field)
+    expect(lockedByFieldset(field)).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+  })
+  it('holds the dialog and locks the number while its code request is out, and frees them after a refusal', async () => {
+    const world = setup()
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    byId('profile-sign-in-choose-phone').click()
+    await flushPromises()
+    await fill('profile-add-sms-phone', '+15557654321')
+    const request = heldReply('profile_add_sms_request')
+    world.dispatch.mockImplementationOnce(request.handle)
+    const field = byId('profile-add-sms-phone') as HTMLInputElement
+    const send = byId('profile-add-sms-request') as HTMLButtonElement
+    const back = byId('profile-sign-in-add-back') as HTMLButtonElement
+    const cancel = byId('profile-sign-in-add-cancel') as HTMLButtonElement
+    expect(lockedByFieldset(field)).toBe(false)
+
+    send.click()
+    await nextTick()
+    expect(world.dispatch).toHaveBeenLastCalledWith(
+      'profile_add_sms_request',
+      { phone: '+15557654321' },
+      expect.anything(),
+    )
+    expect(lockedByFieldset(field)).toBe(true)
+    expect(send.getAttribute('aria-busy')).toBe('true')
+    expect(send.matches(':disabled')).toBe(false)
+    expect(back.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(addStillOpen()).toBe(true)
+
+    request.refuse('That number cannot get codes')
+    await flushPromises()
+    expect(byId('profile-add-sms-phone')).toBe(field)
+    expect(field.value).toBe('+15557654321')
+    expect(lockedByFieldset(field)).toBe(false)
+    expect(back.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(byId('profile-add-sms-error').textContent).toContain(
+      'That number cannot get codes',
+    )
   })
 })

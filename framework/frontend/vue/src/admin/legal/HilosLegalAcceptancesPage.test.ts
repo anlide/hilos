@@ -130,13 +130,14 @@ const failed = {
  * Mount the page with its export: the page answer's section, the frames after
  * it, and the server's word on the confirmation step, answered by `stepUp`.
  *
- * @param options The export the page opens with, the step's answer, and whether a viewer of the admin view mode looks.
+ * @param options The export the page opens with, the step's answer, whether a viewer of the admin view mode looks, and the actions whose reply stays in flight until the test settles or refuses it.
  */
 async function mountExport(
   options: {
     initial?: HilosLegalAcceptancesExportNode
     stepUp?: 'skip' | 'ask' | 'refused'
     viewer?: boolean
+    hold?: string[]
   } = {},
 ) {
   const scopes = new ScopeManager()
@@ -146,6 +147,7 @@ async function mountExport(
   }
   const frames: Array<(signal: ProjectSignal) => void> = []
   const sent: Array<{ name: string; data: unknown }> = []
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
   const stepUp = options.stepUp ?? 'skip'
   const context = {
     scopes,
@@ -163,6 +165,16 @@ async function mountExport(
     actions: {
       dispatch(name: string, data: unknown) {
         sent.push({ name, data })
+        if (options.hold?.includes(name))
+          return {
+            done: new Promise((resolve, reject) =>
+              held.push({
+                settle: () => resolve({ reply: {} }),
+                refuse: (reason) =>
+                  reject(new ActionError(name, 'fail', reason)),
+              }),
+            ),
+          }
         const reply =
           name !== 'hilos_step_up_start'
             ? {}
@@ -230,6 +242,7 @@ async function mountExport(
   return {
     wrapper,
     sent,
+    held,
     names: () => sent.map((entry) => entry.name),
     controller: () => {
       if (controller === null) throw new Error('The table was not drawn')
@@ -246,6 +259,45 @@ async function mountExport(
     button: () =>
       wrapper.get<HTMLButtonElement>('[data-id="legal-acceptances-export"]'),
   }
+}
+
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+function byId(id: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  if (found === null) throw new Error(`No element ${id}`)
+
+  return found
+}
+
+function cancelButton(): HTMLButtonElement {
+  const found = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Cancel',
+  )
+  if (found === undefined) throw new Error('No Cancel button')
+
+  return found
+}
+
+// Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  const modal = byId('modal')
+  byId('modal-close').click()
+  cancelButton().click()
+  modal.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modal.click()
+}
+
+/** Type into the password field as a person does. */
+function typePassword(value: string): void {
+  const field = byId('step-up-password') as HTMLInputElement
+  field.value = value
+  field.dispatchEvent(new Event('input'))
 }
 
 describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
@@ -361,6 +413,77 @@ describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
     expect(
       document.querySelector('[data-id="legal-acceptances-export-step-up"]'),
     ).toBeNull()
+    w.wrapper.unmount()
+  })
+
+  it('holds the window and locks the password while the proof and the order are out, and frees it after a refusal', async () => {
+    const w = await mountExport({
+      stepUp: 'ask',
+      hold: ['hilos_step_up_confirm', 'legal_acceptances_export'],
+    })
+    await w.button().trigger('click')
+    await flushPromises()
+    typePassword('a proof')
+    await flushPromises()
+    const field = byId('step-up-password') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = cancelButton()
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    // The proof is held, refused with its sentence, then let through.
+    byId('legal-acceptances-export-confirm').click()
+    await flushPromises()
+    expect(w.held).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    w.held[0]!.refuse('That password is not right')
+    await flushPromises()
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('a proof')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('step-up-error').textContent).toContain(
+      'That password is not right',
+    )
+
+    // The order follows the proof: the window stays held until it answers.
+    byId('legal-acceptances-export-confirm').click()
+    await flushPromises()
+    w.held[1]!.settle()
+    await flushPromises()
+    expect(w.held).toHaveLength(3)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    w.held[2]!.refuse('Only one export at a time')
+    await flushPromises()
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('legal-acceptances-export-order-error').textContent).toContain(
+      'Only one export at a time',
+    )
+
+    // The same proof goes through and the window closes with the order.
+    byId('legal-acceptances-export-confirm').click()
+    await flushPromises()
+    w.held[3]!.settle()
+    await flushPromises()
+    w.held[4]!.settle()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
     w.wrapper.unmount()
   })
 

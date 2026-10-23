@@ -23,6 +23,20 @@ function byId(id: string): HTMLElement {
   return found
 }
 
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+/** The window's Cancel: the plain button of its footer. */
+function cancelButton(): HTMLButtonElement {
+  const found = document.querySelector<HTMLButtonElement>(
+    '[data-id="modal"] .modal-footer .btn-secondary',
+  )
+  if (!found) throw new Error('Missing Cancel')
+  return found
+}
+
 function makeSession(
   id: number,
   options: { current?: boolean; impersonated?: boolean } = {},
@@ -325,6 +339,77 @@ describe('HilosProfileSessions (Vue)', () => {
     expect(slot.textContent).not.toContain('Failed to end session')
     expect(byId('profile-session-end-error-slot')).toBe(slot)
   })
+
+  it.each([
+    {
+      window: 'End session',
+      open: 'profile-session-revoke',
+      action: 'hilos_sessions_end',
+      confirm: 'profile-session-end-confirm',
+      error: 'profile-session-end-error',
+    },
+    {
+      window: 'Sign out everywhere else',
+      open: 'profile-sessions-end-others',
+      action: 'hilos_sessions_end_others',
+      confirm: 'profile-sessions-end-others-confirm',
+      error: 'profile-sessions-end-others-error',
+    },
+  ])(
+    'holds the $window window while it is out, and frees it after a refusal',
+    async ({ open, action, confirm, error }) => {
+      const answers: Array<{
+        resolve(): void
+        reject(reason: unknown): void
+      }> = []
+      const held = () =>
+        new Promise<unknown>((resolve, reject) => {
+          answers.push({ resolve: () => resolve({ reply: null }), reject })
+        })
+      setup([makeSession(1, { current: true }), makeSession(2)], held, held)
+      byId(open).click()
+      await nextTick()
+      const body = bodyLock()
+      const slot = byId(`${error}-slot`)
+      const close = byId('modal-close') as HTMLButtonElement
+      expect(body?.contains(slot)).toBe(true)
+      expect(body?.disabled).toBe(false)
+      expect(cancelButton().disabled).toBe(false)
+
+      byId(confirm).click()
+      await nextTick()
+      expect(answers).toHaveLength(1)
+      expect(body?.disabled).toBe(true)
+      expect(cancelButton().disabled).toBe(true)
+      expect(close.disabled).toBe(true)
+      close.click()
+      cancelButton().click()
+      byId('modal').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+      byId('modal').click()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+      expect(byId(`${error}-slot`)).toBe(slot)
+      expect(slot.getAttribute('role')).toBe('alert')
+
+      answers[0]!.reject(new ActionError(action, 'fail', 'Try again later'))
+      await flushPromises()
+      expect(bodyLock()).toBe(body)
+      expect(body?.disabled).toBe(false)
+      expect(cancelButton().disabled).toBe(false)
+      expect(close.disabled).toBe(false)
+      expect(byId(error).textContent).toContain('Try again later')
+      expect(byId(`${error}-slot`)).toBe(slot)
+
+      byId(confirm).click()
+      await nextTick()
+      answers[1]!.resolve()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    },
+  )
 
   it('closes modal on Cancel without calling endOtherSessions', async () => {
     const { endOtherSessions } = setup()

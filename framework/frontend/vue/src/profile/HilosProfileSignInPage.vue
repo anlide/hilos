@@ -145,6 +145,10 @@ const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
 const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
+// Every request of the add dialog in flight - a step of the flow and its own
+// confirmation: nothing closes the dialog, its fields and plain buttons stay
+// locked and Cancel waits with it, while a pressed LoadingButton locks itself.
+const addInFlight = computed(() => busy.value || stepUpBusy.value)
 /** The dialog opens on the server's answer, never on the click. */
 const addOpening = computed(() => step.value === 'opening')
 /** The button that asked for the dialog; it alone spins while it opens. */
@@ -480,259 +484,273 @@ onUnmounted(() => {
       :title="addTitle"
       initial-focus="dialog"
       :confirm-on-close="addDirty"
+      :busy="addInFlight"
     >
-      <div ref="addBody" data-id="profile-sign-in-add-modal">
-        <div
-          class="visually-hidden"
-          role="alert"
-          aria-live="assertive"
-          aria-atomic="true"
-          data-id="profile-sign-in-add-live"
-        >
-          {{ step === 'step-up' ? stepUpRefusal : refusal }}
-        </div>
-        <div class="hilos-stack">
-          <div class="invisible" aria-hidden="true" inert>
-            <div :class="SEND_PROGRESS_ROW_CLASS">
-              <i
-                class="bi bi-hourglass-split flex-shrink-0"
-                aria-hidden="true"
-              ></i>
-              <span class="flex-grow-1 text-truncate">&nbsp;</span>
-              <span :class="SEND_PROGRESS_DETAILS_CLASS"
-                ><i class="bi bi-info-circle" aria-hidden="true"></i
-              ></span>
-            </div>
-            <div class="mb-3">
-              <span class="btn btn-link btn-sm p-0">{{
-                SEND_AGAIN_LABEL
-              }}</span>
+      <template #body="{ busy: modalBusy }">
+        <div ref="addBody" data-id="profile-sign-in-add-modal">
+          <div
+            class="visually-hidden"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            data-id="profile-sign-in-add-live"
+          >
+            {{ step === 'step-up' ? stepUpRefusal : refusal }}
+          </div>
+          <div class="hilos-stack">
+            <div class="invisible" aria-hidden="true" inert>
+              <div :class="SEND_PROGRESS_ROW_CLASS">
+                <i
+                  class="bi bi-hourglass-split flex-shrink-0"
+                  aria-hidden="true"
+                ></i>
+                <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                <span :class="SEND_PROGRESS_DETAILS_CLASS"
+                  ><i class="bi bi-info-circle" aria-hidden="true"></i
+                ></span>
+              </div>
+              <div class="mb-3">
+                <span class="btn btn-link btn-sm p-0">{{
+                  SEND_AGAIN_LABEL
+                }}</span>
+              </div>
+              <div
+                v-for="label in [
+                  'Code',
+                  'New password',
+                  'Confirm new password',
+                ]"
+                :key="label"
+                class="mb-3"
+              >
+                <div class="form-label">{{ label }}</div>
+                <div class="form-control">&nbsp;</div>
+              </div>
+              <div class="form-text">
+                {{ HILOS_PROFILE_SIGN_IN_COPY.passwordHint }}
+              </div>
             </div>
             <div
-              v-for="label in ['Code', 'New password', 'Confirm new password']"
-              :key="label"
-              class="mb-3"
+              class="invisible d-flex flex-column gap-2"
+              aria-hidden="true"
+              inert
             >
-              <div class="form-label">{{ label }}</div>
-              <div class="form-control">&nbsp;</div>
-            </div>
-            <div class="form-text">
-              {{ HILOS_PROFILE_SIGN_IN_COPY.passwordHint }}
-            </div>
-          </div>
-          <div
-            class="invisible d-flex flex-column gap-2"
-            aria-hidden="true"
-            inert
-          >
-            <template v-for="way in ways" :key="wayKey(way)">
-              <span
-                v-if="way.kind === 'password'"
-                class="btn btn-outline-secondary"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Password</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
-                    }}</span></span
-                  ></span
-                ></span
-              >
-              <span
-                v-else-if="way.kind === 'phone'"
-                class="btn btn-outline-secondary"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Phone</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
-                    }}</span></span
-                  ></span
-                ></span
-              >
-              <span
-                v-else-if="way.kind === 'provider'"
-                class="btn btn-outline-secondary"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i
-                    class="bi bi-box-arrow-in-right fs-5"
-                    aria-hidden="true"
-                  ></i
-                  ><span
-                    ><span class="d-block fw-semibold small">{{
-                      way.label
-                    }}</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.providerDescription
-                    }}</span></span
-                  ></span
-                ></span
-              >
-              <span v-else class="btn btn-outline-secondary"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Passkey</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
-                    }}</span></span
-                  ></span
-                ></span
-              >
-            </template>
-          </div>
-          <form
-            v-if="step === 'step-up'"
-            :id="`${baseId}-step-up`"
-            class="align-self-start"
-            data-id="profile-sign-in-add-step-up"
-            @submit.prevent="flow.confirmStepUp()"
-          >
-            <HilosStepUpStep :controller="flow.stepUp" />
-          </form>
-          <div v-else-if="step === 'refused'" class="align-self-start"></div>
-          <div
-            v-else-if="step === 'choose'"
-            class="d-flex flex-column gap-2 align-self-start"
-          >
-            <template v-for="way in ways" :key="wayKey(way)">
-              <button
-                v-if="way.kind === 'password'"
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="busy"
-                data-id="profile-sign-in-choose-password"
-                @click="flow.choosePassword"
-              >
-                <span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Password</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
-                    }}</span></span
+              <template v-for="way in ways" :key="wayKey(way)">
+                <span
+                  v-if="way.kind === 'password'"
+                  class="btn btn-outline-secondary"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Password</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
+                      }}</span></span
+                    ></span
                   ></span
                 >
-              </button>
-              <button
-                v-else-if="way.kind === 'phone'"
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="busy"
-                data-id="profile-sign-in-choose-phone"
-                @click="flow.choosePhone"
-              >
-                <span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Phone</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
-                    }}</span></span
+                <span
+                  v-else-if="way.kind === 'phone'"
+                  class="btn btn-outline-secondary"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Phone</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
+                      }}</span></span
+                    ></span
                   ></span
                 >
-              </button>
-              <LoadingButton
-                v-else-if="way.kind === 'provider'"
-                class="btn btn-outline-secondary"
-                :loading="busy && pendingProvider === way.key"
-                :disabled="busy && pendingProvider !== way.key"
-                :data-id="`profile-oauth-link-${way.key}`"
-                @click="flow.chooseProvider(way.key)"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i
-                    class="bi bi-box-arrow-in-right fs-5"
-                    aria-hidden="true"
-                  ></i
-                  ><span
-                    ><span class="d-block fw-semibold small">{{
-                      way.label
-                    }}</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.providerDescription
-                    }}</span></span
+                <span
+                  v-else-if="way.kind === 'provider'"
+                  class="btn btn-outline-secondary"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i
+                      class="bi bi-box-arrow-in-right fs-5"
+                      aria-hidden="true"
+                    ></i
+                    ><span
+                      ><span class="d-block fw-semibold small">{{
+                        way.label
+                      }}</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.providerDescription
+                      }}</span></span
+                    ></span
                   ></span
-                ></LoadingButton
-              >
-              <LoadingButton
-                v-else
-                class="btn btn-outline-secondary"
-                :loading="busy && pendingProvider === null"
-                :disabled="busy && pendingProvider !== null"
-                data-id="profile-passkey-add"
-                @click="flow.choosePasskey"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Passkey</span
-                    ><span class="d-block small text-body-secondary">{{
-                      HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
-                    }}</span></span
+                >
+                <span v-else class="btn btn-outline-secondary"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Passkey</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
+                      }}</span></span
+                    ></span
                   ></span
-                ></LoadingButton
-              >
-            </template>
+                >
+              </template>
+            </div>
+            <form
+              v-if="step === 'step-up'"
+              :id="`${baseId}-step-up`"
+              class="align-self-start"
+              data-id="profile-sign-in-add-step-up"
+              @submit.prevent="flow.confirmStepUp()"
+            >
+              <fieldset class="m-0 p-0 border-0" :disabled="modalBusy">
+                <HilosStepUpStep :controller="flow.stepUp" />
+              </fieldset>
+            </form>
+            <div v-else-if="step === 'refused'" class="align-self-start"></div>
+            <div
+              v-else-if="step === 'choose'"
+              class="d-flex flex-column gap-2 align-self-start"
+            >
+              <template v-for="way in ways" :key="wayKey(way)">
+                <button
+                  v-if="way.kind === 'password'"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="modalBusy"
+                  data-id="profile-sign-in-choose-password"
+                  @click="flow.choosePassword"
+                >
+                  <span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Password</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
+                      }}</span></span
+                    ></span
+                  >
+                </button>
+                <button
+                  v-else-if="way.kind === 'phone'"
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  :disabled="modalBusy"
+                  data-id="profile-sign-in-choose-phone"
+                  @click="flow.choosePhone"
+                >
+                  <span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Phone</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
+                      }}</span></span
+                    ></span
+                  >
+                </button>
+                <LoadingButton
+                  v-else-if="way.kind === 'provider'"
+                  class="btn btn-outline-secondary"
+                  :loading="busy && pendingProvider === way.key"
+                  :disabled="busy && pendingProvider !== way.key"
+                  :data-id="`profile-oauth-link-${way.key}`"
+                  @click="flow.chooseProvider(way.key)"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i
+                      class="bi bi-box-arrow-in-right fs-5"
+                      aria-hidden="true"
+                    ></i
+                    ><span
+                      ><span class="d-block fw-semibold small">{{
+                        way.label
+                      }}</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.providerDescription
+                      }}</span></span
+                    ></span
+                  ></LoadingButton
+                >
+                <LoadingButton
+                  v-else
+                  class="btn btn-outline-secondary"
+                  :loading="busy && pendingProvider === null"
+                  :disabled="busy && pendingProvider !== null"
+                  data-id="profile-passkey-add"
+                  @click="flow.choosePasskey"
+                  ><span class="d-flex align-items-center gap-3 text-start"
+                    ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
+                    ><span
+                      ><span class="d-block fw-semibold small">Passkey</span
+                      ><span class="d-block small text-body-secondary">{{
+                        HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
+                      }}</span></span
+                    ></span
+                  ></LoadingButton
+                >
+              </template>
+            </div>
+            <form
+              v-else
+              :id="`${baseId}-add`"
+              class="align-self-start"
+              @submit.prevent="submitAdd"
+            >
+              <fieldset class="m-0 p-0 border-0" :disabled="modalBusy">
+                <div
+                  v-for="(field, index) in addFields"
+                  :key="field.key"
+                  class="mb-3"
+                >
+                  <HilosSendProgress
+                    v-if="field.key === 'code'"
+                    :progress="sendProgress"
+                    :to="step === 'phone-code' ? sentPhone : sentEmail"
+                    :resend-at="resendAt"
+                    :busy="busy"
+                    :data-id="
+                      step === 'phone-code'
+                        ? 'profile-add-sms-send'
+                        : 'profile-add-password-send'
+                    "
+                    @send-again="sendAgainAdd"
+                  />
+                  <label
+                    :for="`${baseId}-add-${field.key}`"
+                    class="form-label"
+                    >{{ field.label }}</label
+                  >
+                  <input
+                    :id="`${baseId}-add-${field.key}`"
+                    v-model="addDraft[field.key]"
+                    :type="field.type"
+                    :autocomplete="field.autocomplete"
+                    class="form-control"
+                    :data-id="field.dataId"
+                    :aria-describedby="
+                      field.type === 'password'
+                        ? `${baseId}-add-password-hint`
+                        : undefined
+                    "
+                    :data-autofocus="index === 0 ? '' : undefined"
+                  />
+                </div>
+                <div
+                  v-if="step === 'password-new' || step === 'password-code'"
+                  :id="`${baseId}-add-password-hint`"
+                  class="form-text"
+                  data-id="profile-add-password-hint"
+                >
+                  {{ HILOS_PROFILE_SIGN_IN_COPY.passwordHint }}
+                </div>
+              </fieldset>
+            </form>
           </div>
-          <form
-            v-else
-            :id="`${baseId}-add`"
-            class="align-self-start"
-            @submit.prevent="submitAdd"
-          >
-            <div
-              v-for="(field, index) in addFields"
-              :key="field.key"
-              class="mb-3"
-            >
-              <HilosSendProgress
-                v-if="field.key === 'code'"
-                :progress="sendProgress"
-                :to="step === 'phone-code' ? sentPhone : sentEmail"
-                :resend-at="resendAt"
-                :busy="busy"
-                :data-id="
-                  step === 'phone-code'
-                    ? 'profile-add-sms-send'
-                    : 'profile-add-password-send'
-                "
-                @send-again="sendAgainAdd"
-              />
-              <label :for="`${baseId}-add-${field.key}`" class="form-label">{{
-                field.label
-              }}</label>
-              <input
-                :id="`${baseId}-add-${field.key}`"
-                v-model="addDraft[field.key]"
-                :type="field.type"
-                :autocomplete="field.autocomplete"
-                class="form-control"
-                :data-id="field.dataId"
-                :aria-describedby="
-                  field.type === 'password'
-                    ? `${baseId}-add-password-hint`
-                    : undefined
-                "
-                :data-autofocus="index === 0 ? '' : undefined"
-              />
-            </div>
-            <div
-              v-if="step === 'password-new' || step === 'password-code'"
-              :id="`${baseId}-add-password-hint`"
-              class="form-text"
-              data-id="profile-add-password-hint"
-            >
-              {{ HILOS_PROFILE_SIGN_IN_COPY.passwordHint }}
-            </div>
-          </form>
+          <HilosFormError :message="refusal" :data-id="errorId" />
         </div>
-        <HilosFormError :message="refusal" :data-id="errorId" />
-      </div>
+      </template>
       <template #actions="{ requestClose }">
         <button
           type="button"
           class="btn btn-secondary"
+          :disabled="addInFlight"
           data-id="profile-sign-in-add-cancel"
           @click="requestClose"
         >
@@ -751,7 +769,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="btn btn-outline-secondary"
-            :disabled="busy"
+            :disabled="addInFlight"
             data-id="profile-sign-in-add-back"
             @click="flow.back"
           >

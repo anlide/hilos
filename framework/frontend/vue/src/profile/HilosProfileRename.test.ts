@@ -1,7 +1,8 @@
 // Covers what the name window's view owns (HIL-1169): the confirmation first
 // when the operation asks and the field focused once it gives way to the form,
-// Save held while the draft equals the live name, the refusal in the form, and
-// the notice when the name moved elsewhere.
+// Save held while the draft equals the live name, the refusal in the form, the
+// notice when the name moved elsewhere, and the window held with its body
+// locked while the rename or the confirmation is out (HIL-1763).
 import {
   ActionError,
   createHilosProfileRenameFlow,
@@ -34,11 +35,41 @@ function typeInto(id: string, value: string): void {
   field.dispatchEvent(new Event('input'))
 }
 
-function setup(stepUp: unknown = { required: false, purpose: 'rename' }) {
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+/**
+ * Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+ *
+ * @param cancel The data-id of the Cancel on screen.
+ */
+function tryClosing(cancel: string): void {
+  byId('modal-close').click()
+  byId(cancel).click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+}
+
+/**
+ * A mounted window over the project's rename; the rename lands when the test
+ * moves the live name or sets the refusal.
+ *
+ * @param stepUp What the operation's confirmation answers on open.
+ * @param hold Actions whose reply stays in flight until the test settles or refuses it.
+ */
+function setup(
+  stepUp: unknown = { required: false, purpose: 'rename' },
+  hold: string[] = [],
+) {
   const name = createSignal('Ann')
   const refusal = createSignal<string | null>(null)
   const sent: string[] = []
   const dispatched: Array<{ action: string; payload?: unknown }> = []
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
   const rename: HilosProfileRename = {
     send(next) {
       sent.push(next)
@@ -55,6 +86,16 @@ function setup(stepUp: unknown = { required: false, purpose: 'rename' }) {
       actions: {
         dispatch: (action: string, payload?: unknown) => {
           dispatched.push({ action, payload })
+          if (hold.includes(action))
+            return {
+              done: new Promise((resolve, reject) =>
+                held.push({
+                  settle: () => resolve({ reply: [] }),
+                  refuse: (reason) =>
+                    reject(new ActionError(action, 'fail', reason)),
+                }),
+              ),
+            }
           return {
             done:
               action === 'hilos_step_up_start'
@@ -70,7 +111,7 @@ function setup(stepUp: unknown = { required: false, purpose: 'rename' }) {
     rename,
   )
   mount(HilosProfileRenameModal, { props: { flow }, attachTo: document.body })
-  return { flow, name, refusal, sent, dispatched }
+  return { flow, name, refusal, sent, dispatched, held }
 }
 
 describe('HilosProfileRename', () => {
@@ -142,5 +183,96 @@ describe('HilosProfileRename', () => {
       'Updated just now',
     )
     expect((byId('profile-name-input') as HTMLInputElement).value).toBe('Anna')
+  })
+
+  it('holds the window and locks the field while the rename is out, and frees them after a refusal', async () => {
+    const { flow, name, refusal, sent } = setup()
+    await flow.open()
+    await flushPromises()
+    typeInto('profile-name-input', 'Bob')
+    await nextTick()
+    const field = byId('profile-name-input') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = byId('profile-rename-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    byId('profile-rename-save').click()
+    await nextTick()
+    expect(sent).toEqual(['Bob'])
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing('profile-rename-cancel')
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    refusal.set('That name is not allowed')
+    await nextTick()
+    expect(byId('profile-name-input')).toBe(field)
+    expect(field.value).toBe('Bob')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('profile-rename-error').textContent).toContain(
+      'That name is not allowed',
+    )
+
+    byId('profile-rename-save').click()
+    await nextTick()
+    expect(sent).toEqual(['Bob', 'Bob'])
+    name.set('Bob')
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
+  it('holds the window and locks the password while the confirmation is out, and frees it after a refusal', async () => {
+    const { flow, held } = setup(
+      { required: true, purpose: 'change your name', method: 'password' },
+      ['hilos_step_up_confirm'],
+    )
+    await flow.open()
+    await flushPromises()
+    typeInto('step-up-password', 'wrong')
+    await nextTick()
+    const form = byId('profile-name-step-up')
+    const field = byId('step-up-password') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = byId('profile-name-step-up-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    expect(held).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing('profile-name-step-up-cancel')
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    held[0]!.refuse('That password is not right')
+    await flushPromises()
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('wrong')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('step-up-error').textContent).toContain(
+      'That password is not right',
+    )
+
+    typeInto('step-up-password', 'secret')
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    held[1]!.settle()
+    await flushPromises()
+    expect((byId('profile-name-input') as HTMLInputElement).value).toBe('Ann')
   })
 })

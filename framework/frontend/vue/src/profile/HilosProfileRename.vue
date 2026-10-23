@@ -28,6 +28,9 @@ const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const stepUpOpening = useSignal(props.flow.stepUp.opening)
 const stepUpBusy = useSignal(props.flow.stepUp.busy)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
+// Every request of this window in flight - the rename and its own confirmation:
+// nothing closes the window, its body stays locked and Cancel waits with it.
+const inFlight = computed(() => busy.value || stepUpBusy.value)
 const body = ref<HTMLElement | null>(null)
 const open = computed({
   get: () => step.value !== 'closed',
@@ -56,6 +59,7 @@ watch(step, (next, previous) => {
   <HilosModal
     v-model="open"
     :confirm-on-close="asksBeforeClosing"
+    :busy="inFlight"
     initial-focus="inner"
   >
     <template #header>
@@ -116,6 +120,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="inFlight"
           data-id="profile-name-step-up-cancel"
           @click="requestClose"
         >
@@ -145,7 +150,7 @@ watch(step, (next, previous) => {
             <button
               type="button"
               class="btn btn-outline-secondary"
-              :disabled="busy"
+              :disabled="inFlight"
               data-id="profile-rename-cancel"
               @click="requestClose"
             >

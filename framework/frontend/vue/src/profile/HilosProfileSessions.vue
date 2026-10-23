@@ -197,6 +197,7 @@ async function confirmEndOthers(): Promise<void> {
     <HilosModal
       :model-value="endingSessionId !== null"
       :title="`End session #${endingSessionId ?? ''}`"
+      :busy="endBusy"
       initial-focus="dialog"
       @update:model-value="endingSessionId = $event ? endingSessionId : null"
     >
@@ -234,6 +235,7 @@ async function confirmEndOthers(): Promise<void> {
     <HilosModal
       :model-value="endOthersOpen"
       title="Sign out everywhere else"
+      :busy="endOthersBusy"
       initial-focus="dialog"
       @update:model-value="endOthersOpen = $event"
     >

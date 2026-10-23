@@ -76,11 +76,13 @@ watch(step, (next, previous) => {
   <!-- Every step is one server-confirmed submit; a refusal stays on the step in
   the room HilosFormError holds for it. Closing on steps 2 to 4 asks first,
   because a code is already out; the address moves only on step 4, so a flow
-  abandoned anywhere changes nothing. -->
+  abandoned anywhere changes nothing. While a request of the window is out, the
+  confirmation's included, nothing closes it and its body stays locked. -->
   <HilosModal
     v-model="open"
     :title="title"
     :confirm-on-close="asksBeforeClosing"
+    :busy="busy"
     initial-focus="inner"
   >
     <!-- This dialog's own voice; one region for all the steps, since only one
@@ -233,6 +235,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="busy"
           data-id="profile-email-cancel"
           @click="requestClose"
         >
@@ -253,6 +256,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="busy"
           data-id="profile-email-cancel"
           @click="requestClose"
         >
@@ -303,6 +307,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="busy"
           data-id="profile-email-again"
           @click="flow.again()"
         >
@@ -311,6 +316,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-primary"
+          :disabled="busy"
           data-autofocus
           data-id="profile-email-done"
           @click="requestClose"

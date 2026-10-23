@@ -5,8 +5,10 @@
 // closes. Connecting an app is a protected operation (HIL-1138): the
 // modal opens on the server's word, at the confirmation step or at the name.
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
-// removal that stands, and an open window closes when it turns off.
+// removal that stands, and an open window closes when it turns off. Every
+// window is held with its body locked while its request is out (HIL-1763).
 import {
+  ActionError,
   createSignal,
   ScopeManager,
   type ActionHandle,
@@ -152,6 +154,69 @@ function typeInto(id: string, value: string): void {
 /** Send a form the way Enter does: past its buttons. */
 function submit(id: string): void {
   byId(id).dispatchEvent(new Event('submit', { cancelable: true }))
+}
+
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+/** The window's Cancel, Close or Not now: the plain button of its footer. */
+function cancelButton(): HTMLButtonElement {
+  const found = document.querySelector<HTMLButtonElement>(
+    '[data-id="modal"] .modal-footer .btn-secondary',
+  )
+  if (found === null) {
+    throw new Error('no Cancel in the open window')
+  }
+
+  return found
+}
+
+/**
+ * Hold the next reply to an action in flight until the test refuses it with the
+ * server's sentence.
+ *
+ * @param replies The world's answers, read at each dispatch.
+ * @param action The action whose reply is held.
+ */
+function holdReply(
+  replies: Record<string, unknown>,
+  action: string,
+): { refuse(reason: string): void } {
+  let refuse!: (reason: string) => void
+  replies[action] = new Promise((_resolve, reject) => {
+    refuse = (reason) => reject(new ActionError(action, 'fail', reason))
+  })
+
+  return { refuse }
+}
+
+/**
+ * Expect the open window held while its request is out: the body locked, Cancel
+ * and the × off, and the ×, Cancel, Escape and the backdrop all leaving it open
+ * with no Discard step.
+ */
+async function expectHeld(): Promise<void> {
+  expect(bodyLock()?.disabled).toBe(true)
+  expect(cancelButton().disabled).toBe(true)
+  expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+  byId('modal-close').click()
+  cancelButton().click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+  await flushPromises()
+  expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+  expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+}
+
+/** Expect the open window free again: the body, Cancel and the × all live. */
+function expectFreed(): void {
+  expect(bodyLock()?.disabled).toBe(false)
+  expect(cancelButton().disabled).toBe(false)
+  expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(false)
 }
 
 /** Open "Add an app" and name the app. */
@@ -399,6 +464,176 @@ describe('HilosProfileSecurityPage', () => {
     )
     expect(wrapper.find('[data-id="profile-2fa-add"]').exists()).toBe(true)
   })
+})
+
+describe('HilosProfileSecurityPage with a request out', () => {
+  it('holds Add an app and locks the name while it is sent, and frees them after a refusal', async () => {
+    const replies: Record<string, unknown> = { ...REPLIES }
+    const { wrapper } = pageWorld(replies)
+    await nextTick()
+    await openEnrolment(wrapper)
+    await nextTick()
+    const field = byId('profile-2fa-enroll-label') as HTMLInputElement
+    const body = bodyLock()
+    expect(body?.contains(field)).toBe(true)
+    expectFreed()
+    const start = holdReply(replies, 'profile_second_factor_enroll_start')
+
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await expectHeld()
+
+    start.refuse('Two-step verification is not available right now')
+    await flushPromises()
+    expect(bodyLock()).toBe(body)
+    expect(byId('profile-2fa-enroll-label')).toBe(field)
+    expect(field.value).toBe('Work phone')
+    expectFreed()
+    expect(byId('hilos-action-error').textContent).toContain(
+      'Two-step verification is not available right now',
+    )
+
+    replies.profile_second_factor_enroll_start =
+      REPLIES.profile_second_factor_enroll_start
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await nextTick()
+    expect(byId('profile-2fa-enroll-code')).toBeTruthy()
+  })
+
+  it('holds Add an app and locks the password while its confirmation is out, and frees them after a refusal', async () => {
+    const replies: Record<string, unknown> = {
+      ...REPLIES,
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'add an authenticator app',
+        method: 'password',
+      },
+    }
+    const { wrapper } = pageWorld(replies)
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    typeInto('step-up-password', 'wrong')
+    await nextTick()
+    const field = byId('step-up-password') as HTMLInputElement
+    const body = bodyLock()
+    expect(body?.contains(field)).toBe(true)
+    expectFreed()
+    const confirm = holdReply(replies, 'hilos_step_up_confirm')
+
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await expectHeld()
+
+    confirm.refuse('That password is not right')
+    await flushPromises()
+    expect(bodyLock()).toBe(body)
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('wrong')
+    expectFreed()
+    expect(byId('step-up-error').textContent).toContain(
+      'That password is not right',
+    )
+
+    replies.hilos_step_up_confirm = []
+    typeInto('step-up-password', 'secret')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await nextTick()
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
+  })
+
+  it.each([
+    {
+      window: 'Backup codes',
+      open: 'profile-2fa-codes-show',
+      field: 'profile-2fa-proof',
+      value: '123456',
+      action: 'profile_second_factor_codes_show',
+      reply: { codes: [{ code: 'abcde-fghjk', used: false }] },
+      send: 'profile-2fa-codes-submit',
+      after: 'profile-2fa-codes-list',
+    },
+    {
+      window: 'Remove',
+      open: 'profile-2fa-remove-1',
+      field: 'profile-2fa-proof',
+      value: '123456',
+      action: 'profile_second_factor_remove',
+      reply: [],
+      send: 'profile-2fa-remove-submit',
+      after: null,
+    },
+    {
+      window: 'Wait before removal',
+      open: 'profile-2fa-wait-edit',
+      field: 'profile-2fa-wait-days',
+      value: '12',
+      action: 'profile_second_factor_reset_wait_set',
+      reply: [],
+      send: 'profile-2fa-wait-save',
+      after: null,
+    },
+    {
+      window: 'Request removal',
+      open: 'profile-2fa-reset-request',
+      field: null,
+      value: '',
+      action: 'profile_second_factor_reset_request',
+      reply: [],
+      send: 'profile-2fa-reset-submit',
+      after: null,
+    },
+  ])(
+    'holds the $window window while its request is out, and frees it after a refusal',
+    async ({ open, field, value, action, reply, send, after }) => {
+      const replies: Record<string, unknown> = { ...REPLIES }
+      const { dispatched } = pageWorld(replies, SECTION_ON)
+      await nextTick()
+      byId(open).click()
+      await nextTick()
+      if (field !== null) {
+        typeInto(field, value)
+        await nextTick()
+      }
+      const input = field === null ? null : (byId(field) as HTMLInputElement)
+      const body = bodyLock()
+      if (input !== null) {
+        expect(body?.contains(input)).toBe(true)
+      }
+      expectFreed()
+      const held = holdReply(replies, action)
+
+      byId(send).click()
+      await flushPromises()
+      expect(dispatched.filter((sent) => sent === action)).toHaveLength(1)
+      await expectHeld()
+
+      held.refuse('The server is busy, try again')
+      await flushPromises()
+      expect(bodyLock()).toBe(body)
+      if (field !== null) {
+        expect(byId(field)).toBe(input)
+        expect(input?.value).toBe(value)
+      }
+      expectFreed()
+      expect(byId('hilos-action-error').textContent).toContain(
+        'The server is busy, try again',
+      )
+
+      replies[action] = reply
+      byId(send).click()
+      await flushPromises()
+      await nextTick()
+      if (after === null) {
+        expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      } else {
+        expect(byId(after)).toBeTruthy()
+      }
+    },
+  )
 })
 
 describe('HilosProfileSecurityPage turned off by the administrator', () => {

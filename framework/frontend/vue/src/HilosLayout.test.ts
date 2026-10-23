@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
+import { h, nextTick } from 'vue'
 import {
   ActionLifecycle,
   applyServerTime,
@@ -35,6 +35,7 @@ import type {
 
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { bindThemeState } from '../../core/src/theme/themeState.js'
+import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
 import HilosLayout from './HilosLayout.vue'
 import LoadingButton from './LoadingButton.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
@@ -108,12 +109,14 @@ class ReplyingSource implements ActionLifecycleSource {
   succeed(
     requestId: string | undefined,
     action = IMPERSONATION_ACTION_STOP,
+    reply?: unknown,
   ): void {
     for (const listener of this.success) {
       listener({
         kind: 'actionSuccess',
         action,
         requestId,
+        reply,
         envelope: { type: 'action_success', data: {} },
       } as ActionSuccessSignal)
     }
@@ -1099,6 +1102,56 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
   const windowShown = (): boolean =>
     document.body.querySelector('[data-id="legal-reconsent-modal"]') !== null
 
+  /**
+   * An element of the window, which is teleported to the body.
+   *
+   * @param id The element's data-id.
+   */
+  function windowPart<T extends HTMLElement = HTMLElement>(id: string): T {
+    const element = document.body.querySelector<T>(`[data-id="${id}"]`)
+    if (element === null) throw new Error(`Missing ${id}`)
+
+    return element
+  }
+
+  /** The window's dialog, where its Escape and backdrop are heard. */
+  function dialog(): HTMLElement {
+    return windowPart('legal-reconsent-modal').closest<HTMLElement>(
+      '[role="dialog"]',
+    )!
+  }
+
+  /** The window's ×. */
+  function cross(): HTMLButtonElement {
+    return dialog().querySelector<HTMLButtonElement>('[data-id="modal-close"]')!
+  }
+
+  /** Raise the window on a sign-in and answer its reading, so Accept is live. */
+  async function openWithContent() {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    const wrapper = mountShell(shellConnection())
+    session.handshake(reconsentHandshake(inWindow))
+    await flushPromises()
+    const read = session.source.sent.at(-1)!
+    session.source.succeed(read.requestId, read.action, reconsentContent())
+    await flushPromises()
+
+    return { session, wrapper }
+  }
+
+  /** Every way a person leaves the window: ×, Escape, the backdrop, Later and the refusal step. */
+  function tryClosing(): void {
+    cross().click()
+    dialog().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    dialog().click()
+    windowPart('legal-reconsent-later').click()
+    windowPart('legal-reconsent-refuse').click()
+  }
+
   it('draws the yellow document icon after the user slot with the days left', () => {
     vi.useFakeTimers()
     vi.setSystemTime(Date.UTC(2026, 10, 1))
@@ -1154,6 +1207,124 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
     expect(windowShown()).toBe(false)
     await wrapper.get('[data-id="legal-reconsent-icon"]').trigger('click')
     expect(windowShown()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('holds the window while the acceptance is out, Accept keeping its look and focus until 300 ms (HIL-1763)', async () => {
+    vi.useFakeTimers()
+    const { session, wrapper } = await openWithContent()
+    const accept = windowPart<HTMLButtonElement>('legal-reconsent-accept')
+    const spinner = () =>
+      accept.querySelector('[data-id="loading-button-spinner"]')
+    const accepts = () =>
+      session.source.sent.filter((sent) => sent.action === 'hilos_legal_accept')
+
+    accept.focus()
+    accept.click()
+    await nextTick()
+    expect(accepts()).toHaveLength(1)
+    expect(accept.getAttribute('aria-busy')).toBe('true')
+    expect(accept.getAttribute('aria-disabled')).toBe('true')
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(accept.closest('fieldset')).toBeNull()
+    expect(spinner()).toBeNull()
+    expect(document.activeElement).toBe(accept)
+    expect(
+      windowPart('legal-reconsent-full-text').closest('fieldset')?.disabled,
+    ).toBe(true)
+    expect(
+      windowPart<HTMLButtonElement>('legal-reconsent-later').disabled,
+    ).toBe(true)
+    expect(
+      windowPart<HTMLButtonElement>('legal-reconsent-refuse').disabled,
+    ).toBe(true)
+    expect(cross().disabled).toBe(true)
+    tryClosing()
+    await nextTick()
+    expect(windowShown()).toBe(true)
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(
+      document.querySelector('[data-id="legal-reconsent-refuse-step"]'),
+    ).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(299)
+    expect(spinner()).toBeNull()
+    expect(accept.classList.contains('disabled')).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(spinner()).not.toBeNull()
+    expect(accept.classList.contains('disabled')).toBe(true)
+    expect(accept.matches(':disabled')).toBe(false)
+    accept.click()
+    await nextTick()
+    expect(accepts()).toHaveLength(1)
+    expect(document.activeElement).toBe(accept)
+
+    session.source.succeed(accepts()[0]!.requestId, 'hilos_legal_accept')
+    await flushPromises()
+    expect(windowShown()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('frees the window after a refused acceptance, with the refusal shown, as before (HIL-1763)', async () => {
+    const { session, wrapper } = await openWithContent()
+    windowPart('legal-reconsent-accept').click()
+    await nextTick()
+    const accepted = session.source.sent.at(-1)!
+    expect(accepted.action).toBe('hilos_legal_accept')
+
+    session.source.refuse(
+      accepted.requestId,
+      'The terms changed again.',
+      'hilos_legal_accept',
+    )
+    await flushPromises()
+    // The text is read again before the acceptance lets go of the window.
+    const reread = session.source.sent.at(-1)!
+    expect(reread.action).toBe('hilos_legal_reconsent')
+    expect(cross().disabled).toBe(true)
+    session.source.succeed(reread.requestId, reread.action, reconsentContent())
+    await flushPromises()
+
+    expect(windowPart('legal-reconsent-error').textContent).toContain(
+      'The terms changed again.',
+    )
+    expect(cross().disabled).toBe(false)
+    expect(
+      windowPart('legal-reconsent-full-text').closest('fieldset')?.disabled,
+    ).toBe(false)
+    const later = windowPart<HTMLButtonElement>('legal-reconsent-later')
+    expect(later.disabled).toBe(false)
+    later.click()
+    await flushPromises()
+    expect(windowShown()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('closes the window as before while only its text is read (HIL-1763)', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    const wrapper = mountShell(shellConnection())
+    session.handshake(reconsentHandshake(inWindow))
+    await flushPromises()
+
+    windowPart('legal-reconsent-loading')
+    expect(cross().disabled).toBe(false)
+    expect(
+      windowPart('legal-reconsent').querySelector('fieldset')?.disabled,
+    ).toBe(false)
+    cross().click()
+    await flushPromises()
+    expect(windowShown()).toBe(false)
+
+    await wrapper.get('[data-id="legal-reconsent-icon"]').trigger('click')
+    windowPart('legal-reconsent-loading')
+    dialog().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await flushPromises()
+    expect(windowShown()).toBe(false)
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
     wrapper.unmount()
   })
 

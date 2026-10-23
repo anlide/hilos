@@ -155,6 +155,34 @@ function dialog(): HTMLElement {
   return element
 }
 
+/**
+ * Whether a disabled fieldset around the element turns it off. happy-dom
+ * matches `:disabled` on an element's own attribute only, so the lock a
+ * fieldset gives is read off the fieldset itself.
+ *
+ * @param element The control to read.
+ */
+function lockedByFieldset(element: Element): boolean {
+  return element.closest('fieldset[disabled]') !== null
+}
+
+/** Every way a person closes the window: the ×, Close, Escape and the backdrop. */
+function tryClosing(): void {
+  byId('modal-close').click()
+  byId('profile-theme-close').click()
+  dialog().dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  dialog().click()
+}
+
+/** The three position buttons, in the order the list draws them. */
+function positions(): HTMLButtonElement[] {
+  return ['light', 'dark', 'system'].map((pick) =>
+    byId(`profile-theme-option-${pick}`),
+  )
+}
+
 describe('HilosProfileTheme', () => {
   it('opens a named dialog with three live positions, a default badge and only Close', async () => {
     const server = setup(null, {
@@ -555,5 +583,98 @@ describe('HilosProfileTheme', () => {
     await flushPromises()
     expect(server.sendAction).toHaveBeenCalledOnce()
     expect(document.activeElement).toBe(byId('theme-opener'))
+  })
+
+  it('holds the window while the site default is out, its button keeping its look and focus until 300 ms', async () => {
+    const server = setup('dark')
+    await server.open()
+    const reset = byId('profile-theme-default')
+    const options = positions()
+    const lock = options[0]?.closest('fieldset')
+    const spinner = () =>
+      reset.querySelector('[data-id="loading-button-spinner"]')
+    expect(lock?.contains(byId('hilos-action-error-slot'))).toBe(true)
+    expect(options.every((option) => lock?.contains(option))).toBe(true)
+    expect(lock?.disabled).toBe(false)
+    expect(lockedByFieldset(reset)).toBe(false)
+
+    reset.focus()
+    reset.click()
+    await nextTick()
+    expect(server.sendAction).toHaveBeenCalledExactlyOnceWith(
+      'hilos_theme_pick',
+      { themePick: null },
+      '1',
+    )
+    expect(reset.getAttribute('aria-busy')).toBe('true')
+    expect(reset.getAttribute('aria-disabled')).toBe('true')
+    expect(reset.matches(':disabled')).toBe(false)
+    expect(lockedByFieldset(reset)).toBe(false)
+    expect(spinner()).toBeNull()
+    expect(document.activeElement).toBe(reset)
+    expect(options.map(lockedByFieldset)).toEqual([true, true, true])
+    expect(options.map((option) => option.disabled)).toEqual([true, true, true])
+    expect(byId('profile-theme-close').disabled).toBe(true)
+    expect(byId('modal-close').disabled).toBe(true)
+    tryClosing()
+    await nextTick()
+    expect(server.shown.value).toBe(true)
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(299)
+    expect(spinner()).toBeNull()
+    expect(reset.classList.contains('disabled')).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(spinner()).not.toBeNull()
+    expect(reset.classList.contains('disabled')).toBe(true)
+    expect(reset.matches(':disabled')).toBe(false)
+
+    reset.click()
+    for (const option of options) option.click()
+    await nextTick()
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(reset)
+
+    server.handshake(null, 1, true)
+    server.reply('success')
+    await flushPromises()
+    expect(server.shown.value).toBe(false)
+    expect(document.activeElement).toBe(byId('theme-opener'))
+  })
+
+  it('holds the window while a position is out, and frees the positions and Close after a refusal', async () => {
+    const server = setup()
+    await server.open()
+    const options = positions()
+    const reset = byId('profile-theme-default')
+    byId('profile-theme-option-dark').click()
+    await nextTick()
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    expect(options.map(lockedByFieldset)).toEqual([true, true, true])
+    expect(reset.disabled).toBe(true)
+    expect(lockedByFieldset(reset)).toBe(false)
+    expect(byId('profile-theme-close').disabled).toBe(true)
+    tryClosing()
+    await nextTick()
+    expect(server.shown.value).toBe(true)
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    server.reply('fail')
+    await flushPromises()
+    expect(positions()).toEqual(options)
+    expect(options.map(lockedByFieldset)).toEqual([false, false, false])
+    expect(options.map((option) => option.disabled)).toEqual([
+      false,
+      false,
+      false,
+    ])
+    expect(reset.disabled).toBe(false)
+    expect(byId('profile-theme-close').disabled).toBe(false)
+    expect(byId('hilos-action-error').textContent).toContain(
+      'Theme switching is disabled.',
+    )
+    byId('profile-theme-close').click()
+    await nextTick()
+    expect(server.shown.value).toBe(false)
   })
 })

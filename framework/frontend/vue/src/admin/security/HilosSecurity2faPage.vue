@@ -170,6 +170,9 @@ const live = useSignal(editor.state)
 const editNoticeText = useSignal(editor.noticeText)
 const editSaveLabel = useSignal(editor.saveLabel)
 const saveAvailable = useSignal(editor.saveAvailable)
+// The session's save in flight: nothing closes the dialog and its body stays
+// locked until the reply, and Cancel waits with it.
+const editSaving = useSignal(editor.saving)
 const editHidden = computed(() => editForm.value.hidden)
 // The number input's model: v-model on a number input hands back a number, and
 // the value is text everywhere else (the form, the session, the wire).
@@ -275,6 +278,7 @@ function submitEdit(): void {
     <HilosModal
       v-model="editOpen"
       :confirm-on-close="live.dirty"
+      :busy="editSaving"
       :aria-label="editTitle"
       @cancel="closeEdit"
     >
@@ -346,7 +350,7 @@ function submitEdit(): void {
             <button
               type="button"
               class="btn btn-secondary"
-              :disabled="editBusy"
+              :disabled="editSaving"
               @click="requestClose"
             >
               Cancel

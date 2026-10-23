@@ -67,9 +67,30 @@ const FRAME_AFTER: Record<string, string | null> = {
   profile_change_password: null,
 }
 
-function setup() {
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  byId('modal-close').click()
+  byId('profile-password-cancel').click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+}
+
+/**
+ * A mounted window whose server answers from `answers`; a string refuses.
+ *
+ * @param hold Actions whose reply stays in flight until the test settles or refuses it.
+ */
+function setup(hold: string[] = []) {
   tell(null)
   const dispatched: Array<{ name: string; payload?: unknown }> = []
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
   const answers: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your password' },
     profile_change_password_open: {
@@ -81,6 +102,19 @@ function setup() {
     actions: {
       dispatch: (name: string, payload?: unknown) => {
         dispatched.push({ name, payload })
+        if (hold.includes(name))
+          return {
+            done: new Promise((resolve, reject) =>
+              held.push({
+                settle: () => {
+                  if (name in FRAME_AFTER) tell(FRAME_AFTER[name] ?? null)
+                  resolve({ reply: answers[name] ?? [] })
+                },
+                refuse: (reason) =>
+                  reject(new ActionError(name, 'fail', reason)),
+              }),
+            ),
+          }
         if (typeof answers[name] === 'string')
           return {
             done: Promise.reject(new ActionError(name, 'fail', answers[name])),
@@ -94,7 +128,7 @@ function setup() {
     props: { flow },
     attachTo: document.body,
   })
-  return { flow, answers, dispatched }
+  return { flow, answers, dispatched, held }
 }
 describe('password change modal', () => {
   it.each([true, false])(
@@ -168,6 +202,52 @@ describe('password change modal', () => {
       'short',
     )
     expect(byId('profile-password-error-slot')).toBeDefined()
+  })
+  it('holds the window and locks the new password while it is saved, and frees it after a refusal', async () => {
+    const { flow, held } = setup(['profile_change_password'])
+    await flow.open()
+    await flow.sendCode()
+    flow.code.set('123456')
+    await flow.confirmCode()
+    flow.newPassword.set('short')
+    await flushPromises()
+    const field = byId('profile-password-new') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = byId('profile-password-cancel') as HTMLButtonElement
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    byId('profile-password-save').click()
+    await flushPromises()
+    expect(held).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    held[0]!.refuse('Password is too short')
+    await flushPromises()
+    expect(byId('profile-password-new')).toBe(field)
+    expect(field.value).toBe('short')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('profile-password-error').textContent).toContain(
+      'Password is too short',
+    )
+
+    flow.newPassword.set('new-secret')
+    await flushPromises()
+    byId('profile-password-save').click()
+    await flushPromises()
+    held[1]!.settle()
+    await flushPromises()
+    expect(byId('profile-password-outcome')).toBeDefined()
   })
   it('draws the send block on the code step and sends again from it', async () => {
     const { flow, answers } = setup()

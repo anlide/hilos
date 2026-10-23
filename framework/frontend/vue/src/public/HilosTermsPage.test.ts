@@ -44,6 +44,29 @@ function standing(facts: Record<string, unknown> = {}) {
   }
 }
 
+function byId(id: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  if (found === null) throw new Error(`No element ${id}`)
+
+  return found
+}
+
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the window: the ×, Close, Escape and the backdrop.
+function tryClosing(): void {
+  const modal = byId('modal')
+  byId('modal-close').click()
+  byId('terms-changes-close').click()
+  modal.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modal.click()
+}
+
 /**
  * The Terms page over an answer, its reader signed in first when one is named.
  *
@@ -241,6 +264,72 @@ it('accepts from the comparison window and closes it on success', async () => {
   accept!.click()
   expect(dispatch).toHaveBeenCalledTimes(1)
   resolve({})
+  await flushPromises()
+  expect(document.querySelector('[data-id="terms-changes-modal"]')).toBeNull()
+})
+
+it('holds the comparison window while the acceptance is out, and frees it after a refusal', async () => {
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
+  const { view, dispatch } = mountTerms(
+    {
+      legalTerms: termsSectionBehind,
+      legalAgreements: termsAgreements(
+        termsAgreement('window', first, '2026-11-10'),
+      ),
+    },
+    {
+      standing: standing({
+        window: [{ document: 'terms', deadline: '2026-11-10' }],
+      }),
+    },
+    vi.fn(() => ({
+      done: new Promise<ActionResult>((resolve, reject) =>
+        held.push({
+          settle: () => resolve({}),
+          refuse: (reason) =>
+            reject(new ActionError('hilos_legal_accept', 'fail', reason)),
+        }),
+      ),
+    })),
+  )
+  await flushPromises()
+  await view.get('[data-id="legal-document-changes-open"]').trigger('click')
+  await flushPromises()
+  const body = bodyLock()
+  const close = byId('terms-changes-close') as HTMLButtonElement
+  const x = byId('modal-close') as HTMLButtonElement
+  expect(body?.contains(byId('terms-changes-modal'))).toBe(true)
+  expect(body?.disabled).toBe(false)
+  expect(close.disabled).toBe(false)
+
+  byId('terms-changes-accept').click()
+  await flushPromises()
+  expect(dispatch).toHaveBeenCalledTimes(1)
+  expect(body?.disabled).toBe(true)
+  expect(close.disabled).toBe(true)
+  expect(x.disabled).toBe(true)
+  tryClosing()
+  await flushPromises()
+  expect(
+    document.querySelector('[data-id="terms-changes-modal"]'),
+  ).not.toBeNull()
+  expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+  held[0]!.refuse('The terms moved.')
+  await flushPromises()
+  expect(bodyLock()).toBe(body)
+  expect(body?.disabled).toBe(false)
+  expect(close.disabled).toBe(false)
+  expect(x.disabled).toBe(false)
+  expect(byId('terms-changes-refusal').textContent).toContain(
+    'The terms moved.',
+  )
+
+  byId('terms-changes-accept').click()
+  await flushPromises()
+  expect(dispatch).toHaveBeenCalledTimes(2)
+  expect(body?.disabled).toBe(true)
+  held[1]!.settle()
   await flushPromises()
   expect(document.querySelector('[data-id="terms-changes-modal"]')).toBeNull()
 })

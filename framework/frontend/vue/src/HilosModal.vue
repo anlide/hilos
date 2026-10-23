@@ -1,10 +1,24 @@
 <!-- HilosModal — the one home for editing (edit-in-modal is a hard Hilos rule;
 docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
-fills #header (defaults to the title), the body (default slot), and #actions
-(which receives `requestClose` so a footer button closes through the confirm
-guard). The footer exists exactly when #actions is declared or a copyText is
-given: a dialog with neither gets no footer element — neither buttons nor the
-bordered strip — and there is no default footer to opt out of.
+fills #header (defaults to the title), the body (default slot, or #body), and
+#actions (which receives `requestClose` so a footer button closes through the
+confirm guard). The footer exists exactly when #actions is declared or a
+copyText is given: a dialog with neither gets no footer element — neither
+buttons nor the bordered strip — and there is no default footer to opt out of.
+While the dialog's request is in flight (`busy`) nothing closes it and its body
+is locked: the default slot stands inside a fieldset with no border or spacing
+that is always there and that `busy` disables, so every field in it turns
+natively disabled and keeps what was typed — the same nodes, never remounted.
+A body whose own submitting LoadingButton stands inside it fills #body instead:
+it receives the same `busy`, replaces only that fieldset inside the same
+modal-body, and its owner disables its fields with it — owning the slot is no
+license to leave them editable. The footer is not wrapped: Cancel and the other
+buttons of #actions are disabled by their owner with the same `busy`, Copy by
+the modal, and a LoadingButton stays locked by its own `loading`. Nothing turns
+inert or aria-hidden, so the text, the draft and the refusal regions stay
+readable. When `busy` clears, focus left on the dialog itself — because the
+step that moved in flight found its field locked — or on the page's body goes
+to the initial element again, as on opening; any other element keeps it.
 The body is what scrolls, always: the dialog is never taller than the window
 (modal-dialog-scrollable), the header and the footer stay put, and a short
 dialog is not changed by it at all. On a narrow screen the dialog becomes a
@@ -105,12 +119,19 @@ const props = withDefaults(
     /** Close on a backdrop click (through the confirm guard). */
     closeOnBackdrop?: boolean
     /**
-     * The dialog's request is in flight: the header close button turns
-     * natively disabled, and neither Escape, a backdrop click, nor the
-     * `requestClose` the #actions slot receives closes the dialog or raises
-     * the confirm step. Outranks `closeOnEsc` and `closeOnBackdrop`; a
-     * gesture refused while busy is not replayed once it clears. The parent
-     * setting `modelValue` to false still closes the dialog.
+     * The dialog's request is in flight: the header close button and the
+     * footer's Copy turn natively disabled, and neither Escape, a backdrop
+     * click, nor the `requestClose` the #actions slot receives closes the
+     * dialog or raises the confirm step. Outranks `closeOnEsc` and
+     * `closeOnBackdrop`; a gesture refused while busy is not replayed once it
+     * clears. The parent setting `modelValue` to false still closes the
+     * dialog. The body is locked too: the fieldset around the default slot is
+     * disabled, or #body receives the flag to lock its own fields. A control
+     * disabled for a reason of its own stays disabled once it clears. Once it
+     * clears, focus that stands on the dialog itself or on the page's body goes
+     * to the initial element again, as on opening; any other element keeps it —
+     * a control in the dialog, or one outside it, such as another modal
+     * standing over this one.
      */
     busy?: boolean
     /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -245,6 +266,28 @@ watch(confirmVisible, (visible) => {
   })
 })
 
+// A step that moved while the request was out found its field locked and put
+// focus on the dialog itself; once busy clears, focus that stands on the dialog
+// itself or on the page's body goes to the initial element again, as on
+// opening. Any other element keeps it — a control in the dialog, another modal
+// standing over this one, an open confirm step.
+watch(
+  () => props.busy,
+  (busy, wasBusy) => {
+    if (busy || !wasBusy) return
+    void nextTick(() => {
+      if (disposed || props.busy || !props.modelValue || confirmVisible.value) {
+        return
+      }
+      const root = dialog.value
+      if (!root?.isConnected) return
+      const { activeElement: active, body } = root.ownerDocument
+      if (active && active !== root && active !== body) return
+      trap.refocus(root, trapPlacement(props.initialFocus))
+    })
+  },
+)
+
 function onTab(event: KeyboardEvent): void {
   const root = activeRoot()
   if (root) {
@@ -297,7 +340,13 @@ function onTab(event: KeyboardEvent): void {
               ></button>
             </div>
             <div class="modal-body">
-              <slot />
+              <!-- The fieldset is always there, so flipping busy only toggles
+              its disabled: the fields and their draft are never remounted. -->
+              <slot name="body" :busy="busy">
+                <fieldset class="m-0 p-0 border-0" :disabled="busy">
+                  <slot />
+                </fieldset>
+              </slot>
             </div>
             <div
               v-if="$slots.actions || showCopy"
@@ -310,6 +359,7 @@ function onTab(event: KeyboardEvent): void {
                 type="button"
                 class="btn btn-outline-secondary"
                 data-id="modal-copy"
+                :disabled="busy"
                 @click="onCopy"
               >
                 <i class="bi bi-clipboard me-1" aria-hidden="true"></i>

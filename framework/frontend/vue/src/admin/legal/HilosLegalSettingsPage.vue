@@ -35,6 +35,9 @@ const state = useSignal(editor.state)
 const noticeText = useSignal(editor.noticeText)
 const saveAvailable = useSignal(editor.saveAvailable)
 const saveLabel = useSignal(editor.saveLabel)
+// The session's save in flight: nothing closes the modal and its body stays
+// locked until the reply, and Cancel waits with it.
+const saving = useSignal(editor.saving)
 const action = useTrackedAction({ toast: false })
 const { busy, clearError, run } = action
 const inputId = useId()
@@ -173,6 +176,7 @@ function save(): void {
           ? (HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey)
           : 'Edit setting'
       "
+      :busy="saving"
       @cancel="editor.close"
     >
       <HilosActionError
@@ -227,7 +231,7 @@ function save(): void {
             <button
               type="button"
               class="btn btn-secondary"
-              :disabled="busy"
+              :disabled="saving"
               data-id="legal-setting-cancel"
               @click="requestClose"
             >

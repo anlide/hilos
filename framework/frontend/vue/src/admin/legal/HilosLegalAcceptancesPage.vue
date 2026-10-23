@@ -154,6 +154,7 @@ onUnmounted(() => {
     <HilosModal
       v-model="open"
       :title="HILOS_STEP_UP_COPY.title"
+      :busy="busy"
       initial-focus="inner"
     >
       <div class="visually-hidden" role="alert" aria-live="assertive">
@@ -174,6 +175,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary"
+          :disabled="busy"
           @click="requestClose"
         >
           {{ HILOS_STEP_UP_COPY.cancel }}

@@ -5,7 +5,7 @@
 // The secret's modal opens empty, keeps save locked until something is typed,
 // and only ever says the row is gone. The ↺ resets a field only through a
 // confirm dialog (HIL-1147).
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -345,6 +345,29 @@ function notice(): HTMLElement | null {
   return modalEl('hilos-oauth-field-edit-notice')
 }
 
+function cancelButton(): HTMLButtonElement {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      '[data-id="modal"] .modal-footer button',
+    ),
+  ).find((button) => button.textContent?.trim() === 'Cancel')!
+}
+
+// The fieldset the modal stands its body in; a save in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the dialog: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  modalEl('modal-close')?.click()
+  cancelButton().click()
+  modalEl('modal')?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modalEl('modal')?.click()
+}
+
 async function typeDraft(text: string): Promise<void> {
   const input = valueInput()
   input.value = text
@@ -474,6 +497,56 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
 
     modalEl('modal-close')?.click()
     await nextTick()
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY, ''])
+  })
+
+  it('holds the dialog and locks its body while the save is in flight, and frees the same field after a refusal', async () => {
+    const { context, sent, answer, focus } = seededContext('Iv1.a')
+    await openModal(context, 'client_id')
+    await typeDraft('Iv1.mine')
+    const field = valueInput()
+    const body = bodyLock()
+    const cancel = cancelButton()
+    const close = modalEl('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    saveButton().click()
+    await nextTick()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.payload).toMatchObject({
+      field: 'client_id',
+      value: 'Iv1.mine',
+    })
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await nextTick()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('modal-confirm')).toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY])
+
+    answer('fail')
+    await flushPromises()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(bodyLock()).toBe(body)
+    expect(valueInput()).toBe(field)
+    expect(field.value).toBe('Iv1.mine')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    await typeDraft('Iv1.mine.again')
+    saveButton().click()
+    await nextTick()
+    expect(sent[1]?.payload).toMatchObject({
+      field: 'client_id',
+      value: 'Iv1.mine.again',
+    })
+    answer('success')
+    await flushPromises()
     expect(modalEl('modal')).toBeNull()
     expect(focus).toEqual([CLIENT_ID_KEY, ''])
   })

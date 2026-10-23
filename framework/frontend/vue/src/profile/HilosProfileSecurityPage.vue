@@ -154,6 +154,11 @@ const enrollment = ref<HilosSecondFactorEnrollment | null>(null)
 const issuedCodes = ref<readonly string[]>([])
 const issuedSaved = ref(false)
 const enrollAction = useTrackedAction()
+// Every request of this window in flight - its steps and its own confirmation:
+// nothing closes the window, its body stays locked and Cancel waits with it.
+const enrollInFlight = computed(
+  () => enrollAction.busy.value || enrollStepUpBusy.value,
+)
 const enrollForm = ref<HTMLFormElement | null>(null)
 watch(enrollStep, () => focusStep(enrollForm))
 /** Issued codes not yet marked saved: closing asks first, they are shown once. */
@@ -650,6 +655,7 @@ watch(view, (current) => {
     <HilosModal
       v-model="enrollOpen"
       :title="enrollTitle"
+      :busy="enrollInFlight"
       :confirm-on-close="enrollCodesUnsaved"
       confirm-title="Close before saving the codes?"
       confirm-message="You have not marked these codes as saved. You can still show them later with a code from your app."
@@ -771,7 +777,7 @@ watch(view, (current) => {
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="enrollAction.busy.value"
+          :disabled="enrollInFlight"
           @click="requestClose"
         >
           {{ enrollStep === 'more' ? 'Not now' : 'Cancel' }}
@@ -793,6 +799,7 @@ watch(view, (current) => {
     <HilosModal
       v-model="codesOpen"
       title="Backup codes"
+      :busy="codesAction.busy.value"
       :confirm-on-close="renewedUnsaved"
       confirm-title="Close before saving the codes?"
       confirm-message="You have not marked the new codes as saved, and the old ones no longer work. You can still show them later with a code from your app."
@@ -891,6 +898,7 @@ watch(view, (current) => {
     <HilosModal
       v-model="removeOpen"
       :title="removeTarget ? `Remove ${removeTarget.label}` : 'Remove app'"
+      :busy="removeAction.busy.value"
     >
       <HilosActionError
         :action="removeAction"
@@ -946,7 +954,11 @@ watch(view, (current) => {
     </HilosModal>
 
     <!-- The removal wait. -->
-    <HilosModal v-model="waitOpen" title="Wait before removal">
+    <HilosModal
+      v-model="waitOpen"
+      title="Wait before removal"
+      :busy="waitAction.busy.value"
+    >
       <HilosActionError
         :action="waitAction"
         details-title="Couldn't change the wait"
@@ -997,6 +1009,7 @@ watch(view, (current) => {
     <HilosModal
       v-model="resetOpen"
       title="Request removal"
+      :busy="resetAction.busy.value"
       initial-focus="dialog"
     >
       <HilosActionError

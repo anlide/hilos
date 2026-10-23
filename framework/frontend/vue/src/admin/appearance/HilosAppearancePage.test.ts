@@ -236,6 +236,26 @@ async function choose(enabled: boolean): Promise<void> {
   await nextTick()
 }
 
+// The fieldset the modal stands its body in; a save in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+/**
+ * Every way a person closes a window: the ×, its Cancel, Escape and the backdrop.
+ *
+ * @param cancel The window's Cancel button.
+ */
+function tryClosing(cancel: HTMLButtonElement): void {
+  document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+  cancel.click()
+  const modal = document.querySelector<HTMLElement>('[data-id="modal"]')
+  modal?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modal?.click()
+}
+
 describe('Appearance page', () => {
   it('shows a placeholder, then typed values and defaults to an admin view mode viewer', async () => {
     const h = harness()
@@ -395,6 +415,51 @@ describe('Appearance page', () => {
     expect(save().disabled).toBe(false)
   })
 
+  it('holds the window and locks its body while the save is in flight, and frees the same switch after a refusal', async () => {
+    const h = harness()
+    await openEdit(h)
+    await choose(false)
+    const field = input()
+    const body = bodyLock()
+    const cancel = document.querySelector<HTMLButtonElement>(
+      '[data-id="appearance-switching-cancel"]',
+    )!
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="modal-close"]',
+    )!
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    save().click()
+    await nextTick()
+    expect(h.sent).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing(cancel)
+    submitWindowForm()
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(h.sent).toHaveLength(1)
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(bodyLock()).toBe(body)
+    expect(input()).toBe(field)
+    expect(field.checked).toBe(false)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    save().click()
+    await nextTick()
+    expect(h.sent[1]?.payload).toEqual({ enabled: false })
+    h.answer('success', 'Theme switching saved.')
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
   it('follows a pristine update from another administrator through the focused row', async () => {
     const h = harness()
     await openEdit(h)
@@ -539,8 +604,13 @@ describe('Appearance default theme window', () => {
         modal.querySelector('.badge')?.classList.contains('bg-body-tertiary'),
       ).toBe(true)
       expect(modal.querySelector('.badge')?.textContent?.trim()).toBe('default')
+      // The group's own fieldset, the one its legend names; the modal locks
+      // its body with a fieldset of its own around it.
       expect(
-        modal.querySelector('fieldset')?.getAttribute('aria-describedby'),
+        modal
+          .querySelector('legend')
+          ?.closest('fieldset')
+          ?.getAttribute('aria-describedby'),
       ).toBe('appearance-default-theme-hint')
       expect(
         modal.querySelector('#appearance-default-theme-hint')?.textContent,
@@ -626,6 +696,52 @@ describe('Appearance default theme window', () => {
     expect(
       hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
     ).toEqual([['error', 'The setting could not be saved.']])
+  })
+
+  it('holds the window and locks its body while the save is in flight, and frees the same radios after a refusal', async () => {
+    const h = harness()
+    await openDefaultThemeEdit(h)
+    await chooseTheme('dark')
+    const radio = themeRadio('dark')
+    const body = bodyLock()
+    const cancel = document.querySelector<HTMLButtonElement>(
+      '[data-id="appearance-default-theme-cancel"]',
+    )!
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="modal-close"]',
+    )!
+    expect(body?.contains(radio)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    themeSave().click()
+    await nextTick()
+    expect(h.sent).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing(cancel)
+    submitWindowForm()
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(h.sent).toHaveLength(1)
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(bodyLock()).toBe(body)
+    expect(themeRadio('dark')).toBe(radio)
+    expect(radio.checked).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    await chooseTheme('light')
+    themeSave().click()
+    await nextTick()
+    expect(h.sent[1]?.payload).toEqual({ defaultTheme: 'light' })
+    h.answer('success', 'Default theme saved.')
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
   it('takes a pristine incoming value and clears its notice when the draft changes', async () => {

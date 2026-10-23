@@ -23,6 +23,12 @@ const busy = useSignal(props.flow.busy)
 const checking = useSignal(props.flow.checking)
 const refusal = useSignal(props.flow.refusal)
 const voice = useSignal(props.flow.voice)
+// Every request of this window in flight - a picked file opening, a save, a
+// removal, and the moderator's check of the photo: nothing closes the window,
+// its body stays locked and Cancel waits with it. The canvas is no form control
+// the locked fieldset reaches, and the file input is clicked from code, so the
+// handlers below hold them with it.
+const inFlight = computed(() => busy.value || checking.value)
 const input = ref<HTMLInputElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 let dragging: { id: number; x: number; y: number } | null = null
@@ -46,26 +52,31 @@ watch([preview, step], () => {
 })
 
 function choose(): void {
+  if (inFlight.value) return
   input.value?.click()
 }
 function picked(event: Event): void {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
-  if (file) void props.flow.pick(file)
+  if (file && !inFlight.value) void props.flow.pick(file)
   target.value = ''
 }
 function dropped(event: DragEvent): void {
+  if (inFlight.value) return
   const file = event.dataTransfer?.files[0]
   if (file) void props.flow.pick(file)
 }
 function startDrag(event: PointerEvent): void {
+  if (inFlight.value) return
   dragging = { id: event.pointerId, x: event.clientX, y: event.clientY }
   ;(event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId)
 }
+// A drag begun before the window was held goes on following the pointer, so the
+// crop does not jump once it frees, but it moves the crop only while it is free.
 function drag(event: PointerEvent): void {
   if (!dragging || dragging.id !== event.pointerId) return
   const side = canvas.value?.getBoundingClientRect().width ?? 0
-  if (side > 0)
+  if (side > 0 && !inFlight.value)
     props.flow.move(
       event.clientX - dragging.x,
       event.clientY - dragging.y,
@@ -77,6 +88,7 @@ function stopDrag(): void {
   dragging = null
 }
 function arrow(event: KeyboardEvent): void {
+  if (inFlight.value) return
   const side = canvas.value?.getBoundingClientRect().width ?? 0
   if (side <= 0) return
   const motion = {
@@ -100,7 +112,12 @@ function arrow(event: KeyboardEvent): void {
   >
     {{ voice }}
   </div>
-  <HilosModal v-model="open" :title="COPY.title" initial-focus="dialog">
+  <HilosModal
+    v-model="open"
+    :title="COPY.title"
+    :busy="inFlight"
+    initial-focus="dialog"
+  >
     <input
       ref="input"
       type="file"
@@ -151,7 +168,8 @@ function arrow(event: KeyboardEvent): void {
         class="hilos-photo-crop rounded-circle mx-auto d-block touch-action-none"
         role="img"
         :aria-label="COPY.position"
-        tabindex="0"
+        :aria-disabled="inFlight || undefined"
+        :tabindex="inFlight ? -1 : 0"
         data-id="profile-photo-preview"
         @pointerdown="startDrag"
         @pointermove="drag"
@@ -245,6 +263,7 @@ function arrow(event: KeyboardEvent): void {
       <button
         type="button"
         class="btn btn-outline-secondary"
+        :disabled="inFlight"
         data-id="profile-photo-cancel"
         @click="requestClose"
       >

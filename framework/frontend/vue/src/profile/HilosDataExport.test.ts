@@ -1,4 +1,5 @@
 import {
+  ActionError,
   createSignal,
   bindImpersonation,
   ingest,
@@ -18,13 +19,29 @@ afterEach(() => {
   document.body.classList.remove('modal-open')
 })
 
-function mountExport(required = false) {
+/**
+ * The export section over a fake server.
+ *
+ * @param required Whether the confirmation step asks for the password.
+ * @param hold Actions whose reply stays in flight until the test settles or refuses it.
+ */
+function mountExport(required = false, hold: string[] = []) {
   const state = createSignal<DataExportNode | null>(null)
   const store: HilosDataExportStore = { state, start() {}, dispose() {} }
   const sent: string[] = []
+  const held: Array<{ settle(): void; refuse(reason: string): void }> = []
   const actions = {
     dispatch(name: string) {
       sent.push(name)
+      if (hold.includes(name))
+        return {
+          done: new Promise((resolve, reject) =>
+            held.push({
+              settle: () => resolve({ reply: {} }),
+              refuse: (reason) => reject(new ActionError(name, 'fail', reason)),
+            }),
+          ),
+        }
       return {
         done: Promise.resolve({
           reply:
@@ -40,7 +57,46 @@ function mountExport(required = false) {
     attachTo: document.body,
     props: { store, flow },
   })
-  return { state, flow, sent, wrapper }
+  return { state, flow, sent, held, wrapper }
+}
+
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+function byId(id: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  if (found === null) throw new Error(`No element ${id}`)
+
+  return found
+}
+
+// Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  const modal = byId('modal')
+  byId('modal-close').click()
+  cancelButton().click()
+  modal.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modal.click()
+}
+
+function cancelButton(): HTMLButtonElement {
+  const found = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Cancel',
+  )
+  if (found === undefined) throw new Error('No Cancel button')
+
+  return found
+}
+
+/** Type into the password field as a person does. */
+function typePassword(value: string): void {
+  const field = byId('step-up-password') as HTMLInputElement
+  field.value = value
+  field.dispatchEvent(new Event('input'))
 }
 
 describe('HilosDataExport', () => {
@@ -105,6 +161,77 @@ describe('HilosDataExport', () => {
     ).not.toBeNull()
     w.flow.close()
     await flushPromises()
+    w.flow.dispose()
+  })
+
+  it('holds the window and locks the password while the proof and the order are out, and frees it after a refusal', async () => {
+    const w = mountExport(true, [
+      'hilos_step_up_confirm',
+      'hilos_data_export_order',
+    ])
+    await w.wrapper.get('[data-id="data-export-prepare"]').trigger('click')
+    await flushPromises()
+    typePassword('a proof')
+    await flushPromises()
+    const field = byId('step-up-password') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = cancelButton()
+    const close = byId('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    // The proof is held, refused with its sentence, then let through.
+    byId('data-export-confirm').click()
+    await flushPromises()
+    expect(w.held).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    w.held[0]!.refuse('That password is not right')
+    await flushPromises()
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('a proof')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('step-up-error').textContent).toContain(
+      'That password is not right',
+    )
+
+    // The order follows the proof: the window stays held until it answers.
+    byId('data-export-confirm').click()
+    await flushPromises()
+    w.held[1]!.settle()
+    await flushPromises()
+    expect(w.held).toHaveLength(3)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    w.held[2]!.refuse('Only one copy at a time')
+    await flushPromises()
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(byId('data-export-order-error').textContent).toContain(
+      'Only one copy at a time',
+    )
+
+    // The same proof goes through and the window closes with the order.
+    byId('data-export-confirm').click()
+    await flushPromises()
+    w.held[3]!.settle()
+    await flushPromises()
+    w.held[4]!.settle()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
     w.flow.dispose()
   })
 })

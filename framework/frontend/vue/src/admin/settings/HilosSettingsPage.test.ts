@@ -305,6 +305,21 @@ function spinner(save: HTMLButtonElement): Element | null {
   return save.querySelector('[data-id="loading-button-spinner"]')
 }
 
+// The fieldset the modal stands its body in; a save in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the dialog: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  modalEl('modal-close')?.click()
+  modalEl('hilos-settings-edit-cancel')?.click()
+  modalEl('modal')?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modalEl('modal')?.click()
+}
+
 describe('HilosSettingsPage', () => {
   it('renders a row per setting with its key', async () => {
     const { context } = seededContext([
@@ -695,6 +710,61 @@ describe('HilosSettingsPage', () => {
     answer('success')
     await settle()
     expect(modalEl('modal')).toBeNull()
+  })
+
+  it('holds the dialog and locks its body while the save is in flight, and frees the same field after a refusal', async () => {
+    const { context, sent, answer, focus } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    const field = modalEl('hilos-settings-edit-value') as HTMLInputElement
+    const body = bodyLock()
+    const cancel = modalEl('hilos-settings-edit-cancel') as HTMLButtonElement
+    const close = modalEl('modal-close') as HTMLButtonElement
+    expect(body?.contains(field)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    modalEl('hilos-settings-edit-save')?.click()
+    await settle()
+    expect(sent.map((entry) => entry.action)).toEqual(['setting_add'])
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('modal-confirm')).toBeNull()
+    expect(focus).toEqual(['site_name'])
+
+    answer('fail')
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(bodyLock()).toBe(body)
+    expect(modalEl('hilos-settings-edit-value')).toBe(field)
+    expect(field.value).toBe('Mine')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    await type('Mine again')
+    modalEl('hilos-settings-edit-save')?.click()
+    await settle()
+    expect(sent[1]?.payload).toMatchObject({
+      key: 'site_name',
+      value: 'Mine again',
+    })
+    answer('success')
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual(['site_name', ''])
   })
 
   it('turns Save off at once for a draft with nothing to save', async () => {

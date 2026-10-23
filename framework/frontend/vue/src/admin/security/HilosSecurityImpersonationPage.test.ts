@@ -280,6 +280,30 @@ function scopeRadio(value: 'view' | 'act'): HTMLInputElement {
   return el(`hilos-impersonation-scope-${value}`) as HTMLInputElement
 }
 
+function cancelButton(): HTMLButtonElement {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      '[data-id="modal"] .modal-footer button',
+    ),
+  ).find((button) => button.textContent?.trim() === 'Cancel')!
+}
+
+// The fieldset the modal stands its body in; a save in flight disables it. The
+// choice's own group stands inside it, one level down.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+// Every way a person closes the dialog: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  el('modal-close')?.click()
+  cancelButton().click()
+  el('modal')?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  el('modal')?.click()
+}
+
 /** Let a reply or a live frame reach the page. */
 async function settle(): Promise<void> {
   for (let tick = 0; tick < 4; tick += 1) {
@@ -454,6 +478,51 @@ describe('HilosSecurityImpersonationPage scope modal', () => {
       'The scope must be view or act',
     )
     expect(scopeRadio('view').checked).toBe(true)
+  })
+
+  it('holds the dialog and locks its body while the save is in flight, and frees the same choice after a refusal', async () => {
+    const { context, sent, answer, focus } = seededContext()
+    await openScope(context)
+    await choose('view')
+    const radio = scopeRadio('view')
+    const body = bodyLock()
+    const cancel = cancelButton()
+    const close = el('modal-close') as HTMLButtonElement
+    expect(body?.contains(radio)).toBe(true)
+    expect(body?.disabled).toBe(false)
+
+    saveButton().click()
+    await nextTick()
+    expect(sent.map((entry) => entry.action)).toEqual([
+      'security_impersonation_scope_set',
+    ])
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+    tryClosing()
+    await nextTick()
+    expect(el('modal')).not.toBeNull()
+    expect(el('modal-confirm')).toBeNull()
+    expect(focus).toEqual([SCOPE])
+
+    answer('fail', 'The scope must be view or act')
+    await settle()
+    expect(el('modal')).not.toBeNull()
+    expect(bodyLock()).toBe(body)
+    expect(scopeRadio('view')).toBe(radio)
+    expect(radio.checked).toBe(true)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close.disabled).toBe(false)
+
+    saveButton().click()
+    await nextTick()
+    expect(sent).toHaveLength(2)
+    expect(sent[1]?.payload).toEqual({ scope: 'view' })
+    answer('success', 'Impersonation setting saved.')
+    await settle()
+    expect(el('modal')).toBeNull()
+    expect(focus).toEqual([SCOPE, ''])
   })
 
   it('takes a change made elsewhere into a pristine modal and says so', async () => {

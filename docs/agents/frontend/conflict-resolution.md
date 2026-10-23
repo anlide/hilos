@@ -15,6 +15,21 @@ entered key or a server-assigned id, and running with an option, do not.
 The modal component itself is agnostic — the parent owns the form — but
 every edit session runs through a modal so the merge has one home.
 
+In Vue today the modal also holds the window while its request is in flight
+(`busy`, [`HilosModal`](../../../framework/frontend/vue/src/HilosModal.vue)):
+nothing closes it, and its body is locked. The default slot stands in an
+always-present `fieldset` with no border or spacing, which `busy` disables, so
+its fields turn natively disabled and keep what was typed — the same nodes,
+never remounted. A body with its own submitting `LoadingButton` fills `#body`
+instead; it receives the same `busy` and its owner disables its field groups
+with it; the submitting button keeps its own look and focus until its spinner. The footer is not wrapped: the owner disables
+Cancel and the other `#actions` buttons with the same `busy`, and a footer
+`LoadingButton` keeps its own `loading`, which is not an independent `disabled`
+([accessibility.md](accessibility.md), "Busy state"). Nothing turns `inert` or
+`aria-hidden`, so the text, the draft and the refusal stay readable, and Tab
+and the initial focus skip what is disabled
+([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)).
+
 ### Creation in a known place
 
 Use the core row-edit session when the opening button already addresses the
@@ -192,7 +207,11 @@ refusal and the toasts, and whose runner the view hands to `save`; the words;
 the check of the input; what the form forgets on close (a provider's secret).
 The view mirrors the session's signals through its bridge (`useSignal`,
 `hilosSignal` / `mirrorHilosSignal`), writes its inputs through `setForm` /
-`patchForm`, and passes `state.dirty` to the modal's confirm-on-close.
+`patchForm`, and passes `state.dirty` to the modal's confirm-on-close. In Vue
+today the window also passes the modal `busy` from the session's `saving`, not
+from the busy of the tracked action, and disables its footer Cancel with the
+same flag — see `editSaving` in
+[`HilosSettingsPage`](../../../framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue).
 
 - **Merge** is offered only on a surface where splicing two values makes sense
   (`mergeable`); a typed value — a setting, a channel field, a name — has no

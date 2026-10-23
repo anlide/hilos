@@ -14,7 +14,13 @@ nothing. The frozen variant keeps only "Accept" and lays the exits out as
 actions: the data copy, the deletion called off when one is scheduled, and
 sign-out. Under a takeover the acceptance is not offered at all: only the person
 may accept their terms. The state lives in the core store; the component draws
-it and emits what was pressed. Bootstrap classes only (styling-rules.md). -->
+it and emits what was pressed. Bootstrap classes only (styling-rules.md).
+While the window's acceptance is out nothing in it leaves the window or changes
+its step (HIL-1763): the content and its navigation stand in a fieldset the
+acceptance disables, the buttons of the row below are disabled by it beside
+their own reasons, and Accept stays outside both, in its place, keeping its
+look and focus until its own spinner. The freeze and the preview are not
+windows and keep their exits. -->
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import {
@@ -136,6 +142,24 @@ const acceptDisabled = computed(
 const address = computed(() =>
   describeHilosLegalReconsentAddress(props.content),
 )
+// The window's acceptance in flight holds the screen; the freeze and the
+// preview keep their exits whatever their busy says.
+const held = computed(() => props.variant === 'window' && props.busy)
+
+/**
+ * Keep the refusal step's links in place while the acceptance is out: they are
+ * anchors the locked fieldset does not reach, and a click would leave the page
+ * and close the window past the guard. Caught on the way down, since a link
+ * navigates before a click handed to it from here would run.
+ *
+ * @param event The click on its way to a link.
+ */
+function holdLinks(event: MouseEvent): void {
+  if (held.value) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
 
 function onSignOut(): void {
   if (signOutBusy.value) return
@@ -153,231 +177,244 @@ function onKeepAccount(): void {
     :data-variant="variant"
     :aria-labelledby="headingId"
   >
-    <div
-      v-if="variant !== 'preview' && person !== null"
-      class="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
-      data-id="legal-reconsent-person"
-    >
-      <i class="bi bi-person-circle text-body-secondary" aria-hidden="true" />
-      <div class="lh-sm text-break">
-        <div class="fw-semibold">{{ person.name }}</div>
-        <div
-          v-if="address !== null"
-          class="text-body-secondary small"
-          data-id="legal-reconsent-address"
-        >
-          {{ address }}
+    <!-- The fieldset is always there, so the acceptance only toggles its
+    disabled and nothing in it is remounted. -->
+    <fieldset class="m-0 p-0 border-0" :disabled="held">
+      <div
+        v-if="variant !== 'preview' && person !== null"
+        class="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
+        data-id="legal-reconsent-person"
+      >
+        <i class="bi bi-person-circle text-body-secondary" aria-hidden="true" />
+        <div class="lh-sm text-break">
+          <div class="fw-semibold">{{ person.name }}</div>
+          <div
+            v-if="address !== null"
+            class="text-body-secondary small"
+            data-id="legal-reconsent-address"
+          >
+            {{ address }}
+          </div>
         </div>
+        <LoadingButton
+          v-if="!person.impersonated"
+          class="btn-link btn-sm p-0 ms-auto"
+          data-id="legal-reconsent-not-you"
+          :loading="signOutBusy"
+          @click="onSignOut"
+        >
+          {{ copy.notYou }}
+        </LoadingButton>
       </div>
-      <LoadingButton
-        v-if="!person.impersonated"
-        class="btn-link btn-sm p-0 ms-auto"
-        data-id="legal-reconsent-not-you"
-        :loading="signOutBusy"
-        @click="onSignOut"
+      <h2 :id="headingId" class="h5 mb-3" data-id="legal-reconsent-heading">
+        {{ heading }}
+      </h2>
+      <div class="visually-hidden" role="status" aria-live="polite">
+        {{ error ?? (loading ? 'Loading terms…' : '') }}
+      </div>
+      <div
+        v-if="loading"
+        class="placeholder-glow mb-3"
+        data-id="legal-reconsent-loading"
+        aria-busy="true"
       >
-        {{ copy.notYou }}
-      </LoadingButton>
-    </div>
-    <h2 :id="headingId" class="h5 mb-3" data-id="legal-reconsent-heading">
-      {{ heading }}
-    </h2>
-    <div class="visually-hidden" role="status" aria-live="polite">
-      {{ error ?? (loading ? 'Loading terms…' : '') }}
-    </div>
-    <div
-      v-if="loading"
-      class="placeholder-glow mb-3"
-      data-id="legal-reconsent-loading"
-      aria-busy="true"
-    >
-      <span class="placeholder col-12" aria-hidden="true" />
-      <span class="placeholder col-9" aria-hidden="true" />
-      <span class="placeholder col-10" aria-hidden="true" />
-    </div>
-    <p
-      v-if="firstRevision"
-      class="text-body-secondary mb-0"
-      data-id="legal-reconsent-preview-first"
-    >
-      {{ copy.previewFirst }}
-    </p>
-    <template v-else-if="content !== null && view.kind === 'changes'">
-      <section
-        v-for="row in rows"
-        :key="row.section.document"
-        class="mb-3"
-        data-id="legal-reconsent-document"
-        :data-document="row.section.document"
+        <span class="placeholder col-12" aria-hidden="true" />
+        <span class="placeholder col-9" aria-hidden="true" />
+        <span class="placeholder col-10" aria-hidden="true" />
+      </div>
+      <p
+        v-if="firstRevision"
+        class="text-body-secondary mb-0"
+        data-id="legal-reconsent-preview-first"
       >
-        <h3 class="h6 mb-2">
-          {{ hilosLegalDocumentLabel(row.section.document) }}
-        </h3>
-        <div
-          v-if="row.plate !== null"
-          class="d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small"
-          :class="`bg-${row.plate.tone}-subtle text-${row.plate.tone}-emphasis`"
-          data-id="legal-reconsent-badge"
-          :data-tone="row.plate.tone"
+        {{ copy.previewFirst }}
+      </p>
+      <template v-else-if="content !== null && view.kind === 'changes'">
+        <section
+          v-for="row in rows"
+          :key="row.section.document"
+          class="mb-3"
+          data-id="legal-reconsent-document"
+          :data-document="row.section.document"
         >
-          <i class="bi" :class="row.plate.icon" aria-hidden="true" />
-          <strong>{{ row.plate.text }}</strong>
-          <span v-if="row.plate.detail !== null">{{ row.plate.detail }}</span>
-        </div>
-        <p class="small text-body-secondary mb-2">{{ row.accepted }}</p>
-        <ul class="list-unstyled mb-2">
-          <li
-            v-for="change in row.changes"
-            :key="change.clauseKey"
-            class="d-flex gap-2 py-2 border-bottom text-break"
-            data-id="legal-reconsent-change"
-            :data-clause="change.clauseKey"
+          <h3 class="h6 mb-2">
+            {{ hilosLegalDocumentLabel(row.section.document) }}
+          </h3>
+          <div
+            v-if="row.plate !== null"
+            class="d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small"
+            :class="`bg-${row.plate.tone}-subtle text-${row.plate.tone}-emphasis`"
+            data-id="legal-reconsent-badge"
+            :data-tone="row.plate.tone"
           >
-            <i
-              class="bi text-body-secondary mt-1"
-              :class="change.icon"
-              aria-hidden="true"
-            />
-            <div class="flex-grow-1">
-              <div class="small fw-semibold">
-                {{ change.statement }}
-                <span
-                  class="badge bg-body-tertiary text-body-emphasis border ms-1"
-                  data-id="legal-reconsent-change-kind"
-                  >{{ change.kind }}</span
+            <i class="bi" :class="row.plate.icon" aria-hidden="true" />
+            <strong>{{ row.plate.text }}</strong>
+            <span v-if="row.plate.detail !== null">{{ row.plate.detail }}</span>
+          </div>
+          <p class="small text-body-secondary mb-2">{{ row.accepted }}</p>
+          <ul class="list-unstyled mb-2">
+            <li
+              v-for="change in row.changes"
+              :key="change.clauseKey"
+              class="d-flex gap-2 py-2 border-bottom text-break"
+              data-id="legal-reconsent-change"
+              :data-clause="change.clauseKey"
+            >
+              <i
+                class="bi text-body-secondary mt-1"
+                :class="change.icon"
+                aria-hidden="true"
+              />
+              <div class="flex-grow-1">
+                <div class="small fw-semibold">
+                  {{ change.statement }}
+                  <span
+                    class="badge bg-body-tertiary text-body-emphasis border ms-1"
+                    data-id="legal-reconsent-change-kind"
+                    >{{ change.kind }}</span
+                  >
+                </div>
+                <div
+                  v-if="change.before !== null"
+                  class="small text-body-secondary"
                 >
+                  {{ change.before }}
+                </div>
               </div>
-              <div
-                v-if="change.before !== null"
-                class="small text-body-secondary"
-              >
-                {{ change.before }}
-              </div>
-            </div>
-          </li>
-        </ul>
-        <div class="small">
-          <button
-            type="button"
-            class="btn btn-link btn-sm p-0"
-            data-id="legal-reconsent-full-text"
-            :data-document="row.section.document"
-            @click="
-              emit('show', { kind: 'text', document: row.section.document })
-            "
-          >
-            {{ copy.fullText }}
-          </button>
-          <template v-if="row.section.held !== null">
-            ·
+            </li>
+          </ul>
+          <div class="small">
             <button
               type="button"
               class="btn btn-link btn-sm p-0"
-              data-id="legal-reconsent-compare"
+              data-id="legal-reconsent-full-text"
               :data-document="row.section.document"
               @click="
-                emit('show', {
-                  kind: 'compare',
-                  document: row.section.document,
-                })
+                emit('show', { kind: 'text', document: row.section.document })
               "
             >
-              {{ copy.compare }}
+              {{ copy.fullText }}
             </button>
-          </template>
-        </div>
-      </section>
-      <section
-        v-if="variant === 'frozen'"
-        class="border rounded px-3 py-2 mb-3"
-        data-id="legal-reconsent-exits"
+            <template v-if="row.section.held !== null">
+              ·
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0"
+                data-id="legal-reconsent-compare"
+                :data-document="row.section.document"
+                @click="
+                  emit('show', {
+                    kind: 'compare',
+                    document: row.section.document,
+                  })
+                "
+              >
+                {{ copy.compare }}
+              </button>
+            </template>
+          </div>
+        </section>
+        <section
+          v-if="variant === 'frozen'"
+          class="border rounded px-3 py-2 mb-3"
+          data-id="legal-reconsent-exits"
+        >
+          <h3 class="h6">{{ copy.freezeKeeps }}</h3>
+          <div class="d-flex flex-wrap gap-2">
+            <HilosLink
+              :to="dataHref"
+              class="btn btn-sm btn-outline-secondary"
+              data-id="legal-reconsent-data-link"
+            >
+              <i class="bi bi-download me-1" aria-hidden="true" />{{
+                copy.dataLink
+              }}
+            </HilosLink>
+            <LoadingButton
+              v-if="deletionScheduled && !impersonated"
+              class="btn-sm btn-outline-secondary"
+              data-id="legal-reconsent-keep-account"
+              :loading="keepBusy"
+              @click="onKeepAccount"
+            >
+              {{ copy.keepAccount }}
+            </LoadingButton>
+            <LoadingButton
+              class="btn-sm btn-outline-secondary"
+              data-id="legal-reconsent-sign-out"
+              :loading="signOutBusy"
+              @click="onSignOut"
+            >
+              {{ copy.signOut }}
+            </LoadingButton>
+          </div>
+        </section>
+        <p
+          v-if="variant === 'frozen' && impersonated && person !== null"
+          class="small text-body-secondary"
+          data-id="legal-reconsent-impersonated"
+        >
+          {{ copy.onlyPerson.replace('{name}', person.name) }}
+        </p>
+      </template>
+      <div v-else-if="viewed !== null && view.kind === 'text'">
+        <h3 class="h6">{{ hilosLegalDocumentLabel(viewed.document) }}</h3>
+        <HilosLegalRevisionText :clauses="[...viewed.clauses]" />
+      </div>
+      <div v-else-if="viewed !== null && view.kind === 'compare'">
+        <h3 class="h6">{{ hilosLegalDocumentLabel(viewed.document) }}</h3>
+        <HilosLegalChanges
+          :changes="[...viewed.changes]"
+          :from-label="viewed.held?.revisionId ?? ''"
+          :to-label="viewed.current.revisionId"
+        />
+      </div>
+      <div
+        v-else-if="content !== null && view.kind === 'refuse'"
+        data-id="legal-reconsent-refuse-step"
       >
-        <h3 class="h6">{{ copy.freezeKeeps }}</h3>
-        <div class="d-flex flex-wrap gap-2">
+        <p>{{ refusal }}</p>
+        <div
+          class="d-flex flex-wrap gap-3 small mb-3"
+          @click.capture="holdLinks"
+        >
           <HilosLink
             :to="dataHref"
-            class="btn btn-sm btn-outline-secondary"
             data-id="legal-reconsent-data-link"
+            :aria-disabled="held || undefined"
+            :tabindex="held ? -1 : undefined"
+            @click="emit('later')"
           >
-            <i class="bi bi-download me-1" aria-hidden="true" />{{
-              copy.dataLink
-            }}
+            {{ copy.dataLink }}
           </HilosLink>
-          <LoadingButton
-            v-if="deletionScheduled && !impersonated"
-            class="btn-sm btn-outline-secondary"
-            data-id="legal-reconsent-keep-account"
-            :loading="keepBusy"
-            @click="onKeepAccount"
+          <HilosLink
+            :to="profileHref"
+            class="link-danger"
+            data-id="legal-reconsent-delete-link"
+            :aria-disabled="held || undefined"
+            :tabindex="held ? -1 : undefined"
+            @click="emit('later')"
           >
-            {{ copy.keepAccount }}
-          </LoadingButton>
-          <LoadingButton
-            class="btn-sm btn-outline-secondary"
-            data-id="legal-reconsent-sign-out"
-            :loading="signOutBusy"
-            @click="onSignOut"
-          >
-            {{ copy.signOut }}
-          </LoadingButton>
+            {{ copy.deleteLink }}
+          </HilosLink>
         </div>
-      </section>
-      <p
-        v-if="variant === 'frozen' && impersonated && person !== null"
-        class="small text-body-secondary"
-        data-id="legal-reconsent-impersonated"
-      >
-        {{ copy.onlyPerson.replace('{name}', person.name) }}
-      </p>
-    </template>
-    <div v-else-if="viewed !== null && view.kind === 'text'">
-      <h3 class="h6">{{ hilosLegalDocumentLabel(viewed.document) }}</h3>
-      <HilosLegalRevisionText :clauses="[...viewed.clauses]" />
-    </div>
-    <div v-else-if="viewed !== null && view.kind === 'compare'">
-      <h3 class="h6">{{ hilosLegalDocumentLabel(viewed.document) }}</h3>
-      <HilosLegalChanges
-        :changes="[...viewed.changes]"
-        :from-label="viewed.held?.revisionId ?? ''"
-        :to-label="viewed.current.revisionId"
-      />
-    </div>
-    <div
-      v-else-if="content !== null && view.kind === 'refuse'"
-      data-id="legal-reconsent-refuse-step"
-    >
-      <p>{{ refusal }}</p>
-      <div class="d-flex flex-wrap gap-3 small mb-3">
-        <HilosLink
-          :to="dataHref"
-          data-id="legal-reconsent-data-link"
-          @click="emit('later')"
-        >
-          {{ copy.dataLink }}
-        </HilosLink>
-        <HilosLink
-          :to="profileHref"
-          class="link-danger"
-          data-id="legal-reconsent-delete-link"
-          @click="emit('later')"
-        >
-          {{ copy.deleteLink }}
-        </HilosLink>
       </div>
-    </div>
-    <button
-      v-if="viewed !== null"
-      type="button"
-      class="btn btn-link btn-sm px-0 mb-3"
-      data-id="legal-reconsent-back"
-      @click="emit('show', { kind: 'changes' })"
-    >
-      {{ copy.backToChanges }}
-    </button>
-    <HilosFormError :message="error" data-id="legal-reconsent-error" />
+      <button
+        v-if="viewed !== null"
+        type="button"
+        class="btn btn-link btn-sm px-0 mb-3"
+        data-id="legal-reconsent-back"
+        @click="emit('show', { kind: 'changes' })"
+      >
+        {{ copy.backToChanges }}
+      </button>
+      <HilosFormError :message="error" data-id="legal-reconsent-error" />
+    </fieldset>
+    <!-- No top margin: the fieldset keeps the refusal row's margin inside it,
+    and that margin is the gap this row's own used to collapse into. -->
     <div
       v-if="!firstRevision"
-      class="d-flex flex-wrap justify-content-end gap-2 mt-2"
+      class="d-flex flex-wrap justify-content-end gap-2"
     >
       <button
         v-if="error !== null && content === null"
@@ -393,6 +430,7 @@ function onKeepAccount(): void {
           type="button"
           class="btn btn-outline-secondary"
           data-id="legal-reconsent-back"
+          :disabled="held"
           @click="emit('show', { kind: 'changes' })"
         >
           {{ copy.back }}
@@ -401,6 +439,7 @@ function onKeepAccount(): void {
           type="button"
           class="btn btn-secondary"
           data-id="legal-reconsent-close"
+          :disabled="held"
           @click="emit('later')"
         >
           {{ copy.close }}
@@ -412,7 +451,7 @@ function onKeepAccount(): void {
           type="button"
           class="btn btn-outline-danger"
           data-id="legal-reconsent-refuse"
-          :disabled="variant === 'preview' || content === null"
+          :disabled="variant === 'preview' || content === null || held"
           @click="emit('show', { kind: 'refuse' })"
         >
           {{ copy.refuse }}
@@ -422,7 +461,7 @@ function onKeepAccount(): void {
           type="button"
           class="btn btn-outline-secondary"
           data-id="legal-reconsent-later"
-          :disabled="variant === 'preview'"
+          :disabled="variant === 'preview' || held"
           @click="emit('later')"
         >
           {{ copy.later }}

@@ -47,6 +47,32 @@ function refused(): ActionHandle<HilosTableBulkAccepted> {
   }
 }
 
+/** A run whose reply stays in flight until the test accepts or refuses it. */
+interface HeldRun {
+  handle: ActionHandle<HilosTableBulkAccepted>
+  accept(): void
+  refuse(reason: string): void
+}
+
+/** Send a run and keep its reply back; the test answers it when it chooses. */
+function held(): HeldRun {
+  let accept!: () => void
+  let refuse!: (reason: string) => void
+  const done = new Promise<{ reply: HilosTableBulkAccepted }>(
+    (resolve, reject) => {
+      accept = () => resolve({ reply: { progressKey: 'run-1', total: 2 } })
+      refuse = (reason) =>
+        reject(new ActionError('backups_delete', 'fail', reason))
+    },
+  )
+
+  return {
+    handle: { requestId: 'req-1', loading: createSignal(false), done },
+    accept,
+    refuse,
+  }
+}
+
 /**
  * One declared operation that records what it was asked to run over.
  *
@@ -121,6 +147,31 @@ function mountPanel(
         ? {}
         : { provide: { [hilosAdminViewModeKey as symbol]: ref(viewMode) } },
   })
+}
+
+// The fieldset the modal stands its body in; a request in flight disables it.
+function bodyLock(): HTMLFieldSetElement | null {
+  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
+}
+
+function cancelButton(): HTMLButtonElement {
+  const found = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Cancel',
+  )
+  if (found === undefined) throw new Error('No Cancel button')
+
+  return found
+}
+
+// Every way a person closes the window: the ×, Cancel, Escape and the backdrop.
+function tryClosing(): void {
+  const modal = document.querySelector<HTMLElement>('[data-id="modal"]')
+  document.querySelector<HTMLElement>('[data-id="modal-close"]')?.click()
+  cancelButton().click()
+  modal?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  modal?.click()
 }
 
 describe('HilosTableSelection', () => {
@@ -227,6 +278,60 @@ describe('HilosTableSelection', () => {
 
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(document.body.textContent).toContain('The node is frozen')
+  })
+
+  it('holds the confirmation while the run is asked, and frees it after a refusal', async () => {
+    const runs: HeldRun[] = []
+    const controller = makeController([
+      deleteAction([], () => {
+        const run = held()
+        runs.push(run)
+
+        return run.handle
+      }),
+    ])
+    controller.selectRow('a', true)
+    const wrapper = mountPanel(controller)
+
+    await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
+    const body = bodyLock()
+    const cancel = cancelButton()
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="modal-close"]',
+    )
+    const confirm = document.querySelector<HTMLElement>(
+      '[data-id="hilos-table-bulk-confirm"]',
+    )
+    expect(body?.textContent).toContain('1 row on this page will be affected')
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+
+    confirm?.click()
+    await flushPromises()
+    expect(runs).toHaveLength(1)
+    expect(body?.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(close?.disabled).toBe(true)
+    tryClosing()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    runs[0]!.refuse('The node is frozen')
+    await flushPromises()
+    expect(bodyLock()).toBe(body)
+    expect(body?.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(close?.disabled).toBe(false)
+    expect(document.body.textContent).toContain('The node is frozen')
+
+    confirm?.click()
+    await flushPromises()
+    expect(runs).toHaveLength(2)
+    expect(body?.disabled).toBe(true)
+    runs[1]!.accept()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
   it('heads the refusal details with what the refused operation failed to do', async () => {

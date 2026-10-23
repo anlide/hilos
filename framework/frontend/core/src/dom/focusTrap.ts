@@ -7,7 +7,7 @@
 // it never touches a global and stays usable in any document.
 
 const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 const FOCUS_RETURN_REQUEST = 'hilos-focus-return-request'
 
@@ -73,26 +73,32 @@ export function registerFocusReturnFallback(
 
 /**
  * Where {@link focusInitial} puts keyboard focus when a dialog opens.
- * `'marked'` reads the first `[data-autofocus]`. When that element is a radio
- * button, focus goes to the checked and enabled radio of that group under
- * `root` (matching native radio group behavior), falling back to the marked
- * radio; finding no mark, it focuses `root`.
+ * `'marked'` reads the first `[data-autofocus]` that is not `:disabled` — a
+ * disabled `fieldset` around it disables it too. When that element is a radio
+ * button, focus goes to the checked radio of that group under `root` that is
+ * not `:disabled` either (matching native radio group behavior), falling back
+ * to the marked radio; finding no such mark, it focuses `root`.
  * `'dialog'` focuses the root without looking.
  */
 export type FocusPlacement = 'marked' | 'dialog'
 
-/** The tabbable elements inside `root`, in DOM order. */
+/**
+ * The tabbable elements inside `root`, in DOM order. A control that matches
+ * `:disabled` is left out, including one disabled only by its `fieldset`.
+ */
 export function focusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter((element) => !element.matches(':disabled'))
 }
 
 /**
- * Find the checked and enabled radio button belonging to the same radio group
- * as `mark` within `root`.
+ * Find the checked radio button belonging to the same radio group as `mark`
+ * within `root` that is not `:disabled`, by itself or by its `fieldset`.
  *
  * @param root The dialog element to search for sibling radios.
  * @param mark The autofocus-marked element.
- * @returns The checked, enabled radio of the same group, or null if none or not a radio.
+ * @returns The checked, available radio of the same group, or null if none or not a radio.
  */
 function checkedRadioOf(
   root: HTMLElement,
@@ -108,7 +114,7 @@ function checkedRadioOf(
   for (const radio of root.querySelectorAll<HTMLInputElement>(
     'input[type="radio"]',
   )) {
-    if (radio.name === name && radio.checked && !radio.disabled) {
+    if (radio.name === name && radio.checked && !radio.matches(':disabled')) {
       return radio
     }
   }
@@ -117,11 +123,12 @@ function checkedRadioOf(
 }
 
 /**
- * Focus the initial element: a `[data-autofocus]` under `'marked'`, else
- * `root`. When the marked element is a radio button, focus goes to the
- * checked and enabled radio of that group under `root` (matching native radio
- * group behavior), falling back to the marked radio. `'dialog'` focuses `root`
- * without looking.
+ * Focus the initial element: the first `[data-autofocus]` that is not
+ * `:disabled` under `'marked'`, else `root` — a mark inside a disabled
+ * `fieldset` is skipped. When the marked element is a radio button, focus goes
+ * to the checked radio of that group under `root` that is not `:disabled`
+ * either (matching native radio group behavior), falling back to the marked
+ * radio. `'dialog'` focuses `root` without looking.
  *
  * @param root The dialog element whose initial element is focused.
  * @param placement Whether to look for a marked element or focus `root`.
@@ -135,7 +142,9 @@ export function focusInitial(
 
     return
   }
-  const autofocus = root.querySelector<HTMLElement>('[data-autofocus]')
+  const autofocus = Array.from(
+    root.querySelectorAll<HTMLElement>('[data-autofocus]'),
+  ).find((mark) => !mark.matches(':disabled'))
   if (!autofocus) {
     root.focus()
 
@@ -203,10 +212,13 @@ export class FocusTrap {
 
   /**
    * Keep Tab focus within `root`: wrap from the last element to the first and,
-   * with Shift, from the first back to the last.
+   * with Shift, from the first back to the last. With nothing in `root` left to
+   * take focus — no control, or every one `:disabled` — Tab is swallowed and
+   * focus stays where it is.
    *
    * @param root The dialog element whose focusables cycle.
-   * @param event The Tab keydown event; its default is prevented on a wrap.
+   * @param event The Tab keydown event; its default is prevented on a wrap and
+   *   when nothing in `root` takes focus.
    */
   handleTab(root: HTMLElement, event: KeyboardEvent): void {
     const items = focusableElements(root)

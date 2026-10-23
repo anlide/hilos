@@ -116,6 +116,21 @@ const voice = computed(() =>
   step.value === 'step-up' ? stepUpRefusal.value : refusal.value,
 )
 
+/**
+ * Keep the Your data link in place while a step of the window is out: it is an
+ * anchor the modal's locked fieldset does not reach, and its click would leave
+ * the page and close the window past the modal's guard. Caught on the way down,
+ * since the link navigates before a click handed to it from here would run.
+ *
+ * @param event The click on its way to the link.
+ */
+function holdDataLink(event: MouseEvent): void {
+  if (busy.value) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
+
 function fill(template: string): string {
   const current = deletion.value
 
@@ -182,6 +197,7 @@ function fill(template: string): string {
     <HilosModal
       v-model="open"
       :title="step === 'in-progress' ? COPY.progressTitle : COPY.title"
+      :busy="busy"
       initial-focus="inner"
     >
       <div
@@ -253,10 +269,16 @@ function fill(template: string): string {
             <p class="small text-body-secondary mb-0">
               {{ COPY.explainChangeMind }}
             </p>
-            <p class="small mb-0 mt-2" data-id="account-deletion-data-link">
+            <p
+              class="small mb-0 mt-2"
+              data-id="account-deletion-data-link"
+              @click.capture="holdDataLink"
+            >
               {{ HILOS_DATA_EXPORT_COPY.deleteHint }}
               <HilosLink
                 :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]"
+                :aria-disabled="busy || undefined"
+                :tabindex="busy ? -1 : undefined"
                 @click="flow.close()"
                 >{{ HILOS_DATA_EXPORT_COPY.deleteLink }}</HilosLink
               >
@@ -302,6 +324,7 @@ function fill(template: string): string {
           <button
             type="button"
             class="btn btn-outline-secondary"
+            :disabled="busy"
             data-id="account-deletion-close"
             @click="requestClose"
           >
@@ -320,6 +343,7 @@ function fill(template: string): string {
           <button
             type="button"
             class="btn btn-outline-secondary"
+            :disabled="busy"
             data-id="account-deletion-cancel"
             @click="requestClose"
           >

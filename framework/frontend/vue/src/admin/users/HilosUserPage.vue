@@ -1023,7 +1023,12 @@ function submit(): void {
       </template>
     </HilosModal>
 
-    <HilosModal v-model="editing" :confirm-on-close="dirty" @cancel="closeEdit">
+    <HilosModal
+      v-model="editing"
+      :confirm-on-close="dirty"
+      :busy="loading"
+      @cancel="closeEdit"
+    >
       <template #header>
         <ConflictHeader :title="editTitle" :conflict="live.conflict" />
       </template>

@@ -77,6 +77,9 @@ const enabled = computed({
   set: (value: boolean) => editor.patchForm({ enabled: value }),
 })
 const noticeKind = computed(() => state.value.notice?.kind ?? null)
+// Each session's save in flight: nothing closes its window and the window's
+// body stays locked until the reply, and Cancel waits with it.
+const saving = useSignal(editor.saving)
 const editAction = useTrackedAction()
 const { busy, run, clearError } = editAction
 
@@ -108,6 +111,7 @@ const defaultTheme = computed({
 const defaultThemeNoticeKind = computed(
   () => defaultThemeState.value.notice?.kind ?? null,
 )
+const defaultThemeSaving = useSignal(defaultThemeEditor.saving)
 const defaultThemeAction = useTrackedAction()
 const {
   busy: defaultThemeBusy,
@@ -224,6 +228,7 @@ function valueLabel(value: boolean | string): string {
     <HilosModal
       v-model="editOpen"
       :confirm-on-close="state.dirty"
+      :busy="saving"
       aria-label="Edit · Theme switching"
       @cancel="editor.close()"
     >
@@ -290,7 +295,7 @@ function valueLabel(value: boolean | string): string {
             <button
               type="button"
               class="btn btn-secondary"
-              :disabled="busy"
+              :disabled="saving"
               data-id="appearance-switching-cancel"
               @click="requestClose"
             >
@@ -315,6 +320,7 @@ function valueLabel(value: boolean | string): string {
     <HilosModal
       v-model="defaultThemeOpen"
       :confirm-on-close="defaultThemeState.dirty"
+      :busy="defaultThemeSaving"
       aria-label="Edit · Default theme"
       @cancel="defaultThemeEditor.close()"
     >
@@ -392,7 +398,7 @@ function valueLabel(value: boolean | string): string {
             <button
               type="button"
               class="btn btn-secondary"
-              :disabled="defaultThemeBusy"
+              :disabled="defaultThemeSaving"
               data-id="appearance-default-theme-cancel"
               @click="requestClose"
             >

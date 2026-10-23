@@ -1,9 +1,12 @@
-// @vitest-environment happy-dom
+// @vitest-environment jsdom
+// jsdom, not happy-dom: a control inside a disabled fieldset matches
+// `:disabled` only in jsdom, and that inheritance is what the trap reads.
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   FocusTrap,
+  focusableElements,
   focusInitial,
   registerFocusReturnFallback,
 } from '../../src/dom/focusTrap.js'
@@ -26,6 +29,39 @@ function mountRoot(html = ''): HTMLElement {
   document.body.append(root)
 
   return root
+}
+
+/**
+ * Ask the trap to handle one Tab press from the element focused now.
+ *
+ * @param trap The trap under test.
+ * @param root The dialog element whose focusables cycle.
+ * @param shiftKey Whether Shift is held.
+ * @returns Whether the trap prevented the browser's own move.
+ */
+function pressTab(
+  trap: FocusTrap,
+  root: HTMLElement,
+  shiftKey = false,
+): boolean {
+  const event = new KeyboardEvent('keydown', {
+    key: 'Tab',
+    shiftKey,
+    cancelable: true,
+  })
+  trap.handleTab(root, event)
+
+  return event.defaultPrevented
+}
+
+/**
+ * The `data-id`s of what `focusableElements` returns under `root`.
+ *
+ * @param root The dialog element to read.
+ * @returns The ids in DOM order.
+ */
+function focusableIds(root: HTMLElement): (string | undefined)[] {
+  return focusableElements(root).map((element) => element.dataset.id)
 }
 
 /**
@@ -89,6 +125,37 @@ function strayButton(): HTMLButtonElement {
     'button',
   )!
 }
+
+describe('focusableElements', () => {
+  it('skips the controls a disabled fieldset turns off, but not its first legend or a link', () => {
+    const root = mountRoot(
+      '<button type="button" data-id="close">Close</button>' +
+        '<fieldset disabled>' +
+        '<legend><button type="button" data-id="help">Help</button></legend>' +
+        '<input data-id="field" />' +
+        '<input tabindex="0" data-id="indexed" />' +
+        '<select data-id="choice"></select>' +
+        '<textarea data-id="text"></textarea>' +
+        '<a href="#" data-id="link">Link</a>' +
+        '<button type="button" data-id="save">Save</button>' +
+        '</fieldset>',
+    )
+    expect(focusableIds(root)).toEqual(['close', 'help', 'link'])
+  })
+
+  it('returns the controls once their fieldset is enabled again', () => {
+    const root = mountRoot(
+      '<button type="button" data-id="close">Close</button>' +
+        '<fieldset disabled>' +
+        '<input data-id="field" />' +
+        '<button type="button" data-id="save">Save</button>' +
+        '</fieldset>',
+    )
+    expect(focusableIds(root)).toEqual(['close'])
+    root.querySelector('fieldset')!.disabled = false
+    expect(focusableIds(root)).toEqual(['close', 'field', 'save'])
+  })
+})
 
 describe('focusInitial', () => {
   it('focuses the marked element when a mark is present', () => {
@@ -174,9 +241,83 @@ describe('focusInitial', () => {
     focusInitial(root)
     expect(document.activeElement).toBe(root.querySelector('[data-id="field"]'))
   })
+
+  it('focuses the marked radio when its fieldset disables the checked one', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" value="one" data-autofocus data-id="r1" />' +
+        '<fieldset disabled>' +
+        '<input type="radio" name="group" value="two" checked data-id="r2" />' +
+        '</fieldset>',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="r1"]'))
+  })
+
+  it('focuses the root when the only mark sits in a disabled fieldset', () => {
+    const root = mountRoot(
+      '<button type="button">Close</button>' +
+        '<fieldset disabled><input data-autofocus data-id="field" /></fieldset>',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root)
+  })
+
+  it('focuses the first mark that is not disabled', () => {
+    const root = mountRoot(
+      '<fieldset disabled><input data-autofocus data-id="locked" /></fieldset>' +
+        '<input data-autofocus data-id="open" />',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="open"]'))
+  })
+
+  it('focuses the mark again once its fieldset is enabled', () => {
+    const root = mountRoot(
+      '<fieldset disabled><input data-autofocus data-id="field" /></fieldset>',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root)
+    root.querySelector('fieldset')!.disabled = false
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="field"]'))
+  })
 })
 
 describe('FocusTrap', () => {
+  it('wraps Tab over the controls a disabled fieldset turns off', () => {
+    const root = mountRoot(
+      '<fieldset disabled><input data-id="before" /></fieldset>' +
+        '<button type="button" data-id="first">First</button>' +
+        '<button type="button" data-id="last">Last</button>' +
+        '<fieldset disabled><input data-id="after" /></fieldset>',
+    )
+    const first = root.querySelector<HTMLElement>('[data-id="first"]')!
+    const last = root.querySelector<HTMLElement>('[data-id="last"]')!
+    const trap = new FocusTrap()
+    trap.activate(root)
+    last.focus()
+    expect(pressTab(trap, root)).toBe(true)
+    expect(document.activeElement).toBe(first)
+    expect(pressTab(trap, root, true)).toBe(true)
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('keeps Tab on the dialog when every control inside is disabled', () => {
+    const root = mountRoot(
+      '<fieldset disabled>' +
+        '<input data-autofocus />' +
+        '<button type="button">Save</button>' +
+        '</fieldset>',
+    )
+    const trap = new FocusTrap()
+    trap.activate(root)
+    expect(document.activeElement).toBe(root)
+    expect(pressTab(trap, root)).toBe(true)
+    expect(document.activeElement).toBe(root)
+    expect(pressTab(trap, root, true)).toBe(true)
+    expect(document.activeElement).toBe(root)
+  })
+
   it('returns focus to the opener on release', () => {
     const opener = document.createElement('button')
     opener.type = 'button'

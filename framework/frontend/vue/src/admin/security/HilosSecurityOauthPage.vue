@@ -98,6 +98,9 @@ const live = useSignal(editor.state)
 const editNoticeText = useSignal(editor.noticeText)
 const editSaveLabel = useSignal(editor.saveLabel)
 const saveAvailable = useSignal(editor.saveAvailable)
+// The session's save in flight: nothing closes the dialog and its body stays
+// locked until the reply, and Cancel waits with it.
+const editSaving = useSignal(editor.saving)
 const editHidden = computed(() => editForm.value.hidden)
 const editValue = computed({
   get: () => editForm.value.text,
@@ -296,6 +299,7 @@ async function submitReset(): Promise<void> {
     <HilosModal
       v-model="editOpen"
       :confirm-on-close="live.dirty"
+      :busy="editSaving"
       aria-label="Edit · Return address"
       @cancel="closeEdit"
     >
@@ -344,7 +348,7 @@ async function submitReset(): Promise<void> {
             <button
               type="button"
               class="btn btn-secondary"
-              :disabled="editBusy"
+              :disabled="editSaving"
               @click="requestClose"
             >
               Cancel
