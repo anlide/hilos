@@ -453,7 +453,7 @@ export function HilosLogsRotationsPage({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={takeout.loading}
+              loading={takeout.busy}
               disabled={takeoutNotice !== null}
               data-id="hilos-rotation-takeout-confirm"
               onClick={() => void submitTakeout()}
@@ -544,7 +544,7 @@ export function HilosLogsRotationsPage({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={undo.loading}
+              loading={undo.busy}
               disabled={undoNotice !== null}
               data-id="hilos-rotation-undo-confirm"
               onClick={() => void submitUndo()}

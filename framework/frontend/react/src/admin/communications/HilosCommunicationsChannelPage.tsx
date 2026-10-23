@@ -146,7 +146,7 @@ export function HilosCommunicationsChannelPage({
   const live = useSignal(editor.state)
   const editNoticeText = useSignal(editor.noticeText)
   const editSaveLabel = useSignal(editor.saveLabel)
-  const canSave = useSignal(editor.canSave)
+  const saveAvailable = useSignal(editor.saveAvailable)
   const editInputType = inputType(editRow?.type)
   const editStep = editRow?.type === 'float' ? 'any' : undefined
   const editTitle = editRow ? `Edit · ${editRow.label}` : 'Edit field'
@@ -232,8 +232,7 @@ export function HilosCommunicationsChannelPage({
         </p>
         <LoadingButton
           className="btn-outline-primary btn-sm"
-          loading={test.loading}
-          disabled={test.busy}
+          loading={test.busy}
           data-id="hilos-channel-test"
           onClick={sendTest}
         >
@@ -305,7 +304,7 @@ export function HilosCommunicationsChannelPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -323,7 +322,7 @@ export function HilosCommunicationsChannelPage({
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={edit.loading}
+                loading={edit.busy}
                 disabled={disabled}
                 data-id="hilos-channel-edit-save"
                 onClick={onSave}
@@ -415,8 +414,8 @@ export function HilosCommunicationsChannelPage({
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={reset.loading}
-              disabled={reset.busy || resetGone}
+              loading={reset.busy}
+              disabled={resetGone}
               data-id="hilos-channel-reset-confirm"
               onClick={() => void submitReset()}
             >

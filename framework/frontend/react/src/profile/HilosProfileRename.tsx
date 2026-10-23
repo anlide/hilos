@@ -86,7 +86,7 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
         ) : (
           <ConflictActions
             conflict={edit.conflict}
-            disableSave={!valid || !edit.dirty || busy || edit.gone}
+            disableSave={!valid || !edit.dirty || edit.gone}
             saveLabel={saveLabel}
             onSave={() => flow.save()}
             onAcceptMine={() => flow.keepMine()}

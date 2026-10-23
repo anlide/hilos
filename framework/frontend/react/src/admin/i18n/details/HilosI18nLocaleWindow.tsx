@@ -104,11 +104,11 @@ function LocaleWindow({
     editForm = useSignal(editor.form),
     editState = useSignal(editor.state),
     editNotice = useSignal(editor.noticeText),
-    editCanSave = useSignal(editor.canSave),
+    editSaveAvailable = useSignal(editor.saveAvailable),
     editSaveLabel = useSignal(editor.saveLabel)
   const addRow = useSignal(creator.row),
     addForm = useSignal(creator.form),
-    addCanSave = useSignal(creator.canAdd),
+    addAvailable = useSignal(creator.addAvailable),
     addElsewhere = useSignal(creator.elsewhere),
     pairGone = useSignal(creator.gone)
   const focused = useSignal(controller.focusedRow)
@@ -412,8 +412,15 @@ function LocaleWindow({
                 </button>
                 <LoadingButton
                   className="btn-primary"
-                  loading={switchAction.loading}
-                  disabled={busy || unsavedAtStep || lockedOn || editGone}
+                  loading={switchAction.busy}
+                  disabled={
+                    addAction.busy ||
+                    editAction.busy ||
+                    offAction.busy ||
+                    unsavedAtStep ||
+                    lockedOn ||
+                    editGone
+                  }
                   data-id="i18n-locale-switch-on-confirm"
                   onClick={() => void confirm()}
                 >
@@ -433,8 +440,13 @@ function LocaleWindow({
                 </button>
                 <LoadingButton
                   className="btn-danger"
-                  loading={offAction.loading}
-                  disabled={busy || offVerdict.disabled}
+                  loading={offAction.busy}
+                  disabled={
+                    addAction.busy ||
+                    editAction.busy ||
+                    switchAction.busy ||
+                    offVerdict.disabled
+                  }
                   data-id="i18n-locale-switch-off-confirm"
                   onClick={() => void confirmOff()}
                 >
@@ -444,7 +456,7 @@ function LocaleWindow({
             ) : mode === 'edit' ? (
               <ConflictActions
                 conflict={editState.conflict}
-                disableSave={!editCanSave || editGone}
+                disableSave={!editSaveAvailable || editGone}
                 saveLabel={editGone ? 'Deleted' : editSaveLabel}
                 onSave={() => void submit()}
                 onAcceptMine={editor.keepMine}
@@ -474,7 +486,7 @@ function LocaleWindow({
                 saveButton={({ disabled: saveDisabled, onSave }) => (
                   <LoadingButton
                     className="btn-primary"
-                    loading={editAction.loading}
+                    loading={editAction.busy}
                     disabled={saveDisabled}
                     data-id="i18n-locale-submit"
                     onClick={onSave}
@@ -496,8 +508,8 @@ function LocaleWindow({
                 </button>
                 <LoadingButton
                   className="btn-primary"
-                  loading={addAction.loading}
-                  disabled={!addCanSave || addGone}
+                  loading={addAction.busy}
+                  disabled={!addAvailable || addGone}
                   data-id="i18n-locale-submit"
                   onClick={() => void submit()}
                 >

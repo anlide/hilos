@@ -110,12 +110,13 @@ export function HilosLegalReconsent({
         )
       : COPY.refuseRemind
   const acceptOffered = variant !== 'frozen' || !impersonated
+  // The acceptance in flight is not a reason here: busy is Accept's own loading,
+  // which blocks it at once and keeps its look until the spinner comes.
   const acceptDisabled =
     variant === 'preview' ||
     content === null ||
     sections.length === 0 ||
-    loading ||
-    busy
+    loading
   const onSignOut = (): void => {
     if (signOutAction.busy) return
     void signOutAction.run(signOut())

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionError,
@@ -338,16 +338,23 @@ describe('HilosSettingPresetsPage', () => {
     expect(document.body.textContent).not.toContain('Overwrite your own edits?')
   })
 
-  it('disables every card while the action is in flight', () => {
-    const { context, push } = makeContext()
+  it('locks every card while the action is in flight, the clicked one by its own flight', () => {
+    const { context, push, dispatched } = makeContext()
     const container = mountPage(context)
 
     push(groupState())
     fireEvent.click(cardOf(container, 'frugal') as HTMLElement)
 
-    for (const name of ['frugal', 'normal', 'investigation']) {
+    const clicked = cardOf(container, 'frugal') as HTMLButtonElement
+    expect(clicked.disabled).toBe(false)
+    expect(clicked.getAttribute('aria-disabled')).toBe('true')
+    expect(clicked.getAttribute('aria-busy')).toBe('true')
+    for (const name of ['normal', 'investigation']) {
       expect(cardOf(container, name)?.disabled).toBe(true)
     }
+
+    fireEvent.click(clicked)
+    expect(dispatched).toHaveLength(1)
   })
 
   it('draws a refusal above the cards when the click applied at once', async () => {
@@ -439,6 +446,190 @@ describe('HilosSettingPresetsPage', () => {
         'href',
       ),
     ).toBe('/hilos/settings')
+  })
+})
+
+// What a card or a button tells a sighted person and a screen reader now.
+function buttonState(button: HTMLButtonElement) {
+  return {
+    nativeDisabled: button.disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+// Advance the fake clock and let the view render what the timers decided.
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
+}
+
+// The production LoadingButton and its 300 ms timer: the card whose click
+// applied at once carries its own flight — locked at once, spinning at 300 ms —
+// and the others are off natively from the first moment. An apply no card
+// pressed — through the confirmation or the button inside the applied card —
+// lights no card at all.
+describe('HilosSettingPresetsPage apply in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  const DRIFTED = groupState({
+    differences: [{ key: 'level', presetValue: 'INFO', currentValue: 'DEBUG' }],
+  })
+
+  // Every card's state, by the preset it stands for.
+  function cardStates(container: HTMLElement) {
+    return Object.fromEntries(
+      ['frugal', 'normal', 'investigation'].map((name) => [
+        name,
+        buttonState(cardOf(container, name) as HTMLButtonElement),
+      ]),
+    )
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return document.querySelector(
+      '[data-id="hilos-setting-preset-apply-confirm"]',
+    ) as HTMLButtonElement
+  }
+
+  it('locks the clicked card at once, turns the others off and spins it only at 300 ms', async () => {
+    const { context, push, dispatched } = makeContext()
+    const container = mountPage(context)
+
+    push(groupState())
+    expect(cardStates(container)).toEqual({
+      frugal: RESTING,
+      normal: OFF,
+      investigation: RESTING,
+    })
+
+    fireEvent.click(cardOf(container, 'frugal') as HTMLElement)
+    expect(dispatched).toHaveLength(1)
+    expect(cardStates(container)).toEqual({
+      frugal: LOCKED,
+      normal: OFF,
+      investigation: OFF,
+    })
+
+    wait(299)
+    expect(cardStates(container)).toEqual({
+      frugal: LOCKED,
+      normal: OFF,
+      investigation: OFF,
+    })
+    wait(1)
+    expect(cardStates(container)).toEqual({
+      frugal: SPINNING,
+      normal: OFF,
+      investigation: OFF,
+    })
+    fireEvent.click(cardOf(container, 'frugal') as HTMLElement)
+    fireEvent.click(cardOf(container, 'investigation') as HTMLElement)
+    expect(dispatched).toHaveLength(1)
+
+    dispatched[0].settle({})
+    await settled()
+    expect(cardStates(container)).toEqual({
+      frugal: RESTING,
+      normal: OFF,
+      investigation: RESTING,
+    })
+  })
+
+  it('lights no card for the apply the confirmation sent', () => {
+    const { context, push, dispatched } = makeContext()
+    const container = mountPage(context)
+
+    push(DRIFTED)
+    fireEvent.click(cardOf(container, 'frugal') as HTMLElement)
+    clickConfirm()
+    expect(dispatched).toHaveLength(1)
+    expect(buttonState(confirmButton())).toEqual(LOCKED)
+    expect(cardStates(container)).toEqual({
+      frugal: OFF,
+      normal: OFF,
+      investigation: OFF,
+    })
+
+    wait(300)
+    expect(buttonState(confirmButton())).toEqual(SPINNING)
+    expect(cardStates(container)).toEqual({
+      frugal: OFF,
+      normal: OFF,
+      investigation: OFF,
+    })
+  })
+
+  it('lights no card for putting the applied values back', () => {
+    const { context, push, dispatched } = makeContext()
+    const container = mountPage(context)
+
+    push(DRIFTED)
+    const revert = byId(
+      container,
+      'hilos-setting-preset-revert',
+    ) as HTMLButtonElement
+    fireEvent.click(revert)
+    expect(dispatched).toHaveLength(1)
+    expect(buttonState(revert)).toEqual(LOCKED)
+    expect(cardStates(container)).toEqual({
+      frugal: OFF,
+      normal: OFF,
+      investigation: OFF,
+    })
+
+    wait(300)
+    expect(buttonState(revert)).toEqual(SPINNING)
+    expect(cardStates(container)).toEqual({
+      frugal: OFF,
+      normal: OFF,
+      investigation: OFF,
+    })
+  })
+
+  it('forgets the pressed card once its apply is answered', async () => {
+    const { context, push, dispatched } = makeContext()
+    const container = mountPage(context)
+
+    push(groupState())
+    fireEvent.click(cardOf(container, 'frugal') as HTMLElement)
+    dispatched[0].refuse(
+      new ActionError('setting_preset_apply', 'fail', 'Rule said no.'),
+    )
+    await settled()
+
+    push(DRIFTED)
+    fireEvent.click(
+      byId(container, 'hilos-setting-preset-revert') as HTMLElement,
+    )
+    expect(dispatched).toHaveLength(2)
+    expect(cardStates(container)).toEqual({
+      frugal: OFF,
+      normal: OFF,
+      investigation: OFF,
+    })
   })
 })
 

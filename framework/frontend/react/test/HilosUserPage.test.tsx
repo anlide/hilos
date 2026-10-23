@@ -373,6 +373,23 @@ function saveButton(): HTMLButtonElement {
   return byId('hilos-user-save') as HTMLButtonElement
 }
 
+function mergeConfirm(): HTMLButtonElement {
+  return byId('hilos-user-merge-confirm') as HTMLButtonElement
+}
+
+/** Open the merge window on the rendered card and take Bob to its second step. */
+async function openMergeOnBob(): Promise<void> {
+  for (const id of [
+    'hilos-user-merge-open',
+    'hilos-user-merge-row-2',
+    'hilos-user-merge-next',
+  ]) {
+    await act(async () => {
+      fireEvent.click(byId(id) as Element)
+    })
+  }
+}
+
 /** Render the seeded page and open the rename modal. */
 function openModal(context: HilosUsersContext): void {
   const { container } = renderPage(context)
@@ -467,6 +484,75 @@ describe('HilosUserPage', () => {
     expect(
       (byId('hilos-user-merge-confirm') as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  // Merge is locked by its own merge in flight, which never turns it off
+  // natively; a reason of its own does — a password fate not chosen yet, the
+  // other account gone from the list.
+  it('turns Merge off for a missing password fate, apart from its own flight', async () => {
+    const context = userContext(true, true, 'skip', {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+    })
+    renderPage(context)
+    await openMergeOnBob()
+    const merges = () =>
+      context.sent.filter((entry) => entry.action === 'hilos_user_merge')
+
+    expect(mergeConfirm().disabled).toBe(true)
+    expect(mergeConfirm().getAttribute('aria-busy')).toBeNull()
+    await act(async () => {
+      fireEvent.click(mergeConfirm())
+    })
+    expect(merges()).toHaveLength(0)
+
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-fate-survivor') as Element)
+    })
+    expect(mergeConfirm().disabled).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(mergeConfirm())
+    })
+    expect(merges()).toHaveLength(1)
+    expect(mergeConfirm().disabled).toBe(false)
+    expect(mergeConfirm().getAttribute('aria-busy')).toBe('true')
+    expect(mergeConfirm().getAttribute('aria-disabled')).toBe('true')
+    await act(async () => {
+      fireEvent.click(mergeConfirm())
+    })
+    expect(merges()).toHaveLength(1)
+  })
+
+  it('turns Merge off when the other account goes while its merge flies', async () => {
+    const context = userContext(true, true)
+    renderPage(context)
+    await openMergeOnBob()
+    await act(async () => {
+      fireEvent.click(mergeConfirm())
+    })
+    expect(mergeConfirm().disabled).toBe(false)
+    expect(mergeConfirm().getAttribute('aria-busy')).toBe('true')
+
+    await act(async () => {
+      context.removeCandidate()
+    })
+    expect(byId('hilos-user-merge-gone')).not.toBeNull()
+    expect(mergeConfirm().disabled).toBe(true)
+    expect(mergeConfirm().getAttribute('aria-busy')).toBe('true')
+
+    await act(async () => {
+      context.answerMerge('Merge refused')
+    })
+    expect(byId('modal')).not.toBeNull()
+    expect(mergeConfirm().disabled).toBe(true)
+    expect(mergeConfirm().getAttribute('aria-busy')).toBeNull()
+    await act(async () => {
+      fireEvent.click(mergeConfirm())
+    })
+    expect(
+      context.sent.filter((entry) => entry.action === 'hilos_user_merge'),
+    ).toHaveLength(1)
   })
 
   it('opens the rename modal prefilled with the current name on Edit', () => {
@@ -835,8 +921,8 @@ describe('HilosUserPage lifecycle', () => {
       block: true,
     })
     expect(
-      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      find('hilos-user-lifecycle-confirm')?.getAttribute('aria-disabled'),
+    ).toBe('true')
     expect(
       (find('hilos-user-lifecycle-cancel') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -1473,8 +1559,8 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
       context.sent.find((entry) => entry.action === 'hilos_impersonate_start'),
     ).toMatchObject({ data: { targetUserId: 1 } })
     expect(
-      (byId('hilos-user-impersonate-confirm') as HTMLButtonElement).disabled,
-    ).toBe(true)
+      byId('hilos-user-impersonate-confirm')?.getAttribute('aria-disabled'),
+    ).toBe('true')
 
     act(() => context.answerImpersonate())
     await settle()

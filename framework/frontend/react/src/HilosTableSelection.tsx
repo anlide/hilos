@@ -206,8 +206,7 @@ export function HilosTableSelection<R>({
               className={
                 confirmAction?.danger === true ? 'btn-danger' : 'btn-primary'
               }
-              loading={bulkTracked.loading}
-              disabled={bulkTracked.busy}
+              loading={bulkTracked.busy}
               data-id="hilos-table-bulk-confirm"
               onClick={() => void submitBulk()}
             >

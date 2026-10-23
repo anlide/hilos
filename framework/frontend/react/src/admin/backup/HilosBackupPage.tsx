@@ -772,7 +772,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={del.loading}
+              loading={del.busy}
               data-id="hilos-backup-delete-confirm"
               onClick={() => void submitDelete()}
             >
@@ -815,7 +815,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={reopen.loading}
+              loading={reopen.busy}
               data-id="hilos-backup-reopen-confirm"
               onClick={() => void submitReopen()}
             >
@@ -938,7 +938,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={restore.loading}
+              loading={restore.busy}
               disabled={!restoreConfirmed}
               data-id="hilos-backup-restore-confirm"
               onClick={() => void submitRestore()}
@@ -1097,7 +1097,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={create.loading}
+              loading={create.busy}
               data-id="hilos-backup-create-confirm"
               onClick={() => void submitCreate()}
             >

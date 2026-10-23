@@ -100,8 +100,8 @@ export function HilosI18nLanguageSwitchOn({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={action.loading}
-              disabled={action.busy || elsewhere}
+              loading={action.busy}
+              disabled={elsewhere}
               data-id="language-card-switch-on-confirm"
               onClick={() => void confirm()}
             >

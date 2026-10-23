@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   RECONSENT_NOW,
   reconsentContent,
@@ -10,7 +10,10 @@ import {
   type HilosLegalReconsentProps,
 } from '../src/legal/HilosLegalReconsent.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 const PERSON = { name: 'Bob', impersonated: false }
 
@@ -118,6 +121,48 @@ describe('React "the terms have changed" screen (HIL-500)', () => {
     )
     fireEvent.click(one('legal-reconsent-retry')!)
     expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('blocks Accept by its own acceptance at once and keeps its look until the spinner, while reading the text turns it off (HIL-1767)', () => {
+    vi.useFakeTimers()
+    const onAccept = vi.fn()
+    const props: HilosLegalReconsentProps = {
+      variant: 'window',
+      content: reconsentContent(),
+      view: { kind: 'changes' },
+      now: RECONSENT_NOW,
+      onAccept,
+    }
+    const { container, rerender } = render(
+      <HilosLegalReconsent {...props} busy />,
+    )
+    const accept = container.querySelector(
+      '[data-id="legal-reconsent-accept"]',
+    ) as HTMLButtonElement
+    const spinner = (): Element | null =>
+      accept.querySelector('[data-id="loading-button-spinner"]')
+    expect(accept.getAttribute('aria-busy')).toBe('true')
+    expect(accept.getAttribute('aria-disabled')).toBe('true')
+    expect(accept.disabled).toBe(false)
+    expect(accept.classList.contains('disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+    fireEvent.click(accept)
+    expect(onAccept).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(spinner()).not.toBeNull()
+    expect(accept.classList.contains('disabled')).toBe(true)
+
+    rerender(<HilosLegalReconsent {...props} busy={false} />)
+    expect(accept.getAttribute('aria-disabled')).toBeNull()
+    fireEvent.click(accept)
+    expect(onAccept).toHaveBeenCalledOnce()
+
+    rerender(<HilosLegalReconsent {...props} loading />)
+    expect(accept.disabled).toBe(true)
+    expect(accept.getAttribute('aria-busy')).toBeNull()
   })
 
   it('holds Accept when nothing is left to accept', () => {

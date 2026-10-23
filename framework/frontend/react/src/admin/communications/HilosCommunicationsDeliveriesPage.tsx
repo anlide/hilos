@@ -175,7 +175,7 @@ export function HilosCommunicationsDeliveriesPage({
               <LoadingButton
                 className="btn-outline-primary btn-sm"
                 loading={retryAction.busy && retryPendingId === row.rowKey}
-                disabled={retryAction.busy}
+                disabled={retryAction.busy && retryPendingId !== row.rowKey}
                 data-id={`hilos-delivery-retry-${row.rowKey}`}
                 onClick={() => void retry(row)}
               >

@@ -115,7 +115,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const live = useSignal(editor.state)
   const editNoticeText = useSignal(editor.noticeText)
   const editSaveLabel = useSignal(editor.saveLabel)
-  const canSave = useSignal(editor.canSave)
+  const saveAvailable = useSignal(editor.saveAvailable)
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)
   const editHidden = editForm.hidden
@@ -299,7 +299,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -318,7 +318,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={edit.loading}
+                loading={edit.busy}
                 disabled={disabled}
                 data-id="hilos-settings-edit-save"
                 onClick={onSave}
@@ -453,8 +453,8 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={del.loading}
-              disabled={del.busy || deleteGone}
+              loading={del.busy}
+              disabled={deleteGone}
               data-id="hilos-settings-delete-confirm"
               onClick={() => void submitDelete()}
             >
@@ -504,8 +504,8 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={reset.loading}
-              disabled={reset.busy || resetGone}
+              loading={reset.busy}
+              disabled={resetGone}
               data-id="hilos-settings-reset-confirm"
               onClick={() => void submitReset()}
             >

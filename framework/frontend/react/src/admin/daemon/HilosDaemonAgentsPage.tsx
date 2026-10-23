@@ -88,9 +88,8 @@ function Agents({
   const frozenSince = useSignal(agents.controller.frozenSince)
   const restartOpen = useSignal(restart.opened)
   const restartTarget = useSignal(restart.target)
-  const canRestart = useSignal(restart.canSubmit)
   const restartAction = useTrackedAction()
-  const { busy, loading } = restartAction
+  const { busy } = restartAction
   const [identity, setIdentity] = useState<HilosDaemonAgentRow | null>(null)
   const lookOnly = useLookOnly()
   const unavailable =
@@ -261,8 +260,8 @@ function Agents({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={loading}
-              disabled={busy || !canRestart}
+              loading={busy}
+              disabled={restartUnavailable}
               data-id="hilos-daemon-restart-confirm"
               onClick={() => void submitRestart()}
             >

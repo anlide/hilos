@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
@@ -252,6 +252,50 @@ function renderPage(context: HilosSettingsContext) {
       <HilosSettingsPage context={context} />
     </HilosRouterContext.Provider>,
   )
+}
+
+function editSave(): HTMLButtonElement {
+  return document.querySelector(
+    '[data-id="hilos-settings-edit-save"]',
+  ) as HTMLButtonElement
+}
+
+// What the edit window's Save tells a sighted person and a screen reader now.
+function saveState() {
+  const save = editSave()
+
+  return {
+    nativeDisabled: save.disabled,
+    disabledLook: save.classList.contains('disabled'),
+    spinner: save.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: save.getAttribute('aria-busy'),
+    ariaDisabled: save.getAttribute('aria-disabled'),
+  }
+}
+
+const SAVE_RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const SAVE_OFF = { ...SAVE_RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const SAVE_LOCKED = { ...SAVE_RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SAVE_SPINNING = { ...SAVE_LOCKED, disabledLook: true, spinner: true }
+
+// Enter in the edit window: the submit of its form.
+function enterInEdit(): void {
+  fireEvent.submit(
+    document.querySelector('[data-id="modal"] form') as HTMLFormElement,
+  )
+}
+
+// Advance the fake clock and let the view render what the timers decided.
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 }
 
 describe('HilosSettingsPage', () => {
@@ -712,6 +756,149 @@ describe('HilosSettingsPage', () => {
   })
 })
 
+// The production LoadingButton, ConflictActions and ActionLifecycle together:
+// the button's own 300 ms timer is the only delay, so the spinner never waits
+// for the lifecycle's deferred loading on top of it, and the own save in flight
+// never turns Save off natively — only a reason of its own does.
+describe('HilosSettingsPage Save in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    vi.useRealTimers()
+  })
+
+  const OWN = slot({
+    key: 'site_name',
+    valueSource: 'override',
+    value: 'Hilos',
+    overrideValue: 'Hilos',
+  })
+
+  // Open the row's edit window and type a value into its field.
+  function openAndType(context: HilosSettingsContext, value: string): void {
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    type(value)
+  }
+
+  function type(value: string): void {
+    fireEvent.change(
+      document.querySelector(
+        '[data-id="hilos-settings-edit-value"]',
+      ) as HTMLInputElement,
+      { target: { value } },
+    )
+  }
+
+  async function reply(
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail',
+  ): Promise<void> {
+    await act(async () => {
+      answer(outcome)
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+    })
+  }
+
+  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+    const { context, sent, answer } = seededContext([OWN])
+    openAndType(context, 'Mine')
+    expect(saveState()).toEqual(SAVE_RESTING)
+
+    fireEvent.click(editSave())
+    expect(sent.map((entry) => entry.action)).toEqual(['setting_add'])
+    expect(saveState()).toEqual(SAVE_LOCKED)
+    fireEvent.click(editSave())
+    enterInEdit()
+    expect(sent).toHaveLength(1)
+
+    wait(299)
+    expect(saveState()).toEqual(SAVE_LOCKED)
+    wait(1)
+    expect(saveState()).toEqual(SAVE_SPINNING)
+    fireEvent.click(editSave())
+    enterInEdit()
+    expect(sent).toHaveLength(1)
+
+    await reply(answer, 'success')
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
+  it('returns Save to rest on a refusal and lets the next press send', async () => {
+    const { context, sent, answer } = seededContext([OWN])
+    openAndType(context, 'Mine')
+    fireEvent.click(editSave())
+    wait(300)
+    expect(saveState()).toEqual(SAVE_SPINNING)
+
+    await reply(answer, 'fail')
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-action-error"]'),
+    ).not.toBeNull()
+    expect(saveState()).toEqual(SAVE_RESTING)
+
+    fireEvent.click(editSave())
+    expect(sent).toHaveLength(2)
+  })
+
+  it('turns Save off at once for a draft with nothing to save', () => {
+    const { context, sent } = seededContext([OWN])
+    openAndType(context, 'Mine')
+    type('Hilos')
+    expect(saveState()).toEqual(SAVE_OFF)
+
+    fireEvent.click(editSave())
+    wait(300)
+    expect(saveState()).toEqual(SAVE_OFF)
+    enterInEdit()
+    expect(sent).toEqual([])
+  })
+
+  it('turns Save off for a removal that comes while the save flies', async () => {
+    const { context, answer, pushRemove } = seededContext([OWN])
+    openAndType(context, 'Mine')
+    fireEvent.click(editSave())
+    expect(saveState()).toEqual(SAVE_LOCKED)
+
+    act(() => {
+      pushRemove('site_name')
+    })
+    expect(saveState()).toEqual({ ...SAVE_LOCKED, nativeDisabled: true })
+    expect(editSave().textContent?.trim()).toBe('Deleted')
+
+    await reply(answer, 'fail')
+    expect(saveState()).toEqual(SAVE_OFF)
+    expect(editSave().textContent?.trim()).toBe('Deleted')
+  })
+
+  it('turns Save off for a conflict that comes while the save flies', async () => {
+    const { context, answer, pushUpdate } = seededContext([OWN])
+    openAndType(context, 'Mine')
+    fireEvent.click(editSave())
+    expect(saveState()).toEqual(SAVE_LOCKED)
+
+    act(() => {
+      pushUpdate({ ...OWN, value: 'Theirs', overrideValue: 'Theirs' })
+    })
+    expect(
+      document.querySelector('[data-id="conflict-accept-mine"]'),
+    ).not.toBeNull()
+    expect(saveState()).toEqual({ ...SAVE_LOCKED, nativeDisabled: true })
+
+    await reply(answer, 'fail')
+    expect(saveState()).toEqual(SAVE_OFF)
+  })
+})
+
 describe('HilosSettingsPage reset dialog', () => {
   afterEach(() => {
     cleanup()
@@ -881,6 +1068,7 @@ describe('HilosSettingsPage in the admin view mode', () => {
     cleanup()
     document.body.classList.remove('modal-open')
     for (const release of releases.splice(0)) release()
+    vi.useRealTimers()
   })
 
   function bindSession() {
@@ -956,6 +1144,34 @@ describe('HilosSettingsPage in the admin view mode', () => {
     expect(cancel.disabled).toBe(false)
     fireEvent.click(cancel)
     expect(byId('modal')).toBeNull()
+  })
+
+  // A viewer's value is always hidden (HIL-1258): Save is off from the first
+  // frame, natively, and neither a click nor Enter sends anything.
+  it('turns Save off at once in the admin view mode', () => {
+    vi.useFakeTimers()
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    expect(saveState()).toEqual(SAVE_OFF)
+
+    fireEvent.click(editSave())
+    wait(300)
+    expect(saveState()).toEqual(SAVE_OFF)
+    enterInEdit()
+    expect(sent).toEqual([])
   })
 
   it('a viewer opens the reset of a setting and has nothing to reset it with', () => {

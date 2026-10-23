@@ -116,7 +116,7 @@ export function HilosProfilePasswordChange({
                 form={`${id}-code-form`}
                 className="btn-primary"
                 loading={busy}
-                disabled={code.trim() === '' || busy}
+                disabled={code.trim() === ''}
                 data-id="profile-password-confirm-code"
               >
                 {COPY.continue}
@@ -128,7 +128,7 @@ export function HilosProfilePasswordChange({
                 form={`${id}-password-form`}
                 className="btn-primary"
                 loading={busy}
-                disabled={newPassword === '' || busy}
+                disabled={newPassword === ''}
                 data-id="profile-password-save"
               >
                 {COPY.save}

@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosModal } from '../HilosModal.js'
+import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 
@@ -154,29 +155,15 @@ export function HilosProfileTheme({ open, onClose }: HilosProfileThemeProps) {
           })}
         </div>
         <hr />
-        <button
-          type="button"
-          className="btn btn-outline-secondary w-100 position-relative"
-          disabled={busy}
-          aria-busy={busy && submitted === null ? true : undefined}
+        <LoadingButton
+          className="btn-outline-secondary w-100"
+          loading={busy && submitted === null}
+          disabled={busy && submitted !== null}
           data-id="profile-theme-default"
           onClick={() => void choose(null)}
         >
-          <span
-            className={loading && submitted === null ? 'invisible' : undefined}
-          >
-            {THEME_COPY.siteDefault}
-          </span>
-          {loading && submitted === null && (
-            <span
-              className="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm"
-              role="status"
-              data-id="profile-theme-loading"
-            >
-              <span className="visually-hidden">Loading…</span>
-            </span>
-          )}
-        </button>
+          {THEME_COPY.siteDefault}
+        </LoadingButton>
       </div>
     </HilosModal>
   )

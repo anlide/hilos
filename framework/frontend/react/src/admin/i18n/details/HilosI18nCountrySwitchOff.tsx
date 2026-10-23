@@ -97,8 +97,8 @@ export function HilosI18nCountrySwitchOff({
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={action.loading}
-              disabled={action.busy || elsewhere}
+              loading={action.busy}
+              disabled={elsewhere}
               data-id="country-card-switch-off-confirm"
               onClick={() => void confirm()}
             >

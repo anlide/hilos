@@ -1612,7 +1612,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                           type="button"
                           className="btn-outline-secondary"
                           loading={pending && state.methodKey === method.key}
-                          disabled={pending}
+                          disabled={pending && state.methodKey !== method.key}
                           aria-label={method.label}
                           title={method.label}
                           data-id={methodDataId(method.key)}
@@ -1735,7 +1735,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                               loading={
                                 pending && state.methodKey === method.key
                               }
-                              disabled={pending}
+                              disabled={
+                                pending && state.methodKey !== method.key
+                              }
                               aria-label={method.label}
                               title={method.label}
                               data-id={methodDataId(method.key)}
@@ -1866,7 +1868,6 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                         type="button"
                         className="btn-primary w-100"
                         loading={pending}
-                        disabled={pending}
                         data-id={methodDataId(primaryMethod.key)}
                         onClick={() =>
                           void auth
@@ -1885,9 +1886,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                         type="button"
                         className="btn-primary w-100"
                         loading={pending}
-                        disabled={
-                          pending || unavailableChannels.has(primaryChannel.key)
-                        }
+                        disabled={unavailableChannels.has(primaryChannel.key)}
                         data-id={channelDataId(primaryChannel.key)}
                         onClick={() =>
                           void auth.chooseChannel(primaryChannel.key)
@@ -1932,7 +1931,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                                   pending && state.channelKey === channel.key
                                 }
                                 disabled={
-                                  pending ||
+                                  (pending &&
+                                    state.channelKey !== channel.key) ||
                                   unavailableChannels.has(channel.key)
                                 }
                                 aria-label={`Send the code via ${channel.label}`}

@@ -30,7 +30,7 @@ export function HilosI18nLanguageWindow({
     frozen = useSignal(window.frozen),
     plate = useSignal(window.plate),
     notice = useSignal(window.notice),
-    canSave = useSignal(window.canSave),
+    saveAvailable = useSignal(window.saveAvailable),
     saveLabel = useSignal(window.saveLabel)
   const action = useTrackedAction()
   const { locked } = useLookOnly()
@@ -72,7 +72,7 @@ export function HilosI18nLanguageWindow({
         mode === 'edit' ? (
           <ConflictActions
             conflict={state.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={saveLabel}
             onSave={submit}
             onAcceptMine={window.keepMine}
@@ -91,7 +91,7 @@ export function HilosI18nLanguageWindow({
             saveButton={({ disabled: saveDisabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={action.loading}
+                loading={action.busy}
                 disabled={saveDisabled}
                 data-id="i18n-language-edit-submit"
                 onClick={onSave}

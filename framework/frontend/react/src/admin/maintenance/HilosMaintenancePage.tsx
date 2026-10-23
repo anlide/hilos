@@ -426,8 +426,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                 <div className="hilos-button-row mt-3">
                   <LoadingButton
                     className="btn-outline-primary btn-sm"
-                    loading={passAction.loading}
-                    disabled={passAction.busy}
+                    loading={passAction.busy}
                     data-id="hilos-maintenance-pass"
                     onClick={openPass}
                   >
@@ -435,8 +434,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                   </LoadingButton>
                   <LoadingButton
                     className="btn-warning btn-sm"
-                    loading={disableAction.loading}
-                    disabled={disableAction.busy}
+                    loading={disableAction.busy}
                     data-id="hilos-maintenance-disable"
                     onClick={openDisable}
                   >
@@ -468,8 +466,8 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={enableAction.loading}
-              disabled={enableAction.busy || position !== 'open'}
+              loading={enableAction.busy}
+              disabled={position !== 'open'}
               data-id="hilos-maintenance-enable-confirm"
               onClick={() => void submitEnable()}
             >
@@ -523,8 +521,8 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={disableAction.loading}
-              disabled={disableAction.busy || position !== 'manual'}
+              loading={disableAction.busy}
+              disabled={position !== 'manual'}
               data-id="hilos-maintenance-disable-confirm"
               onClick={() => void submitDisable()}
             >
@@ -572,8 +570,8 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             {passStep === 'confirm' ? (
               <LoadingButton
                 className="btn-primary"
-                loading={passAction.loading}
-                disabled={passAction.busy || position !== 'manual'}
+                loading={passAction.busy}
+                disabled={position !== 'manual'}
                 data-id="hilos-maintenance-pass-confirm"
                 onClick={() => void submitPass()}
               >
@@ -676,7 +674,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={circleAdd.loading}
+              loading={circleAdd.busy}
               disabled={circleAddIdentifier.trim() === ''}
               data-id="hilos-maintenance-circle-add-confirm"
               onClick={() => void submitCircleAdd()}
@@ -732,7 +730,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={circleRemove.loading}
+              loading={circleRemove.busy}
               disabled={removeGone}
               data-id="hilos-maintenance-circle-remove-confirm"
               onClick={() => void submitCircleRemove()}

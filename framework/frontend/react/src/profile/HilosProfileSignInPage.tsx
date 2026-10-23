@@ -309,7 +309,7 @@ export function HilosProfileSignInPage({
                       key={wayKey(way)}
                       className="btn-sm btn-outline-secondary"
                       loading={addOpening && addPressed === wayKey(way)}
-                      disabled={addOpening}
+                      disabled={addOpening && addPressed !== wayKey(way)}
                       data-id={passkeyOnlyWayId(way)}
                       onClick={() => openAdd(way)}
                     >
@@ -402,7 +402,7 @@ export function HilosProfileSignInPage({
       <LoadingButton
         className="btn-sm btn-outline-primary mt-3"
         loading={addOpening && addPressed === 'add'}
-        disabled={addOpening}
+        disabled={addOpening && addPressed !== 'add'}
         data-id="profile-sign-in-add"
         onClick={() => openAdd()}
       >
@@ -429,8 +429,7 @@ export function HilosProfileSignInPage({
             </button>
             <LoadingButton
               className="btn btn-danger"
-              loading={unlinkAction.loading}
-              disabled={unlinkAction.busy}
+              loading={unlinkAction.busy}
               data-id="identity-unlink-yes"
               onClick={() => void remove()}
             >
@@ -480,7 +479,6 @@ export function HilosProfileSignInPage({
                 form={`${baseId}-step-up`}
                 className="btn btn-primary"
                 loading={stepUpBusy}
-                disabled={stepUpBusy}
                 data-id="profile-sign-in-add-step-up-confirm"
               >
                 {HILOS_STEP_UP_COPY.confirm}
@@ -501,7 +499,7 @@ export function HilosProfileSignInPage({
                   form={`${baseId}-add`}
                   className="btn btn-primary"
                   loading={busy}
-                  disabled={!addValid || busy}
+                  disabled={!addValid}
                   data-id={submitId}
                 >
                   {step === 'password-email' || step === 'phone-number'
@@ -683,7 +681,7 @@ export function HilosProfileSignInPage({
                       key={way.key}
                       className="btn btn-outline-secondary"
                       loading={busy && pendingProvider === way.key}
-                      disabled={busy}
+                      disabled={busy && pendingProvider !== way.key}
                       data-id={`profile-oauth-link-${way.key}`}
                       onClick={() => void flow.chooseProvider(way.key)}
                     >
@@ -707,7 +705,7 @@ export function HilosProfileSignInPage({
                       key="passkey"
                       className="btn btn-outline-secondary"
                       loading={busy && pendingProvider === null}
-                      disabled={busy}
+                      disabled={busy && pendingProvider !== null}
                       data-id="profile-passkey-add"
                       onClick={() => void flow.choosePasskey()}
                     >

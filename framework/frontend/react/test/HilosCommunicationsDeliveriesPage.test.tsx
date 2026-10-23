@@ -1,8 +1,9 @@
-// The React peer of vue/src/admin/communications/HilosCommunicationsDeliveriesPage.test.ts,
-// the cases of the admin view mode (HIL-1260, HIL-1261): the mark where personal
-// texts are hidden, and the retry a viewer finds standing while an admin keeps it.
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+// The React peer of vue/src/admin/communications/HilosCommunicationsDeliveriesPage.test.ts:
+// the retry the pressed row carries while the others wait, and the cases of the
+// admin view mode (HIL-1260, HIL-1261): the mark where personal texts are hidden,
+// and the retry a viewer finds standing while an admin keeps it.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -72,10 +73,17 @@ interface SentAction {
   requestId?: string
 }
 
-/** A deliveries context that serves one delivery as its window and records what is sent. */
-function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
+/**
+ * A deliveries context that serves one delivery as its window, the neighbors
+ * after it, records what is sent and answers it when told.
+ */
+function seededContext(
+  delivery: Record<string, unknown> = FAILED_DELIVERY,
+  neighbors: Record<string, Record<string, unknown>> = {},
+): {
   context: HilosDeliveriesContext
   sent: SentAction[]
+  answer: (requestId: string) => void
 } {
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
@@ -84,8 +92,14 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
     const data = {
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
       tableKey: TABLE,
-      rows: [{ rowKey: '57', slots: { delivery } }],
-      totalCount: 1,
+      rows: [
+        { rowKey: '57', slots: { delivery } },
+        ...Object.entries(neighbors).map(([rowKey, neighbor]) => ({
+          rowKey,
+          slots: { delivery: neighbor },
+        })),
+      ],
+      totalCount: 1 + Object.keys(neighbors).length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -121,6 +135,7 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
       return () => {}
     },
   }
+  const successListeners = new Set<Listener>()
   const sent: SentAction[] = []
   const actions = new ActionLifecycle({
     sendAction: (
@@ -132,7 +147,15 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
 
       return true
     },
-    on: () => () => {},
+    on: (event: string, listener: Listener) => {
+      if (event === 'actionSuccess') {
+        successListeners.add(listener)
+
+        return () => successListeners.delete(listener)
+      }
+
+      return () => {}
+    },
   } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
@@ -142,6 +165,17 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
       actions,
     },
     sent,
+    answer(requestId: string): void {
+      for (const listener of successListeners) {
+        listener({
+          kind: 'actionSuccess',
+          action: 'communications_delivery_retry',
+          message: undefined,
+          reply: undefined,
+          requestId,
+        })
+      }
+    },
   }
 }
 
@@ -156,11 +190,78 @@ function renderPage(context: HilosDeliveriesContext): HTMLElement {
 // The row's controls stand in the document twice — once in the table and once
 // in the card the same row becomes on a narrow screen — so the button is looked
 // up through the table, which says which of the two is clicked.
-function retryButton(): HTMLButtonElement {
+function retryButton(rowKey = '57'): HTMLButtonElement {
   return document.querySelector(
-    'table [data-id="hilos-delivery-retry-57"]',
+    `table [data-id="hilos-delivery-retry-${rowKey}"]`,
   ) as HTMLButtonElement
 }
+
+// What a Retry tells a sighted person and a screen reader now.
+function retryState(rowKey: string) {
+  const button = retryButton(rowKey)
+
+  return {
+    nativeDisabled: button.disabled,
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+
+// One retry flies at a time: the row it was pressed on carries it — locked at
+// once, its spinner at 300 ms — and every other row's Retry is off natively
+// from the first moment, without a spinner of its own.
+describe('HilosCommunicationsDeliveriesPage retry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('spins only the row it retries and turns the other rows off at once', async () => {
+    const { context, sent, answer } = seededContext(FAILED_DELIVERY, {
+      '58': FAILED_DELIVERY,
+    })
+    renderPage(context)
+    expect(retryState('57')).toEqual(RESTING)
+    expect(retryState('58')).toEqual(RESTING)
+
+    fireEvent.click(retryButton('57'))
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
+    expect(retryState('57')).toEqual(LOCKED)
+    expect(retryState('58')).toEqual(OFF)
+
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(retryState('57')).toEqual({ ...LOCKED, spinner: true })
+    expect(retryState('58')).toEqual(OFF)
+    fireEvent.click(retryButton('57'))
+    fireEvent.click(retryButton('58'))
+    expect(sent).toHaveLength(1)
+
+    await act(async () => {
+      answer(sent[0]?.requestId ?? '')
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+    })
+    expect(retryState('57')).toEqual(RESTING)
+    expect(retryState('58')).toEqual(RESTING)
+  })
+})
 
 describe('HilosCommunicationsDeliveriesPage with personal texts hidden (HIL-1260)', () => {
   const HIDDEN = { _hidden: true }

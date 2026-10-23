@@ -96,8 +96,8 @@ function NameDelete({
           </button>
           <LoadingButton
             className="btn-danger"
-            loading={action.loading}
-            disabled={action.busy || missing}
+            loading={action.busy}
+            disabled={missing}
             data-id="i18n-country-name-delete-confirm"
             onClick={() => void confirm()}
           >

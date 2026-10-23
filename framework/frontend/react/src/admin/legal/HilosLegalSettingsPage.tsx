@@ -55,7 +55,7 @@ export function HilosLegalSettingsPage({
     form = useSignal(editor.form),
     state = useSignal(editor.state),
     noticeText = useSignal(editor.noticeText),
-    canSave = useSignal(editor.canSave),
+    saveAvailable = useSignal(editor.saveAvailable),
     saveLabel = useSignal(editor.saveLabel)
   const action = useTrackedAction({ toast: false })
   const inputId = useId()
@@ -185,7 +185,7 @@ export function HilosLegalSettingsPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={state.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={saveLabel}
             onSave={save}
             onAcceptMine={editor.keepMine}
@@ -204,7 +204,7 @@ export function HilosLegalSettingsPage({
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={action.loading}
+                loading={action.busy}
                 disabled={disabled}
                 data-id="legal-setting-save"
                 onClick={onSave}

@@ -469,7 +469,7 @@ describe('HilosAppearancePage Theme switching window', () => {
       },
     ])
     expect(byId('modal')).not.toBeNull()
-    expect(switchingSave().disabled).toBe(true)
+    expect(switchingSave().getAttribute('aria-disabled')).toBe('true')
     expect(tableText('appearance-setting-value-theme.switching_enabled')).toBe(
       'On',
     )

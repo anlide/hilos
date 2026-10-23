@@ -92,8 +92,8 @@ function LocaleDelete({
           </button>
           <LoadingButton
             className="btn-danger"
-            loading={action.loading}
-            disabled={action.busy || elsewhere}
+            loading={action.busy}
+            disabled={elsewhere}
             data-id="i18n-locale-delete-confirm"
             onClick={() => void confirm()}
           >

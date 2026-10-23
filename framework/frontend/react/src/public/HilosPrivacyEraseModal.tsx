@@ -21,8 +21,6 @@ export interface HilosPrivacyEraseModalProps {
   labels: readonly string[]
   /** The erase is in flight: the answers are held and the dialog cannot be dismissed. */
   busy: boolean
-  /** Deferred loading of the erase, for the confirming button's spinner. */
-  loading: boolean
   /** Called when the dialog is dismissed. */
   onClose: () => void
   /** Called when the dangerous answer is taken. */
@@ -39,7 +37,6 @@ export function HilosPrivacyEraseModal({
   open,
   labels,
   busy,
-  loading,
   onClose,
   onConfirm,
 }: HilosPrivacyEraseModalProps) {
@@ -63,7 +60,7 @@ export function HilosPrivacyEraseModal({
           </button>
           <LoadingButton
             className="btn-danger"
-            loading={loading}
+            loading={busy}
             data-id="privacy-erase-confirm"
             onClick={onConfirm}
           >

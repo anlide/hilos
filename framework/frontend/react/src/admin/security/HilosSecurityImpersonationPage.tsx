@@ -126,7 +126,7 @@ export function HilosSecurityImpersonationPage({
   const live = useSignal(editor.state)
   const editNoticeText = useSignal(editor.noticeText)
   const editSaveLabel = useSignal(editor.saveLabel)
-  const canSave = useSignal(editor.canSave)
+  const saveAvailable = useSignal(editor.saveAvailable)
   const edit = useTrackedAction()
   const editHidden = editForm.hidden
   const editScope = editForm.scope
@@ -226,7 +226,7 @@ export function HilosSecurityImpersonationPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -244,7 +244,7 @@ export function HilosSecurityImpersonationPage({
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={edit.loading}
+                loading={edit.busy}
                 disabled={disabled}
                 data-id="hilos-impersonation-scope-save"
                 onClick={onSave}

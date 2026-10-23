@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { act, fireEvent } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type HilosI18nLanguageCard,
   type HilosI18nLocaleRow,
@@ -72,6 +72,38 @@ function busyClose(): void {
   click('modal-close')
   fireEvent.keyDown(el('modal'), { key: 'Escape' })
   click('modal')
+}
+
+// What a footer button tells a sighted person and a screen reader now.
+function buttonState(id: string) {
+  const button = el<HTMLButtonElement>(id)
+
+  return {
+    nativeDisabled: button.disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+// Advance the fake clock and let the view render what the timers decided.
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 }
 
 describe('React locale window forms', () => {
@@ -487,4 +519,150 @@ describe('React locale confirmations', () => {
       'YYYY-MM-DD',
     )
   })
+})
+
+// The real locale factories, LoadingButton and ActionLifecycle together: Add
+// looks by addAvailable and Save by saveAvailable, so their own send only locks
+// them and the look comes with the spinner at 300 ms, while the guarded canAdd
+// and canSave keep a second press or Enter from sending. The pressed switch
+// confirm spins, its Back is off natively; a pair taken or gone, an unfit form,
+// a conflict and the admin view mode turn the button off natively.
+describe('React locale window in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('locks Add at once and greys it only with its spinner at 300 ms', async () => {
+    const h = setup(absentLocale)
+    expect(buttonState('i18n-locale-submit')).toEqual(RESTING)
+
+    click('i18n-locale-submit')
+    expect(h.calls).toHaveLength(1)
+    expect(h.calls[0]?.action).toBe('hilos_i18n_locale_add')
+    expect(buttonState('i18n-locale-submit')).toEqual(LOCKED)
+    expect(el<HTMLButtonElement>('i18n-locale-cancel').disabled).toBe(true)
+    click('i18n-locale-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    wait(299)
+    expect(buttonState('i18n-locale-submit')).toEqual(LOCKED)
+    wait(1)
+    expect(buttonState('i18n-locale-submit')).toEqual(SPINNING)
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    await settle(() => h.refuse())
+    expect(buttonState('i18n-locale-submit')).toEqual(RESTING)
+    click('i18n-locale-submit')
+    expect(h.calls).toHaveLength(2)
+  })
+  it('turns Add off at once for a pair taken elsewhere', () => {
+    const h = setup(absentLocale)
+    act(() => h.focused.set(localeRow))
+    expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+
+    enter()
+    wait(300)
+    expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toEqual([])
+  })
+  it('turns Add off natively under its lock when the pair goes in flight', async () => {
+    const h = setup(absentLocale)
+    click('i18n-locale-submit')
+    expect(buttonState('i18n-locale-submit')).toEqual(LOCKED)
+
+    act(() => h.focused.set(undefined))
+    expect(buttonState('i18n-locale-submit')).toEqual({
+      ...LOCKED,
+      nativeDisabled: true,
+    })
+    expect(el('i18n-locale-submit').textContent).toBe('Deleted')
+
+    await settle(() => h.refuse())
+    expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+  })
+  it.each([false, true])(
+    'turns Add off at once for an unchosen unknown pair or a viewer (viewer %s)',
+    (viewer) => {
+      const h = setup(
+        viewer
+          ? absentLocale
+          : { ...absentLocale, countryName: null, catalogFormats: null },
+        viewer,
+      )
+      expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+
+      enter()
+      wait(300)
+      expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+      expect(h.calls).toEqual([])
+    },
+  )
+  it('locks the edit Save at once, spins it at 300 ms and turns it off for a conflict in flight', async () => {
+    const h = setup()
+    change('i18n-locale-field-date', 'YYYY-MM-DD')
+    expect(buttonState('i18n-locale-submit')).toEqual(RESTING)
+
+    click('i18n-locale-submit')
+    expect(h.calls).toHaveLength(1)
+    expect(h.calls[0]?.action).toBe('hilos_i18n_locale_update')
+    expect(buttonState('i18n-locale-submit')).toEqual(LOCKED)
+    expect(el<HTMLButtonElement>('i18n-locale-switch-on').disabled).toBe(true)
+    click('i18n-locale-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    wait(299)
+    expect(buttonState('i18n-locale-submit')).toEqual(LOCKED)
+    wait(1)
+    expect(buttonState('i18n-locale-submit')).toEqual(SPINNING)
+
+    act(() =>
+      h.focused.set({
+        ...localeRow,
+        formats: { ...formats, date: 'DD.MM.YYYY' },
+      }),
+    )
+    expect(buttonState('i18n-locale-submit')).toEqual({
+      ...SPINNING,
+      nativeDisabled: true,
+    })
+
+    await settle(() => h.refuse())
+    expect(buttonState('i18n-locale-submit')).toEqual(OFF)
+    expect(h.calls).toHaveLength(1)
+  })
+  it.each(['on', 'off'] as const)(
+    'locks the switch-%s confirm at once with Back off natively and spins it at 300 ms',
+    async (direction) => {
+      const h = setup({ ...localeRow, enabled: direction === 'off' })
+      const confirm = `i18n-locale-switch-${direction}-confirm`
+      click(`i18n-locale-switch-${direction}`)
+      expect(buttonState(confirm)).toEqual(RESTING)
+
+      click(confirm)
+      expect(h.calls).toHaveLength(1)
+      expect(buttonState(confirm)).toEqual(LOCKED)
+      expect(
+        el<HTMLButtonElement>(`i18n-locale-switch-${direction}-back`).disabled,
+      ).toBe(true)
+      click(confirm)
+      expect(h.calls).toHaveLength(1)
+
+      wait(299)
+      expect(buttonState(confirm)).toEqual(LOCKED)
+      wait(1)
+      expect(buttonState(confirm)).toEqual(SPINNING)
+
+      await settle(() => h.refuse())
+      expect(buttonState(confirm)).toEqual(RESTING)
+      click(confirm)
+      expect(h.calls).toHaveLength(2)
+    },
+  )
 })

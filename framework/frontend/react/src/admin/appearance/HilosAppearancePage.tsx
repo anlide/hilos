@@ -158,7 +158,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
   const switchingState = useSignal(switchingEditor.state)
   const switchingNoticeText = useSignal(switchingEditor.noticeText)
   const switchingSaveLabel = useSignal(switchingEditor.saveLabel)
-  const switchingCanSave = useSignal(switchingEditor.canSave)
+  const switchingSaveAvailable = useSignal(switchingEditor.saveAvailable)
 
   const defaultThemeOpen = useSignal(defaultThemeEditor.opened)
   const defaultThemeRow = useSignal(defaultThemeEditor.row)
@@ -166,7 +166,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
   const defaultThemeState = useSignal(defaultThemeEditor.state)
   const defaultThemeNoticeText = useSignal(defaultThemeEditor.noticeText)
   const defaultThemeSaveLabel = useSignal(defaultThemeEditor.saveLabel)
-  const defaultThemeCanSave = useSignal(defaultThemeEditor.canSave)
+  const defaultThemeSaveAvailable = useSignal(defaultThemeEditor.saveAvailable)
 
   function openSwitching(row: HilosAppearanceSettingRow): void {
     switchingAction.clearError()
@@ -255,7 +255,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={switchingState.conflict}
-            disableSave={!switchingCanSave}
+            disableSave={!switchingSaveAvailable}
             saveLabel={switchingSaveLabel}
             onSave={submitSwitching}
             onAcceptMine={() => switchingEditor.keepMine()}
@@ -274,7 +274,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={switchingAction.loading}
+                loading={switchingAction.busy}
                 disabled={disabled}
                 data-id="appearance-switching-save"
                 onClick={onSave}
@@ -357,7 +357,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={defaultThemeState.conflict}
-            disableSave={!defaultThemeCanSave}
+            disableSave={!defaultThemeSaveAvailable}
             saveLabel={defaultThemeSaveLabel}
             onSave={submitDefaultTheme}
             onAcceptMine={() => defaultThemeEditor.keepMine()}
@@ -376,7 +376,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={defaultThemeAction.loading}
+                loading={defaultThemeAction.busy}
                 disabled={disabled}
                 data-id="appearance-default-theme-save"
                 onClick={onSave}

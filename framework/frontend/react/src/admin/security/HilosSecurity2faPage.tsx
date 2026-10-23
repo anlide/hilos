@@ -177,7 +177,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   const live = useSignal(editor.state)
   const editNoticeText = useSignal(editor.noticeText)
   const editSaveLabel = useSignal(editor.saveLabel)
-  const canSave = useSignal(editor.canSave)
+  const saveAvailable = useSignal(editor.saveAvailable)
   const edit = useTrackedAction()
   const editHidden = editForm.hidden
   const editValue = editForm.text
@@ -281,7 +281,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -299,7 +299,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={edit.loading}
+                loading={edit.busy}
                 disabled={disabled}
                 data-id="hilos-2fa-save"
                 onClick={onSave}
@@ -410,7 +410,6 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
               <LoadingButton
                 className="btn-danger"
                 loading={disableBusy}
-                disabled={disableBusy}
                 data-id="hilos-2fa-disable-confirm"
                 onClick={() => void disable.confirm()}
               >

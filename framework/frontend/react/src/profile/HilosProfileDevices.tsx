@@ -101,8 +101,8 @@ export function HilosProfileDevices({
               ) : (
                 <LoadingButton
                   className="btn-outline-danger btn-sm"
-                  loading={removeAction.loading}
-                  disabled={!refreshed || removeAction.busy}
+                  loading={removeAction.busy}
+                  disabled={!refreshed}
                   data-id="profile-device-remove"
                   onClick={() => void removeDevice(device.id)}
                 >

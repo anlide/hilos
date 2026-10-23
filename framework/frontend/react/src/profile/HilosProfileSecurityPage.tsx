@@ -268,8 +268,10 @@ export function HilosProfileSecurityPage({
   }
 
   async function enrollSubmit(): Promise<void> {
-    // Enter submits the form past the disabled button, so the guard is here too.
-    if (enrollAction.busy || enrollDisabled) {
+    // Enter submits the form past the button, so what holds the button holds
+    // here too: a flight in progress, which only blocks it, and the step's own
+    // verdict, which disables it.
+    if (enrollSubmitBusy || enrollSubmitDisabled) {
       return
     }
     if (enrollStep === 'step-up') {
@@ -317,10 +319,13 @@ export function HilosProfileSecurityPage({
     await openEnroll()
   }
 
-  const enrollDisabled =
-    enrollStep === 'opening' ||
+  // The submit's own flight: the step's action, the confirmation, or the
+  // opening after Connect another. It blocks the button at once and keeps its
+  // look until the spinner comes; it is no reason to disable it.
+  const enrollSubmitBusy =
+    enrollAction.busy || enrollStepUpBusy || enrollStep === 'opening'
+  const enrollSubmitDisabled =
     enrollStep === 'refused' ||
-    (enrollStep === 'step-up' && enrollStepUpBusy) ||
     (enrollStep === 'proof' && proofCode.trim() === '') ||
     (enrollStep === 'scan' && enrollCode.trim() === '') ||
     (enrollStep === 'codes' && !issuedSaved)
@@ -572,7 +577,6 @@ export function HilosProfileSecurityPage({
               <LoadingButton
                 className="btn-sm btn-outline-primary mb-4"
                 loading={enrollStep === 'opening'}
-                disabled={enrollStep === 'opening'}
                 data-id="profile-2fa-add"
                 onClick={() => void openEnroll()}
               >
@@ -624,8 +628,7 @@ export function HilosProfileSecurityPage({
               </span>
               <LoadingButton
                 className="btn-sm btn-outline-secondary"
-                loading={resetCancelAction.loading}
-                disabled={resetCancelAction.busy}
+                loading={resetCancelAction.busy}
                 data-id="profile-2fa-reset-cancel"
                 onClick={() =>
                   void resetCancelAction.run(actions.cancelReset())
@@ -689,8 +692,8 @@ export function HilosProfileSecurityPage({
             {enrollStep !== 'refused' ? (
               <LoadingButton
                 className="btn-primary"
-                loading={enrollAction.loading || enrollStepUpBusy}
-                disabled={enrollAction.busy || enrollDisabled}
+                loading={enrollSubmitBusy}
+                disabled={enrollSubmitDisabled}
                 data-id="profile-2fa-enroll-submit"
                 onClick={() => void enrollSubmit()}
               >
@@ -826,8 +829,8 @@ export function HilosProfileSecurityPage({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={codesAction.loading}
-              disabled={codesAction.busy || codesDisabled}
+              loading={codesAction.busy}
+              disabled={codesDisabled}
               data-id="profile-2fa-codes-submit"
               onClick={() => void codesSubmit()}
             >
@@ -912,8 +915,8 @@ export function HilosProfileSecurityPage({
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={removeAction.loading}
-              disabled={removeAction.busy || removeDisabled}
+              loading={removeAction.busy}
+              disabled={removeDisabled}
               data-id="profile-2fa-remove-submit"
               onClick={() => void removeSubmit()}
             >
@@ -967,8 +970,8 @@ export function HilosProfileSecurityPage({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={waitAction.loading}
-              disabled={waitAction.busy || waitDisabled}
+              loading={waitAction.busy}
+              disabled={waitDisabled}
               data-id="profile-2fa-wait-save"
               onClick={() => void waitSubmit()}
             >
@@ -1029,8 +1032,7 @@ export function HilosProfileSecurityPage({
             </button>
             <LoadingButton
               className="btn-danger"
-              loading={resetAction.loading}
-              disabled={resetAction.busy}
+              loading={resetAction.busy}
               data-id="profile-2fa-reset-submit"
               onClick={() => void resetSubmit()}
             >

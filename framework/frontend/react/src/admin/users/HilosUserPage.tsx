@@ -536,7 +536,6 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }, [detail?.hasSecondFactor, selectedCandidate?.hasSecondFactor])
   const mergeGone = mergeStep === 2 && selectedCandidate === null
   const mergeDisabled =
-    mergeAction.busy ||
     mergeGone ||
     selectedCandidate === null ||
     (passwordChoiceRequired && passwordFate === null) ||
@@ -570,7 +569,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const setDraft = (name: string) => editor.setForm({ name })
   const loading = useSignal(editor.saving)
   const live = useSignal(editor.state)
-  const canSave = useSignal(editor.canSave)
+  const saveAvailable = useSignal(editor.saveAvailable)
   const dirty = live.dirty
   const editTitle = detail
     ? `Rename · ${hiddenAsWord(detail.name)}`
@@ -660,6 +659,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     if (
       !detail ||
       !selectedCandidate ||
+      mergeAction.busy ||
       mergeDisabled ||
       typeof detail.hasSecondFactor !== 'boolean' ||
       typeof selectedCandidate.hasSecondFactor !== 'boolean'
@@ -1024,10 +1024,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 className={
                   lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'
                 }
-                loading={lifecycleAction.loading}
-                disabled={
-                  lifecycleAction.busy || !lifecyclePrompt || !lifecycleOffered
-                }
+                loading={lifecycleAction.busy}
+                disabled={!lifecyclePrompt || !lifecycleOffered}
                 data-id="hilos-user-lifecycle-confirm"
                 onClick={() => void submitLifecycle()}
               >
@@ -1104,9 +1102,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             ) : impersonateProof === 'skip' ? (
               <LoadingButton
                 className="btn-primary"
-                loading={impersonateAction.loading}
+                loading={impersonateAction.busy}
                 disabled={
-                  impersonateAction.busy ||
                   impersonation === null ||
                   impersonation.disabled ||
                   detail?.id !== impersonateTarget?.userId
@@ -1164,7 +1161,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={saveLabel}
             onSave={submit}
             onAcceptMine={acceptMine}
@@ -1307,7 +1304,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 </button>
                 <LoadingButton
                   className="btn-danger"
-                  loading={mergeAction.loading}
+                  loading={mergeAction.busy}
                   disabled={mergeDisabled}
                   data-id="hilos-user-merge-confirm"
                   onClick={() => void submitMerge()}

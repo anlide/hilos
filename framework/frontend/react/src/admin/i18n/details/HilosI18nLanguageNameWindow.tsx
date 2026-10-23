@@ -52,6 +52,8 @@ function NameForm({
     saving = useSignal(window.saving),
     canSave = useSignal(window.canSave),
     canSubmit = useSignal(window.canSubmit),
+    saveAvailable = useSignal(window.saveAvailable),
+    submitAvailable = useSignal(window.submitAvailable),
     saveLabel = useSignal(window.saveLabel)
   const action = useTrackedAction(),
     { locked } = useLookOnly()
@@ -88,7 +90,7 @@ function NameForm({
         mode === 'edit' ? (
           <ConflictActions
             conflict={state.conflict}
-            disableSave={!canSave}
+            disableSave={!saveAvailable}
             saveLabel={saveLabel}
             onSave={submit}
             onAcceptMine={window.keepMine}
@@ -107,7 +109,7 @@ function NameForm({
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={action.loading}
+                loading={action.busy}
                 disabled={disabled}
                 data-id="i18n-language-name-submit"
                 onClick={onSave}
@@ -129,8 +131,8 @@ function NameForm({
             </button>
             <LoadingButton
               className="btn-primary"
-              loading={action.loading}
-              disabled={!canSubmit}
+              loading={action.busy}
+              disabled={!submitAvailable}
               data-id="i18n-language-name-submit"
               onClick={submit}
             >

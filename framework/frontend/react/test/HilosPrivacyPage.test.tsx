@@ -30,6 +30,7 @@ import { HilosPrivacyPage } from '../src/public/HilosPrivacyPage.js'
 afterEach(() => {
   cleanup()
   document.body.classList.remove('modal-open')
+  vi.useRealTimers()
 })
 
 beforeEach(() => {
@@ -143,6 +144,56 @@ describe('HilosPrivacyPage', () => {
     expect(sessionStorage.getItem('hilos.oauth.provider')).toBeNull()
     expect(localStorage.getItem('hilos.protectedMode.hint')).toBeNull()
     expect(order).toEqual(['forget', 'dispatch'])
+  })
+
+  it('holds the confirmation from the first moment of the erase, keeps Erase looking live until its spinner, and sends once (HIL-1767)', async () => {
+    vi.useFakeTimers()
+    const connection = fakeConnection()
+    let answer!: (reply: { message?: string }) => void
+    const actions = fakeActions(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    render(<HilosPrivacyPage context={eraseContext(connection, actions)} />)
+    fireEvent.click(byId('privacy-erase') as HTMLElement)
+    const confirm = byId('privacy-erase-confirm') as HTMLButtonElement
+    const spinner = (): Element | null =>
+      confirm.querySelector('[data-id="loading-button-spinner"]')
+
+    await act(async () => {
+      fireEvent.click(confirm)
+    })
+    expect(actions.dispatch).toHaveBeenCalledOnce()
+    expect((byId('privacy-erase-cancel') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.classList.contains('disabled')).toBe(false)
+    expect(spinner()).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(confirm)
+      vi.advanceTimersByTime(299)
+    })
+    expect(spinner()).toBeNull()
+    expect(confirm.classList.contains('disabled')).toBe(false)
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(spinner()).not.toBeNull()
+    expect(confirm.classList.contains('disabled')).toBe(true)
+    expect(actions.dispatch).toHaveBeenCalledOnce()
+    expect(connection.forgetProtectedModePass).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      answer({})
+    })
+    expect(byId('privacy-erase-done')).not.toBeNull()
+    expect(byId('privacy-erase-confirm')).toBeNull()
   })
 
   it('becomes the outcome, naming what went and that the account did not', async () => {

@@ -18,7 +18,7 @@ export function HilosI18nCountryAdd({ add }: { add: CountryAdd }) {
     form = useSignal(add.form),
     kind = useSignal(add.kind),
     catalogSize = useSignal(add.catalogSize),
-    canSubmit = useSignal(add.canSubmit),
+    submitAvailable = useSignal(add.submitAvailable),
     saving = useSignal(add.saving)
   const formAction = useTrackedAction(),
     confirmAction = useTrackedAction(),
@@ -61,8 +61,8 @@ export function HilosI18nCountryAdd({ add }: { add: CountryAdd }) {
               className="btn-primary"
               type="submit"
               form="i18n-country-add-form"
-              loading={formAction.loading}
-              disabled={!canSubmit}
+              loading={formAction.busy}
+              disabled={!submitAvailable}
               data-id="i18n-country-add-submit"
             >
               {copy.submit}
@@ -154,8 +154,8 @@ export function HilosI18nCountryAdd({ add }: { add: CountryAdd }) {
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={confirmAction.loading}
-              disabled={!canSubmit}
+              loading={confirmAction.busy}
+              disabled={!submitAvailable}
               data-id="i18n-country-confirm-submit"
               onClick={confirm}
             >

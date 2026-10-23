@@ -2,6 +2,9 @@
 // is a protected operation, so the modal opens on the server's word - at the
 // confirmation step for the first app, at the name when no step is needed - and
 // a second app is still asked for a code from the connected one after the name.
+// While the confirmation or the next opening is out the submit is locked at once
+// and keeps its look until its spinner comes, and a repeat sends nothing; an
+// empty code or codes not marked saved turn it off at once (HIL-1767).
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
 // removal that stands, and an open window closes when it turns off.
 import { StrictMode } from 'react'
@@ -17,7 +20,10 @@ import {
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 /** A section with no app connected yet, as the group frame carries it. */
 const SECTION_OFF = {
@@ -60,11 +66,19 @@ function setup(
   section: object = SECTION_OFF,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn((action: string) => ({
-    requestId: action,
-    loading: createSignal(false),
-    done: Promise.resolve({ reply: replies[action] }),
-  }))
+  const dispatch = vi.fn((action: string) => {
+    const reply = replies[action]
+
+    return {
+      requestId: action,
+      loading: createSignal(false),
+      // A reply given as a promise is held until it settles.
+      done:
+        reply instanceof Promise
+          ? reply.then((settled: unknown) => ({ reply: settled }))
+          : Promise.resolve({ reply }),
+    }
+  })
   const context = {
     actions: { dispatch },
     connection: {
@@ -103,6 +117,46 @@ function setup(
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement | null
   return { dispatch, node, push }
+}
+
+/** A reply the test holds out until it settles it. */
+function held(): { reply: Promise<unknown>; settle: (reply: unknown) => void } {
+  let settle!: (reply: unknown) => void
+  const reply = new Promise<unknown>((resolve) => {
+    settle = resolve
+  })
+
+  return { reply, settle }
+}
+
+// What a button tells a sighted person and a screen reader now.
+function buttonState(button: HTMLElement | null) {
+  return {
+    nativeDisabled: (button as HTMLButtonElement).disabled,
+    disabledLook: button!.classList.contains('disabled'),
+    spinner:
+      button!.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button!.getAttribute('aria-busy'),
+    ariaDisabled: button!.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+// Advance the fake clock and let the view render what the timers decided.
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 }
 
 it('asks the server before the modal opens and starts at the name when no step is needed', async () => {
@@ -151,6 +205,153 @@ it('opens at the confirmation step for the first app and moves to the name once 
   expect(document.querySelector('.modal-title')?.textContent).toBe(
     'Add an authenticator app',
   )
+})
+
+it('keeps Confirm live-looking while the confirmation is out, dims it only with its spinner and sends it once', async () => {
+  vi.useFakeTimers()
+  const answer = held()
+  const { dispatch, node } = setup({
+    ...REPLIES,
+    hilos_step_up_start: {
+      required: true,
+      purpose: 'add an authenticator app',
+      method: 'password',
+    },
+    hilos_step_up_confirm: answer.reply,
+  })
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  const confirms = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_confirm')
+  fireEvent.change(node('step-up-password')!, { target: { value: 'secret' } })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  const confirm = node('profile-2fa-enroll-submit')
+  expect(confirms()).toHaveLength(1)
+  expect(buttonState(confirm)).toEqual(LOCKED)
+
+  wait(299)
+  expect(buttonState(confirm)).toEqual(LOCKED)
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+    fireEvent.click(confirm!)
+  })
+  expect(confirms()).toHaveLength(1)
+  wait(1)
+  expect(buttonState(confirm)).toEqual(SPINNING)
+
+  await act(async () => {
+    answer.settle(undefined)
+  })
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+})
+
+it('keeps Connect another live-looking while the next opening is out, dims it only with its spinner and asks once', async () => {
+  vi.useFakeTimers()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_enroll_confirm: {},
+  }
+  const { dispatch, node } = setup(replies)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  fireEvent.change(node('profile-2fa-enroll-code')!, {
+    target: { value: '123456' },
+  })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  const more = node('profile-2fa-enroll-submit')
+  expect(more?.textContent?.trim()).toBe('Connect another')
+  const openings = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_start')
+  expect(openings()).toHaveLength(1)
+
+  const answer = held()
+  replies.hilos_step_up_start = answer.reply
+  await act(async () => {
+    fireEvent.click(more!)
+  })
+  expect(openings()).toHaveLength(2)
+  expect(buttonState(more)).toEqual(LOCKED)
+
+  wait(299)
+  expect(buttonState(more)).toEqual(LOCKED)
+  await act(async () => {
+    fireEvent.click(more!)
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(openings()).toHaveLength(2)
+  wait(1)
+  expect(buttonState(more)).toEqual(SPINNING)
+
+  await act(async () => {
+    answer.settle({ required: false, purpose: 'add an authenticator app' })
+  })
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+})
+
+it('turns the submit off at once for an empty code and for codes not marked saved', async () => {
+  const { dispatch, node } = setup(
+    {
+      ...REPLIES,
+      profile_second_factor_enroll_confirm: {
+        backupCodes: ['1111-2222', '3333-4444'],
+      },
+    },
+    SECTION_OFF,
+  )
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(OFF)
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(
+    dispatch.mock.calls.filter(
+      ([action]) => action === 'profile_second_factor_enroll_confirm',
+    ),
+  ).toHaveLength(0)
+
+  fireEvent.change(node('profile-2fa-enroll-code')!, {
+    target: { value: '123456' },
+  })
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(node('backup-codes')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(OFF)
+
+  fireEvent.click(node('backup-codes-saved')!)
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+})
+
+it('turns the submit off at once for an empty code from the connected app', async () => {
+  const { node } = setup(REPLIES, SECTION_ON)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(node('profile-2fa-proof')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(OFF)
+
+  fireEvent.change(node('profile-2fa-proof')!, { target: { value: '654321' } })
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
 })
 
 it('asks a second app for a code from the connected one after the name, as before', async () => {

@@ -29,7 +29,7 @@ export function HilosI18nCountryWindow({ window }: { window: CountryWindow }) {
     options = useSignal(window.options),
     localeHint = useSignal(window.localeHint),
     touched = useSignal(window.touched),
-    canSave = useSignal(window.canSave),
+    saveAvailable = useSignal(window.saveAvailable),
     saveLabel = useSignal(window.saveLabel),
     saving = useSignal(window.saving)
   const action = useTrackedAction(),
@@ -67,7 +67,7 @@ export function HilosI18nCountryWindow({ window }: { window: CountryWindow }) {
         mode === 'edit' ? (
           <ConflictActions
             conflict={state.conflict}
-            disableSave={!canSave || busy}
+            disableSave={!saveAvailable}
             saveLabel={saveLabel}
             onSave={submit}
             onAcceptMine={window.keepMine}
@@ -86,7 +86,7 @@ export function HilosI18nCountryWindow({ window }: { window: CountryWindow }) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={action.loading}
+                loading={action.busy}
                 disabled={disabled}
                 data-id="i18n-country-save"
                 onClick={onSave}

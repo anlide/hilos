@@ -234,7 +234,6 @@ export function HilosPrivacyPage({
         open={confirming}
         labels={labels}
         busy={erase.busy}
-        loading={erase.loading}
         onClose={() => setConfirming(false)}
         onConfirm={onConfirm}
       />

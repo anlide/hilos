@@ -326,7 +326,7 @@ describe('HilosDaemonAgentsPage', () => {
       'hilos_daemon_agent_restart',
       { agentId: 'room:12', nodeId: 'n1' },
     )
-    expect(button(h).disabled).toBe(true)
+    expect(button(h).getAttribute('aria-disabled')).toBe('true')
     expect(button(h, 'hilos-daemon-restart-cancel').disabled).toBe(true)
     expect(button(h, 'modal-close').disabled).toBe(true)
     expect(h.find('hilos-daemon-agent-restarting-room:12')).toBeNull()
@@ -343,6 +343,21 @@ describe('HilosDaemonAgentsPage', () => {
       'hilosDaemonAgents',
       '',
     )
+  })
+  it('locks the confirmation for its own restart without turning it off, and turns it off at once for an independent reason', async () => {
+    const h = ready()
+    open(h)
+    expect(button(h).disabled).toBe(false)
+    expect(button(h).hasAttribute('aria-disabled')).toBe(false)
+    fireEvent.click(button(h))
+    expect(button(h).getAttribute('aria-disabled')).toBe('true')
+    expect(button(h).disabled).toBe(false)
+    fireEvent.click(button(h))
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
+    h.heading(SILENT)
+    expect(button(h).disabled).toBe(true)
+    expect(button(h).getAttribute('aria-disabled')).toBe('true')
+    await h.success()
   })
   it('keeps a refusal in the modal and clears it on a new confirmation', async () => {
     const h = ready()

@@ -1,5 +1,5 @@
 import { act, fireEvent } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createHilosI18nBuiltInCountryCodes,
   createHilosI18nCountryAdd,
@@ -32,6 +32,38 @@ function fill(code = 'gg') {
 }
 function enter() {
   fireEvent.submit(el<HTMLInputElement>('i18n-country-add-code').form!)
+}
+
+// What a creation button tells a sighted person and a screen reader now.
+function buttonState(id: string) {
+  const button = el<HTMLButtonElement>(id)
+
+  return {
+    nativeDisabled: button.disabled,
+    disabledLook: button.classList.contains('disabled'),
+    spinner:
+      button.querySelector('[data-id="loading-button-spinner"]') !== null,
+    ariaBusy: button.getAttribute('aria-busy'),
+    ariaDisabled: button.getAttribute('aria-disabled'),
+  }
+}
+
+const RESTING = {
+  nativeDisabled: false,
+  disabledLook: false,
+  spinner: false,
+  ariaBusy: null,
+  ariaDisabled: null,
+}
+const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
+const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+const SPINNING = { ...LOCKED, disabledLook: true, spinner: true }
+
+// Advance the fake clock and let the view render what the timers decided.
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 }
 
 describe('React country creation', () => {
@@ -150,5 +182,94 @@ describe('React country creation', () => {
     expect(h.calls).toEqual([])
     expect(el<HTMLInputElement>('i18n-country-add-code').disabled).toBe(false)
     expect(el<HTMLButtonElement>('i18n-country-add-submit').disabled).toBe(true)
+  })
+})
+
+// The real creation factory, LoadingButton and ActionLifecycle together: the
+// button looks by submitAvailable, so its own send only locks it and the look
+// comes with the spinner at 300 ms, while the guarded canSubmit keeps a second
+// press or Enter from sending; an unfit form or the admin view mode turns it
+// off natively from the first moment.
+describe('React country creation in flight', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('locks Add at once for a known code and greys it only with its spinner at 300 ms', async () => {
+    const h = setup()
+    fill('us')
+    expect(buttonState('i18n-country-add-submit')).toEqual(RESTING)
+
+    click('i18n-country-add-submit')
+    expect(h.calls).toHaveLength(1)
+    expect(buttonState('i18n-country-add-submit')).toEqual(LOCKED)
+    expect(el<HTMLButtonElement>('i18n-country-add-cancel').disabled).toBe(true)
+    click('i18n-country-add-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    wait(299)
+    expect(buttonState('i18n-country-add-submit')).toEqual(LOCKED)
+    wait(1)
+    expect(buttonState('i18n-country-add-submit')).toEqual(SPINNING)
+    click('i18n-country-add-submit')
+    enter()
+    expect(h.calls).toHaveLength(1)
+
+    await settle(() => h.refuse(0, "Country 'us' already exists."))
+    expect(buttonState('i18n-country-add-submit')).toEqual(RESTING)
+    click('i18n-country-add-submit')
+    expect(h.calls).toHaveLength(2)
+  })
+  it('locks the responsibility confirm at once and spins it at 300 ms', async () => {
+    const h = setup()
+    fill('gg')
+    enter()
+    expect(buttonState('i18n-country-confirm-submit')).toEqual(RESTING)
+
+    click('i18n-country-confirm-submit')
+    expect(h.calls).toHaveLength(1)
+    expect(buttonState('i18n-country-confirm-submit')).toEqual(LOCKED)
+    expect(el<HTMLButtonElement>('i18n-country-confirm-cancel').disabled).toBe(
+      true,
+    )
+    click('i18n-country-confirm-submit')
+    expect(h.calls).toHaveLength(1)
+
+    wait(299)
+    expect(buttonState('i18n-country-confirm-submit')).toEqual(LOCKED)
+    wait(1)
+    expect(buttonState('i18n-country-confirm-submit')).toEqual(SPINNING)
+
+    await settle(() => h.succeed(0, 'Server added the country'))
+    expect(el('modal')).toBeNull()
+    expect(h.calls).toHaveLength(1)
+  })
+  it('turns Add off at once for a currency that does not pass', () => {
+    const h = setup()
+    fill()
+    change('i18n-country-add-currency-code', 'ab')
+    expect(buttonState('i18n-country-add-submit')).toEqual(OFF)
+
+    click('i18n-country-add-submit')
+    enter()
+    wait(300)
+    expect(buttonState('i18n-country-add-submit')).toEqual(OFF)
+    expect(h.calls).toEqual([])
+  })
+  it('turns Add off at once in the admin view mode', () => {
+    const h = setup(true)
+    fill('us')
+    expect(buttonState('i18n-country-add-submit')).toEqual(OFF)
+
+    click('i18n-country-add-submit')
+    enter()
+    wait(300)
+    expect(buttonState('i18n-country-add-submit')).toEqual(OFF)
+    expect(h.calls).toEqual([])
   })
 })

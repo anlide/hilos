@@ -25,7 +25,7 @@ export function HilosI18nLanguageAdd({
     form = useSignal(add.form),
     known = useSignal(add.known),
     complete = useSignal(add.complete),
-    canSubmit = useSignal(add.canSubmit)
+    submitAvailable = useSignal(add.submitAvailable)
   const catalogSignal = useMemo(
     () => createHilosI18nBuiltInLanguages(context),
     [context],
@@ -68,8 +68,8 @@ export function HilosI18nLanguageAdd({
               className="btn-primary"
               type="submit"
               form="i18n-language-add-form"
-              loading={formAction.loading}
-              disabled={!canSubmit || formAction.busy}
+              loading={formAction.busy}
+              disabled={!submitAvailable}
               data-id="i18n-language-add-submit"
             >
               {copy.submit}
@@ -194,8 +194,8 @@ export function HilosI18nLanguageAdd({
             </button>
             <LoadingButton
               className="btn-warning"
-              loading={confirmAction.loading}
-              disabled={!canSubmit || confirmAction.busy}
+              loading={confirmAction.busy}
+              disabled={!submitAvailable}
               data-id="i18n-language-confirm-submit"
               onClick={confirm}
             >
