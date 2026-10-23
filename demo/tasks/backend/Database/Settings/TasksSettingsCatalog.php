@@ -27,6 +27,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Status\StatusSettingsCatalog;
 
 /**
  * TasksSettingsCatalog - Project settings catalog for the tasks demo.
@@ -77,6 +78,7 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            StatusSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),

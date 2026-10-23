@@ -3066,6 +3066,21 @@ final class HilosSignalConstants
     /** Full snapshot or changed whole node views from the collector to the page agent (HIL-1371). */
     public const string DAEMON_CLUSTER_PICTURE_PORTION = 'daemon_cluster_picture_portion';
 
+    /** Status owner's independent leased interest in whole Daemon pictures (HIL-1688). */
+    public const string STATUS_DAEMON_PICTURE_WATCH = 'status_daemon_picture_watch';
+
+    /** Full snapshot or changed whole node views for the Status owner (HIL-1688). */
+    public const string STATUS_DAEMON_PICTURE_PORTION = 'status_daemon_picture_portion';
+
+    /** Gatekeeper asks the Status owner to suppress a current candidate's publication. */
+    public const string STATUS_CANCEL_PUBLICATION = 'status_cancel_publication';
+
+    /** Gatekeeper asks the Status owner to publish a current candidate now. */
+    public const string STATUS_PUBLISH_NOW = 'status_publish_now';
+
+    /** Gatekeeper asks the Status owner to append immutable team text to a published incident. */
+    public const string STATUS_ADD_UPDATE = 'status_add_update';
+
     /** Whole live process roster from a master to its own Daemon node agent (HIL-1372). */
     public const string DAEMON_MASTER_PROCESS_ROSTER = 'daemon_master_process_roster';
 

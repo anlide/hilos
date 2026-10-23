@@ -8,6 +8,9 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
@@ -18,6 +21,8 @@ use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Hilos;
 use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Status\Exception\StatusComponentDeclarationException;
+use Hilos\Status\StatusAgent;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 
@@ -127,6 +132,7 @@ final class FeatureActivationValidator
         );
         $this->validateProfilePhoto($declared, $pages, $tables, $browserTables, $pageTables, $errors);
         $this->validateModeration($hilosClass, $declared, $agents, $errors);
+        $this->validateStatus($hilosClass, $declared, $agents, $errors);
 
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors($hilosClass, $errors);
@@ -631,6 +637,37 @@ final class FeatureActivationValidator
             if (!array_key_exists($kind->verdictTo, $agents)) {
                 $errors[] = "{$directory} sends moderation verdicts of {$key} to {$kind->verdictTo}, but AGENTS has no such agent";
             }
+        }
+    }
+
+    /**
+     * @param class-string<Hilos> $hilosClass Facade being checked without initializing DB or RT
+     * @param list<HilosFeature> $declared Enabled features
+     * @param array $agents Project agent registry
+     * @param list<string> $errors Accumulated activation refusals
+     */
+    private function validateStatus(string $hilosClass, array $declared, array $agents, array &$errors): void
+    {
+        if (!in_array(HilosFeature::STATUS, $declared, true)) {
+            return;
+        }
+        try {
+            Hilos::statusComponentsOf($hilosClass);
+        } catch (StatusComponentDeclarationException $e) {
+            $errors[] = $e->getMessage();
+        }
+        $entry = $agents[HilosAgentType::HILOS_STATUS] ?? null;
+        $worker = AgentRegistry::workerClass($entry);
+        $daemon = AgentRegistry::daemonClass($entry);
+        if ($worker !== StatusAgent::class || $daemon !== StatusAgentDaemon::class) {
+            $errors[] = 'HilosFeature::STATUS requires the StatusAgent / StatusAgentDaemon pair';
+        }
+        if (AgentRegistry::scope($entry) !== AgentScope::CLUSTER
+            || AgentRegistry::placement($entry) !== AgentPlacement::POLICY
+            || AgentRegistry::requiresIndex($entry)
+            || AgentRegistry::idleTimeout($entry) !== null
+            || (is_array($entry) && array_key_exists(AgentRegistryKey::IDLE_TIMEOUT, $entry))) {
+            $errors[] = 'HilosFeature::STATUS requires CLUSTER / POLICY, a non-indexed permanent owner without IDLE_TIMEOUT';
         }
     }
 

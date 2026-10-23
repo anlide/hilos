@@ -224,6 +224,58 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         self::assertSame([], $this->drain());
     }
 
+    public function testPageAndStatusConsumersReceiveTheirOwnSerializedSnapshotsAndPortions(): void
+    {
+        $collector = $this->collector();
+        $this->report($collector, 'n1', NodeRole::Master);
+        $pages = new DaemonPictureFanOutProbeAgent();
+        ClusterDaemonPictureMirror::addViewer('ak');
+        $pages->tickAt($this->at(0.0));
+        $this->carryClaim($collector);
+        $pageSnapshot = $this->carryPortion($pages);
+
+        $claim = new DaemonPictureWatchSignalData(1);
+        $collector->onSignalAgent(
+            new AgentSignalData(data: DaemonPictureWatchSignalData::fromArray($claim->toArray())),
+            'agent/hilos_status',
+            HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH,
+        );
+        $snapshots = $this->drain();
+        self::assertCount(1, $snapshots);
+        self::assertSame(HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION, $snapshots[0]->signalName->getName());
+        $statusSnapshot = DaemonClusterPicturePortionSignalData::fromArray($snapshots[0]->data->data->toArray());
+        self::assertSame($pageSnapshot->toArray(), $statusSnapshot->toArray(), 'Response name adds no fields to either DTO');
+        self::assertSame(['snapshot', 'nodes'], array_keys($statusSnapshot->toArray()));
+        self::assertSame(['nodeId', 'online', 'receivedAt', 'picture'], array_keys($statusSnapshot->toArray()['nodes'][0]));
+
+        $this->report($collector, 'n1', NodeRole::Slave);
+        $collector->fanOutIfDue($this->at(0.6));
+        $portions = $this->drain();
+        self::assertCount(2, $portions);
+        self::assertSame([
+            HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
+            HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION,
+        ], array_map(static fn (SignalDTO $frame): string => $frame->signalName->getName(), $portions));
+        foreach ($portions as $frame) {
+            $portion = DaemonClusterPicturePortionSignalData::fromArray($frame->data->data->toArray());
+            self::assertFalse($portion->snapshot);
+            self::assertSame(NodeRole::Slave, $portion->nodes[0]->slot->picture->role);
+        }
+        $pages->onSignalAgent(new AgentSignalData(data: DaemonClusterPicturePortionSignalData::fromArray(
+            $portions[0]->data->data->toArray(),
+        )), 'agent/hilos_daemon_collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
+        self::assertSame(NodeRole::Slave, ClusterDaemonPictureMirror::picture()->node('n1')->slot->picture->role);
+
+        ClusterDaemonPictureMirror::removeViewer('ak');
+        $pages->tickAt($this->at(1.0));
+        $this->carryClaim($collector);
+        $this->report($collector, 'n2', NodeRole::Slave);
+        $collector->fanOutIfDue($this->at(1.2));
+        $onlyStatus = $this->drain();
+        self::assertCount(1, $onlyStatus);
+        self::assertSame(HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION, $onlyStatus[0]->signalName->getName());
+    }
+
     public function testMasterRosterReachesNodeCollectorAndMirrorAsOneWholeSlot(): void
     {
         $node = new DaemonNodeAgent();

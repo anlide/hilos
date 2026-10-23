@@ -85,4 +85,7 @@ enum HilosFeature: string
 
     /** Database change log: the derived journal, cluster reader and three admin pages. */
     case CHANGE_LOG = 'change_log';
+
+    /** Permanent agent components, current Status counts and durable incident history. */
+    case STATUS = 'status';
 }

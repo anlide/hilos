@@ -202,6 +202,8 @@ use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
+use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
+use Hilos\Status\StatusAgent;
 
 /**
  * Hilos - Main app facade for data access.
@@ -246,6 +248,7 @@ final class Hilos extends HilosFacade
         HilosFeature::HILOS_USERS,
         HilosFeature::LOGS,
         HilosFeature::DAEMON,
+        HilosFeature::STATUS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH,
@@ -455,6 +458,12 @@ final class Hilos extends HilosFacade
         DaemonCollectorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
             AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        StatusAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => StatusAgent::class,
+            AgentRegistryKey::DAEMON => StatusAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::CLUSTER,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LogAggregatorAgent::AGENT_TYPE => [

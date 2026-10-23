@@ -167,6 +167,18 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
+use Hilos\Core\Agent\TopologyAgentFactory;
+use Hilos\Core\Feature\FeatureRegistry;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use Hilos\Database\Settings\Validation\NonNegativeIntegerRule;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
+use Hilos\Status\DTO\StatusCancelPublicationSignalData;
+use Hilos\Status\DTO\StatusPublishNowSignalData;
+use Hilos\Status\DTO\StatusAddUpdateSignalData;
+use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
+use Hilos\Status\StatusAgent;
+use Hilos\Status\StatusSettingsCatalog;
 
 /**
  * Guards the project-level binance-btc-tracker topology registry.
@@ -187,6 +199,98 @@ use PHPUnit\Framework\TestCase;
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
+    /** The shared Status owner is a permanent singleton placed on a regular worker. */
+    public function testStatusOwnerUsesTheFrameworkPairAndFactories(): void
+    {
+        self::assertContains(HilosFeature::STATUS, Hilos::featuresOf(Hilos::class));
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_STATUS];
+        self::assertSame([
+            AgentRegistryKey::WORKER => StatusAgent::class,
+            AgentRegistryKey::DAEMON => StatusAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::CLUSTER,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ], $entry);
+        self::assertFalse(AgentRegistry::requiresIndex($entry));
+        self::assertNull(AgentRegistry::idleTimeout($entry));
+        self::assertSame(StatusAgent::class, TopologyAgentFactory::createWorker(Hilos::class, HilosAgentType::HILOS_STATUS, null)::class);
+        $daemon = TopologyAgentFactory::createDaemon(Hilos::class, HilosAgentType::HILOS_STATUS, null);
+        self::assertSame(StatusAgentDaemon::class, $daemon::class);
+        self::assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
+    /** Status owns its collector response and three internal writes, with no client actions. */
+    public function testStatusConsumerAndInternalOperationsHaveTypedRoutes(): void
+    {
+        self::assertSame([
+            HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
+            HilosSignalConstants::STATUS_CANCEL_PUBLICATION => StatusCancelPublicationSignalData::class,
+            HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
+            HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
+        ], StatusAgent::AGENT_SIGNALS);
+        self::assertSame(DaemonPictureWatchSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH]);
+        self::assertSame(DaemonClusterPicturePortionSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION]);
+        self::assertSame(StatusCancelPublicationSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_CANCEL_PUBLICATION]);
+        self::assertArrayNotHasKey(HilosSignalConstants::STATUS_CANCEL_PUBLICATION, Hilos::getActionAgentRoutes());
+        self::assertNotContains(HilosSignalConstants::STATUS_CANCEL_PUBLICATION, StatusAgent::AUTH_ACTIONS);
+        self::assertSame(StatusPublishNowSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_PUBLISH_NOW]);
+        self::assertArrayNotHasKey(HilosSignalConstants::STATUS_PUBLISH_NOW, Hilos::getActionAgentRoutes());
+        self::assertNotContains(HilosSignalConstants::STATUS_PUBLISH_NOW, StatusAgent::AUTH_ACTIONS);
+        self::assertSame(StatusAddUpdateSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_ADD_UPDATE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::STATUS_ADD_UPDATE, Hilos::getActionAgentRoutes());
+        self::assertNotContains(HilosSignalConstants::STATUS_ADD_UPDATE, StatusAgent::AUTH_ACTIONS);
+        self::assertSame([], StatusAgent::AGENT_ACTIONS);
+    }
+
+    /** The project inherits Service and merges the live publication-delay setting. */
+    public function testStatusComponentsAndSettingsUseFrameworkDefaults(): void
+    {
+        $components = iterator_to_array(Hilos::statusComponentsOf(Hilos::class));
+        self::assertSame(['service'], array_keys($components));
+        $service = $components['service'];
+        self::assertSame([
+            'service', 'Service', null, HilosAgentType::HILOS_INDEX, AgentScope::CLUSTER, AgentPlacement::LEADER,
+        ], [
+            $service->componentKey, $service->name, $service->description, $service->agentType, $service->scope, $service->placement,
+        ]);
+        self::assertSame([
+            SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+            SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 300,
+            SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            SettingsCatalogConstants::CATALOG_ENTRY_RULE => NonNegativeIntegerRule::class,
+        ], BinanceBtcTrackerSettingsCatalog::getCatalog()[StatusSettingsCatalog::PUBLISH_DELAY_SECONDS]);
+    }
+
+    /** Status selects its two primary tables without introducing browser requirements. */
+    public function testStatusRequirementsAndSchemaSelectionAreComplete(): void
+    {
+        $definition = (new FeatureRegistry())->definition(HilosFeature::STATUS);
+        $requirements = $definition->requirements();
+        self::assertSame([HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY], $requirements->requires);
+        self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
+        self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
+        self::assertSame(['hilos_status_incident', 'hilos_status_incident_update'], $requirements->requiredDbTables);
+        self::assertSame([], $requirements->requiredPages);
+        self::assertSame([], $requirements->requiredTables);
+        self::assertSame([], $requirements->requiredPageTables);
+        self::assertTrue($definition->mountsRuntime());
+
+        $statusUnits = [];
+        foreach ((new FrameworkSchemaCatalog())->selectedUnits(Hilos::class) as $unit) {
+            if (str_starts_with($unit->key, 'status_')) {
+                $statusUnits[$unit->key] = [$unit->tables, $unit->dependencies, $unit->connection];
+            }
+        }
+        self::assertSame([
+            'status_incident' => [['hilos_status_incident'], [], 0],
+            'status_incident_update' => [['hilos_status_incident_update'], ['status_incident'], 0],
+        ], $statusUnits);
+    }
+
     /** All three journal pages use the cluster reader and the framework tables. */
     public function testChangeLogSectionIsFullyActivated(): void
     {
@@ -372,6 +476,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_LOG_CARRIER,
             HilosAgentType::HILOS_DAEMON_NODE,
             HilosAgentType::HILOS_DAEMON_COLLECTOR,
+            HilosAgentType::HILOS_STATUS,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_RT_SET,
@@ -1041,6 +1146,11 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::DAEMON_AGENT_CRON => HilosAgentType::HILOS_DAEMON_NODE,
                 HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => HilosAgentType::HILOS_DAEMON_COLLECTOR,
                 HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
+                HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
+                HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_CANCEL_PUBLICATION => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_PUBLISH_NOW => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_ADD_UPDATE => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
                 HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
             ],
@@ -1070,6 +1180,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosFeature::HILOS_USERS,
                 HilosFeature::LOGS,
                 HilosFeature::DAEMON,
+                HilosFeature::STATUS,
                 HilosFeature::NOTIFICATIONS,
                 HilosFeature::NOTIFICATION_DELIVERY,
             ],

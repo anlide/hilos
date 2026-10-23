@@ -33,6 +33,7 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => DaemonNodePictureSignalData::class,
         HilosSignalConstants::DAEMON_PICTURE_WATCH => DaemonPictureWatchSignalData::class,
+        HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH => DaemonPictureWatchSignalData::class,
     ];
 
     /** @var list<string> Cluster membership used only at delivery time */
@@ -43,11 +44,16 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     private const int LABEL_SALT_BYTES = 32;
     private const string WATCH_RENEWED_AT = 'renewedAt';
     private const string WATCH_SENT_REVISION = 'sentRevision';
+    private const string WATCH_REPLY_SIGNAL = 'replySignal';
+    private const array WATCH_REPLIES = [
+        HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
+        HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH => HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION,
+    ];
 
     private ClusterDaemonPicture $picture;
     private string $labelSalt;
 
-    /** @var array<string, array{renewedAt: float, sentRevision: int}> */
+    /** @var array<string, array{renewedAt: float, sentRevision: int, replySignal: string}> Sender-key consumer leases */
     private array $watchers = [];
 
     /** @var array<string, int> Node id to last report or online-change revision */
@@ -118,8 +124,9 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::DAEMON_PICTURE_WATCH:
+            case HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH:
                 if ($data->data instanceof DaemonPictureWatchSignalData) {
-                    $this->applyWatch($sender, $data->data->viewers, microtime(true));
+                    $this->applyWatch($sender, $data->data->viewers, microtime(true), self::WATCH_REPLIES[$name]);
                 }
 
                 return;
@@ -212,12 +219,16 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     /**
      * A positive claim renews its 90-second lease and receives a whole snapshot every time.
      *
+     * @param string $sender Full consumer address
+     * @param int $viewers Positive interest, or zero to release
+     * @param float $now Local lease clock in seconds
+     * @param string $replySignal Response selected from the fixed request pair
      * @throws InvalidArgumentException When a snapshot cannot be routed
      * @throws RtCollectionNotFoundException When the cluster register is not mounted
      * @throws RtCollectionNotReadableException When this agent lacks reader interest
      * @throws RtActionsStateCollectionNullException When the register has no backing state
      */
-    private function applyWatch(string $sender, int $viewers, float $now): void
+    private function applyWatch(string $sender, int $viewers, float $now, string $replySignal): void
     {
         if ($viewers === 0) {
             unset($this->watchers[$sender]);
@@ -230,6 +241,7 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
         $this->watchers[$sender] = [
             self::WATCH_RENEWED_AT => $now,
             self::WATCH_SENT_REVISION => $this->revision,
+            self::WATCH_REPLY_SIGNAL => $replySignal,
         ];
         $this->sendPortion($sender, $views, true, $now);
     }
@@ -257,7 +269,7 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     private function sendPortion(string $sender, array $nodes, bool $snapshot, float $now): void
     {
         $this->sendToAgent(
-            HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
+            $this->watchers[$sender][self::WATCH_REPLY_SIGNAL],
             new DaemonClusterPicturePortionSignalData($snapshot, $nodes),
         );
         $this->watchers[$sender][self::WATCH_SENT_REVISION] = $this->revision;

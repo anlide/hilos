@@ -4,23 +4,30 @@ Read this before declaring Status components, changing the candidate and outage
 machine, publishing its public files, building its admin section, or reading
 `/status` without a connection or under a freeze.
 
-This is the target architecture of HIL-1685, written ahead of implementation.
-The names and public JSON shapes below are normative for the implementation
-leaves. A future mechanism ends with its owning leaf's marker; this documentation
-does not implement Status or close its design promises.
+This document records the Status backend already built by HIL-1688 and the
+surfaces still owned by later leaves. Public file shapes and browser surfaces
+remain future contracts where their leaf markers say so.
 
 ## Core Rule
 
 The machine declares an outage from facts about expected agent instances. A
 person may suppress publication or add public words, but cannot declare, close
 or delete an outage. One cluster owner holds the durable history.
-(not in the code yet — HIL-1688)
 
 The public page reads one sanitized projection from nginx files, with or without
 a usable socket. Neither an admin table mirror nor `page_response` supplies
 that projection. File publication and its heartbeat continue under a freeze;
 the database half obeys the freeze's silence.
 (not in the code yet — HIL-1690)
+
+HIL-1688 builds the framework feature, component catalog, collector consumer,
+durable incident machine, candidate notices, internal owner operations and a
+typed backend read projection. It does not build browser Status pages, tables,
+modals or production admin gatekeeper reply routes (HIL-1689); public files,
+the public reader or the publisher's freeze exception (HIL-1690); subscribers
+or their mail (HIL-1691); scheduled works or actual maintenance history
+(HIL-1692); the admin history UI (HIL-1693); separate cluster/failover proof
+(HIL-1694); or React and Angular views (HIL-1695 and HIL-1696).
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -29,13 +36,45 @@ Status does not introduce another collector, storage transport or time helper.
 
 ## Components And Activation
 
-Declare `HilosFeature::STATUS = 'status'`, requiring `DAEMON` and
-`NOTIFICATION_DELIVERY` (and thus `NOTIFICATIONS`). Status is a framework-owned
-[Mode 1 feature](admin-features.md): the project activates it, declares its
-content and registers thin bindings; it does not copy the outage machine.
-Activation is intended for all six demos. HIL-1686 and HIL-1687 prepare demos;
-their preparation alone is not Status activation.
-(not in the code yet — HIL-1688)
+`HilosFeature::STATUS` is a framework-owned [Mode 1 feature](admin-features.md):
+the project activates it and declares its component content; it does not copy
+the outage machine. `StatusFeature` requires `DAEMON` and
+`NOTIFICATION_DELIVERY`, the `HILOS_STATUS` agent, the `StatusSettingsCatalog`
+fragment, and the `hilos_status_incident` and
+`hilos_status_incident_update` tables. It declares no required pages, tables,
+or page-table bindings. It mounts the feature-owned runtime collection.
+
+### Activation Recipe
+
+In the project's `Hilos::FEATURES`, include `HilosFeature::STATUS`. Register the
+framework pair in `Hilos::AGENTS` under `StatusAgent::AGENT_TYPE`:
+
+```php
+StatusAgent::AGENT_TYPE => [
+    AgentRegistryKey::WORKER => StatusAgent::class,
+    AgentRegistryKey::DAEMON => StatusAgentDaemon::class,
+    AgentRegistryKey::SCOPE => AgentScope::CLUSTER,
+    AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+],
+```
+
+This is one cluster owner on a regular worker: it is non-indexed, has no idle
+timeout, and does not require a monopolistic process. Scope determines how many
+instances a component expects; placement determines which node hosts the owner.
+Merge `StatusSettingsCatalog::getCatalog()` into the project's settings catalog.
+Then run `db:framework:pull` for that project. It copies the missing primary
+schema migration pairs from the framework's `status_incident` and
+`status_incident_update` units; the second unit depends on the first. The pull
+does not apply SQL. Commit the generated pairs with the project and apply them
+through the ordinary `db:migration:up` command. Do not hand-write or copy these
+migrations.
+All six demos in this repository already activate the feature, register the
+pair and merge the settings fragment; their schema pairs came from the same
+framework pull.
+
+This backend activation does not register a Status page or browser table. The
+admin pages, table, modals and production gatekeeper reply route remain
+HIL-1689.
 
 The project Hilos class declares `protected const array STATUS_COMPONENTS = []`
 (`Hilos::STATUS_COMPONENTS`). Its catalog boundary has this shape:
@@ -46,15 +85,20 @@ map<componentKey, {name: string, description: ?string, agentType: string}>
 
 The key is stable; the name and optional description are public project content.
 The agent type comes from the project's declared `AGENTS`. Keep the map at this
-catalog boundary; the runtime reader uses a typed boundary, as required by
+catalog boundary; `Hilos::statusComponents()` and
+`Hilos::statusComponentsOf(class-string<Hilos>)` expose it as a typed
+`StatusComponentCatalog`, following
 [Settings and catalogs](../framework-development.md#settings-and-catalogs).
-An empty declaration means one component: key `service`, name `Service`, type
+An empty declaration
+means one component: key `service`, name `Service`, type
 `HilosAgentType::HILOS_INDEX` — the project's index agent. An index agent is not
-an `INDEXED` type. Only permanent, non-indexed types are supported in this
-version. Refuse unknown types, `INDEXED` types and duplicate keys; do not turn
-an invalid declaration into an operational component or accept groups of
-per-object agents.
-(not in the code yet — HIL-1688)
+an `INDEXED` type. Only permanent, non-indexed types with no idle timeout are
+supported. Each entry must contain exactly `{name, description, agentType}`;
+the key matches `[a-z][a-z0-9_.-]{0,127}`, the name is nonblank UTF-8 of 1 to
+255 characters, the description is null or UTF-8, and the agent type is
+nonempty and registered. The catalog refuses duplicate keys, unknown types,
+indexed types and idle types. Scope and placement are resolved from the agent
+registry and remain separate axes.
 
 The admin section is `/hilos/status`, with Overview, Scheduled works,
 Components, Subscribers and History tabs. Overview shows what is open now,
@@ -73,19 +117,23 @@ activation mechanism.
 
 ## Facts And Ownership
 
-The existing `DaemonCollectorAgent` and `DaemonPictureWatchSignalData` carry
-whole node pictures through leased interest. The collector distinguishes no
-initial picture, a reported empty roster, and a silent node. Scope and placement
-are separate axes: `AgentScope::CLUSTER` or `NODE` determines multiplicity;
-`AgentPlacement::LEADER` or `POLICY` chooses the host.
+The existing `DaemonCollectorAgent` and whole-node picture DTOs carry node
+pictures through leased interest. Status has its own permanent consumer pair:
+`status_daemon_picture_watch` and `status_daemon_picture_portion`. Its owner
+renews a 90-second collector lease every 30 seconds and retries the first full
+snapshot every second. The lease remains active with no browser viewers. The
+collector is its sole source for running instances and silent nodes; the
+placement table and a browser/page mirror are not sources.
 
-Status renews its own internal consumer lease even when no administrator has
-the section open. The collector is its sole source for running instances and
-silent nodes; the placement table and the page worker's mirror are projections,
-not sources. Normalize observations into a continuous component fact before
-writing a candidate. Repeated copies of the same fact must not create repeated
-candidates or notifications.
-(not in the code yet — HIL-1688)
+`StatusAgent` keeps the whole picture, baseline, freshness flags, cursor and
+deadline cursor in private rebuildable memory. A new owner first establishes a
+full-snapshot baseline; online process facts count only after a usable report is
+newer than that node's baseline. Offline membership proves absence, but an
+online node with no process roster or no fresh report makes the observation
+unknown. Foreign report clocks are not compared with the Status owner's local
+clock. A `NODE` component expects one slot per member, including offline
+members; duplicate copies on one node do not fill another node's slot. A
+`CLUSTER` component expects one instance.
 
 Expected instances follow the declaration:
 
@@ -96,57 +144,193 @@ Expected instances follow the declaration:
 - Before the first complete observation, missing data is unknown, not proven
   zero. Once absence is established, zero live instances means Major outage;
   fewer than expected but more than zero means Partial outage.
-- Freeze means Maintenance. Instances stopped by that freeze do not become
-  outage facts. There are no external probes, latency measurements or
-  performance thresholds in this version.
+- An empty node set is still unknown; zero is established from known offline
+  member slots, not from having no member picture.
+- Freeze means Maintenance in the typed projection. The owner stops observation,
+  DB writes and notification delivery during every occupied freeze phase, so
+  instances stopped by that freeze do not become outage facts. Start and lift
+  both require a new full/fresh baseline. There are no external probes, latency
+  measurements or performance thresholds in this version.
 
-(not in the code yet — HIL-1688)
-
-Declare `HilosAgentType::HILOS_STATUS = 'hilos_status'` with
-`AgentScope::CLUSTER` and `AgentPlacement::POLICY`, without an index or a
-monopolistic worker. That one agent owns candidates, outages and their update
-timeline. Restarting or moving it must preserve the continuous fact, detection
-moment, publication deadline and suppression decision.
-(not in the code yet — HIL-1688)
+`HilosAgentType::HILOS_STATUS` uses `AgentScope::CLUSTER` and
+`AgentPlacement::POLICY`, without an index, idle timeout or monopolistic
+worker. That one agent owns candidates, outages and their update timeline.
+Restarting or moving it preserves the continuous fact, detection moment,
+publication deadline and suppression decision in the primary database; it
+rebuilds observations from a fresh full picture.
 
 The same owner holds subscriber records.
 (not in the code yet — HIL-1691)
 
 The same owner holds scheduled works and the history of actual maintenance
 periods. Their exact DB/RT entities, fields and action payloads belong to the
-implementation interviews, as do those of candidates and subscribers; this
-canon does not invent their storage schemas.
+HIL-1692 implementation interview; this canon does not invent their storage
+schema.
 (not in the code yet — HIL-1692)
 
 ## Candidate And Outage
 
-`status.publish_delay_seconds` is an integer Settings value, at least zero,
-default `300`, named by `StatusSettingsCatalog::PUBLISH_DELAY_SECONDS`. Read
-the current value when assigning a new candidate's durable `publishAt` from its
-`detectedAt`. Changing the setting affects new deadlines immediately and moves
-no deadline already assigned. It is a setting, not an environment value.
-(not in the code yet — HIL-1688)
+`status.publish_delay_seconds` is the integer setting named by
+`StatusSettingsCatalog::PUBLISH_DELAY_SECONDS`: nonnegative, default `300`.
+`StatusAgent` reads
+`Hilos::$setting[StatusSettingsCatalog::PUBLISH_DELAY_SECONDS]->int()` when it
+creates a candidate and persists `publish_at` from that detection moment. A
+settings change affects new deadlines only; it does not move an existing
+deadline. The overflow guard refuses an unsupported deadline.
 
-Each new continuous fact creates one candidate. It is public as Checking
-immediately. Administrators immediately receive a bell notification and email
-through the notification channel. The delay decides whether the candidate
-becomes a published outage; it does not delay disclosure of Checking.
-(not in the code yet — HIL-1688)
+### Durable And Runtime State
 
-| Event | Durable transition and public result |
+`hilos_status_incident` and `hilos_status_incident_update` are non-journaled
+tables on the primary database. With `STATUS` enabled, the framework mounts
+their full ORM chains at `Hilos::$db->statusIncidents` and
+`Hilos::$db->statusIncidentUpdates` using `LAZY_STRATEGY_KEY`. The incident has
+a positive integer primary id, `component_key`, its detection-time
+`component_name`, nullable `active_component_key`, current `severity`, nullable
+`peak_severity`, `detected_at`, `publish_at`, nullable `published_at`,
+`suppressed_at`, `resolved_at` and `outcome`. A unique nullable
+`active_component_key` permits only one open record per component. Resolving
+the fact clears that key in the same item write, allowing a later absence to
+create a new id. These internal integer ids do not change the future public
+JSON contract's opaque string ids.
+
+Each update row stores `incident_id`, `kind`, `severity`, immutable `text`,
+millisecond `at` and nullable `request_id`. The incident-to-updates relation is
+queried directly by its foreign key, backed by an
+`(incident_id, at, id)` timeline index; tracked request ids have a unique
+`(incident_id, request_id)` index. Request replay uses the bounded
+`Hilos::$db->statusIncidentUpdates->forRequest($incidentId, $requestId)` lookup.
+Do not load all incident history through a lazy full-table read.
+
+The DB write API is:
+
+```php
+Hilos::$db->statusIncidents->actions->candidate(
+    $componentKey, $componentName, $severity, $detectedAt, $publishAt,
+);
+Hilos::$db->statusIncidents[$id]->actions->suppress($at);
+Hilos::$db->statusIncidents[$id]->actions->publish($at);
+Hilos::$db->statusIncidents[$id]->actions->changeSeverity($severity);
+Hilos::$db->statusIncidents[$id]->actions->resolve($at);
+Hilos::$db->statusIncidentUpdates->actions->append(
+    $incidentId, $kind, $severity, $text, $at, $requestId,
+);
+```
+
+The append takes `StatusUpdateKind`, `StatusSeverity` and `StatusUpdateText`.
+These actions join the transaction opened by `StatusAgent`; the owner alone
+claims incident Add and Update and timeline Add. It finds the current incident
+with `whereColumnIn(EntityStatusIncident::active_component_key, ...$portionKeys)`
+and reads a known id by collection offset. The typed `$incident->updates`
+relation reads that incident's timeline by foreign key. Do not add a repository,
+service or owner-side SQL path.
+
+The feature-owned `Hilos::$rt->hilosStatusComponents` collection carries only
+`componentKey`, `expectedInstances`, nullable `liveInstances` and nullable
+`observedAt`. Null means unknown, not zero. The framework feature mounts the
+collection and its representation/actions. Its owner uses
+`$collection->actions->ensure($componentKey, $expectedInstances)` and
+`$component->actions->update($expectedInstances, $liveInstances, $observedAt)`;
+`StatusAgent` is the only writer. Per-component DB reconciliation and these RT
+writes share one primary transaction, including the automatic timeline append. A failed
+transaction rolls back the RT and ORM memory too. Each pass handles at most 32
+components; a durable publication deadline schedules a pass even without a
+new Daemon picture.
+
+`StatusSnapshot::read()` is the existing typed backend projection. It reads the
+ordered component catalog and unconditional protected-mode runtime row. With
+`STATUS` enabled and sources available, it reads current component RT rows and
+current open incident DB rows selected by
+`whereColumnIn(active_component_key, ...catalogKeys)`. Counts are usable only while
+the RT item's `staleSince()` is null. Its
+`StatusComponentSnapshot` entries expose the component, `StatusComponentState`,
+expected/live counts, `observedAt` and optional DB incident. The enum states
+are `OPERATIONAL`, `CHECKING`, `PARTIAL_OUTAGE`, `MAJOR_OUTAGE`, `MAINTENANCE`
+and `UNKNOWN`. An unpublished open incident projects as `CHECKING`; a published
+incident projects its current severity. Without an incident, fresh counts at or
+above expected project `OPERATIONAL`. Its top-level `incidents` is `null` when
+DB facts are unavailable and `[]` when none are known. A reader must declare DB
+and RT source interest through the existing
+[truth-source mechanism](truth-source.md) before calling it. While
+protected mode silences unstopped writers,
+it does not read the incident DB; every occupied freeze phase overlays each
+component as Maintenance.
+This projection is not a public file format or a ready `/status` page.
+
+### Continuous Fact And Timeline
+
+Each new continuous abnormal observation creates one durable candidate with a
+fixed detection moment and publication deadline. `StatusSnapshot::read()` can
+project an available unpublished incident as `CHECKING`; the public page/file
+surface is still future work. When live count is zero the current severity is
+Major; a positive count below expected is Partial. Partial↔Major changes update
+the same open record. Until publication they do not raise `peak_severity`; on
+publication the peak starts at the then-current severity. After publication,
+the peak records the greatest proven severity and a severity change appends one
+automatic `severity_changed` update. Automatic text is `Partial outage.`,
+`Major outage.` or `Resolved.` according to the transition.
+
+| Event | Durable transition and typed projection |
 |---|---|
-| Deadline reached, or **Publish now** | Atomically promote the same candidate to a published outage and append its first automatic update. |
-| Fact ends before publication | End the candidate; remove Checking and retain the reason for the admin history. |
-| **Do not publish** | Suppress publication for the entire current continuous fact. Keep Checking until the fact ends; retain the manual cancellation reason. A later timer pass cannot recreate the candidate for that same fact. |
-| Fact ends after publication | Resolve automatically and append a Resolved update. |
-| **Add an update** | Append the administrator's published words, labeled **from the team**. |
+| Deadline reached, or **Publish now** | Promote the same open candidate and append its one automatic `published` update in the same transaction. |
+| Fact ends before publication | End the candidate with `recovered_before_publication`; append no timeline update. |
+| **Do not publish** | Set `suppressed_at`. Keep the same candidate and its Checking projection until complete recovery; retain suppression for the whole continuous fact. |
+| Suppressed fact recovers | End it as `canceled_publication`; a later timer cannot recreate it while the fact remains continuous. |
+| Fact ends after publication | Resolve it and append one automatic `resolved` update in the same transaction. |
+| **Add an update** | Append immutable team text with kind `team` to an open published incident. |
 
-Serialize the timer and button through the owner so a race produces one
-transition. Announce the event and enqueue its notification only after the
-owner's durable write completes. Published outages and their updates are not
-deleted; team updates cannot be edited away. No human action declares or closes
-an outage.
-(not in the code yet — HIL-1688)
+Recovery means every expected slot is healthy. The item's `resolve()` records
+the outcome and releases the active key in one write. Thus a new absence after
+full recovery receives a new incident id. The three durable outcomes are
+`recovered_before_publication`, `canceled_publication` and `resolved`. Automatic
+timeline kinds are `published`, `severity_changed` and `resolved`; unpublished
+candidates have no timeline rows. Timer publication and **Publish now** use the
+same idempotent publication path, so either order creates one first update.
+
+The owner receives three internal `AGENT_SIGNALS`: the
+`HilosSignalConstants::STATUS_CANCEL_PUBLICATION` signal
+(`StatusCancelPublicationSignalData`), `HilosSignalConstants::STATUS_PUBLISH_NOW`
+(`StatusPublishNowSignalData`) and `HilosSignalConstants::STATUS_ADD_UPDATE`
+(`StatusAddUpdateSignalData`). The first two carry `incidentId`, `replySignal`,
+`acceptKey`, nullable `requestId`, `action` and nullable `successMessage`; the
+last also carries `text`. Nullable keys remain present with `null`; request ids
+hold at most 128 characters. They implement `HandoverAskInterface`. The owner
+answers with `HandoverAnswerSignalData::to(...)` only after the transaction
+commits or the owner has a refusal. In a freeze or without runtime state, the
+owner refuses before DB access. The target is the internal positive integer
+incident id, never a component key. These asks are not browser `ACTIONS`,
+`AGENT_ACTIONS`, `AUTH_ACTIONS` or client-signal routes; the production ADMIN
+gatekeeper and reply route belong to HIL-1689.
+
+Cancel is idempotent for an open unpublished incident; a published or ended
+incident refuses. Publish-now is idempotent for an open already-published
+incident, and refuses a suppressed or ended one. A team update requires an open
+published incident. `StatusUpdateText` trims plain UTF-8 text and accepts 1 to
+5000 Unicode characters. A tracked request id replay with the same text returns
+the existing update; replay with different text refuses. A null request id is
+untracked and is not assigned an invented correlation id.
+
+### Candidate Notices
+
+After a new candidate commits, `Database::afterCommit()` queues one typed
+`StatusCandidateNotice` in the owning agent. The queue drains at most 32 drafts
+per tick, including while the machine has no new picture. For each recipient it
+uses `Hilos::adminAudienceClass()::all()` and `Hilos::$notify->emit()` through
+the existing notification library. The warning type is
+`status.possible_outage`, the title is `Possible outage: <name>`, and the body is
+`Detected at <detected>. Publication scheduled for <deadline>. See /hilos/status.`
+It narrows channel delivery to email while retaining the normal bell
+notification and notification policy (`channels=[email]`). That link names the
+future HIL-1689 admin page; it does not mean the page exists yet.
+
+`StatusCandidateNotice::draftFor(userId)` formats both moments with
+`TimeHelper::serverTextTimeZone(userId)` and `Y-m-d H:i:s P (e)`; stored and
+wire moments remain epoch milliseconds. Its data contains the URL, internal
+integer `incidentId`, `componentKey`, `detectedAt` and `publishAt`, with no
+personal or node data. The queue and recipient cursor are private best-effort
+work, not a durable outbox or exactly-once promise. Stop and freeze clear them;
+an attempted recipient is consumed before emit. A delivery failure after commit
+does not roll back or recreate the candidate, and repeated frames, ticks,
+restarts or severity changes do not enqueue another candidate notice.
 
 Only confirmed subscribers receive publication, team-update and resolution
 mail. They receive no candidate mail, including for a short candidate or a
@@ -387,11 +571,13 @@ hosting and external monitoring are outside this feature.
 
 Existing foundations are the Daemon collector and watch DTO, scope/placement
 declarations, `DirectoryScope::CLUSTER`, `FsPath::publish()` and the private
-cluster-directory guard. They are not evidence that Status is implemented.
+cluster-directory guard. Those foundations alone are not the Status
+implementation; the backend core below landed with HIL-1688, while later
+surfaces remain separately owned.
 
 | Work | Owner and status |
 |---|---|
-| Activation, component catalog, status owner, candidate/outage machine | (not in the code yet — HIL-1688) |
+| Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed backend read | Landed by HIL-1688 |
 | Admin section and its gates | (not in the code yet — HIL-1689) |
 | Public files, heartbeat, hint, nginx routes, reader and freeze publisher | (not in the code yet — HIL-1690) |
 | Subscribers and their mail | (not in the code yet — HIL-1691) |
@@ -402,10 +588,11 @@ cluster-directory guard. They are not evidence that Status is implemented.
 | Angular UI parity, including public freeze/disconnection behavior | (not in the code yet — HIL-1696) |
 
 PR-133 through PR-135 and PR-204 through PR-209 remain the code leaves' design
-promises. HIL-1685 neither implements nor closes them. Exact storage schemas,
-admin and guest action DTOs, and frontend page registry keys remain with their
-implementation interviews and the ordinary contract approval gate. Remove a
-future marker only in the commit that lands its behavior, following
+promises. HIL-1685 neither implements nor closes them. Exact HIL-1691 and
+HIL-1692 storage schemas, admin and guest action DTOs, and frontend page
+registry keys remain with their implementation interviews and the ordinary
+contract approval gate. Remove a future marker only in the commit that lands
+its behavior, following
 [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ## Validation
@@ -416,8 +603,8 @@ For this documentation, run
 test environment. Check `git diff --check` and walk the index and skill links.
 No new text test or full frontend/e2e/cluster run is needed for this text layer.
 
-Review all eight contract topics against this canon: feature, component
-declaration, setting, agent type, directory, file shapes, hint, and env/routes.
-Check markers, privacy, D-248 and the narrow exceptions against the subscription
-and freeze rules. Future code validation belongs to the leaf that implements
-each mechanism; cluster and failover evidence belongs to HIL-1694.
+Review the built feature, component declaration, setting, agent pair, DB/RT
+operations, notices and typed projection against current source. Keep sibling
+markers, public JSON v1, privacy, D-248 and the narrow file/freeze exceptions
+aligned with the future owners. Cluster and failover evidence belongs to
+HIL-1694.

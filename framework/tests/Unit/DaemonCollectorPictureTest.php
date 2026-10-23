@@ -19,6 +19,7 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /** A node's report replaces its slot whole and no frame leaves without a watcher. */
 final class DaemonCollectorPictureTest extends TestCase
@@ -106,6 +107,50 @@ final class DaemonCollectorPictureTest extends TestCase
         $agent->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10));
         $agent->fanOutIfDue(microtime(true) + 91.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testConsumerLeasesRenewExpireAndStopIndependently(): void
+    {
+        $agent = new DaemonCollectorAgent();
+        $agent->onStart();
+        foreach ([
+            'agent/hilos_daemon' => HilosSignalConstants::DAEMON_PICTURE_WATCH,
+            'agent/hilos_status' => HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH,
+        ] as $sender => $request) {
+            $agent->onSignalAgent(new AgentSignalData(data: new DaemonPictureWatchSignalData(1)), $sender, $request);
+        }
+        self::assertSame(HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
+            Hilos::$sr->getNextQueuedSignal()->signalName->getName());
+        self::assertSame(HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION,
+            Hilos::$sr->getNextQueuedSignal()->signalName->getName());
+
+        // Control lease clocks without sleeping; renew Status through the real signal path.
+        $leases = new ReflectionProperty(DaemonCollectorAgent::class, 'watchers');
+        $watchers = $leases->getValue($agent);
+        $watchers['agent/hilos_daemon']['renewedAt'] = 100.0;
+        $watchers['agent/hilos_status']['renewedAt'] = 100.0;
+        $leases->setValue($agent, $watchers);
+        $agent->onSignalAgent(new AgentSignalData(data: new DaemonPictureWatchSignalData(1)),
+            'agent/hilos_status', HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH);
+        self::assertTrue(Hilos::$sr->getNextQueuedSignal()->data->data->snapshot);
+        $agent->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10));
+        $agent->fanOutIfDue(microtime(true) + 1.0);
+        self::assertSame(HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION,
+            Hilos::$sr->getNextQueuedSignal()->signalName->getName());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertSame(['agent/hilos_status'], array_keys($leases->getValue($agent)));
+
+        $agent->onSignalAgent(new AgentSignalData(data: new DaemonPictureWatchSignalData(1)),
+            'agent/hilos_daemon', HilosSignalConstants::DAEMON_PICTURE_WATCH);
+        Hilos::$sr->getNextQueuedSignal();
+        $agent->onSignalAgent(new AgentSignalData(data: new DaemonPictureWatchSignalData(0)),
+            'agent/hilos_status', HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH);
+        $agent->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 11));
+        $agent->fanOutIfDue(microtime(true) + 2.0);
+        self::assertSame(HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION,
+            Hilos::$sr->getNextQueuedSignal()->signalName->getName());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertSame(['agent/hilos_daemon'], array_keys($leases->getValue($agent)));
     }
 
     public function testCollectorReplacesNodeDigestsWithLifetimeLabelsBeforeStoringReports(): void

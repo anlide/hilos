@@ -21,6 +21,7 @@ use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Core\Feature\Definition\NotificationsFeature;
 use Hilos\Core\Feature\Definition\ProfilePhotoFeature;
 use Hilos\Core\Feature\Definition\SettingsFeature;
+use Hilos\Core\Feature\Definition\StatusFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Hilos;
@@ -112,6 +113,7 @@ class FeatureRegistry
             new ModerationFeature(),
             new AnalyticsFeature(),
             new ChangeLogFeature(),
+            new StatusFeature(),
         ];
     }
 }

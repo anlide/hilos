@@ -1,0 +1,29 @@
+{
+    "format": 1,
+    "id": "20261023115508508976_HIL-1688_status_machine",
+    "parts": [
+        {
+            "unit": "status_incident",
+            "introducesUnit": true,
+            "up": "create_hilos_status_incident.sql",
+            "down": "create_hilos_status_incident_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "503666fbd66cfb715bd36ba0d8a37d27b934f0637c2e7fae0b16cf2128183109",
+            "afterStubDownSha256": "5a90a8f3305d729279f7e117a8e7cd451fb761515549f258347d5346e88e485b"
+        },
+        {
+            "unit": "status_incident_update",
+            "introducesUnit": true,
+            "up": "create_hilos_status_incident_update.sql",
+            "down": "create_hilos_status_incident_update_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261023115508508976_HIL-1688_status_machine",
+                    "unit": "status_incident"
+                }
+            ],
+            "afterStubUpSha256": "35d51a1c7ba4541f3c2ac917420c4cfffc80aa59bad2dbeca82e6926d56599e8",
+            "afterStubDownSha256": "3aeba9679051715e56397306feda3e4f64d30fd8c2c7c79b56f0cc21ccf9014a"
+        }
+    ]
+}

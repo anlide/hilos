@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["status_incident"],"parts":[{"changeId":"20261023115508508976_HIL-1688_status_machine","unit":"status_incident","upSha256":"503666fbd66cfb715bd36ba0d8a37d27b934f0637c2e7fae0b16cf2128183109","downSha256":"5a90a8f3305d729279f7e117a8e7cd451fb761515549f258347d5346e88e485b"}],"upSha256":"503666fbd66cfb715bd36ba0d8a37d27b934f0637c2e7fae0b16cf2128183109","downSha256":"5a90a8f3305d729279f7e117a8e7cd451fb761515549f258347d5346e88e485b"}
+DROP TABLE IF EXISTS `hilos_status_incident`;

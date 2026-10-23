@@ -40,6 +40,9 @@ final class HilosAgentType
     /** Daemon section collector placed once per cluster. */
     public const string HILOS_DAEMON_COLLECTOR = 'hilos_daemon_collector';
 
+    /** Cluster owner of Status components and incident history. */
+    public const string HILOS_STATUS = 'hilos_status';
+
     /** @var string Hilos backup agent (monopoly owner of the backup index and storage) */
     public const string HILOS_BACKUP = 'hilos_backup';
 

@@ -70,6 +70,7 @@ use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\Runtime\View\Collection\HilosSessionToastStacks;
+use Hilos\Runtime\View\Collection\HilosStatusComponents;
 use Hilos\Runtime\View\Collection\HilosUploads;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
@@ -103,6 +104,7 @@ use OutOfBoundsException;
  * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE
  * @property-read HilosUploads $hilosUploads Files connections are sending or have sent, mounted for a project that declares HilosFeature::UPLOADS
  * @property-read HilosModerationChecks $hilosModerationChecks Checks connections are waiting on, mounted for MODERATION
+ * @property-read HilosStatusComponents $hilosStatusComponents Current component counts, mounted only for STATUS
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted

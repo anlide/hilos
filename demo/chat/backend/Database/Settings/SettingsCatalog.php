@@ -30,6 +30,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Status\StatusSettingsCatalog;
 
 /**
  * SettingsCatalog - Project settings catalog.
@@ -152,6 +153,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             ModerationSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            StatusSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),

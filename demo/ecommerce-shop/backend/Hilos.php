@@ -142,6 +142,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
+use Hilos\Status\StatusAgent;
 
 /**
  * Hilos - Main app facade for data access.
@@ -190,6 +192,7 @@ final class Hilos extends HilosFacade
         HilosFeature::BACKUP,
         HilosFeature::CHANGE_LOG,
         HilosFeature::DAEMON,
+        HilosFeature::STATUS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -339,6 +342,12 @@ final class Hilos extends HilosFacade
         DaemonCollectorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
             AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        StatusAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => StatusAgent::class,
+            AgentRegistryKey::DAEMON => StatusAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::CLUSTER,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         // The probes of this demo's cluster stand - scenarios 3, 4, 9, 12, 14, 16 and 19 read the

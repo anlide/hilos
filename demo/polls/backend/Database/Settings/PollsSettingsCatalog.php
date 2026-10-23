@@ -26,6 +26,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Status\StatusSettingsCatalog;
 
 /**
  * PollsSettingsCatalog - Project settings catalog for the polls demo.
@@ -76,6 +77,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            StatusSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),

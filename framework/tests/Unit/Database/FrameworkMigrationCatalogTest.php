@@ -229,8 +229,11 @@ final class FrameworkMigrationCatalogTest extends TestCase
     public function testEveryRealStubIsCatalogedWithExactTablesAndExecutableDependencyOrder(): void
     {
         // OAuth and legal-acceptance export enter AUTH in slice 5; they are real catalog units already.
+        // Status storage arrives before its activation in HIL-1688 slice 2.
         $allRequirements = new FeatureRequirements(
-            requiredDbTables: ['hilos_oauth_provider', 'hilos_legal_acceptance_export'],
+            requiredDbTables: [
+                'hilos_oauth_provider', 'hilos_legal_acceptance_export', 'hilos_status_incident', 'hilos_status_incident_update',
+            ],
         );
         $registry = new class ($allRequirements) extends FeatureRegistry {
             public function __construct(private readonly FeatureRequirements $extraRequirements)

@@ -85,6 +85,8 @@ use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Status\Exception\StatusComponentDeclarationException;
+use Hilos\Status\StatusComponentCatalog;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
@@ -329,6 +331,9 @@ abstract class Hilos implements TruthSourceOwner
      * @var list<HilosFeature>
      */
     protected const array FEATURES = [];
+
+    /** @var array<string, array{name: string, description: ?string, agentType: string}> Ordered permanent Status components */
+    protected const array STATUS_COMPONENTS = [];
 
     /**
      * What this project promises about its database, so that every node may rely on it (HIL-1206).
@@ -784,6 +789,25 @@ abstract class Hilos implements TruthSourceOwner
     public static function featuresOf(string $hilosClass): array
     {
         return $hilosClass::FEATURES;
+    }
+
+    /**
+     * @return StatusComponentCatalog Running project's validated component declaration
+     * @throws StatusComponentDeclarationException When the component declaration or an agent type is unsupported
+     */
+    public static function statusComponents(): StatusComponentCatalog
+    {
+        return static::statusComponentsOf(static::appClass());
+    }
+
+    /**
+     * @param class-string<Hilos> $hilosClass Facade being validated, independent of the running project
+     * @return StatusComponentCatalog Validated components in declaration order
+     * @throws StatusComponentDeclarationException When the component declaration or an agent type is unsupported
+     */
+    public static function statusComponentsOf(string $hilosClass): StatusComponentCatalog
+    {
+        return StatusComponentCatalog::fromDeclaration($hilosClass::STATUS_COMPONENTS, $hilosClass::AGENTS);
     }
 
     /**

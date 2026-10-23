@@ -181,6 +181,8 @@ class FrameworkSchemaCatalog
             $this->tableUnit('user_photo', 'hilos_user_photo', [self::USER, self::FILE]),
             $this->tableUnit(self::VERIFIER_CIRCLE, 'hilos_verifier_circle'),
             $this->tableUnit('moderation_rule', 'hilos_moderation_rule'),
+            $this->tableUnit('status_incident', 'hilos_status_incident'),
+            $this->tableUnit('status_incident_update', 'hilos_status_incident_update', ['status_incident']),
             new FrameworkSchemaUnit(
                 'analytics',
                 FrameworkTablesWithoutEntity::analyticsTables(),

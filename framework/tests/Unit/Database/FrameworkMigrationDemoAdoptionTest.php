@@ -36,6 +36,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
         $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
+        $statusIndices = [102, 61, 61, 47, 47, 47];
         $browserTimeZones = [
             'session' => '07a4fbd825b000f57571647973c8814230f60651773b8b19d4c8634b7dacf464',
             'user' => '57ecdc04ffd0dc9bad816b7d3eb0bd3cbe48486ffe4490ae42c25ec8339255da',
@@ -105,6 +106,23 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(['moderation_rule'], $install->units);
                 self::assertSame(
                     array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $catalog->partsForUnits(['moderation_rule'])),
+                    array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
+                );
+                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                $origins[] = $install;
+            }
+            $statusParts = $catalog->partsForUnits(['status_incident', 'status_incident_update']);
+            foreach (['status_incident', 'status_incident_update'] as $offset => $key) {
+                $unit = $schema->unit($key);
+                $base = $project->root . '/' . sprintf('%03d', $statusIndices[$index] + $offset) . '_framework_install_' . $key;
+                $up = FsPath::read($base . '.sql');
+                $down = FsPath::read($base . '_down.sql');
+                $install = $catalog->verifyPair($up, $down);
+                self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+                self::assertSame([$key], $install->units);
+                self::assertSame(
+                    [$statusParts[$offset]->toArray()],
                     array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
                 );
                 self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));

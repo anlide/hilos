@@ -17,6 +17,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Status\StatusSettingsCatalog;
 
 /**
  * EcommerceShopSettingsCatalog - Project settings catalog for this demo.
@@ -66,6 +67,7 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
             ],
             DeliveryLogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            StatusSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),

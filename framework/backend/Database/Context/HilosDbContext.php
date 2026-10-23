@@ -7,6 +7,8 @@ namespace Hilos\Database\Context;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Hilos;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
@@ -46,6 +48,8 @@ use Hilos\Database\View\Collection\SecondFactorSettings as DbCollectionSecondFac
 use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
+use Hilos\Database\View\Collection\StatusIncidents as DbCollectionStatusIncidents;
+use Hilos\Database\View\Collection\StatusIncidentUpdates as DbCollectionStatusIncidentUpdates;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
@@ -80,6 +84,8 @@ use Hilos\Database\Actions\Collection\SecondFactorSettingsActions;
 use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
+use Hilos\Database\Actions\Collection\StatusIncidentsActions;
+use Hilos\Database\Actions\Collection\StatusIncidentUpdatesActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\UserMergesActions;
 use Hilos\Database\Actions\Collection\UserPhotosActions;
@@ -105,6 +111,7 @@ use Hilos\Database\Actions\Item\SecondFactorBackupCodeActions;
 use Hilos\Database\Actions\Item\SecondFactorResetActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
+use Hilos\Database\Actions\Item\StatusIncidentActions;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Actions\Item\UserRenameActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
@@ -160,12 +167,16 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionLocales $locales
  * @property-read DbCollectionI18nReflows $i18nReflows Fingerprint of the catalog last taken into the reference tables
  * @property-read DbCollectionModerationRules $moderationRules Administrators' own rules per moderation kind
+ * @property-read DbCollectionStatusIncidents $statusIncidents Status candidates and durable history, mounted only for STATUS
+ * @property-read DbCollectionStatusIncidentUpdates $statusIncidentUpdates Immutable Status timeline, mounted only for STATUS
  */
 abstract class HilosDbContext extends DbContext
 {
     public const string settings = 'settings';
     public const string setting = 'setting';
     public const string identities = 'identities';
+    public const string statusIncidents = 'statusIncidents';
+    public const string statusIncidentUpdates = 'statusIncidentUpdates';
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
@@ -563,6 +574,22 @@ abstract class HilosDbContext extends DbContext
             DbCollectionUserPhotos::class,
             UserPhotosActions::class,
         );
+
+        if (Hilos::hasFeature(HilosFeature::STATUS)) {
+            $this->mountFramework(
+                self::statusIncidents,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusIncidents::class,
+                StatusIncidentsActions::class,
+                StatusIncidentActions::class,
+            );
+            $this->mountFramework(
+                self::statusIncidentUpdates,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusIncidentUpdates::class,
+                StatusIncidentUpdatesActions::class,
+            );
+        }
 
         $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));
         if ($unknown !== []) {
