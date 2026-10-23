@@ -97,13 +97,27 @@ const publicLegalTypes = [
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
+/**
+ * The photo's own check frame gave way to the shared moderation one: the two
+ * names it took out of the frozen snapshot and the three it added, by hand.
+ */
+const moderationRemovedValues = [
+  'SIGNAL_PROFILE_PHOTO_CHECK',
+  'profilePhotoCheckSchema',
+]
+const moderationValues = [
+  'PROFILE_PHOTO_KIND',
+  'SIGNAL_MODERATION_CHECK',
+  'moderationCheckSchema',
+]
 const expectedValues = [
-  ...legacy.value,
+  ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
   ...logViewerValues,
   ...pageHeadValues,
   ...publicLegalValues,
   ...momentValues,
+  ...moderationValues,
 ].sort()
 
 /**
@@ -213,6 +227,7 @@ describe('core public entries', () => {
       ...pageHeadValues,
       ...publicLegalValues,
       ...momentValues,
+      ...moderationValues,
     ]) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(

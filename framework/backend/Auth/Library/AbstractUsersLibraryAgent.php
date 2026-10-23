@@ -182,9 +182,11 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
-use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
@@ -201,7 +203,6 @@ use Hilos\Users\AddressablePerson;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
-use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
@@ -346,9 +347,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::userRenames => [TruthSourceOperation::Update],
     ];
 
-    /** @var array<string, list<TruthSourceOperation>> */
-    public const array OWNS_RT = [
-        HilosProfilePhotoCheck::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    /**
+     * The moderation checks whose verdicts come to this library, as one set of the shared queue
+     * (HIL-1625): it opens them and ends them, and nothing edits a check in between. The set is
+     * named by {@see self::ownedRtSetKey()}; the moderator only reads the checks.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT_SET = [
+        HilosModerationCheck::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     /** @var list<string> */
@@ -415,7 +422,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => UserAccountDeletionCancelDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => UserPhotoPutDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => UserPhotoRemoveDoneSignalData::class,
-        HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
 
@@ -829,8 +835,20 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $this->sweepRegistrationReservations();
         $this->sweepVerifications();
         if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
-            $this->profilePhotoCommands()->sweepClosedConnections();
+            $this->profilePhotoCommands()->sweepChecks();
         }
+    }
+
+    /**
+     * Names the set of the moderation checks this library holds: the checks whose verdicts come
+     * to it, which every kind names by its recipient's agent type (HIL-1625).
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return string This library's agent type for the moderation checks, the base answer otherwise
+     */
+    public function ownedRtSetKey(string $collection): string
+    {
+        return $collection === HilosModerationCheck::RT_COLLECTION ? self::AGENT_TYPE : parent::ownedRtSetKey($collection);
     }
 
     /** @return list<CronRule> Current verification, second-factor and registration-hold sweep schedules */
@@ -1014,6 +1032,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * resumed here (HIL-1409). An administrator's cancel is answered to the card once the agent
      * has written. A published photo is bound on the agent's answer; that action was already
      * answered when the upload was sent.
+     * A moderation verdict comes here for every kind that names this library as its recipient,
+     * though no declaration says so: the router reads the recipient off the kind (HIL-1625). It
+     * is applied by the command of its kind - the profile photo alone today.
      * Code mint requests write the hold and challenge after the code agent's probe; release
      * requests remove only the forgotten browser's hold (HIL-1411).
      *
@@ -1339,13 +1360,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return;
 
-            case HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT:
-                if (!$data->data instanceof ProfilePhotoVerdictSignalData) {
+            case HilosSignalConstants::HILOS_MODERATION_VERDICT:
+                if (!$data->data instanceof ModerationVerdictSignalData) {
                     throw new ValidationException(
-                        HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT . ' payload must be ' . ProfilePhotoVerdictSignalData::class,
+                        HilosSignalConstants::HILOS_MODERATION_VERDICT . ' payload must be ' . ModerationVerdictSignalData::class,
                     );
                 }
-                $this->profilePhotoCommands()->verdict($data->data);
+                $this->applyModerationVerdict($data->data);
 
                 return;
 
@@ -3010,6 +3031,26 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function userRenameCommands(): UserRenameCommands
     {
         return $this->userRenameCommands ??= new UserRenameCommands($this);
+    }
+
+    /**
+     * Hands a moderation verdict to the command of its kind.
+     *
+     * The verdict comes here because its kind names this library as the recipient, and every
+     * kind applies its own: today that is the profile photo alone. A verdict of any other kind
+     * is not applied as one, and is only logged.
+     *
+     * @param ModerationVerdictSignalData $verdict The moderator's verdict
+     * @throws HilosException When state, a publication frame or a refusal frame fails
+     */
+    private function applyModerationVerdict(ModerationVerdictSignalData $verdict): void
+    {
+        if ($verdict->kind === ModerationKindKey::PROFILE_PHOTO && Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
+            $this->profilePhotoCommands()->verdict($verdict);
+
+            return;
+        }
+        Logger::logAgentWarning($this->getId(), "Moderation verdict of kind {$verdict->kind} has no command here");
     }
 
     /** @return ProfilePhotoCommands Profile photo workflow, built once per process */

@@ -11,6 +11,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Mail\SmtpSecurity;
+use Hilos\Moderation\ModerationLlmConstants;
 use Hilos\Utils\LogLevel;
 
 /**
@@ -155,6 +156,38 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LLM_EXTERNAL_CHAT_MODEL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_TEXT_PROVIDER->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                LLMConstants::PROVIDER_LOCAL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_TEXT_MODEL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                ModerationLlmConstants::DEFAULT_TEXT_MODEL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_TEXT_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::HILOS_MODERATION_TEXT_TIMEOUT_SEC->name => self::entry(
+                EnvCatalogConstants::TYPE_FLOAT,
+                LLMConstants::DEFAULT_TIMEOUT_SEC,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_IMAGE_PROVIDER->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                LLMConstants::PROVIDER_LOCAL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_IMAGE_MODEL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                ModerationLlmConstants::DEFAULT_IMAGE_MODEL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_MODERATION_IMAGE_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::HILOS_MODERATION_IMAGE_TIMEOUT_SEC->name => self::entry(
+                EnvCatalogConstants::TYPE_FLOAT,
+                LLMConstants::DEFAULT_TIMEOUT_SEC,
                 emptyIsMissing: true,
             ),
             EnvConstants::CHAT_MODERATION_MODEL->name => self::entry(

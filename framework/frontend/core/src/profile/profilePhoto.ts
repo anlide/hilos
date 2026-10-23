@@ -1,7 +1,11 @@
-import { z } from 'zod'
 import { ActionErrorStore } from '../connection/ActionErrorStore.js'
 import { ActionError } from '../connection/actionLifecycle.js'
 import { formatInitials } from '../format/initials.js'
+import {
+  moderationCheckSchema,
+  PROFILE_PHOTO_KIND,
+  SIGNAL_MODERATION_CHECK,
+} from '../moderation/moderationProtocol.js'
 import { sessionUserName } from '../session/sessionScope.js'
 import {
   computedSignal,
@@ -39,15 +43,12 @@ export const HILOS_PROFILE_PHOTO_UPLOAD_TARGET = 'hilos_profile_photo'
 export const PROFILE_PHOTO_SET_ACTION = 'hilos_profile_photo_set'
 /** Tracked action to remove the acting person's photo. */
 export const PROFILE_PHOTO_REMOVE_ACTION = 'hilos_profile_photo_remove'
-/** Live checking flag for this connection. */
-export const SIGNAL_PROFILE_PHOTO_CHECK = 'hilos_profile_photo_check'
-
-/** The users library's checking flag. */
-export const profilePhotoCheckSchema = z.looseObject({ checking: z.boolean() })
-
-/** Framework signal schemas understood by the profile photo flow. */
+/**
+ * Framework signal schemas understood by the profile photo flow: the shared moderation check
+ * frame, of which the flow reads the photo kind alone.
+ */
 export const PROFILE_PHOTO_SIGNAL_SCHEMAS = {
-  [SIGNAL_PROFILE_PHOTO_CHECK]: profilePhotoCheckSchema,
+  [SIGNAL_MODERATION_CHECK]: moderationCheckSchema,
 }
 
 /** The window's visible tiles. Checking stays over the crop tile. */
@@ -199,9 +200,11 @@ export function createHilosProfilePhotoFlow(
         if (bitmap.get() !== null) step.set('crop')
       }),
       context.connection.on('projectSignal', (signal) => {
-        if (signal.type !== SIGNAL_PROFILE_PHOTO_CHECK) return
-        const parsed = profilePhotoCheckSchema.safeParse(signal.data)
-        if (parsed.success) checking.set(parsed.data.checking)
+        if (signal.type !== SIGNAL_MODERATION_CHECK) return
+        const parsed = moderationCheckSchema.safeParse(signal.data)
+        if (parsed.success && parsed.data.kind === PROFILE_PHOTO_KIND) {
+          checking.set(parsed.data.checking)
+        }
       }),
     ]
   }

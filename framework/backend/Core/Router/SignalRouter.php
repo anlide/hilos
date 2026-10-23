@@ -10,11 +10,13 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Group\GroupNameMatch;
@@ -45,6 +47,8 @@ use Hilos\Database\Database;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKind;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -1100,6 +1104,7 @@ class SignalRouter
      * @throws EnvException When the placement post-pass reads cluster configuration and it is invalid
      * @throws ClusterConfigurationException When a node-addressed agent signal reads the local node
      *     id and cluster mode is on with a missing or invalid node config
+     * @throws InvalidArgumentException When a moderation verdict is routed and the project's kind directory is malformed
      */
     public function getDestinations(SignalDTO $signal): array
     {
@@ -1949,7 +1954,9 @@ class SignalRouter
      * Get agent destinations for agent-to-agent signal.
      *
      * Uses page-owned signal topology first, then agent AGENT_SIGNALS ownership
-     * through the active project topology.
+     * through the active project topology. The moderation verdict is the one agent
+     * signal between the two that no agent declares: its recipient is named by the
+     * kind it carries ({@see getModerationVerdictDestinations()}).
      *
      * For indexed multi-instance agents, reads the index field declared in
      * AGENT_SIGNALS config via getAgentSignalIndexFields() and extracts the
@@ -1972,6 +1979,7 @@ class SignalRouter
      *     payload names — or empty when unrouted
      * @throws EnvException When reading the local node id reads cluster configuration and it is invalid
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * @throws InvalidArgumentException When a moderation verdict is routed and the project's kind directory is malformed
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {
@@ -1989,6 +1997,10 @@ class SignalRouter
         }
 
         $signalName = $signal->signalName->getName();
+        if ($signalName === HilosSignalConstants::HILOS_MODERATION_VERDICT) {
+            return $this->getModerationVerdictDestinations($signal);
+        }
+
         $hilosClass = $this->hilosClass();
         $agentType = $hilosClass::getAgentSignalRoutes()[$signalName] ?? null;
         if (!is_string($agentType) || $agentType === '') {
@@ -2023,6 +2035,50 @@ class SignalRouter
     }
 
     /**
+     * Resolves the agent a moderation verdict goes to from the kind it carries (HIL-1625).
+     *
+     * No agent declares the verdict in AGENT_SIGNALS, because no one agent receives it: each kind
+     * names the agent its verdicts go to ({@see ModerationKind::$verdictTo}), and two kinds may name
+     * two agents. The payload is read as the verdict DTO, the way the receiving worker reads it, and
+     * the kind is looked up among the kinds the project publishes, which come from constants alone:
+     * nothing here touches the database, the runtime or a file, as routing in the master must not.
+     * The recipient is a plain agent destination, placed by the same post-pass as a declared one.
+     *
+     * A payload that is not a verdict and a kind the project does not publish are not routed, and
+     * the log says which: the master's own line for an empty list only says no route was found.
+     *
+     * @param SignalDTO $signal Moderation verdict from an accepted source
+     * @return list<AgentDestination> The kind's verdict recipient, or empty when the verdict cannot be routed
+     * @throws InvalidArgumentException When the project's moderation kind directory is malformed
+     */
+    private function getModerationVerdictDestinations(SignalDTO $signal): array
+    {
+        $signalName = $signal->signalName->getName();
+        if (!$signal->data instanceof AgentSignalData) {
+            Logger::error("Agent signal {$signalName} carries " . get_debug_type($signal->data) . ' instead of agent signal data');
+            return [];
+        }
+
+        $payload = $signal->data->data;
+        try {
+            $verdict = $payload instanceof ModerationVerdictSignalData
+                ? $payload
+                : ModerationVerdictSignalData::fromArray($payload->toArray());
+        } catch (InvalidFormatException $e) {
+            Logger::error("Agent signal {$signalName} carries no moderation verdict: {$e->getMessage()}");
+            return [];
+        }
+
+        $kind = $this->hilosClass()::moderationKinds()[$verdict->kind] ?? null;
+        if ($kind === null) {
+            Logger::error("Moderation verdict names the kind {$verdict->kind}, which this project does not publish");
+            return [];
+        }
+
+        return [new AgentDestination($kind->verdictTo)];
+    }
+
+    /**
      * Tells whether a node id names the node this router runs on.
      *
      * The standalone id is local too; unknown named ids still remain remote.
@@ -2042,16 +2098,22 @@ class SignalRouter
     /**
      * Creates agent-owned signal inner payload DTO from project topology.
      *
+     * The moderation verdict, which no agent declares, is parsed into the framework's own verdict
+     * DTO: whichever agent its kind names receives it typed (HIL-1625).
+     *
      * @param string $signalName Signal name
      * @param AgentSignalData $signalData Wrapped agent signal payload
      * @return AgentSignalData Validated or passthrough wrapper
      * @throws BrokenSignalPayloadDtoException When topology declares a class that cannot be hydrated at all
-     * @throws InvalidAgentSignalPayloadException When topology declares a DTO and payload does not match
+     * @throws InvalidAgentSignalPayloadException When topology declares a DTO, or the signal is a moderation
+     *     verdict, and the payload does not match
      */
     public function createAgentSignalPayloadDTO(string $signalName, AgentSignalData $signalData): AgentSignalData
     {
         // Registry values are class-strings; anything else means the signal declares no DTO.
-        $dtoClass = $this->hilosClass()::getAgentSignalDtoRoutes()[$signalName] ?? null;
+        $dtoClass = $signalName === HilosSignalConstants::HILOS_MODERATION_VERDICT
+            ? ModerationVerdictSignalData::class
+            : $this->hilosClass()::getAgentSignalDtoRoutes()[$signalName] ?? null;
         if (!is_string($dtoClass)) {
             return $signalData;
         }

@@ -125,7 +125,7 @@ final class FeatureActivationValidator
             $agents,
             $errors,
         );
-        $this->validateProfilePhoto($hilosClass, $declared, $agents, $pages, $tables, $browserTables, $pageTables, $errors);
+        $this->validateProfilePhoto($declared, $pages, $tables, $browserTables, $pageTables, $errors);
         $this->validateModeration($hilosClass, $declared, $agents, $errors);
 
         if ($errors !== []) {
@@ -558,9 +558,7 @@ final class FeatureActivationValidator
     }
 
     /**
-     * @param class-string<Hilos> $hilosClass Project facade being checked
      * @param list<HilosFeature> $declared Enabled features
-     * @param array $agents Agent registry
      * @param array $pages Page registry
      * @param array $tables Server table registry
      * @param array $browserTables Browser table registry
@@ -568,24 +566,17 @@ final class FeatureActivationValidator
      * @param list<string> $errors Accumulated activation refusals
      */
     private function validateProfilePhoto(
-        string $hilosClass,
         array $declared,
-        array $agents,
         array $pages,
         array $tables,
         array $browserTables,
         array $pageTables,
         array &$errors,
     ): void {
-        $enabled = in_array(HilosFeature::PROFILE_PHOTO, $declared, true);
-        $checker = $hilosClass::PROFILE_PHOTO_CHECKER;
-        if ($checker !== null && !$enabled) {
-            $errors[] = 'PROFILE_PHOTO_CHECKER names an agent, but HilosFeature::PROFILE_PHOTO is not declared';
-        }
-        if ($checker !== null && !array_key_exists($checker, $agents)) {
-            $errors[] = "PROFILE_PHOTO_CHECKER names {$checker}, but AGENTS has no such agent";
-        }
-        if ($enabled && in_array(HilosFeature::HILOS_USERS, $declared, true)) {
+        if (
+            in_array(HilosFeature::PROFILE_PHOTO, $declared, true)
+            && in_array(HilosFeature::HILOS_USERS, $declared, true)
+        ) {
             $this->validatePageTableBinding(
                 $this->name(HilosFeature::PROFILE_PHOTO),
                 AbstractHilosUserPage::class,

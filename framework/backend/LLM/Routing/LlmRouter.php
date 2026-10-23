@@ -18,9 +18,15 @@ use Hilos\LLM\Exception\LLMConfigurationException;
  *
  * The single policy layer above {@see ClientFactory}: it turns a profile key
  * into an immutable {@see LlmProfile} (provider explicit, resolved from the
- * env-backed catalog plus an optional runtime override), then builds the async
- * chat client for it. Replaces the global LLM_CHAT_PROVIDER switch read at
- * multiple call sites; that switch is now the `default` profile's provider env.
+ * env-backed catalog plus the runtime overrides), then builds the async chat
+ * client for it. Replaces the global LLM_CHAT_PROVIDER switch read at multiple
+ * call sites; that switch is now the `default` profile's provider env.
+ *
+ * The catalog it resolves from is the framework's {@see LlmProfileCatalogStub}
+ * with the project's own catalog on top, so the built-in keys are declared in
+ * every project. The overrides come in two layers: the project's optional source
+ * first, then {@see FrameworkLlmProfileOverrideSource}, which the router always
+ * applies, so the framework settings of a built-in key have the last word.
  */
 class LlmRouter
 {
@@ -29,9 +35,13 @@ class LlmRouter
 
     private ?LlmProfileOverrideSource $overrides;
 
+    private FrameworkLlmProfileOverrideSource $frameworkOverrides;
+
     /**
-     * @param class-string<CatalogProviderInterface> $catalogClass Profile catalog provider class
-     * @param ?LlmProfileOverrideSource $overrides Runtime override source, or null for env-only
+     * @param class-string<CatalogProviderInterface> $catalogClass Project profile catalog provider class,
+     *   folded over the framework catalog
+     * @param ?LlmProfileOverrideSource $overrides Project runtime override source, or null when the
+     *   project overrides nothing; the framework override runs either way
      */
     public function __construct(
         string $catalogClass = LlmProfileCatalogStub::class,
@@ -39,6 +49,7 @@ class LlmRouter
     ) {
         $this->catalogClass = $catalogClass;
         $this->overrides = $overrides;
+        $this->frameworkOverrides = new FrameworkLlmProfileOverrideSource();
     }
 
     /**
@@ -46,20 +57,27 @@ class LlmRouter
      *
      * The single source of catalog knowledge for callers that need to enumerate
      * profiles or read an entry's env-variable names (e.g. the `llm:ping` CLI),
-     * so no code re-reads the catalog provider class directly.
+     * so no code re-reads the catalog provider class directly. The framework
+     * profiles lie under the project's own, so a project catalog that declares
+     * only its keys still resolves the built-in ones, and an entry the project
+     * declares under a built-in key replaces it.
      *
      * @return array<string, array<string, mixed>> Profiles keyed by profile key
      */
     public function catalog(): array
     {
-        return ($this->catalogClass)::getCatalog();
+        return array_replace(LlmProfileCatalogStub::getCatalog(), ($this->catalogClass)::getCatalog());
     }
 
     /**
-     * Resolves a profile key to its effective profile, applying any override.
+     * Resolves a profile key to its effective profile, applying the overrides.
+     *
+     * The project's override source runs first, the framework's last. The
+     * framework's reads its settings afresh on every call, so the next resolve
+     * after a saved change already returns the changed built-in profile.
      *
      * @param string $profileKey Profile key, e.g. 'default'
-     * @return LlmProfile Effective profile (base plus any runtime override)
+     * @return LlmProfile Effective profile (base plus the runtime overrides)
      * @throws LLMConfigurationException When the key is not declared, the provider
      *   is invalid, or the external provider is selected without an API key
      * @throws EnvException When an env variable the profile names is missing, outside
@@ -70,16 +88,16 @@ class LlmRouter
     {
         $base = $this->resolveBase($profileKey);
 
-        return $this->overrides?->override($base) ?? $base;
+        return $this->frameworkOverrides->override($this->overrides?->override($base) ?? $base);
     }
 
     /**
      * Resolves a profile key to its env-backed profile, before any override.
      *
      * The pre-override half of {@see resolve()}: it turns catalog plus env into an
-     * immutable profile without consulting the runtime override source. Kept public
-     * so an operator tool can show what env resolves to versus what the override
-     * changed, from one code path rather than two.
+     * immutable profile without consulting either runtime override source. Kept
+     * public so an operator tool can show what env resolves to versus what the
+     * overrides changed, from one code path rather than two.
      *
      * @param string $profileKey Profile key, e.g. 'default'
      * @return LlmProfile Env-backed profile, before any runtime override
@@ -91,7 +109,7 @@ class LlmRouter
      */
     public function resolveBase(string $profileKey): LlmProfile
     {
-        $catalog = ($this->catalogClass)::getCatalog();
+        $catalog = $this->catalog();
         if (!array_key_exists($profileKey, $catalog)) {
             throw new LLMConfigurationException("LLM profile '{$profileKey}' is not declared in the catalog");
         }

@@ -8,6 +8,12 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\PositiveIntegerRule;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos;
+use Hilos\Moderation\Validation\ModerationModelRule;
+use Hilos\Moderation\Validation\ModerationProviderRule;
+use Hilos\Moderation\Validation\ModerationTimeoutRule;
+use Hilos\Moderation\Validation\ModerationUrlRule;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Throwable;
@@ -17,10 +23,15 @@ use Throwable;
  */
 final class SettingsAccessorCatalogCacheTest extends TestCase
 {
+    private ?EnvAccessor $previousEnv = null;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        // The moderation fragment reads its defaults from env; without env it holds its literals.
+        $this->previousEnv = Hilos::$env;
+        Hilos::$env = null;
         CountingSettingsTestCatalog::$calls = 0;
         CountingSettingsTestCatalog::$catalog = [
             'test_string_key' => [
@@ -36,6 +47,7 @@ final class SettingsAccessorCatalogCacheTest extends TestCase
         CountingSettingsTestCatalog::$calls = 0;
         CountingSettingsTestCatalog::$catalog = [];
         CountingSettingsTestCatalog::$failure = null;
+        Hilos::$env = $this->previousEnv;
 
         parent::tearDown();
     }
@@ -98,10 +110,35 @@ final class SettingsAccessorCatalogCacheTest extends TestCase
                 'default_value' => 1000,
                 'rule' => PositiveIntegerRule::class,
             ],
+            'moderation.text.provider' => $this->moderationEntry('string', 'local', ModerationProviderRule::class),
+            'moderation.text.model' => $this->moderationEntry('string', 'qwen2.5:0.5b', ModerationModelRule::class),
+            'moderation.text.url' => $this->moderationEntry('string', '', ModerationUrlRule::class),
+            'moderation.text.timeout_sec' => $this->moderationEntry('float', 20.0, ModerationTimeoutRule::class),
+            'moderation.image.provider' => $this->moderationEntry('string', 'local', ModerationProviderRule::class),
+            'moderation.image.model' => $this->moderationEntry('string', 'qwen2.5vl:3b', ModerationModelRule::class),
+            'moderation.image.url' => $this->moderationEntry('string', '', ModerationUrlRule::class),
+            'moderation.image.timeout_sec' => $this->moderationEntry('float', 20.0, ModerationTimeoutRule::class),
+            'moderation.check_timeout_sec' => $this->moderationEntry('integer', 90, PositiveIntegerRule::class),
             'test_string_key' => [
                 'type' => 'string',
                 'default_value' => 'test_default',
             ],
+        ];
+    }
+
+    /**
+     * @param string $type Setting type
+     * @param string|int|float $default Default value with no environment behind it
+     * @param class-string $rule Rule class
+     * @return array<string, mixed> Catalog entry of the framework moderation fragment
+     */
+    private function moderationEntry(string $type, string|int|float $default, string $rule): array
+    {
+        return [
+            'type' => $type,
+            'admin_view_visible' => true,
+            'default_value' => $default,
+            'rule' => $rule,
         ];
     }
 }

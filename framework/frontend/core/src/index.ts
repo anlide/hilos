@@ -883,14 +883,17 @@ export {
   type HilosPhotoPickFailure,
 } from './profile/photoPick.js'
 export {
+  moderationCheckSchema,
+  PROFILE_PHOTO_KIND,
+  SIGNAL_MODERATION_CHECK,
+} from './moderation/moderationProtocol.js'
+export {
   createHilosProfilePhotoFlow,
   HILOS_PROFILE_PHOTO_COPY,
   HILOS_PROFILE_PHOTO_UPLOAD_TARGET,
   PROFILE_PHOTO_SET_ACTION,
   PROFILE_PHOTO_REMOVE_ACTION,
-  SIGNAL_PROFILE_PHOTO_CHECK,
   PROFILE_PHOTO_SIGNAL_SCHEMAS,
-  profilePhotoCheckSchema,
   type HilosProfilePhotoFlow,
   type HilosProfilePhotoPreview,
   type HilosProfilePhotoStep,

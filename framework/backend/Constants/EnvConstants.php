@@ -220,6 +220,32 @@ enum EnvConstants
     /** @var string External LLM chat model name */
     case LLM_EXTERNAL_CHAT_MODEL;
 
+    // ── Framework moderation ────────────────────────────────────────────────
+
+    /** @var string Text moderation provider: local | external */
+    case HILOS_MODERATION_TEXT_PROVIDER;
+
+    /** @var string Text moderation model name, for either provider */
+    case HILOS_MODERATION_TEXT_MODEL;
+
+    /** @var string Text moderation local API base URL; empty falls back to LLM_LOCAL_URL */
+    case HILOS_MODERATION_TEXT_URL;
+
+    /** @var float Text moderation request timeout in seconds */
+    case HILOS_MODERATION_TEXT_TIMEOUT_SEC;
+
+    /** @var string Image moderation provider: local | external */
+    case HILOS_MODERATION_IMAGE_PROVIDER;
+
+    /** @var string Image moderation model name, for either provider */
+    case HILOS_MODERATION_IMAGE_MODEL;
+
+    /** @var string Image moderation local API base URL; empty falls back to LLM_LOCAL_URL */
+    case HILOS_MODERATION_IMAGE_URL;
+
+    /** @var float Image moderation request timeout in seconds */
+    case HILOS_MODERATION_IMAGE_TIMEOUT_SEC;
+
     // ── Chat moderation (demo) ──────────────────────────────────────────────
 
     /** @var string Moderation model name */
@@ -234,16 +260,16 @@ enum EnvConstants
     /** @var string Moderation provider: local | external */
     case CHAT_MODERATION_PROVIDER;
 
-    /** @var string Model name for a project's profile photo check */
+    /** @var string Model name for the chat moderator's check of images attached to messages (HIL-1627) */
     case CHAT_PHOTO_MODERATION_MODEL;
 
-    /** @var string Profile photo checker API base URL */
+    /** @var string Chat moderator image check API base URL */
     case CHAT_PHOTO_MODERATION_URL;
 
-    /** @var float Profile photo check timeout in seconds */
+    /** @var float Chat moderator image check timeout in seconds */
     case CHAT_PHOTO_MODERATION_TIMEOUT_SEC;
 
-    /** @var string Profile photo checker provider: local | external */
+    /** @var string Chat moderator image check provider: local | external */
     case CHAT_PHOTO_MODERATION_PROVIDER;
 
     /** @var string Enable moderation for bot messages: 1|0, true|false (default: false) */

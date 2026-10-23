@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgentDaemon;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -11,6 +13,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\ImagesFeature;
+use Hilos\Core\Feature\Definition\ModerationFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
@@ -42,6 +45,11 @@ use Hilos\Files\Image\ImageProbe;
 use Hilos\Files\Image\ImagesAgent;
 use Hilos\Files\Image\ImagesAgentDaemon;
 use Hilos\Files\Image\ImageVariant;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
@@ -384,20 +392,63 @@ final class FeatureActivationValidatorTest extends TestCase
         self::assertArrayHasKey('thumb', FeatureActivationPhotoHilos::imageVariants());
     }
 
-    public function testPhotoCheckerNeedsTheFeature(): void
+    public function testDeclaredModerationOfTextAloneWithEveryPairAndTheFragmentPasses(): void
     {
-        $this->expectException(IncompleteFeatureActivationException::class);
-        $this->expectExceptionMessage('PROFILE_PHOTO_CHECKER names an agent, but HilosFeature::PROFILE_PHOTO is not declared');
+        FeatureActivationModerationHilos::validateFeatureActivation();
 
-        FeatureActivationCheckerWithoutPhotoHilos::validateFeatureActivation();
+        $this->addToAssertionCount(1);
     }
 
-    public function testPhotoCheckerNeedsARegisteredAgent(): void
+    public function testDeclaredModerationWithoutTheModeratorIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
-        $this->expectExceptionMessage('PROFILE_PHOTO_CHECKER names missing, but AGENTS has no such agent');
+        $this->expectExceptionMessage(
+            'HilosFeature::MODERATION is declared but agent ' . HilosAgentType::HILOS_MODERATOR . ' is not registered in AGENTS',
+        );
 
-        FeatureActivationPhotoMissingCheckerHilos::validateFeatureActivation();
+        FeatureActivationModerationWithoutModeratorHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredModerationWithAModeratorWorkerAloneIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::MODERATION is declared but AGENTS[' . HilosAgentType::HILOS_MODERATOR
+            . '] does not declare both a worker and a daemon class',
+        );
+
+        FeatureActivationModerationWithoutModeratorDaemonHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredModerationWithoutTheSettingsLibraryIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::MODERATION is declared but agent ' . HilosAgentType::HILOS_SETTINGS_LIBRARY . ' is not registered in AGENTS',
+        );
+
+        FeatureActivationModerationWithoutSettingsLibraryHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredModerationWithoutItsFragmentIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::MODERATION is declared but ' . FeatureActivationBareCatalog::class . ' does not fold in '
+            . ModerationSettingsCatalog::class . ': ' . implode(', ', array_keys(ModerationSettingsCatalog::getCatalog())),
+        );
+
+        FeatureActivationModerationUnfoldedHilos::validateFeatureActivation();
+    }
+
+    public function testModeratorWithoutTheDeclarationIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'AGENTS registers ' . HilosAgentType::HILOS_MODERATOR . ' but HilosFeature::MODERATION is not declared in FEATURES',
+        );
+
+        FeatureActivationModeratorOnlyHilos::validateFeatureActivation();
     }
 
     public function testPhotoOnAdminUserPageNeedsThePhotoTableBinding(): void
@@ -464,6 +515,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new UploadsFeature(),
             new FilesFeature(),
             new ImagesFeature(),
+            new ModerationFeature(),
         ];
     }
 }
@@ -1338,16 +1390,6 @@ class FeatureActivationPhotoHilos extends FeatureActivationImagesHilos
     ];
 }
 
-final class FeatureActivationPhotoMissingCheckerHilos extends FeatureActivationPhotoHilos
-{
-    public const ?string PROFILE_PHOTO_CHECKER = 'missing';
-}
-
-final class FeatureActivationCheckerWithoutPhotoHilos extends FeatureActivationImagesHilos
-{
-    public const ?string PROFILE_PHOTO_CHECKER = 'moderator';
-}
-
 final class FeatureActivationPhotoUsersHilos extends FeatureActivationCardBoundHilos
 {
     protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::HILOS_USERS, HilosFeature::PROFILE_PHOTO];
@@ -1421,4 +1463,101 @@ final class FeatureActivationImagesBadVariantsHilos extends FeatureActivationIma
             ImageVariant::FORMAT => 'webp'],
         'extra' => ['extra' => true],
     ];
+}
+
+/**
+ * Facade that moderates text alone: moderation with the moderator, both libraries and the people
+ * library its framework kinds answer to, the fragment folded in, and no files, uploads or images.
+ */
+class FeatureActivationModerationHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::MODERATION];
+
+    protected const string SETTINGS_CATALOG = FeatureActivationModerationCatalog::class;
+
+    public const array MODERATOR = [
+        HilosAgentType::HILOS_MODERATOR => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+        ],
+    ];
+
+    public const array RULES_LIBRARY = [
+        HilosAgentType::HILOS_MODERATION_RULES_LIBRARY => [
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+        ],
+    ];
+
+    public const array SETTINGS_LIBRARY = [
+        HilosAgentType::HILOS_SETTINGS_LIBRARY => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+        ],
+    ];
+
+    public const array USERS_LIBRARY = [
+        HilosAgentType::HILOS_USERS_LIBRARY => [
+            AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class,
+            AgentRegistryKey::DAEMON => AbstractUsersLibraryAgentDaemon::class,
+        ],
+    ];
+
+    public const array AGENTS = FeatureActivationValidHilos::AGENTS
+        + self::MODERATOR
+        + self::RULES_LIBRARY
+        + self::SETTINGS_LIBRARY
+        + self::USERS_LIBRARY;
+}
+
+/** Moderation without the moderator pair. */
+final class FeatureActivationModerationWithoutModeratorHilos extends FeatureActivationModerationHilos
+{
+    public const array AGENTS = FeatureActivationValidHilos::AGENTS
+        + FeatureActivationModerationHilos::RULES_LIBRARY
+        + FeatureActivationModerationHilos::SETTINGS_LIBRARY
+        + FeatureActivationModerationHilos::USERS_LIBRARY;
+}
+
+/** Moderation whose moderator entry names the worker and leaves the daemon out. */
+final class FeatureActivationModerationWithoutModeratorDaemonHilos extends FeatureActivationModerationHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_MODERATOR => [AgentRegistryKey::WORKER => ModerationAgent::class],
+    ] + FeatureActivationModerationHilos::AGENTS;
+}
+
+/** Moderation without the library that writes its settings. */
+final class FeatureActivationModerationWithoutSettingsLibraryHilos extends FeatureActivationModerationHilos
+{
+    public const array AGENTS = FeatureActivationValidHilos::AGENTS
+        + FeatureActivationModerationHilos::MODERATOR
+        + FeatureActivationModerationHilos::RULES_LIBRARY
+        + FeatureActivationModerationHilos::USERS_LIBRARY;
+}
+
+/** Moderation whose project catalog leaves the moderation settings out. */
+final class FeatureActivationModerationUnfoldedHilos extends FeatureActivationModerationHilos
+{
+    protected const string SETTINGS_CATALOG = FeatureActivationBareCatalog::class;
+}
+
+/** The moderator registered by a project that does not moderate. */
+final class FeatureActivationModeratorOnlyHilos extends FeatureActivationValidHilos
+{
+    public const array AGENTS = FeatureActivationValidHilos::AGENTS + FeatureActivationModerationHilos::MODERATOR;
+}
+
+/**
+ * Project settings catalog that folds the moderation settings in beside its own key.
+ */
+final class FeatureActivationModerationCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> The project's own key with the moderation fragment folded in
+     */
+    public static function getCatalog(): array
+    {
+        return array_replace(FeatureActivationBareCatalog::getCatalog(), ModerationSettingsCatalog::getCatalog());
+    }
 }

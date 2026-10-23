@@ -10,6 +10,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Definition\ModerationFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
@@ -17,13 +18,18 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\ModerationRule;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -32,8 +38,10 @@ use ReflectionProperty;
  * Startup activation of HilosFeature::MODERATION and of the moderation kind directory (HIL-1623).
  *
  * The validator runs the real ModerationFeature over a registry of its own, beside a stand-in
- * for the profile photo feature, so a refusal here is the directory check or the rules library
- * pair (HIL-1624) and nothing else. Every refusal is asserted as the activation exception: a
+ * for the profile photo feature, so a refusal here is the directory check, the rules library
+ * pair (HIL-1624), or the moderator pair, the settings library pair and the settings fragment
+ * (HIL-1625), and nothing else. No fixture declares files, uploads or images: a project that
+ * moderates text alone is complete without them. Every refusal is asserted as the activation exception: a
  * broken declaration must stop the start with a readable list, never with a PHP error out of the
  * middle of the check.
  */
@@ -56,6 +64,41 @@ final class ModerationFeatureActivationTest extends TestCase
         ],
     ];
 
+    /** The moderator pair, as a project with moderation on registers it. */
+    public const array MODERATOR = [
+        HilosAgentType::HILOS_MODERATOR => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+        ],
+    ];
+
+    /** The settings library pair the moderation settings are written by. */
+    public const array SETTINGS_LIBRARY = [
+        HilosAgentType::HILOS_SETTINGS_LIBRARY => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+        ],
+    ];
+
+    /** The people library pair the framework kinds send their verdicts to. */
+    public const array USERS_LIBRARY = [
+        HilosAgentType::HILOS_USERS_LIBRARY => [
+            AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class,
+            AgentRegistryKey::DAEMON => AbstractUsersLibraryAgentDaemon::class,
+        ],
+    ];
+
+    /** Every pair the feature itself requires, without any verdict recipient. */
+    public const array MODERATION_PAIRS = self::RULES_LIBRARY + self::MODERATOR + self::SETTINGS_LIBRARY;
+
+    /** The recipient pair of the project's own kind. */
+    public const array NOTES = [
+        self::NOTES_AGENT => [
+            AgentRegistryKey::WORKER => AbstractAgent::class,
+            AgentRegistryKey::DAEMON => AbstractAgentDaemon::class,
+        ],
+    ];
+
     /** @var string App facade class bound before the test, restored afterwards */
     private string $boundAppClass = HilosFacade::class;
 
@@ -75,15 +118,17 @@ final class ModerationFeatureActivationTest extends TestCase
         $this->bindAppClass($this->boundAppClass);
     }
 
-    public function testTheRegistryRequiresTheSharedRulesLibraryAndItsTableWithoutRuntime(): void
+    public function testTheRegistryRequiresTheModeratorTheSharedLibrariesTheFragmentAndTheTableAndMountsTheChecks(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::MODERATION);
 
         self::assertInstanceOf(ModerationFeature::class, $definition);
-        self::assertFalse($definition->mountsRuntime());
+        self::assertTrue($definition->mountsRuntime());
         self::assertEquals(
             new FeatureRequirements(
-                requiredSharedAgents: [HilosAgentType::HILOS_MODERATION_RULES_LIBRARY],
+                requiredAgents: [HilosAgentType::HILOS_MODERATOR],
+                requiredSharedAgents: [HilosAgentType::HILOS_MODERATION_RULES_LIBRARY, HilosAgentType::HILOS_SETTINGS_LIBRARY],
+                requiredCatalogFragments: [ModerationSettingsCatalog::class],
                 requiredDbTables: [ModerationRule::_table],
             ),
             $definition->requirements(),
@@ -93,7 +138,7 @@ final class ModerationFeatureActivationTest extends TestCase
     /** @return iterable<string, array{class-string<HilosFacade>}> Declarations the start accepts */
     public static function acceptedActivations(): iterable
     {
-        yield 'feature on, framework kinds' => [ModerationActivationHilos::class];
+        yield 'feature on, framework kinds, text alone without files, uploads or images' => [ModerationActivationHilos::class];
         yield 'feature on, project kinds' => [ModerationActivationProjectHilos::class];
         yield 'feature on, profile photos on' => [ModerationActivationPhotoHilos::class];
         yield 'feature off, framework kinds, no people library' => [ModerationActivationOffHilos::class];
@@ -410,14 +455,11 @@ final class ModerationActivationDroppedPhotoDirectory extends ModerationKindDire
  */
 abstract class ModerationActivationHilos extends HilosFacade
 {
-    public const array AGENTS = ModerationFeatureActivationTest::RULES_LIBRARY + [
-        HilosAgentType::HILOS_USERS_LIBRARY => [
-            AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class,
-            AgentRegistryKey::DAEMON => AbstractUsersLibraryAgentDaemon::class,
-        ],
-    ];
+    public const array AGENTS = ModerationFeatureActivationTest::MODERATION_PAIRS + ModerationFeatureActivationTest::USERS_LIBRARY;
 
     protected const array FEATURES = [HilosFeature::MODERATION];
+
+    protected const string SETTINGS_CATALOG = ModerationActivationCatalog::class;
 
     /**
      * @return FeatureRegistry Moderation and the profile photo stand-in
@@ -433,12 +475,7 @@ abstract class ModerationActivationHilos extends HilosFacade
  */
 abstract class ModerationActivationProjectHilos extends ModerationActivationHilos
 {
-    public const array AGENTS = ModerationActivationHilos::AGENTS + [
-        ModerationFeatureActivationTest::NOTES_AGENT => [
-            AgentRegistryKey::WORKER => AbstractAgent::class,
-            AgentRegistryKey::DAEMON => AbstractAgentDaemon::class,
-        ],
-    ];
+    public const array AGENTS = ModerationActivationHilos::AGENTS + ModerationFeatureActivationTest::NOTES;
 
     protected const string MODERATION_KIND_DIRECTORY = ModerationActivationDirectory::class;
 }
@@ -456,7 +493,7 @@ abstract class ModerationActivationPhotoHilos extends ModerationActivationHilos
  */
 abstract class ModerationActivationNoRecipientHilos extends ModerationActivationHilos
 {
-    public const array AGENTS = ModerationFeatureActivationTest::RULES_LIBRARY;
+    public const array AGENTS = ModerationFeatureActivationTest::MODERATION_PAIRS;
 }
 
 /**
@@ -464,17 +501,17 @@ abstract class ModerationActivationNoRecipientHilos extends ModerationActivation
  */
 abstract class ModerationActivationPhotoNoRecipientHilos extends ModerationActivationPhotoHilos
 {
-    public const array AGENTS = ModerationFeatureActivationTest::RULES_LIBRARY;
+    public const array AGENTS = ModerationFeatureActivationTest::MODERATION_PAIRS;
 }
 
 /**
- * Moderation with the people library and without the rules library.
+ * Moderation with the moderator, the settings library and the people library, and without the rules library.
  */
 abstract class ModerationActivationNoLibraryHilos extends ModerationActivationHilos
 {
-    public const array AGENTS = [
-        HilosAgentType::HILOS_USERS_LIBRARY => ModerationActivationHilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY],
-    ];
+    public const array AGENTS = ModerationFeatureActivationTest::MODERATOR
+        + ModerationFeatureActivationTest::SETTINGS_LIBRARY
+        + ModerationFeatureActivationTest::USERS_LIBRARY;
 }
 
 /**
@@ -579,9 +616,16 @@ abstract class ModerationActivationOffLibraryHilos extends ModerationActivationO
 
 /**
  * A project without moderation that already declares its own kinds and registers their recipients.
+ *
+ * The moderator is not registered: it exists for the feature alone, so registering it here would
+ * be a gap of its own.
  */
 abstract class ModerationActivationOffProjectHilos extends ModerationActivationProjectHilos
 {
+    public const array AGENTS = ModerationFeatureActivationTest::RULES_LIBRARY
+        + ModerationFeatureActivationTest::USERS_LIBRARY
+        + ModerationFeatureActivationTest::NOTES;
+
     protected const array FEATURES = [];
 }
 
@@ -599,4 +643,18 @@ abstract class ModerationActivationOffProjectNoRecipientHilos extends Moderation
 abstract class ModerationActivationOffReservedHilos extends ModerationActivationOffProjectHilos
 {
     protected const string MODERATION_KIND_DIRECTORY = ModerationActivationReservedDirectory::class;
+}
+
+/**
+ * A project catalog that folds the moderation settings in, as a project with moderation on must.
+ */
+final class ModerationActivationCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> The moderation fragment, which is all this project declares
+     */
+    public static function getCatalog(): array
+    {
+        return ModerationSettingsCatalog::getCatalog();
+    }
 }

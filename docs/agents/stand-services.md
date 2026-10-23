@@ -15,7 +15,7 @@ here.
 The [framework moderator](architecture/moderation.md) uses this same local
 model resident for both `hilos.moderation.text` and `hilos.moderation.image`
 on the chat stand, through the ordinary router and client; the spec dictates
-the answer. (not in the code yet — HIL-1625)
+the answer.
 Tasks wires those roles on its stand. (not in the code yet — HIL-1636)
 Polls wires those roles on its stand. (not in the code yet — HIL-1637)
 This reuses `/model`; it does not introduce a moderator stub or a new container.
@@ -360,7 +360,9 @@ turns red on the defect ten runs out of ten (HIL-929).
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
 `docker/docker-compose.{local,dev,test}.yml`; the transitional
-`CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL` on the chat test stack;
+`CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL` on the chat test stack,
+beside the framework moderator's `HILOS_MODERATION_TEXT_URL` and
+`HILOS_MODERATION_IMAGE_URL` there;
 `OAUTH_ENDPOINT_URL` on the test stacks of all three).
 `stand-gateway` is a network alias the gateway service carries in every stack,
 and it is also the name its certificate is issued for: the daemon checks the
@@ -369,9 +371,10 @@ stack, cannot be the address. One name means one certificate, and a new demo
 does not reissue it.
 
 Both framework moderation profiles resolve to
-`https://stand-gateway:18000/model` on the chat stand. HIL-1625 chooses their
-env names; the current chat URL keys are not the future framework contract.
-(not in the code yet — HIL-1625)
+`https://stand-gateway:18000/model` on the chat stand, each through its own
+role key: `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` in the
+chat test stack's compose file. The chat URL keys beside them are the
+transitional chat moderator's, not the framework contract.
 Tasks uses that same address for both roles. (not in the code yet — HIL-1636)
 Polls uses that same address for both roles. (not in the code yet — HIL-1637)
 
@@ -557,13 +560,16 @@ and name it before writing.
    `https://stand-gateway:18000/model`. Do not set the global `LLM_LOCAL_URL` to
    move only moderation: the bot and context analyzer also fall back to it.
    Framework moderation supplies two role addresses for this same resident,
-   with env names chosen by HIL-1625. (not in the code yet — HIL-1625)
+   `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL`, which the chat
+   stack sets to the same address.
    Tasks wires both roles. (not in the code yet — HIL-1636)
    Polls wires both roles. (not in the code yet — HIL-1637)
    An address the environment gives one role reaches that role's agent only if the
    project's settings layer, finding its own URL setting empty, falls back to the
    profile env resolved rather than to the global address. Chat's does since
-   HIL-927 (`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`);
+   HIL-927 (`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`),
+   and the framework's does for its two moderation roles
+   (`framework/backend/LLM/Routing/FrameworkLlmProfileOverrideSource.php`);
    before it the stand's address was lost on the way, silently — check that layer
    before trusting a per-role address in a new project. Where
    the product builds its addresses from a recipe rather than reading one whole,

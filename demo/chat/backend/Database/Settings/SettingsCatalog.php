@@ -24,6 +24,7 @@ use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
@@ -148,6 +149,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             UploadsSettingsCatalog::getCatalog(),
+            ModerationSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),

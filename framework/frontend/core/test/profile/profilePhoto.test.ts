@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
+  PROFILE_PHOTO_KIND,
+  SIGNAL_MODERATION_CHECK,
+} from '../../src/moderation/moderationProtocol.js'
+import {
   createHilosProfilePhotoFlow,
   HILOS_PROFILE_PHOTO_COPY,
   PROFILE_PHOTO_REMOVE_ACTION,
   PROFILE_PHOTO_SET_ACTION,
-  SIGNAL_PROFILE_PHOTO_CHECK,
 } from '../../src/profile/profilePhoto.js'
 import {
   openHilosPhoto,
@@ -121,8 +124,8 @@ describe('profile photo flow', () => {
       }),
     )
     emit('projectSignal', {
-      type: SIGNAL_PROFILE_PHOTO_CHECK,
-      data: { checking: true },
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: PROFILE_PHOTO_KIND, checking: true },
     })
     expect(flow.checking.get()).toBe(true)
     expect(flow.busy.get()).toBe(true)
@@ -179,8 +182,8 @@ describe('profile photo flow', () => {
       }),
     )
     emit('projectSignal', {
-      type: SIGNAL_PROFILE_PHOTO_CHECK,
-      data: { checking: true },
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: PROFILE_PHOTO_KIND, checking: true },
     })
     flow.close()
     emit('actionError', {
@@ -191,6 +194,51 @@ describe('profile photo flow', () => {
     expect(flow.step.get()).toBe('crop')
     expect(flow.checking.get()).toBe(false)
     expect(flow.refusal.get()).toBe('Photos cannot be checked right now.')
+    flow.dispose()
+  })
+
+  it('follows the check frame of the photo kind alone, and only a well-formed one', async () => {
+    const { flow, emit, dispatch } = setup()
+    flow.open()
+    await flow.pick(new File(['a'], 'photo.png', { type: 'image/png' }))
+    await flow.save()
+    completeUpload()
+    await vi.waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(PROFILE_PHOTO_SET_ACTION, {
+        clientUploadId: 'upload-1',
+      }),
+    )
+
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: 'hilos_profile_name', checking: true },
+    })
+    expect(flow.checking.get()).toBe(false)
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { checking: true },
+    })
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: PROFILE_PHOTO_KIND, checking: 'yes' },
+    })
+    expect(flow.checking.get()).toBe(false)
+
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: PROFILE_PHOTO_KIND, checking: true },
+    })
+    expect(flow.checking.get()).toBe(true)
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: 'hilos_profile_name', checking: false },
+    })
+    expect(flow.checking.get()).toBe(true)
+    emit('projectSignal', {
+      type: SIGNAL_MODERATION_CHECK,
+      data: { kind: PROFILE_PHOTO_KIND, checking: false },
+    })
+    expect(flow.checking.get()).toBe(false)
     flow.dispose()
   })
 })

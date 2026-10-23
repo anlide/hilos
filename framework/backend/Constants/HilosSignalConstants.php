@@ -98,6 +98,8 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\HilosMailer;
+use Hilos\Moderation\DTO\ModerationCheckSignalData;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
@@ -2327,14 +2329,24 @@ final class HilosSignalConstants
     /** @var string Cumulative raw-byte permission from the master upload ledger */
     public const string HILOS_UPLOAD_CREDIT = 'hilos_upload_credit';
 
-    /** Users library → one connection: whether its submitted photo awaits a verdict. */
-    public const string HILOS_PROFILE_PHOTO_CHECK = 'hilos_profile_photo_check';
-
-    /** Project checker → users library: verdict for one connection's submitted photo. */
-    public const string HILOS_PROFILE_PHOTO_VERDICT = 'hilos_profile_photo_verdict';
-
     /** Files library → users library: result of publishing the approved profile photo. */
     public const string HILOS_PROFILE_PHOTO_PUBLISHED = 'hilos_profile_photo_published';
+
+    /**
+     * Initiator → one connection: whether it is waiting on a moderation check of one kind (HIL-1625).
+     *
+     * Carried by {@see ModerationCheckSignalData}; a connection may wait on checks of several kinds
+     * at once, so the frame names the kind it is about.
+     */
+    public const string HILOS_MODERATION_CHECK = 'hilos_moderation_check';
+
+    /**
+     * Moderator → the agent the kind names as its verdict recipient: the verdict on one check (HIL-1625).
+     *
+     * Carried by {@see ModerationVerdictSignalData}; the recipient applies it only while the check
+     * it names still holds the same request id.
+     */
+    public const string HILOS_MODERATION_VERDICT = 'hilos_moderation_verdict';
 
     /** Users library → sessions library: refresh every open session of this person. */
     public const string HILOS_USER_SESSIONS_RESTATE = 'hilos_user_sessions_restate';

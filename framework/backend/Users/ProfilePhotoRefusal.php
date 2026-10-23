@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
-/** Caller-facing words for a project's profile photo verdict. */
+use Hilos\Moderation\ModerationReason;
+
+/** Caller-facing words for the moderation verdict on a profile photo. */
 final class ProfilePhotoRefusal
 {
     public const string REASON_NUDITY = 'nudity';
     public const string REASON_VIOLENCE = 'violence';
     public const string REASON_HATE = 'hate';
-    public const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
+    public const string REASON_SERVICE_UNAVAILABLE = ModerationReason::SERVICE_UNAVAILABLE;
     public const string REASON_UNKNOWN = 'unknown';
 
     public const string PHOTOS_NOT_KEPT = 'Profile photos are not kept here';
@@ -19,7 +21,7 @@ final class ProfilePhotoRefusal
     public const string PROFILE_PATH = '/profile';
 
     /**
-     * @param string $reason Project checker reason
+     * @param string $reason Reason code of the moderation verdict
      * @return string Sentence to show the person
      */
     public static function forReason(string $reason): string
@@ -34,8 +36,8 @@ final class ProfilePhotoRefusal
     }
 
     /**
-     * @param string $reason Project checker reason
-     * @return bool Whether refusal concerns the photo itself rather than the checker
+     * @param string $reason Reason code of the moderation verdict
+     * @return bool Whether refusal concerns the photo itself rather than the moderation being unable to judge it
      */
     public static function isAboutThePhoto(string $reason): bool
     {

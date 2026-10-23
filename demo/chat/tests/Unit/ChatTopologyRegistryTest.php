@@ -291,10 +291,13 @@ use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
@@ -323,7 +326,6 @@ use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
-use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
@@ -747,7 +749,8 @@ final class ChatTopologyRegistryTest extends TestCase
         // of its own besides: minting an account is a claim one process holds wherever it sits,
         // every handshake touches sessions, every worker emits into notifications, every published
         // file is bound and swept by one owner, every admin screen writes settings through one
-        // hand, the i18n reference has one writer, and so do the moderation rules. The uploads and images agents are placed the same
+        // hand, the i18n reference has one writer, and so do the moderation rules, and the checks
+        // of everything people publish go through one moderator. The uploads and images agents are placed the same
         // way, beside the files library they hand files to through the cluster's tmp, on whatever
         // node each lands. The backup agent owns a directory on one node's disk, so it has to stay
         // with it: following
@@ -769,6 +772,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_I18N_LIBRARY,
             HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+            HilosAgentType::HILOS_MODERATOR,
             HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
@@ -781,13 +785,15 @@ final class ChatTopologyRegistryTest extends TestCase
     }
 
     /**
-     * The moderation rules have their one writer registered ahead of the feature (HIL-1624): the
-     * framework pair itself, without a project subclass, placed once for the cluster. Moderation
-     * stays off until the chat switches it on with its moderator (HIL-1625).
+     * The chat switches moderation on (HIL-1625): the rules library of HIL-1624 and the cluster's one
+     * moderator are the framework pairs themselves, without a project subclass, each placed once for
+     * the cluster, and the moderation settings sit in the chat's own catalog because that is the one
+     * the activation check reads. The chat's own moderator keeps its place until the photo path
+     * moves off it.
      */
-    public function testModerationRulesLibraryIsRegisteredWhileModerationStaysOff(): void
+    public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
     {
-        $this->assertNotContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
+        $this->assertContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
         $this->assertSame([
@@ -801,6 +807,25 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         $this->assertFalse(AgentRegistry::requiresIndex($entry));
         $this->assertTrue((new ModerationRulesLibraryAgentDaemon())->requiresMonopolisticProcess());
+
+        $moderator = Hilos::AGENTS[HilosAgentType::HILOS_MODERATOR];
+        $this->assertSame([
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ], $moderator);
+        $this->assertSame(ModerationAgent::class, AgentRegistry::workerClass($moderator));
+        $this->assertSame(ModerationAgentDaemon::class, AgentRegistry::daemonClass($moderator));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($moderator));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($moderator));
+        $this->assertFalse(AgentRegistry::requiresIndex($moderator));
+        $this->assertTrue((new ModerationAgentDaemon())->requiresMonopolisticProcess());
+
+        $this->assertArrayHasKey(AgentType::MODERATOR, Hilos::AGENTS);
+        $catalog = SettingsCatalog::getCatalog();
+        foreach (ModerationSettingsCatalog::getCatalog() as $key => $settingEntry) {
+            $this->assertSame($settingEntry, $catalog[$key]);
+        }
     }
 
     public function testBotAgentRegistryRequiresIndex(): void
@@ -1228,7 +1253,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-            HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME_MODERATION_RESULT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1545,7 +1569,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => UserAccountDeletionCancelDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => UserPhotoPutDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => UserPhotoRemoveDoneSignalData::class,
-            HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
             ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,

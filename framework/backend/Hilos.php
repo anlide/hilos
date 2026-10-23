@@ -133,10 +133,17 @@ abstract class Hilos implements TruthSourceOwner
      */
     protected const string PAGE_CATALOG = PageCatalogStub::class;
 
-    /** @var class-string<CatalogProviderInterface> LLM profile catalog provider class. */
+    /** @var class-string<CatalogProviderInterface> LLM profile catalog provider class; the router folds it over the built-in profiles. */
     protected const string LLM_PROFILE_CATALOG = LlmProfileCatalogStub::class;
 
-    /** @var ?class-string<LlmProfileOverrideSource> Optional runtime LLM profile override source (e.g. admin settings). */
+    /**
+     * Optional runtime override source of the project's own LLM profiles (e.g. admin settings).
+     *
+     * The built-in profiles take the framework settings whether or not a project sets this:
+     * the router applies its own override after this one.
+     *
+     * @var ?class-string<LlmProfileOverrideSource>
+     */
     protected const ?string LLM_PROFILE_OVERRIDE = null;
 
     /**
@@ -407,9 +414,6 @@ abstract class Hilos implements TruthSourceOwner
      * @var array<string, array<string, mixed>> Image variant declaration boundary
      */
     public const array IMAGE_VARIANTS = [];
-
-    /** Project agent type that checks a new photo before it is published, or null for immediate publication. */
-    public const ?string PROFILE_PHOTO_CHECKER = null;
 
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];

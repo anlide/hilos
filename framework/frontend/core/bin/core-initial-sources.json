@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "33bf0d767b6beb07cf8ab2544a3f38d689b10aeaccb8d45b7e80727b75c97dd9",
-    "outputSha256": "7296fe1408f2468f86ce5f0857c3a0544f82c98ab27e7953194e1e9586aa3832"
+    "sourceSha256": "10b70087524b8fc94da89e52587bd770a4afdbb610d676af1e15ad4852e516bd",
+    "outputSha256": "e4493f24e9ce9cca2d31ea31ef9ab38edd9dda0d15e817cac725116abb8ec564"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
@@ -259,6 +259,10 @@
     "sourceSha256": "47b6c47519287902c77f68f20603b03c6e95ba66b504b3fc7121a33e68bbb550",
     "outputSha256": "f09436143fe6a659538674bd5cbeacc6c32f43bc550f2e15e8c3d26b1c5a2c2f"
   },
+  "src/moderation/moderationProtocol.ts": {
+    "sourceSha256": "4192ddb78d75b18fb1bc7a7e1ae4d0483f1fc84b053c7d7d3bfe6134ddd387c7",
+    "outputSha256": "a3e4fa22c64ae777d4addad33c45ba9a602c778b03ca5977a13f4d0207d680c6"
+  },
   "src/notifications/notificationCenter.ts": {
     "sourceSha256": "5ab66b001d42bde02af4017b31bd9b67193c1658be4717dad914b5fb7f72092f",
     "outputSha256": "2b744aa4ea68b875c3c6b67a00bec8e5d8747de835adf63667ac0067a79c14a5"
@@ -340,8 +344,8 @@
     "outputSha256": "03cb255deab691f926aa0d398decc9529062cc864abacff6059f0c7165a75948"
   },
   "src/profile/profilePhoto.ts": {
-    "sourceSha256": "b8e5800fbf033d2cad3dba606509cf4d6ed9df00f209441691f1010f05e92412",
-    "outputSha256": "1be9d4b3a560ec9655706528387b4dc5ee33abe9e56e77d209ed9afdc32c6f5b"
+    "sourceSha256": "c579adfc09c3a4b64e2cac4aadf97824d4f2deff85bce81aa428ee70920a7b0e",
+    "outputSha256": "acb6833f0babe6749b0924c4d87bbdaf72bdfe8c2554babf9341cfeaf0c78795"
   },
   "src/profile/profileRename.ts": {
     "sourceSha256": "5a646a26f3aab16355a4da2284d9e3139e7f5310eb0d9a7d410fa131c388497b",

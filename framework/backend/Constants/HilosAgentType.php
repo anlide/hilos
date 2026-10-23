@@ -91,6 +91,9 @@ final class HilosAgentType
     /** Cluster library owning administrators' own moderation rules of every kind. */
     public const string HILOS_MODERATION_RULES_LIBRARY = 'hilos_moderation_rules_library';
 
+    /** The cluster's one moderator: asks a model about each check and sends the verdict to the kind's recipient. */
+    public const string HILOS_MODERATOR = 'hilos_moderator';
+
     /** @var string Hilos log store agent (per-node monopolistic owner of the log directory and of the node's log index) */
     public const string HILOS_LOG_STORE = 'hilos_log_store';
 

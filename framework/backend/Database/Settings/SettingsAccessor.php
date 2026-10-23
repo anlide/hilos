@@ -19,6 +19,7 @@ use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\Validation\SettingValueRuleInterface;
 use Hilos\Hilos;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsCatalog;
 
 /**
@@ -49,7 +50,7 @@ class SettingsAccessor implements ArrayAccess
     /**
      * Returns the settings catalog for this accessor, asking the provider once.
      *
-     * Project entries override the framework delivery defaults. Only metadata is cached;
+     * Project entries override the framework delivery and moderation defaults. Only metadata is cached;
      * effective persisted values are read on demand.
      *
      * The catalog is a declaration, not a value: the provider builds the same array from the same
@@ -57,8 +58,10 @@ class SettingsAccessor implements ArrayAccess
      * remembered because one index read consults it three times — the key check in offsetGet, the type
      * in typeFor, and the value in effectiveValueFor — while a settings screen row asks it four or more times.
      *
-     * One section of the catalog derives its defaults from the environment (LogSettingsCatalog
-     * pulls env values for disk threshold and push interval defaults, included in each demo catalog).
+     * Two sections of the catalog derive their defaults from the environment (LogSettingsCatalog
+     * pulls env values for disk threshold and push interval defaults, included in each demo catalog;
+     * ModerationSettingsCatalog pulls the model, provider, address and timeout of its two roles,
+     * folded in here for every project).
      * The cached catalog does not become stale: the only mechanism in the process that re-reads env is
      * Hilos::reloadEnv(), called exclusively by BaseManager::handleRestart(), which immediately sets
      * shouldExit, so a running daemon process never continues with reloaded environment values.
@@ -69,6 +72,7 @@ class SettingsAccessor implements ArrayAccess
     {
         return $this->catalogCache ??= array_replace(
             DeliverySettingsCatalog::getCatalog(),
+            ModerationSettingsCatalog::getCatalog(),
             $this->catalogClass::getCatalog(),
         );
     }

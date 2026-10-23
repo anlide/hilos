@@ -1,24 +1,42 @@
 # LLM testing runbook — moderation and bots, local and external
 
 A step-by-step walkthrough for driving the chat demo's LLM roles by hand: the
-moderator and the bots, first against a local Ollama, then against an external
-OpenAI-compatible API. Every step is a command to run or a thing to click; the
-"why" is in [llm-routing](agents/architecture/llm-routing.md), not here.
+chat's own moderator, the framework moderator that checks profile photos, and the
+bots, first against a local Ollama, then against an external OpenAI-compatible
+API. Every step is a command to run or a thing to click; the "why" is in
+[llm-routing](agents/architecture/llm-routing.md) and
+[moderation](agents/architecture/moderation.md), not here.
 
-Two facts decide everything below, so read them first:
+Three facts decide everything below, so read them first:
 
 1. **For `chat.bot` and `chat.moderation` the settings row wins over the env
    variable.** `ChatLlmProfileOverrideSource` rebuilds both profiles from the
    settings; `CHAT_BOT_*` / `CHAT_MODERATION_*` env values are only the fallback
    when the router runs without the override source. Setting
    `CHAT_MODERATION_PROVIDER=external` in `.env` alone changes nothing.
+   `chat.photo_moderation`, the chat moderator's picture client for images
+   attached to messages, has no settings row at all: only `CHAT_PHOTO_MODERATION_*`
+   env moves it.
 2. **Credentials never live in settings.** `LLM_EXTERNAL_URL` and
    `LLM_EXTERNAL_API_KEY` are read from env only. A settings row may switch
    *which* provider is used, never the key it uses.
+3. **The profile photo is checked by the framework moderator, not by the chat's.**
+   It asks the profile `hilos.moderation.image`; the same moderator has a second
+   profile, `hilos.moderation.text`, that no flow opens a check for yet. The
+   settings `moderation.image.*` and `moderation.text.*` (`provider`, `model`,
+   `url`, `timeout_sec`) win over env here too, but env is the *default of that
+   setting*: with no row written, the setting reads
+   `HILOS_MODERATION_IMAGE_*` / `HILOS_MODERATION_TEXT_*` from env, so editing
+   `.env` and recreating the container does move the role until a row is saved.
+   That differs from fact 1: the provider and model of `chat.moderation` never
+   come from `CHAT_*` env, only from settings.
 
 A setting with no persisted value (no row or a `NULL` value) inherits:
 `chat_moderation_model` → `default_bot_model`
-→ catalog default. So the shared `default_bot_*` rows move both roles at once.
+→ catalog default. So the shared `default_bot_*` rows move both chat roles at
+once. The `moderation.*` settings do not inherit from `default_bot_*`: with no row
+they read their `HILOS_MODERATION_*` env value, then the code default — local
+provider, `qwen2.5vl:3b` for images, `qwen2.5:0.5b` for text, 20 s per request.
 
 ## 0. Prerequisites, once per machine
 
@@ -81,7 +99,9 @@ versus the static compiled dist served by nginx.
 
 ### Reaching Ollama from the daemon container
 
-The daemon uses `LLM_LOCAL_URL`, default `http://host.docker.internal:11434`.
+The daemon uses `LLM_LOCAL_URL`, default `http://host.docker.internal:11434`. It
+is also the address of a framework moderation role while both its
+`HILOS_MODERATION_*_URL` env and its `moderation.*.url` setting are empty.
 
 - **Docker Desktop (Windows/macOS/WSL2):** works out of the box.
 - **Native Docker on Linux:** `host.docker.internal` does not resolve. Set
@@ -109,9 +129,12 @@ use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 EntrypointPrelude::run(Hilos::class, '/app', static fn() => Database::initialize(initHilos: true));
-foreach (['chat.moderation', 'chat.bot', 'chat.analyzer', 'default'] as $key) {
+foreach ([
+    'hilos.moderation.image', 'hilos.moderation.text',
+    'chat.moderation', 'chat.photo_moderation', 'chat.bot', 'chat.analyzer', 'default',
+] as $key) {
     $p = Hilos::$llm->resolve($key);
-    printf("%-16s provider=%-8s url=%-34s model=%-14s timeout=%s apiKey=%s\n",
+    printf("%-22s provider=%-8s url=%-34s model=%-14s timeout=%s apiKey=%s\n",
         $p->key, $p->provider->value, $p->url, $p->model, $p->timeoutSec,
         $p->apiKey === null ? 'null' : '(set)');
 }
@@ -131,6 +154,10 @@ docker exec chat-mysql-local sh -c 'mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" \
 The guard re-checks per delivery, so the admin menu appears without a re-login.
 
 ## 1. Local moderation (Ollama)
+
+This section drives the chat's own moderator: messages, the display name and the
+pictures attached to messages. The profile photo is checked by the framework
+moderator instead — section 5.
 
 The default state after a fresh install: `default_bot_provider = local`,
 `default_bot_model = qwen2.5:3b`, both `chat_moderation_*` rows `NULL`.
@@ -285,6 +312,94 @@ OpenAI-compatible gateway instead.
 > vendors means editing `.env` and recreating the container. HIL-332 covers the
 > named endpoint/credential catalog that would lift this.
 
+## 5. Profile photo — the framework moderator
+
+The chat declares `HilosFeature::MODERATION`, so a submitted profile photo does
+not publish at once: the people library opens a `hilos_profile_photo` check, the
+cluster's one `hilos_moderator` agent asks the image profile
+`hilos.moderation.image`, and the library publishes or refuses on the verdict.
+The previous photo stays visible until approval. The display name (HIL-1626) and
+the messages (HIL-1627) still go through the chat's own moderator, and the kind
+rules have no administration screen yet, so the photo is the one flow this
+section can drive; the profile print also lists `hilos.moderation.text`, which
+nothing asks yet.
+
+| | env (default of the setting) | setting | default |
+|---|---|---|---|
+| provider | `HILOS_MODERATION_IMAGE_PROVIDER` | `moderation.image.provider` | `local` |
+| model | `HILOS_MODERATION_IMAGE_MODEL` | `moderation.image.model` | `qwen2.5vl:3b` |
+| address | `HILOS_MODERATION_IMAGE_URL` | `moderation.image.url` | empty → `LLM_LOCAL_URL` |
+| per request | `HILOS_MODERATION_IMAGE_TIMEOUT_SEC` | `moderation.image.timeout_sec` | 20 s |
+
+`moderation.check_timeout_sec` (default 90) is how long the whole check may wait.
+The text profile has the same four rows under `HILOS_MODERATION_TEXT_*` and
+`moderation.text.*`. All of them are on `/hilos/settings`; become an admin first
+(section 0).
+
+### Local photo check
+
+1. **Pull the vision model once.** The composer pull script fetches only the three
+   `qwen2.5` text models, not this one:
+
+   ```bash
+   docker exec hilos-ollama-local-gpu-nvidia ollama pull qwen2.5vl:3b
+   ```
+
+   Use `hilos-ollama-local` for the CPU container. Warm it as in section 1,
+   step 1, with `"model":"qwen2.5vl:3b"`.
+
+2. Run the profile print from section 0 — expect `hilos.moderation.image` with
+   `provider=local`, `url=http://host.docker.internal:11434` (or your
+   `LLM_LOCAL_URL`) and `model=qwen2.5vl:3b`.
+
+3. **Allow path.** Open the profile page, choose *Change your photo*, pick an
+   ordinary picture and save. The dialog shows `Checking your photo…`, then the
+   avatar changes in every open tab.
+
+4. **Block path.** Save a picture the built-in photo rules refuse (nudity or
+   sexual content, graphic violence, hate symbols). The dialog shows the
+   refusal (`This photo was not accepted: …`), the person gets a *Your new photo
+   was not accepted* notification, and the old photo stays.
+
+5. **Unavailable path.** Stop Ollama (`composer run ollama:stop`) and save a
+   picture: the dialog says `Photos cannot be checked right now.` and no
+   notification is sent, because nothing was said about the picture. A moderator
+   that never answers ends the same way once `moderation.check_timeout_sec` has
+   passed. Start Ollama again afterwards.
+
+If the dialog stays on *Checking your photo…*, the request never reached the model
+or the model tag is not pulled — check the profile print and the daemon log.
+
+### External photo check
+
+Credentials work as in section 3, steps 1–2: `LLM_EXTERNAL_URL` and
+`LLM_EXTERNAL_API_KEY` in `demo/chat/.env`, container recreated. Then:
+
+1. On `/hilos/settings` set **both** rows (the model tag is otherwise an Ollama
+   one, as in section 3, step 3), using a model that accepts images:
+
+   | setting | value |
+   |---|---|
+   | `moderation.image.provider` | `external` |
+   | `moderation.image.model` | `gpt-4o-mini` |
+
+   Putting `HILOS_MODERATION_IMAGE_PROVIDER=external` and
+   `HILOS_MODERATION_IMAGE_MODEL=…` in `demo/chat/.env` does the same for a role
+   whose rows were never saved; a saved row wins over env.
+
+2. Save another photo. The moderator resolves the profile before each check, so
+   the next check uses the new one with no restart; a check already with the
+   model finishes on the profile it started with.
+
+3. Re-run the profile print — expect `hilos.moderation.image` with
+   `provider=external`, `url=https://api.openai.com`, `apiKey=(set)` — and repeat
+   the allow / block checks above.
+
+4. **Missing-key path.** Clear `LLM_EXTERNAL_API_KEY`, recreate the container, and
+   leave the provider on `external`: every photo check ends as
+   `service_unavailable` (`Photos cannot be checked right now.`) until the key is
+   back or the provider is set to `local`.
+
 ## Troubleshooting
 
 | Symptom | Cause to check first |
@@ -293,5 +408,8 @@ OpenAI-compatible gateway instead.
 | `Moderation is unavailable right now` | The model returned unparseable output, or the request errored — read the daemon log for the raw body |
 | Settings change had no effect | The role has not started another LLM request, or a role-specific persisted row overrides the edited `default_bot_*` value |
 | External call fails immediately | Model name still an Ollama tag; or the URL is not `https://` |
-| Everything resolves `local` after setting `external` in `.env` | Expected — the settings row is authoritative for bot and moderation |
+| Everything resolves `local` after setting `external` in `.env` | Expected for `chat.bot` and `chat.moderation` — their settings row is authoritative. A `hilos.moderation.*` role does follow `HILOS_MODERATION_*` env until a `moderation.*` row is saved |
+| Photo stuck on *Checking your photo…* | The moderator cannot reach the model, or `qwen2.5vl:3b` is not pulled; the wait ends as `service_unavailable` after `moderation.check_timeout_sec` (90 s by default) at the latest |
+| `Photos cannot be checked right now.` | `service_unavailable`: model unreachable, model tag unknown to the provider, an answer that is not a verdict, or `external` selected without `LLM_EXTERNAL_API_KEY` — read the daemon log |
+| A `moderation.image.*` edit changed nothing for the photo | The edit was made to `chat_moderation_*` (the chat's own moderator), or the check had already started — only the next check reads it |
 | `LLM_EXTERNAL_API_KEY` empty inside the container after editing `.env` | The container was restarted, not recreated — `env_file` is only read at creation. Run `up -d` (see section 3, step 2) |

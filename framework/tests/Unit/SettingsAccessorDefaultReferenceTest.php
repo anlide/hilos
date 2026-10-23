@@ -13,7 +13,9 @@ use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,6 +25,7 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
 {
     private ?DbContext $previousDb = null;
     private ?SettingsAccessor $previousSetting = null;
+    private ?EnvAccessor $previousEnv = null;
 
     protected function setUp(): void
     {
@@ -30,14 +33,17 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
 
         $this->previousDb = Hilos::$db;
         $this->previousSetting = Hilos::$setting;
+        $this->previousEnv = Hilos::$env;
         Hilos::$db = null;
         Hilos::$setting = null;
+        Hilos::$env = null;
     }
 
     protected function tearDown(): void
     {
         Hilos::$db = $this->previousDb;
         Hilos::$setting = $this->previousSetting;
+        Hilos::$env = $this->previousEnv;
 
         parent::tearDown();
     }
@@ -53,6 +59,18 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
 
         $this->assertSame('qwen2.5:3b', $settings->defaultValueFor('bot_model'));
         $this->assertSame('base_model', $settings->defaultReferenceKeyFor('bot_model'));
+    }
+
+    public function testResolvesDefaultReferenceIntoTheFrameworkModerationFragment(): void
+    {
+        $settings = $this->settings([
+            'project_model' => $this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => ModerationSettingsCatalog::TEXT_MODEL,
+            ]),
+        ]);
+
+        $this->assertSame('qwen2.5:0.5b', $settings->defaultValueFor('project_model'));
+        $this->assertSame(ModerationSettingsCatalog::TEXT_MODEL, $settings->defaultReferenceKeyFor('project_model'));
     }
 
     public function testResolvesDefaultReferenceChain(): void

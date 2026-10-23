@@ -246,7 +246,7 @@ final class PollsTopologyRegistryTest extends TestCase
             self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
         }
 
-        self::assertNull(Hilos::PROFILE_PHOTO_CHECKER);
+        self::assertFalse(Hilos::hasFeature(HilosFeature::MODERATION));
         self::assertSame([], Hilos::UPLOAD_TARGETS);
         self::assertSame([], Hilos::IMAGE_VARIANTS);
         self::assertSame([ProfilePhotoUploadTarget::NAME => ProfilePhotoUploadTarget::class], Hilos::uploadTargets());
@@ -668,7 +668,6 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
                 // The logs section's own frames (HIL-393): the section agent takes the
                 // cluster picture in portions, the per-node store answers the reads the

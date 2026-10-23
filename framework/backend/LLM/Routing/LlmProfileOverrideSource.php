@@ -11,10 +11,12 @@ use Hilos\LLM\Exception\LLMConfigurationException;
 /**
  * Post-resolution override seam for LLM profiles.
  *
- * The router resolves a profile from the env-backed catalog, then hands it to an
- * override source (if one is set) that may return a modified profile. This is
- * the runtime settings-override hook the admin LLM config (HIL-262) plugs into;
- * the framework wires no source by default, so env is the only source today.
+ * The router resolves a profile from the env-backed catalog, then hands it to the
+ * project's override source (if one is set) and after it to the framework's own,
+ * {@see FrameworkLlmProfileOverrideSource}; either may return a modified profile.
+ * This is the runtime settings-override hook the admin LLM config (HIL-262) plugs
+ * into: a project's source owns its own keys, the framework's owns the built-in
+ * ones and runs last.
  */
 interface LlmProfileOverrideSource
 {

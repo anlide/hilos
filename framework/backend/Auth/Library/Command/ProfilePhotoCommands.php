@@ -20,11 +20,15 @@ use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Moderation\DTO\ModerationCheckSignalData;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationReason;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\View\Item\HilosModerationCheck;
 use Hilos\Users\AddressablePerson;
-use Hilos\Users\DTO\ProfilePhotoCheckSignalData;
-use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
@@ -32,10 +36,19 @@ use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\ProfilePhotoRefusal;
 use Hilos\Users\UserNotificationType;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use LogicException as NativeLogicException;
+use Random\RandomException;
 
-/** Sets, checks, publishes and removes a person's profile photo. */
+/**
+ * Sets, checks, publishes and removes a person's profile photo.
+ *
+ * With {@see HilosFeature::MODERATION} a photo is checked before it is published: this library
+ * opens the check of the {@see ModerationKindKey::PROFILE_PHOTO} kind in the shared queue, tells
+ * the connection it waits, applies the moderator's verdict and ends the wait the verdict never
+ * reached. Without moderation a valid upload is published at once (HIL-1625).
+ */
 final class ProfilePhotoCommands extends AbstractLibraryCommands
 {
     private const float SWEEP_INTERVAL_SECONDS = 1.0;
@@ -50,26 +63,30 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     private float $lastSweepAt = 0.0;
 
     /**
-     * Submits one completed upload for publication or a project check.
+     * Submits one completed upload for publication, or for a moderation check first.
+     *
+     * Without moderation the upload goes to publication as it is, and the files library judges
+     * it there. With moderation the upload is judged here before the check is opened - the
+     * moderator reads it as it is now - and a connection waits on one photo check at a time.
      *
      * @param string $acceptKey Connection that submitted
      * @param string $clientUploadId Completed upload id
      * @throws ValidationException When photos are off, a check is pending or the upload is not ready
      * @throws HilosException When runtime state or signal delivery fails
-     * @throws NativeLogicException When the runtime item factory rejects a photo check
+     * @throws NativeLogicException When the runtime item factory rejects a check
+     * @throws RandomException When the platform's secure random source refuses the request id
      */
     public function set(string $acceptKey, string $clientUploadId): void
     {
         $this->requireFeature();
         $acting = $this->actingUser($acceptKey);
-        if (Hilos::$rt->hilosProfilePhotoChecks[$acceptKey] !== null) {
-            throw new ValidationException(ProfilePhotoRefusal::STILL_CHECKING);
-        }
-
-        if (Hilos::appClass()::PROFILE_PHOTO_CHECKER === null) {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
             $this->publish($acceptKey, $clientUploadId);
 
             return;
+        }
+        if (Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_PHOTO) !== null) {
+            throw new ValidationException(ProfilePhotoRefusal::STILL_CHECKING);
         }
 
         $upload = Hilos::$rt->hilosUploads->find($acceptKey, $clientUploadId);
@@ -83,50 +100,54 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
             throw new ValidationException(self::UPLOAD_NOT_FINISHED);
         }
 
-        Hilos::$rt->hilosProfilePhotoChecks->actions->open($acceptKey, $acting->userId, $clientUploadId);
-        $this->library->sendToUser(
-            HilosSignalConstants::HILOS_PROFILE_PHOTO_CHECK,
+        Hilos::$rt->hilosModerationChecks->actions->open(
             $acceptKey,
-            new ProfilePhotoCheckSignalData(true),
+            $acting->userId,
+            ModerationKindKey::PROFILE_PHOTO,
+            clientUploadId: $clientUploadId,
         );
+        $this->tellChecking($acceptKey, true);
     }
 
     /**
-     * Applies a project's verdict to the still-pending upload.
+     * Applies the moderator's verdict on a photo check to the attempt it answers.
      *
-     * @param ProfilePhotoVerdictSignalData $verdict Verdict and upload identity
+     * A verdict naming a check this connection no longer holds, or holds under another request
+     * id, is late or repeated and changes nothing. A check whose connection closed or now carries
+     * somebody else ends without a word to anybody. A check past its deadline ends unavailable
+     * whatever the verdict says, as the sweep would end it. While the connection's copy is frozen
+     * nothing is decided on the verdict, and the deadline ends the wait. Otherwise the check ends
+     * first, the connection is told it no longer waits, and the photo is published or refused.
+     *
+     * @param ModerationVerdictSignalData $verdict Verdict of a {@see ModerationKindKey::PROFILE_PHOTO} check
      * @throws HilosException When state, a publication frame or a refusal frame fails
      */
-    public function verdict(ProfilePhotoVerdictSignalData $verdict): void
+    public function verdict(ModerationVerdictSignalData $verdict): void
     {
-        $check = Hilos::$rt->hilosProfilePhotoChecks[$verdict->acceptKey];
-        if ($check === null || $check->clientUploadId !== $verdict->clientUploadId) {
+        $check = Hilos::$rt->hilosModerationChecks->find($verdict->acceptKey, ModerationKindKey::PROFILE_PHOTO);
+        if ($verdict->kind !== ModerationKindKey::PROFILE_PHOTO || $check === null || $check->requestId !== $verdict->requestId) {
             Logger::logAgentWarning(
                 $this->library->getId(),
-                "Profile photo verdict has no matching check: {$verdict->acceptKey}/{$verdict->clientUploadId}",
+                "Moderation verdict has no matching photo check: {$verdict->acceptKey}/{$verdict->kind}/{$verdict->requestId}",
             );
 
             return;
         }
-
-        $check->actions->forget();
-        $this->library->sendToUser(
-            HilosSignalConstants::HILOS_PROFILE_PHOTO_CHECK,
-            $verdict->acceptKey,
-            new ProfilePhotoCheckSignalData(false),
-        );
-
-        if ($verdict->allow) {
-            $this->publish($verdict->acceptKey, $verdict->clientUploadId);
+        $carried = $this->carriedBy($check);
+        if ($carried === false) {
+            $check->actions->forget();
 
             return;
         }
+        if (TimeHelper::nowMs() >= $check->deadlineAt) {
+            $this->finish($check, false, ModerationReason::SERVICE_UNAVAILABLE);
 
-        $message = ProfilePhotoRefusal::forReason($verdict->reason);
-        if (ProfilePhotoRefusal::isAboutThePhoto($verdict->reason)) {
-            $this->notifyRejected($check->userId, $verdict->reason, $message);
+            return;
         }
-        $this->failSet($verdict->acceptKey, $message);
+        if ($carried === null) {
+            return;
+        }
+        $this->finish($check, $verdict->allow, $verdict->reason);
     }
 
     /**
@@ -223,7 +244,8 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     /**
      * Asks the person's agent to remove the photo row (HIL-1409).
      *
-     * The feature, the acting person and a pending check of this connection are judged here.
+     * The feature, the acting person and a pending photo check of this connection are judged
+     * here: the photo check ends without a verdict, and a check of another kind is left alone.
      * The row is the agent's, and a person with no photo is answered once the agent says so.
      *
      * @param string $acceptKey Connection that submitted
@@ -238,14 +260,12 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     {
         $this->requireFeature();
         $acting = $this->actingUser($acceptKey);
-        $check = Hilos::$rt->hilosProfilePhotoChecks[$acceptKey];
+        $check = Hilos::hasFeature(HilosFeature::MODERATION)
+            ? Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_PHOTO)
+            : null;
         if ($check !== null) {
             $check->actions->forget();
-            $this->library->sendToUser(
-                HilosSignalConstants::HILOS_PROFILE_PHOTO_CHECK,
-                $acceptKey,
-                new ProfilePhotoCheckSignalData(false),
-            );
+            $this->tellChecking($acceptKey, false);
         }
 
         $this->library->askPersonAgent(
@@ -290,25 +310,35 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Sweeps checks whose connections have gone, no more than once per second.
+     * Ends the photo checks the moderator's verdict will not settle, no more than once per second.
      *
-     * @throws HilosException When runtime state cannot be read or changed
+     * A check whose connection closed, or now carries somebody else, is removed without a word to
+     * anybody. A check past its deadline ends unavailable: the moderator does not start it, and
+     * one that stopped would otherwise leave the connection waiting forever - a connection whose
+     * copy here is frozen included, since only the deadline is sure to end its wait.
+     *
+     * @throws HilosException When runtime state cannot be read or changed, or a frame cannot be queued
      */
-    public function sweepClosedConnections(): void
+    public function sweepChecks(): void
     {
         $now = microtime(true);
         if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS) {
             return;
         }
         $this->lastSweepAt = $now;
-
-        $connections = Hilos::$rt->connectionsSource();
-        if ($connections === null) {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
             return;
         }
-        foreach (Hilos::$rt->hilosProfilePhotoChecks as $check) {
-            if ($connections->get($check->acceptKey) === null) {
+
+        $nowMs = TimeHelper::nowMs();
+        foreach (Hilos::$rt->hilosModerationChecks as $check) {
+            if ($check->kind !== ModerationKindKey::PROFILE_PHOTO) {
+                continue;
+            }
+            if ($this->carriedBy($check) === false) {
                 $check->actions->forget();
+            } elseif ($nowMs >= $check->deadlineAt) {
+                $this->finish($check, false, ModerationReason::SERVICE_UNAVAILABLE);
             }
         }
     }
@@ -321,6 +351,81 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
         if (!Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
             throw new ValidationException(ProfilePhotoRefusal::PHOTOS_NOT_KEPT);
         }
+    }
+
+    /**
+     * Ends a photo check and settles what it was asked for.
+     *
+     * The row leaves first, so a second submission is accepted from the moment the connection
+     * hears it no longer waits. A refusal about the photo itself notifies the person as well; a
+     * check that could not be had only answers the tab.
+     *
+     * @param HilosModerationCheck $check Photo check to end
+     * @param bool $allow Whether the photo passed
+     * @param string $reason Reason code of the verdict
+     * @throws HilosException When state, a publication frame or a refusal frame fails
+     * @throws LogicException When the check names no upload, which an image kind's opening refuses
+     */
+    private function finish(HilosModerationCheck $check, bool $allow, string $reason): void
+    {
+        $acceptKey = $check->acceptKey;
+        $clientUploadId = $check->clientUploadId ?? throw new LogicException('A photo check carries no upload');
+        $userId = $check->userId;
+        $check->actions->forget();
+        $this->tellChecking($acceptKey, false);
+
+        if ($allow) {
+            $this->publish($acceptKey, $clientUploadId);
+
+            return;
+        }
+
+        $message = ProfilePhotoRefusal::forReason($reason);
+        if (ProfilePhotoRefusal::isAboutThePhoto($reason)) {
+            $this->notifyRejected($userId, $reason, $message);
+        }
+        $this->failSet($acceptKey, $message);
+    }
+
+    /**
+     * Whether the connection of a check still carries the person who asked.
+     *
+     * A project with no connections mounted has nobody to compare, and its checks stand.
+     *
+     * @param HilosModerationCheck $check Check to judge
+     * @return ?bool True while it does, false once the connection closed or carries somebody else,
+     *     null while this process holds a frozen copy of the connection
+     */
+    private function carriedBy(HilosModerationCheck $check): ?bool
+    {
+        $connections = Hilos::$rt->connectionsSource();
+        if ($connections === null) {
+            return true;
+        }
+        $connection = $connections->get($check->acceptKey);
+        if ($connection === null) {
+            return false;
+        }
+        $collection = $connections->getCollectionName();
+        if ($collection !== null && RtStaleness::staleSince($collection, $check->acceptKey) !== null) {
+            return null;
+        }
+
+        return $connection->userId === $check->userId;
+    }
+
+    /**
+     * @param string $acceptKey Connection to tell
+     * @param bool $checking Whether it now waits on a photo check
+     * @throws HilosException When the frame cannot be queued
+     */
+    private function tellChecking(string $acceptKey, bool $checking): void
+    {
+        $this->library->sendToUser(
+            HilosSignalConstants::HILOS_MODERATION_CHECK,
+            $acceptKey,
+            new ModerationCheckSignalData(ModerationKindKey::PROFILE_PHOTO, $checking),
+        );
     }
 
     /**
@@ -363,7 +468,7 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
 
     /**
      * @param int $userId Person to tell
-     * @param string $reason Project checker reason
+     * @param string $reason Reason code of the refusal
      * @param string $message Caller-facing refusal
      */
     private function notifyRejected(int $userId, string $reason, string $message): void

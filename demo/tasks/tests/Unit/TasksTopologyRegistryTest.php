@@ -328,7 +328,7 @@ final class TasksTopologyRegistryTest extends TestCase
             $daemonClass = AgentRegistry::daemonClass(Hilos::AGENTS[$type]);
             self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
         }
-        self::assertNull(Hilos::PROFILE_PHOTO_CHECKER);
+        self::assertFalse(Hilos::hasFeature(HilosFeature::MODERATION));
     }
 
     /** The framework supplies the public photo target and its display variant without project duplicates. */
@@ -715,7 +715,6 @@ final class TasksTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
                 // The logs section's own frames (HIL-392): the section agent takes the
                 // cluster picture in portions, the per-node store answers the reads the

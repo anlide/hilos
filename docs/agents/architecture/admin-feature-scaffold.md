@@ -680,7 +680,8 @@ thin project bindings and database/DDL setup above remain required.
 Framework-owned: the project activates the mechanism and supplies its own
 kinds, never a copy of the moderator or admin engine. Read
 [moderation.md](moderation.md) for the rules and current implementation status.
-The target activation order is:
+The activation order is below; steps 1 to 4 are in the code, and what steps 5 and
+6 mark with a leaf is not:
 
 1. Declare `HilosFeature::MODERATION` in `FEATURES`. This does not enable
    `PROFILE_PHOTO`.
@@ -695,9 +696,15 @@ The target activation order is:
    `HilosAgentType::HILOS_MODERATION_RULES_LIBRARY` with
    `AgentPlacement::POLICY` and no project subclass. Do not invent a project
    storage path for rules.
-4. Register the moderator's agent/daemon pair and wire the framework profiles
-   and settings. HIL-1625 defines their exact declarations; this recipe adds no
-   extra required agents. (not in the code yet — HIL-1625)
+4. Register the moderator's agent/daemon pair, `ModerationAgent` and
+   `ModerationAgentDaemon`, under `HilosAgentType::HILOS_MODERATOR` with
+   `AgentPlacement::POLICY` and no project subclass. Fold
+   `ModerationSettingsCatalog::getCatalog()` into the project's settings
+   catalog, and run the settings library pair beside it: startup reads the
+   project's catalog, not the accessor's own fold of the same entries. The
+   framework profiles `hilos.moderation.text` and `hilos.moderation.image` need
+   no project declaration; a stand points them at its model with
+   `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL`.
 5. Register the two framework browser tables, kinds and rules.
    (not in the code yet — HIL-1628)
    Register the section root page. (not in the code yet — HIL-1629)

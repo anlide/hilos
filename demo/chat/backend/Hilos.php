@@ -42,7 +42,6 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Agents\OAuthAgent;
-use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
@@ -237,6 +236,8 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
@@ -346,11 +347,10 @@ final class Hilos extends HilosFacade
         HilosFeature::UPLOADS,
         HilosFeature::IMAGES,
         HilosFeature::PROFILE_PHOTO,
+        HilosFeature::MODERATION,
         HilosFeature::ANALYTICS,
         HilosFeature::CHANGE_LOG,
     ];
-
-    public const ?string PROFILE_PHOTO_CHECKER = AgentType::MODERATOR;
 
     /** A file attached to a message - the chat's one kind of upload (HIL-144). */
     public const array UPLOAD_TARGETS = [
@@ -523,6 +523,11 @@ final class Hilos extends HilosFacade
         ModerationRulesLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
             AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ModerationAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LibraryAgent::AGENT_TYPE => [

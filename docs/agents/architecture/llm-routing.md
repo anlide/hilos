@@ -78,8 +78,13 @@ the profile — resolving `{provider: EXTERNAL, apiKey: null}` is a configuratio
 error surfaced as `LLMConfigurationException`, never a silent fallback to local.
 
 The framework owns `hilos.moderation.text` for `TEXT` / `TEXT_WITH_FILES` and
-`hilos.moderation.image` for `IMAGE`; use them for the common
-[moderator](moderation.md). (not in the code yet — HIL-1625)
+`hilos.moderation.image` for `IMAGE`, declared beside `default` in
+`framework/backend/LLM/Routing/LlmProfileCatalogStub.php` (the key names are
+`ModerationLlmConstants::PROFILE_TEXT` / `PROFILE_IMAGE`). `LlmRouter::catalog()`
+folds that framework catalog under the project's own `LLM_PROFILE_CATALOG`, so
+the built-in keys resolve in a project that declares only its own keys; a
+project entry under a built-in key replaces the framework one. Use them for the
+common [moderator](moderation.md).
 
 Today's `chat.moderation` and `chat.photo_moderation`, declared in
 `demo/chat/backend/Environment/ChatLlmProfileCatalog.php`, are transitional;
@@ -105,10 +110,29 @@ row written by a browser user — a settings override may switch *which* keyed
 credential a profile uses, but not inline a secret value.
 
 For framework moderation, both the text model and the image model have
-framework settings over env defaults. Read them for the next check, so a change
-takes effect without restarting the moderator; secrets remain in env. HIL-1625
-chooses the exact env and settings constants.
-(not in the code yet — HIL-1625)
+framework settings over env defaults. The env defaults are
+`HILOS_MODERATION_TEXT_*` and `HILOS_MODERATION_IMAGE_*` (`PROVIDER`, `MODEL`,
+`URL`, `TIMEOUT_SEC`; one model per role serves both providers). The settings are
+`moderation.text.*` and `moderation.image.*` (`provider`, `model`, `url`,
+`timeout_sec`) in `framework/backend/Moderation/ModerationSettingsCatalog.php`,
+each defaulting to its env value. `FrameworkLlmProfileOverrideSource` applies
+them in every `LlmRouter::resolve()`, whether or not the project sets
+`LLM_PROFILE_OVERRIDE`. A project's own source still runs first and keeps its
+keys (the chat demo's `chat.*`); for the built-in keys the framework source runs
+last and has the last word. Each resolve reads the settings afresh through
+`Hilos::$setting`, with no cache of its own, so the next resolve after a saved
+change returns the changed profile.
+
+Secrets remain in env: a role the settings switch to `external` takes
+`LLM_EXTERNAL_URL` and `LLM_EXTERNAL_API_KEY` from env, and without the key the
+resolve throws `LLMConfigurationException` instead of falling back to local. An
+empty `url` setting is no override: the role's own `HILOS_MODERATION_*_URL`
+stands, then `LLM_LOCAL_URL`, also for a role whose env resolved it as external
+and whose settings switched it to local.
+
+The moderator resolves its profile before each check, so a change takes effect
+without restarting it; a check already with the model finishes on the profile it
+started with.
 
 Today's transitional chat override source overrides `chat.moderation` but lets
 `chat.photo_moderation` pass through from env.
@@ -178,7 +202,9 @@ The transitional `ModeratorAgent` has no test swap: on the test stand its
 `chat.moderation` profile resolves to the model emulator (see
 [stand-services.md](../stand-services.md)), so a test rides the same router and
 client production does. Framework moderation keeps that path for both its
-profiles. (not in the code yet — HIL-1625)
+profiles: on the chat stand `hilos.moderation.text` and `hilos.moderation.image`
+resolve through `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` to
+the same emulator.
 
 What carries the stand's address there is the resolution rule above taken
 literally — "absent an override, the env default stands": an EMPTY URL setting is
