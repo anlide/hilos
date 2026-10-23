@@ -15,8 +15,12 @@ interface FocusReturnRequest {
   fallback?: () => HTMLElement | null
 }
 
-/** Whether a return target still belongs to the visible, interactive document. */
-function available(element: HTMLElement | null): element is HTMLElement {
+/**
+ * Whether a return target still belongs to the visible, interactive document.
+ * Shared within core/dom; not part of the public entrypoints.
+ * @internal
+ */
+export function available(element: HTMLElement | null): element is HTMLElement {
   if (!element?.isConnected || element.matches(':disabled')) return false
   if (element.closest('[hidden], [inert]')) return false
   for (
@@ -41,27 +45,40 @@ function available(element: HTMLElement | null): element is HTMLElement {
  * stays nearest first: the nearest owner's target wins while it is available,
  * and an outer owner is read only when every nearer one gives none — it was
  * disposed, its root left the document, or its target is null or unavailable.
- * No document registry or lookup of a replacement control is involved.
+ * Each owner may capture a replacement reader from the request's original
+ * opener while it is still mounted. After nearer offers, that owner's available
+ * replacement precedes its ordinary fallback. No document registry is involved.
  * Disposal invalidates callbacks already captured by an open trap as well as
  * removing the listener.
  *
  * @param root The connected surface that owns the opener.
  * @param fallback Read the surface's current visible fallback on release.
+ * @param captureReplacement Optionally capture a mount-local address at activation.
  * @returns Release this mount's offer, including outstanding callbacks.
  */
 export function registerFocusReturnFallback(
   root: HTMLElement,
   fallback: () => HTMLElement | null,
+  captureReplacement?: (
+    opener: HTMLElement,
+  ) => (() => HTMLElement | null) | null,
 ): () => void {
   let active = true
   const answer = (event: Event) => {
     const request = (event as CustomEvent<FocusReturnRequest>).detail
     const nearer = request.fallback
+    const replacement =
+      event.target instanceof HTMLElement
+        ? captureReplacement?.(event.target)
+        : null
     request.fallback = () => {
       const target = nearer?.() ?? null
       if (available(target)) return target
+      if (!active || !root.isConnected) return null
+      const replacementTarget = replacement?.() ?? null
+      if (available(replacementTarget)) return replacementTarget
 
-      return active && root.isConnected ? fallback() : null
+      return fallback()
     }
   }
   root.addEventListener(FOCUS_RETURN_REQUEST, answer)

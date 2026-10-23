@@ -848,7 +848,7 @@ for (const outcome of [
   'root',
   'external',
 ] as const) {
-  test(`B05 modal ${outcome}: trap and return follow the actual opener occurrence`, async ({
+  test(`B05 modal ${outcome}: trap and return follow the live focus-return policy`, async ({
     page,
   }, info) => {
     if (outcome === 'root') {
@@ -868,18 +868,30 @@ for (const outcome of [
       await expect(modal).toHaveAccessibleName('Inspect geometry record')
       expect((await focus.read()).openerConnected).toBe(true)
       if (outcome === 'snapshot') {
-        await press(page, 'geometry-modal-snapshot')
+        await page
+          .getByTestId('geometry-modal-snapshot')
+          .evaluate((button: HTMLButtonElement) => button.click())
         await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
           'Fresh a',
         )
+        await expect(modal).toBeFocused()
         const replaced = await focus.read()
         expect(replaced.openerConnected).toBe(false)
         expect(replaced.sameTrigger).toBe(false)
         expect(replaced.visibleTriggers).toBe(1)
+        expect(replaced.rootConnected).toBe(true)
+        expect(replaced.inDialog).toBe(true)
+        await expect(shownByTestId(page, 'geometry-action-a')).toHaveAttribute(
+          'data-hilos-focus-return',
+          'inspect-geometry',
+        )
       } else if (outcome !== 'connected') {
-        await press(page, 'geometry-modal-remove')
+        await page
+          .getByTestId('geometry-modal-remove')
+          .evaluate((button: HTMLButtonElement) => button.click())
         await retired(page, 'a')
         expect((await focus.read()).openerConnected).toBe(false)
+        await expect(modal).toBeFocused()
       }
       // The two fixture controls and SDK close control cycle at both ends.
       await page.getByTestId('geometry-modal-snapshot').focus()
@@ -898,13 +910,15 @@ for (const outcome of [
       await expect(
         outcome === 'connected'
           ? trigger
-          : page.getByTestId(
-              outcome === 'external'
-                ? 'geometry-position'
-                : outcome === 'root'
-                  ? 'hilos-viewport-table'
-                  : 'hilos-table-search',
-            ),
+          : outcome === 'snapshot'
+            ? shownByTestId(page, 'geometry-action-a')
+            : page.getByTestId(
+                outcome === 'external'
+                  ? 'geometry-position'
+                  : outcome === 'root'
+                    ? 'hilos-viewport-table'
+                    : 'hilos-table-search',
+              ),
       ).toBeFocused()
       expect((await focus.read()).inDialog).toBe(false)
     } finally {

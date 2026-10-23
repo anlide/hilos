@@ -7,6 +7,7 @@ import {
   ScopeManager,
   TableViewportController,
   bindTableViewport,
+  registerFocusReturnFallback,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -21,6 +22,7 @@ import type {
 } from '@hilos/core'
 
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
+import { HilosModal } from '../src/HilosModal.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import {
   HilosTableSelectionEdgeContext,
@@ -3313,43 +3315,60 @@ describe('HilosViewportTable connected geometry', () => {
     },
   )
 
-  it('returns a gone modal opener through the mounted table without stealing the active trap or another focus choice', () => {
-    tableGeometryDOM()
-    const { controller } = make({ search: true })
-    const { container } = render(
-      <HilosViewportTable controller={controller} {...content()} />,
-    )
-    const opener = container.querySelector<HTMLElement>(
-      '[data-id="project-action-a"]',
-    )!
-    const modal = document.createElement('div')
-    modal.tabIndex = -1
-    extras.push(modal)
-    document.body.append(modal)
-    const trap = new FocusTrap()
-    opener.focus()
-    trap.activate(modal, 'dialog')
-    trap.release()
-    expect(document.activeElement).toBe(opener)
-    trap.activate(modal, 'dialog')
-    act(() => snapshot(controller))
-    expect(document.activeElement).toBe(modal)
-    expect(container.querySelector('[data-id="project-action-a"]')).not.toBe(
-      opener,
-    )
-    trap.release()
-    expect(document.activeElement).toBe(
-      container.querySelector('[data-id="hilos-table-search"]'),
-    )
-    container
-      .querySelector<HTMLElement>('[data-id="project-action-a"]')!
-      .focus()
-    act(() => {
-      depart(controller)
-      modal.focus()
-    })
-    expect(document.activeElement).toBe(modal)
-  })
+  it.each(['replacement', 'departure', 'unmarked'] as const)(
+    'returns a gone modal opener through the mounted table: %s',
+    (change) => {
+      tableGeometryDOM()
+      const { controller } = make({ search: true })
+      const { container } = render(
+        <HilosViewportTable controller={controller} {...content()} />,
+      )
+      const opener = container.querySelector<HTMLElement>(
+        '[data-id="project-action-a"]',
+      )!
+      if (change !== 'unmarked')
+        opener.setAttribute('data-hilos-focus-return', 'edit')
+      const modal = document.createElement('div')
+      modal.tabIndex = -1
+      extras.push(modal)
+      document.body.append(modal)
+      const trap = new FocusTrap()
+      opener.focus()
+      trap.activate(modal, 'dialog')
+      trap.release()
+      expect(document.activeElement).toBe(opener)
+      trap.activate(modal, 'dialog')
+      act(() => {
+        if (change === 'departure') depart(controller)
+        else snapshot(controller)
+      })
+      if (change === 'replacement')
+        container
+          .querySelector<HTMLElement>('[data-id="project-action-a"]')!
+          .setAttribute('data-hilos-focus-return', 'edit')
+      expect(document.activeElement).toBe(modal)
+      expect(container.querySelector('[data-id="project-action-a"]')).not.toBe(
+        opener,
+      )
+      trap.release()
+      expect(document.activeElement).toBe(
+        container.querySelector(
+          change === 'replacement'
+            ? '[data-id="project-action-a"]'
+            : '[data-id="hilos-table-search"]',
+        ),
+      )
+      if (change === 'departure') act(() => snapshot(controller))
+      container
+        .querySelector<HTMLElement>('[data-id="project-action-a"]')!
+        .focus()
+      act(() => {
+        depart(controller)
+        modal.focus()
+      })
+      expect(document.activeElement).toBe(modal)
+    },
+  )
 
   it('renders the production table statically without DOM reads or registration', () => {
     tableGeometryDOM()
@@ -3368,5 +3387,400 @@ describe('HilosViewportTable connected geometry', () => {
     expect(html).toContain('Private a')
     expect(html).toContain('hilos-table-room-card')
     expect(html).not.toContain('hilos-table-fixed')
+  })
+})
+
+describe('HilosViewportTable modal focus lifetime', () => {
+  const targets: TableViewportController<Row>[] = []
+  const releases: (() => void)[] = []
+  afterEach(() => {
+    cleanup()
+    releases.splice(0).forEach((release) => release())
+    targets.splice(0).forEach((target) => target.dispose())
+    vi.restoreAllMocks()
+  })
+
+  function fixture({
+    search = true,
+    projection = 'wide',
+    marked = true,
+    strict = false,
+  }: {
+    search?: boolean
+    projection?: 'wide' | 'card'
+    marked?: boolean
+    strict?: boolean
+  } = {}) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        return this.closest('[hidden]')
+          ? new DOMRect()
+          : new DOMRect(0, 0, 400, 40)
+      },
+    )
+    function make() {
+      const { controller } = makeController({
+        title: 'People',
+        columns: COLUMNS,
+        ...(search ? { search: {} } : {}),
+      })
+      targets.push(controller)
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      return controller
+    }
+    const controller = make()
+    let current = controller
+    let open = false
+    let mounted = true
+    let marker: string | undefined = marked ? 'person-open' : undefined
+    let duplicates = false
+    function tree() {
+      const content = (
+        <div>
+          {mounted ? (
+            <HilosViewportTable
+              controller={current}
+              cells={{
+                name: (row) => (
+                  <fieldset>
+                    <button
+                      data-id="open-person"
+                      data-hilos-focus-return={marker}
+                      onClick={() => {
+                        open = true
+                        redraw()
+                      }}
+                    >
+                      Inspect {row.name}
+                    </button>
+                    {duplicates ? (
+                      <button data-hilos-focus-return={marker}>
+                        Ambiguous
+                      </button>
+                    ) : null}
+                  </fieldset>
+                ),
+              }}
+            />
+          ) : null}
+          <HilosModal
+            open={open}
+            title="Inspect person"
+            initialFocus="dialog"
+            onClose={() => {
+              open = false
+              redraw()
+            }}
+          />
+          <button data-id="unrelated">Other control</button>
+        </div>
+      )
+      return strict ? <StrictMode>{content}</StrictMode> : content
+    }
+    const view = render(tree())
+    function redraw() {
+      view.rerender(tree())
+    }
+    function show(next: 'wide' | 'card') {
+      view.container.querySelector<HTMLElement>('.table-responsive')!.hidden =
+        next !== 'wide'
+      view.container.querySelector<HTMLElement>(
+        '[data-id="hilos-table-cards"]',
+      )!.hidden = next !== 'card'
+    }
+    show(projection)
+    function control(target = projection): HTMLElement {
+      return view.container.querySelector<HTMLElement>(
+        `${target === 'wide' ? 'tr' : '[role="list"]'} [data-id="open-person"]`,
+      )!
+    }
+    const opener = control()
+    const other = view.container.querySelector<HTMLElement>(
+      '[data-id="unrelated"]',
+    )!
+    const modal = () =>
+      document.querySelector<HTMLElement>(
+        '[data-id="modal"][aria-label="Inspect person"]',
+      )!
+    function snapshot(name = 'Alice') {
+      act(() =>
+        controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        ),
+      )
+    }
+    function remove() {
+      act(() =>
+        controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'a',
+          reason: 'deleted',
+          own: true,
+        }),
+      )
+    }
+    return {
+      ...view,
+      controller,
+      opener,
+      other,
+      control,
+      modal,
+      show,
+      snapshot,
+      remove,
+      search: () =>
+        view.container.querySelector<HTMLElement>(
+          '[data-id="hilos-table-search"]',
+        )!,
+      root: () =>
+        view.container.querySelector<HTMLElement>(
+          '[data-id="hilos-viewport-table"]',
+        )!,
+      activate() {
+        opener.focus()
+        fireEvent.click(opener)
+        expect(document.activeElement).toBe(modal())
+      },
+      close() {
+        fireEvent.keyDown(modal(), { key: 'Escape' })
+        expect(modal()).toBeNull()
+      },
+      hide() {
+        act(() => {
+          open = false
+          redraw()
+        })
+      },
+      changeMarker(value?: string) {
+        act(() => {
+          marker = value
+          redraw()
+        })
+      },
+      duplicate() {
+        act(() => {
+          duplicates = true
+          redraw()
+        })
+      },
+      replaceController() {
+        act(() => {
+          current = make()
+          // Occurrences belong to a controller. Give the new controller a fresh
+          // DOM key so this case exercises the disposed offer, not the still
+          // available native opener that always has priority.
+          current.ingestWindow(
+            [{ rowKey: 'a', slots: { name: 'Other controller' } }],
+            1,
+            true,
+            null,
+            null,
+            10,
+          )
+          redraw()
+        })
+      },
+      unmountTable() {
+        act(() => {
+          mounted = false
+          redraw()
+        })
+      },
+      offerOuter() {
+        releases.push(registerFocusReturnFallback(view.container, () => other))
+      },
+    }
+  }
+
+  it('returns to the connected opener after a live value update', () => {
+    const f = fixture()
+    f.activate()
+    act(() =>
+      f.controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'Updated' } },
+      }),
+    )
+    expect(f.opener.isConnected).toBe(true)
+    f.close()
+    expect(document.activeElement).toBe(f.opener)
+  })
+
+  describe.each([false, true])('StrictMode=%s', (strict) => {
+    it.each(['wide', 'card'] as const)(
+      'returns to the fresh marked logical control in %s',
+      (projection) => {
+        const f = fixture({ projection, strict })
+        const occurrence = f.controller.rows.get()[0]!.occurrence
+        f.activate()
+        const modal = f.modal()
+        f.snapshot('Updated person')
+        expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+        const fresh = f.control()
+        expect(f.opener.isConnected).toBe(false)
+        expect(fresh).not.toBe(f.opener)
+        expect(fresh.isConnected).toBe(true)
+        expect(document.activeElement).toBe(modal)
+        f.close()
+        expect(document.activeElement).toBe(fresh)
+      },
+    )
+
+    it.each(['controller', 'unmount'] as const)(
+      'invalidates captured return after table %s',
+      (change) => {
+        const f = fixture({ strict })
+        f.offerOuter()
+        f.activate()
+        const modal = f.modal()
+        if (change === 'controller') f.replaceController()
+        else f.unmountTable()
+        expect(f.opener.isConnected).toBe(false)
+        expect(document.activeElement).toBe(modal)
+        f.close()
+        expect(document.activeElement).toBe(f.other)
+      },
+    )
+  })
+
+  it.each(['same key', 'reused key'])(
+    'returns an unmarked data-id-only %s control to search',
+    (change) => {
+      const f = fixture({ marked: false })
+      f.activate()
+      const modal = f.modal()
+      f.snapshot(change === 'reused key' ? 'Another person' : 'Alice')
+      expect(f.opener.isConnected).toBe(false)
+      expect(f.control()).not.toBe(f.opener)
+      expect(document.activeElement).toBe(modal)
+      f.close()
+      expect(document.activeElement).toBe(f.search())
+    },
+  )
+
+  it.each([
+    'removed',
+    'placeholder',
+    'missing marker',
+    'changed marker',
+    'duplicate marker',
+    'hidden control',
+    'disabled control',
+    'inert control',
+    'disabled fieldset',
+    'hidden projection',
+    'foreign parts',
+    'foreign table',
+  ] as const)(
+    'returns to search when the replacement is unavailable: %s',
+    (change) => {
+      const f = fixture()
+      // An identical address on another table must never be selected.
+      const foreign = change === 'foreign table' ? fixture() : null
+      f.activate()
+      const modal = f.modal()
+      if (change === 'removed')
+        act(() => f.controller.ingestWindow([], 0, true, null, null, 10))
+      else if (change === 'placeholder') f.remove()
+      else {
+        if (change === 'missing marker' || change === 'foreign table')
+          f.changeMarker()
+        if (change === 'changed marker') f.changeMarker('another-action')
+        if (change === 'duplicate marker') f.duplicate()
+        f.snapshot()
+      }
+      if (change === 'hidden control') f.control().hidden = true
+      if (change === 'disabled control')
+        f.control().setAttribute('disabled', '')
+      if (change === 'inert control') f.control().setAttribute('inert', '')
+      if (change === 'disabled fieldset')
+        f.control().closest('fieldset')!.disabled = true
+      if (change === 'hidden projection') f.show('card')
+      const row = change === 'foreign parts' ? f.control().closest('tr')! : null
+      const parent = row?.parentElement
+      if (row) document.body.append(row)
+      expect(f.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(modal)
+      f.close()
+      expect(document.activeElement).toBe(f.search())
+      if (foreign) expect(document.activeElement).not.toBe(foreign.control())
+      // Restore externally moved React children before their normal cleanup.
+      if (row) parent!.append(row)
+    },
+  )
+
+  it.each(['absent', 'hidden'])(
+    'returns a removed opener to the root with %s search',
+    (search) => {
+      const f = fixture({ search: search === 'hidden' })
+      f.activate()
+      if (search === 'hidden') f.search().hidden = true
+      f.remove()
+      expect(document.activeElement).toBe(f.modal())
+      f.close()
+      expect(document.activeElement).toBe(f.root())
+      expect(f.root().tabIndex).toBe(-1)
+    },
+  )
+
+  it('keeps an explicit focus choice outside the dialog', () => {
+    const f = fixture()
+    f.activate()
+    f.other.focus()
+    f.snapshot()
+    expect(document.activeElement).toBe(f.other)
+    f.close()
+    expect(document.activeElement).toBe(f.other)
+  })
+
+  it('honors a nearer registered offer before the table replacement', () => {
+    const f = fixture()
+    releases.push(
+      registerFocusReturnFallback(
+        f.container.querySelector<HTMLElement>('.table-responsive')!,
+        () => f.other,
+      ),
+    )
+    f.activate()
+    f.snapshot()
+    expect(f.opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(f.modal())
+    f.close()
+    expect(document.activeElement).toBe(f.other)
+  })
+
+  it('keeps independent modal addresses and the upper dialog focus', () => {
+    const lower = fixture()
+    const upper = fixture()
+    lower.activate()
+    upper.opener.focus()
+    fireEvent.click(upper.opener)
+    const modal = [
+      ...document.querySelectorAll<HTMLElement>('[data-id="modal"]'),
+    ].at(-1)!
+    lower.snapshot('Lower person')
+    upper.snapshot('Upper person')
+    expect(lower.opener.isConnected).toBe(false)
+    expect(upper.opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(modal)
+    lower.hide()
+    expect(document.activeElement).toBe(modal)
+    upper.close()
+    expect(document.activeElement).toBe(upper.control())
+    expect(document.activeElement).not.toBe(lower.control())
   })
 })

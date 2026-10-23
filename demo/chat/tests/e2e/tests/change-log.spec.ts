@@ -36,8 +36,7 @@ test('opens Change Log from the admin dashboard with its overview and feed', asy
   await expectChangeLogOverview(expect, page)
 })
 
-// FIXME(F-017, 2026-10-22): после Escape не возвращается фокус на кнопку чека · чужой · попытка 2 · HIL-1601
-test.fixme('opens a block receipt with old and new values and returns keyboard focus', async ({
+test('opens a block receipt with old and new values and returns keyboard focus', async ({
   browser,
   page,
 }) => {

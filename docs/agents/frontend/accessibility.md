@@ -65,37 +65,49 @@ Every modal names where focus lands, and the naming is visible at the mount.
 - With no mark and no declaration the dialog itself takes focus — the safe
   default for a project that mounts the SDK, never the close button.
 
-On close, `FocusTrap` returns to the original connected, visible, enabled
-trigger. Vue, React, and Angular table mounts offer
-[`registerFocusReturnFallback(root, read)`](../../../framework/frontend/core/src/dom/focusTrap.ts)
-from `core/dom`: activation captures the mount-local offers around the trigger
-through a bubbling DOM request, nearest first, and release calls `read` only if
-the trigger became unavailable. The nearest offer's available target wins; an
-outer offer is read only when every nearer one gives none — it was cleaned up,
-its root left the document, or its target is `null` or unavailable — so a
-surface around a table still catches a return when the table itself is gone.
-`read` returns the surface's current visible search, or its stable
-`tabindex="-1"` table root. Registration returns a `() => void` cleanup; call it
-when the mount is disposed or its controller is replaced. Cleanup removes the
-offer and invalidates callbacks already captured by an open trap. Angular's
-per-controller
-[`createTableViewportGeometry`](../../../framework/frontend/angular/src/tableViewportGeometry.ts)
-registers this fallback for its mounted root and releases it when the adapter is
-disposed or its controller is replaced.
+On close, `FocusTrap` first returns to the original connected, visible, enabled
+trigger. Vue, React, and Angular table mounts can also offer a mount-local
+replacement through the optional third argument of
+[`registerFocusReturnFallback(root, fallback, captureReplacement?)`](../../../framework/frontend/core/src/dom/focusTrap.ts);
+the existing two-argument registration remains valid. Activation captures
+offers around the still-mounted trigger through a bubbling DOM request, nearest
+first. On release, the nearest offer with an available target wins; an outer
+offer is read only when every nearer offer gives none — it was cleaned up, its
+root left the document, or its target is `null` or unavailable — so a surface
+around a table still catches a return when the table itself is gone. The table's
+ordinary fallback returns its current visible search, or its stable
+`tabindex="-1"` root. Registration returns a `() => void` cleanup; call it when
+the mount is disposed or its controller is replaced. Cleanup removes the offer
+and invalidates callbacks already captured by an open trap.
 
-A fresh snapshot's occurrence is a different control even when its row key or
-`data-id` repeats; no replacement is guessed from those strings. An invisible
-measurement projection is not a focus target: its holder is inert and
-`aria-hidden`, with no row data, `data-id`, or interactive clone. While the
-modal is open, table updates keep focus inside it. A focus choice outside the
-dialog is preserved. The offer contains browser handles only; numeric core
-geometry contains no DOM references. Callers without an offer retain ordinary
-trigger return. The Vue registration and current fallback are wired in
-[`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts);
-the React mount wires the same API and fallback in
-[`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts).
-Angular's fallback reads the current visible, enabled search or the table root
-from its adapter; it does not select another occurrence by row key or `data-id`.
+The shared
+[`captureTableFocusReturnTarget(opener, readRows)`](../../../framework/frontend/core/src/dom/tableFocusReturn.ts)
+path is opt-in: the original opener button must carry a non-empty
+`data-hilos-focus-return` value. Capture records its live row key, projection,
+and literal marker value. On release, the reader checks fresh mounted parts of
+that same table registration and returns a current available control only when
+exactly one control in that row and projection carries the same marker. The
+Change Log action buttons opt in with `data-hilos-focus-return="change-log-open"`.
+A `data-id` value by itself, matching text, or DOM order alone never supplies a
+replacement address. Thus an explicitly marked logical button may follow a
+snapshot to a fresh occurrence in the same row and projection; geometry readers
+for the departed occurrence still reject that new occurrence.
+
+The Vue adapter
+[`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts),
+React adapter
+[`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts),
+and Angular adapter
+[`tableViewportGeometry`](../../../framework/frontend/angular/src/tableViewportGeometry.ts)
+use this shared path. Their captured readers stay within the originating root,
+registration, and controller lifetime and are invalidated on disposal or
+replacement. Without an explicit marker, or when the replacement is ambiguous
+or unavailable, the table uses its ordinary search/root fallback before the
+outer owner is considered. An invisible measurement projection is not a focus
+target: its holder is inert and `aria-hidden`, with no row data, `data-id`, or
+interactive clone. While the modal is open, table updates keep focus inside it;
+an explicit focus choice outside the dialog is preserved. These offers contain
+browser handles only; numeric core geometry contains no DOM references.
 
 The empty default of `initialFocus` means the mark is in this file. The confirm
 step a dirty close raises is always the dialog itself: it has a heading, a

@@ -495,6 +495,10 @@ export {
   type FocusPlacement,
 } from './dom/focusTrap.js'
 export {
+  captureTableFocusReturnTarget,
+  type TableFocusReturnRow,
+} from './dom/tableFocusReturn.js'
+export {
   lockBodyScroll,
   unlockBodyScroll,
   type ScrollLockOwner,

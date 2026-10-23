@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
   CHANGE_LOG_OVERVIEW_SECTION,
@@ -291,12 +291,12 @@ function harness(
     scopes,
     actions,
   }
-  function pushWindow() {
+  function pushWindow(nextRows = rows) {
     const data = {
       page: HilosPages.CHANGE_LOG,
       tableKey: TABLE,
-      rows,
-      totalCount: rows.length,
+      rows: nextRows,
+      totalCount: nextRows.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -333,10 +333,38 @@ function mountPage(
   return result
 }
 
+/** Give jsdom a connected layout and explicitly select one visible projection. */
+function focusLayout(projection: 'wide' | 'card'): () => HTMLElement {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.closest('[hidden]')
+        ? new DOMRect()
+        : new DOMRect(0, 0, 400, 40)
+    },
+  )
+  return () => {
+    const wide = document.querySelector<HTMLElement>('.table-responsive')!
+    const cards = element('hilos-table-cards')
+    wide.hidden = projection !== 'wide'
+    cards.hidden = projection !== 'card'
+    return projection === 'wide' ? wide : cards
+  }
+}
+
+async function closeDetails(close: 'escape' | 'footer'): Promise<void> {
+  if (close === 'escape') fireEvent.keyDown(element('modal'), { key: 'Escape' })
+  else await click(element('hilos-change-log-detail-close'))
+  await settle()
+  expect(document.querySelector('[data-id="modal"]')).toBeNull()
+}
+
 describe('HilosChangeLogPage', () => {
   // The receipt modal is portalled to the document body, so a page left mounted
   // would leave it there for the next case to find.
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
 
   it('draws the page snapshot and offers its table names in the feed filter', () => {
     mountPage(harness())
@@ -523,35 +551,128 @@ describe('HilosChangeLogPage', () => {
     },
   )
 
-  it('opens a bare change from the same actions slot, including its card projection', async () => {
-    const h = harness(OVERVIEW, [
-      {
-        rowKey: 'entry:11',
-        slots: {
-          feed: receipt({ kind: 'entry', receiptId: null, entryId: 11 }),
+  describe.each(['wide', 'card'] as const)(
+    'focus return in %s',
+    (projection) => {
+      it.each(['escape', 'footer'] as const)(
+        'returns to the fresh receipt opener after %s',
+        async (close) => {
+          const show = focusLayout(projection)
+          const h = harness(OVERVIEW, [
+            { rowKey: 'receipt:7', slots: { feed: receipt() } },
+          ])
+          mountPage(h, false, router(), true)
+          const root = show()
+          const opener = await open(h, root)
+          const modal = element('modal')
+          await reply(h)
+          act(() =>
+            h.pushWindow([
+              {
+                rowKey: 'receipt:7',
+                slots: { feed: receipt({ actorLabel: 'Updated Ada' }) },
+              },
+            ]),
+          )
+          await settle()
+          const fresh = element('hilos-change-log-open-receipt:7', root)
+          expect(opener.isConnected).toBe(false)
+          expect(fresh).not.toBe(opener)
+          expect(fresh.isConnected).toBe(true)
+          expect(root.textContent).toContain('Updated Ada')
+          expect(document.activeElement).toBe(modal)
+          // The feed changed while the open receipt kept its original reader facts.
+          expect(element('hilos-change-log-detail').textContent).toContain(
+            'at the keyboard Ada',
+          )
+          expect(element('hilos-change-log-detail').textContent).toContain(
+            'bot.update',
+          )
+          expect(element('hilos-change-log-detail').textContent).not.toContain(
+            'Updated Ada',
+          )
+          await closeDetails(close)
+          expect(document.activeElement).toBe(fresh)
+          expect(h.source.sent).toHaveLength(1)
         },
-      },
-    ])
-    mountPage(h)
-    const cards = document.querySelector('[role="list"]')!
-    await click(element('hilos-change-log-open-entry:11', cards))
-    expect(h.source.sent[0]).toMatchObject({
-      action: HILOS_CHANGE_LOG_ENTRY_READ,
-      data: { entryId: 11 },
-    })
-    act(() => h.source.success(0, { entry: { ...entry(), receiptId: null } }))
-    await settle()
-    expect(element('modal').getAttribute('aria-label')).toBe(
-      'Change #11 past the application',
-    )
-    const text = element('hilos-change-log-detail').textContent
-    expect(text).toContain('Unknown')
-    expect(text).toContain(
-      'No receipt: this change was made past the application',
-    )
-    expect(text).not.toContain('Guest')
-    expect(text).not.toContain('System')
-  })
+      )
+
+      it.each(['search', 'root'] as const)(
+        'returns to %s when the receipt disappears',
+        async (fallback) => {
+          const show = focusLayout(projection)
+          const h = harness(OVERVIEW, [
+            { rowKey: 'receipt:7', slots: { feed: receipt() } },
+          ])
+          mountPage(h, false, router(), true)
+          const opener = await open(h, show())
+          await reply(h)
+          const modal = element('modal')
+          act(() => h.pushWindow([]))
+          await settle()
+          if (fallback === 'root') element('hilos-table-search').hidden = true
+          expect(opener.isConnected).toBe(false)
+          expect(document.activeElement).toBe(modal)
+          await closeDetails('escape')
+          expect(document.activeElement).toBe(
+            element(
+              fallback === 'search'
+                ? 'hilos-table-search'
+                : 'hilos-viewport-table',
+            ),
+          )
+          expect(h.source.sent).toHaveLength(1)
+        },
+      )
+    },
+  )
+
+  it.each(['wide', 'card'] as const)(
+    'opens a bare change in %s and returns to its fresh opener',
+    async (projection) => {
+      const show = focusLayout(projection)
+      const h = harness(OVERVIEW, [
+        {
+          rowKey: 'entry:11',
+          slots: {
+            feed: receipt({ kind: 'entry', receiptId: null, entryId: 11 }),
+          },
+        },
+      ])
+      mountPage(h, false, router(), true)
+      const root = show()
+      const opener = element('hilos-change-log-open-entry:11', root)
+      opener.focus()
+      await click(opener)
+      expect(h.source.sent[0]).toMatchObject({
+        action: HILOS_CHANGE_LOG_ENTRY_READ,
+        data: { entryId: 11 },
+      })
+      act(() => h.source.success(0, { entry: { ...entry(), receiptId: null } }))
+      await settle()
+      expect(element('modal').getAttribute('aria-label')).toBe(
+        'Change #11 past the application',
+      )
+      const text = element('hilos-change-log-detail').textContent
+      expect(text).toContain('Unknown')
+      expect(text).toContain(
+        'No receipt: this change was made past the application',
+      )
+      expect(text).not.toContain('Guest')
+      expect(text).not.toContain('System')
+      const modal = element('modal')
+      act(() => h.pushWindow())
+      await settle()
+      const fresh = element('hilos-change-log-open-entry:11', root)
+      expect(opener.isConnected).toBe(false)
+      expect(fresh).not.toBe(opener)
+      expect(fresh.isConnected).toBe(true)
+      expect(document.activeElement).toBe(modal)
+      await closeDetails('footer')
+      expect(document.activeElement).toBe(fresh)
+      expect(h.source.sent).toHaveLength(1)
+    },
+  )
 
   it('renders hidden labels beside their numbers while keeping details readable', async () => {
     const h = harness(OVERVIEW, [

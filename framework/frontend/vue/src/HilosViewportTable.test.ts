@@ -4,6 +4,7 @@ import { h, nextTick, ref, shallowRef } from 'vue'
 import {
   createSignal,
   HIDDEN_VALUE,
+  registerFocusReturnFallback,
   TableViewportController,
 } from '@hilos/core/base'
 import type {
@@ -3565,7 +3566,15 @@ describe('HilosViewportTable modal focus lifetime', () => {
     document.body.replaceChildren()
   })
 
-  function fixture(search = true) {
+  function fixture({
+    search = true,
+    projection = 'wide',
+    marked = true,
+  }: {
+    search?: boolean
+    projection?: 'wide' | 'card'
+    marked?: boolean
+  } = {}) {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
       function (this: HTMLElement) {
         return this.closest('[hidden]')
@@ -3592,6 +3601,8 @@ describe('HilosViewportTable modal focus lifetime', () => {
     const current = shallowRef(controller)
     const open = ref(false)
     const tableMounted = ref(true)
+    const marker = ref<string | undefined>(marked ? 'person-open' : undefined)
+    const duplicates = ref(false)
     const wrapper = mount(
       {
         setup: () => () =>
@@ -3601,17 +3612,28 @@ describe('HilosViewportTable modal focus lifetime', () => {
                   HilosViewportTable,
                   { controller: current.value },
                   {
-                    'cell-name': () =>
+                    'cell-name': () => [
                       h(
                         'button',
                         {
                           'data-id': 'open-person',
+                          'data-hilos-focus-return': marker.value,
                           onClick: () => {
                             open.value = true
                           },
                         },
                         'Inspect',
                       ),
+                      duplicates.value
+                        ? h(
+                            'button',
+                            {
+                              'data-hilos-focus-return': marker.value,
+                            },
+                            'Ambiguous',
+                          )
+                        : null,
+                    ],
                   },
                 )
               : null,
@@ -3628,14 +3650,34 @@ describe('HilosViewportTable modal focus lifetime', () => {
       },
       { attachTo: document.body },
     )
-    const opener = wrapper.get('tr [data-id="open-person"]')
-      .element as HTMLElement
+    function show(next: 'wide' | 'card') {
+      const wide = wrapper.get('.table-responsive').element as HTMLElement
+      const cards = wrapper.get('[data-id="hilos-table-cards"]')
+        .element as HTMLElement
+      wide.hidden = next !== 'wide'
+      cards.hidden = next !== 'card'
+    }
+    show(projection)
+    function control(target: 'wide' | 'card' = projection): HTMLElement {
+      return wrapper.get(
+        `${target === 'wide' ? 'tr' : '[role="list"]'} [data-id="open-person"]`,
+      ).element as HTMLElement
+    }
+    const opener = control()
+    function remove() {
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+    }
     async function activate() {
       opener.focus()
       opener.click()
       await flushPromises()
       expect(document.activeElement).toBe(
-        document.querySelector('[data-id="modal"]'),
+        [...document.querySelectorAll('[data-id="modal"]')].at(-1),
       )
     }
     async function close() {
@@ -3650,9 +3692,15 @@ describe('HilosViewportTable modal focus lifetime', () => {
     return {
       controller,
       current,
+      open,
       tableMounted,
       wrapper,
       opener,
+      marker,
+      duplicates,
+      show,
+      control,
+      remove,
       snapshot,
       activate,
       close,
@@ -3674,26 +3722,37 @@ describe('HilosViewportTable modal focus lifetime', () => {
     f.controller.dispose()
   })
 
-  it.each(['same key', 'reused key', 'removed'] as const)(
-    'keeps the dialog focused through a fresh occurrence (%s), then returns to its table search',
-    async (replacement) => {
-      const f = fixture()
+  it.each(['wide', 'card'] as const)(
+    'returns to the fresh marked logical control in the %s projection',
+    async (projection) => {
+      const f = fixture({ projection })
       const occurrence = f.controller.rows.get()[0]!.occurrence
       await f.activate()
       const modal = document.activeElement
-      if (replacement === 'removed') {
-        f.controller.ingestDelta({
-          kind: 'row_removed',
-          rowKey: 'a',
-          reason: 'deleted',
-          own: true,
-        })
-      } else {
-        f.snapshot(replacement === 'reused key' ? 'Another person' : 'Alice')
-        expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
-      }
+      f.snapshot('Updated person')
+      expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+      await flushPromises()
+      const fresh = f.control()
+      expect(f.opener.isConnected).toBe(false)
+      expect(fresh).not.toBe(f.opener)
+      expect(fresh.isConnected).toBe(true)
+      expect(document.activeElement).toBe(modal)
+      await f.close()
+      expect(document.activeElement).toBe(fresh)
+      f.controller.dispose()
+    },
+  )
+
+  it.each(['same key', 'reused key'] as const)(
+    'returns an unmarked data-id-only %s control to search',
+    async (replacement) => {
+      const f = fixture({ marked: false })
+      await f.activate()
+      const modal = document.activeElement
+      f.snapshot(replacement === 'reused key' ? 'Another person' : 'Alice')
       await flushPromises()
       expect(f.opener.isConnected).toBe(false)
+      expect(f.control()).not.toBe(f.opener)
       expect(document.activeElement).toBe(modal)
       await f.close()
       expect(document.activeElement).toBe(
@@ -3703,16 +3762,64 @@ describe('HilosViewportTable modal focus lifetime', () => {
     },
   )
 
+  it.each([
+    'removed',
+    'placeholder',
+    'missing marker',
+    'duplicate marker',
+    'hidden control',
+    'disabled control',
+    'hidden projection',
+    'foreign parts',
+  ] as const)(
+    'returns to search when the marked replacement is unavailable: %s',
+    async (replacement) => {
+      const f = fixture()
+      await f.activate()
+      const modal = document.activeElement
+      if (replacement === 'removed') {
+        f.controller.ingestWindow([], 0, true, null, null, 10)
+      } else if (replacement === 'placeholder') {
+        f.remove()
+      } else {
+        if (replacement === 'missing marker') f.marker.value = undefined
+        if (replacement === 'duplicate marker') f.duplicates.value = true
+        f.snapshot()
+      }
+      await flushPromises()
+      if (replacement === 'hidden control') f.control().hidden = true
+      if (replacement === 'disabled control')
+        f.control().setAttribute('disabled', '')
+      if (replacement === 'hidden projection') f.show('card')
+      const foreign = document.createElement('table')
+      if (replacement === 'foreign parts') {
+        document.body.append(foreign)
+        foreign.append(f.control().closest('tr')!)
+      }
+      expect(f.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(modal)
+      await f.close()
+      expect(document.activeElement).toBe(
+        f.wrapper.get('[data-id="hilos-table-search"]').element,
+      )
+      // Return externally moved DOM before Vue unmounts its own children.
+      if (replacement === 'foreign parts')
+        f.wrapper.get('tbody').element.append(foreign.firstElementChild!)
+      foreign.remove()
+      f.controller.dispose()
+    },
+  )
+
   it.each(['absent', 'hidden'] as const)(
     'returns a removed modal opener to the root with %s search',
     async (search) => {
-      const f = fixture(search === 'hidden')
+      const f = fixture({ search: search === 'hidden' })
       await f.activate()
       if (search === 'hidden')
         f.wrapper
           .get('[data-id="hilos-table-search"]')
           .element.setAttribute('hidden', '')
-      f.snapshot()
+      f.remove()
       await flushPromises()
       await f.close()
       const root = f.wrapper.get('[data-id="hilos-viewport-table"]')
@@ -3735,10 +3842,38 @@ describe('HilosViewportTable modal focus lifetime', () => {
     f.controller.dispose()
   })
 
+  it('keeps two modal addresses separate and preserves the upper dialog focus', async () => {
+    const lower = fixture()
+    const upper = fixture()
+    await lower.activate()
+    await upper.activate()
+    const modal = document.activeElement
+    lower.snapshot('Lower person')
+    upper.snapshot('Upper person')
+    await flushPromises()
+    expect(lower.opener.isConnected).toBe(false)
+    expect(upper.opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(modal)
+    lower.open.value = false
+    await flushPromises()
+    expect(document.activeElement).toBe(modal)
+    await upper.close()
+    expect(document.activeElement).toBe(upper.control())
+    expect(document.activeElement).not.toBe(lower.control())
+    lower.controller.dispose()
+    upper.controller.dispose()
+  })
+
   it.each(['controller', 'unmount'] as const)(
     'invalidates a modal return callback after table %s',
     async (change) => {
       const f = fixture()
+      const other = f.wrapper.get('[data-id="unrelated"]')
+        .element as HTMLElement
+      const release = registerFocusReturnFallback(
+        f.wrapper.element as HTMLElement,
+        () => other,
+      )
       await f.activate()
       const next = makeController({
         title: 'Other table',
@@ -3758,17 +3893,25 @@ describe('HilosViewportTable modal focus lifetime', () => {
         await flushPromises()
         const modal = document.activeElement
         expect(f.opener.isConnected).toBe(false)
+        expect(modal).toBe(document.querySelector('[data-id="modal"]'))
+        const replacement = f.control()
         await f.close()
         expect(document.activeElement).not.toBe(
           f.wrapper.get('[data-id="hilos-table-search"]').element,
         )
+        expect(document.activeElement).not.toBe(replacement)
         expect(modal?.isConnected).toBe(false)
       } else {
         f.tableMounted.value = false
         await flushPromises()
+        expect(document.activeElement).toBe(
+          document.querySelector('[data-id="modal"]'),
+        )
         await f.close()
         expect(document.activeElement).not.toBe(f.opener)
       }
+      expect(document.activeElement).toBe(other)
+      release()
       f.controller.dispose()
       next.dispose()
     },

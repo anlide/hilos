@@ -241,6 +241,7 @@ export function HilosChangeLogPage({ context }: HilosChangeLogPageProps) {
               type="button"
               className="btn btn-sm btn-outline-secondary text-wrap"
               data-id={`hilos-change-log-open-${row.rowKey}`}
+              data-hilos-focus-return="change-log-open"
               onClick={() => openDetails(row)}
             >
               {formatChangeLogFeedOpenLabel(row)}

@@ -13,11 +13,13 @@ import {
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
+  type TableViewportController,
 } from '@hilos/core/base'
 import {
   CHANGE_LOG_OVERVIEW_SECTION,
   HILOS_CHANGE_LOG_ENTRY_READ,
   HILOS_CHANGE_LOG_RECEIPT_READ,
+  type HilosChangeLogFeedRow,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogEntry,
@@ -25,6 +27,7 @@ import {
 } from '@hilos/core/admin/change-log'
 
 import HilosChangeLogPage from './HilosChangeLogPage.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const TABLE = 'hilosChangeLogFeed'
@@ -274,12 +277,12 @@ function harness(
     scopes,
     actions,
   }
-  function pushWindow() {
+  function pushWindow(nextRows = rows) {
     const data = {
       page: HilosPages.CHANGE_LOG,
       tableKey: TABLE,
-      rows,
-      totalCount: rows.length,
+      rows: nextRows,
+      totalCount: nextRows.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -294,6 +297,7 @@ function harness(
 const mounted: ReturnType<typeof mount>[] = []
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  vi.restoreAllMocks()
 })
 
 async function mountPage(
@@ -310,6 +314,36 @@ async function mountPage(
   h.pushWindow()
   await nextTick()
   return wrapper
+}
+
+/** Supply layout and responsive visibility without weakening DOM availability. */
+function focusLayout(projection: 'wide' | 'card'): () => HTMLElement {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.closest('[hidden]')
+        ? new DOMRect()
+        : new DOMRect(0, 0, 400, 40)
+    },
+  )
+  return () => {
+    const wide = document.querySelector('.table-responsive') as HTMLElement
+    const cards = element('hilos-table-cards')
+    wide.hidden = projection !== 'wide'
+    cards.hidden = projection !== 'card'
+    return projection === 'wide' ? wide : cards
+  }
+}
+
+async function closeDetails(close: 'escape' | 'footer'): Promise<void> {
+  if (close === 'escape') {
+    element('modal').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+  } else {
+    element('hilos-change-log-detail-close').click()
+  }
+  await settle()
+  expect(document.querySelector('[data-id="modal"]')).toBeNull()
 }
 
 describe('HilosChangeLogPage', () => {
@@ -501,36 +535,127 @@ describe('HilosChangeLogPage', () => {
     },
   )
 
-  it('opens a bare change from the same actions slot, including its card projection', async () => {
-    const h = harness(OVERVIEW, [
-      {
-        rowKey: 'entry:11',
-        slots: {
-          feed: receipt({ kind: 'entry', receiptId: null, entryId: 11 }),
+  describe.each(['wide', 'card'] as const)(
+    'focus return in %s',
+    (projection) => {
+      it.each(['escape', 'footer'] as const)(
+        'returns to the fresh receipt opener after %s close',
+        async (close) => {
+          const show = focusLayout(projection)
+          const h = harness(OVERVIEW, [
+            { rowKey: 'receipt:7', slots: { feed: receipt() } },
+          ])
+          const wrapper = await mountPage(h)
+          const root = show()
+          // Test Utils loses the generic SFC's prop type at findComponent.
+          const { controller } = wrapper
+            .findComponent(HilosViewportTable)
+            .props() as {
+            controller: TableViewportController<HilosChangeLogFeedRow>
+          }
+          const occurrence = controller.rows.get()[0]!.occurrence
+          const opener = await open(h, root)
+          const modal = element('modal')
+          reply(h)
+          await settle()
+          h.pushWindow([
+            {
+              rowKey: 'receipt:7',
+              slots: { feed: receipt({ actorLabel: 'Updated Ada' }) },
+            },
+          ])
+          expect(controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+          await settle()
+          const fresh = element('hilos-change-log-open-receipt:7', root)
+          expect(opener.isConnected).toBe(false)
+          expect(fresh).not.toBe(opener)
+          expect(fresh.isConnected).toBe(true)
+          expect(document.activeElement).toBe(modal)
+          expect(element('hilos-change-log-detail').textContent).toContain(
+            'bot.update',
+          )
+          await closeDetails(close)
+          expect(document.activeElement).toBe(fresh)
+          expect(h.source.sent).toHaveLength(1)
         },
-      },
-    ])
-    await mountPage(h)
-    const cards = document.querySelector('[role="list"]')!
-    element('hilos-change-log-open-entry:11', cards).click()
-    await settle()
-    expect(h.source.sent[0]).toMatchObject({
-      action: HILOS_CHANGE_LOG_ENTRY_READ,
-      data: { entryId: 11 },
-    })
-    h.source.success(0, { entry: { ...entry(), receiptId: null } })
-    await settle()
-    expect(element('modal').getAttribute('aria-label')).toBe(
-      'Change #11 past the application',
-    )
-    const text = element('hilos-change-log-detail').textContent
-    expect(text).toContain('Unknown')
-    expect(text).toContain(
-      'No receipt: this change was made past the application',
-    )
-    expect(text).not.toContain('Guest')
-    expect(text).not.toContain('System')
-  })
+      )
+
+      it('returns to search when the receipt row disappears', async () => {
+        const show = focusLayout(projection)
+        const h = harness(OVERVIEW, [
+          { rowKey: 'receipt:7', slots: { feed: receipt() } },
+        ])
+        await mountPage(h)
+        const opener = await open(h, show())
+        reply(h)
+        await settle()
+        const modal = element('modal')
+        h.pushWindow([])
+        await settle()
+        expect(opener.isConnected).toBe(false)
+        expect(document.activeElement).toBe(modal)
+        await closeDetails('escape')
+        expect(document.activeElement).toBe(element('hilos-table-search'))
+        expect(h.source.sent).toHaveLength(1)
+      })
+    },
+  )
+
+  it.each(['wide', 'card'] as const)(
+    'opens a bare change in %s and returns to its fresh opener',
+    async (projection) => {
+      const show = focusLayout(projection)
+      const h = harness(OVERVIEW, [
+        {
+          rowKey: 'entry:11',
+          slots: {
+            feed: receipt({ kind: 'entry', receiptId: null, entryId: 11 }),
+          },
+        },
+      ])
+      const wrapper = await mountPage(h)
+      const root = show()
+      // Test Utils loses the generic SFC's prop type at findComponent.
+      const { controller } = wrapper
+        .findComponent(HilosViewportTable)
+        .props() as {
+        controller: TableViewportController<HilosChangeLogFeedRow>
+      }
+      const occurrence = controller.rows.get()[0]!.occurrence
+      const opener = element('hilos-change-log-open-entry:11', root)
+      opener.focus()
+      opener.click()
+      await settle()
+      expect(h.source.sent[0]).toMatchObject({
+        action: HILOS_CHANGE_LOG_ENTRY_READ,
+        data: { entryId: 11 },
+      })
+      h.source.success(0, { entry: { ...entry(), receiptId: null } })
+      await settle()
+      expect(element('modal').getAttribute('aria-label')).toBe(
+        'Change #11 past the application',
+      )
+      const text = element('hilos-change-log-detail').textContent
+      expect(text).toContain('Unknown')
+      expect(text).toContain(
+        'No receipt: this change was made past the application',
+      )
+      expect(text).not.toContain('Guest')
+      expect(text).not.toContain('System')
+      const modal = element('modal')
+      h.pushWindow()
+      expect(controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+      await settle()
+      const fresh = element('hilos-change-log-open-entry:11', root)
+      expect(opener.isConnected).toBe(false)
+      expect(fresh).not.toBe(opener)
+      expect(fresh.isConnected).toBe(true)
+      expect(document.activeElement).toBe(modal)
+      await closeDetails('footer')
+      expect(document.activeElement).toBe(fresh)
+      expect(h.source.sent).toHaveLength(1)
+    },
+  )
 
   it('renders hidden labels beside their numbers while keeping details readable', async () => {
     const h = harness(OVERVIEW, [

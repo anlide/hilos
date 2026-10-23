@@ -1151,6 +1151,7 @@ onScopeDispose(() => {
               v-else
               class="btn btn-sm btn-outline-secondary"
               :data-id="`geometry-action-${rowKey}`"
+              data-hilos-focus-return="inspect-geometry"
               @click="focusModalOpen = true"
             >
               Inspect

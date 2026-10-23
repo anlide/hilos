@@ -6,10 +6,12 @@ import {
   type RefObject,
 } from 'react'
 import {
+  captureTableFocusReturnTarget,
   registerFocusReturnFallback,
   subscribeSignal,
   type ReadonlySignal,
   type TableColumnTracks,
+  type TableFocusReturnRow,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
   type TableGeometryRegistration,
@@ -430,8 +432,40 @@ function createMount(
     if (focusRoot === root.current) return
     releaseFocusFallback?.()
     focusRoot = root.current
-    releaseFocusFallback = focusRoot
-      ? registerFocusReturnFallback(focusRoot, focusFallback)
+    const node = focusRoot
+    releaseFocusFallback = node
+      ? registerFocusReturnFallback(node, focusFallback, (opener) =>
+          captureTableFocusReturnTarget(opener, () => {
+            if (
+              stopped ||
+              !node.isConnected ||
+              root.current !== node ||
+              bindings.mount?.registration !== registration
+            )
+              return []
+            const rows: TableFocusReturnRow[] = []
+            for (const record of elements.values()) {
+              const state = registration.record(
+                record.rowKey,
+                record.projection,
+              )
+              if (
+                state?.reason !== null ||
+                state.record.occurrence !== record.occurrence
+              )
+                continue
+              rows.push({
+                rowKey: record.rowKey,
+                projection: record.projection,
+                parts: [record.main, record.work, record.detail].filter(
+                  (part): part is HTMLElement =>
+                    !!part?.isConnected && node.contains(part),
+                ),
+              })
+            }
+            return rows
+          }),
+        )
       : undefined
   }
 

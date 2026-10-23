@@ -188,6 +188,7 @@ onUnmounted(() => {
           type="button"
           class="btn btn-sm btn-outline-secondary text-wrap"
           :data-id="`hilos-change-log-open-${row.rowKey}`"
+          data-hilos-focus-return="change-log-open"
           @click="openDetails(row)"
         >
           {{ formatChangeLogFeedOpenLabel(row) }}

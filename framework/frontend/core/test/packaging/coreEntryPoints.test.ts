@@ -19,6 +19,7 @@ import * as settings from '../../src/admin/settings/index.js'
 import * as users from '../../src/admin/users/index.js'
 import * as base from '../../src/base/index.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
+import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -104,6 +105,9 @@ const tableTextTypes = [
   'HilosTableTextRem',
   'HilosTableRowHeight',
 ]
+/** Explicit table focus return additions, with one DOM owner for root and base. */
+const tableFocusReturnValues = ['captureTableFocusReturnTarget']
+const tableFocusReturnTypes = ['TableFocusReturnRow']
 /**
  * The photo's own check frame gave way to the shared moderation one: the two
  * names it took out of the frozen snapshot and the three it added, by hand.
@@ -125,6 +129,7 @@ const expectedValues = [
   ...publicLegalValues,
   ...momentValues,
   ...tableTextValues,
+  ...tableFocusReturnValues,
   ...moderationValues,
 ].sort()
 
@@ -236,6 +241,7 @@ describe('core public entries', () => {
       ...publicLegalValues,
       ...momentValues,
       ...tableTextValues,
+      ...tableFocusReturnValues,
       ...moderationValues,
     ]) {
       expect(base, name).toHaveProperty(name)
@@ -245,6 +251,9 @@ describe('core public entries', () => {
     }
     expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
     expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
+    expect(base.captureTableFocusReturnTarget).toBe(
+      tableFocusReturn.captureTableFocusReturnTarget,
+    )
     expect(base.hilosNotifications).toBe(core.hilosNotifications)
     expect(base.hilosLegalReconsent).toBe(core.hilosLegalReconsent)
     expect(base.createHilosConnection().connection).toBeInstanceOf(
@@ -368,6 +377,7 @@ describe('core public entries', () => {
         ...publicLegalTypes,
         ...momentTypes,
         ...tableTextTypes,
+        ...tableFocusReturnTypes,
       ].sort(),
     )
     const baseExports = exportsOf('base/index.ts')
@@ -378,6 +388,8 @@ describe('core public entries', () => {
       ...momentValues,
       ...tableTextTypes,
       ...tableTextValues,
+      ...tableFocusReturnTypes,
+      ...tableFocusReturnValues,
     ]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))
@@ -385,6 +397,10 @@ describe('core public entries', () => {
     const momentExports = exportsOf('format/moment.ts')
     for (const name of [...momentValues, ...momentTypes]) {
       expect(root.get(name), name).toBe(momentExports.get(name))
+    }
+    const focusReturnExports = exportsOf('dom/tableFocusReturn.ts')
+    for (const name of [...tableFocusReturnValues, ...tableFocusReturnTypes]) {
+      expect(root.get(name), name).toBe(focusReturnExports.get(name))
     }
     const names = new Set<string>()
     for (const entry of entries.slice(1)) {
@@ -439,6 +455,8 @@ describe('core public entries', () => {
   it.each([
     'base/index.ts',
     'connection/HilosConnection.ts',
+    'dom/focusTrap.ts',
+    'dom/tableFocusReturn.ts',
     'format/moment.ts',
     'timeZone/timeZoneState.ts',
     'subscription/PageSubscription.ts',

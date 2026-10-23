@@ -1041,7 +1041,7 @@ test.describe('wide', () => {
     await retired(page, 'd')
   })
 
-  test('B05 modal keeps focus across a replacement occurrence and returns to its own search', async ({
+  test('B05 modal returns to its marked replacement and to search after removal', async ({
     page,
   }, info) => {
     const trigger = shownByTestId(page, 'geometry-action-a')
@@ -1063,6 +1063,11 @@ test.describe('wide', () => {
     expect(replaced.sameTrigger).toBe(false)
     expect(replaced.visibleTriggers).toBe(1)
     expect(replaced.rootConnected).toBe(true)
+    const freshTrigger = shownByTestId(page, 'geometry-action-a')
+    await expect(freshTrigger).toHaveAttribute(
+      'data-hilos-focus-return',
+      'inspect-geometry',
+    )
     await expect(modal).toBeFocused()
     await modal.press('Tab')
     await expect(page.getByTestId('modal-close')).toBeFocused()
@@ -1070,9 +1075,12 @@ test.describe('wide', () => {
     await expect(page.getByTestId('modal-close')).toBeFocused()
     await modal.press('Escape')
     await expect(modal).toHaveCount(0)
-    await expect(page.getByTestId('hilos-table-search')).toBeFocused()
+    await expect(freshTrigger).toBeFocused()
     const returned = await focus.read()
     expect(returned.inDialog).toBe(false)
+    expect(returned.openerConnected).toBe(false)
+    expect(returned.sameTrigger).toBe(false)
+    expect(returned.triggerFocused).toBe(false)
     const removal = await watchTableModalFocus(trigger)
     await trigger.focus()
     await trigger.press('Enter')

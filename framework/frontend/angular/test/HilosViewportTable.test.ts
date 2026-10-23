@@ -17,6 +17,7 @@ import {
   bindTableViewport,
   ScopeManager,
   subscribeSignal,
+  registerFocusReturnFallback,
 } from '@hilos/core'
 import type {
   ActionHandle,
@@ -33,6 +34,7 @@ import type {
 
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
+import { HilosModal } from '../src/HilosModal.js'
 import { HilosTableCell } from '../src/HilosTableCell.js'
 import { HilosTableDetail } from '../src/HilosTableDetail.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
@@ -2786,10 +2788,75 @@ class GeometryTableHost {
   readonly controller = signal<TableViewportController<Row> | null>(null)
 }
 
+/** The real table and modal share only the opening intent and modal model. */
+@Component({
+  imports: [HilosTableCell, HilosTableDetail, HilosViewportTable, HilosModal],
+  template: `
+    @if (controller(); as current) {
+      <hilos-viewport-table [controller]="current">
+        <ng-template hilosTableCell="name" let-row>
+          @if (part() === 'main') {
+            <fieldset>
+              <button
+                type="button"
+                data-id="open-person"
+                data-hilos-focus-return="person-open"
+                (click)="open.set(true)"
+              >
+                Inspect {{ row.name }}
+              </button>
+            </fieldset>
+          }
+        </ng-template>
+        <ng-template #rowProgress>
+          @if (part() === 'work') {
+            <button
+              type="button"
+              data-id="open-person"
+              data-hilos-focus-return="person-open"
+              (click)="open.set(true)"
+            >
+              Inspect work
+            </button>
+          }
+        </ng-template>
+        <ng-template hilosTableDetail="lastError">
+          @if (part() === 'detail') {
+            <button
+              type="button"
+              data-id="open-person"
+              data-hilos-focus-return="person-open"
+              (click)="open.set(true)"
+            >
+              Inspect detail
+            </button>
+          }
+        </ng-template>
+      </hilos-viewport-table>
+    }
+    <hilos-modal [(open)]="open" title="Inspect person" initialFocus="dialog">
+      <ng-template #modalActions let-requestClose="requestClose">
+        <button type="button" data-id="detail-close" (click)="requestClose()">
+          Close
+        </button>
+      </ng-template>
+    </hilos-modal>
+    <button type="button" data-id="unrelated">Other control</button>
+  `,
+})
+class ModalGeometryTableHost extends GeometryTableHost {
+  readonly open = signal(false)
+  readonly part = signal<'main' | 'work' | 'detail'>('main')
+}
+
 // The real Angular render/capture seam, with numeric rectangles. Native CSS and
 // the installed Sass/FESM delivery are proved by the separate browser fixture.
 describe('HilosViewportTable wired geometry', () => {
+  const releases: (() => void)[] = []
+  const modalRoots: HTMLElement[] = []
   afterEach(() => {
+    releases.splice(0).forEach((release) => release())
+    modalRoots.length = 0
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -2808,7 +2875,10 @@ describe('HilosViewportTable wired geometry', () => {
     return { register, captures }
   }
 
-  function geometryFixture() {
+  function geometryFixture(
+    host = GeometryTableHost,
+    frame = CARD_DETAIL_FRAME,
+  ) {
     const measured: string[] = []
     let detailHeight = 60.75
     let mainHeight = 40.25
@@ -2847,11 +2917,11 @@ describe('HilosViewportTable wired geometry', () => {
     const controller = new TableViewportController<Row>({
       resolve,
       sendViewport: () => {},
-      frame: CARD_DETAIL_FRAME,
+      frame,
     })
     ingestTwo(controller)
     const { register, captures } = observeGeometry(controller)
-    const fixture = TestBed.createComponent(GeometryTableHost)
+    const fixture = TestBed.createComponent(host)
     fixture.componentInstance.controller.set(controller)
     fixture.detectChanges()
     TestBed.tick()
@@ -2870,6 +2940,359 @@ describe('HilosViewportTable wired geometry', () => {
       },
     }
   }
+
+  function modalFixture({
+    projection = 'wide',
+    search = true,
+    marked = true,
+    part = 'main',
+  }: {
+    projection?: 'wide' | 'card'
+    search?: boolean
+    marked?: boolean
+    part?: 'main' | 'work' | 'detail'
+  } = {}) {
+    const frame = {
+      title: 'People',
+      columns: part === 'detail' ? CARD_DETAIL_FRAME.columns : COLUMNS,
+      ...(search ? { search: {} } : {}),
+    }
+    const f = geometryFixture(ModalGeometryTableHost, frame)
+    // TestBed's renderer removes earlier fixture roots on each createComponent.
+    // Independent hosts in one case must both stay in the real document.
+    for (const root of modalRoots)
+      if (!root.isConnected) document.body.append(root)
+    modalRoots.push(f.fixture.nativeElement)
+    const host = f.fixture.componentInstance as ModalGeometryTableHost
+    host.part.set(part)
+    function redraw() {
+      f.fixture.detectChanges()
+      TestBed.tick()
+    }
+    function preparePart() {
+      if (part === 'detail') f.controller.expandRow('a', true)
+      if (part === 'work')
+        f.controller.ingestProgress({
+          scope: 'row',
+          rowKey: 'a',
+          progressKey: 'inspect-a',
+          current: 1,
+          total: 2,
+        })
+    }
+    preparePart()
+    redraw()
+    function show(next: 'wide' | 'card') {
+      query(f.fixture, '.table-responsive')!.hidden = next !== 'wide'
+      query(f.fixture, '[data-id="hilos-table-cards"]')!.hidden =
+        next !== 'card'
+    }
+    show(projection)
+    function control() {
+      const prefix =
+        projection === 'card'
+          ? 'card'
+          : part === 'detail'
+            ? 'row-detail'
+            : part === 'work'
+              ? 'progress-row'
+              : 'row'
+      return query(
+        f.fixture,
+        `[data-id="hilos-table-${prefix}-a"] [data-id="open-person"]`,
+      )!
+    }
+    const opener = control()
+    if (!marked) opener.removeAttribute('data-hilos-focus-return')
+    const other = query(f.fixture, '[data-id="unrelated"]')!
+    const modal = () => query(f.fixture, '[data-id="modal"]')!
+    return {
+      ...f,
+      opener,
+      other,
+      control,
+      modal,
+      show,
+      search: () => query(f.fixture, '[data-id="hilos-table-search"]')!,
+      root: () => query(f.fixture, '[data-id="hilos-viewport-table"]')!,
+      activate() {
+        opener.focus()
+        opener.click()
+        redraw()
+        expect(document.activeElement).toBe(modal())
+      },
+      close(close: 'escape' | 'footer' = 'escape') {
+        if (close === 'escape')
+          modal().dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+          )
+        else query(f.fixture, '[data-id="detail-close"]')!.click()
+        redraw()
+        expect(modal()).toBeNull()
+      },
+      hide() {
+        host.open.set(false)
+        redraw()
+      },
+      snapshot(name = 'Alice') {
+        f.controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+        preparePart()
+        redraw()
+      },
+      remove(placeholder = false) {
+        if (placeholder)
+          f.controller.ingestDelta({
+            kind: 'row_removed',
+            rowKey: 'a',
+            reason: 'deleted',
+            own: true,
+          })
+        else f.controller.ingestWindow([], 0, true, null, null, 10)
+        redraw()
+      },
+      replaceController() {
+        const next = makeController(frame)
+        ingestTwo(next)
+        next.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Other controller' } }],
+          1,
+          true,
+          null,
+          null,
+          10,
+        )
+        releases.push(() => next.dispose())
+        host.controller.set(next)
+        redraw()
+      },
+      unmountTable() {
+        host.controller.set(null)
+        redraw()
+      },
+      offerOuter() {
+        releases.push(
+          registerFocusReturnFallback(f.fixture.nativeElement, () => other),
+        )
+      },
+    }
+  }
+
+  describe('modal focus lifetime', () => {
+    it.each(['wide', 'card'] as const)(
+      'keeps the available original %s opener after a live update',
+      (projection) => {
+        const f = modalFixture({ projection })
+        f.activate()
+        f.controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Updated' } },
+        })
+        f.fixture.detectChanges()
+        expect(f.opener.isConnected).toBe(true)
+        f.close()
+        expect(document.activeElement).toBe(f.opener)
+      },
+    )
+
+    describe.each(['wide', 'card'] as const)('%s projection', (projection) => {
+      it.each(['work', 'detail'] as const)(
+        'returns to the fresh marked control in the %s part',
+        (part) => {
+          const f = modalFixture({ projection, part })
+          const occurrence = f.controller.rows.get()[0]!.occurrence
+          f.activate()
+          const modal = f.modal()
+          f.snapshot()
+          const fresh = f.control()
+          expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+          expect(f.opener.isConnected).toBe(false)
+          expect(fresh).not.toBe(f.opener)
+          expect(fresh.isConnected).toBe(true)
+          expect(document.activeElement).toBe(modal)
+          f.close()
+          expect(document.activeElement).toBe(fresh)
+        },
+      )
+
+      it.each(['escape', 'footer'] as const)(
+        'returns to the fresh marked logical control after %s',
+        (close) => {
+          const f = modalFixture({ projection })
+          const occurrence = f.controller.rows.get()[0]!.occurrence
+          f.activate()
+          const modal = f.modal()
+          f.snapshot('Updated person')
+          expect(f.controller.rows.get()[0]!.occurrence).not.toBe(occurrence)
+          const fresh = f.control()
+          expect(f.opener.isConnected).toBe(false)
+          expect(fresh).not.toBe(f.opener)
+          expect(fresh.isConnected).toBe(true)
+          expect(document.activeElement).toBe(modal)
+          f.close(close)
+          expect(document.activeElement).toBe(fresh)
+        },
+      )
+
+      it.each(['same key', 'reused key'])(
+        'returns an unmarked data-id-only %s control to search',
+        (change) => {
+          const f = modalFixture({ projection, marked: false })
+          f.activate()
+          const modal = f.modal()
+          f.snapshot(change === 'reused key' ? 'Another person' : 'Alice')
+          expect(f.opener.isConnected).toBe(false)
+          expect(f.control()).not.toBe(f.opener)
+          expect(document.activeElement).toBe(modal)
+          f.close()
+          expect(document.activeElement).toBe(f.search())
+        },
+      )
+
+      it.each([
+        'removed',
+        'placeholder',
+        'missing marker',
+        'empty marker',
+        'changed marker',
+        'duplicate marker',
+        'hidden control',
+        'disabled control',
+        'inert control',
+        'disabled fieldset',
+        'hidden projection',
+        'foreign parts',
+        'foreign table',
+      ] as const)('returns to search for %s', (change) => {
+        const f = modalFixture({ projection })
+        const foreign =
+          change === 'foreign table' ? modalFixture({ projection }) : null
+        f.activate()
+        const modal = f.modal()
+        if (change === 'removed' || change === 'placeholder')
+          f.remove(change === 'placeholder')
+        else {
+          f.snapshot()
+          const control = f.control()
+          if (change === 'missing marker' || change === 'foreign table')
+            control.removeAttribute('data-hilos-focus-return')
+          if (change === 'empty marker')
+            control.setAttribute('data-hilos-focus-return', '')
+          if (change === 'changed marker')
+            control.setAttribute('data-hilos-focus-return', 'another-action')
+          if (change === 'duplicate marker')
+            control.parentElement!.append(control.cloneNode(true))
+          if (change === 'hidden control') control.hidden = true
+          if (change === 'disabled control')
+            control.setAttribute('disabled', '')
+          if (change === 'inert control') control.setAttribute('inert', '')
+          if (change === 'disabled fieldset')
+            control.closest('fieldset')!.disabled = true
+          if (change === 'hidden projection')
+            f.show(projection === 'wide' ? 'card' : 'wide')
+        }
+        const row =
+          change === 'foreign parts'
+            ? f
+                .control()
+                .closest<HTMLElement>(projection === 'wide' ? 'tr' : '.card')!
+            : null
+        const parent = row?.parentElement
+        if (row) document.body.append(row)
+        try {
+          expect(f.opener.isConnected).toBe(false)
+          expect(document.activeElement).toBe(modal)
+          f.close()
+          expect(document.activeElement).toBe(f.search())
+          if (foreign)
+            expect(document.activeElement).not.toBe(foreign.control())
+        } finally {
+          if (row) parent!.append(row)
+        }
+      })
+    })
+
+    it.each(['absent', 'hidden'])(
+      'returns to the root with %s search',
+      (search) => {
+        const f = modalFixture({ search: search === 'hidden' })
+        f.activate()
+        if (search === 'hidden') f.search().hidden = true
+        f.remove(true)
+        expect(document.activeElement).toBe(f.modal())
+        f.close()
+        expect(document.activeElement).toBe(f.root())
+        expect(f.root().tabIndex).toBe(-1)
+      },
+    )
+
+    it.each(['controller', 'unmount'] as const)(
+      'invalidates the captured offer after %s',
+      (change) => {
+        const f = modalFixture()
+        f.offerOuter()
+        f.activate()
+        const modal = f.modal()
+        if (change === 'controller') f.replaceController()
+        else f.unmountTable()
+        expect(f.opener.isConnected).toBe(false)
+        expect(document.activeElement).toBe(modal)
+        f.close()
+        expect(document.activeElement).toBe(f.other)
+      },
+    )
+
+    it('keeps an explicit focus choice outside the dialog', () => {
+      const f = modalFixture()
+      f.activate()
+      f.other.focus()
+      f.snapshot()
+      expect(document.activeElement).toBe(f.other)
+      f.close()
+      expect(document.activeElement).toBe(f.other)
+    })
+
+    it('honors a nearer registered offer before the table replacement', () => {
+      const f = modalFixture()
+      releases.push(
+        registerFocusReturnFallback(
+          query(f.fixture, '.table-responsive')!,
+          () => f.other,
+        ),
+      )
+      f.activate()
+      f.snapshot()
+      expect(f.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(f.modal())
+      f.close()
+      expect(document.activeElement).toBe(f.other)
+    })
+
+    it('keeps independent modal addresses and the upper dialog focus', () => {
+      const lower = modalFixture()
+      const upper = modalFixture()
+      lower.activate()
+      upper.activate()
+      const modal = upper.modal()
+      lower.snapshot('Lower person')
+      upper.snapshot('Upper person')
+      expect(lower.opener.isConnected).toBe(false)
+      expect(upper.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(modal)
+      lower.hide()
+      expect(document.activeElement).toBe(modal)
+      upper.close()
+      expect(document.activeElement).toBe(upper.control())
+      expect(document.activeElement).not.toBe(lower.control())
+    })
+  })
 
   it.each(['deleted', 'left_set', 'moved_out'] as const)(
     'first replacement retains the complete footprint for %s and removes payload from both mounted branches',

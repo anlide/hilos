@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "283c816b2e20f6b252297843b0a44981f993cec7ee429efa43f7bd0d6e48da27",
-    "outputSha256": "fa4f1e804dcb60a00d603c0e69ce7dd9ac5d9f9ccf4bdc671e0a2e3fba6dadb2"
+    "sourceSha256": "34001cb13f76d58a3c839a755cb3f1bde4fc55021306cb5231e6bc6a53ac7a46",
+    "outputSha256": "efe7cd95b2f5f42d02c38c5edece1622cc980ee38792181cb1eea7ca5d471d33"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
@@ -184,8 +184,8 @@
     "outputSha256": "29378f376c1723a7891df533629ceb8ae704ef5e6d49526f1d6d6fab4658e7c3"
   },
   "src/dom/focusTrap.ts": {
-    "sourceSha256": "f0411501c89be4cadb7e836caf83f96f62ed4424dd0145147533d81b1aaef2f5",
-    "outputSha256": "74efd25a747a4dff5f36b3b2db0b5518b903b36a8064cf97af91f387fa7dd4a0"
+    "sourceSha256": "699a4b3381f1ec61e2d617b30fb3300477cf490582e15f2f0df60cc28d0967ee",
+    "outputSha256": "699fbe473f00c587693d39081e6bbb3300a3ca08a44722f0773cce78fb2d82be"
   },
   "src/dom/modalStack.ts": {
     "sourceSha256": "46784c5166ed420458902b6d0bcbf0f2ab27537cb78e19498d3e1007ecb385f2",
@@ -198,6 +198,10 @@
   "src/dom/scrollLock.ts": {
     "sourceSha256": "7cb3d577fe84fc4cbc48c59cbfb09b50fbd0323793aab9c981cbbf0992d0def8",
     "outputSha256": "9b7be50aa89dd54f68b577d9ac8a09cfbd099660ae24738a02f674b556e2a25a"
+  },
+  "src/dom/tableFocusReturn.ts": {
+    "sourceSha256": "d148310392f4a4d10b7c5925f5abaf3ae6ac8443bcb66159bf3a23894e04ed7f",
+    "outputSha256": "a41c55db757be0e7e342952180535f1c95f608e7e5fa3a3f03c2f489eb293011"
   },
   "src/format/bytes.ts": {
     "sourceSha256": "b8ac8a01398b3102928ede73648efb4218154bc46373cd9c04adb6e74ca5eeb2",

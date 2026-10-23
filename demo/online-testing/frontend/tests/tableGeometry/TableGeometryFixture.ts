@@ -294,6 +294,7 @@ function raw(key: string): TableRow {
                   type="button"
                   class="btn btn-sm btn-outline-secondary"
                   [attr.data-id]="'geometry-action-' + rowKey"
+                  data-hilos-focus-return="inspect-geometry"
                   (click)="openModal(rowKey)"
                 >
                   Inspect

@@ -1484,7 +1484,7 @@ for (const projection of ['wide', 'card'] as const) {
       await retired(page, 'd')
     })
 
-    test('B05 modal keeps focus across a replacement occurrence and returns to its own search', async ({
+    test('B05 modal returns to its marked replacement and to search after removal', async ({
       page,
     }, info) => {
       const trigger = shownByTestId(page, 'geometry-action-a')
@@ -1496,7 +1496,9 @@ for (const projection of ['wide', 'card'] as const) {
       await expect(modal).toHaveAccessibleName('Inspect geometry record')
       const opened = await focus.read()
       expect(opened.openerConnected).toBe(true)
-      await press(page, 'geometry-modal-snapshot')
+      await page
+        .getByTestId('geometry-modal-snapshot')
+        .evaluate((button: HTMLButtonElement) => button.click())
       await expect(shownByTestId(page, 'geometry-name-a')).toHaveText('Fresh a')
       await settleTableLayout(page)
       const replaced = await focus.read()
@@ -1504,27 +1506,38 @@ for (const projection of ['wide', 'card'] as const) {
       expect(replaced.sameTrigger).toBe(false)
       expect(replaced.visibleTriggers).toBe(1)
       expect(replaced.rootConnected).toBe(true)
-      await expect(page.getByTestId('geometry-modal-snapshot')).toBeFocused()
-      await page.getByTestId('geometry-modal-snapshot').press('Tab')
+      const freshTrigger = shownByTestId(page, 'geometry-action-a')
+      await expect(freshTrigger).toHaveAttribute(
+        'data-hilos-focus-return',
+        'inspect-geometry',
+      )
+      await expect(modal).toBeFocused()
+      await page.getByTestId('geometry-modal-snapshot').focus()
+      await page.keyboard.press('Tab')
       await expect(page.getByTestId('modal-close')).toBeFocused()
-      await page.getByTestId('modal-close').press('Shift+Tab')
+      await page.keyboard.press('Shift+Tab')
       await expect(page.getByTestId('geometry-modal-snapshot')).toBeFocused()
       await modal.press('Escape')
       await expect(modal).toHaveCount(0)
-      await expect(page.getByTestId('hilos-table-search')).toBeFocused()
+      await expect(freshTrigger).toBeFocused()
       const returned = await focus.read()
       expect(returned.inDialog).toBe(false)
+      expect(returned.openerConnected).toBe(false)
+      expect(returned.sameTrigger).toBe(false)
+      expect(returned.triggerFocused).toBe(false)
       const removal = await watchTableModalFocus(trigger)
       await trigger.focus()
       await trigger.press('Enter')
       await expect(modal).toBeFocused()
-      await press(page, 'geometry-modal-remove')
+      await page
+        .getByTestId('geometry-modal-remove')
+        .evaluate((button: HTMLButtonElement) => button.click())
       await retired(page, 'a')
       await settleTableLayout(page)
       const removed = await removal.read()
       expect(removed.openerConnected).toBe(false)
       expect(removed.visibleTriggers).toBe(0)
-      await expect(page.getByTestId('geometry-modal-remove')).toBeFocused()
+      await expect(modal).toBeFocused()
       await modal.press('Escape')
       await expect(modal).toHaveCount(0)
       await expect(page.getByTestId('hilos-table-search')).toBeFocused()

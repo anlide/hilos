@@ -1,8 +1,10 @@
 import { signal } from '@angular/core'
 import {
+  captureTableFocusReturnTarget,
   registerFocusReturnFallback,
   subscribeSignal,
   type TableColumnTracks,
+  type TableFocusReturnRow,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
   type TableGeometryRegistration,
@@ -329,9 +331,41 @@ export function createTableViewportGeometry(
     if (focusRoot === root) return
     releaseFocusFallback?.()
     focusRoot = root
-    releaseFocusFallback = focusRoot
-      ? registerFocusReturnFallback(focusRoot, focusFallback)
-      : undefined
+    const node = focusRoot
+    const owner = registration
+    releaseFocusFallback =
+      node && owner
+        ? registerFocusReturnFallback(node, focusFallback, (opener) =>
+            captureTableFocusReturnTarget(opener, () => {
+              if (
+                !mounted ||
+                stopped ||
+                !node.isConnected ||
+                root !== node ||
+                registration !== owner
+              )
+                return []
+              const rows: TableFocusReturnRow[] = []
+              for (const record of elements.values()) {
+                const state = owner.record(record.rowKey, record.projection)
+                if (
+                  state?.reason !== null ||
+                  state.record.occurrence !== record.occurrence
+                )
+                  continue
+                rows.push({
+                  rowKey: record.rowKey,
+                  projection: record.projection,
+                  parts: [record.main, record.work, record.detail].filter(
+                    (part): part is HTMLElement =>
+                      !!part?.isConnected && node.contains(part),
+                  ),
+                })
+              }
+              return rows
+            }),
+          )
+        : undefined
   }
 
   function capture(request: TableGeometryCaptureRequest) {

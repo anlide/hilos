@@ -717,6 +717,7 @@ export function TableGeometryFixture() {
                       type="button"
                       className="btn btn-sm btn-outline-secondary"
                       data-id={`geometry-action-${key}`}
+                      data-hilos-focus-return="inspect-geometry"
                       onClick={() => setModalOpen(true)}
                     >
                       Inspect

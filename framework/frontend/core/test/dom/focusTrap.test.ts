@@ -2,7 +2,7 @@
 // jsdom, not happy-dom: a control inside a disabled fieldset matches
 // `:disabled` only in jsdom, and that inheritance is what the trap reads.
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   FocusTrap,
@@ -507,4 +507,202 @@ describe('registerFocusReturnFallback around nested surfaces', () => {
       expect(document.activeElement).toBe(dialog)
     },
   )
+})
+
+describe('registerFocusReturnFallback replacement capture', () => {
+  it('captures the request source while mounted, before dialog focus, and prefers the original opener', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(1)
+    const replacement = strayButton()
+    const readReplacement = vi.fn(() => replacement)
+    const fallback = vi.fn(() => targets[0])
+    const capture = vi.fn((source: HTMLElement) => {
+      expect(source).toBe(opener)
+      expect(source.isConnected).toBe(true)
+      expect(document.activeElement).toBe(opener)
+
+      return readReplacement
+    })
+    registerFocusReturnFallback(surfaces[0], fallback, capture)
+    const { trap } = openFrom(opener)
+    expect(capture).toHaveBeenCalledExactlyOnceWith(opener)
+    trap.release()
+    expect(document.activeElement).toBe(opener)
+    expect(readReplacement).not.toHaveBeenCalled()
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('uses the request source even if focus changes while the request bubbles', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(1)
+    const replacement = strayButton()
+    opener.addEventListener('hilos-focus-return-request', () => {
+      targets[0].focus()
+    })
+    const capture = vi.fn((source: HTMLElement) => {
+      expect(document.activeElement).toBe(targets[0])
+
+      return source === opener ? () => replacement : null
+    })
+    registerFocusReturnFallback(surfaces[0], () => targets[0], capture)
+    const { trap } = openFrom(opener)
+    expect(capture).toHaveBeenCalledExactlyOnceWith(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(replacement)
+  })
+
+  it.each(['search', 'root'] as const)(
+    'prefers an available replacement over the ordinary %s fallback and forgets it on release',
+    (kind) => {
+      const { surfaces, targets, opener } = nestedSurfaces(1)
+      surfaces[0].tabIndex = -1
+      const replacement = strayButton()
+      const readReplacement = vi.fn(() => replacement)
+      const fallback = vi.fn(() => (kind === 'root' ? surfaces[0] : targets[0]))
+      registerFocusReturnFallback(surfaces[0], fallback, () => readReplacement)
+      const { trap, dialog } = openFrom(opener)
+      opener.remove()
+      trap.release()
+      expect(document.activeElement).toBe(replacement)
+      expect(readReplacement).toHaveBeenCalledOnce()
+      expect(fallback).not.toHaveBeenCalled()
+      dialog.focus()
+      trap.release()
+      expect(document.activeElement).toBe(dialog)
+      expect(readReplacement).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each(['null', 'hidden', 'inert', 'disabled', 'detached'] as const)(
+    'uses the ordinary fallback when replacement is %s',
+    (state) => {
+      const { surfaces, targets, opener } = nestedSurfaces(1)
+      const replacement = strayButton()
+      registerFocusReturnFallback(
+        surfaces[0],
+        () => targets[0],
+        () => () => (state === 'null' ? null : replacement),
+      )
+      const { trap } = openFrom(opener)
+      opener.remove()
+      if (state === 'detached') replacement.remove()
+      else if (state !== 'null') replacement.setAttribute(state, '')
+      trap.release()
+      expect(document.activeElement).toBe(targets[0])
+    },
+  )
+
+  it('keeps a nearer ordinary fallback ahead of an outer replacement', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(2)
+    const outerReplacement = strayButton()
+    const readOuter = vi.fn(() => outerReplacement)
+    registerFocusReturnFallback(
+      surfaces[0],
+      () => targets[0],
+      () => readOuter,
+    )
+    registerFocusReturnFallback(
+      surfaces[1],
+      () => targets[1],
+      () => null,
+    )
+    const { trap } = openFrom(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(targets[1])
+    expect(readOuter).not.toHaveBeenCalled()
+  })
+
+  it('tries an outer replacement when the nearer replacement and fallback are unavailable', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(2)
+    const replacement = strayButton()
+    registerFocusReturnFallback(
+      surfaces[0],
+      () => targets[0],
+      () => () => replacement,
+    )
+    targets[1].hidden = true
+    registerFocusReturnFallback(
+      surfaces[1],
+      () => targets[1],
+      () => () => targets[1],
+    )
+    const { trap } = openFrom(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(replacement)
+  })
+
+  it.each(['withdrawn', 'detached'] as const)(
+    'invalidates an already captured replacement when its owner is %s',
+    (loss) => {
+      const { surfaces, targets, opener } = nestedSurfaces(2)
+      const replacement = strayButton()
+      const readReplacement = vi.fn(() => replacement)
+      const fallback = vi.fn(() => replacement)
+      registerFocusReturnFallback(surfaces[0], () => targets[0])
+      const dispose = registerFocusReturnFallback(
+        surfaces[1],
+        fallback,
+        () => readReplacement,
+      )
+      const { trap } = openFrom(opener)
+      opener.remove()
+      if (loss === 'withdrawn') dispose()
+      else surfaces[1].remove()
+      trap.release()
+      expect(document.activeElement).toBe(targets[0])
+      expect(readReplacement).not.toHaveBeenCalled()
+      expect(fallback).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps two captures from one registration independent', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(1)
+    const secondOpener = document.createElement('button')
+    surfaces[0].append(secondOpener)
+    const firstReplacement = strayButton()
+    const secondReplacement = strayButton()
+    registerFocusReturnFallback(
+      surfaces[0],
+      () => targets[0],
+      (source) =>
+        source === opener ? () => firstReplacement : () => secondReplacement,
+    )
+    const first = openFrom(opener)
+    const second = openFrom(secondOpener)
+    opener.remove()
+    secondOpener.remove()
+    second.trap.release()
+    expect(document.activeElement).toBe(secondReplacement)
+    first.dialog.focus()
+    first.trap.release()
+    expect(document.activeElement).toBe(firstReplacement)
+  })
+
+  it('preserves upper-dialog and explicit outside focus without reading a replacement', () => {
+    const { surfaces, targets, opener } = nestedSurfaces(1)
+    const replacement = strayButton()
+    const readReplacement = vi.fn(() => replacement)
+    registerFocusReturnFallback(
+      surfaces[0],
+      () => targets[0],
+      () => readReplacement,
+    )
+    const lower = openFrom(opener)
+    const upper = openFrom(lower.dialog)
+    opener.remove()
+    lower.trap.release()
+    expect(document.activeElement).toBe(upper.dialog)
+    expect(readReplacement).not.toHaveBeenCalled()
+    upper.trap.release()
+    expect(document.activeElement).toBe(lower.dialog)
+
+    const next = openFrom(targets[0])
+    targets[0].remove()
+    const outside = strayButton()
+    outside.focus()
+    next.trap.release()
+    expect(document.activeElement).toBe(outside)
+    expect(readReplacement).not.toHaveBeenCalled()
+  })
 })

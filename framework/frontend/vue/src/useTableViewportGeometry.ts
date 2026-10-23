@@ -8,9 +8,11 @@ import {
   type Ref,
 } from 'vue'
 import {
+  captureTableFocusReturnTarget,
   registerFocusReturnFallback,
   subscribeSignal,
   type TableColumnTracks,
+  type TableFocusReturnRow,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
   type TableGeometryRecord,
@@ -319,8 +321,42 @@ export function useTableViewportGeometry(
     if (focusRoot === root.value) return
     releaseFocusFallback?.()
     focusRoot = root.value
+    const node = focusRoot
+    const owner = registration
+    const source = controller()
     releaseFocusFallback = focusRoot
-      ? registerFocusReturnFallback(focusRoot, focusFallback)
+      ? registerFocusReturnFallback(focusRoot, focusFallback, (opener) =>
+          captureTableFocusReturnTarget(opener, () => {
+            if (
+              !mounted ||
+              stopped ||
+              !node?.isConnected ||
+              root.value !== node ||
+              !owner ||
+              registration !== owner ||
+              controller() !== source
+            )
+              return []
+            const rows: TableFocusReturnRow[] = []
+            for (const record of elements.values()) {
+              const state = owner.record(record.rowKey, record.projection)
+              if (
+                state?.reason !== null ||
+                state.record.occurrence !== record.occurrence
+              )
+                continue
+              rows.push({
+                rowKey: record.rowKey,
+                projection: record.projection,
+                parts: [record.main, record.work, record.detail].filter(
+                  (part): part is HTMLElement =>
+                    !!part?.isConnected && node.contains(part),
+                ),
+              })
+            }
+            return rows
+          }),
+        )
       : undefined
   }
 

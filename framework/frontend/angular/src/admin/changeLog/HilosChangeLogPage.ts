@@ -174,6 +174,7 @@ import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary text-wrap"
+            data-hilos-focus-return="change-log-open"
             [attr.data-id]="'hilos-change-log-open-' + row.rowKey"
             (click)="openDetails(row)"
           >
