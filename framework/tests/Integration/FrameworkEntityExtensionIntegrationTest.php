@@ -16,9 +16,11 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\VerifierCircleMember as EntityVerifierCircleMember;
 use Hilos\Database\Schema\EntitySchemaAudit;
+use Hilos\Database\Schema\EntityDatabaseStartupGuard;
 use Hilos\Database\Schema\EntitySchemaMismatch;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\SetOwnershipGuard;
@@ -165,6 +167,21 @@ final class FrameworkEntityExtensionIntegrationTest extends FrameworkIntegration
             static fn(EntitySchemaMismatch $mismatch): string => $mismatch->describe(),
             $mismatches,
         )));
+    }
+
+    /** The mounted project column is audited while absent optional framework tables stay inactive. */
+    public function testStartupAuditsTheMountedSubclassAndSkipsAbsentOptionalFrameworkTables(): void
+    {
+        EntityDatabaseStartupGuard::assertMountedSchemasMatch();
+        $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
+        $this->assertNotNull(Schema::getTable(EntityVerifierCircleMember::_table));
+        $this->assertNull(Schema::getTable(EntityIdentity::_table));
+
+        Database::sql('ALTER TABLE `' . EntityVerifierCircleMember::_table . '` MODIFY `note` INT NULL');
+        Schema::reset();
+        $this->expectException(DatabaseException::class);
+        $this->expectExceptionMessage('[type] ' . EntityVerifierCircleMember::_table . '.note');
+        EntityDatabaseStartupGuard::assertMountedSchemasMatch();
     }
 
     /**

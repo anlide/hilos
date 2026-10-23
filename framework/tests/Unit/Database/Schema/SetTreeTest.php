@@ -18,6 +18,8 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\PhpType;
 use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
+use Hilos\Database\Database;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -61,6 +63,50 @@ final class SetTreeTest extends TestCase
         Hilos::$db = null;
 
         parent::tearDown();
+    }
+
+    #[RunInSeparateProcess]
+    public function testParentRowsAreReadOnlyFromTheSourceEntityDatabase(): void
+    {
+        Database::configure(database: 'tree_schema');
+        Database::configure(index: 2, host: 'remote.invalid', database: 'tree_schema');
+        Database::registerDatabase('tree_remote', 2);
+        Database::useConnection(2);
+        Hilos::$db->mountRemoteMiddle();
+
+        $this->assertSame(self::OWN_TOP, SetTree::topOfSetKey(SetTreeBottomEntity::class, '17'));
+        $this->assertSame('66', SetTree::topOfSetKey(NamedTreeRemoteBottomEntity::class, '17'));
+        $this->assertSame(['set_tree_middle' => 'tree_remote_middles'], SetTree::walkOf(NamedTreeRemoteBottomEntity::class));
+        $this->assertSame(2, Database::getCurrentIndex());
+        $this->assertFalse(Database::isConnected(0));
+        $this->assertFalse(Database::isConnected(2));
+    }
+
+    #[RunInSeparateProcess]
+    public function testAnotherDatabaseParentCannotSatisfyASetClaim(): void
+    {
+        Database::configure(database: 'tree_schema');
+        Database::configure(index: 2, host: 'remote.invalid', database: 'tree_schema');
+        Database::registerDatabase('tree_remote', 2);
+        $this->assertNull(SetTree::topOfSetKey(NamedTreeRemoteBottomEntity::class, '17'));
+        $this->assertSame(['set_tree_middle' => null], SetTree::walkOf(NamedTreeRemoteBottomEntity::class));
+
+        TruthSourceRegistry::register('tree_remote_bottoms', TruthSourceKeys::set(self::OWN_TOP), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("the item's set keys are []");
+        DbWriteGuard::guardItemWrite('tree_remote_bottoms', '40',
+            SetTree::climb(NamedTreeRemoteBottomEntity::class, '17'), TruthSourceOperation::Update);
+    }
+
+    #[RunInSeparateProcess]
+    public function testAPhysicalAliasUsesTheExistingParentMount(): void
+    {
+        Database::configure(database: 'tree_schema');
+        Database::configure(index: 2, database: 'tree_schema', password: 'different-secret');
+        Database::registerDatabase('tree_remote', 2);
+        $this->assertSame(self::OWN_TOP, SetTree::topOfSetKey(NamedTreeRemoteBottomEntity::class, '17'));
+        $this->assertSame(['set_tree_middle' => 'set_tree_middles'], SetTree::walkOf(NamedTreeRemoteBottomEntity::class));
     }
 
     public function testAFloorHungOnATableInNobodysSetHasItsOwnValueAsTheTop(): void
@@ -300,6 +346,14 @@ final class SetTreeDbContext extends HilosDbContext
         foreach ($this->collectionClasses as $collectionClass) {
             $this->_objectCollections[$collectionClass::COLLECTION_KEY] = $collectionClass::initEmpty();
         }
+    }
+
+    /** Adds a same-named remote parent whose stored set pointer differs from primary. */
+    public function mountRemoteMiddle(): void
+    {
+        $this->_objectCollections['tree_remote_middles'] = NamedTreeRemoteMiddles::initEmpty();
+        $entity = NamedTreeRemoteMiddleEntity::fromRow(['id' => 17, 'top_id' => 66]);
+        $this->_objectCollections['tree_remote_middles']['17'] = NamedTreeRemoteMiddleObject::fromEntity($entity);
     }
 
     /**
@@ -611,4 +665,36 @@ final class SetTreeStrayEntity extends Entity
 
     public const string _setVia = self::elsewhere_id;
     public const bool _setRoot = false;
+}
+
+final class NamedTreeRemoteBottomEntity extends Entity
+{
+    public const string _database = 'tree_remote';
+    public const string _table = 'set_tree_bottom';
+    public const string _setVia = 'middle_id';
+    public const array _foreign = ['middle_id' => 'set_tree_middle'];
+}
+
+final class NamedTreeRemoteMiddleEntity extends Entity
+{
+    public const string _database = 'tree_remote';
+    public const string _table = 'set_tree_middle';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'top_id'];
+    public const array _types = ['id' => PhpType::INTEGER->value, 'top_id' => PhpType::INTEGER->value];
+    public const string _setVia = 'top_id';
+
+    public ?int $id = null;
+    public int $top_id;
+}
+
+final class NamedTreeRemoteMiddleObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedTreeRemoteMiddleEntity::class;
+}
+
+final class NamedTreeRemoteMiddles extends Objects
+{
+    public const string OBJECT_CLASS = NamedTreeRemoteMiddleObject::class;
+    public const string COLLECTION_KEY = 'tree_remote_middles';
 }

@@ -6,9 +6,11 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
+use Hilos\Database\Object\FilteredCollection;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
@@ -48,6 +50,24 @@ final class ObjectsWholeOnFirstReadTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$db = $this->previousDb;
+    }
+
+    /** Binding metadata neither hydrates the collection nor opens its connection. */
+    public function testDatabaseMetadataDistinguishesBackingFromManualSetsWithoutReadingRows(): void
+    {
+        $wasConnected = Database::isConnected(0);
+        $backed = WholeOnFirstReadObjects::initDB();
+        $manual = WholeOnFirstReadObjects::initEmpty();
+        $filtered = new FilteredCollection($backed, []);
+        $manualFiltered = new FilteredCollection($manual, []);
+
+        self::assertSame(0, $backed->getDatabase()?->connectionIndex);
+        self::assertEquals($backed->getDatabase(), $filtered->getDatabase());
+        self::assertSame($backed->getTableName(), $filtered->getTableName());
+        self::assertNull($manual->getDatabase());
+        self::assertNull($manualFiltered->getDatabase());
+        self::assertSame(0, WholeOnFirstReadEntities::$tableReads);
+        self::assertSame($wasConnected, Database::isConnected(0));
     }
 
     /**

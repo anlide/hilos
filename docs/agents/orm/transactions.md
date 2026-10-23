@@ -44,6 +44,38 @@ made; a rollback drops them, and so does a commit that fails. Nothing outside
 the transaction learns of a change that may never stand, and a rollback puts the
 memory back as it was before the transaction, with the rows.
 
+## Named transaction entry point
+
+`Database::transaction(string $database, Closure $operation): mixed` runs one
+ordinary application transaction on the named database's `connectionIndex` and
+returns the callback's value after commit. The callback takes no arguments. It
+does not nest: a start on a connection with an open application transaction is
+refused. If the callback throws, the method silently rolls back its own level
+when that level is still open, preserves the original failure, and restores the
+previous transaction scope in `finally`. The method commits immediately after
+the operation returns successfully.
+
+The named scope does not change `Database::getCurrentIndex()` or the default for
+raw `Database::sql()` calls. `sql()`, `affectedRows()`, `lastInsertId()`, and
+connection-specific result methods accept an explicit connection index where
+their signatures provide one. Transaction start/commit/rollback and
+`afterCommit()` / `onRollback()` default to the named scope's index while the
+callback runs; an explicit index takes precedence. A `ResultSetCollection`
+remembers the connection that produced it, so later result-set traversal,
+collection, and affected-row reads stay on that connection rather than following
+a changed ambient index. The connection index stays local to ORM and source
+routing; DB sync frames do not carry it as a field.
+
+The transaction belongs to a row connection, not to a schema name. Different
+schemas on one row connection share its transaction, in-memory rollback journal,
+runtime changes, and deferred announcements. A read through another connection
+is allowed but has no snapshot in common with the open transaction. An ORM write
+to another connection is refused while any foreign application transaction is
+open, including a failed or lazy-start level, before SQL or collection
+membership changes. This does not provide a distributed commit. In particular,
+the built-in `change_log` binding uses schema index 1 with row connection 0, so
+it shares the primary row connection's transaction and receipt session state.
+
 ## What waits for the commit, and what does not
 
 Two announcements wait, for a row and for a runtime state alike:
@@ -69,17 +101,20 @@ Two things do not wait:
   message of the caller's, not an announcement of a change; the framework's own
   such messages are sent after the commit by their callers.
 
-`Database::afterCommit(Closure $announce)` is the one door: it runs the closure
-at once when no transaction is open on the current connection, and holds it on
-the innermost open level otherwise. Use it for anything of your own that must
-happen only if the writes stand — never for something that has to happen
-whether they stand or not.
+`Database::afterCommit(Closure $announce, ?int $index = null)` is the one door:
+it runs the closure at once when no transaction is open on the selected
+connection, and holds it on the innermost open level otherwise. With no explicit
+index it follows the named transaction scope, or the current connection when no
+scope is active. Use it for anything of your own that must happen only if the
+writes stand — never for something that has to happen whether they stand or not.
 
-`Database::onRollback(Closure $undo)` is its pair: "put this back unless it
-commits". It keeps the closure on the innermost open level, and with no open
-level it keeps nothing — outside a transaction a write stands the moment it is
-made. The write doors of the ORM and the runtime use it for the memory they
-change; use it for memory of your own that a write inside a transaction changes:
+`Database::onRollback(Closure $undo, ?int $index = null)` is its pair: "put this
+back unless it commits". It keeps the closure on the innermost open level, and
+with no open level it keeps nothing — outside a transaction a write stands the
+moment it is made. With no explicit index it follows the named transaction
+scope, or the current connection when no scope is active. The write doors of the
+ORM and the runtime use it for the memory they change; use it for memory of your
+own that a write inside a transaction changes:
 
 ```php
 Database::transactionStart();

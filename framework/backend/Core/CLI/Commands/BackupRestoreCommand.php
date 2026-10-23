@@ -34,6 +34,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -191,6 +192,7 @@ HELP;
      * @return int Exit code (0 success, 1 refused/failed, 2 bad argument, 3 unconfigured)
      * @throws EnvException When the hot path needs daemon host/port env values and they are missing or invalid
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public function execute(array $options, array $args): int
     {
@@ -344,6 +346,7 @@ HELP;
      *
      * @return bool Whether the declared verdicts collect into a registry
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     private function reportPiiRegistry(): bool
     {

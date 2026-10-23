@@ -751,6 +751,298 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame(1, self::requestRows(), 'The commit stood, the transaction left open went back');
     }
 
+    /** A foreign query cannot redirect an indexed result collection, its counters or its remaining result sets. */
+    public function testExplicitSqlResultsCountersAndMultiQueryStayOnTheirConnection(): void
+    {
+        $this->configureNamedRowConnection();
+        Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('primary')", null, false);
+        $primaryId = Database::lastInsertId();
+        $secondaryWrite = Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('second'), ('third')", [], false, 2);
+        $secondaryId = Database::lastInsertId(2);
+        self::assertGreaterThan($primaryId, $secondaryId);
+        self::assertSame($primaryId, Database::lastInsertId());
+        self::assertSame(1, Database::affectedRows());
+        self::assertSame(2, Database::affectedRows(2));
+        self::assertSame(2, $secondaryWrite->affectedRows());
+        self::assertSame(0, Database::getCurrentIndex());
+
+        $secondary = Database::sql('SELECT ? AS value; SELECT ? AS value', ['secondary-first', 'secondary-next'], true, 2);
+        $primary = Database::sql('SELECT ? AS value', ['primary']);
+        self::assertSame([['value' => 'primary']], $primary->rows());
+        self::assertSame([['value' => 'secondary-first']], $secondary->rows());
+        self::assertSame([['value' => 'secondary-next']], $secondary->getResultSet(1)?->rows());
+        self::assertSame(2, $secondary->collectAll()->count());
+        self::assertSame('primary', Database::getCachedResultSet(0)?->first()['value']);
+        self::assertNull(Database::getCachedResultSet(2));
+        self::assertSame(0, Database::getCurrentIndex());
+    }
+
+    /** The timeout probe, query result and timeout restoration use the explicit session on both exit paths. */
+    public function testExplicitSqlRunTimeoutAndCachedResultAreIsolatedOnSuccessAndFailure(): void
+    {
+        $this->configureNamedRowConnection();
+        Database::sql('SET SESSION max_statement_time = 11', index: 0);
+        Database::sql('SET SESSION max_statement_time = 22', index: 2);
+        $primary = Database::sql("SELECT 'ambient' AS value");
+        Database::sqlRun('SELECT @@max_statement_time AS timeout', [], 3, false, 2);
+        self::assertSame(3000.0, (float) Database::getCachedResultSet(2)?->first()['timeout']);
+        self::assertSame([['value' => 'ambient']], $primary->rows());
+        self::assertSame('ambient', Database::getCachedResultSet(0)?->first()['value']);
+        self::assertSame(22.0, (float) Database::sql('SELECT @@max_statement_time AS timeout', index: 2)->field('timeout'));
+        self::assertSame(11.0, (float) Database::sql('SELECT @@max_statement_time AS timeout')->field('timeout'));
+        try {
+            Database::sqlRun('SELECT * FROM `absent_named_transaction_table`', timeout: 5, index: 2);
+            self::fail('An invalid query must fail on its explicit connection');
+        } catch (DatabaseRuntimeException) {
+            self::assertSame(22.0, (float) Database::sql('SELECT @@max_statement_time AS timeout', index: 2)->field('timeout'));
+            self::assertSame(11.0, (float) Database::sql('SELECT @@max_statement_time AS timeout')->field('timeout'));
+        }
+        self::assertSame(0, Database::getCurrentIndex());
+    }
+
+    /** A lost indexed session reconnects without replacing or selecting the ambient connection. */
+    public function testExplicitSqlReconnectDoesNotChangeTheAmbientConnection(): void
+    {
+        $this->configureNamedRowConnection();
+        $primary = (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+        $secondary = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+        Database::sql('KILL ?', [$secondary], index: 0);
+        $replacement = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+        self::assertNotSame($secondary, $replacement);
+        self::assertSame($primary, (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id'));
+        self::assertSame(0, Database::getCurrentIndex());
+    }
+
+    /** Raw SQL keeps its legacy default while explicitly indexed SQL participates in the named transaction. */
+    public function testNamedTransactionCommitsTheSelectedRowConnectionAndLeavesRawSqlOnAmbient(): void
+    {
+        $this->configureNamedRowConnection();
+        $primary = (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+        $secondary = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+        $made = [];
+        $value = Database::transaction('archive', static function () use ($primary, $secondary, &$made): int {
+            self::assertSame(0, Database::getCurrentIndex());
+            $ambient = Database::sql('SELECT CONNECTION_ID() AS id, @@in_transaction AS active')->row();
+            self::assertSame($primary, (int) $ambient['id']);
+            self::assertSame(0, (int) $ambient['active']);
+            $scoped = Database::sql('SELECT CONNECTION_ID() AS id, @@in_transaction AS active', index: 2)->row();
+            self::assertSame($secondary, (int) $scoped['id']);
+            self::assertSame(1, (int) $scoped['active']);
+            Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('committed archive')", index: 2);
+            $id = Database::lastInsertId(2);
+            Database::afterCommit(static function () use (&$made): void { $made[] = 'archive'; });
+            self::assertSame([], $made);
+
+            return $id;
+        });
+        self::assertGreaterThan(0, $value);
+        self::assertSame(['archive'], $made);
+        self::assertSame('committed archive', Database::sql('SELECT `name` FROM `hilos_user` WHERE `id` = ?', [$value])->field('name'));
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** A named rollback undoes its SQL and memory while an ambient autocommit write stands. */
+    public function testNamedCallbackFailureRollsBackOnlyTheSelectedConnectionAndItsMemory(): void
+    {
+        $this->configureNamedRowConnection();
+        $failure = new RuntimeException('named callback failed');
+        $undone = false;
+        $made = [];
+        try {
+            Database::transaction('archive', static function () use ($failure, &$undone, &$made): void {
+                Database::sqlRun("INSERT INTO `hilos_user` (`name`) VALUES ('legacy ambient')");
+                Database::sqlRun("INSERT INTO `hilos_user` (`name`) VALUES ('rolled back archive')", index: 2);
+                Database::onRollback(static function () use (&$undone): void { $undone = true; });
+                Database::afterCommit(static function () use (&$made): void { $made[] = 'archive'; });
+                Database::afterCommit(static function () use (&$made): void { $made[] = 'primary'; }, 0);
+                throw $failure;
+            });
+            self::fail('The callback must fail');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
+        self::assertTrue($undone);
+        self::assertSame(['primary'], $made);
+        self::assertSame([['name' => 'legacy ambient']], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+        Database::transactionStart();
+        self::assertSame(1, (int) Database::sql('SELECT @@in_transaction AS active')->field('active'));
+        Database::transactionRollback();
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** A killed session fails COMMIT, restores its memory and cannot leave a transaction default behind. */
+    public function testNamedCommitFailurePreservesItsSqlFailureAndRestoresTheScope(): void
+    {
+        $this->configureNamedRowConnection();
+        $made = [];
+        $undone = false;
+        try {
+            Database::transaction('archive', static function () use (&$made, &$undone): void {
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('lost archive')", index: 2);
+                $session = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+                Database::onRollback(static function () use (&$undone): void { $undone = true; });
+                Database::afterCommit(static function () use (&$made): void { $made[] = 'must not leave'; });
+                Database::sql('KILL ?', [$session], index: 0);
+            });
+            self::fail('A commit on a killed session must fail');
+        } catch (DatabaseRuntimeException $failure) {
+            self::assertStringContainsString('Query: COMMIT', $failure->getMessage());
+        }
+        self::assertTrue($undone);
+        self::assertSame([], $made);
+        self::assertSame([], Database::handlerEnd());
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame([], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+        Database::transactionStart();
+        Database::afterCommit(static function () use (&$made): void { $made[] = 'primary'; });
+        self::assertSame([], $made);
+        Database::transactionCommit();
+        self::assertSame(['primary'], $made);
+    }
+
+    /** A failed driver rollback must not replace the callback's original refusal. */
+    public function testNamedRollbackFailurePreservesTheOriginalCallbackError(): void
+    {
+        $this->configureNamedRowConnection();
+        $operation = new LogicException('named operation refused');
+        $logFile = (string) tempnam(sys_get_temp_dir(), 'hilos-named-rollback');
+        Logger::setLogFile($logFile);
+        try {
+            try {
+                Database::transaction('archive', static function () use ($operation): void {
+                    Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('lost archive')", index: 2);
+                    $session = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+                    Database::sql('KILL ?', [$session], index: 0);
+                    throw $operation;
+                });
+                self::fail('The original callback failure must be raised');
+            } catch (LogicException $failure) {
+                self::assertSame($operation, $failure);
+                self::assertStringContainsString('A silent transaction rollback failed: ', (string) file_get_contents($logFile));
+                self::assertStringContainsString('Query: ROLLBACK', (string) file_get_contents($logFile));
+            }
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame([], Database::handlerEnd());
+        self::assertSame([], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+    }
+
+    /** A failure after COMMIT cannot take back its row or retain its transaction scope. */
+    public function testNamedAnnouncementFailureLeavesTheCommittedRowAndRestoresTheDefault(): void
+    {
+        $this->configureNamedRowConnection();
+        self::assertSame([], Database::handlerEnd());
+        try {
+            Database::transaction('archive', static function (): void {
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('committed archive')", index: 2);
+                Database::afterCommit(static fn (): never => throw new RuntimeException('named announcement failed'));
+            });
+            self::fail('Outside a handler the announcement must fail at commit');
+        } catch (AnnouncementFailedException $failure) {
+            self::assertSame('named announcement failed', $failure->getPrevious()?->getMessage());
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame([['name' => 'committed archive']], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+        Database::transactionStart();
+        Database::transactionCommit();
+        self::assertSame([], Database::handlerEnd());
+    }
+
+    /** The caller closes only a failed child before rolling its parent back on the same explicit connection. */
+    public function testExplicitNestedCleanupKeepsItsParentOnTheSelectedConnection(): void
+    {
+        $this->configureNamedRowConnection();
+        Database::transactionStartNestable(2);
+        Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('parent')", index: 2);
+        Database::transactionStartNestable(2);
+        Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('child')", index: 2);
+        // Losing the savepoint makes RELEASE fail without destroying the parent transaction.
+        Database::sql('RELEASE SAVEPOINT hilos_tx_2', index: 2);
+        try {
+            Database::transactionCommit(2);
+            self::fail('The missing child savepoint must refuse its commit');
+        } catch (DatabaseRuntimeException) {
+            Database::transactionRollbackSilent(2);
+        }
+        Database::assertCanWrite(2);
+        self::assertSame(0, Database::getCurrentIndex());
+        Database::transactionRollback(2);
+        self::assertSame([], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** A handler boundary cleans every connection even when called inside an indexed transaction scope. */
+    public function testHandlerEndStillCleansEveryConnectionInsideANamedCallback(): void
+    {
+        $this->configureNamedRowConnection();
+        try {
+            Database::transaction('archive', static function (): void {
+                Database::transactionStart(0);
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('primary rollback')", index: 0);
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('archive rollback')", index: 2);
+                $owed = Database::handlerEnd();
+                self::assertCount(1, $owed);
+                self::assertInstanceOf(TransactionLeftOpenException::class, $owed[0]);
+                self::assertStringContainsString('connection 0', $owed[0]->getMessage());
+                self::assertStringContainsString('connection 2', $owed[0]->getMessage());
+            });
+            self::fail('The named level was closed by the handler boundary');
+        } catch (TransactionNotOpenException) {
+            self::assertFalse(Database::hasOpenTransactions());
+        }
+        self::assertSame([], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
+        self::assertSame(0, Database::getCurrentIndex());
+    }
+
+    /** A selected secondary remains the raw SQL and legacy transaction default around a named primary scope. */
+    public function testNonPrimaryAmbientConnectionRemainsSelectedAroundANamedPrimaryScope(): void
+    {
+        $this->configureNamedRowConnection();
+        $primary = (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+        Database::useConnection(2);
+        $secondary = (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+        self::assertNotSame($primary, $secondary);
+        try {
+            Database::transaction('primary', static function () use ($primary, $secondary): void {
+                $ambient = Database::sql('SELECT CONNECTION_ID() AS id, @@in_transaction AS active')->row();
+                self::assertSame($secondary, (int) $ambient['id']);
+                self::assertSame(0, (int) $ambient['active']);
+                $named = Database::sql('SELECT CONNECTION_ID() AS id, @@in_transaction AS active', index: 0)->row();
+                self::assertSame($primary, (int) $named['id']);
+                self::assertSame(1, (int) $named['active']);
+            });
+            self::assertSame(2, Database::getCurrentIndex());
+            Database::transactionStart();
+            self::assertSame(1, (int) Database::sql('SELECT @@in_transaction AS active')->field('active'));
+            self::assertSame(0, (int) Database::sql('SELECT @@in_transaction AS active', index: 0)->field('active'));
+            Database::transactionRollback();
+            self::assertFalse(Database::hasOpenTransactions());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** A real second session on the existing framework database; no remote service or SQL double. */
+    private function configureNamedRowConnection(): void
+    {
+        $primary = Database::getConnectionConfig(0);
+        Database::configure(
+            index: 2,
+            host: $primary->host,
+            user: $primary->user,
+            password: $primary->password,
+            database: $primary->database,
+            port: $primary->port,
+            charset: $primary->charset,
+            socket: $primary->socket,
+        );
+        Database::registerDatabase('archive', 2);
+        Database::connect(2);
+    }
+
     /**
      * Writes one deletion request the way the framework does, through the collection's actions.
      *

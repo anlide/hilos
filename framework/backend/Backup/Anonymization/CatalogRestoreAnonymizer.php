@@ -10,6 +10,7 @@ use Hilos\Backup\RestoreAnonymizer;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 use Random\RandomException;
@@ -62,6 +63,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      * @throws AnonymizationConfigException When a verdict is malformed
      * @throws RandomException When the platform's secure random source refuses to mint a salt
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function fromCatalog(): self
     {

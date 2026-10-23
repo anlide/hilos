@@ -57,6 +57,7 @@ use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
@@ -238,6 +239,7 @@ final class TopologyValidator
      *     cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public function validateReferences(string $hilosClass): void
     {
@@ -378,6 +380,7 @@ final class TopologyValidator
      * @param array $agents Agent registry
      * @param list<string> $errors Validation error accumulator
      * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     private function validateSetClaims(array $agents, array &$errors): void
     {
@@ -427,6 +430,7 @@ final class TopologyValidator
      * @param class-string<Entity> $entityClass Entity of that collection
      * @param list<string> $errors Validation error accumulator
      * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     private function validateSetClimb(string $ownerClass, string $collection, string $entityClass, array &$errors): void
     {

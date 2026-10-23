@@ -30,7 +30,8 @@ class MyEntity extends Entity {
 
 ## Rules
 
-- One MOUNTED Entity class = one DB table. A project's subclass of a framework
+- One MOUNTED Entity class = one DB table. A node refuses two mounted chains for
+  the same physical table. A project's subclass of a framework
   Entity maps the same table and is mounted in place of the base, as one link of
   the whole subclassed chain, and a node refuses to start over two mounted chains
   of one table; see [inheritance.md](inheritance.md), *What Refuses The Start*
@@ -41,22 +42,42 @@ class MyEntity extends Entity {
 
 ## The Database An Entity Lives In
 
-An Entity declares the logical name of its database, not a connection index;
-without a declaration it belongs to the primary database.
-(not in the code yet — HIL-1614)
-An explicitly empty or unknown name refuses startup instead of falling back to
-primary. (not in the code yet — HIL-1614)
-The `Database` layer resolves that logical name to the installation's real
-database. This is a general mechanism for projects, not a journal-only path.
-(not in the code yet — HIL-1614)
+An Entity declares the logical database name in `_database`, identified by
+`Entity::META_DATABASE`. It is a string and defaults to
+`DatabaseNames::PRIMARY`; it contains no server address or credentials. A
+projects register each additional name with
+`Database::registerDatabase(string $name, int $schemaIndex, ?int $connectionIndex = null)`
+after configuring those indices. `Database::getDatabase($name)` resolves it to
+an immutable `DatabaseBinding`: `schemaIndex` selects the physical database
+configuration, while `connectionIndex` selects the connection used for ORM
+rows and transactions. Omitting the row connection uses the schema index.
 
-The journal's real database name is derived from the primary name of each
-installation or test piece; see
-[Where The Journal Lives](../architecture/change-log.md#where-the-journal-lives).
-HIL-1614 defines the declaration and resolution API. Until it lands, the Entity
-layer still uses the active connection and has no logical database declaration.
-The database name does not decide the transaction's connection; see
-[Collections In A Named Database](db-collection.md#collections-in-a-named-database).
+The built-in `primary` binding uses schema and row connection 0. The built-in
+`change_log` binding uses schema 1 and row connection 0, with its physical name
+derived from the configured primary name for each installation or test piece;
+see [Where The Journal Lives](../architecture/change-log.md#where-the-journal-lives).
+Invalid, empty, and unregistered names fail instead of falling back to primary.
+Primary metadata is available before database configuration through
+`Entity::getDatabaseName()` and `Entity::getDatabase()`; physical accessors such
+as `DatabaseBinding::getDatabaseName()`, `getSqlTableName()`, and `getIdentity()`
+require their connection configuration. The table-name helper returns the
+backtick-quoted physical schema and table.
+
+A physical identity consists of endpoint (host, port, and socket) plus schema,
+not the logical alias or credentials. A row connection can serve a schema only
+when its configured host, port, and socket match; the resolver does not guess
+that different host strings are DNS-equivalent. A project alias can use its own
+host, port, socket, user, and password through its own row connection.
+
+ORM SQL, including reads and counters for primary Entities, follows the
+Entity's binding even when the ambient raw SQL connection points elsewhere. An
+ordinary unjournaled Entity may use a remote database. Journaled Entities remain
+supported only on the primary physical schema and row connection 0: generated
+journal triggers and the receipt path are still primary-only, and startup
+refuses other journal topologies. A named database does not install generic
+remote triggers. See
+[Collections In A Named Database](db-collection.md#collections-in-a-named-database)
+for row routing and transaction behavior.
 
 ## Entity vs Object
 
@@ -75,7 +96,15 @@ condition to diagnose at runtime.
 
 The audit compares an Entity with the table in its declared database, including
 table coverage, rather than assuming every Entity belongs to primary.
-(not in the code yet — HIL-1614)
+
+At daemon startup, `EntityDatabaseStartupGuard` validates mounted bindings
+before the constant-only guards, then audits each mounted table in its declared
+schema and probes `SELECT * ... LIMIT 0` through its row connection before the
+daemon manager and event loop are built. This is a mounted-table audit, not a
+full audit of every live table. A missing optional primary framework table is
+skipped and does not enable its feature; a mounted secondary table must exist
+and be readable. A same-named primary table does not satisfy a secondary
+Entity's schema check or anonymization coverage.
 
 For framework Entities this drift is caught by `EntitySchemaConsistencyTest` (framework
 integration suite): it applies the migration stubs and audits every Entity against the
@@ -227,12 +256,11 @@ things in a `TablesWithoutEntityProvider`. A project's subclass of a framework E
 declares the verdicts on its own columns and inherits the base's; see
 [inheritance.md](inheritance.md).
 
-At backup and restore, the Entity's verdict belongs to the same declared database
-as its table; the verdict itself does not name a connection index.
-(not in the code yet — HIL-1614)
-Today `PiiRegistry` still places Entity verdicts on primary and the journal uses
-its separate provider. The journal's six Entities take over those verdicts.
-(not in the code yet — HIL-1615)
+At backup and restore, `PiiRegistry` places the Entity's verdict under its
+binding's `schemaIndex`, independent of the row connection and ambient database
+index. The verdict itself does not name a connection index. The journal's six
+Entities take over the journal provider's verdicts in HIL-1615; that provider
+remains responsible for the journal until then.
 
 How to choose a strategy, and what the gates of a restore and of a startup refuse
 on:

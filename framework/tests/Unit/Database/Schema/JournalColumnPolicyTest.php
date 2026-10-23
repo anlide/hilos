@@ -14,6 +14,10 @@ use Hilos\Database\Entity\Item\SecondFactor;
 use Hilos\Database\Exception\UnplacedJournalColumnException;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournalColumnPolicy;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /** The shared placement policy judges live columns, including columns outside the ORM. */
@@ -114,6 +118,45 @@ final class JournalColumnPolicyTest extends TestCase
         }
     }
 
+    #[RunInSeparateProcess]
+    public function testPiiPlacementUsesSchemaIndexInsteadOfTheSharedRowConnection(): void
+    {
+        Database::configure(database: 'journal_primary');
+        Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
+        $schema = self::schema('journal_test', ['id' => 'int', 'label' => 'varchar']);
+        $pii = new PiiRegistry([
+            0 => ['journal_test' => []],
+            1 => ['journal_test' => ['label' => AnonymizationStrategy::MASK]],
+        ], [0 => ['journal_test' => ['id', 'label']], 1 => ['journal_test' => ['id']]]);
+
+        $placements = JournalColumnPolicy::forTable(SecondaryPolicyEntity::class, $schema, $pii);
+        $this->assertSame(JournalColumnMode::PERSONAL, $placements['label']->mode);
+        $this->assertSame(0, SecondaryPolicyEntity::getDatabase()->connectionIndex);
+
+        $pii = new PiiRegistry([0 => ['journal_test' => AnonymizationStrategy::PURGE], 1 => ['journal_test' => []]],
+            [1 => ['journal_test' => ['id', 'label']]]);
+        $placements = JournalColumnPolicy::forTable(SecondaryPolicyEntity::class, $schema, $pii);
+        $this->assertSame(JournalColumnMode::VALUE, $placements['label']->mode);
+
+        $pii = new PiiRegistry([0 => ['journal_test' => []], 1 => ['journal_test' => AnonymizationStrategy::PURGE]],
+            [0 => ['journal_test' => ['id', 'label']]]);
+        $placements = JournalColumnPolicy::forTable(SecondaryPolicyEntity::class, $schema, $pii);
+        $this->assertSame(JournalColumnMode::PERSONAL, $placements['label']->mode);
+    }
+
+    #[RunInSeparateProcess]
+    public function testAPrimaryVerdictCannotFillAGapOnTheSecondarySchema(): void
+    {
+        Database::configure(database: 'journal_primary');
+        Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
+        $schema = self::schema('journal_test', ['id' => 'int', 'label' => 'varchar']);
+        $pii = new PiiRegistry([0 => ['journal_test' => AnonymizationStrategy::PURGE], 1 => ['journal_test' => []]],
+            [1 => ['journal_test' => ['id']]]);
+        $this->expectException(UnplacedJournalColumnException::class);
+        $this->expectExceptionMessage('journal_test.label');
+        JournalColumnPolicy::forTable(SecondaryPolicyEntity::class, $schema, $pii);
+    }
+
     public function testAnEntityCannotPlaceAnotherTablesSchema(): void
     {
         $schema = self::schema('different_table', ['id' => 'int']);
@@ -162,4 +205,10 @@ final class ProjectJournalEntity extends JournalEntity
 final class BrokenJournalEntity extends JournalEntity
 {
     public const array _journalNoise = ['secret' => '', 'absent' => 'Does not exist'];
+}
+
+final class SecondaryPolicyEntity extends Entity
+{
+    public const string _database = DatabaseNames::CHANGE_LOG;
+    public const string _table = 'journal_test';
 }

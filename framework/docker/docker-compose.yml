@@ -205,6 +205,37 @@ services:
       - hilos-framework-test-network
     profiles: [test]
 
+  # A second real MariaDB endpoint for multi-connection integration fixtures.
+  # It uses the same database names as the primary service on a separate server.
+  mysql-framework-remote-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4
+    container_name: hilos-mysql-framework-remote-test${HILOS_STAND_SUFFIX:-}
+    labels:
+      hilos.role: database
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}
+      MYSQL_USER: hilos_remote
+      MYSQL_PASSWORD: hilos_remote_pass
+      TZ: UTC
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-framework-test-network
+    profiles: [test]
+
   # Backup receiver: the far side of a shipping run (BACKUP_SHIP_TARGET). No host
   # ports — only the CLI runner talks to it, over the stack's own network, and the
   # stand keeps its promise of not reaching outside. The key pair and the
@@ -254,6 +285,10 @@ services:
       DB_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
       # The reset integration fixture creates and removes its own databases.
       DB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      HILOS_TEST_REMOTE_DB_HOST: mysql-framework-remote-test
+      HILOS_TEST_REMOTE_DB_PORT: "3306"
+      HILOS_TEST_REMOTE_DB_USERNAME: hilos_remote
+      HILOS_TEST_REMOTE_DB_PASSWORD: hilos_remote_pass
     networks:
       - hilos-framework-test-network
     profiles: [test]

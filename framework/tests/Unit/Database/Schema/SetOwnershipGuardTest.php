@@ -13,6 +13,8 @@ use Hilos\Database\PhpType;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Hilos;
 use Hilos\Tests\Unit\FrameworkEntitySetOwnershipTest;
+use Hilos\Database\Database;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,6 +36,56 @@ final class SetOwnershipGuardTest extends TestCase
         Hilos::$db = null;
 
         parent::tearDown();
+    }
+
+    #[RunInSeparateProcess]
+    public function testARootOnAnotherDatabaseCannotApproveTheLocalParent(): void
+    {
+        $this->configureNamedDatabases();
+        $this->mount([NamedSetNonRoots::class, NamedSetRemoteRoots::class, NamedSetChildren::class]);
+        $this->expectException(UndeclaredSetOwnershipException::class);
+        $this->expectExceptionMessage(NamedSetChildEntity::class . ' hangs its set on named_set_root');
+        SetOwnershipGuard::assertMountedSetsDeclared();
+    }
+
+    #[RunInSeparateProcess]
+    public function testANonRootOnAnotherDatabaseDoesNotReplaceTheLocalRoot(): void
+    {
+        $this->configureNamedDatabases();
+        $this->mount([NamedSetRoots::class, NamedSetRemoteNonRoots::class, NamedSetChildren::class]);
+        SetOwnershipGuard::assertMountedSetsDeclared();
+        $this->assertSame(2, Database::getCurrentIndex());
+    }
+
+    #[RunInSeparateProcess]
+    public function testAChainAcrossTwoDatabasesDoesNotInventACycle(): void
+    {
+        $this->configureNamedDatabases();
+        $this->mount([NamedSetChildren::class, NamedSetCycleRoots::class]);
+        SetOwnershipGuard::assertMountedSetsDeclared();
+        $this->assertSame(2, Database::getCurrentIndex());
+    }
+
+    #[RunInSeparateProcess]
+    public function testAPrimaryNamesakeCannotHideARealSecondaryCycle(): void
+    {
+        $this->configureNamedDatabases();
+        $this->mount([NamedSetCycleRoots::class, NamedSetRemoteChildren::class, NamedSetRoots::class]);
+        $this->expectException(UndeclaredSetOwnershipException::class);
+        $this->expectExceptionMessage('named_set_root -> named_set_child -> named_set_root');
+        SetOwnershipGuard::assertMountedSetsDeclared();
+    }
+
+    #[RunInSeparateProcess]
+    public function testAliasesOfTheSamePhysicalSchemaShareTheirRootMap(): void
+    {
+        Database::configure(database: 'main_schema');
+        Database::configure(index: 2, database: 'main_schema', password: 'other-credentials');
+        Database::registerDatabase('named_set_remote', 2);
+        $this->mount([NamedSetNonRoots::class, NamedSetRemoteChildren::class]);
+        $this->expectException(UndeclaredSetOwnershipException::class);
+        $this->expectExceptionMessage('does not declare itself a set root');
+        SetOwnershipGuard::assertMountedSetsDeclared();
     }
 
     public function testAnInstallationThatMountedNothingIsNotJudged(): void
@@ -209,6 +261,15 @@ final class SetOwnershipGuardTest extends TestCase
         $this->assertStringContainsString(SetGuardSilentEntity::class, $message);
         $this->assertStringContainsString(SetGuardStrangeColumnEntity::class, $message);
         $this->assertStringContainsString(SetGuardLooseRootEntity::class, $message);
+    }
+
+    /** Configures metadata only; no test endpoint is reachable or queried. */
+    private function configureNamedDatabases(): void
+    {
+        Database::configure(database: 'main_schema');
+        Database::configure(index: 2, host: 'remote.invalid', database: 'main_schema');
+        Database::registerDatabase('named_set_remote', 2);
+        Database::useConnection(2);
     }
 
     /**
@@ -781,4 +842,117 @@ final class SetGuardLoopSecond extends Object_
 final class SetGuardLoopSeconds extends Objects
 {
     public const string OBJECT_CLASS = SetGuardLoopSecond::class;
+}
+
+class NamedSetRootEntity extends Entity
+{
+    public const string _table = 'named_set_root';
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = true;
+}
+
+final class NamedSetNonRootEntity extends NamedSetRootEntity
+{
+    public const bool _setRoot = false;
+}
+
+class NamedSetRemoteRootEntity extends NamedSetRootEntity
+{
+    public const string _database = 'named_set_remote';
+}
+
+final class NamedSetRemoteNonRootEntity extends NamedSetRemoteRootEntity
+{
+    public const bool _setRoot = false;
+}
+
+class NamedSetChildEntity extends Entity
+{
+    public const string _table = 'named_set_child';
+    public const array _columns = ['root_id'];
+    public const array _foreign = ['root_id' => NamedSetRootEntity::_table];
+    public const string _setVia = 'root_id';
+    public const bool _setRoot = true;
+}
+
+final class NamedSetRemoteChildEntity extends NamedSetChildEntity
+{
+    public const string _database = 'named_set_remote';
+}
+
+final class NamedSetCycleRootEntity extends NamedSetRemoteRootEntity
+{
+    public const array _columns = ['child_id'];
+    public const array _foreign = ['child_id' => NamedSetChildEntity::_table];
+    public const string _setVia = 'child_id';
+}
+
+final class NamedSetRootObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetRootEntity::class;
+}
+
+final class NamedSetRoots extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetRootObject::class;
+}
+
+final class NamedSetNonRootObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetNonRootEntity::class;
+}
+
+final class NamedSetNonRoots extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetNonRootObject::class;
+}
+
+final class NamedSetRemoteRootObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetRemoteRootEntity::class;
+}
+
+final class NamedSetRemoteRoots extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetRemoteRootObject::class;
+}
+
+final class NamedSetRemoteNonRootObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetRemoteNonRootEntity::class;
+}
+
+final class NamedSetRemoteNonRoots extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetRemoteNonRootObject::class;
+}
+
+final class NamedSetChildObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetChildEntity::class;
+}
+
+final class NamedSetChildren extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetChildObject::class;
+}
+
+final class NamedSetRemoteChildObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetRemoteChildEntity::class;
+}
+
+final class NamedSetRemoteChildren extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetRemoteChildObject::class;
+}
+
+final class NamedSetCycleRootObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedSetCycleRootEntity::class;
+}
+
+final class NamedSetCycleRoots extends Objects
+{
+    public const string OBJECT_CLASS = NamedSetCycleRootObject::class;
 }

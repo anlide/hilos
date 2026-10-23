@@ -107,11 +107,10 @@ final class User extends Entity
 - The column set to judge is the *live* one, not `_columns`. A table may carry
   columns the ORM does not map (`Identity::secret` is the framework's own case),
   and those are personal data like any other.
-- No connection index is written in the verdict. It is collected from the Entity
-  and belongs to that Entity's declared database.
-  (not in the code yet — HIL-1614)
-  Today `PiiRegistry` still places Entity verdicts on primary; the named-database
-  mechanism changes that routing, not the verdict's strategies.
+- No connection index is written in the verdict. `PiiRegistry` collects the
+  Entity's `schemaIndex` and places the verdict with that physical schema,
+  independent of its row connection or the ambient database index. The named
+  database changes where the existing verdict is applied, not its strategies.
 
 A project's subclass of a framework Entity declares the verdicts on its own
 columns and inherits the base's; the registry collects the mounted subclass, not

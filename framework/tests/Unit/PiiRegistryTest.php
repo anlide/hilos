@@ -17,6 +17,12 @@ use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\Session;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Hilos;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Objects;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -95,6 +101,36 @@ final class PiiRegistryTest extends TestCase
             $registry->notPersonalColumns(0, Identity::_table) ?? [],
             'The non-personal half of the verdict must come out of the registry too',
         );
+    }
+
+    #[RunInSeparateProcess]
+    public function testEntityVerdictsFollowSchemaIndicesEvenWhenRowsSharePrimary(): void
+    {
+        Database::configure(database: 'pii_primary');
+        Database::configure(index: 1, database: ChangeLogDatabase::configuredName());
+        Database::configure(index: 2, host: 'remote.invalid', database: 'pii_primary');
+        Database::registerDatabase('pii_remote', 2);
+        Database::useConnection(2);
+        Hilos::$db = new NamedPiiContext();
+        Hilos::$db->configure();
+
+        $registry = PiiRegistry::collect();
+
+        $this->assertSame(['label' => AnonymizationStrategy::MASK], $registry->strategiesFor(0, 'pii_same_table'));
+        $this->assertSame(['label' => AnonymizationStrategy::HASH], $registry->strategiesFor(1, 'pii_same_table'));
+        $this->assertSame(['id'], $registry->notPersonalColumns(0, 'pii_same_table'));
+        $this->assertSame(['id', 'local_only'], $registry->notPersonalColumns(1, 'pii_same_table'));
+        $this->assertFalse($registry->isPurged(0, 'pii_same_table'));
+        $this->assertFalse($registry->isPurged(1, 'pii_same_table'));
+        $this->assertTrue($registry->isPurged(2, 'pii_same_table'));
+        $this->assertSame([], $registry->strategiesFor(2, 'pii_same_table'));
+        $this->assertSame([], $registry->notPersonalColumns(2, 'pii_same_table'));
+        $this->assertSame(0, NamedLocalPiiEntity::getDatabase()->connectionIndex);
+        $this->assertSame(1, NamedLocalPiiEntity::getDatabase()->schemaIndex);
+        $this->assertSame(2, Database::getCurrentIndex());
+        foreach ([0, 1, 2] as $index) {
+            $this->assertFalse(Database::isConnected($index));
+        }
     }
 
     public function testAPurgedTableCarriesNoColumnWorkOfEitherHalf(): void
@@ -614,4 +650,66 @@ final class NonIntegerIndexTablesWithoutEntityHilos extends Hilos
     {
         return new FrameworkPiiTestDbContext();
     }
+}
+
+/** Mounts three same-named tables whose verdicts must never replace one another. */
+final class NamedPiiContext extends HilosDbContext
+{
+    public function configure(): void
+    {
+        foreach ([NamedPrimaryPiiRows::class, NamedLocalPiiRows::class, NamedRemotePiiRows::class] as $class) {
+            $this->_objectCollections[$class] = $class::initEmpty();
+        }
+    }
+}
+
+class NamedPrimaryPiiEntity extends Entity
+{
+    public const string _table = 'pii_same_table';
+    public const array _pii = ['label' => AnonymizationStrategy::MASK];
+    public const array _piiNotPersonal = ['id'];
+}
+
+final class NamedLocalPiiEntity extends NamedPrimaryPiiEntity
+{
+    public const string _database = DatabaseNames::CHANGE_LOG;
+    public const array _pii = ['label' => AnonymizationStrategy::HASH];
+    public const array _piiNotPersonal = ['id', 'local_only'];
+}
+
+final class NamedRemotePiiEntity extends Entity
+{
+    public const string _table = NamedPrimaryPiiEntity::_table;
+    public const string _database = 'pii_remote';
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
+}
+
+final class NamedPrimaryPiiObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedPrimaryPiiEntity::class;
+}
+
+final class NamedPrimaryPiiRows extends Objects
+{
+    public const string OBJECT_CLASS = NamedPrimaryPiiObject::class;
+}
+
+final class NamedLocalPiiObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedLocalPiiEntity::class;
+}
+
+final class NamedLocalPiiRows extends Objects
+{
+    public const string OBJECT_CLASS = NamedLocalPiiObject::class;
+}
+
+final class NamedRemotePiiObject extends Object_
+{
+    public const string ENTITY_CLASS = NamedRemotePiiEntity::class;
+}
+
+final class NamedRemotePiiRows extends Objects
+{
+    public const string OBJECT_CLASS = NamedRemotePiiObject::class;
 }

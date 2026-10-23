@@ -16,6 +16,8 @@ use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -46,6 +48,7 @@ use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use RuntimeException;
 
 /**
@@ -81,6 +84,9 @@ final class TransactionMemoryRollbackTest extends TestCase
 
     private ?RtContext $previousRt = null;
 
+    /** @var array<string, mixed> Private Database configuration restored after memory-only cases */
+    private array $previousDatabaseConfiguration = [];
+
     private MemoryRollbackMirror $mirror;
 
     private MemoryRollbackReaction $reaction;
@@ -89,6 +95,16 @@ final class TransactionMemoryRollbackTest extends TestCase
     {
         parent::setUp();
 
+        foreach (['configurations', 'databaseBindings', 'connections', 'resultSets', 'lastSql', 'closedByHand',
+            'currentIndex', 'transactionIndex'] as $property) {
+            $reflection = new ReflectionProperty(Database::class, $property);
+            $this->previousDatabaseConfiguration[$property] = $reflection->getValue();
+            $reflection->setValue(null, match ($property) {
+                'currentIndex' => 0,
+                'transactionIndex' => null,
+                default => [],
+            });
+        }
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousDb = Hilos::$db;
         $this->previousRt = Hilos::$rt;
@@ -116,6 +132,9 @@ final class TransactionMemoryRollbackTest extends TestCase
         Hilos::$rt = $this->previousRt;
         Hilos::$db = $this->previousDb;
         Hilos::$sr = $this->previousSignalRouter;
+        foreach ($this->previousDatabaseConfiguration as $property => $value) {
+            new ReflectionProperty(Database::class, $property)->setValue(null, $value);
+        }
 
         parent::tearDown();
     }
@@ -148,6 +167,48 @@ final class TransactionMemoryRollbackTest extends TestCase
         $object->sync();
 
         $this->assertSame([MemoryRollbackEntity::WRITE_UPDATE, MemoryRollbackEntity::WRITE_UPDATE], MemoryRollbackEntity::$writes);
+    }
+
+    /** Primary Object undo, membership undo and deferred announcements ignore a foreign ambient index. */
+    public function testObjectAndBackedCollectionMemoryFollowPrimaryWithAnotherAmbientConnection(): void
+    {
+        $this->configureNamedArchive();
+        $objects = $this->mounted();
+        $object = MemoryRollbackObject::stored(7, 'before');
+        $objects->load(7, $object);
+        $view = $this->view()[7];
+        Database::useConnection(2);
+        Database::transactionStart(0);
+        $object->remark('after');
+        $object->sync();
+        $objects->clearInMemory();
+        self::assertSame([], $this->reaction->seen);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        Database::transactionRollback(0);
+
+        self::assertSame('before', $view->getObject()->mark());
+        self::assertSame($object, $objects[7]);
+        self::assertSame($object, $this->view()[7]->getObject());
+        self::assertTrue($object->isRelated());
+        self::assertSame([], $this->reaction->seen);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertSame(2, Database::getCurrentIndex());
+    }
+
+    /** A manual collection without a backing Entity keeps the legacy transaction default. */
+    public function testManualCollectionMembershipRetainsTheAmbientRollbackStack(): void
+    {
+        $this->configureNamedArchive();
+        $objects = MemoryRollbackObjects::initEmpty();
+        Database::useConnection(2);
+        Database::transactionStart();
+        $objects[7] = MemoryRollbackObject::stored(7, 'held');
+        self::assertNull($objects->getDatabase());
+        self::assertSame([], $this->reaction->seen);
+        Database::transactionRollback();
+
+        self::assertFalse(isset($objects[7]));
+        self::assertSame([], $this->reaction->seen);
     }
 
     /**
@@ -634,6 +695,273 @@ final class TransactionMemoryRollbackTest extends TestCase
         $this->assertSame('second', $collection['a']?->mark());
     }
 
+    /** Runtime undo and deferred echo registration belong to the named level beside an independent primary level. */
+    public function testRuntimeMemoryAndEchoRollbackFollowTheNamedScopeInsteadOfAmbientConnection(): void
+    {
+        $this->configureNamedArchive();
+        $collection = $this->mountedRt();
+        $collection->actions->put('kept', 'before');
+        $beforeReactions = $this->reaction->seen;
+        Hilos::$sr = new SignalRouter();
+        Database::transactionStart(0);
+        $primaryUndone = false;
+        Database::onRollback(static function () use (&$primaryUndone): void { $primaryUndone = true; }, 0);
+        $failure = new RuntimeException('named runtime work failed');
+        try {
+            Database::transaction('archive', function () use ($collection, $failure): void {
+                $collection->actions->remark('kept', 'after');
+                $collection->actions->put('added', 'added');
+                self::assertSame(0, Database::getCurrentIndex());
+                self::assertSame([], $this->drainRtFrames());
+                self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
+                throw $failure;
+            });
+            self::fail('The named callback must fail');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
+        self::assertFalse($primaryUndone);
+        self::assertSame('before', $collection['kept']?->mark());
+        self::assertNull($collection['added']);
+        self::assertSame([], $this->drainRtFrames());
+        self::assertSame($beforeReactions, $this->reaction->seen);
+        self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
+        Database::transactionRollback();
+        self::assertTrue($primaryUndone, 'Outside the callback the low-level default is the ambient connection again');
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** The primary rollback cannot undo runtime work already committed by the named connection. */
+    public function testNamedRuntimeCommitReleasesFramesAndEchoesIndependentlyOfAnExplicitPrimaryLevel(): void
+    {
+        $this->configureNamedArchive();
+        $collection = $this->mountedRt();
+        Database::transactionStart(0);
+        $primaryUndone = false;
+        Database::transaction('archive', function () use ($collection, &$primaryUndone): void {
+            Database::onRollback(static function () use (&$primaryUndone): void { $primaryUndone = true; }, 0);
+            $collection->actions->put('added', 'first');
+            $collection->actions->remark('added', 'second');
+            self::assertSame([], $this->drainRtFrames());
+            self::assertSame([], $this->reaction->seen);
+        });
+        self::assertSame(
+            [[SignalConstants::RT_SYNC_CREATED, 'added'], [SignalConstants::RT_SYNC_UPDATED, 'added']],
+            $this->drainRtFrames(),
+        );
+        self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
+        self::assertSame([[TableMutationType::Create, 'added', ['id' => 'added', 'mark' => 'first']]], $this->reaction->seen);
+        Database::transactionRollback(0);
+        self::assertTrue($primaryUndone);
+        self::assertSame('second', $collection['added']?->mark());
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** Indexed source and DB-sync callbacks follow the selected connection through commit. */
+    public function testIndexedSourceAndDbSyncCallbacksWaitForTheirExplicitConnection(): void
+    {
+        $this->configureNamedArchive();
+        $router = Hilos::$sr;
+        $change = SourceChange::dbCreated('source_changes', 'source-row', ['id' => 'source-row']);
+
+        Database::transactionStart(0);
+        Database::transactionStart(2);
+        SourceChangeBus::whileApplyingRemote(static function () use ($change): void {
+            SourceChangeBus::publish($change, 2);
+        });
+        $router->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_CREATED,
+            new DbSyncCreatedSignalData('events', 'indexed-row', ['id' => 'indexed-row'], 'accept-key'),
+            2,
+        );
+        $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData('events', 'accept-key'), 2);
+
+        self::assertSame(
+            [[TableMutationType::Create, 'source-row', ['id' => 'source-row']]],
+            $this->mirror->seen,
+        );
+        self::assertSame([], $this->reaction->seen);
+        self::assertSame([], $this->reaction->provenances);
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'indexed-row', $router->getEmitter()));
+        self::assertNull($router->getNextQueuedSignal());
+
+        Database::transactionCommit(0);
+
+        self::assertSame([], $this->reaction->seen);
+        self::assertNull($router->getNextQueuedSignal());
+
+        Database::transactionCommit(2);
+
+        self::assertSame(
+            [[TableMutationType::Create, 'source-row', ['id' => 'source-row']]],
+            $this->reaction->seen,
+        );
+        self::assertSame([SourceChangeProvenance::AppliedRemote], $this->reaction->provenances);
+
+        $rowSignal = $router->getNextQueuedSignal();
+        $clearSignal = $router->getNextQueuedSignal();
+        self::assertNotNull($rowSignal);
+        self::assertNotNull($clearSignal);
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertSame(SignalConstants::DB_SYNC_CREATED, $rowSignal->signalType->getType());
+        self::assertSame(SignalConstants::DB_SYNC_CLEARED, $clearSignal->signalType->getType());
+        self::assertInstanceOf(DbSyncCreatedSignalData::class, $rowSignal->data);
+        self::assertInstanceOf(DbSyncClearedSignalData::class, $clearSignal->data);
+        self::assertSame('events', $rowSignal->data->collectionKey);
+        self::assertSame('indexed-row', $rowSignal->data->idString);
+        self::assertSame('events', $clearSignal->data->collectionKey);
+        self::assertSame($router->getEmitter(), $rowSignal->data->emitter);
+        self::assertSame($router->getEmitter(), $clearSignal->data->emitter);
+        self::assertSame('accept-key', $rowSignal->data->origin);
+        self::assertArrayNotHasKey('connectionIndex', $change->toArray());
+        self::assertArrayNotHasKey('connectionIndex', $rowSignal->data->toArray());
+        self::assertArrayNotHasKey('connectionIndex', $clearSignal->data->toArray());
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'indexed-row', 'another-process'));
+        self::assertTrue($router->shouldSkipDbSyncApply('events', 'indexed-row', $router->getEmitter()));
+        self::assertTrue($router->shouldSkipDbSyncClearApply($clearSignal->data->emitter));
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** Rolling back the ambient connection leaves callbacks selected for the named connection intact. */
+    public function testIndexedCallbacksSurviveRollbackOfTheOtherConnection(): void
+    {
+        $this->configureNamedArchive();
+        $router = Hilos::$sr;
+        $change = SourceChange::dbCreated('source_changes', 'survivor', ['id' => 'survivor']);
+
+        Database::transactionStart(0);
+        Database::transactionStart(2);
+        SourceChangeBus::publish($change, 2);
+        $router->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_CREATED,
+            new DbSyncCreatedSignalData('events', 'survivor', ['id' => 'survivor']),
+            2,
+        );
+
+        Database::transactionRollback(0);
+
+        self::assertSame([], $this->reaction->seen);
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'survivor', $router->getEmitter()));
+
+        Database::transactionCommit(2);
+
+        self::assertSame(
+            [[TableMutationType::Create, 'survivor', ['id' => 'survivor']]],
+            $this->reaction->seen,
+        );
+        $signal = $router->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame(SignalConstants::DB_SYNC_CREATED, $signal->signalType->getType());
+        self::assertTrue($router->shouldSkipDbSyncApply('events', 'survivor', $router->getEmitter()));
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** Rolling back the selected connection drops its DB frame and its pending row echo. */
+    public function testIndexedDbSyncRollbackDropsTheFrameAndEchoRegistration(): void
+    {
+        $this->configureNamedArchive();
+        $router = Hilos::$sr;
+        $change = SourceChange::dbCreated('source_changes', 'rolled-back', ['id' => 'rolled-back']);
+        Database::transactionStart(2);
+        SourceChangeBus::publish($change, 2);
+        $router->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_CREATED,
+            new DbSyncCreatedSignalData('events', 'rolled-back', ['id' => 'rolled-back']),
+            2,
+        );
+        $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData('events'), 2);
+
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'rolled-back', $router->getEmitter()));
+
+        Database::transactionRollback(2);
+
+        self::assertSame([], $this->reaction->seen);
+        self::assertSame(
+            [[TableMutationType::Create, 'rolled-back', ['id' => 'rolled-back']]],
+            $this->mirror->seen,
+        );
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'rolled-back', $router->getEmitter()));
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** Explicit connection zero and an omitted index keep their independent stacks in a named callback. */
+    public function testExplicitZeroAndOmittedIndexUseTheirSeparateStacks(): void
+    {
+        $this->configureNamedArchive();
+        $router = Hilos::$sr;
+        Database::transactionStart(0);
+
+        Database::transaction('archive', function () use ($router): void {
+            SourceChangeBus::publish(SourceChange::dbCreated('source_changes', 'zero', ['id' => 'zero']), 0);
+            SourceChangeBus::publish(SourceChange::dbCreated('source_changes', 'named', ['id' => 'named']));
+            $router->queueDbSyncSignal(
+                SignalConstants::DB_SYNC_CREATED,
+                new DbSyncCreatedSignalData('events', 'zero', ['id' => 'zero']),
+                0,
+            );
+            $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData('zero-clear'), 0);
+            $router->queueDbSyncSignal(
+                SignalConstants::DB_SYNC_CREATED,
+                new DbSyncCreatedSignalData('events', 'named', ['id' => 'named']),
+            );
+            $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData('named-clear'));
+            Database::useConnection(2);
+        });
+
+        self::assertSame(
+            [[TableMutationType::Create, 'named', ['id' => 'named']]],
+            $this->reaction->seen,
+        );
+        self::assertSame(SignalConstants::DB_SYNC_CREATED, $router->getNextQueuedSignal()?->signalType->getType());
+        $clearSignal = $router->getNextQueuedSignal();
+        self::assertNotNull($clearSignal);
+        self::assertSame(SignalConstants::DB_SYNC_CLEARED, $clearSignal->signalType->getType());
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertTrue($router->shouldSkipDbSyncApply('events', 'named', $router->getEmitter()));
+        self::assertFalse($router->shouldSkipDbSyncApply('events', 'zero', $router->getEmitter()));
+        self::assertTrue($router->shouldSkipDbSyncClearApply($clearSignal->data->emitter));
+
+        Database::transactionRollback(0);
+
+        self::assertSame(
+            [[TableMutationType::Create, 'named', ['id' => 'named']]],
+            $this->reaction->seen,
+        );
+        self::assertNull($router->getNextQueuedSignal());
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** The ambient index is selected when a legacy call queues its callback. */
+    public function testOmittedIndexCapturesAmbientConnectionBeforeItChanges(): void
+    {
+        $this->configureNamedArchive();
+        $router = Hilos::$sr;
+        Database::useConnection(2);
+        Database::transactionStart();
+        SourceChangeBus::publish(SourceChange::dbCreated('source_changes', 'ambient', ['id' => 'ambient']));
+        $router->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_CREATED,
+            new DbSyncCreatedSignalData('events', 'ambient', ['id' => 'ambient']),
+        );
+        Database::useConnection(0);
+
+        self::assertSame([], $this->reaction->seen);
+        self::assertNull($router->getNextQueuedSignal());
+
+        Database::transactionCommit(2);
+
+        self::assertSame(
+            [[TableMutationType::Create, 'ambient', ['id' => 'ambient']]],
+            $this->reaction->seen,
+        );
+        self::assertSame(SignalConstants::DB_SYNC_CREATED, $router->getNextQueuedSignal()?->signalType->getType());
+        self::assertTrue($router->shouldSkipDbSyncApply('events', 'ambient', $router->getEmitter()));
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
     /**
      * The defect P-431 named: the revert used to put a clone of the saved state in, a clone is a
      * new row, and the next save inserted under a key the table already held.
@@ -731,6 +1059,14 @@ final class TransactionMemoryRollbackTest extends TestCase
         }
     }
 
+    private function configureNamedArchive(): void
+    {
+        Database::configure(database: 'memory_primary');
+        Database::configure(index: 2, database: 'memory_archive');
+        Database::registerDatabase('archive', 2);
+        Database::useConnection(0);
+    }
+
     /**
      * Mounts the fixture runtime collection through a context, so the view cache subscriber finds
      * the view by the name a fact carries.
@@ -824,6 +1160,9 @@ final class MemoryRollbackReaction implements SourceChangeSubscriberInterface
     /** @var list<array{TableMutationType, string, array<string, mixed>}> Kind, id and row of each change, in order */
     public array $seen = [];
 
+    /** @var list<SourceChangeProvenance> Provenance captured for each delivered change */
+    public array $provenances = [];
+
     /**
      * @param SourceChange $change Announced change to record
      * @param SourceChangeProvenance $provenance Announced provenance, not read here
@@ -831,6 +1170,7 @@ final class MemoryRollbackReaction implements SourceChangeSubscriberInterface
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
     {
         $this->seen[] = [$change->mutationType, $change->sourceId, $change->row];
+        $this->provenances[] = $provenance;
     }
 }
 

@@ -25,6 +25,7 @@ use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\Database\Exception\OrmForgetRefusedException;
@@ -108,6 +109,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     private bool $_loadsWholeOnFirstRead = false;
 
+    /** Whether initDB() attached this instance to its Entity's database. */
+    private bool $databaseBacked = false;
+
     /**
      * Initialize collection with database loading strategy
      * Automatically determines loading behavior based on strategy
@@ -133,6 +137,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
 
         $self = new static();
+        $self->databaseBacked = true;
 
         if ($strategy === self::LAZY_STRATEGY_NONE) {
             // Eager by promise, not by load: the collection reads the table whole on its own
@@ -229,8 +234,10 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     protected function lazyLoadCount(): int
     {
+        $database = $this->getDatabase();
         $resultSetCollection = Database::sql(
-            "SELECT COUNT(*) as count FROM `" . $this->getTableName() . "`"
+            'SELECT COUNT(*) as count FROM ' . ($database?->getSqlTableName($this->getTableName()) ?? '`' . $this->getTableName() . '`'),
+            index: $database?->connectionIndex,
         );
         $firstResultSet = $resultSetCollection->first();
 
@@ -948,6 +955,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     public function offsetSet($offset, $value): void
     {
@@ -977,7 +985,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             $value->toArray(),
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
-        ));
+        ), connectionIndex: $this->getDatabase()?->connectionIndex);
     }
 
     /**
@@ -993,6 +1001,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param int|string $key Array key the row is stored under
      * @param T $object Object read out of storage
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     protected function hydrate(int|string $key, Object_ $object): void
     {
@@ -1024,6 +1033,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param mixed $offset Array key to unset, or null for no-op
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     public function offsetUnset($offset): void
     {
@@ -1045,7 +1055,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             $previous->toArray(),
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
-        ));
+        ), connectionIndex: $this->getDatabase()?->connectionIndex);
     }
 
     /**
@@ -1197,6 +1207,17 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * Resolves metadata without opening a connection. Manual sets have no backing database.
+     *
+     * @return ?DatabaseBinding Entity binding for a DB-backed collection, null for a manual set
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
+     */
+    public function getDatabase(): ?DatabaseBinding
+    {
+        return $this->databaseBacked ? static::entityClass()::getDatabase() : null;
+    }
+
+    /**
      * Get collection key for TruthSourceRegistry
      *
      * @return string Collection key
@@ -1217,7 +1238,14 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     {
         DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY, TruthSourceOperation::Remove);
 
-        Database::sql("DELETE FROM `" . $this->getTableName() . "` WHERE true;");
+        $database = $this->getDatabase();
+        if ($database !== null) {
+            Database::assertCanWrite($database->connectionIndex);
+        }
+        Database::sql(
+            'DELETE FROM ' . ($database?->getSqlTableName($this->getTableName()) ?? '`' . $this->getTableName() . '`') . ' WHERE true;',
+            index: $database?->connectionIndex,
+        );
         $this->clearInMemory();
 
         $collectionKey = static::COLLECTION_KEY;
@@ -1228,6 +1256,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                     ExecutionContext::currentAcceptKey(),
                     ExecutionContext::currentRequestId(),
                 ),
+                connectionIndex: $this->getDatabase()?->connectionIndex,
             );
         }
     }
@@ -1242,6 +1271,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * Under an open transaction the whole map is remembered first: a rollback brings the rows
      * back, since the DELETE that dropped them is rolled back too.
+     *
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     public function clearInMemory(): void
     {
@@ -1439,6 +1470,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param int|string $key Key about to change
      * @param ?T $held Object the key holds before the change, null when it holds none
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     private function rememberKey(int|string $key, ?Object_ $held): void
     {
@@ -1450,7 +1482,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                 $this->objects[$key] = $held;
             }
             $this->announceRestored($key, $held, $replaced);
-        });
+        }, index: $this->getDatabase()?->connectionIndex);
     }
 
     /**
@@ -1459,6 +1491,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Taken where the collection is cleared or read anew as a whole: a snapshot by key would be
      * longer there than the map itself, and the map is copied lazily - its first change after
      * this pays for one copy. The step tells the mirrors about every key whose instance it changed.
+     *
+     * @throws DatabaseException When the backing database cannot be resolved
      */
     private function rememberWhole(): void
     {
@@ -1476,7 +1510,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             foreach (array_keys($map + $replaced) as $key) {
                 $this->announceRestored($key, $map[$key] ?? null, $replaced[$key] ?? null);
             }
-        });
+        }, index: $this->getDatabase()?->connectionIndex);
     }
 
     /**

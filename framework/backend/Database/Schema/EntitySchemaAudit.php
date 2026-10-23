@@ -7,9 +7,13 @@ namespace Hilos\Database\Schema;
 use FilesystemIterator;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseBinding;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Hilos;
@@ -118,25 +122,37 @@ final class EntitySchemaAudit
     }
 
     /**
-     * Audit each given Entity class against the live schema on `$index`.
+     * Audit each Entity in its declared physical schema, preserving the caller's connection.
      *
      * @param list<class-string<Entity>> $entityClasses Entity classes to audit
-     * @param ?int $index Connection index (default: current)
+     * @param ?int $index Restrict to this physical schema when supplied
      * @return list<EntitySchemaMismatch> Every divergence found, across all classes
      * @throws DatabaseException When an introspection query fails
+     * @throws NamedDatabaseException When a declared database or schema index cannot be resolved
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public static function audit(array $entityClasses, ?int $index = null): array
     {
-        $index = $index ?? Database::getCurrentIndex();
-
         $originalIndex = Database::getCurrentIndex();
-        Database::useConnection($index);
-
         try {
+            $identity = $index === null ? null : (new DatabaseBinding(DatabaseNames::PRIMARY, $index, $index))->getIdentity();
             $mismatches = [];
             foreach ($entityClasses as $entityClass) {
-                array_push($mismatches, ...self::auditEntity($entityClass));
+                $binding = $entityClass::getDatabase();
+                if ($identity !== null && $binding->getIdentity() !== $identity) {
+                    continue;
+                }
+
+                Database::useConnection($binding->schemaIndex);
+                try {
+                    array_push($mismatches, ...self::auditEntity($entityClass));
+                } catch (DatabaseException $failure) {
+                    throw new DatabaseException(
+                        "Cannot audit database '{$binding->name}' ({$binding->getDatabaseName()})"
+                        . ' table ' . $entityClass::_table . " on schema connection {$binding->schemaIndex}",
+                        previous: $failure,
+                    );
+                }
             }
             return $mismatches;
         } finally {
@@ -217,14 +233,17 @@ final class EntitySchemaAudit
      * @param class-string<Entity> $entityClass Entity to look the mounted class up for
      * @return class-string<Entity> The mounted subclass over the same table, else `$entityClass` itself
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When an explicit name or configured database cannot be resolved
      */
     public static function mountedClassOf(string $entityClass): string
     {
         $table = constant("{$entityClass}::" . Entity::META_TABLE);
+        $identity = self::databaseIdentityOf($entityClass);
         foreach (Hilos::$db?->getMountedEntities() ?? [] as $mountedClass) {
             if (
                 is_subclass_of($mountedClass, $entityClass)
                 && constant("{$mountedClass}::" . Entity::META_TABLE) === $table
+                && self::databaseIdentityOf($mountedClass) === $identity
             ) {
                 return $mountedClass;
             }
@@ -246,18 +265,23 @@ final class EntitySchemaAudit
      * @param ?int $index Connection index (default: current)
      * @return list<EntitySchemaMismatch> One TABLE_UNMAPPED per unclaimed table, ordered by table name
      * @throws DatabaseException When the introspection query fails
+     * @throws NamedDatabaseException When a declared database or schema index cannot be resolved
      */
     public static function auditTableCoverage(
         array $entityClasses,
         array $allowedTablesWithoutEntity = [],
         ?int $index = null,
     ): array {
+        $index ??= Database::getCurrentIndex();
+        $identity = (new DatabaseBinding(DatabaseNames::PRIMARY, $index, $index))->getIdentity();
         $claimed = array_fill_keys(
             [...FrameworkTablesWithoutEntity::tables(), ...$allowedTablesWithoutEntity],
             true,
         );
         foreach ($entityClasses as $entityClass) {
-            $claimed[constant("{$entityClass}::" . Entity::META_TABLE)] = true;
+            if ($entityClass::getDatabase()->getIdentity() === $identity) {
+                $claimed[constant("{$entityClass}::" . Entity::META_TABLE)] = true;
+            }
         }
 
         $mismatches = [];
@@ -276,6 +300,24 @@ final class EntitySchemaAudit
             );
         }
         return $mismatches;
+    }
+
+    /**
+     * @param class-string<Entity> $entityClass Entity whose physical database is compared
+     * @return string Physical identity, or the default primary marker before configuration
+     * @throws NamedDatabaseException When an explicit name or configured schema cannot be resolved
+     */
+    private static function databaseIdentityOf(string $entityClass): string
+    {
+        $binding = $entityClass::getDatabase();
+        if (
+            $binding->name === DatabaseNames::PRIMARY
+            && !in_array(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getConfiguredIndices(), true)
+        ) {
+            return DatabaseNames::PRIMARY;
+        }
+
+        return $binding->getIdentity();
     }
 
     /**

@@ -449,9 +449,14 @@ class SignalRouter
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
+     * @param ?int $connectionIndex Connection index, or null for the legacy transaction scope
      * @throws InvalidArgumentException When the signal name is empty
      */
-    public function queueDbSyncSignal(string $signalName, DbSyncSignalDataInterface $signalData): void
+    public function queueDbSyncSignal(
+        string $signalName,
+        DbSyncSignalDataInterface $signalData,
+        ?int $connectionIndex = null,
+    ): void
     {
         if (!$this->dbSyncBroadcastEnabled) {
             return;
@@ -468,7 +473,7 @@ class SignalRouter
                 signalName: new SignalName($signalName),
                 signalData: $signalData->withEmitter($this->emitter),
             );
-        });
+        }, $connectionIndex);
     }
 
     /**
@@ -516,9 +521,13 @@ class SignalRouter
      * a rollback drops it.
      *
      * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
+     * @param ?int $connectionIndex Connection index, or null for the legacy transaction scope
      * @throws InvalidArgumentException When the cleared signal cannot be named
      */
-    public function queueDbSyncClearedSignal(DbSyncClearedSignalData $signalData): void
+    public function queueDbSyncClearedSignal(
+        DbSyncClearedSignalData $signalData,
+        ?int $connectionIndex = null,
+    ): void
     {
         if (!$this->dbSyncBroadcastEnabled || $signalData->collectionKey === '') {
             return;
@@ -531,7 +540,7 @@ class SignalRouter
                 signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
                 signalData: $signalData->withEmitter($this->emitter),
             );
-        });
+        }, $connectionIndex);
     }
 
     /**

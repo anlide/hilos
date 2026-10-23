@@ -21,7 +21,7 @@ new collection, helper, table method, or page-level query.
 
 The Entity also determines which logical database the collection's rows belong
 to; mounting a collection does not create a second public context for that
-database. (not in the code yet — HIL-1614)
+database.
 
 ```php
 final class ChatDbContext extends HilosDbContext
@@ -70,24 +70,29 @@ to a collection, item, or action.
 
 `Hilos::$db` remains the public door. The database follows the
 [Entity's declaration](entity.md#the-database-an-entity-lives-in), not a connection
-chosen by a page, table, or agent. (not in the code yet — HIL-1614)
-Lookup by key, lazy loading, `queryPage()` / `loadByColumn()`, counts and bulk
-writes all read or write that Entity's database.
-(not in the code yet — HIL-1614)
-Do not add a repository, service, or context per database. HIL-1614 supplies the
-missing database routing; an agreed future API is not a reason to put SQL into
-its callers meanwhile.
+chosen by a page, table, or agent. Key lookup, lazy loading, `queryPage()` /
+`loadByColumn()`, counts, bulk writes, and source changes follow that Entity's
+binding. `Objects::getDatabase()` returns its binding for a DB-backed collection
+and `null` for a manual collection such as `initEmpty()`; a `FilteredCollection`
+delegates to its source. `getTableName()` remains the bare table name. Do not
+add a repository, service, or context per database.
 
-A transaction, its memory rollback and `afterCommit()` queue, and the SQL session
-variable `@hilos_receipt` belong to a connection. A logical database name does
-not move them to another connection or promise atomicity across connections.
-The existing [transaction rule](transactions.md) still applies, including the
-handler boundary and the release of announcements at commit. HIL-1614 must
-define and test the supported behavior of a write to a second database while
-the primary connection has an open transaction, and align these docs with that
-implementation. This rule does not choose between switching connections and
-qualified SQL. Today the ORM uses the active connection, and receipt SQL uses
-qualified journal tables on primary.
+The binding's `schemaIndex` identifies the physical schema; its
+`connectionIndex` routes ORM SQL and row memory. This applies to primary Entities
+too, regardless of the ambient raw SQL connection. A named transaction uses the
+binding's row connection, while raw SQL still defaults to the current connection
+unless its caller supplies an explicit index. A transaction, its memory rollback
+and `afterCommit()` queue, and the SQL session variable `@hilos_receipt` belong
+to a row connection. Schemas sharing that row connection share those effects;
+different row connections do not share a transaction or snapshot. Reads across
+connections are allowed, but an ORM write to another connection is refused while
+an application transaction is open, before SQL or collection membership changes.
+There is no cross-connection atomicity. Journal triggers remain limited to
+source tables in the primary physical schema; the derived change-log schema is
+on the primary server and uses row connection 0. Named remote databases do not
+get generic journal trigger installation. See the
+[transaction rule](transactions.md) for the named callback API, hook indexing,
+and rollback details.
 
 A collection written by triggers has no application writer; its readers declare
 ordinary interest and ORM writes refuse, as described in

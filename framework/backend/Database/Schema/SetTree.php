@@ -9,10 +9,14 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
 
@@ -68,7 +72,7 @@ final class SetTree
             return $setKey;
         }
 
-        $mounted = self::mountedByTable();
+        $mounted = self::mountedByTable()[self::databaseIdentityOf($entityClass)] ?? [];
         if (!isset($mounted[$parentTable])) {
             return null;
         }
@@ -119,10 +123,11 @@ final class SetTree
      * @return array<string, ?string> Mounted collection key of each table the climb reads, keyed by
      *     table name, null for a table that is not mounted; empty when the value is the top already
      * @throws InvalidMountedCollectionException When a mounted parent collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function walkOf(string $entityClass): array
     {
-        $mounted = self::mountedByTable();
+        $mounted = self::mountedByTable()[self::databaseIdentityOf($entityClass)] ?? [];
         $walk = [];
         $class = $entityClass;
         while (($column = self::setColumnOf($class)) !== null) {
@@ -191,16 +196,35 @@ final class SetTree
      *
      * The context resolves every mounted collection to its Entity before this map is built.
      *
-     * @return array<string, array{0: string, 1: class-string<Entity>}> Collection key and Entity per table name
+     * @return array<string, array<string, array{0: string, 1: class-string<Entity>}>> Mounts by database identity and table
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database cannot be resolved
      */
     private static function mountedByTable(): array
     {
         $mounted = [];
         foreach (Hilos::$db?->getMountedEntities() ?? [] as $key => $entityClass) {
-            $mounted[$entityClass::_table] = [$key, $entityClass];
+            $mounted[self::databaseIdentityOf($entityClass)][$entityClass::_table] = [$key, $entityClass];
         }
 
         return $mounted;
+    }
+
+    /**
+     * @param class-string<Entity> $entityClass Entity whose database is compared
+     * @return string Physical identity, or the default primary marker before configuration
+     * @throws NamedDatabaseException When an explicit name or configured schema cannot be resolved
+     */
+    private static function databaseIdentityOf(string $entityClass): string
+    {
+        $binding = $entityClass::getDatabase();
+        if (
+            $binding->name === DatabaseNames::PRIMARY
+            && !in_array(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getConfiguredIndices(), true)
+        ) {
+            return DatabaseNames::PRIMARY;
+        }
+
+        return $binding->getIdentity();
     }
 }

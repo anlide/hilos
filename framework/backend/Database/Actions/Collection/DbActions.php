@@ -16,6 +16,7 @@ use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
@@ -186,9 +187,9 @@ abstract class DbActions
      * Ensure write is allowed
      * Asks the write guard for the right over the whole table
      *
-     * The right is the only question asked at any of the four doors. Nothing is loaded before a
-     * write: a collection that promised the whole table reads it on its own first read, and a row
-     * a write puts into memory keeps its instance when that read comes (HIL-1144).
+     * The target connection is checked before the right at all four doors: judging a set claim
+     * may read a parent row. The collection itself is not preloaded: one that promised the whole
+     * table reads it on its own first read, preserving rows already held (HIL-1144).
      *
      * The operation has no default: this door is shared by actions that insert rows in bulk, edit
      * them in bulk and delete them, and no one value is right for all of them. A door that creates
@@ -198,9 +199,11 @@ abstract class DbActions
      * @param TruthSourceOperation $operation Operation the caller performs across the collection: Add for an insert
      *     in bulk through the whole table, Update for a bulk edit, Remove for a delete
      * @throws WriteNotAllowedException If write is not allowed
+     * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanWrite(TruthSourceOperation $operation): void
     {
+        $this->guardConnectionWrite();
         DbWriteGuard::guardCollectionWrite($this->objectCollection->getCollectionKey(), $operation);
     }
 
@@ -217,9 +220,11 @@ abstract class DbActions
      * @param TruthSourceOperation $operation Operation the caller performs on every row of the set: Update for a bulk
      *     edit, Remove for a delete
      * @throws WriteNotAllowedException If the write over that set is not allowed
+     * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanWriteSet(string $setKey, TruthSourceOperation $operation): void
     {
+        $this->guardConnectionWrite();
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         DbWriteGuard::guardSetWrite(
             $this->objectCollection->getCollectionKey(),
@@ -239,9 +244,11 @@ abstract class DbActions
      * in a set asks ensureCanCreateInSet().
      *
      * @throws CreateNotAllowedException If create is not allowed
+     * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanCreate(): void
     {
+        $this->guardConnectionWrite();
         DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), static fn(): array => []);
     }
 
@@ -258,9 +265,11 @@ abstract class DbActions
      *
      * @param string $setKey Value of the table's set column the new row will carry
      * @throws CreateNotAllowedException If creating a row in that set is not allowed
+     * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      */
     protected function ensureCanCreateInSet(string $setKey): void
     {
+        $this->guardConnectionWrite();
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), SetTree::climb($objectClass::ENTITY_CLASS, $setKey));
     }
@@ -319,5 +328,16 @@ abstract class DbActions
         $this->objectCollection->deleteAll();
 
         $this->clearCollectionCache();
+    }
+
+    /**
+     * @throws DatabaseException When the backing database is unresolved or a foreign application transaction is open
+     */
+    private function guardConnectionWrite(): void
+    {
+        $database = $this->objectCollection->getDatabase();
+        if ($database !== null) {
+            Database::assertCanWrite($database->connectionIndex);
+        }
     }
 }

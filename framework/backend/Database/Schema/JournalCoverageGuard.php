@@ -10,7 +10,6 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
-use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\UnplacedJournalColumnException;
@@ -19,7 +18,7 @@ use Hilos\Database\Exception\UnplacedJournalColumnException;
 final class JournalCoverageGuard
 {
     /**
-     * Reads the primary schema once before the daemon manager is built.
+     * Reads each mounted journaled Entity's schema once before the daemon manager is built.
      *
      * A missing optional table has no live columns to judge. The journal connection is the
      * activation switch, independent of whether the installation offers backup.
@@ -41,15 +40,22 @@ final class JournalCoverageGuard
         }
 
         $callerIndex = Database::getCurrentIndex();
+        $schemasByIndex = [];
         try {
-            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-            if (!Database::isConnected(DatabaseConnectionDefaults::PRIMARY_INDEX)) {
-                Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            foreach ($mounted as $entityClass) {
+                $index = $entityClass::getDatabase()->schemaIndex;
+                if (isset($schemasByIndex[$index])) {
+                    continue;
+                }
+                Database::useConnection($index);
+                if (!Database::isConnected($index)) {
+                    Database::connect($index);
+                }
+                $schemasByIndex[$index] = LiveSchemaReader::read($index);
             }
-            $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         } catch (DatabaseException $failure) {
             throw new UnplacedJournalColumnException([
-                'primary schema: cannot read live journaled tables: ' . $failure->getMessage(),
+                'journaled schema: cannot read live tables: ' . $failure->getMessage(),
             ]);
         } finally {
             Database::useConnection($callerIndex);
@@ -65,7 +71,7 @@ final class JournalCoverageGuard
 
         $problems = [];
         foreach ($mounted as $entityClass) {
-            $schema = $schemas[$entityClass::_table] ?? null;
+            $schema = $schemasByIndex[$entityClass::getDatabase()->schemaIndex][$entityClass::_table] ?? null;
             if ($schema === null) {
                 continue;
             }

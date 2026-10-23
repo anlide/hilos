@@ -6,9 +6,13 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\NotificationDelivery;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\UndeclaredSetOwnershipException;
 use Hilos\Hilos;
 
@@ -62,6 +66,7 @@ final class SetOwnershipGuard
      *     not declare itself a root, declares a short path that is not another column of a table in
      *     a set, or hangs its set on a chain of parents that returns to itself
      * @throws InvalidMountedCollectionException When a mounted collection resolves to no Entity
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function assertMountedSetsDeclared(): void
     {
@@ -70,16 +75,16 @@ final class SetOwnershipGuard
         $rootByTable = [];
         foreach ($entityClasses as $entityClass) {
             if (defined("{$entityClass}::" . Entity::META_TABLE)) {
-                $rootByTable[constant("{$entityClass}::" . Entity::META_TABLE)] = $entityClass;
+                $rootByTable[self::databaseIdentityOf($entityClass)][$entityClass::_table] = $entityClass;
             }
         }
 
         $problems = [];
         foreach ($entityClasses as $entityClass) {
-            array_push($problems, ...self::problemsOf($entityClass, $rootByTable));
+            array_push($problems, ...self::problemsOf($entityClass, $rootByTable[self::databaseIdentityOf($entityClass)] ?? []));
         }
         foreach ($entityClasses as $entityClass) {
-            array_push($problems, ...self::cycleOf($entityClass, $rootByTable));
+            array_push($problems, ...self::cycleOf($entityClass, $rootByTable[self::databaseIdentityOf($entityClass)] ?? []));
         }
 
         if ($problems !== []) {
@@ -247,5 +252,23 @@ final class SetOwnershipGuard
         }
 
         return [];
+    }
+
+    /**
+     * @param class-string<Entity> $entityClass Entity whose database is compared
+     * @return string Physical identity, or the default primary marker before configuration
+     * @throws NamedDatabaseException When an explicit name or configured schema cannot be resolved
+     */
+    private static function databaseIdentityOf(string $entityClass): string
+    {
+        $binding = $entityClass::getDatabase();
+        if (
+            $binding->name === DatabaseNames::PRIMARY
+            && !in_array(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getConfiguredIndices(), true)
+        ) {
+            return DatabaseNames::PRIMARY;
+        }
+
+        return $binding->getIdentity();
     }
 }

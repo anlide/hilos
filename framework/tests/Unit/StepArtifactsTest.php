@@ -225,11 +225,11 @@ final class StepArtifactsTest extends TestCase
      */
     public function testNarrowsAProfileStandToItsOwnServices(): void
     {
-        $command = standPsCommand(self::PROFILE_STAND, ['mysql-framework-test', 'hilos-cli-test']);
+        $command = standPsCommand(self::PROFILE_STAND, ['mysql-framework-test', 'mysql-framework-remote-test', 'hilos-cli-test']);
 
         $this->assertSame(
             'docker compose -f \'framework/docker/docker-compose.yml\''
-                . ' ps \'mysql-framework-test\' \'hilos-cli-test\'',
+                . ' ps \'mysql-framework-test\' \'mysql-framework-remote-test\' \'hilos-cli-test\'',
             $command,
         );
         $this->assertStringNotContainsString('--profile', $command);

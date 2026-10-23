@@ -6,12 +6,15 @@ namespace Hilos\Database;
 
 use Closure;
 use Hilos\Constants\TimeConstants;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
+use Hilos\Database\Exception\Transaction\CrossConnectionWriteException;
 use Hilos\Database\Exception\Transaction\MemoryRollbackFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
@@ -40,11 +43,17 @@ class Database
     /** @var array<int, DatabaseConnectionConfig> */
     private static array $configurations = [];
 
+    /** @var array<string, DatabaseBinding> Boot-time project registrations, private to this process like connection indices */
+    private static array $databaseBindings = [];
+
     /** @var array<int, ?mysqli> */
     private static array $connections = [];
 
     /** @var int Current active connection index */
     private static int $currentIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
+
+    /** Scoped default for this process's transaction calls; raw SQL still uses currentIndex. */
+    private static ?int $transactionIndex = null;
 
     /** @var array<int, ?ResultSet> Cached ResultSet instances for each connection */
     private static array $resultSets = [];
@@ -154,6 +163,7 @@ class Database
      * @param ?string $socket Unix socket path
      * @param int $reconnectAttempts Reconnect attempt count for sql()
      * @param int $reconnectDelay Delay between reconnects in milliseconds
+     * @throws NamedDatabaseException When reconfiguration would replace an application transaction's target or alias
      */
     public static function configure(
         int $index = DatabaseConnectionDefaults::PRIMARY_INDEX,
@@ -167,8 +177,13 @@ class Database
         int $reconnectAttempts = DatabaseConnectionPolicy::DEFAULT_RECONNECT_ATTEMPTS,
         int $reconnectDelay = DatabaseConnectionPolicy::DEFAULT_RECONNECT_DELAY_MS
     ): void {
+        self::assertCanReconfigure($index);
         if (self::$testRollbackScope !== null) {
             self::dropLink($index);
+        }
+        if ($index === DatabaseConnectionDefaults::PRIMARY_INDEX) {
+            self::$databaseBindings = [];
+            self::$transactionIndex = null;
         }
         self::$configurations[$index] = new DatabaseConnectionConfig(
             $host,
@@ -185,6 +200,59 @@ class Database
         self::$resultSets[$index] = null;
         self::$lastSql[$index] = '';
         unset(self::$closedByHand[$index]);
+    }
+
+    /**
+     * Registers boot-time routing without opening either connection.
+     *
+     * @param string $name Logical project database identifier
+     * @param int $schemaIndex Physical schema configuration index
+     * @param ?int $connectionIndex Row connection index, defaulting to the schema index
+     * @throws NamedDatabaseException When the name is invalid, reserved or registered, or the indices cannot share an endpoint
+     */
+    public static function registerDatabase(string $name, int $schemaIndex, ?int $connectionIndex = null): void
+    {
+        if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $name) !== 1) {
+            throw new NamedDatabaseException("Invalid logical database name '{$name}'");
+        }
+        if ($name === DatabaseNames::PRIMARY || $name === DatabaseNames::CHANGE_LOG || isset(self::$databaseBindings[$name])) {
+            throw new NamedDatabaseException("Logical database '{$name}' is reserved or already registered");
+        }
+        $binding = new DatabaseBinding($name, $schemaIndex, $connectionIndex ?? $schemaIndex);
+        self::validateDatabaseBinding($binding);
+        self::$databaseBindings[$name] = $binding;
+    }
+
+    /**
+     * Primary metadata is available even before configure(); physical access still requires configuration.
+     *
+     * @param string $name Logical database name
+     * @return DatabaseBinding Schema and row connection binding
+     * @throws NamedDatabaseException When the name or its current configuration cannot be resolved
+     */
+    public static function getDatabase(string $name): DatabaseBinding
+    {
+        if ($name === DatabaseNames::PRIMARY) {
+            return new DatabaseBinding($name, DatabaseConnectionDefaults::PRIMARY_INDEX, DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+        if ($name === DatabaseNames::CHANGE_LOG) {
+            $binding = new DatabaseBinding($name, ChangeLogDatabase::CONNECTION_INDEX, DatabaseConnectionDefaults::PRIMARY_INDEX);
+            self::validateDatabaseBinding($binding);
+            try {
+                if ($binding->getDatabaseName() !== ChangeLogDatabase::configuredName()) {
+                    throw new NamedDatabaseException('The change log schema must use the name derived from the primary database');
+                }
+            } catch (DatabaseException $failure) {
+                throw new NamedDatabaseException($failure->getMessage(), previous: $failure);
+            }
+
+            return $binding;
+        }
+        $binding = self::$databaseBindings[$name]
+            ?? throw new NamedDatabaseException("Logical database '{$name}' is not registered");
+        self::validateDatabaseBinding($binding);
+
+        return $binding;
     }
 
     /**
@@ -591,14 +659,19 @@ class Database
      * @param string $sql SQL with ? placeholders
      * @param array|SqlParamCollection|null $params Bound parameters
      * @param bool $tryReconnect Whether to reconnect on connection loss; never inside a transaction, whose loss ends it
+     * @param ?int $index Connection index, defaulting to current even inside a named transaction
      * @return ResultSetCollection First result set collection
      * @throws DatabaseConnectionException When not connected or reconnect fails
      * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
      * @throws DatabaseRuntimeException When execution fails, or active test-scope SQL admission refuses
      */
-    public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): ResultSetCollection
-    {
-        $index = self::$currentIndex;
+    public static function sql(
+        string $sql,
+        array|SqlParamCollection|null $params = null,
+        bool $tryReconnect = true,
+        ?int $index = null,
+    ): ResultSetCollection {
+        $index ??= self::$currentIndex;
         if (self::$testRollbackScope !== null) {
             if (self::$cleaningTestScope) {
                 throw new DatabaseRuntimeException('SQL is refused while a test rollback scope is closing');
@@ -746,7 +819,7 @@ class Database
 
         // Create ResultSetCollection with only first result set
         // Remaining result sets will be collected on-demand via nextResult()
-        $collection = ResultSetCollection::empty();
+        $collection = ResultSetCollection::empty($index);
 
         // Add cached ResultSet (reuse same instance to preserve pointer position)
         if (self::$resultSets[$index] !== null) {
@@ -761,6 +834,7 @@ class Database
      * @param array|SqlParamCollection|null $params Bound parameters
      * @param int $timeout Max execution time in seconds
      * @param bool $tryReconnect Whether to reconnect on connection loss
+     * @param ?int $index Connection index, defaulting to current even inside a named transaction
      * @throws DatabaseConnectionException When not connected or reconnect fails
      * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
      * @throws DatabaseRuntimeException When query execution fails or times out
@@ -770,8 +844,9 @@ class Database
         array|SqlParamCollection|null $params = null,
         int $timeout = DatabaseConnectionPolicy::DEFAULT_SQL_RUN_TIMEOUT_SECONDS,
         bool $tryReconnect = true,
+        ?int $index = null,
     ): void {
-        $index = self::$currentIndex;
+        $index ??= self::$currentIndex;
         $mysqli = self::openLink($index, $tryReconnect);
 
         // Set max execution time. A connection that already died is not this method's
@@ -786,7 +861,7 @@ class Database
         }
 
         try {
-            self::sql($sql, $params, $tryReconnect);
+            self::sql($sql, $params, $tryReconnect, $index);
         } finally {
             // Restore old timeout, but only while the link is still the one it was read from:
             // sql() may have reconnected, and then $mysqli is the handle close() destroyed,
@@ -805,13 +880,14 @@ class Database
     }
 
     /**
+     * @param ?int $index Connection index, defaulting to current
      * @return bool Whether another result set was loaded
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the next statement of the multi-query failed
      */
-    public static function nextResult(): bool
+    public static function nextResult(?int $index = null): bool
     {
-        $index = self::$currentIndex;
+        $index ??= self::$currentIndex;
         $mysqli = self::getConnection($index);
 
         // Move to next result set. false now means only "there are no more results": a
@@ -903,27 +979,94 @@ class Database
     }
 
     /**
+     * @param ?int $index Connection index, defaulting to current
      * @return int Affected row count from last query
      * @throws DatabaseConnectionException When not connected
      */
-    public static function affectedRows(): int
+    public static function affectedRows(?int $index = null): int
     {
-        $mysqli = self::getConnection();
+        $mysqli = self::getConnection($index);
         return mysqli_affected_rows($mysqli);
     }
 
     /**
+     * @param ?int $index Connection index, defaulting to current
      * @return int Last insert ID or 0
      * @throws DatabaseConnectionException When not connected
      */
-    public static function lastInsertId(): int
+    public static function lastInsertId(?int $index = null): int
     {
-        $mysqli = self::getConnection();
+        $mysqli = self::getConnection($index);
         return mysqli_insert_id($mysqli);
     }
 
     /**
-     * Opens the transaction of the current connection.
+     * Runs one ordinary application transaction without changing the raw SQL connection default.
+     *
+     * @param string $database Logical database name
+     * @param Closure $operation Work whose result is returned after commit
+     * @return mixed Callback result
+     * @throws NamedDatabaseException When the logical database cannot be resolved
+     * @throws NestedTransactionRefusedException When the target already has an application transaction
+     * @throws TransactionNotOpenException When the callback closed or replaced its level, or that level failed
+     * @throws DatabaseConnectionException When the commit cannot reach its connection
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When a released announcement fails outside a handler
+     * @throws Throwable Whatever the callback raises, preserved through cleanup
+     */
+    public static function transaction(string $database, Closure $operation): mixed
+    {
+        $index = self::getDatabase($database)->connectionIndex;
+        $previousIndex = self::$transactionIndex;
+        $level = null;
+        self::$transactionIndex = $index;
+        try {
+            self::transactionStart($index);
+            $level = self::$transactions[$index][array_key_last(self::$transactions[$index])];
+            $value = $operation();
+            $levels = self::$transactions[$index] ?? [];
+            if ($levels === [] || $levels[array_key_last($levels)] !== $level) {
+                throw TransactionNotOpenException::forEmptyStack($index);
+            }
+            self::transactionCommit($index);
+
+            return $value;
+        } catch (Throwable $failure) {
+            $levels = self::$transactions[$index] ?? [];
+            if ($level !== null && $levels !== [] && $levels[array_key_last($levels)] === $level) {
+                self::transactionRollbackSilent($index);
+            }
+            throw $failure;
+        } finally {
+            self::$transactionIndex = $previousIndex;
+        }
+    }
+
+    /**
+     * Refuses an ORM write before SQL when another connection owns an application transaction.
+     * Synthetic test roots are neutral; lazy and failed application levels still count.
+     *
+     * @param int $index Target row connection
+     * @throws CrossConnectionWriteException When any foreign application level remains open
+     */
+    public static function assertCanWrite(int $index): void
+    {
+        foreach (self::$transactions as $foreignIndex => $levels) {
+            if ($foreignIndex === $index) {
+                continue;
+            }
+            foreach ($levels as $level) {
+                if ($level->testScope === null) {
+                    throw new CrossConnectionWriteException(
+                        "Cannot write on connection {$index} while an application transaction remains open on connection {$foreignIndex}",
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Opens the transaction of the selected connection.
      *
      * One transaction covers the database and this process's memory: a rollback takes back the
      * rows and puts the row cache and the runtime back as they were. No SQL is sent here and no
@@ -937,11 +1080,12 @@ class Database
      * framework itself never calls. Inside a test rollback scope, the synthetic root is neutral:
      * the first application start is a savepoint, and a second plain application start still refuses.
      *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      * @throws NestedTransactionRefusedException When an application transaction is already open, or test cleanup is running
      */
-    public static function transactionStart(): void
+    public static function transactionStart(?int $index = null): void
     {
-        $index = self::$currentIndex;
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
         if (self::$cleaningTestScope) {
             throw new NestedTransactionRefusedException('Cannot start a transaction while a test rollback scope is closing');
         }
@@ -974,11 +1118,12 @@ class Database
      * Project code may call this; the framework never does, and the NESTABLE-TRANSACTION guard
      * keeps it so - a framework method joins the caller's transaction instead.
      *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      * @throws NestedTransactionRefusedException When a level of the open chain was started without the mark, or failed to commit
      */
-    public static function transactionStartNestable(): void
+    public static function transactionStartNestable(?int $index = null): void
     {
-        $index = self::$currentIndex;
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
         if (self::$cleaningTestScope) {
             throw new NestedTransactionRefusedException('Cannot start a transaction while a test rollback scope is closing');
         }
@@ -1007,7 +1152,7 @@ class Database
     }
 
     /**
-     * Commits the innermost open level of the current connection.
+     * Commits the innermost open level of the selected connection.
      *
      * A nested level releases its savepoint and hands the announcements it held and its memory
      * journal to the level under it; the outermost level commits, throws its journal away - the
@@ -1020,14 +1165,15 @@ class Database
      * caller's rollback to close - taken off here, that rollback would reach the parent level.
      * A synthetic test root is never committed here: only an application level may commit.
      *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      * @throws TransactionNotOpenException When no application transaction is open, or its innermost level already failed
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the commit or the savepoint release fails
      * @throws AnnouncementFailedException When an announcement the commit released failed and no handler is open to hold the failure
      */
-    public static function transactionCommit(): void
+    public static function transactionCommit(?int $index = null): void
     {
-        $index = self::$currentIndex;
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
         $depth = count(self::$transactions[$index] ?? []);
         if ($depth === 0 || self::$transactions[$index][$depth - 1]->testScope !== null) {
             throw TransactionNotOpenException::forEmptyStack($index);
@@ -1073,7 +1219,7 @@ class Database
     }
 
     /**
-     * Rolls back the innermost level of the current connection, if there is one.
+     * Rolls back the innermost level of the selected connection, if there is one.
      *
      * Silent with no transaction open, like ROLLBACK in MySQL: after a commit made outside any
      * handler whose released announcement failed, the caller's catch rolls back a transaction
@@ -1088,14 +1234,15 @@ class Database
      * as it is when it is a Hilos exception and wrapped when it is not. The rest are logged.
      * With only a synthetic test root it does nothing; that root belongs to its scope token.
      *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the rollback fails
      * @throws MemoryRollbackFailedException When a step putting memory back raised something outside the framework's tree
      * @throws HilosException Whatever else a step putting memory back raised
      */
-    public static function transactionRollback(): void
+    public static function transactionRollback(?int $index = null): void
     {
-        $index = self::$currentIndex;
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
         $depth = count(self::$transactions[$index] ?? []);
         if ($depth === 0 || self::$transactions[$index][$depth - 1]->testScope !== null) {
             return;
@@ -1110,11 +1257,13 @@ class Database
      * as an error and dropped. A step that failed while putting memory back has already been logged,
      * so this line can record that same failure a second time. A rollback that succeeds, and a call
      * with no transaction open, writes nothing.
+     *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      */
-    public static function transactionRollbackSilent(): void
+    public static function transactionRollbackSilent(?int $index = null): void
     {
         try {
-            self::transactionRollback();
+            self::transactionRollback($index);
         } catch (HilosException $failure) {
             Logger::error('A silent transaction rollback failed: ' . $failure->getMessage());
         }
@@ -1123,7 +1272,7 @@ class Database
     /**
      * Makes an announcement now, or once the transaction it was made under commits.
      *
-     * Held on the innermost open level of the current connection: a committed nested level
+     * Held on the innermost open level of the selected connection: a committed nested level
      * hands it to its parent, the outermost commit makes it, a rollback drops it. With no open
      * level - no transaction, no connection at all, or only a level whose commit already failed
      * and whose writes are gone - it is made at once, as every announcement was before there
@@ -1134,14 +1283,16 @@ class Database
      * {@see self::onRollback()}.
      *
      * @param Closure $announce Announcement to make
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      */
-    public static function afterCommit(Closure $announce): void
+    public static function afterCommit(Closure $announce, ?int $index = null): void
     {
         if (self::$cleaningTestScope) {
             return;
         }
-        self::ensureTestRoot(self::$currentIndex);
-        $levels = self::$transactions[self::$currentIndex] ?? [];
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
+        self::ensureTestRoot($index);
+        $levels = self::$transactions[$index] ?? [];
         for ($position = count($levels) - 1; $position >= 0; $position--) {
             if (!$levels[$position]->isFailed()) {
                 $levels[$position]->hold($announce);
@@ -1160,7 +1311,7 @@ class Database
      *
      * The pair of {@see self::afterCommit()}: that one holds what is to happen once the writes
      * stand, this one what is to be undone if they do not. Kept on the innermost open level of
-     * the current connection: a committed nested level hands it to its parent, the outermost
+     * the selected connection: a committed nested level hands it to its parent, the outermost
      * commit throws it away, a rollback - and a failed commit, a lost connection, a handler that
      * left the transaction open - runs it, the steps in the reverse order of the writes. With no
      * open level nothing is kept: outside a transaction a write stands the moment it is made.
@@ -1169,14 +1320,16 @@ class Database
      * code calls it for memory of its own that has to go back with the database.
      *
      * @param Closure $undo Step putting back what the write changed in memory
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
      */
-    public static function onRollback(Closure $undo): void
+    public static function onRollback(Closure $undo, ?int $index = null): void
     {
         if (self::$cleaningTestScope) {
             return;
         }
-        self::ensureTestRoot(self::$currentIndex);
-        $levels = self::$transactions[self::$currentIndex] ?? [];
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
+        self::ensureTestRoot($index);
+        $levels = self::$transactions[$index] ?? [];
         for ($position = count($levels) - 1; $position >= 0; $position--) {
             if (!$levels[$position]->isFailed() || $levels[$position]->testScope !== null) {
                 $levels[$position]->remember($undo);
@@ -1785,5 +1938,52 @@ class Database
             throw $card;
         }
         self::$announcementFailures[] = $card;
+    }
+
+    /**
+     * @param int $index Configuration slot about to be replaced
+     * @throws NamedDatabaseException When an application transaction still uses the target or an affected binding
+     */
+    private static function assertCanReconfigure(int $index): void
+    {
+        $affected = [$index];
+        foreach (self::$databaseBindings as $binding) {
+            if ($index === DatabaseConnectionDefaults::PRIMARY_INDEX || $binding->schemaIndex === $index) {
+                $affected[] = $binding->connectionIndex;
+            }
+        }
+        if ($index === ChangeLogDatabase::CONNECTION_INDEX) {
+            try {
+                $affected[] = self::getDatabase(DatabaseNames::CHANGE_LOG)->connectionIndex;
+            } catch (NamedDatabaseException) {
+                // An unconfigured or independent low-level slot has no journal binding to primary.
+            }
+        }
+        foreach ($affected as $target) {
+            foreach (self::$transactions[$target] ?? [] as $level) {
+                if ($level->testScope === null) {
+                    throw new NamedDatabaseException(
+                        "Cannot reconfigure connection {$index} while an application transaction uses connection {$target}",
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * @param DatabaseBinding $binding Indices to validate against current configuration
+     * @throws NamedDatabaseException When an index is missing or qualified SQL would address another server
+     */
+    private static function validateDatabaseBinding(DatabaseBinding $binding): void
+    {
+        try {
+            $schema = self::getConnectionConfig($binding->schemaIndex);
+            $connection = self::getConnectionConfig($binding->connectionIndex);
+        } catch (DatabaseException $failure) {
+            throw new NamedDatabaseException($failure->getMessage(), previous: $failure);
+        }
+        if ($schema->host !== $connection->host || $schema->port !== $connection->port || $schema->socket !== $connection->socket) {
+            throw new NamedDatabaseException("Database '{$binding->name}' cannot share a row connection with a different host, port or socket");
+        }
     }
 }

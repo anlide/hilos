@@ -9,9 +9,13 @@ use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\IncompleteFrameworkExtensionException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 
@@ -75,6 +79,7 @@ final class FrameworkExtensionGuard
     /** The declarations of the base a subclass keeps as they are: one scalar, or one strategy, each. */
     private const array KEPT_SCALARS = [
         Entity::META_TABLE,
+        Entity::META_DATABASE,
         Entity::META_PRIMARY,
         Entity::META_SET_VIA,
         Entity::META_SET_ROOT,
@@ -101,6 +106,7 @@ final class FrameworkExtensionGuard
      *     written over past the substitution point, the subclass does not keep a declaration of
      *     the base, a column carries two verdicts or an added one none, or one table is mounted by two chains
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function assertMountedExtensionsWhole(): void
     {
@@ -423,22 +429,26 @@ final class FrameworkExtensionGuard
      * @param HilosDbContext $db Context whose mounts are judged
      * @return list<string> One finding per table under two or more chains, empty when every table has one
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     private static function sharedTableProblems(HilosDbContext $db): array
     {
         $collectionsByTable = [];
+        $tables = [];
         foreach ($db->getMountedEntities() as $key => $entityClass) {
             $collectionClass = $db->mountedObjectCollection($key)::class;
-            $collectionsByTable[$entityClass::_table][] = "{$collectionClass} [{$key}]";
+            $identity = serialize([self::databaseIdentityOf($entityClass), $entityClass::_table]);
+            $collectionsByTable[$identity][] = "{$collectionClass} [{$key}]";
+            $tables[$identity] = $entityClass::_table;
         }
 
         $problems = [];
-        foreach ($collectionsByTable as $table => $collections) {
+        foreach ($collectionsByTable as $identity => $collections) {
             if (count($collections) < 2) {
                 continue;
             }
 
-            $problems[] = "table {$table} is mounted by " . implode(' and ', $collections)
+            $problems[] = "table {$tables[$identity]} is mounted by " . implode(' and ', $collections)
                 . '; one table, one mounted chain - a framework table is extended under its own key through'
                 . ' HilosDbContext::frameworkExtensions()';
         }
@@ -468,5 +478,23 @@ final class FrameworkExtensionGuard
     {
         return self::notKeptProblem($class, $constant, $frameworkClass) . ': lost or changed [' . implode(', ', $lost)
             . "]; compose it from parent::{$constant}";
+    }
+
+    /**
+     * @param class-string<Entity> $entityClass Entity whose database is compared
+     * @return string Physical identity, or the default primary marker before configuration
+     * @throws NamedDatabaseException When an explicit name or configured schema cannot be resolved
+     */
+    private static function databaseIdentityOf(string $entityClass): string
+    {
+        $binding = $entityClass::getDatabase();
+        if (
+            $binding->name === DatabaseNames::PRIMARY
+            && !in_array(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getConfiguredIndices(), true)
+        ) {
+            return DatabaseNames::PRIMARY;
+        }
+
+        return $binding->getIdentity();
     }
 }

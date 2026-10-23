@@ -76,9 +76,10 @@ final class SourceChangeBus
      * the transaction covers the runtime as it covers the database.
      *
      * @param SourceChange $change Fact describing what happened to the source
+     * @param ?int $connectionIndex Connection index, or null for the legacy transaction scope
      * @throws SourceChangeSubscriberException When a subscriber's reaction fails
      */
-    public static function publish(SourceChange $change): void
+    public static function publish(SourceChange $change, ?int $connectionIndex = null): void
     {
         $provenance = self::$provenance;
         self::deliver(self::$mirrors, $change, $provenance);
@@ -86,7 +87,7 @@ final class SourceChangeBus
         if ($reactions !== []) {
             Database::afterCommit(static function () use ($reactions, $change, $provenance): void {
                 self::deliver($reactions, $change, $provenance);
-            });
+            }, $connectionIndex);
         }
     }
 

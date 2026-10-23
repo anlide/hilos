@@ -207,15 +207,21 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
     {
         self::configureSecondConnection();
         $this->scope = Database::beginRollbackScopeForTest();
-        self::request(1562);
+        $first = self::request(1562);
         Database::useConnection(2);
         Database::transactionStart();
-        self::request(1563);
+        self::insertSecondaryRequest(1563);
         Database::transactionCommit();
+        self::assertTrue(Database::isConnected(2));
+        self::assertSame([100, 1562], self::localUsers(0));
         self::assertSame([100, 1563], self::localUsers());
         self::assertSame([100], $this->persistedUsers());
+        $this->assertNothingPublished();
         $this->scope->rollback();
         self::assertSame(2, Database::getCurrentIndex());
+        self::assertNull($first->id);
+        self::assertSame([100], self::localUsers(0));
+        self::assertSame([100], self::localUsers(2));
         self::assertSame([100], $this->persistedUsers());
         self::assertFalse(Database::hasOpenTransactions());
         $this->assertNothingPublished();
@@ -474,7 +480,12 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         Database::sql('SELECT CONNECTION_ID() AS id');
         $connectionId = (int)Database::field('id');
         Database::useConnection(2);
-        self::request(1563);
+        self::insertSecondaryRequest(1563);
+        self::assertTrue(Database::isConnected(2));
+        self::assertSame([100, 1562], self::localUsers(0));
+        self::assertSame([100, 1563], self::localUsers());
+        self::assertSame([100], $this->persistedUsers());
+        $this->assertNothingPublished();
         Database::useConnection(0);
         $this->observer->query('KILL CONNECTION ' . $connectionId);
         try {
@@ -496,6 +507,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         } catch (DatabaseRuntimeException) {
             $this->assertNothingPublished();
         }
+        self::assertSame([100, 1563], self::localUsers(2));
         try {
             $this->scope->rollback();
             self::fail('A lost root must fail cleanup');
@@ -503,6 +515,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
             self::assertSame([100], $this->persistedUsers());
         }
         self::assertSame(0, Database::getCurrentIndex());
+        self::assertSame([100], self::localUsers(2));
         self::assertFalse(Database::hasOpenTransactions());
         $this->assertNothingPublished();
     }
@@ -512,11 +525,16 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
     {
         self::configureSecondConnection();
         $this->scope = Database::beginRollbackScopeForTest();
-        self::request(1562);
+        $first = self::request(1562);
         Database::sql('SELECT CONNECTION_ID() AS id');
         $connectionId = (int)Database::field('id');
         Database::useConnection(2);
-        self::request(1563);
+        self::insertSecondaryRequest(1563);
+        self::assertTrue(Database::isConnected(2));
+        self::assertSame([100, 1562], self::localUsers(0));
+        self::assertSame([100, 1563], self::localUsers());
+        self::assertSame([100], $this->persistedUsers());
+        $this->assertNothingPublished();
         $this->observer->query('KILL CONNECTION ' . $connectionId);
         try {
             $this->scope->rollback();
@@ -525,6 +543,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
             self::assertSame([100], $this->persistedUsers());
         }
         self::assertSame(2, Database::getCurrentIndex());
+        self::assertNull($first->id);
+        self::assertSame([100], self::localUsers(2));
         self::assertFalse(Database::hasOpenTransactions());
         $this->assertNothingPublished();
     }
@@ -577,15 +597,30 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         return Hilos::$db->accountDeletions->actions->request($userId, '2027-01-01 00:00:00');
     }
 
-    /** @return list<int> Users visible to the current transactional connection, bypassing ORM caches */
-    private static function localUsers(): array
+    /**
+     * The primary-bound ORM cannot write this root; technical harness SQL still passes scope admission.
+     *
+     * @param int $userId Fixture person number in the secondary session
+     */
+    private static function insertSecondaryRequest(int $userId): void
     {
-        Database::sql('SELECT user_id FROM hilos_account_deletion ORDER BY user_id');
-        $users = [];
-        while (($row = Database::row()) !== null) {
-            $users[] = (int)$row['user_id'];
-        }
-        return $users;
+        Database::sqlRun(
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, NOW(), ?)',
+            [$userId, '2027-01-01 00:00:00'],
+            index: 2,
+        );
+    }
+
+    /**
+     * @param ?int $index Session to read, defaulting to the current connection
+     * @return list<int> Users visible to that transactional connection, bypassing ORM caches
+     */
+    private static function localUsers(?int $index = null): array
+    {
+        return array_map(
+            static fn (array $row): int => (int)$row['user_id'],
+            Database::sql('SELECT user_id FROM hilos_account_deletion ORDER BY user_id', index: $index)->rows(),
+        );
     }
 
     /** @return list<int> Persisted users on an independent autocommit reader */

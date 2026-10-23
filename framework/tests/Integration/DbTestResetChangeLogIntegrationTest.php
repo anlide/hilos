@@ -12,9 +12,11 @@ use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\ChangeLogPartitions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
+use Hilos\Database\Schema\Schema;
 use Hilos\Database\Seed;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -34,6 +36,9 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
     private string $previousAppClass;
     /** @var array<int, DatabaseConnectionConfig> Connections to restore */
     private array $previousConfigurations;
+    /** @var array<string, DatabaseBinding> Logical project registrations to restore */
+    private array $previousDatabaseBindings;
+    private ?int $previousTransactionIndex;
     /** @var list<int> Connections open on entry */
     private array $previousConnected;
     private int $previousIndex;
@@ -51,6 +56,8 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
         $this->previousEnv = Hilos::$env;
         $this->previousAppClass = Hilos::appClass();
         $this->previousConfigurations = new ReflectionProperty(Database::class, 'configurations')->getValue();
+        $this->previousDatabaseBindings = new ReflectionProperty(Database::class, 'databaseBindings')->getValue();
+        $this->previousTransactionIndex = new ReflectionProperty(Database::class, 'transactionIndex')->getValue();
         $this->previousConnected = array_values(array_filter(Database::getConfiguredIndices(), Database::isConnected(...)));
         $this->previousIndex = Database::getCurrentIndex();
         $this->previousMigration = [];
@@ -77,8 +84,11 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
         );
         foreach (Database::getConfiguredIndices() as $index) {
             Database::close($index);
+            Schema::reset($index);
         }
         new ReflectionProperty(Database::class, 'configurations')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'databaseBindings')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'transactionIndex')->setValue(null, null);
         new ReflectionProperty(Database::class, 'currentIndex')->setValue(null, DatabaseConnectionDefaults::PRIMARY_INDEX);
         Hilos::$env = new ResetChangeLogEnv($this->previousEnv, $this->primaryName);
         Migration::setMigrationListPath($this->temporaryPath);
@@ -91,6 +101,7 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
         try {
             foreach (Database::getConfiguredIndices() as $index) {
                 Database::close($index);
+                Schema::reset($index);
             }
             if (isset($this->server)) {
                 $this->server->query('DROP DATABASE IF EXISTS ' . ChangeLogDatabase::identifier($this->primaryName));
@@ -112,6 +123,8 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
             }
             new ReflectionProperty(Seed::class, 'seedPath')->setValue(null, $this->previousSeedPath);
             new ReflectionProperty(Database::class, 'configurations')->setValue(null, $this->previousConfigurations);
+            new ReflectionProperty(Database::class, 'databaseBindings')->setValue(null, $this->previousDatabaseBindings);
+            new ReflectionProperty(Database::class, 'transactionIndex')->setValue(null, $this->previousTransactionIndex);
             foreach ($this->previousConnected as $index) {
                 Database::connect($index);
             }

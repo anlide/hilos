@@ -7,8 +7,8 @@ namespace Hilos\Database\Schema;
 use Hilos\Backup\Anonymization\LiveTableSchema;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\UnplacedJournalColumnException;
 
 /** Places every column of a journaled table using its Entity and the live SQL schema. */
@@ -23,6 +23,7 @@ final class JournalColumnPolicy
      * @return array<string, JournalColumnPlacement> Placement by live column, in schema order
      * @throws UnplacedJournalColumnException When a column or declaration cannot be placed safely
      * @throws InvalidArgumentException When a placement cannot carry its reason
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function forTable(string $entityClass, LiveTableSchema $schema, PiiRegistry $pii): array
     {
@@ -33,7 +34,7 @@ final class JournalColumnPolicy
             ]);
         }
 
-        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $index = $entityClass::getDatabase()->schemaIndex;
         $personal = $pii->strategiesFor($index, $table);
         $notPersonal = $pii->notPersonalColumns($index, $table);
         $purged = $pii->isPurged($index, $table);

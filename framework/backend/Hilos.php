@@ -52,6 +52,7 @@ use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseGuarantee;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -1302,6 +1303,7 @@ abstract class Hilos implements TruthSourceOwner
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table
      *     cut by no column, or of a runtime collection cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function validateTopologyReferences(): void
     {

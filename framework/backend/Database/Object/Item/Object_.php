@@ -142,7 +142,7 @@ abstract class Object_
                 $row,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
-            ));
+            ), connectionIndex: $this->entity::getDatabase()->connectionIndex);
         });
     }
 
@@ -200,6 +200,7 @@ abstract class Object_
         $before = $isCreate ? $this->entity->toArray() : $this->entitySync->toArray();
 
         try {
+            Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
             $this->guardWrite($isCreate);
 
             if ($isCreate) {
@@ -225,7 +226,7 @@ abstract class Object_
             if (!$isCreate) {
                 $this->announceUndoneUpdate($result, $previous);
             }
-        });
+        }, index: $this->entity::getDatabase()->connectionIndex);
         $this->entitySync = clone $this->entity;
 
         // Outside the failure path on purpose: the row stands in the table by now, and an
@@ -262,13 +263,14 @@ abstract class Object_
      */
     public function delete(): void
     {
+        Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
         $stored = $this->entitySync->toArray();
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '') {
             $this->entity->delete();
             Database::onRollback(function () use ($stored): void {
                 $this->restoreSaved($stored, related: true);
-            });
+            }, index: $this->entity::getDatabase()->connectionIndex);
 
             return;
         }
@@ -284,7 +286,7 @@ abstract class Object_
         $this->entity->delete();
         Database::onRollback(function () use ($stored): void {
             $this->restoreSaved($stored, related: true);
-        });
+        }, index: $this->entity::getDatabase()->connectionIndex);
 
         if ($idString !== '') {
             $this->queueDbSyncDeleted($collectionKey, $idString, $row);
@@ -375,6 +377,7 @@ abstract class Object_
      * column held by a reader moved. The skip of empty results in ordinary ORM updates remains:
      * there an empty diff means nothing changed at all.
      *
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
@@ -395,7 +398,7 @@ abstract class Object_
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
             previous: [],
-        ));
+        ), connectionIndex: $this->entity::getDatabase()->connectionIndex);
     }
 
     /**
@@ -482,6 +485,7 @@ abstract class Object_
      * @param bool $isCreate True if this was a create (new row)
      * @param array<string, mixed> $result Full row for create, diff for update
      * @param array<string, mixed> $previous Previous values of updated columns
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
@@ -507,7 +511,7 @@ abstract class Object_
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
             previous: $previous,
-        ));
+        ), connectionIndex: $this->entity::getDatabase()->connectionIndex);
     }
 
     /**
@@ -516,6 +520,7 @@ abstract class Object_
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Full row data
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
      */
     private function queueDbSyncCreated(string $collectionKey, string $idString, array $row): void
     {
@@ -528,6 +533,7 @@ abstract class Object_
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
             ),
+            connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
     }
 
@@ -538,6 +544,7 @@ abstract class Object_
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Diff row data
      * @param array<string, mixed> $previous Previous values of changed columns
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
      */
     private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row, array $previous): void
     {
@@ -551,6 +558,7 @@ abstract class Object_
                 ExecutionContext::currentRequestId(),
                 previous: $previous,
             ),
+            connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
     }
 
@@ -560,6 +568,7 @@ abstract class Object_
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Previous row data
+     * @throws DatabaseException When the Entity's logical database cannot be resolved
      */
     private function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
     {
@@ -572,6 +581,7 @@ abstract class Object_
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
             ),
+            connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
     }
 

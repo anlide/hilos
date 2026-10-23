@@ -12,6 +12,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Hilos;
 
 /**
@@ -52,6 +53,7 @@ final class AnonymizationStartupGuard
      *     carries no PII verdict, when a declared verdict cannot be collected, or when the
      *     schema of a configured connection cannot be read
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function assertLiveSchemaClassified(): void
     {

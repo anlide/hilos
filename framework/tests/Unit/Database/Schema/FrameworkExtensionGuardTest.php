@@ -34,6 +34,10 @@ use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMemberObjects;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMembers;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMembersActions;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMembersDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\Object\Item\Object_;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,6 +59,54 @@ final class FrameworkExtensionGuardTest extends TestCase
         Hilos::$db = null;
 
         parent::tearDown();
+    }
+
+    /** @return iterable<string, array{string, string, bool}> Physical database pairs */
+    public static function databasePairs(): iterable
+    {
+        yield 'same schema on remote server' => ['remote.invalid', 'main_schema', false];
+        yield 'another schema on same server' => ['primary.invalid', 'another_schema', false];
+        yield 'same physical database with other credentials' => ['primary.invalid', 'main_schema', true];
+    }
+
+    /**
+     * @param string $host Other alias endpoint
+     * @param string $schema Other alias schema
+     * @param bool $duplicate Whether both mounts address one physical table
+     */
+    #[RunInSeparateProcess]
+    #[DataProvider('databasePairs')]
+    public function testDuplicateMountsUsePhysicalDatabaseAndTable(string $host, string $schema, bool $duplicate): void
+    {
+        Database::configure(host: 'primary.invalid', database: 'main_schema', password: 'first-secret');
+        Database::configure(index: 2, host: $host, database: $schema, password: 'second-secret');
+        Database::registerDatabase('extension_other', 2);
+        Database::useConnection(2);
+        Hilos::$db = new PhysicalMountContext();
+        Hilos::$db->configure();
+        if ($duplicate) {
+            $this->expectException(IncompleteFrameworkExtensionException::class);
+            $this->expectExceptionMessage('table identical_table is mounted by');
+        }
+        try {
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            $this->assertFalse($duplicate);
+        } finally {
+            $this->assertSame(2, Database::getCurrentIndex());
+            $this->assertFalse(Database::isConnected(0));
+            $this->assertFalse(Database::isConnected(2));
+        }
+    }
+
+    #[RunInSeparateProcess]
+    public function testAnExtensionCannotChangeItsLogicalDatabaseEvenToAPhysicalAlias(): void
+    {
+        Database::configure(database: 'main_schema');
+        Database::registerDatabase('extension_other', 0);
+        $this->mountCircle(MovedDatabaseMembers::class);
+        $this->expectException(IncompleteFrameworkExtensionException::class);
+        $this->expectExceptionMessage(MovedDatabaseEntity::class . '::_database does not keep the framework');
+        FrameworkExtensionGuard::assertMountedExtensionsWhole();
     }
 
     public function testAProcessWithoutADatabaseContextIsNotJudged(): void
@@ -922,4 +974,70 @@ final class CopiedCircleObjects extends NotedMemberObjects
 final class CopiedCircle extends NotedMembers
 {
     public const string OBJECT_COLLECTION_CLASS = CopiedCircleObjects::class;
+}
+
+final class PhysicalMountContext extends HilosDbContext
+{
+    /** Mounts independent chains with identical table names. */
+    public function configure(): void
+    {
+        $this->_objectCollections['first'] = PhysicalPrimaryRows::initEmpty();
+        $this->_objectCollections['second'] = PhysicalOtherRows::initEmpty();
+    }
+}
+
+class PhysicalPrimaryEntity extends Entity
+{
+    public const string _table = 'identical_table';
+}
+
+final class PhysicalOtherEntity extends PhysicalPrimaryEntity
+{
+    public const string _database = 'extension_other';
+}
+
+final class PhysicalPrimaryObject extends Object_
+{
+    public const string ENTITY_CLASS = PhysicalPrimaryEntity::class;
+}
+
+final class PhysicalOtherObject extends Object_
+{
+    public const string ENTITY_CLASS = PhysicalOtherEntity::class;
+}
+
+final class PhysicalPrimaryRows extends Objects
+{
+    public const string OBJECT_CLASS = PhysicalPrimaryObject::class;
+}
+
+final class PhysicalOtherRows extends Objects
+{
+    public const string OBJECT_CLASS = PhysicalOtherObject::class;
+}
+
+final class MovedDatabaseEntity extends NotedMemberEntity
+{
+    public const string _database = 'extension_other';
+}
+
+final class MovedDatabaseEntities extends NotedMemberEntities
+{
+    public const string ENTITY_CLASS = MovedDatabaseEntity::class;
+}
+
+final class MovedDatabaseObject extends NotedMemberObject
+{
+    public const string ENTITY_CLASS = MovedDatabaseEntity::class;
+}
+
+final class MovedDatabaseObjects extends NotedMemberObjects
+{
+    public const string OBJECT_CLASS = MovedDatabaseObject::class;
+    public const string ENTITY_COLLECTION_CLASS = MovedDatabaseEntities::class;
+}
+
+final class MovedDatabaseMembers extends NotedMembers
+{
+    public const string OBJECT_COLLECTION_CLASS = MovedDatabaseObjects::class;
 }

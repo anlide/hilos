@@ -85,10 +85,12 @@ class rather than the framework's:
 | `DB_ITEM_CLASS` | the view collection | the project's view item |
 | `OBJECT_COLLECTION_CLASS` | the view collection | the project's object collection |
 
-Two constants stay the framework's and are NOT re-pointed:
+These declarations stay the framework's and are NOT re-pointed:
 
 - `Entity::_table` — the table is one. A subclass that names another table has
   left the framework's table, and this rule no longer describes what it did.
+- `Entity::_database` — the framework table stays in its declared logical
+  database; the extension guard checks it together with `_table`.
 - `Objects::COLLECTION_KEY` — process-to-process synchronization is routed by
   the collection key (`DbSyncApplicator` looks the mounted collection up by it),
   so a subclass under another key is a second collection, not an extension.
@@ -137,16 +139,19 @@ public const array _pii = [...parent::_pii, self::note => AnonymizationStrategy:
 ```
 
 and the same for `_indexes`, `_foreign` and `_piiNotPersonal` where the project
-adds to them. `_table`, `_primary` and the collection key are inherited and not
-restated. A table the framework purges whole (`_pii = AnonymizationStrategy::PURGE`)
+adds to them. `_table`, `_database`, `_primary` and the collection key are
+inherited and not restated. A table the framework purges whole
+(`_pii = AnonymizationStrategy::PURGE`)
 stays purged whole: the subclass restates neither `_pii` nor `_piiNotPersonal`,
 and the purge covers its column too. A subclass that copies the base's lists by
 hand drifts from them on the base's next migration. The test chain over the
 verifier circle, `framework/tests/Unit/Database/Fixtures/Extension/`, is the
 worked example of the whole chain.
 
-`_setVia` and `_setRoot` are inherited as they are: the table's set is a fact of
-the table, not of the project's columns.
+`_database` is inherited with `_table` and `_primary`; changing it would move a
+framework table out of its declared identity. `_setVia` and `_setRoot` are
+inherited as they are: the table's set is a fact of the table, not of the
+project's columns.
 
 The project's columns arrive by a project migration, like any column of a table
 whose DDL the project carries. The personal-data verdict on every one of them is
@@ -234,8 +239,9 @@ it is not the framework's. The refusals:
   is not the one its view names, which is a mount that went around
   `frameworkExtensions()`. Asked of every framework key, extended or not;
 - the subclass did not keep the base's declaration — one rule behind both "the
-  table and the collection key stay the framework's" and "no column or type of
-  the base is lost": `_table`, `_primary`, `_setVia`, `_setRoot`,
+  table, database and collection key stay the framework's" and "no column or
+  type of the base is lost": `_table`, `_database`, `_primary`, `_setVia`,
+  `_setRoot`,
   `_setShortPath` and a purge strategy in `_pii` keep their value; `_columns`
   and `_piiNotPersonal` keep every element of the base's; `_types`, `_foreign`,
   `_indexes` and a `_pii` map keep every key of the base's with the same value
@@ -248,9 +254,13 @@ it is not the framework's. The refusals:
   `_piiNotPersonal` still lists it is caught — and every column of the
   subclass's `_columns` beyond the base's is in one of the two; a table purged
   whole covers them all and is not asked;
-- two chains are mounted over one table — asked over every collection the
-  context mounted and not only the framework's keys, so a subclass mounted
-  under a key of its own beside the framework's chain is caught here.
+- two chains are mounted over one physical table — identity is the configured
+  endpoint (host, port, socket), schema, and table, not the logical alias or
+  credentials. Aliases of the same schema cannot bypass the duplicate-mount
+  guard; a namesake table on a different database has a separate identity and
+  cannot stand in for the framework Entity, its subclass, or its set parent.
+  The check covers every collection the context mounted, not only framework
+  keys, so a second mount beside the framework's chain is caught here.
 
 The verdict on a new column is asked in EVERY project, backup or not (owner's
 decision at the HIL-1191 interview, 2026-09-27). The framework keeps its own

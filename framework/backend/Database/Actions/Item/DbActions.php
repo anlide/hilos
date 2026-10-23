@@ -10,6 +10,8 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -71,12 +73,13 @@ abstract class DbActions
      * held by this very item, and the ones that instead drop it name the operation themselves.
      * Minting a new row goes through the collection's create guard instead.
      *
-     * The right is the only question asked here. Nothing is loaded before a write: a collection
-     * that promised the whole table reads it on its own first read, and the row this write puts
-     * into memory keeps its instance when that read comes (HIL-1144).
+     * The backing connection is checked before the right, because judging a set claim may read
+     * a parent row. The collection itself is not preloaded: one that promised the whole table
+     * reads it on its own first read, preserving rows already held (HIL-1144).
      *
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws ObjectCollectionNullException If object collection is null (manual)
+     * @throws DatabaseException When the binding is unresolved or a foreign application transaction is open
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws WriteNotAllowedException If write not allowed by truth source
      * @throws CreateNotAllowedException If the row is not in the database yet and creating it is not allowed
@@ -85,6 +88,11 @@ abstract class DbActions
     {
         $objectCollection = $this->getObjectCollection()
             ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)");
+
+        $database = $objectCollection->getDatabase();
+        if ($database !== null) {
+            Database::assertCanWrite($database->connectionIndex);
+        }
 
         $collectionKey = $objectCollection->getCollectionKey();
         if ($this->object->isRelated()) {

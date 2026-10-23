@@ -139,6 +139,8 @@ abstract class FrameworkRollbackIntegrationTestCase extends RollbackIntegrationT
             Schema::reset($index);
         }
         new ReflectionProperty(Database::class, 'configurations')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'databaseBindings')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'transactionIndex')->setValue(null, null);
         new ReflectionProperty(Database::class, 'currentIndex')->setValue(null, DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 }

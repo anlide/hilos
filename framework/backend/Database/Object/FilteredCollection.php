@@ -1,9 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database\Object;
 
 use Generator;
 use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Database\DatabaseBinding;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -55,6 +59,15 @@ class FilteredCollection extends Objects
     public function getTableName(): string
     {
         return $this->sourceCollection->getTableName();
+    }
+
+    /**
+     * @return ?DatabaseBinding Source collection's binding, null for a manual source
+     * @throws DatabaseException When the source Entity's logical database cannot be resolved
+     */
+    public function getDatabase(): ?DatabaseBinding
+    {
+        return $this->sourceCollection->getDatabase();
     }
 
     /**

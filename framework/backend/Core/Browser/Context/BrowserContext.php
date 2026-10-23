@@ -136,6 +136,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 
 /**
  * Base browser-facing context.
@@ -7271,6 +7272,7 @@ abstract class BrowserContext
      *
      * @return ?PiiRegistry Verdicts of this installation, or null when they could not be collected
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     protected function viewerPiiRegistry(): ?PiiRegistry
     {

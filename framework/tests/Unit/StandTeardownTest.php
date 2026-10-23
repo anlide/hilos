@@ -227,12 +227,13 @@ final class StandTeardownTest extends TestCase
     public function testKeepsOnlyTheContainersOfTheStandsOwnServices(): void
     {
         $output = "hilos-mysql-framework-test\tmysql-framework-test\n"
+            . "hilos-mysql-framework-remote-test\tmysql-framework-remote-test\n"
             . "hilos-preview-caddy\thilos-preview-caddy\n"
             . "hilos-framework-hilos-cli-test-run-9f2\thilos-cli-test\n";
 
         $this->assertSame(
-            ['hilos-mysql-framework-test', 'hilos-framework-hilos-cli-test-run-9f2'],
-            teardownContainerNames($output, ['mysql-framework-test', 'hilos-cli-test']),
+            ['hilos-mysql-framework-test', 'hilos-mysql-framework-remote-test', 'hilos-framework-hilos-cli-test-run-9f2'],
+            teardownContainerNames($output, ['mysql-framework-test', 'mysql-framework-remote-test', 'hilos-cli-test']),
         );
     }
 

@@ -11,6 +11,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
+use Hilos\Database\Schema\Schema;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
@@ -142,8 +143,11 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     {
         foreach (Database::getConfiguredIndices() as $index) {
             Database::close($index);
+            Schema::reset($index);
         }
         new ReflectionProperty(Database::class, 'configurations')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'databaseBindings')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'transactionIndex')->setValue(null, null);
         new ReflectionProperty(Database::class, 'currentIndex')->setValue(null, DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 }

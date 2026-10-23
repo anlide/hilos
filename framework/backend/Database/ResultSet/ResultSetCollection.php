@@ -27,11 +27,17 @@ class ResultSetCollection implements Iterator, Countable
     /** @var int current iterator position */
     private int $position = 0;
 
+    /** Connection owning lazy results and counters, captured without changing the active connection. */
+    private int $connectionIndex;
+
     /**
      * Private constructor - use fromDatabase() or empty() instead.
+     *
+     * @param ?int $index Connection index, defaulting to current at creation
      */
-    private function __construct()
+    private function __construct(?int $index = null)
     {
+        $this->connectionIndex = $index ?? Database::getCurrentIndex();
     }
 
     /**
@@ -50,11 +56,12 @@ class ResultSetCollection implements Iterator, Countable
     /**
      * Create empty collection.
      *
+     * @param ?int $index Connection index, defaulting to current at creation
      * @return self Empty collection instance
      */
-    public static function empty(): self
+    public static function empty(?int $index = null): self
     {
-        return new self();
+        return new self($index);
     }
 
     /**
@@ -68,7 +75,7 @@ class ResultSetCollection implements Iterator, Countable
      */
     public static function fromDatabase(?int $index = null): self
     {
-        $instance = new self();
+        $instance = new self($index);
         $currentIndex = $index ?? Database::getCurrentIndex();
 
         // Get cached ResultSet from Database (reuse same instance to preserve pointer position)
@@ -249,7 +256,7 @@ class ResultSetCollection implements Iterator, Countable
      */
     public function affectedRows(): int
     {
-        return Database::affectedRows();
+        return Database::affectedRows($this->connectionIndex);
     }
 
     /**
@@ -390,8 +397,8 @@ class ResultSetCollection implements Iterator, Countable
     {
         // Already have first result set from sql()
         // Collect remaining result sets
-        while (Database::nextResult()) {
-            $resultSet = Database::getCachedResultSet();
+        while (Database::nextResult($this->connectionIndex)) {
+            $resultSet = Database::getCachedResultSet($this->connectionIndex);
             if ($resultSet !== null) {
                 $this->add($resultSet);
             }
@@ -418,7 +425,7 @@ class ResultSetCollection implements Iterator, Countable
 
         // If index is 0 and we have no result sets, try to get first one
         if ($index === 0 && empty($this->resultSets)) {
-            $resultSet = Database::getCachedResultSet();
+            $resultSet = Database::getCachedResultSet($this->connectionIndex);
             if ($resultSet !== null) {
                 $this->add($resultSet);
                 return $resultSet;
@@ -427,11 +434,11 @@ class ResultSetCollection implements Iterator, Countable
 
         // Collect result sets until we reach the requested index
         while (count($this->resultSets) <= $index) {
-            if (!Database::nextResult()) {
+            if (!Database::nextResult($this->connectionIndex)) {
                 // No more result sets available
                 return null;
             }
-            $resultSet = Database::getCachedResultSet();
+            $resultSet = Database::getCachedResultSet($this->connectionIndex);
             if ($resultSet !== null) {
                 $this->add($resultSet);
             } else {

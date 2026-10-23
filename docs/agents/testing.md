@@ -33,14 +33,25 @@ Composer scripts live in the repo-root `composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:framework:install-deps` | Install PHPUnit & framework dev deps inside the test container. |
-| `composer run test:framework:up` | Build the backup receiver image from the cache, start it with `mysql-framework-test`, and wait until both are healthy. |
-| `composer run test:framework:databases` | Recreate the databases of the integration pieces, `hilos-framework-test-1`…`4`, as root inside the database container. Needs `up`. |
+| `composer run test:framework:up` | Build the backup receiver image from the cache, start `mysql-framework-test`, `mysql-framework-remote-test`, and `sshd-framework-test`, and wait until they are healthy. |
+| `composer run test:framework:databases` | Recreate the integration-piece and derived change-log schemas on both MariaDB services. Needs `up`. |
 | `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
 | `composer run test:framework:phpunit` | Run both PHPUnit suites. |
 | `composer run test:framework:all` | Run the framework backend steps of the graph, tag `framework-php`: `framework-unit` beside the integration pieces, each on its own database; the stand comes up before them and goes down after a green finish. |
 | `composer run test:framework:down[-volumes]` | Stop (and optionally wipe volumes). |
+
+Framework integration uses two real MariaDB services on the stand network:
+`mysql-framework-test` and `mysql-framework-remote-test`. The remote service has
+its own host and credentials, no published host port, and the same configured
+physical database names on a separate server. `test:framework:databases`
+recreates the same piece schemas and derived `-change-log` schemas on both
+services, using the current primary piece names, then grants each service's app
+user access to them. The remote service supports real cross-server ORM routing
+tests; the built-in change log stays on the primary server's derived schema and
+uses row connection 0. The public composer target names are unchanged, and the
+framework unit runner has no database-service dependency.
 
 ---
 
@@ -282,10 +293,11 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   and keeps its own verdict when `<demo>-check` fails.
 
 **A database per piece.** Framework integration runs as four graph steps against
-one database container. `framework-up` recreates their separate databases; each
-test class belongs to one piece in full. Shared stand resources, such as the backup
-receiver or MariaDB server settings, may therefore be touched by only one class.
-The pieces need no edge or group between them.
+the primary and remote database services. `framework-up` starts both, and
+`framework:databases` recreates each piece's separate databases on both servers;
+each test class belongs to one piece in full. Shared stand resources, such as the
+backup receiver or MariaDB server settings, may therefore be touched by only one
+class. The pieces need no edge or group between them.
 
 Neither the order nor the lane count is the lever it looks like. The three steps of
 the `chat` demo share a group — one stand — so 106 + 1227 + 6 = 1339s of them can

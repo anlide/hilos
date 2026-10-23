@@ -23,6 +23,7 @@ use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\MigrationClaimHolder;
@@ -761,6 +762,7 @@ final class BackupRestorer
      * @throws RestoreFailedException When the declared registry is not a registry, or the
      *     platform's secure random source refuses to mint this run's salt
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     private function resolveAnonymizer(): RestoreAnonymizer
     {

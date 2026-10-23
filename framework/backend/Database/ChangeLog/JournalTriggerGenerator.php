@@ -12,6 +12,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\UnplacedJournalColumnException;
 use Hilos\Database\Migration;
+use Hilos\Database\Schema\EntityDatabaseStartupGuard;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\JournalColumnPolicy;
 use Hilos\Database\Schema\JournaledTables;
@@ -33,6 +34,7 @@ final class JournalTriggerGenerator
      */
     public static function plan(): array
     {
+        EntityDatabaseStartupGuard::assertMountedBindings();
         $originalIndex = Database::getCurrentIndex();
         try {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);

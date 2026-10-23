@@ -11,6 +11,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
+use Hilos\Database\Schema\EntityDatabaseStartupGuard;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\JournalCoverageGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
@@ -105,7 +106,10 @@ final class DaemonApplication
             // and until then the node's own env is the honest answer.
             LogWriteLevelApplier::applyFromEnv();
 
-            // Before anything composes, and first of the guards: a project's chain under a
+            // Resolve names and journal placement before the constant-only identity guards.
+            EntityDatabaseStartupGuard::assertMountedBindings();
+
+            // Before anything composes: a project's chain under a
             // framework key, inherited by halves, leaves the guards below judging the framework's
             // class where the project's stands - and a column the chain never carried to its
             // Object says nothing until the day somebody opens it. Constants and the mounted map
@@ -129,6 +133,10 @@ final class DaemonApplication
             // rather than served wrong rows later. The facade's constant alone, ahead of the first
             // guard that asks the live schema.
             DatabaseGuaranteeStartupGuard::assertDeclared($hilosClass);
+
+            // One startup read, before the manager and event loop; secondary tables are required
+            // at their actual schema and through the credentials used for their rows.
+            EntityDatabaseStartupGuard::assertMountedSchemasMatch();
 
             // Before anything composes: a node that promises anonymized copies of its database
             // refuses to come up over a schema it could not anonymize. Silent for a project that

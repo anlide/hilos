@@ -19,10 +19,13 @@ $script = <<<'SH'
     SH;
 
 chdir(dirname(__DIR__));
-$command = 'docker compose -f framework/docker/docker-compose.yml exec -T mysql-framework-test sh -c '
-    . escapeshellarg($script) . ' sh ' . implode(' ', array_map('escapeshellarg', $databases));
-passthru($command, $status);
-if ($status !== 0) {
-    exit($status);
+foreach (['mysql-framework-test', 'mysql-framework-remote-test'] as $service) {
+    $command = 'docker compose -f framework/docker/docker-compose.yml exec -T ' . escapeshellarg($service) . ' sh -c '
+        . escapeshellarg($script) . ' sh ' . implode(' ', array_map('escapeshellarg', $databases));
+    passthru($command, $status);
+    if ($status !== 0) {
+        exit($status);
+    }
+
+    fwrite(STDOUT, 'framework databases: ' . implode(', ', $databases) . ' — recreated on ' . $service . "\n");
 }
-fwrite(STDOUT, 'framework databases: ' . implode(', ', $databases) . " — recreated\n");

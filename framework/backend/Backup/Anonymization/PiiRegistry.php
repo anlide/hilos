@@ -12,6 +12,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Hilos;
@@ -20,8 +21,8 @@ use Hilos\Hilos;
  * PiiRegistry - what one restore run believes about every table's personal data.
  *
  * Collected rather than listed: each table carries its own verdict where it is declared -
- * an Entity in its `_pii` / `_piiNotPersonal` constants on the primary database (the only
- * connection an Entity knows), a table outside the ORM in its {@see TablesWithoutEntityProvider}
+ * an Entity in its `_pii` / `_piiNotPersonal` constants on its declared database,
+ * a table outside the ORM in its {@see TablesWithoutEntityProvider}
  * on the database under whose connection index the provider is declared, and the framework's
  * own verdict ({@see FrameworkTablesWithoutEntity}) on every database in the registry because
  * `migration` is created on every migrated database. The walk goes through the collections a
@@ -54,7 +55,7 @@ final class PiiRegistry
     /**
      * Collects the registry this installation restores under.
      *
-     * Walks the mounted collections first, placing entity verdicts on the primary database,
+     * Walks the mounted collections first, placing Entity verdicts on their schema indices,
      * in the order they were registered - framework collections, then the project's - and
      * the tables outside the ORM after them, placing provider verdicts under their declared
      * connection indices with framework verdicts covering every database. That order becomes
@@ -63,18 +64,18 @@ final class PiiRegistry
      * @return self Registry over every verdict this installation declares
      * @throws AnonymizationConfigException When a personal-data verdict is malformed
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
+     * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
      */
     public static function collect(): self
     {
         $rows = [];
         $notPersonal = [];
-        $primaryIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
-
         foreach (self::classifiedEntities() as $entityClass) {
+            $index = $entityClass::getDatabase()->schemaIndex;
             $table = $entityClass::_table;
             $row = self::normalizeRow($entityClass, $table, constant("{$entityClass}::" . Entity::META_PII));
-            $rows[$primaryIndex][$table] = $row;
-            $notPersonal[$primaryIndex][$table] = self::normalizeNotPersonal(
+            $rows[$index][$table] = $row;
+            $notPersonal[$index][$table] = self::normalizeNotPersonal(
                 $entityClass,
                 $table,
                 defined("{$entityClass}::" . Entity::META_PII_NOT_PERSONAL)

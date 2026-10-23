@@ -8,9 +8,12 @@ use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Exception\DatabaseParamsException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlIndexType;
@@ -22,6 +25,7 @@ use Hilos\Database\SqlSortDirection;
  *
  * Child classes must define:
  * - const string _table — table name
+ * - const string _database — optional logical database name, inherited as primary by default
  * - const string|array _primary — primary key column(s)
  * - const array _columns — all column names
  * - const array _types — column types mapping
@@ -55,6 +59,7 @@ abstract class Entity
 {
     // Meta property names
     public const string META_TABLE = '_table';
+    public const string META_DATABASE = '_database';
     public const string META_PRIMARY = '_primary';
     public const string META_COLUMNS = '_columns';
     public const string META_TYPES = '_types';
@@ -69,6 +74,7 @@ abstract class Entity
     public const string META_JOURNAL_SECRETS = '_journalSecrets';
     public const string META_JOURNAL_NOISE = '_journalNoise';
 
+    public const string _database = DatabaseNames::PRIMARY;
     public const bool _journaled = false;
     public const array _journalSecrets = [];
     public const array _journalNoise = [];
@@ -112,14 +118,42 @@ abstract class Entity
     }
 
     /**
+     * @return string Logical metadata name, without requiring database configuration
+     */
+    public static function getDatabaseName(): string
+    {
+        return static::_database;
+    }
+
+    /**
+     * @return DatabaseBinding Binding of this Entity's declared logical database
+     * @throws NamedDatabaseException When the declared name or its configuration cannot be resolved
+     */
+    public static function getDatabase(): DatabaseBinding
+    {
+        return Database::getDatabase(static::getDatabaseName());
+    }
+
+    /**
+     * @return string Fully quoted physical schema and table name
+     * @throws NamedDatabaseException When the database or table identifier cannot be resolved
+     */
+    public static function getSqlTableName(): string
+    {
+        return static::getDatabase()->getSqlTableName(static::_table);
+    }
+
+    /**
      * Save entity to database.
      *
      * @param list<string> $columns Specific columns to save (empty = all changed columns)
      * @return bool Always true on success
-     * @throws DatabaseException When database operation fails
+     * @throws DatabaseException When the write fails or a foreign application transaction forbids it
      */
     public function save(array $columns = []): bool
     {
+        Database::assertCanWrite(static::getDatabase()->connectionIndex);
+
         if ($this->_related) {
             $this->saveUpdate($columns);
         } else {
@@ -133,10 +167,12 @@ abstract class Entity
      *
      * @param Entity $originalEntity Entity state to compare against
      * @return bool True if saved (or no changes)
-     * @throws DatabaseException When database operation fails
+     * @throws DatabaseException When the write fails or a foreign application transaction forbids it, even for an unchanged diff
      */
     public function saveDiff(Entity $originalEntity): bool
     {
+        Database::assertCanWrite(static::getDatabase()->connectionIndex);
+
         $changedColumns = [];
         $columns = static::_columns;
 
@@ -160,7 +196,8 @@ abstract class Entity
      */
     private function saveInsert(): void
     {
-        $table = static::_table;
+        $table = static::getSqlTableName();
+        $connectionIndex = static::getDatabase()->connectionIndex;
         $columns = static::_columns;
         $types = static::_types;
 
@@ -181,14 +218,14 @@ abstract class Entity
         }
 
         $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
-        $sql = "INSERT INTO `{$table}` (" . implode(', ', $insertColumns) . ") VALUES ({$placeholders})";
+        $sql = "INSERT INTO {$table} (" . implode(', ', $insertColumns) . ") VALUES ({$placeholders})";
 
-        Database::sql($sql, $params);
+        Database::sql($sql, $params, index: $connectionIndex);
 
         // Update primary key if auto-increment
         $primaryKey = is_array(static::_primary) ? static::_primary[0] : static::_primary;
         if ($this->$primaryKey === null) {
-            $this->$primaryKey = Database::lastInsertId();
+            $this->$primaryKey = Database::lastInsertId($connectionIndex);
         }
 
         $this->_related = true;
@@ -203,7 +240,7 @@ abstract class Entity
      */
     private function saveUpdate(array $columns = []): void
     {
-        $table = static::_table;
+        $table = static::getSqlTableName();
         $allColumns = static::_columns;
         $types = static::_types;
         $primaryKeys = is_array(static::_primary) ? static::_primary : [static::_primary];
@@ -229,9 +266,9 @@ abstract class Entity
             $params->add(self::createParam($this->$primaryKey, $types[$primaryKey]));
         }
 
-        $sql = "UPDATE `{$table}` SET " . implode(', ', $updateParts) . " WHERE " . implode(' AND ', $whereParts);
+        $sql = "UPDATE {$table} SET " . implode(', ', $updateParts) . " WHERE " . implode(' AND ', $whereParts);
 
-        Database::sql($sql, $params);
+        Database::sql($sql, $params, index: static::getDatabase()->connectionIndex);
 
         $this->_originalData = $this->toArray();
     }
@@ -239,15 +276,17 @@ abstract class Entity
     /**
      * Delete entity from database.
      *
-     * @throws DatabaseException If entity is not related to a database row
+     * @throws DatabaseException When the entity is unrelated, SQL fails, or a foreign application transaction forbids the write
      */
     public function delete(): void
     {
+        Database::assertCanWrite(static::getDatabase()->connectionIndex);
+
         if (!$this->_related) {
             throw new DatabaseException("Cannot delete entity that is not related to database");
         }
 
-        $table = static::_table;
+        $table = static::getSqlTableName();
         $primaryKeys = is_array(static::_primary) ? static::_primary : [static::_primary];
         $types = static::_types;
 
@@ -259,9 +298,9 @@ abstract class Entity
             $params->add(self::createParam($this->$primaryKey, $types[$primaryKey]));
         }
 
-        $sql = "DELETE FROM `{$table}` WHERE " . implode(' AND ', $whereParts);
+        $sql = "DELETE FROM {$table} WHERE " . implode(' AND ', $whereParts);
 
-        Database::sql($sql, $params);
+        Database::sql($sql, $params, index: static::getDatabase()->connectionIndex);
 
         $this->_related = false;
         $this->_originalData = [];
@@ -446,7 +485,7 @@ abstract class Entity
         int $limit = TableConstants::NO_LIMIT,
         int $offset = 0,
     ): EntityCollection {
-        $table = static::class::_table;
+        $table = static::getSqlTableName();
 
         [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
         $orderByClause = self::buildOrderBy($orderBy);
@@ -456,9 +495,9 @@ abstract class Entity
             $limitClause = " LIMIT {$limit} OFFSET {$offset}";
         }
 
-        $sql = "SELECT * FROM `{$table}`{$whereClause}{$orderByClause}{$limitClause}";
+        $sql = "SELECT * FROM {$table}{$whereClause}{$orderByClause}{$limitClause}";
 
-        $resultSetCollection = Database::sql($sql, $params);
+        $resultSetCollection = Database::sql($sql, $params, index: static::getDatabase()->connectionIndex);
         $firstResultSet = $resultSetCollection->first();
 
         if ($firstResultSet === null) {
@@ -506,13 +545,13 @@ abstract class Entity
      */
     public static function count(array|string $filters = [], array|string $filtersParam = []): int
     {
-        $table = static::class::_table;
+        $table = static::getSqlTableName();
 
         [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
 
-        $sql = "SELECT COUNT(*) as `cnt` FROM `{$table}`{$whereClause}";
+        $sql = "SELECT COUNT(*) as `cnt` FROM {$table}{$whereClause}";
 
-        $resultSetCollection = Database::sql($sql, $params);
+        $resultSetCollection = Database::sql($sql, $params, index: static::getDatabase()->connectionIndex);
         $firstResultSet = $resultSetCollection->first();
 
         if ($firstResultSet === null) {
@@ -541,14 +580,14 @@ abstract class Entity
      */
     public static function countUpTo(int $ceiling, array|string $filters = [], array|string $filtersParam = []): int
     {
-        $table = static::class::_table;
+        $table = static::getSqlTableName();
 
         [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
 
         $capped = $ceiling + 1;
-        $sql = "SELECT COUNT(*) as `cnt` FROM (SELECT 1 FROM `{$table}`{$whereClause} LIMIT {$capped}) as `capped`";
+        $sql = "SELECT COUNT(*) as `cnt` FROM (SELECT 1 FROM {$table}{$whereClause} LIMIT {$capped}) as `capped`";
 
-        $resultSetCollection = Database::sql($sql, $params);
+        $resultSetCollection = Database::sql($sql, $params, index: static::getDatabase()->connectionIndex);
         $firstResultSet = $resultSetCollection->first();
 
         if ($firstResultSet === null) {
