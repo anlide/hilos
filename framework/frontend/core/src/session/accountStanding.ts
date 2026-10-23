@@ -99,7 +99,7 @@ export interface HilosAvatarMark {
 
 /** What the deletion strip draws while it stands. */
 export interface HilosDeletionStrip {
-  /** The LOCAL epoch-ms moment the account is erased. */
+  /** The absolute server epoch-ms moment the account is erased. */
   readonly effectiveAt: number
 }
 

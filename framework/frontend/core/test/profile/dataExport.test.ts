@@ -1,3 +1,4 @@
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
@@ -17,6 +18,7 @@ import {
   createHilosDataExportFlow,
   createHilosProfileDataExport,
   describeHilosDataExport,
+  dataExportStatusText,
   profileDataExportNode,
   createHilosDataExportStore,
   dataExportNodeSchema,
@@ -102,19 +104,19 @@ describe('data export', () => {
       dataExportNodeSchema.safeParse({ ...preparing, state: 'ready' }).success,
     ).toBe(false)
   })
-  it('follows initial state, group updates, expiry and disposal with dates converted once', () => {
+  it('follows initial state, group updates, expiry and disposal with absolute server moments', () => {
     vi.useFakeTimers()
     vi.setSystemTime(0)
     applyServerTime(100)
     const w = world()
     w.initial.set(preparing)
-    expect(w.store.state.get()?.requestedAt).toBe(900)
+    expect(w.store.state.get()?.requestedAt).toBe(1000)
     w.emit(ready)
     expect(w.store.state.get()).toEqual({
       ...ready,
-      requestedAt: 900,
-      finishedAt: 1900,
-      expiresAt: 2900,
+      requestedAt: 1000,
+      finishedAt: 2000,
+      expiresAt: 3000,
     })
     w.emit(null)
     expect(w.store.state.get()).toBeNull()
@@ -237,7 +239,7 @@ describe('data export', () => {
 })
 
 describe('profile data export', () => {
-  it('summarizes all four copy states with the local expiry date', () => {
+  it('summarizes all four copy states with the reader-zone expiry date', () => {
     expect(describeHilosDataExport(null)).toBe('No copy yet')
     expect(describeHilosDataExport(preparing)).toBe('Preparing a copy…')
     expect(describeHilosDataExport(ready)).toBe(
@@ -292,3 +294,54 @@ describe('profile data export', () => {
     expect(copy.store.state.get()).toBeNull()
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      const at = Date.parse('2026-01-01T00:30:05Z')
+      expect(dataExportStatusText({ ...preparing, requestedAt: at })).toBe(
+        'Preparing your copy… Started at 12/31/2025, 4:30:05 PM. You can close this page: the copy will wait here.',
+      )
+      expect(dataExportStatusText({ ...ready, expiresAt: at })).toBe(
+        'Your copy is ready · 456 B · available until December 31, 2025',
+      )
+      expect(describeHilosDataExport({ ...ready, expiresAt: at })).toBe(
+        'Copy ready until December 31, 2025',
+      )
+      const w = world()
+      w.initial.set({
+        ...ready,
+        requestedAt: at,
+        finishedAt: at + 1,
+        expiresAt: at + 2,
+      })
+      expect(w.store.state.get()).toEqual({
+        ...ready,
+        requestedAt: at,
+        finishedAt: at + 1,
+        expiresAt: at + 2,
+      })
+      w.emit({
+        ...ready,
+        requestedAt: at + 3,
+        finishedAt: at + 4,
+        expiresAt: at + 5,
+      })
+      expect(w.store.state.get()).toEqual({
+        ...ready,
+        requestedAt: at + 3,
+        finishedAt: at + 4,
+        expiresAt: at + 5,
+      })
+      w.dispose()
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)

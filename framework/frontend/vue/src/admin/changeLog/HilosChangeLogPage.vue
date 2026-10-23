@@ -31,6 +31,7 @@ import {
 import {
   computedSignal,
   HilosPages,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -55,6 +56,15 @@ const pageOverview = useSignal(
 )
 const overview = computed(() => readHilosChangeLogOverview(pageOverview.value))
 const empty = computed(() => changeLogFeedEmpty(overview.value))
+const timeZone = useSignal(hilosTimeZone)
+const journalNote = computed(() => {
+  void timeZone.value
+  return overview.value ? changeLogJournalNote(overview.value) : '—'
+})
+function time(moment: string): string {
+  void timeZone.value
+  return formatChangeLogTime(moment)
+}
 const tablesPath = router?.resolvePath(HilosPages.CHANGE_LOG_TABLES, {})
 const feed = createHilosChangeLogFeedTable(props.context, {
   tables: () => overview.value?.journaledTables ?? [],
@@ -108,7 +118,7 @@ onUnmounted(() => {
             }}
           </div>
           <div class="small text-body-secondary">
-            {{ overview ? changeLogJournalNote(overview) : '—' }}
+            {{ journalNote }}
           </div>
         </div>
       </div>
@@ -129,9 +139,7 @@ onUnmounted(() => {
     </div>
 
     <HilosViewportTable :controller="feed.controller">
-      <template #cell-createdAt="{ row }">{{
-        formatChangeLogTime(row.createdAt)
-      }}</template>
+      <template #cell-createdAt="{ row }">{{ time(row.createdAt) }}</template>
       <template #cell-actorLabel="{ row }">
         <span :class="{ 'text-body-secondary': row.actorDeleted }">
           <template v-if="isHiddenValue(formatChangeLogWho(row))">

@@ -35,6 +35,7 @@ import {
 import {
   computedSignal,
   HilosPages,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -82,6 +83,15 @@ const pageTable = useSignal(
 )
 const table = computed(() => readHilosChangeLogTable(pageTable.value))
 const journaled = computed(() => table.value?.journaled === true)
+const timeZone = useSignal(hilosTimeZone)
+const activity = computed(() => {
+  void timeZone.value
+  return table.value ? formatChangeLogTableActivity(table.value) : ''
+})
+function time(moment: string): string {
+  void timeZone.value
+  return formatChangeLogTime(moment)
+}
 const hasNoise = computed(
   () => table.value?.columns.some(({ mode }) => mode === 'noise') === true,
 )
@@ -184,7 +194,7 @@ onUnmounted(() => {
           {{ CHANGE_LOG_TABLES_UNTRACKED_NOTE }}
         </span>
         <div v-if="table.journaled" class="w-100 small text-body-secondary">
-          {{ formatChangeLogTableActivity(table) }}
+          {{ activity }}
         </div>
       </div>
 
@@ -390,7 +400,7 @@ onUnmounted(() => {
             :controller="history.controller"
           >
             <template #cell-createdAt="{ row }">{{
-              formatChangeLogTime(row.createdAt)
+              time(row.createdAt)
             }}</template>
             <template #cell-recordKey="{ row }">
               <HilosLink

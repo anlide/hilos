@@ -69,6 +69,7 @@ import {
   hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
+  hilosTimeZone,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   protectedModeBannerCopy,
@@ -112,6 +113,7 @@ const props = defineProps<{
 }>()
 
 const connectionState = useConnectionState(props.connection)
+const timeZone = useSignal(hilosTimeZone)
 
 // While the backend holds the node in protected mode the shell shows the
 // maintenance surface instead of the routed page, and drops everything that leads
@@ -187,11 +189,12 @@ watch(
   { immediate: true },
 )
 onUnmounted(() => clearInterval(deletionTick))
-const deletionStripText = computed(() =>
-  deletionStrip.value === null
+const deletionStripText = computed(() => {
+  void timeZone.value
+  return deletionStrip.value === null
     ? ''
-    : formatHilosDeletionStrip(deletionStrip.value, deletionNow.value),
-)
+    : formatHilosDeletionStrip(deletionStrip.value, deletionNow.value)
+})
 const { busy: keepAccountBusy, run: runKeepAccount } = useTrackedAction()
 const onKeepAccount = (): void => {
   if (keepAccountBusy.value) {
@@ -359,7 +362,10 @@ const connVisual = computed(() => CONN_VISUAL[connectionState.value])
 // the socket is up: while it is down the transport itself is the news, and a
 // stale copy is the least of what is out of date.
 const staleness = useRtStaleness(props.connection)
-const stalenessLabel = computed(() => rtStalenessLabel(staleness.value))
+const stalenessLabel = computed(() => {
+  void timeZone.value
+  return rtStalenessLabel(staleness.value)
+})
 const showsFrozenData = computed(
   () => connectionState.value === 'connected' && staleness.value.stale,
 )

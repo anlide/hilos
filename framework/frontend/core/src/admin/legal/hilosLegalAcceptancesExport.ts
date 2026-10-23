@@ -18,8 +18,8 @@ import {
 } from '../../auth/stepUp.js'
 import { ActionError } from '../../connection/actionLifecycle.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatMoment } from '../../format/moment.js'
 import { type HilosLegalContext } from '../../legal/legalAgreements.js'
-import { toLocal } from '../../session/serverClock.js'
 import {
   createSignal,
   subscribeSignal,
@@ -70,10 +70,10 @@ export interface HilosLegalAcceptancesExportFilters {
 }
 
 /**
- * The status line of an export, in the reader's words and clock; empty when
+ * The status line of an export, in the reader's words and time zone; empty when
  * there is none.
  *
- * @param node The export with its moments already on the reader's clock, or null.
+ * @param node The export with absolute server epoch-ms moments, or null.
  */
 export function hilosLegalAcceptancesExportStatus(
   node: HilosLegalAcceptancesExportNode | null,
@@ -82,13 +82,36 @@ export function hilosLegalAcceptancesExportStatus(
     case 'preparing':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.preparing.replace(
         '{time}',
-        new Date(node.requestedAt).toLocaleString(),
+        formatMoment(node.requestedAt, {
+          kind: 'dateTime',
+          format: {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+          },
+        }) ?? '—',
       )
     case 'ready':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.ready
         .replace('{records}', node.records.toLocaleString())
         .replace('{size}', formatBytes(node.sizeBytes))
-        .replace('{time}', new Date(node.expiresAt).toLocaleString())
+        .replace(
+          '{time}',
+          formatMoment(node.expiresAt, {
+            kind: 'dateTime',
+            format: {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+            },
+          }) ?? '—',
+        )
     case 'failed':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.failed
     default:
@@ -143,7 +166,7 @@ export function hilosLegalAcceptancesExportFilterLine(
 /** The administrator's export the server says exists, and its mount lifecycle. */
 export interface HilosLegalAcceptancesExportStore {
   /**
-   * The export with its moments on the reader's clock, or null when there is
+   * The export with absolute server epoch-ms moments, or null when there is
    * none — and for a viewer of the admin view mode, who is not sent one.
    */
   readonly state: ReadonlySignal<HilosLegalAcceptancesExportNode | null>
@@ -164,16 +187,7 @@ function readNode(raw: unknown): HilosLegalAcceptancesExportNode | null {
   if (!parsed.success) {
     return null
   }
-  const node = parsed.data
-
-  return node.state === 'preparing'
-    ? { ...node, requestedAt: toLocal(node.requestedAt) }
-    : {
-        ...node,
-        requestedAt: toLocal(node.requestedAt),
-        finishedAt: toLocal(node.finishedAt),
-        expiresAt: toLocal(node.expiresAt),
-      }
+  return parsed.data
 }
 
 /**

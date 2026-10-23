@@ -37,6 +37,7 @@ import {
   createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
+  hilosTimeZone,
   HILOS_STEP_UP_COPY,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -58,6 +59,7 @@ import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
+import { hilosSignal } from '../hilosSignal.js'
 
 /** One day in ms — the unit of the removal wait. */
 const DAY_MS = 86_400_000
@@ -826,11 +828,13 @@ export class HilosProfileSecurityPage {
   protected readonly resetOpen = signal(false)
   protected readonly resetAction = createHilosTrackedAction()
   protected readonly resetCancelAction = createHilosTrackedAction()
-  protected readonly resetDate = computed(() =>
-    formatCalendarDate(
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly resetDate = computed(() => {
+    this.timeZone()
+    return formatCalendarDate(
       Date.now() + (this.state()?.resetWait.days ?? 0) * DAY_MS,
-    ),
-  )
+    )
+  })
 
   constructor() {
     // Take the section once the context input is bound; let it go on destroy.
@@ -892,9 +896,10 @@ export class HilosProfileSecurityPage {
   /**
    * A moment as the day it falls on.
    *
-   * @param moment The LOCAL epoch-ms moment.
+   * @param moment The absolute epoch-ms moment.
    */
   protected day(moment: number): string {
+    this.timeZone()
     return formatCalendarDate(moment)
   }
 

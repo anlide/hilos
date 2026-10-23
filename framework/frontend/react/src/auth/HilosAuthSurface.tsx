@@ -80,6 +80,7 @@ import {
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
+  hilosTimeZone,
   type AuthFlowScreen,
   type CodeSendProgress,
   type HilosAuthContext,
@@ -448,6 +449,7 @@ export interface HilosAuthSurfaceProps {
  * @param props The project's auth context.
  */
 export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
+  useSignal(hilosTimeZone)
   // The framework wire, bound to that context: the transport seams the machine
   // delegates, plus this surface's own dispatches and the OAuth link it peeks
   // at. Everything born from the context is created ONCE — `useSignal`

@@ -33,7 +33,12 @@ import {
   type HilosAnalyticsBrowserSession,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { computedSignal, HilosPages, type Hideable } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosTimeZone,
+  type Hideable,
+} from '@hilos/core/base'
 
 import {
   HilosAdminPage,
@@ -137,7 +142,11 @@ export class HilosAnalyticsBrowserSessionPage {
   protected readonly copy = ANALYTICS_BROWSER_SESSION_COPY
   protected readonly noValue = ANALYTICS_NO_VALUE
   protected readonly lastSignedIn = formatAnalyticsLastSignedIn
-  protected readonly time = formatAnalyticsTime
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly time = (moment: number): string => {
+    this.timeZone()
+    return formatAnalyticsTime(moment)
+  }
   protected readonly keys = {
     createdTs: ANALYTICS_ACTION_CREATED_TS_FIELD,
     pageName: ANALYTICS_ACTION_PAGE_NAME_FIELD,

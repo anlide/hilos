@@ -1,11 +1,17 @@
 import { mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as core from '@hilos/core/base'
 import {
+  bindTimeZoneState,
   createSignal,
   HilosPages,
+  hilosTimeZone,
+  type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
+  type ProjectSignal,
+  type ReadonlySignal,
 } from '@hilos/core/base'
 import {
   type HilosChangeLogEntry,
@@ -75,7 +81,32 @@ function dialog(
 const mounted: ReturnType<typeof mount>[] = []
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  vi.restoreAllMocks()
 })
+
+/** The real zone binding consumes these connection events, as at boot. */
+function zoneConnection() {
+  const listeners = new Map<string, Set<(signal: ProjectSignal) => void>>()
+  return {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: ProjectSignal) => void) {
+      const group = listeners.get(event) ?? new Set()
+      listeners.set(event, group)
+      group.add(listener)
+      return () => group.delete(listener)
+    },
+    receive(timeZone: string | null) {
+      for (const listener of listeners.get('projectSignal') ?? []) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 3, timeZone } } },
+        } as ProjectSignal)
+      }
+    },
+    listenerCount: () =>
+      [...listeners.values()].reduce((count, group) => count + group.size, 0),
+  }
+}
 
 /** A navigator whose route map gives the Tracked table page an address only when built. */
 function router(tableBuilt: boolean): HilosRouter {
@@ -131,6 +162,11 @@ async function render(
   mounted.push(wrapper)
   await nextTick()
   return {
+    wrapper,
+    unmount() {
+      mounted.splice(mounted.indexOf(wrapper), 1)
+      wrapper.unmount()
+    },
     detail: document.querySelector(
       '[data-id="hilos-change-log-detail"]',
     ) as HTMLElement,
@@ -139,6 +175,114 @@ async function render(
 }
 
 describe('HilosChangeLogReceiptModal', () => {
+  it.each(['receipt', 'entry'] as const)(
+    'updates an open %s from UTC to Kyiv to Automatic without replacing its snapshot or dialog',
+    async (kind) => {
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockReturnValue({
+        ...resolved,
+        timeZone: 'America/New_York',
+      })
+      const connection = zoneConnection()
+      const release = bindTimeZoneState(
+        connection as unknown as HilosConnection,
+      )
+      connection.receive('UTC')
+
+      // Observe the real mirror seam, including its disposer; state and formatting
+      // still use their production implementations.
+      const subscribe = core.subscribeSignal
+      const callbacks = vi.fn()
+      const releases = vi.fn()
+      const subscriptions = vi
+        .spyOn(core, 'subscribeSignal')
+        .mockImplementation(
+          <T>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+            const stop = subscribe(source, (value) => {
+              callbacks(value)
+              listener(value)
+            })
+            return () => {
+              releases()
+              stop()
+            }
+          },
+        )
+      const snapshot = markRaw(
+        kind === 'receipt'
+          ? dialog()
+          : { ...dialog(), kind, entryId: 11, header: null },
+      )
+      const expected = (timeZone: string) =>
+        new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'medium',
+          timeZone,
+        }).format(new Date('2026-10-09T10:11:12.123Z'))
+      const first = await render(snapshot)
+      const element = document.querySelector('[role="dialog"]')
+      const subscriptionCount = subscriptions.mock.calls.length
+      const when = first.detail.querySelector('dd')!
+      try {
+        expect(when.textContent?.trim()).toBe(expected('UTC'))
+        expect(first.wrapper.props('dialog')).toBe(snapshot)
+        connection.receive('Europe/Kyiv')
+        await nextTick()
+        expect(when.textContent?.trim()).toBe(expected('Europe/Kyiv'))
+        expect(document.querySelector('[role="dialog"]')).toBe(element)
+        expect(first.wrapper.props('dialog')).toBe(snapshot)
+        expect(first.reader.dialog.get()).toBe(snapshot)
+        expect(callbacks).toHaveBeenCalledTimes(1)
+
+        connection.receive('Europe/Kyiv')
+        await nextTick()
+        expect(callbacks).toHaveBeenCalledTimes(1)
+        connection.receive(null)
+        await nextTick()
+        expect(when.textContent?.trim()).toBe(expected('America/New_York'))
+        expect(document.querySelector('[role="dialog"]')).toBe(element)
+        expect(first.wrapper.props('dialog')).toBe(snapshot)
+        expect(callbacks).toHaveBeenCalledTimes(2)
+        expect(first.reader.openReceipt).not.toHaveBeenCalled()
+        expect(first.reader.openEntry).not.toHaveBeenCalled()
+        first.unmount()
+        expect(releases).toHaveBeenCalledTimes(subscriptionCount)
+        connection.receive('UTC')
+        expect(callbacks).toHaveBeenCalledTimes(2)
+
+        const rebound = zoneConnection()
+        const stop = bindTimeZoneState(rebound as unknown as HilosConnection)
+        try {
+          expect(connection.listenerCount()).toBe(0)
+          expect(rebound.listenerCount()).toBe(2)
+          release()
+          connection.receive('Europe/Kyiv')
+          expect(hilosTimeZone.get()).toBe('America/New_York')
+          const second = await render(snapshot)
+          rebound.receive('UTC')
+          await nextTick()
+          expect(second.detail.querySelector('dd')?.textContent?.trim()).toBe(
+            expected('UTC'),
+          )
+          expect(callbacks).toHaveBeenCalledTimes(3)
+          expect(subscriptions).toHaveBeenCalledTimes(subscriptionCount * 2)
+          second.unmount()
+          expect(releases).toHaveBeenCalledTimes(subscriptionCount * 2)
+          rebound.receive('Europe/Kyiv')
+          expect(callbacks).toHaveBeenCalledTimes(3)
+        } finally {
+          stop()
+          expect(rebound.listenerCount()).toBe(0)
+        }
+      } finally {
+        release()
+      }
+    },
+  )
+
   it('shows complete escaped long values and distinct absent, NULL, and empty sides', async () => {
     const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)
     const newText = 'new <img src=x onerror=bad()>\n' + 'y'.repeat(6000)

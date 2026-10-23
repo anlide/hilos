@@ -34,6 +34,7 @@ import {
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
   TABLE_FROZEN_COPY,
+  hilosTimeZone,
   hilosTableFrozenLabel,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
@@ -54,6 +55,7 @@ import type {
 
 import { HilosModal } from './HilosModal.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
+import { hilosSignal } from './hilosSignal.js'
 import type {
   BulkUntouchedContext,
   ViewportTableProgressContext,
@@ -389,10 +391,13 @@ export class HilosTableLive<R> {
     )
   })
 
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+
   // The moment the table froze, on the reader's own clock.
-  protected readonly frozenLabel = computed(() =>
-    hilosTableFrozenLabel(this.frozenSince()),
-  )
+  protected readonly frozenLabel = computed(() => {
+    this.timeZone()
+    return hilosTableFrozenLabel(this.frozenSince())
+  })
 
   // The numeral of each message is chosen here rather than in the template: '1 rows'
   // would stand in the most visible place of the screen.

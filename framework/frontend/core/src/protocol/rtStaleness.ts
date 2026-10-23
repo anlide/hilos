@@ -5,7 +5,7 @@
 // when; the shell turns that into one mark beside the connection indicator.
 import { z } from 'zod'
 
-import { toLocal } from '../session/serverClock.js'
+import { formatMoment } from '../format/moment.js'
 
 /**
  * The frozen-replica block as it rides the wire (PHP `RtStalenessSignalData`).
@@ -52,7 +52,7 @@ export const RT_STALENESS_FRESH: RtStalenessStatus = {
  * so the three view packages cannot drift into three different sentences.
  *
  * `{time}` is replaced with the moment in the reader's own timezone. The wire
- * carries a server moment, so the substitution goes through `serverClock`.
+ * carries an absolute server moment, displayed in the effective reader's zone.
  */
 export const RT_STALENESS_COPY = {
   frozen:
@@ -63,9 +63,8 @@ export const RT_STALENESS_COPY = {
  * The sentence the mark shows, with the moment in the reader's own timezone.
  *
  * Here rather than in each view package so the three shells cannot drift into
- * three different sentences, and so the one conversion this needs happens once:
- * the wire carries a server moment, and `serverClock` is where server time meets
- * the scale a browser can format.
+ * three different sentences. The private formatter keeps the wire's absolute
+ * server moment and displays it in the effective reader's zone.
  *
  * @param status The connection's frozen-replica state.
  * @returns The sentence, or undefined when nothing is frozen and there is none.
@@ -80,12 +79,18 @@ export function rtStalenessLabel(
   // A frozen state with no moment should not happen — the backend sends the two
   // together — but a mark with a broken sentence in it is worse than one without
   // a time, so the placeholder falls back to the words rather than to `NaN`.
-  const time =
-    status.since === undefined
-      ? 'an unknown time'
-      : new Date(toLocal(status.since)).toLocaleTimeString()
+  return RT_STALENESS_COPY.frozen.replace('{time}', formatSince(status.since))
+}
 
-  return RT_STALENESS_COPY.frozen.replace('{time}', time)
+/**
+ * The oldest lost-source moment, shared by the stale-data wording.
+ *
+ * @param since Absolute server epoch milliseconds, when known.
+ */
+function formatSince(since: number | undefined): string {
+  return since === undefined
+    ? 'an unknown time'
+    : (formatMoment(since, { kind: 'time' }) ?? 'an unknown time')
 }
 
 /**

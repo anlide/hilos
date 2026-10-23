@@ -10,6 +10,7 @@ import {
 } from '@hilos/core/admin/legal'
 import {
   hilosLegalDocumentLabel,
+  hilosTimeZone,
   HILOS_STEP_UP_COPY,
   HilosPages,
   resolveHilosPath,
@@ -31,6 +32,7 @@ const exporter = createHilosLegalAcceptancesExport(
   props.context,
   table.controller,
 )
+const timeZone = useSignal(hilosTimeZone)
 const node = useSignal(exporter.state)
 const busy = useSignal(exporter.busy)
 const refusal = useSignal(exporter.refusal)
@@ -42,11 +44,17 @@ const open = computed({
     if (!value) exporter.close()
   },
 })
-const status = computed(() => hilosLegalAcceptancesExportStatus(node.value))
+const status = computed(() => {
+  void timeZone.value
+  return hilosLegalAcceptancesExportStatus(node.value)
+})
 const filterLine = computed(() =>
   node.value === null ? '' : hilosLegalAcceptancesExportFilterLine(node.value),
 )
-const statusRoom = hilosLegalAcceptancesExportStatusRoom()
+const statusRoom = computed(() => {
+  void timeZone.value
+  return hilosLegalAcceptancesExportStatusRoom()
+})
 onMounted(() => {
   table.start()
   exporter.start()

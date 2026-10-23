@@ -1,3 +1,4 @@
+import { applyServerTime } from '../../src/session/serverClock.js'
 // Covers the identifier-first auth flow machine (HIL-413): identifier
 // classification, the icon visibility matrix (the CHECK examples), the
 // debounced echo-guarded detection with NO degraded state, the intent
@@ -4632,3 +4633,54 @@ describe('current registration consent (HIL-499)', () => {
     },
   )
 })
+
+it.each([-300_000, 300_000])(
+  'keeps a submit removal moment in UTC with drift %i',
+  async (drift) => {
+    applyServerTime(Date.now() + drift)
+    const at = Date.parse('2026-01-01T00:30:05Z')
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: true,
+        next: { step: 'second_factor' },
+        secondFactor: { trustDeviceDays: 30, resetEffectiveAt: at },
+      }),
+    })
+    try {
+      await typeAndDetect(flow, 'a@b.com')
+      flow.setField('password', 'secret-1')
+      await flow.submit()
+      expect(flow.secondFactor.get()?.resetEffectiveAt).toBe(1_767_227_405_000)
+    } finally {
+      applyServerTime(Date.now())
+    }
+  },
+)
+
+it.each([-300_000, 300_000])(
+  'resumes a second-factor step with its absolute removal moment at drift %i',
+  (drift) => {
+    applyServerTime(Date.now() + drift)
+    try {
+      const flow = setup()
+      flow.resume({
+        identifier: null,
+        kind: null,
+        intent: 'login',
+        step: 'second_factor',
+        channel: null,
+        expiresAt: null,
+        code: null,
+        message: null,
+        secondFactor: {
+          trustDeviceDays: 30,
+          resetEffectiveAt: 1_767_227_405_000,
+        },
+        acceptedRevisions: null,
+      })
+      expect(flow.secondFactor.get()?.resetEffectiveAt).toBe(1_767_227_405_000)
+    } finally {
+      applyServerTime(Date.now())
+    }
+  },
+)

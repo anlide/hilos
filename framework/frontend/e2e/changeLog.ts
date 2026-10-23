@@ -1,4 +1,10 @@
 import type { Expect, Locator, Page } from '@playwright/test'
+import {
+  HILOS_CHANGE_LOG_RECEIPT_READ,
+  changeLogReceiptReadReplySchema,
+} from '../core/src/admin/changeLog/index.js'
+import { watchClientDocument } from './lazyBundles.js'
+import type { SocketFrame } from './socket.js'
 import { shownByTestId, tableRowKeyByText } from './table.js'
 
 /**
@@ -91,6 +97,103 @@ export async function expectChangeLogReceiptOpen(
   const modal: Locator = page.getByTestId('modal')
   await expect(modal).toBeVisible()
   await expect(modal).toHaveAccessibleName(`Receipt #${receiptId}`)
+}
+
+/** Read the one completed real receipt reply; a second read fails this proof. */
+export function expectChangeLogReceiptMoment(
+  expect: Expect,
+  frames: readonly SocketFrame[],
+  receiptId: string,
+): string {
+  const moments: string[] = []
+  for (const frame of frames) {
+    const wire = frame.wire
+    if (
+      wire === null ||
+      typeof wire !== 'object' ||
+      !('type' in wire) ||
+      wire.type !== 'action_success' ||
+      !('data' in wire) ||
+      wire.data === null ||
+      typeof wire.data !== 'object' ||
+      !('action' in wire.data) ||
+      wire.data.action !== HILOS_CHANGE_LOG_RECEIPT_READ
+    ) {
+      continue
+    }
+    expect(frame.failure).toBeUndefined()
+    const reply = changeLogReceiptReadReplySchema.parse(
+      'reply' in wire.data ? wire.data.reply : undefined,
+    )
+    expect(String(reply.receipt.receiptId)).toBe(receiptId)
+    moments.push(reply.receipt.createdAt)
+  }
+  expect(moments).toHaveLength(1)
+  const moment = moments[0]!
+  expect(moment).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/)
+  expect(Number.isFinite(Date.parse(moment))).toBe(true)
+  return moment
+}
+
+/** Check both rendered times with an independent, explicitly zoned Intl oracle. */
+export async function expectChangeLogTimes(
+  expect: Expect,
+  page: Page,
+  receiptId: string,
+  createdAt: string,
+  timeZone: string,
+): Promise<string> {
+  const expected = await page.evaluate(
+    ({ createdAt, timeZone }) =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+        timeZone,
+      }).format(new Date(createdAt)),
+    { createdAt, timeZone },
+  )
+  await expectChangeLogReceiptOpen(expect, page, receiptId)
+  await expect(page.getByTestId('hilos-change-log-receipt-time')).toHaveText(
+    expected,
+  )
+  await expect(
+    shownByTestId(page, `hilos-table-row-receipt:${receiptId}`),
+  ).toContainText(expected)
+  return expected
+}
+
+/** Bookmark the open receipt and visible feed row before a session restate. */
+export async function watchChangeLogDisplay(
+  expect: Expect,
+  page: Page,
+  receiptId: string,
+) {
+  const documentWatch = await watchClientDocument(page)
+  const modal = await page.getByTestId('modal').elementHandle()
+  const row = await shownByTestId(
+    page,
+    `hilos-table-row-receipt:${receiptId}`,
+  ).elementHandle()
+  if (modal === null || row === null) {
+    throw new Error('The receipt and feed must be open before bookmarking.')
+  }
+  return {
+    async unchanged(): Promise<void> {
+      await documentWatch.unchanged()
+      expect(
+        await modal.evaluate(
+          (original) =>
+            original === document.querySelector('[data-id="modal"]'),
+        ),
+      ).toBe(true)
+      expect(await row.evaluate((original) => original.isConnected)).toBe(true)
+    },
+    async dispose(): Promise<void> {
+      await modal.dispose()
+      await row.dispose()
+      await documentWatch.dispose()
+    },
+  }
 }
 
 /** Check the receipt's writer and retain its complete attribution header. */

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { applyServerTime } from '../../../src/session/serverClock.js'
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   CHANGE_LOG_OPEN_TABLES_LABEL,
@@ -79,3 +81,25 @@ describe('change-log overview', () => {
     expect(changeLogFeedEmpty(null)).toEqual(recorded)
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      expect(
+        changeLogJournalNote({ ...overview, oldestAt: '2026-01-01T00:30:05Z' }),
+      ).toBe('2.0 KB · since December 2025')
+      expect(changeLogJournalNote({ ...overview, oldestAt: 'invalid' })).toBe(
+        '2.0 KB · since Invalid Date',
+      )
+      expect(formatChangeLogEntries(1234)).toBe('1.2K')
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)

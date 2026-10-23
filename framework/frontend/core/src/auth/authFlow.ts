@@ -366,8 +366,8 @@ export interface SecondFactorStepData {
   /**
    * The moment a removal of the factor that is already asked for takes effect,
    * or `null` when none is. The step says so instead of offering to ask again.
-   * A SERVER moment on the wire and in {@link AuthFlowSubmitOutcome}, a LOCAL
-   * one in {@link AuthFlow.secondFactor}, like every other moment here.
+   * An absolute server epoch-ms moment on the wire, in
+   * {@link AuthFlowSubmitOutcome} and in {@link AuthFlow.secondFactor}.
    */
   readonly resetEffectiveAt: number | null
   /** The secret of an enrolment just started; absent everywhere else. */
@@ -1075,17 +1075,12 @@ function isSecondFactorStep(step: AuthStep): boolean {
 }
 
 /**
- * The step data as the machine keeps it — with its moment put on this
- * browser's scale, as every server moment is on the way in.
+ * Copy the step data for the machine, preserving its absolute server moment.
  *
  * @param data The step data off the wire.
  */
-function localSecondFactor(data: SecondFactorStepData): SecondFactorStepData {
-  return {
-    ...data,
-    resetEffectiveAt:
-      data.resetEffectiveAt === null ? null : toLocal(data.resetEffectiveAt),
-  }
+function copySecondFactor(data: SecondFactorStepData): SecondFactorStepData {
+  return { ...data }
 }
 
 /** The detection signal before or without a lookup. */
@@ -2164,7 +2159,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * Keep what a second-factor screen was answered, beside the policy frame that
    * stood at that moment.
    *
-   * @param data The step data, its moment already local, or `null` to drop it.
+   * @param data The step data with its absolute server moment, or `null` to drop it.
    */
   function holdSecondFactor(data: SecondFactorStepData | null): void {
     heldSecondFactor.set(
@@ -2307,7 +2302,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // it draws land in one paint. An answer that leaves the second factor's
     // screens carries none, and the move below drops what was held.
     if (outcome.secondFactor !== undefined) {
-      holdSecondFactor(localSecondFactor(outcome.secondFactor))
+      holdSecondFactor(copySecondFactor(outcome.secondFactor))
     }
     if (outcome.next !== undefined) {
       mergeNext(outcome.next)

@@ -31,7 +31,7 @@ import {
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
 
 import {
   HilosAdminPage,
@@ -136,7 +136,11 @@ export class HilosAnalyticsPersonPage {
   protected readonly page = HilosPages.ANALYTICS_PERSON
   protected readonly noValue = ANALYTICS_NO_VALUE
   protected readonly sessionNumber = formatAnalyticsSessionNumber
-  protected readonly time = formatAnalyticsTime
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly time = (moment: number): string => {
+    this.timeZone()
+    return formatAnalyticsTime(moment)
+  }
   protected readonly keys = {
     firstSeenTs: ANALYTICS_BROWSER_SESSION_FIRST_SEEN_TS_FIELD,
     lastSeenTs: ANALYTICS_BROWSER_SESSION_LAST_SEEN_TS_FIELD,

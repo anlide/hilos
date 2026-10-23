@@ -1,3 +1,4 @@
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -220,7 +221,7 @@ afterEach(() => {
 })
 
 describe('createHilosUserDetail', () => {
-  it('follows live rights, block and deletion changes on the local clock', () => {
+  it('follows live rights and block changes while preserving the UTC deletion moment', () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)
     applyServerTime(120_000)
@@ -249,7 +250,7 @@ describe('createHilosUserDetail', () => {
     expect(detail.get()).toMatchObject({
       admin: false,
       block: true,
-      deletionEffectiveAt: 300_000,
+      deletionEffectiveAt: 320_000,
     })
     page.tables.upsert('userDetail', 1, {
       users: ref,
@@ -1064,7 +1065,7 @@ describe('createHilosUserStanding (HIL-945)', () => {
     expect(card.standing.get()).toEqual(
       readStanding({
         shown: 'deletion_scheduled',
-        deletionEffectiveAt: DAY_MS,
+        deletionEffectiveAt: 20_000 + DAY_MS,
       }),
     )
 
@@ -2127,3 +2128,52 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     }
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_700_000_000_000)
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      const at = Date.parse('2026-01-01T00:30:05Z')
+      const { scopes, users } = userStore()
+      const ref = { type: 'user', id: 1 }
+      scopes.page()!.entities.upsert(ref, {
+        id: 1,
+        name: 'Ada',
+        admin: false,
+        block: false,
+      })
+      scopes.page()!.tables.upsert('userDetail', 1, {
+        users: ref,
+        accountDeletions: { userId: 1, deletionEffectiveAt: at },
+      })
+      const detail = createHilosUserDetail({
+        scopes,
+        users,
+      } as HilosUsersContext).get()!
+      expect(detail.deletionEffectiveAt).toBe(1_767_227_405_000)
+      const sections = hilosUserLifecycleSections(
+        detail,
+        99,
+        30,
+        at - 2 * DAY_MS - drift,
+        null,
+      )
+      expect(
+        sections.find((section) => section.key === 'access')?.rows[1]?.hint,
+      ).toContain('December 31, 2025')
+      expect(
+        sections.find((section) => section.key === 'access')?.rows[1]?.hint,
+      ).toContain('2 days left')
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
+  },
+)

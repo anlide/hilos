@@ -1,4 +1,8 @@
-import type { Page, WebSocket as PlaywrightWebSocket } from '@playwright/test'
+import type {
+  Page,
+  WebSocket as PlaywrightWebSocket,
+  WebSocketRoute,
+} from '@playwright/test'
 import {
   parseSignalValue,
   unpackSignalFrames,
@@ -93,6 +97,119 @@ export function watchSocketFrames(
         socket.off('framereceived', listener)
       }
       listeners.clear()
+    },
+  }
+}
+
+/** A JSON object at the test proxy's wire boundary. */
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Copy only an existing signed-in session's own zone, preserving its identity. */
+function sessionWithTimeZone(
+  wire: unknown,
+  timeZone: string | null,
+): Record<string, unknown> | null {
+  if (
+    !object(wire) ||
+    wire.type !== 'handshake_response' ||
+    !object(wire.data) ||
+    !object(wire.data.entities) ||
+    !object(wire.data.entities.currentUser) ||
+    !('timeZone' in wire.data.entities.currentUser)
+  ) {
+    return null
+  }
+  return {
+    ...wire,
+    data: {
+      ...wire.data,
+      entities: {
+        ...wire.data.entities,
+        currentUser: { ...wire.data.entities.currentUser, timeZone },
+      },
+    },
+  }
+}
+
+/**
+ * Forward the real daemon, changing only currentUser.timeZone in session replies.
+ * Install before navigation. The retained frames are unmodified server evidence;
+ * replay sends only the latest signed-in session, never its batch neighbors.
+ * Routing lasts until the page closes; dispose makes it passthrough.
+ *
+ * @param page A fresh page whose application socket is not open yet.
+ * @param initialTimeZone The own zone to deliver until replay changes it.
+ */
+export async function forwardSessionTimeZone(
+  page: Page,
+  initialTimeZone: string | null,
+) {
+  let timeZone = initialTimeZone
+  let active = true
+  let sockets = 0
+  let latest: { client: WebSocketRoute; wire: unknown } | null = null
+  const frames: SocketFrame[] = []
+  const sessions: Record<string, unknown>[] = []
+  await page.routeWebSocket(isApplicationSocket, (client) => {
+    const server = client.connectToServer()
+    const read = createSocketFrameReader(++sockets)
+    client.onMessage((message) => server.send(message))
+    client.onClose((code, reason) => {
+      if (latest?.client === client) latest = null
+      void server.close({ code, reason })
+    })
+    server.onMessage((message) => {
+      const incoming = read(message)
+      frames.push(...incoming)
+      let changed = false
+      const forwarded = incoming.map((frame) => {
+        if (!active || frame.failure) return frame.wire
+        const session = sessionWithTimeZone(frame.wire, timeZone)
+        if (session) {
+          latest = { client, wire: frame.wire }
+          sessions.push(session)
+          changed = true
+          return session
+        }
+        return frame.wire
+      })
+      if (!changed || typeof message !== 'string') {
+        client.send(message)
+        return
+      }
+      // Decode before editing, but keep the complete outer batch metadata too.
+      const outer = JSON.parse(message) as Record<string, unknown>
+      client.send(
+        JSON.stringify(
+          outer.type === 'signal_batch'
+            ? {
+                ...outer,
+                data: { ...(outer.data as object), frames: forwarded },
+              }
+            : forwarded[0],
+        ),
+      )
+    })
+  })
+  return {
+    frames,
+    sessions,
+    sockets: () => sockets,
+    replay(nextTimeZone: string | null): void {
+      if (!active || latest === null) {
+        throw new Error('No live signed-in session to replay.')
+      }
+      const session = sessionWithTimeZone(latest.wire, nextTimeZone)
+      if (session === null) throw new Error('Invalid session replay.')
+      timeZone = nextTimeZone
+      sessions.push(session)
+      latest.client.send(JSON.stringify(session))
+    },
+    dispose(): void {
+      active = false
+      latest = null
     },
   }
 }

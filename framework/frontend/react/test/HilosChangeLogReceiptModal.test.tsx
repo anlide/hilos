@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { HilosPages, createSignal } from '@hilos/core'
+import * as core from '@hilos/core/base'
+import { bindTimeZoneState, hilosTimeZone } from '@hilos/core/base'
 import type {
   HilosChangeLogEntry,
   HilosChangeLogReceiptDialog,
@@ -9,6 +12,11 @@ import type {
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
+import type {
+  HilosConnection,
+  ProjectSignal,
+  ReadonlySignal,
+} from '@hilos/core/base'
 
 import { HilosChangeLogReceiptModal } from '../src/admin/changeLog/HilosChangeLogReceiptModal.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -65,6 +73,34 @@ function dialog(
     outcome: null,
     nextAfterEntryId: null,
     expanded: false,
+  }
+}
+
+/** The real zone binding consumes these connection events, as at boot. */
+function zoneConnection() {
+  const listeners = new Map<string, Set<(signal: ProjectSignal) => void>>()
+  return {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: ProjectSignal) => void) {
+      const eventListeners = listeners.get(event) ?? new Set()
+      eventListeners.add(listener)
+      listeners.set(event, eventListeners)
+      return () => eventListeners.delete(listener)
+    },
+    receive(timeZone: string | null) {
+      for (const listener of listeners.get('projectSignal') ?? []) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as ProjectSignal)
+      }
+    },
+    listenerCount() {
+      return [...listeners.values()].reduce(
+        (count, eventListeners) => count + eventListeners.size,
+        0,
+      )
+    },
   }
 }
 
@@ -139,7 +175,143 @@ function mountModal(
 describe('HilosChangeLogReceiptModal', () => {
   // The modal is portalled to the document body, so a modal left mounted would
   // stay there for the next case to find.
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('updates the open receipt across UTC, Kyiv and Automatic without replacing it', () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    const connection = zoneConnection()
+    const release = bindTimeZoneState(connection as unknown as HilosConnection)
+    const receive = (timeZone: string | null) =>
+      act(() => connection.receive(timeZone))
+    receive('UTC')
+
+    const subscribe = core.subscribeSignal
+    const callbacks = vi.fn()
+    const releases = vi.fn()
+    let activeZoneSubscriptions = 0
+    const subscriptions = vi
+      .spyOn(core, 'subscribeSignal')
+      .mockImplementation(
+        <T,>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+          let active = true
+          const stop = subscribe(source, (value) => {
+            if (source === hilosTimeZone) callbacks(value)
+            listener(value)
+          })
+          if (source === hilosTimeZone) activeZoneSubscriptions++
+          return () => {
+            if (!active) return
+            active = false
+            if (source === hilosTimeZone) activeZoneSubscriptions--
+            releases()
+            stop()
+          }
+        },
+      )
+
+    const snapshot = dialog()
+    const reader: HilosChangeLogReceiptReader = {
+      dialog: createSignal(snapshot),
+      openReceipt: vi.fn(async () => {}),
+      openEntry: vi.fn(async () => {}),
+      more: vi.fn(async () => {}),
+      retry: vi.fn(async () => {}),
+      collapse: vi.fn(),
+      close: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const mounted = render(
+      <StrictMode>
+        <HilosChangeLogReceiptModal dialog={snapshot} reader={reader} />
+      </StrictMode>,
+    )
+    const element = document.querySelector('[role="dialog"]')
+    const detail = document.querySelector(
+      '[data-id="hilos-change-log-detail"]',
+    ) as HTMLElement
+    const when = detail.querySelector('dd')!
+    const expected = (timeZone: string) =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+        timeZone,
+      }).format(new Date('2026-10-09T10:11:12.123Z'))
+
+    try {
+      expect(when.textContent?.trim()).toBe(expected('UTC'))
+      expect(activeZoneSubscriptions).toBe(1)
+      expect(connection.listenerCount()).toBe(2)
+
+      receive('Europe/Kyiv')
+      expect(when.textContent?.trim()).toBe(expected('Europe/Kyiv'))
+      expect(document.querySelector('[role="dialog"]')).toBe(element)
+      expect(reader.dialog.get()).toBe(snapshot)
+      expect(activeZoneSubscriptions).toBe(1)
+      expect(callbacks).toHaveBeenCalledTimes(1)
+
+      receive('Europe/Kyiv')
+      expect(callbacks).toHaveBeenCalledTimes(1)
+      receive(null)
+      expect(when.textContent?.trim()).toBe(expected('America/New_York'))
+      expect(document.querySelector('[role="dialog"]')).toBe(element)
+      expect(reader.dialog.get()).toBe(snapshot)
+      expect(callbacks).toHaveBeenCalledTimes(2)
+      expect(reader.openReceipt).not.toHaveBeenCalled()
+      expect(reader.openEntry).not.toHaveBeenCalled()
+
+      mounted.unmount()
+      expect(activeZoneSubscriptions).toBe(0)
+      receive('UTC')
+      expect(callbacks).toHaveBeenCalledTimes(2)
+      expect(connection.listenerCount()).toBe(2)
+
+      release()
+      const rebound = zoneConnection()
+      const stop = bindTimeZoneState(rebound as unknown as HilosConnection)
+      const receiveRebound = (timeZone: string | null) =>
+        act(() => rebound.receive(timeZone))
+      receiveRebound('UTC')
+      const reboundMount = render(
+        <StrictMode>
+          <HilosChangeLogReceiptModal dialog={snapshot} reader={reader} />
+        </StrictMode>,
+      )
+      try {
+        expect(
+          document
+            .querySelector('[data-id="hilos-change-log-detail"]')
+            ?.querySelector('dd')
+            ?.textContent?.trim(),
+        ).toBe(expected('UTC'))
+        expect(activeZoneSubscriptions).toBe(1)
+        receiveRebound('Europe/Kyiv')
+        expect(
+          document
+            .querySelector('[data-id="hilos-change-log-detail"]')
+            ?.querySelector('dd')
+            ?.textContent?.trim(),
+        ).toBe(expected('Europe/Kyiv'))
+        expect(callbacks).toHaveBeenCalledTimes(3)
+        reboundMount.unmount()
+        expect(activeZoneSubscriptions).toBe(0)
+        receiveRebound(null)
+        expect(callbacks).toHaveBeenCalledTimes(3)
+      } finally {
+        stop()
+      }
+      expect(releases).toHaveBeenCalledTimes(subscriptions.mock.calls.length)
+    } finally {
+      mounted.unmount()
+      release()
+    }
+  })
 
   it('shows complete escaped long values and distinct absent, NULL, and empty sides', () => {
     const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)

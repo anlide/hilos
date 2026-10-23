@@ -198,13 +198,16 @@ afterEach(() => {
 })
 
 describe('readHilosAccountDeletionState', () => {
-  it('puts both moments on the local scale', () => {
+  it('preserves both absolute server moments', () => {
     vi.useFakeTimers()
     vi.setSystemTime(LOCAL_NOW)
     applyServerTime(LOCAL_NOW + SERVER_DRIFT_MS)
 
     expect(readHilosAccountDeletionState(wireScheduled())).toStrictEqual({
-      deletion: { requestedAt: LOCAL_NOW, effectiveAt: LOCAL_NOW + 30 * DAY },
+      deletion: {
+        requestedAt: LOCAL_NOW + SERVER_DRIFT_MS,
+        effectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 30 * DAY,
+      },
     })
   })
 
@@ -233,8 +236,19 @@ describe('the state store', () => {
     store.start()
     expect(store.state.get()).toStrictEqual({ deletion: null })
 
-    connection.emit(SIGNAL_ACCOUNT_DELETION_STATE, wireScheduled())
-    expect(store.state.get()?.deletion).not.toBeNull()
+    applyServerTime(Date.now() + SERVER_DRIFT_MS)
+    scopes.page()!.data.set('accountDeletion', wireScheduled())
+    expect(store.state.get()?.deletion).toEqual({
+      requestedAt: 1_700_000_045_000,
+      effectiveAt: 1_702_592_045_000,
+    })
+    connection.emit(SIGNAL_ACCOUNT_DELETION_STATE, {
+      deletion: { requestedAt: 1000, effectiveAt: 2000 },
+    })
+    expect(store.state.get()?.deletion).toEqual({
+      requestedAt: 1000,
+      effectiveAt: 2000,
+    })
 
     store.dispose()
     expect(store.state.get()).toBeNull()
@@ -659,3 +673,24 @@ describe('the days left', () => {
     expect(formatAccountDeletionDays(30)).toBe('30 days')
   })
 })
+
+it.each([-300_000, 300_000])(
+  'keeps UTC state and the previous day rounding with drift %i',
+  (drift) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(LOCAL_NOW)
+    applyServerTime(Date.now() + drift)
+    const now = LOCAL_NOW - drift
+    expect(
+      readHilosAccountDeletionState({
+        deletion: { requestedAt: LOCAL_NOW, effectiveAt: LOCAL_NOW + 30 * DAY },
+      }),
+    ).toEqual({
+      deletion: { requestedAt: LOCAL_NOW, effectiveAt: LOCAL_NOW + 30 * DAY },
+    })
+    expect(accountDeletionDaysLeft(LOCAL_NOW + 30 * DAY, now)).toBe(30)
+    expect(accountDeletionDaysLeft(LOCAL_NOW + 29 * DAY + 1, now)).toBe(30)
+    expect(accountDeletionDaysLeft(LOCAL_NOW + 1_000, now)).toBe(1)
+    expect(accountDeletionDaysLeft(LOCAL_NOW - DAY, now)).toBe(1)
+  },
+)

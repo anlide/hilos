@@ -14,6 +14,7 @@ import {
   HILOS_STEP_UP_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  hilosTimeZone,
   resolveHilosPath,
   type HilosLegalContext,
 } from '@hilos/core/base'
@@ -54,8 +55,12 @@ export function HilosLegalAcceptancesPage({
   const refusal = useSignal(exporter.refusal)
   const stepRefusal = useSignal(exporter.stepUp.refusal)
   const open = useSignal(exporter.open)
+  const timeZone = useSignal(hilosTimeZone)
   const status = hilosLegalAcceptancesExportStatus(node)
-  const statusRoom = useMemo(() => hilosLegalAcceptancesExportStatusRoom(), [])
+  const statusRoom = useMemo(
+    () => hilosLegalAcceptancesExportStatusRoom(),
+    [timeZone],
+  )
   return (
     <HilosAdminPage page={HilosPages.LEGAL_ACCEPTANCES}>
       <div className="d-flex flex-column align-items-end mb-3">

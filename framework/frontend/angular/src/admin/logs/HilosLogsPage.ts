@@ -49,7 +49,7 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { HilosPages, subscribeSignal } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosLogsOverview,
   HilosLogsOverviewRecentEntry,
@@ -59,7 +59,12 @@ import type {
   HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
 
-import { HilosAdminPage, HilosHideable, HilosLink } from '@hilos/angular/base'
+import {
+  HilosAdminPage,
+  HilosHideable,
+  HilosLink,
+  hilosSignal,
+} from '@hilos/angular/base'
 
 /** The framework logs overview: tiles, the takeout banner and the per-node table. */
 @Component({
@@ -485,7 +490,11 @@ export class HilosLogsPage {
   protected readonly rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
   protected readonly formatBytes = formatLogsOverviewBytes
   protected readonly formatCount = formatLogsOverviewCount
-  protected readonly formatRotationAt = formatLogsOverviewRotationAt
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly formatRotationAt = (moment: string | null): string => {
+    this.timeZone()
+    return formatLogsOverviewRotationAt(moment)
+  }
 
   private readonly logs = computed(() =>
     createHilosLogsOverview(this.context()),
@@ -562,7 +571,10 @@ export class HilosLogsPage {
   protected readonly recentLevelOf = logsOverviewRecentLevel
   protected readonly recentTabLabel = logsOverviewRecentTabLabel
   protected readonly levelVariant = logLevelVariant
-  protected readonly formatRecentAt = formatLogsOverviewRecentAt
+  protected readonly formatRecentAt = (moment: string): string => {
+    this.timeZone()
+    return formatLogsOverviewRecentAt(moment)
+  }
   protected readonly recentPath = logsOverviewRecentPath
 
   constructor() {

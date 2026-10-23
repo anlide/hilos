@@ -559,7 +559,7 @@ describe('sessionScope', () => {
         shown: 'frozen',
         blocked: false,
         frozen: true,
-        deletionEffectiveAt: LOCAL_NOW + 86_400_000,
+        deletionEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
         lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
         window: [{ document: 'privacy', deadline: '2026-11-10' }],
         mergedInto: null,
@@ -915,7 +915,7 @@ describe('pending auth step server words', () => {
 })
 
 describe('a sign-in held on its second factor (HIL-494)', () => {
-  it('reads the code step, naming nobody, with its moments put on the local scale', () => {
+  it('reads the code step with a local expiry and an absolute server removal moment', () => {
     vi.useFakeTimers()
     vi.setSystemTime(LOCAL_NOW)
     try {
@@ -955,7 +955,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
         message: null,
         secondFactor: {
           trustDeviceDays: 30,
-          resetEffectiveAt: LOCAL_NOW + 86_400_000,
+          resetEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
         },
         acceptedRevisions: null,
       })
@@ -1298,3 +1298,53 @@ describe('handshakeResponseAck', () => {
     ).toBeNull()
   })
 })
+
+it.each([-300_000, 300_000])(
+  'keeps removal and deletion moments absolute beside countdown expiry at drift %i',
+  (drift) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(LOCAL_NOW)
+    const socket = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(socket as unknown as HilosConnection, scopes)
+    const at = Date.parse('2026-01-01T00:30:05Z')
+    try {
+      socket.emitHandshakeResponse({
+        data: {
+          serverTimeMs: Date.now() + drift,
+          accountStanding: {
+            shown: 'deletion_scheduled',
+            blocked: false,
+            frozen: false,
+            deletionEffectiveAt: at,
+            lapsed: [],
+            window: [],
+            mergedInto: null,
+            mergedIntoName: null,
+          },
+          pendingAuthStep: {
+            identifier: null,
+            kind: null,
+            intent: 'login',
+            step: 'second_factor',
+            channel: null,
+            expiresAt: at,
+            code: null,
+            message: null,
+            secondFactor: { trustDeviceDays: 30, resetEffectiveAt: at },
+          },
+        },
+      })
+      expect(sessionAccountStanding(scopes).get()?.deletionEffectiveAt).toBe(
+        1_767_227_405_000,
+      )
+      expect(
+        sessionPendingAuthStep(scopes).get()?.secondFactor?.resetEffectiveAt,
+      ).toBe(1_767_227_405_000)
+      expect(sessionPendingAuthStep(scopes).get()?.expiresAt).toBe(at - drift)
+    } finally {
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
+  },
+)

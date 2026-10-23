@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { applyServerTime } from '../../../src/session/serverClock.js'
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   ANALYTICS_NO_VALUE,
@@ -44,3 +46,22 @@ describe('readAnalyticsRouteId', () => {
     expect(readAnalyticsRouteId(raw)).toBeNull()
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      expect(formatAnalyticsTime(Date.parse('2026-01-01T00:30:05Z'))).toBe(
+        'Dec 31, 2025, 4:30:05 PM',
+      )
+      expect(formatAnalyticsTime(NaN)).toBe('Invalid Date')
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)

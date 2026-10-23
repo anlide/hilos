@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { formatBytes } from '../../format/bytes.js'
+import { formatMoment } from '../../format/moment.js'
 
 /** Page-data section containing the opening journal snapshot. */
 export const CHANGE_LOG_OVERVIEW_SECTION = 'changeLogOverview'
@@ -61,10 +62,11 @@ export function formatChangeLogEntries(entries: number): string {
  */
 export function changeLogJournalNote(overview: HilosChangeLogOverview): string {
   if (overview.oldestAt === null) return 'nothing recorded yet'
-  const since = new Date(overview.oldestAt).toLocaleDateString(undefined, {
-    month: 'long',
-    year: 'numeric',
-  })
+  const since =
+    formatMoment(overview.oldestAt, {
+      kind: 'date',
+      format: { month: 'long', year: 'numeric' },
+    }) ?? 'Invalid Date'
   return `${formatBytes(overview.journalBytes)} · since ${since}`
 }
 

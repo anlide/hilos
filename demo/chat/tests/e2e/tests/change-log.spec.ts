@@ -10,12 +10,16 @@ import {
   expectChangeLogFeedRow,
   expectChangeLogOverview,
   expectChangeLogReceiptOpen,
+  expectChangeLogReceiptMoment,
+  expectChangeLogTimes,
   expectChangeLogValues,
   expectRegistrationFeedRow,
   expectRegistrationHistory,
   expectRegistrationReceiptFacts,
   expectTrackedTableRecord,
+  forwardSessionTimeZone,
   shownByTestId,
+  watchChangeLogDisplay,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
@@ -98,4 +102,69 @@ test('its registration receipt shows person and identity creation as facts witho
   await expectRegistrationReceiptFacts(expect, page, userId)
   await page.getByTestId('hilos-change-log-detail-close').click()
   await expect(page.getByTestId('modal')).toHaveCount(0)
+})
+
+test.describe('Change Log reader time zone', () => {
+  test.use({ timezoneId: 'UTC' })
+
+  test('renders the delivered own zone and returns the same receipt and feed to Automatic', async ({
+    page,
+  }) => {
+    // This proves display of an existing session contract. The real daemon
+    // still supplies the receipt and feed; backend zone writes are HIL-1580.
+    const socket = await forwardSessionTimeZone(page, 'Europe/Kyiv')
+    try {
+      const userId = await signUpAdmin(page)
+      await gotoPage(page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
+      const receiptId = await expectRegistrationHistory(expect, page)
+      await gotoPage(page, CHANGE_LOG_PATH)
+      const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
+      await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
+      await expectChangeLogReceiptOpen(expect, page, receiptId)
+      await expect(
+        page.getByTestId('hilos-change-log-receipt-time'),
+      ).toBeVisible()
+      const createdAt = expectChangeLogReceiptMoment(
+        expect,
+        socket.frames,
+        receiptId,
+      )
+      const ownTime = await expectChangeLogTimes(
+        expect,
+        page,
+        receiptId,
+        createdAt,
+        'Europe/Kyiv',
+      )
+      const display = await watchChangeLogDisplay(expect, page, receiptId)
+      const session = socket.sessions.at(-1)
+      expect(session).toMatchObject({
+        data: {
+          entities: { currentUser: { id: userId, timeZone: 'Europe/Kyiv' } },
+        },
+      })
+      const sockets = socket.sockets()
+
+      socket.replay(null)
+      const automaticTime = await expectChangeLogTimes(
+        expect,
+        page,
+        receiptId,
+        createdAt,
+        'UTC',
+      )
+      expect(automaticTime).not.toBe(ownTime)
+      expect(socket.sessions.at(-1)).toMatchObject({
+        data: { entities: { currentUser: { id: userId, timeZone: null } } },
+      })
+      expect(socket.sockets()).toBe(sockets)
+      expect(
+        expectChangeLogReceiptMoment(expect, socket.frames, receiptId),
+      ).toBe(createdAt)
+      await display.unchanged()
+      await display.dispose()
+    } finally {
+      socket.dispose()
+    }
+  })
 })

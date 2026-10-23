@@ -25,6 +25,7 @@ import {
   createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
+  hilosTimeZone,
   HILOS_STEP_UP_COPY,
 } from '@hilos/core/base'
 import type {
@@ -159,6 +160,7 @@ function ProofField({
 export function HilosProfileSecurityPage({
   context,
 }: HilosProfileSecurityPageProps) {
+  useSignal(hilosTimeZone)
   const store = useMemo(() => createHilosSecondFactorStore(context), [context])
   const actions = useMemo(
     () => createHilosSecondFactorActions(context),

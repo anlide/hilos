@@ -27,6 +27,7 @@ import {
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
+  hilosTimeZone,
 } from '@hilos/core/base'
 import type {
   HilosTableBulkReport,
@@ -125,6 +126,7 @@ const bulkProgress = useSignal(props.controller.progress.bulk)
 const bulkStarted = useSignal(props.controller.bulk.started)
 const bulkReport = useSignal(props.controller.bulk.report)
 const frozenSince = useSignal(props.controller.frozenSince)
+const timeZone = useSignal(hilosTimeZone)
 
 /** The accessible name of the track, and the caption of a bar we did not start. */
 const BULK_BAR_NAME = 'Working on the marked rows'
@@ -181,7 +183,10 @@ const staleLabel = computed(() => {
 })
 
 // The moment the table froze, on the reader's own clock.
-const frozenLabel = computed(() => hilosTableFrozenLabel(frozenSince.value))
+const frozenLabel = computed(() => {
+  void timeZone.value
+  return hilosTableFrozenLabel(frozenSince.value)
+})
 
 // The numeral of each message is chosen here rather than in the template: '1 rows'
 // would stand in the most visible place of the screen.

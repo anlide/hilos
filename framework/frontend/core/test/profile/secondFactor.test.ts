@@ -1,5 +1,5 @@
 // Covers the profile's second-factor section (HIL-494): the section read off
-// the wire with its moments on the local scale, the store that takes it from the
+// the wire with its absolute server moments, the store that takes it from the
 // page and from the person's group, the administrator's policy frame laid over
 // an older section and not over a newer one, the view the section is drawn in
 // once the factor is turned off for everyone (HIL-1303), and the profile
@@ -120,7 +120,7 @@ afterEach(() => {
 })
 
 describe('readHilosSecondFactorState', () => {
-  it('puts every moment of the section on the local scale', () => {
+  it('preserves every absolute server moment of the section', () => {
     vi.useFakeTimers()
     vi.setSystemTime(LOCAL_NOW)
     try {
@@ -128,12 +128,19 @@ describe('readHilosSecondFactorState', () => {
       const state = readHilosSecondFactorState(wireSection())
 
       expect(state?.authenticators).toStrictEqual([
-        { id: 7, label: 'Work phone', createdAt: LOCAL_NOW, lastUsedAt: null },
+        {
+          id: 7,
+          label: 'Work phone',
+          createdAt: LOCAL_NOW + SERVER_DRIFT_MS,
+          lastUsedAt: null,
+        },
       ])
-      expect(state?.resetWait.pendingFrom).toBe(LOCAL_NOW + 1_000)
+      expect(state?.resetWait.pendingFrom).toBe(
+        LOCAL_NOW + SERVER_DRIFT_MS + 1_000,
+      )
       expect(state?.reset).toStrictEqual({
-        requestedAt: LOCAL_NOW,
-        effectiveAt: LOCAL_NOW + 5_000,
+        requestedAt: LOCAL_NOW + SERVER_DRIFT_MS,
+        effectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 5_000,
       })
     } finally {
       vi.useRealTimers()
@@ -437,3 +444,41 @@ describe('the profile actions', () => {
     expect(renewed.sent[0]?.name).toBe('profile_second_factor_codes_renew')
   })
 })
+
+it.each([-300_000, 300_000])(
+  'preserves all scalar moments from the initial slot and a frame with drift %i',
+  (drift) => {
+    applyServerTime(Date.now() + drift)
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const raw = wireSection({
+      authenticators: [
+        { id: 7, label: 'Phone', createdAt: 1000, lastUsedAt: 2000 },
+      ],
+    })
+    scopes.openPage('hilos_profile_security').data.set('secondFactor', raw)
+    const store = createHilosSecondFactorStore({
+      connection: connection as unknown as HilosConnection,
+      scopes,
+      actions: {} as ActionLifecycle,
+    })
+    store.start()
+    expect(store.state.get()?.authenticators).toEqual([
+      { id: 7, label: 'Phone', createdAt: 1000, lastUsedAt: 2000 },
+    ])
+    expect(store.state.get()?.resetWait.pendingFrom).toBe(1_700_000_046_000)
+    expect(store.state.get()?.reset).toEqual({
+      requestedAt: 1_700_000_045_000,
+      effectiveAt: 1_700_000_050_000,
+    })
+    connection.emit(SIGNAL_SECOND_FACTOR_STATE, {
+      ...raw,
+      reset: { requestedAt: 3000, effectiveAt: 4000 },
+    })
+    expect(store.state.get()?.reset).toEqual({
+      requestedAt: 3000,
+      effectiveAt: 4000,
+    })
+    store.dispose()
+  },
+)

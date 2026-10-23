@@ -19,7 +19,7 @@ import {
   formatChangeLogReceiptTitle,
   formatChangeLogTime,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
 import type {
   HilosChangeLogEntry,
   HilosChangeLogReceiptDialog,
@@ -34,6 +34,7 @@ import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosChangeLogReceiptModal}. */
 export interface HilosChangeLogReceiptModalProps {
@@ -92,6 +93,7 @@ export function HilosChangeLogReceiptModal({
   dialog,
   reader,
 }: HilosChangeLogReceiptModalProps) {
+  useSignal(hilosTimeZone)
   const router = useContext(HilosRouterContext)
   const attribution = dialog?.header
     ? changeLogReceiptAttribution(dialog.header)
@@ -170,7 +172,9 @@ export function HilosChangeLogReceiptModal({
         {attribution ? (
           <dl className="row mb-2">
             <dt className="col-sm-4">{copy.when}</dt>
-            <dd className="col-sm-8">{attribution.when}</dd>
+            <dd className="col-sm-8" data-id="hilos-change-log-receipt-time">
+              {attribution.when}
+            </dd>
             <dt className="col-sm-4">{copy.who}</dt>
             <dd className="col-sm-8 text-break">
               {personLabel(attribution.actor)}

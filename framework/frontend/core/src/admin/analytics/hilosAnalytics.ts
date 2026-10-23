@@ -1,4 +1,5 @@
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatMoment } from '../../format/moment.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 
 /** Shared connection and page scope for the Analytics viewports. */
@@ -16,10 +17,7 @@ export const ANALYTICS_NO_VALUE = '—'
  * @param ms Source moment in Unix milliseconds.
  */
 export function formatAnalyticsTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  })
+  return formatMoment(ms, { kind: 'dateTime' }) ?? 'Invalid Date'
 }
 
 /**

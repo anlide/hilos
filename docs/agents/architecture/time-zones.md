@@ -124,10 +124,9 @@ and leaves the last values readable. A change of the person's own zone reaches
 every open tab through the session restate below, each tab applies the response
 it receives, and a reset to Automatic returns each tab to its own browser.
 
-The signals are the one effective value every SDK and demo reads, and no reader
-is written yet. The core formatter reads `hilosTimeZone`
-(not in the code yet — HIL-1584). The profile's Time zone row reads
-`hilosOwnTimeZone` and `hilosBrowserTimeZone`
+The effective reader zone is the one value every SDK and demo uses. Each call
+to the core formatter reads `hilosTimeZone`, so it uses the current reader zone.
+The profile's Time zone row reads `hilosOwnTimeZone` and `hilosBrowserTimeZone`
 (not in the code yet — HIL-1585), and so does the selection window
 (not in the code yet — HIL-1593).
 
@@ -311,30 +310,59 @@ the project zone (owner's decision, 2026-10-17, HIL-1589:26749).
 
 ## One Core Formatter
 
-One core formatter serves moment display in every SDK and demo. Its input is
-epoch milliseconds or ISO-8601 UTC; its zone is the effective reader zone.
-Provide date, time and date-and-time views, and calendar labels **today,
-tomorrow and yesterday** calculated in that zone. Move helpers whose input is
-already unambiguous onto this formatter. (not in the code yet — HIL-1584)
+`formatMoment(moment, options?)` is the core formatter for moment display in
+every SDK and demo. The same function and `MomentFormatOptions` type are
+exported from `@hilos/core` and `@hilos/core/base`. The input is a finite epoch
+millisecond value in the `Date` range or a complete ISO UTC timestamp with `T`
+and `Z`. It does not accept a `Date`, a calendar date, a local or offset
+timestamp, or a numeric string, and it never guesses that a number is in
+seconds. The caller declares the unit; even a small number is epoch milliseconds.
+
+`MomentFormatOptions.kind` selects `date`, `time`, `dateTime` (the default), or
+`calendar`. Without a replacement `format`, the presets are respectively a
+medium date, a medium time, a medium date and time, and a medium date. An
+explicit `format` replaces the preset in full; it is not combined with it.
+`format` omits `timeZone`, and the formatter supplies `hilosTimeZone.get()`
+after the caller's options on every call, so the effective reader zone always
+wins. The formatter does not cache the zone between calls or expose a separate
+setter. An omitted `locale` keeps the browser's default locale; a caller may
+pass one locale or a locale list.
 
 Preserve the absolute server moment when formatting it. Do not pass it through
 the device clock correction in
 [`serverClock.toLocal()`](../../../framework/frontend/core/src/session/serverClock.ts):
 that would change the point in time before giving it a calendar representation.
 The server's time is authoritative (owner's decision, 2026-10-17,
-HIL-1584:26746). (not in the code yet — HIL-1584)
+HIL-1584:26746).
 
-The existing clock correction serves countdowns; this documentation leaf does
-not change those countdowns.
+For `calendar`, `now` is an optional server epoch-millisecond reference. If it
+is omitted, the formatter uses `Date.now() + offsetMs()` to align the reference
+with server time. It compares the moment and reference by their local Gregorian
+year, month, and day in the effective zone, not by elapsed milliseconds. This
+keeps the labels correct at local day boundaries and across daylight-saving
+changes without treating a day as a fixed 24-hour duration. A difference of
+zero or one day in either direction uses
+`Intl.RelativeTimeFormat(locale, { numeric: 'auto' })` (`today`, `tomorrow`, or
+`yesterday`); other dates use the ordinary date format. No timer updates a
+`calendar` result after formatting.
+
+An invalid moment, impossible calendar date, or invalid `now` for `calendar`
+returns `null`. An unavailable `Intl.DateTimeFormat` also returns `null`; if
+`Intl.RelativeTimeFormat` is unavailable, `calendar` returns the ordinary date
+instead. Errors in the caller's `locale` or `format` options remain visible.
+Callers keep their own fallback text when the formatter returns `null`.
 
 ### A Calendar Date Or Duration Is Not A Moment
 
-A calendar date names a day, not a point in time. In particular, keep a legal
-document revision's date explicitly UTC when adapting its display; do not move
-it into another day using the reader's zone. (not in the code yet — HIL-1584)
+A calendar date names a day, not a point in time. A legal document revision's
+`YYYY-MM-DD` date stays explicitly UTC when displayed; it does not pass through
+the reader's zone. A recorded acceptance timestamp is an absolute moment and
+uses the core formatter in the reader's zone.
 
 A duration, a countdown and an ordinary number are not moments either. Do not
 feed them to a moment formatter merely because their representation is numeric.
+The existing account-deletion countdown keeps its clock correction inside
+`accountDeletionDaysLeft()`; this formatter does not change that behavior.
 
 ### Guard The Display Boundary
 

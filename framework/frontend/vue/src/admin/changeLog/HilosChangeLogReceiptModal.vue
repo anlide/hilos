@@ -18,7 +18,7 @@ import {
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
 import { computed, inject, nextTick, ref } from 'vue'
 
 import HilosFormError from '../../HilosFormError.vue'
@@ -27,6 +27,7 @@ import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{
   /** The current lazy snapshot, or null when closed. */
@@ -36,13 +37,20 @@ const props = defineProps<{
 }>()
 
 const router = inject(hilosRouterKey, undefined)
+const timeZone = useSignal(hilosTimeZone)
 
 const title = computed(() => formatChangeLogReceiptTitle(props.dialog))
-const attribution = computed(() =>
-  props.dialog?.header
+const attribution = computed(() => {
+  void timeZone.value
+  return props.dialog?.header
     ? changeLogReceiptAttribution(props.dialog.header)
-    : null,
-)
+    : null
+})
+const entryTime = computed(() => {
+  void timeZone.value
+  const first = props.dialog?.entries[0]
+  return first ? formatChangeLogTime(first.createdAt) : ''
+})
 const entries = computed(() =>
   (props.dialog?.entries ?? []).map((entry) => ({
     entryId: entry.entryId,
@@ -126,7 +134,9 @@ async function hide(): Promise<void> {
       </p>
       <dl v-if="attribution" class="row mb-2">
         <dt class="col-sm-4">{{ copy.when }}</dt>
-        <dd class="col-sm-8">{{ attribution.when }}</dd>
+        <dd class="col-sm-8" data-id="hilos-change-log-receipt-time">
+          {{ attribution.when }}
+        </dd>
         <dt class="col-sm-4">{{ copy.who }}</dt>
         <dd class="col-sm-8 text-break">
           <template v-if="isHiddenValue(attribution.actor.label)">
@@ -194,9 +204,7 @@ async function hide(): Promise<void> {
         class="row mb-2"
       >
         <dt class="col-sm-4">{{ copy.when }}</dt>
-        <dd class="col-sm-8">
-          {{ formatChangeLogTime(dialog.entries[0]!.createdAt) }}
-        </dd>
+        <dd class="col-sm-8">{{ entryTime }}</dd>
         <dt class="col-sm-4">{{ copy.who }}</dt>
         <dd class="col-sm-8">
           {{ copy.unknownPerson }}

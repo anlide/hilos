@@ -52,11 +52,13 @@ import {
   type HilosChangeLogHistoryRow,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptDialog,
+  type HilosChangeLogTableDetail,
 } from '@hilos/core/admin/change-log'
 import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
   type HilosRouter,
@@ -442,14 +444,21 @@ export class HilosChangeLogTablePage {
     actions: HILOS_TABLE_ACTIONS_KEY,
   } as const
   protected readonly owner = formatChangeLogTableOwner
-  protected readonly activity = formatChangeLogTableActivity
+  protected readonly activity = (table: HilosChangeLogTableDetail): string => {
+    this.timeZone()
+    return formatChangeLogTableActivity(table)
+  }
   protected readonly storage = formatChangeLogColumnStorage
   protected readonly modeCard = changeLogColumnModeCard
   protected readonly describeTrigger = formatChangeLogTrigger
   protected readonly recordKey = formatChangeLogRecordKey
   protected readonly mutation = formatChangeLogMutation
   protected readonly historyChanges = formatChangeLogHistoryChanges
-  protected readonly time = formatChangeLogTime
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly time = (moment: string): string => {
+    this.timeZone()
+    return formatChangeLogTime(moment)
+  }
   protected readonly who = formatChangeLogWho
   protected readonly onBehalfOf = formatChangeLogOnBehalfOf
   protected readonly channelBadge = changeLogChannelBadge

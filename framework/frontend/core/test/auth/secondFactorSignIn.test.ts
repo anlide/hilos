@@ -63,7 +63,7 @@ const HELD: AuthFlowSubmitOutcome = {
   secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
 }
 
-/** The handshake node of a held sign-in, its moments already local. */
+/** The handshake node of a held sign-in, with a local countdown expiry. */
 function heldStep(overrides: Partial<PendingAuthStep> = {}): PendingAuthStep {
   return {
     identifier: null,
@@ -161,7 +161,7 @@ describe('the code step a proven sign-in is held on', () => {
     expect(flow.secondFactor.get()).toBeNull()
   })
 
-  it('puts the removal date on the local scale', async () => {
+  it('preserves the absolute server removal date', async () => {
     applyServerTime(LOCAL_NOW + 45_000)
     const flow = setup({
       onSubmit: async () => ({
@@ -174,7 +174,9 @@ describe('the code step a proven sign-in is held on', () => {
     })
     await signIn(flow)
 
-    expect(flow.secondFactor.get()?.resetEffectiveAt).toBe(LOCAL_NOW + DAY_MS)
+    expect(flow.secondFactor.get()?.resetEffectiveAt).toBe(
+      LOCAL_NOW + 45_000 + DAY_MS,
+    )
   })
 
   it('does not bring the code that proved the person onto the code step', async () => {

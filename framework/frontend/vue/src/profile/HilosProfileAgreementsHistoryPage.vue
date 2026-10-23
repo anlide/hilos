@@ -8,6 +8,7 @@ import {
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
+  hilosTimeZone,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
 } from '@hilos/core/base'
@@ -23,6 +24,11 @@ const props = defineProps<{ context: HilosLegalContext }>()
 const store = createHilosLegalAgreementsStore(props.context)
 const state = useSignal(store.state)
 const history = useSignal(hilosLegalRevisionHistory(props.context))
+const timeZone = useSignal(hilosTimeZone)
+function acceptanceDate(moment: number): string {
+  void timeZone.value
+  return formatHilosLegalAcceptanceDate(moment)
+}
 const reader = createHilosLegalRevisionReader(props.context)
 const dialog = useSignal(reader.dialog)
 const title = computed(() =>
@@ -100,7 +106,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
                 data-id="legal-history-accepted"
                 >you accepted ·
                 {{
-                  formatHilosLegalAcceptanceDate(
+                  acceptanceDate(
                     acceptedAt(document.document, revision.revisionId)!,
                   )
                 }}</span

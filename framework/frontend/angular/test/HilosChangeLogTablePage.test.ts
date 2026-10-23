@@ -10,6 +10,7 @@
 // router.
 import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import {
   ActionLifecycle,
   CHANGE_LOG_TABLE_COPY,
@@ -27,6 +28,7 @@ import {
   type ActionLifecycleSource,
   type ActionSuccessSignal,
   type ConnectionState,
+  type HilosChangeLogHistoryRow,
   type HilosChangeLogReceiptContext,
   type HilosPageIdentity,
   type HilosRouter,
@@ -34,8 +36,10 @@ import {
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HilosChangeLogTablePage } from '../src/admin/changeLog/HilosChangeLogTablePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const HISTORY = 'hilosChangeLogHistory'
 const BOT = {
@@ -410,6 +414,7 @@ let fixture: ComponentFixture<PageHost>
 const releases: (() => void)[] = []
 afterEach(() => {
   for (const release of releases.splice(0)) release()
+  vi.restoreAllMocks()
 })
 
 /** Let a settled action and the page's own re-render reach the document. */
@@ -570,6 +575,94 @@ describe('HilosChangeLogTablePage', () => {
     expect(document.body.textContent).toContain(
       CHANGE_LOG_TABLE_COPY.historyNote,
     )
+  })
+
+  it('reformats the activity from the live reader zone with an empty record history', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+    const lastChangeAt = '2025-12-31T23:30:05Z'
+    const h = harness({ ...BOT, lastChangeAt })
+    const pushWindow = vi.spyOn(h, 'pushWindow')
+    const pushPageWindow = vi.spyOn(h, 'pushPageWindow')
+    const { r } = await mountPage(
+      h,
+      router({ tableId: 'bot', record: '57' }),
+      false,
+    )
+    h.pushPageWindow()
+    await settle()
+
+    const page = fixture.debugElement.query(
+      By.directive(HilosChangeLogTablePage),
+    ).componentInstance as HilosChangeLogTablePage
+    const viewport = fixture.debugElement.query(
+      By.directive(HilosViewportTable),
+    ).componentInstance as HilosViewportTable<HilosChangeLogHistoryRow>
+    const controller = viewport.controller()
+    const header = element('hilos-change-log-table-header')
+    const activity = get('.w-100', header)
+    const section = h.context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION)
+    const snapshot = section.get()
+    const identity = r.identity.get()
+    const viewportRequests = h.connection.sendTableViewport.mock.calls.length
+    const expectedActivity = (zone: string): string =>
+      `Last 24 hours: 3 · Last change: ${new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+        timeZone: zone,
+      }).format(new Date(lastChangeAt))}`
+    const utc = expectedActivity('UTC')
+    const kyiv = expectedActivity('Europe/Kyiv')
+    expect(utc).not.toBe(kyiv)
+    expect(text(activity)).toBe(utc)
+    expect(controller.rows.get()).toEqual([])
+    expect(text(element('hilos-change-log-record-filter'))).toContain(
+      'Only record #57',
+    )
+
+    for (const [zone, expected] of [
+      ['Europe/Kyiv', kyiv],
+      [null, utc],
+    ] as const) {
+      timeZone.receive(zone)
+      await fixture.whenStable()
+      // Check the parent only: an unmarked OnPush page must stay skipped.
+      fixture.detectChanges()
+      expect(text(activity)).toBe(expected)
+      expect(element('hilos-change-log-table-header')).toBe(header)
+      expect(get('.w-100', header)).toBe(activity)
+      expect(
+        fixture.debugElement.query(By.directive(HilosChangeLogTablePage))
+          .componentInstance,
+      ).toBe(page)
+      expect(
+        fixture.debugElement.query(By.directive(HilosViewportTable))
+          .componentInstance,
+      ).toBe(viewport)
+      expect(viewport.controller()).toBe(controller)
+      expect(controller.rows.get()).toEqual([])
+      expect(page.context()).toBe(h.context)
+      expect(section.get()).toBe(snapshot)
+      expect(r.identity.get()).toBe(identity)
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(h.source.sent).toEqual([])
+      expect(pushWindow).not.toHaveBeenCalled()
+      expect(pushPageWindow).toHaveBeenCalledTimes(1)
+      expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(1)
+      expect(h.connection.unregisterTableWindow).not.toHaveBeenCalled()
+      expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(
+        viewportRequests,
+      )
+    }
+
+    await unmount()
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledTimes(1)
+    expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
+    expect(r.leaves.size).toBe(0)
+    expect(timeZone.listenerCount()).toBe(2)
+    timeZone.release()
+    expect(timeZone.listenerCount()).toBe(0)
   })
 
   it('leaves the noisy line out when no column is noisy', async () => {

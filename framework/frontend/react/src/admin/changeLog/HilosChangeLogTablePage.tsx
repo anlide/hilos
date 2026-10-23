@@ -42,6 +42,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -107,6 +108,7 @@ export function HilosChangeLogTablePage({
   const columnsHeadingId = useId()
   const triggersHeadingId = useId()
   const route = useSignal(router.currentRoute)
+  useSignal(hilosTimeZone)
   const tableId = route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? ''
   const recordParam = route.params[CHANGE_LOG_RECORD_ROUTE_PARAM]
   const record = readChangeLogRecordRouteParam(recordParam)

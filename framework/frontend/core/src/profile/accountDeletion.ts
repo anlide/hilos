@@ -94,7 +94,7 @@ const DAY_SECONDS = 86_400
 
 /**
  * The state payload (PHP `AccountDeletionStateSignalData`). Moments are SERVER
- * epoch ms here and local in {@link HilosAccountDeletionState}.
+ * epoch ms here and in {@link HilosAccountDeletionState}.
  */
 export const accountDeletionStateSchema = z.looseObject({
   deletion: z
@@ -111,11 +111,11 @@ export const ACCOUNT_DELETION_SIGNAL_SCHEMAS = {
   [SIGNAL_ACCOUNT_DELETION_STATE]: accountDeletionStateSchema,
 }
 
-/** A scheduled deletion, in the reader's own clock. */
+/** A scheduled deletion, with absolute server epoch-ms moments. */
 export interface HilosScheduledDeletion {
-  /** The LOCAL moment the deletion was asked for, in epoch ms. */
+  /** The absolute server moment the deletion was asked for, in epoch ms. */
   readonly requestedAt: number
-  /** The LOCAL moment the account is erased, in epoch ms. */
+  /** The absolute server moment the account is erased, in epoch ms. */
   readonly effectiveAt: number
 }
 
@@ -145,8 +145,8 @@ export function readHilosAccountDeletionState(
       deletion === null
         ? null
         : {
-            requestedAt: toLocal(deletion.requestedAt),
-            effectiveAt: toLocal(deletion.effectiveAt),
+            requestedAt: deletion.requestedAt,
+            effectiveAt: deletion.effectiveAt,
           },
   }
 }
@@ -155,14 +155,14 @@ export function readHilosAccountDeletionState(
  * Whole days left until the erasure, rounded up and never below one — "1 day
  * left" is said through the last day.
  *
- * @param effectiveAt The LOCAL moment of the erasure, in epoch ms.
+ * @param effectiveAt The absolute server moment of the erasure, in epoch ms.
  * @param now The LOCAL moment now, in epoch ms.
  */
 export function accountDeletionDaysLeft(
   effectiveAt: number,
   now: number,
 ): number {
-  return Math.max(1, Math.ceil((effectiveAt - now) / DAY_MS))
+  return Math.max(1, Math.ceil((toLocal(effectiveAt) - now) / DAY_MS))
 }
 
 /**

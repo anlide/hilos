@@ -12,6 +12,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
+  hilosTimeZone,
   subscribeSignal,
   type DataExportNode,
   type HilosDataExportStore,
@@ -47,7 +48,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
       </div>
       <div class="hilos-stack">
         <p class="small mb-2 invisible" aria-hidden="true" inert>
-          {{ preparingRoom }}
+          {{ preparingRoom() }}
         </p>
         @if (node(); as current) {
           <p class="small mb-2" [attr.data-id]="'data-export-' + current.state">
@@ -160,15 +161,26 @@ export class HilosDataExport {
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly downloadPath = DATA_EXPORT_DOWNLOAD_PATH
   protected readonly node = signal<DataExportNode | null>(null)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly stepRefusal = signal<string | null>(null)
   protected readonly open = signal(false)
-  protected readonly status = computed(() => dataExportStatusText(this.node()))
-  protected readonly preparingRoom = HILOS_DATA_EXPORT_COPY.preparing.replace(
-    '{time}',
-    new Date().toLocaleString(),
-  )
+  protected readonly status = computed(() => {
+    this.timeZone()
+    return dataExportStatusText(this.node())
+  })
+  protected readonly preparingRoom = computed(() => {
+    this.timeZone()
+    const node = this.node()
+    return dataExportStatusText({
+      state: 'preparing',
+      requestedAt: node?.requestedAt ?? Date.now(),
+      finishedAt: null,
+      expiresAt: null,
+      sizeBytes: null,
+    })
+  })
 
   constructor() {
     effect((onCleanup) => {

@@ -21,6 +21,7 @@ import {
   HILOS_STEP_UP_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  hilosTimeZone,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalAcceptancesExportNode,
@@ -36,6 +37,7 @@ import {
   HilosViewportTable,
   LoadingButton,
   HilosStepUpStep,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** Immutable acceptance records with the complete server-supplied filter vocabulary, and their export. */
@@ -86,7 +88,7 @@ import {
         </div>
         <div class="hilos-stack w-100 text-end mt-2">
           <div class="invisible" aria-hidden="true" inert>
-            <p class="small mb-0">{{ statusRoom }}</p>
+            <p class="small mb-0">{{ statusRoom() }}</p>
             <p class="small text-body-secondary text-truncate mb-0">
               {{ copy.all }}
             </p>
@@ -210,7 +212,11 @@ export class HilosLegalAcceptancesPage {
   protected readonly copy = HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly downloadPath = LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH
-  protected readonly statusRoom = hilosLegalAcceptancesExportStatusRoom()
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly statusRoom = computed(() => {
+    this.timeZone()
+    return hilosLegalAcceptancesExportStatusRoom()
+  })
   protected readonly table = computed(() =>
     createHilosLegalAcceptancesTable(this.context()),
   )
@@ -222,9 +228,10 @@ export class HilosLegalAcceptancesPage {
   protected readonly refusal = signal<string | null>(null)
   protected readonly stepRefusal = signal<string | null>(null)
   protected readonly open = signal(false)
-  protected readonly status = computed(() =>
-    hilosLegalAcceptancesExportStatus(this.node()),
-  )
+  protected readonly status = computed(() => {
+    this.timeZone()
+    return hilosLegalAcceptancesExportStatus(this.node())
+  })
   protected readonly filterLine = computed(() => {
     const node = this.node()
     return node === null ? '' : hilosLegalAcceptancesExportFilterLine(node)

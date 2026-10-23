@@ -22,7 +22,7 @@ import {
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -43,6 +43,12 @@ const userId = computed(() =>
   readAnalyticsRouteId(route.value.params[ANALYTICS_PERSON_ROUTE_PARAM]),
 )
 const sessions = shallowRef<HilosAnalyticsBrowserSessionsTable | null>(null)
+
+const timeZone = useSignal(hilosTimeZone)
+function time(moment: number): string {
+  void timeZone.value
+  return formatAnalyticsTime(moment)
+}
 
 // A session's page, or nothing when the application has no address for it.
 const sessionPath = (rowKey: number): string | undefined =>
@@ -105,9 +111,7 @@ onUnmounted(() => sessions.value?.dispose())
           :data-record="row.rowKey"
         >
           <HilosHideable :value="row.firstSeenTs">
-            <template #default="{ value }">{{
-              formatAnalyticsTime(value)
-            }}</template>
+            <template #default="{ value }">{{ time(value) }}</template>
           </HilosHideable>
         </span>
       </template>
@@ -119,9 +123,7 @@ onUnmounted(() => sessions.value?.dispose())
           :data-record="row.rowKey"
         >
           <HilosHideable :value="row.lastSeenTs">
-            <template #default="{ value }">{{
-              formatAnalyticsTime(value)
-            }}</template>
+            <template #default="{ value }">{{ time(value) }}</template>
           </HilosHideable>
         </span>
       </template>

@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
+import { formatMoment } from '../format/moment.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { SIGNAL_TYPE_PAGE_SUBSCRIBE } from '../protocol/constants.js'
 import { HilosPages } from '../routing/hilosPages.js'
@@ -190,11 +191,13 @@ export function formatHilosLegalDate(date: string): string {
 
 /** Formats a recorded acceptance moment in the reader's time zone: a moment, unlike a revision's calendar date. */
 export function formatHilosLegalAcceptanceDate(moment: number): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(moment))
+  return (
+    formatMoment(moment, {
+      kind: 'date',
+      locale: 'en-GB',
+      format: { day: 'numeric', month: 'long', year: 'numeric' },
+    }) ?? '—'
+  )
 }
 
 /** The profile summary follows the worst document, as judged by the backend. */

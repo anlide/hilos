@@ -1,22 +1,29 @@
+import * as core from '@hilos/core/base'
 import {
+  bindTimeZoneState,
   ActionError,
   createSignal,
   bindImpersonation,
   ingest,
   ScopeManager,
   createHilosDataExportFlow,
+  HILOS_DATA_EXPORT_COPY,
   type DataExportNode,
   type HilosDataExportStore,
   type ActionLifecycle,
+  type HilosConnection,
+  type ProjectSignal,
+  type ReadonlySignal,
 } from '@hilos/core/base'
 import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosDataExport from './HilosDataExport.vue'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  vi.restoreAllMocks()
 })
 
 /**
@@ -100,6 +107,130 @@ function typePassword(value: string): void {
 }
 
 describe('HilosDataExport', () => {
+  it.each(['preparing', 'ready'] as const)(
+    'updates the cached %s status and its reserved line when only the authoritative zone changes',
+    async (state) => {
+      const moment = Date.parse('2026-01-01T00:30:00.000Z')
+      vi.spyOn(Date, 'now').mockReturnValue(moment)
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockReturnValue({
+        ...resolved,
+        timeZone: 'America/New_York',
+      })
+      const listeners = new Set<(signal: ProjectSignal) => void>()
+      const connection = {
+        projectTimeZone: 'UTC',
+        on(event: string, listener: (signal: ProjectSignal) => void) {
+          if (event === 'projectSignal') listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+      }
+      const receive = (timeZone: string | null) => {
+        for (const listener of listeners) {
+          listener({
+            type: 'handshake_response',
+            data: { entities: { currentUser: { id: 1, timeZone } } },
+          } as ProjectSignal)
+        }
+      }
+      const release = bindTimeZoneState(
+        connection as unknown as HilosConnection,
+      )
+      receive('UTC')
+      const subscribe = core.subscribeSignal
+      const callbacks = vi.fn()
+      const releases = vi.fn()
+      const subscriptions = vi
+        .spyOn(core, 'subscribeSignal')
+        .mockImplementation(
+          <T>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+            const stop = subscribe(source, (value) => {
+              callbacks(value)
+              listener(value)
+            })
+            return () => {
+              releases()
+              stop()
+            }
+          },
+        )
+      const w = mountExport()
+      const snapshot: DataExportNode =
+        state === 'ready'
+          ? {
+              state,
+              requestedAt: moment,
+              finishedAt: moment,
+              expiresAt: moment,
+              sizeBytes: 456,
+            }
+          : {
+              state,
+              requestedAt: moment,
+              finishedAt: null,
+              expiresAt: null,
+              sizeBytes: null,
+            }
+      w.state.set(snapshot)
+      await flushPromises()
+      const surface = w.wrapper.element
+      const flow = w.wrapper.props('flow')
+      const status = w.wrapper.get(`[data-id="data-export-${state}"]`)
+      const room = w.wrapper.get('p.invisible[aria-hidden="true"]')
+      const expectedPreparing = (timeZone: string) =>
+        HILOS_DATA_EXPORT_COPY.preparing.replace(
+          '{time}',
+          new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            timeZone,
+          }).format(moment),
+        )
+      const expectedStatus = (timeZone: string) =>
+        state === 'preparing'
+          ? expectedPreparing(timeZone)
+          : `Your copy is ready · 456 B · available until ${new Intl.DateTimeFormat(
+              undefined,
+              { dateStyle: 'long', timeZone },
+            ).format(moment)}`
+      try {
+        expect(status.text()).toBe(expectedStatus('UTC'))
+        expect(room.text()).toBe(expectedPreparing('UTC'))
+        callbacks.mockClear()
+        for (const zone of ['Europe/Kyiv', null]) {
+          receive(zone)
+          await flushPromises()
+          const effective = zone ?? 'America/New_York'
+          expect(status.text()).toBe(expectedStatus(effective))
+          expect(room.text()).toBe(expectedPreparing(effective))
+          expect(w.wrapper.get('[role="status"]').text()).toBe(
+            expectedStatus(effective),
+          )
+          expect(w.wrapper.element).toBe(surface)
+          expect(w.wrapper.props('flow')).toBe(flow)
+          expect(w.state.get()).toBe(snapshot)
+          expect(w.sent).toEqual([])
+        }
+        expect(callbacks).toHaveBeenCalledTimes(2)
+        w.wrapper.unmount()
+        receive('UTC')
+        expect(callbacks).toHaveBeenCalledTimes(2)
+        expect(releases).toHaveBeenCalledTimes(subscriptions.mock.calls.length)
+      } finally {
+        w.flow.dispose()
+        release()
+        expect(listeners.size).toBe(0)
+      }
+    },
+  )
+
   it('shows state-specific controls and the authenticated download link', async () => {
     const w = mountExport()
     expect(w.wrapper.find('[data-id="data-export-prepare"]').exists()).toBe(

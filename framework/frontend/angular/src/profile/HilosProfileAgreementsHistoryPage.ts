@@ -12,6 +12,7 @@ import {
   describeHilosLegalRevision,
   formatHilosLegalAcceptanceDate,
   formatHilosLegalDate,
+  hilosTimeZone,
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
   subscribeSignal,
@@ -25,6 +26,7 @@ import { HilosModal } from '../HilosModal.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
+import { hilosSignal } from '../hilosSignal.js'
 
 type LegalHistory = ReturnType<
   ReturnType<typeof hilosLegalRevisionHistory>['get']
@@ -200,7 +202,11 @@ export class HilosProfileAgreementsHistoryPage {
   protected readonly dialog = signal<HilosLegalRevisionDialog | null>(null)
   protected readonly documentLabel = hilosLegalDocumentLabel
   protected readonly date = formatHilosLegalDate
-  protected readonly acceptanceDate = formatHilosLegalAcceptanceDate
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly acceptanceDate = (moment: number): string => {
+    this.timeZone()
+    return formatHilosLegalAcceptanceDate(moment)
+  }
   protected readonly description = describeHilosLegalRevision
   protected readonly title = computed(() => {
     const dialog = this.dialog()

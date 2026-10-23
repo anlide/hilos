@@ -14,7 +14,7 @@ import {
   type HilosAnalyticsActionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -40,6 +40,12 @@ const browserSessionId = computed(() =>
 )
 const header = useSignal(hilosAnalyticsBrowserSession(props.context.scopes))
 const actions = shallowRef<HilosAnalyticsActionsTable | null>(null)
+
+const timeZone = useSignal(hilosTimeZone)
+function time(moment: number): string {
+  void timeZone.value
+  return formatAnalyticsTime(moment)
+}
 
 // The router clears its buffered page response after publishing the route.
 // Rebind before the next render, once that synchronous navigation has finished.
@@ -91,9 +97,7 @@ onUnmounted(() => actions.value?.dispose())
         <span data-id="hilos-analytics-action-when" :data-record="row.rowKey">
           <HilosHideable :value="row.createdTs">
             <template #default="{ value }">
-              <span :data-created-ts="value">{{
-                formatAnalyticsTime(value)
-              }}</span>
+              <span :data-created-ts="value">{{ time(value) }}</span>
             </template>
           </HilosHideable>
         </span>

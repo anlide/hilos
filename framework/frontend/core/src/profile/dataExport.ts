@@ -12,7 +12,7 @@ import {
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { formatBytes } from '../format/bytes.js'
 import { formatCalendarDate } from '../format/date.js'
-import { toLocal } from '../session/serverClock.js'
+import { formatMoment } from '../format/moment.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   createSignal,
@@ -87,7 +87,17 @@ export function dataExportStatusText(node: DataExportNode | null): string {
     case 'preparing':
       return HILOS_DATA_EXPORT_COPY.preparing.replace(
         '{time}',
-        new Date(node.requestedAt).toLocaleString(),
+        formatMoment(node.requestedAt, {
+          kind: 'dateTime',
+          format: {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+          },
+        }) ?? '—',
       )
     case 'ready':
       return HILOS_DATA_EXPORT_COPY.ready
@@ -100,7 +110,7 @@ export function dataExportStatusText(node: DataExportNode | null): string {
   }
 }
 
-/** The archive the server says exists, with dates translated to the reader's clock. */
+/** The archive the server says exists, with absolute server epoch-ms moments. */
 export interface HilosDataExportStore {
   readonly state: ReadonlySignal<DataExportNode | null>
   start(): void
@@ -119,20 +129,7 @@ export function createHilosDataExportStore(
   const state = createSignal<DataExportNode | null>(null)
   let stop: (() => void) | null = null
   function apply(node: DataExportNode | null): void {
-    state.set(
-      node === null
-        ? null
-        : ({
-            ...node,
-            requestedAt: toLocal(node.requestedAt),
-            ...(node.state === 'preparing'
-              ? {}
-              : {
-                  finishedAt: toLocal(node.finishedAt),
-                  expiresAt: toLocal(node.expiresAt),
-                }),
-          } as DataExportNode),
-    )
+    state.set(node)
   }
   return {
     state,
@@ -251,7 +248,7 @@ export function createHilosDataExportFlow(
 }
 
 /**
- * Summarize the copy for its profile row, using the store's local dates.
+ * Summarize the copy for its profile row, using absolute server moments.
  * @param node The person's copy or its absence.
  */
 export function describeHilosDataExport(node: DataExportNode | null): string {

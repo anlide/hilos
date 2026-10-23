@@ -1,4 +1,5 @@
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatMoment } from '../../format/moment.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type Hideable, isHiddenValue } from '../../state/hiddenValue.js'
 import { type HilosTableFilterOption } from '../../table/tableFrame.js'
@@ -36,13 +37,7 @@ export const CHANGE_LOG_NO_RECEIPT_TEXT =
  * @param at UTC journal moment.
  */
 export function formatChangeLogTime(at: string): string {
-  const date = new Date(at)
-  return Number.isNaN(date.getTime())
-    ? at
-    : date.toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      })
+  return formatMoment(at, { kind: 'dateTime' }) ?? at
 }
 
 /**

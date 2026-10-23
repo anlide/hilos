@@ -80,6 +80,7 @@ import {
   hilosImpersonation,
   hilosSignedIn,
   hilosTakeoverViewOnly,
+  hilosTimeZone,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   protectedModeBannerCopy,
@@ -191,6 +192,7 @@ export function HilosLayout({
   banner,
   children,
 }: HilosLayoutProps) {
+  useSignal(hilosTimeZone)
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
 

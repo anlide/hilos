@@ -61,7 +61,6 @@ import {
   type HilosAccountStanding,
   type HilosAccountStandingKind,
 } from '../../session/sessionScope.js'
-import { toLocal } from '../../session/serverClock.js'
 import { type User } from '../../state/entity.js'
 import { type EntityCollection } from '../../state/EntityCollection.js'
 import { type EntityRef } from '../../state/EntityStore.js'
@@ -200,7 +199,7 @@ export interface HilosUserDetailRow extends HilosUserRow {
   readonly admin: boolean
   /** Whether the account is blocked from signing in. */
   readonly block: boolean
-  /** Scheduled erasure in local epoch milliseconds, or null when none stands. */
+  /** Scheduled erasure in absolute server epoch milliseconds, or null when none stands. */
   readonly deletionEffectiveAt: number | null
 }
 
@@ -916,8 +915,7 @@ export function createHilosUserDetail<TUser extends User>(
       ...resolveHilosUserRow(row, context.users),
       admin: user?.admin ?? false,
       block: user?.block ?? false,
-      deletionEffectiveAt:
-        deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
+      deletionEffectiveAt,
       hasSecondFactor:
         typeof secondFactor === 'boolean' ? secondFactor : HIDDEN_VALUE,
       hasPassword:

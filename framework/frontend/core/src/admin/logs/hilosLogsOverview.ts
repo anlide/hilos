@@ -26,6 +26,7 @@ import {
 } from '../../protocol/logsSignals.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatMoment } from '../../format/moment.js'
 import {
   HIDDEN_VALUE,
   isHiddenValue,
@@ -241,11 +242,19 @@ export function formatLogsOverviewRotationAt(at: string | null): string {
     return NOTHING_KNOWN
   }
 
-  const parsed = new Date(at)
-
-  return Number.isNaN(parsed.getTime())
-    ? NOTHING_KNOWN
-    : parsed.toLocaleString()
+  return (
+    formatMoment(readLogsMoment(at), {
+      kind: 'dateTime',
+      format: {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+      },
+    }) ?? NOTHING_KNOWN
+  )
 }
 
 /**
@@ -659,11 +668,34 @@ export function logsOverviewRecentEmptyLead(tab: HilosLogsRecentTab): string {
  * @param at The instant as ISO 8601, as the node that wrote the line read it.
  */
 export function formatLogsOverviewRecentAt(at: string): string {
-  const parsed = new Date(at)
+  return (
+    formatMoment(readLogsMoment(at), {
+      kind: 'time',
+      format: { hour: 'numeric', minute: 'numeric', second: 'numeric' },
+    }) ?? NOTHING_KNOWN
+  )
+}
 
-  return Number.isNaN(parsed.getTime())
-    ? NOTHING_KNOWN
-    : parsed.toLocaleTimeString()
+/**
+ * Normalize only legacy log timestamps with an explicit numeric offset.
+ * UTC strings pass unchanged; a missing zone never borrows the device's zone.
+ *
+ * @param at A log timestamp from the existing reader boundary.
+ */
+function readLogsMoment(at: string): string {
+  const parts =
+    /^((?:\d{4}|[+-]\d{6})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?[+-]\d{2}:?\d{2}$/.exec(
+      at,
+    )
+  if (parts === null || parts[0] !== at) return at
+  const wallTime = new Date(`${parts[1]}Z`)
+  if (
+    !Number.isFinite(wallTime.getTime()) ||
+    !wallTime.toISOString().startsWith(`${parts[1]}.`)
+  )
+    return at
+  const parsed = new Date(at)
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : at
 }
 
 /**

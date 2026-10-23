@@ -42,7 +42,7 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import type {
   HilosLogsOverviewContext,
   HilosLogsRecentTab,
@@ -76,6 +76,7 @@ const ROTATIONS_PATH = logRotationsPath(HILOS_ROTATION_STATE_DUE)
 export function HilosLogsPage({ context }: HilosLogsPageProps) {
   const handle = useMemo(() => createHilosLogsOverview(context), [context])
   const overview = useSignal(handle.overview)
+  useSignal(hilosTimeZone)
 
   // The frame arrives once as the answer to the subscription and again on every tick
   // where the cluster picture moved; nothing is ever re-requested.

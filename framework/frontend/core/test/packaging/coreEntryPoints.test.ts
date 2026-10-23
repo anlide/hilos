@@ -94,12 +94,16 @@ const publicLegalTypes = [
   'HilosLegalPublicDocumentOptions',
   'HilosLegalPublicDocumentStore',
 ]
+/** The moment formatter's explicit additions to the frozen legacy snapshot. */
+const momentValues = ['formatMoment']
+const momentTypes = ['MomentFormatOptions']
 const expectedValues = [
   ...legacy.value,
   ...timeZoneValues,
   ...logViewerValues,
   ...pageHeadValues,
   ...publicLegalValues,
+  ...momentValues,
 ].sort()
 
 /**
@@ -205,7 +209,11 @@ describe('core public entries', () => {
         true,
       )
     }
-    for (const name of [...pageHeadValues, ...publicLegalValues]) {
+    for (const name of [
+      ...pageHeadValues,
+      ...publicLegalValues,
+      ...momentValues,
+    ]) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
         true,
@@ -329,11 +337,27 @@ describe('core public entries', () => {
         .filter(([, symbol]) => symbol.flags & ts.SymbolFlags.Type)
         .map(([name]) => name)
         .sort(),
-    ).toEqual([...legacy.type, ...pageHeadTypes, ...publicLegalTypes].sort())
+    ).toEqual(
+      [
+        ...legacy.type,
+        ...pageHeadTypes,
+        ...publicLegalTypes,
+        ...momentTypes,
+      ].sort(),
+    )
     const baseExports = exportsOf('base/index.ts')
-    for (const name of [...pageHeadTypes, ...publicLegalTypes]) {
+    for (const name of [
+      ...pageHeadTypes,
+      ...publicLegalTypes,
+      ...momentTypes,
+      ...momentValues,
+    ]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))
+    }
+    const momentExports = exportsOf('format/moment.ts')
+    for (const name of [...momentValues, ...momentTypes]) {
+      expect(root.get(name), name).toBe(momentExports.get(name))
     }
     const names = new Set<string>()
     for (const entry of entries.slice(1)) {
@@ -357,6 +381,7 @@ describe('core public entries', () => {
       'base/index.ts',
     ])
     expect(closure).toContain('connection/restoreProgress.ts')
+    expect(closure).toContain('format/moment.ts')
     for (const module of [
       'legalPublicDocument',
       'legalPrivacy',
@@ -382,6 +407,8 @@ describe('core public entries', () => {
   it.each([
     'base/index.ts',
     'connection/HilosConnection.ts',
+    'format/moment.ts',
+    'timeZone/timeZoneState.ts',
     'subscription/PageSubscription.ts',
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',

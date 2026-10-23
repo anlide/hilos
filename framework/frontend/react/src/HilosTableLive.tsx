@@ -26,6 +26,7 @@ import type { ReactNode } from 'react'
 import {
   TABLE_FROZEN_COPY,
   hilosTableFrozenLabel,
+  hilosTimeZone,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
@@ -131,6 +132,7 @@ export function HilosTableLive<R>({
   tableProgressAction,
   bulkUntouched,
 }: HilosTableLiveProps<R>) {
+  useSignal(hilosTimeZone)
   const live = useSignal(controller.live)
   const rows = useSignal(controller.rows)
   const pendingCount = useSignal(controller.pendingCount)

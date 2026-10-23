@@ -1,3 +1,4 @@
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
 // The export of the acceptance records (HIL-1234): the store follows the page
 // answer and then the latest frame, the order carries the table's filters and
 // search behind the confirmation step, and the lines say what the export holds.
@@ -157,7 +158,7 @@ describe('the export node', () => {
 })
 
 describe('createHilosLegalAcceptancesExportStore', () => {
-  it('starts from the page answer, with the moments on the reader clock', () => {
+  it('starts from the page answer, with absolute server moments', () => {
     vi.useFakeTimers()
     vi.setSystemTime(0)
     applyServerTime(100)
@@ -166,7 +167,7 @@ describe('createHilosLegalAcceptancesExportStore', () => {
     const store = createHilosLegalAcceptancesExportStore(w.context)
     store.start()
 
-    expect(store.state.get()).toEqual({ ...preparing, requestedAt: 900 })
+    expect(store.state.get()).toEqual({ ...preparing, requestedAt: 1000 })
     store.dispose()
   })
 
@@ -431,3 +432,55 @@ describe('the lines of the export', () => {
     expect(hilosLegalAcceptancesExportStatusRoom()).toMatch(/^Export ready · /)
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      const at = Date.parse('2026-01-01T00:30:05Z')
+      expect(
+        hilosLegalAcceptancesExportStatus({ ...preparing, requestedAt: at }),
+      ).toBe('Preparing the export… Started at 12/31/2025, 4:30:05 PM.')
+      expect(
+        hilosLegalAcceptancesExportStatus({ ...ready, expiresAt: at }),
+      ).toBe(
+        'Export ready · 1,234 records · 4.5 KB · available until 12/31/2025, 4:30:05 PM',
+      )
+      const w = world()
+      w.page.data.set('legalAcceptancesExport', {
+        ...ready,
+        requestedAt: at,
+        finishedAt: at + 1,
+        expiresAt: at + 2,
+      })
+      const store = createHilosLegalAcceptancesExportStore(w.context)
+      store.start()
+      expect(store.state.get()).toEqual({
+        ...ready,
+        requestedAt: at,
+        finishedAt: at + 1,
+        expiresAt: at + 2,
+      })
+      w.emit({
+        ...ready,
+        requestedAt: at + 3,
+        finishedAt: at + 4,
+        expiresAt: at + 5,
+      })
+      expect(store.state.get()).toEqual({
+        ...ready,
+        requestedAt: at + 3,
+        finishedAt: at + 4,
+        expiresAt: at + 5,
+      })
+      store.dispose()
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)

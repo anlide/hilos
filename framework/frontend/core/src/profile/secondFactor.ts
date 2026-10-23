@@ -23,7 +23,6 @@ import {
 } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
-import { toLocal } from '../session/serverClock.js'
 import {
   sessionSecondFactorPolicy,
   type SecondFactorPolicy,
@@ -63,7 +62,7 @@ const ACTION_RESET_CANCEL = 'profile_second_factor_reset_cancel'
 
 /**
  * The section payload (PHP `SecondFactorStateSignalData`). Moments are SERVER
- * epoch ms here and local in {@link HilosSecondFactorState}.
+ * epoch ms here and in {@link HilosSecondFactorState}.
  */
 export const secondFactorStateSchema = z.looseObject({
   enabled: z.boolean(),
@@ -106,9 +105,9 @@ export interface HilosSecondFactorAuthenticator {
   readonly id: number
   /** The name the person gave the app when connecting it. */
   readonly label: string
-  /** The LOCAL moment it was connected, in epoch ms. */
+  /** The absolute server moment it was connected, in epoch ms. */
   readonly createdAt: number
-  /** The LOCAL moment a code from it last passed, or `null` when none has. */
+  /** The absolute server moment a code from it last passed, or `null` when none has. */
   readonly lastUsedAt: number | null
 }
 
@@ -122,7 +121,7 @@ export interface HilosSecondFactorResetWait {
   readonly days: number
   /** A shorter wait the person chose that is not in force yet, or `null`. */
   readonly pendingDays: number | null
-  /** The LOCAL moment that shorter wait takes over, or `null`. */
+  /** The absolute server moment that shorter wait takes over, or `null`. */
   readonly pendingFrom: number | null
   /** The wait a person starts on. */
   readonly defaultDays: number
@@ -134,9 +133,9 @@ export interface HilosSecondFactorResetWait {
 
 /** A removal of the factor that stands, waiting for its date. */
 export interface HilosSecondFactorReset {
-  /** The LOCAL moment it was asked for. */
+  /** The absolute server moment it was asked for. */
   readonly requestedAt: number
-  /** The LOCAL moment it takes effect. */
+  /** The absolute server moment it takes effect. */
   readonly effectiveAt: number
 }
 
@@ -187,8 +186,8 @@ export function readHilosSecondFactorState(
     authenticators: data.authenticators.map((entry) => ({
       id: entry.id,
       label: entry.label,
-      createdAt: toLocal(entry.createdAt),
-      lastUsedAt: entry.lastUsedAt === null ? null : toLocal(entry.lastUsedAt),
+      createdAt: entry.createdAt,
+      lastUsedAt: entry.lastUsedAt,
     })),
     backupCodesLeft: data.backupCodesLeft,
     backupCodesTotal: data.backupCodesTotal,
@@ -196,7 +195,7 @@ export function readHilosSecondFactorState(
     resetWait: {
       days: wait.days,
       pendingDays: wait.pendingDays,
-      pendingFrom: wait.pendingFrom === null ? null : toLocal(wait.pendingFrom),
+      pendingFrom: wait.pendingFrom,
       defaultDays: wait.defaultDays,
       minDays: wait.minDays,
       maxDays: wait.maxDays,
@@ -205,8 +204,8 @@ export function readHilosSecondFactorState(
       data.reset === null
         ? null
         : {
-            requestedAt: toLocal(data.reset.requestedAt),
-            effectiveAt: toLocal(data.reset.effectiveAt),
+            requestedAt: data.reset.requestedAt,
+            effectiveAt: data.reset.effectiveAt,
           },
   }
 }

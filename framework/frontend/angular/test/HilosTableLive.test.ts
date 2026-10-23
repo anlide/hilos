@@ -2,7 +2,7 @@
 // Vue reference and the React port run.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TableViewportController,
   createSignal,
@@ -16,8 +16,17 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
+import {
+  bindTestTimeZone,
+  type TimeZoneTestBinding,
+} from './timeZoneTestHarness.js'
+
+let timeZoneBinding: TimeZoneTestBinding | null = null
 
 afterEach(() => {
+  timeZoneBinding?.release()
+  timeZoneBinding = null
+  vi.restoreAllMocks()
   document.body.classList.remove('modal-open')
 })
 
@@ -313,6 +322,49 @@ describe('HilosTableLive', () => {
     expect(
       query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
     ).toBe(hilosTableFrozenLabel(since))
+  })
+
+  it('reformats the frozen line for the live reader zone without replacing it', () => {
+    const since = Date.parse('2026-10-09T23:30:00.000Z')
+    const controller = makeController()
+    controller.ingestFrozen(since)
+    const fixture = mountLive(controller)
+    const line = query(fixture, '[data-id="hilos-table-frozen"]') as HTMLElement
+    timeZoneBinding = bindTestTimeZone('America/New_York')
+
+    const receiveAndRead = (timeZone: string | null): string => {
+      timeZoneBinding?.receive(timeZone)
+      fixture.detectChanges()
+      expect(query(fixture, '[data-id="hilos-table-frozen"]')).toBe(line)
+      const actual = line.textContent?.trim() ?? ''
+      expect(actual).toBe(hilosTableFrozenLabel(since))
+      return actual
+    }
+
+    const utc = receiveAndRead('UTC')
+    const kyiv = receiveAndRead('Europe/Kyiv')
+    const automatic = receiveAndRead(null)
+    expect(utc).not.toBe(kyiv)
+    expect(kyiv).not.toBe(automatic)
+    expect(timeZoneBinding.listenerCount()).toBe(2)
+
+    fixture.destroy()
+    const destroyedText = line.textContent
+    timeZoneBinding.rebind()
+    expect(timeZoneBinding.listenerCount()).toBe(2)
+    timeZoneBinding.receive('UTC')
+    expect(line.textContent).toBe(destroyedText)
+
+    const rebound = mountLive(controller)
+    expect(
+      query(rebound, '[data-id="hilos-table-frozen"]')?.textContent?.trim(),
+    ).toBe(hilosTableFrozenLabel(since))
+    timeZoneBinding.receive('Europe/Kyiv')
+    rebound.detectChanges()
+    expect(
+      query(rebound, '[data-id="hilos-table-frozen"]')?.textContent?.trim(),
+    ).toBe(hilosTableFrozenLabel(since))
+    rebound.destroy()
   })
 
   it('keeps the frozen table as its snowflake after pending changes holding the line', () => {

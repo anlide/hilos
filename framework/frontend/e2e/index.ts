@@ -44,6 +44,7 @@ export {
   countSentFrames,
   createSocketFrameReader,
   dropSocket,
+  forwardSessionTimeZone,
   watchSocketFrames,
   type SocketFrame,
 } from './socket.js'
@@ -199,6 +200,9 @@ export {
   expectChangeLogOverview,
   expectChangeLogFeedRow,
   expectChangeLogReceiptOpen,
+  expectChangeLogReceiptMoment,
+  expectChangeLogTimes,
+  watchChangeLogDisplay,
   expectChangeLogReceiptWriter,
   expectChangeLogValues,
   expectRegistrationFeedRow,

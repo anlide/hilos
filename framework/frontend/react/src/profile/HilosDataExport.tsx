@@ -4,6 +4,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
+  hilosTimeZone,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core/base'
@@ -27,6 +28,7 @@ export function HilosDataExport({
   lead,
   titled = true,
 }: HilosDataExportProps) {
+  useSignal(hilosTimeZone)
   const impersonation = useSignal(hilosImpersonation)
   const node = useSignal(store.state)
   const busy = useSignal(flow.busy)
@@ -34,10 +36,13 @@ export function HilosDataExport({
   const stepRefusal = useSignal(flow.stepUp.refusal)
   const open = useSignal(flow.open)
   const status = dataExportStatusText(node)
-  const preparingRoom = COPY.preparing.replace(
-    '{time}',
-    new Date().toLocaleString(),
-  )
+  const preparingRoom = dataExportStatusText({
+    state: 'preparing',
+    requestedAt: node?.requestedAt ?? Date.now(),
+    finishedAt: null,
+    expiresAt: null,
+    sizeBytes: null,
+  })
   return (
     <section
       className={titled ? 'border rounded p-3 mb-3' : 'mb-3'}

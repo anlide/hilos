@@ -299,7 +299,7 @@ export interface CodeDelivery {
  * password recovery alike — a session cannot stand in both at once. `channel`
  * names the code channel a phone code went over and is null for a mail flow,
  * which has no choice to name; `expiresAt` arrives as a SERVER moment and is
- * handed on in local ms, like every other moment the backend sends.
+ * handed on in local ms for the countdown; displayed removal moments stay UTC.
  *
  * The node also names WHY the session stands where it does (HIL-833), in the
  * vocabulary the live converge signal already uses. That is what lets the
@@ -363,7 +363,7 @@ export interface PendingAuthStep {
   readonly message: string | null
   /**
    * What the second-factor steps draw (HIL-494) — the days of trust the code
-   * step offers and the LOCAL moment an already requested removal takes effect —
+   * step offers and the absolute server moment an already requested removal takes effect —
    * or `null` on every other step.
    */
   readonly secondFactor: PendingSecondFactor | null
@@ -412,7 +412,7 @@ export interface HilosAccountStanding {
   readonly blocked: boolean
   /** Whether a lapsed acceptance freezes the account under the refusal setting. */
   readonly frozen: boolean
-  /** The LOCAL epoch-ms moment the scheduled erasure falls due, or `null` when none is scheduled. */
+  /** The absolute server epoch-ms moment the scheduled erasure falls due, or `null` when none is scheduled. */
   readonly deletionEffectiveAt: number | null
   /** Documents whose deadline has passed, whatever the refusal setting says. */
   readonly lapsed: readonly HilosAccountStandingLapse[]
@@ -462,7 +462,7 @@ const accountStandingLapseSchema = z.looseObject({
 export interface PendingSecondFactor {
   /** Days "don't ask again on this device" promises, or `null` when no trust is offered. */
   readonly trustDeviceDays: number | null
-  /** The LOCAL epoch-ms moment a requested removal takes effect, or `null` when none is. */
+  /** The absolute server epoch-ms moment a requested removal takes effect, or `null` when none is. */
   readonly resetEffectiveAt: number | null
 }
 
@@ -825,9 +825,9 @@ export function sessionPendingAck(
  * device all come back to: it is answered by the server on every handshake, so
  * nothing about it is remembered in the tab.
  *
- * The moment is converted to the local scale on the way out, so a view compares
- * it with `Date.now()` and never with the server's clock; on the identifier step
- * there is no moment at all, and the field is null.
+ * The expiry is converted to the local scale for comparison with `Date.now()`;
+ * on the identifier step it is null. The second-factor removal moment stays
+ * in absolute server epoch milliseconds for display.
  *
  * Not only where the session stopped, but where it was MOVED to while nobody was
  * listening (HIL-833) — which is why a surface watches this for CHANGES and not
@@ -1000,8 +1000,7 @@ function readPendingSecondFactor(value: unknown): PendingSecondFactor | null {
 
   return {
     trustDeviceDays,
-    resetEffectiveAt:
-      resetEffectiveAt === null ? null : toLocal(resetEffectiveAt),
+    resetEffectiveAt,
   }
 }
 
@@ -1232,7 +1231,7 @@ export function sessionAccountBlocked(
  * `null` is also what an anonymous session carries, and what a viewer of the
  * admin view mode reads where the backend put a hidden mark in the standing's
  * place: an unreadable standing is an absent one. The erasure moment comes back
- * on the LOCAL clock.
+ * as absolute server epoch milliseconds.
  *
  * @param raw The standing as the wire carried it.
  */
@@ -1249,8 +1248,7 @@ export function readHilosAccountStanding(
     shown: parsed.data.shown,
     blocked: parsed.data.blocked,
     frozen: parsed.data.frozen,
-    deletionEffectiveAt:
-      deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
+    deletionEffectiveAt,
     lapsed: readStandingDocuments(parsed.data.lapsed),
     window: readStandingDocuments(parsed.data.window),
     mergedInto: parsed.data.mergedInto,

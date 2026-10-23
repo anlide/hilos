@@ -3,13 +3,20 @@
 // factor takes effect is said on the sign-in step, on its confirmation and in the
 // profile, and three spellings of one date would read as three dates.
 
+import { formatMoment } from './moment.js'
+
 /**
  * A moment as its calendar date, in the reader's own locale and long form —
  * "September 24, 2026" — because the day is the whole of what is being said.
  *
- * @param moment The LOCAL epoch-ms moment.
+ * @param moment The absolute server epoch-ms moment.
  * @returns The date as the reader's locale writes it.
  */
 export function formatCalendarDate(moment: number): string {
-  return new Date(moment).toLocaleDateString(undefined, { dateStyle: 'long' })
+  return (
+    formatMoment(moment, {
+      kind: 'date',
+      format: { dateStyle: 'long' },
+    }) ?? '—'
+  )
 }

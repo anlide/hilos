@@ -1,3 +1,4 @@
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
@@ -355,3 +356,26 @@ describe('what the freeze screen is handed (HIL-500)', () => {
     ])
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_700_000_000_000)
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      const now = Date.parse('2025-12-30T00:30:05Z') - drift
+      const effectiveAt = Date.parse('2026-01-01T00:30:05Z')
+      expect(formatHilosDeletionStrip({ effectiveAt }, now)).toBe(
+        'Your account will be deleted on December 31, 2025 — 2 days left',
+      )
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
+  },
+)

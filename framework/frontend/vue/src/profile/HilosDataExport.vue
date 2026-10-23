@@ -6,6 +6,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
+  hilosTimeZone,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core/base'
@@ -25,6 +26,7 @@ const props = withDefaults(
   { titled: true, lead: '' },
 )
 const impersonation = useSignal(hilosImpersonation)
+const timeZone = useSignal(hilosTimeZone)
 const node = useSignal(props.store.state)
 const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
@@ -36,11 +38,20 @@ const open = computed({
     if (!value) props.flow.close()
   },
 })
-const status = computed(() => dataExportStatusText(node.value))
-const preparingRoom = COPY.preparing.replace(
-  '{time}',
-  new Date().toLocaleString(),
-)
+const status = computed(() => {
+  void timeZone.value
+  return dataExportStatusText(node.value)
+})
+const preparingRoom = computed(() => {
+  void timeZone.value
+  return dataExportStatusText({
+    state: 'preparing',
+    requestedAt: node.value?.requestedAt ?? Date.now(),
+    finishedAt: null,
+    expiresAt: null,
+    sizeBytes: null,
+  })
+})
 </script>
 
 <template>

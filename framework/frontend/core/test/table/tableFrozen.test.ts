@@ -1,3 +1,4 @@
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import {
@@ -26,8 +27,8 @@ describe('hilosTableFrozenLabel', () => {
     expect(hilosTableFrozenLabel(null)).toBeNull()
   })
 
-  it('says since when the table froze, on the reader own clock', () => {
-    // The server runs a minute ahead: its moment of the failure is the reader's "now".
+  it('says the absolute failure time in the reader zone', () => {
+    // Clock correction must not shift the absolute moment of the failure.
     applyServerTime(LOCAL_NOW + MINUTE_MS)
 
     const label = hilosTableFrozenLabel(LOCAL_NOW + MINUTE_MS)
@@ -35,10 +36,29 @@ describe('hilosTableFrozenLabel', () => {
     expect(label).toBe(
       TABLE_FROZEN_COPY.bar.replace(
         '{time}',
-        new Date(LOCAL_NOW).toLocaleTimeString(),
+        new Date(LOCAL_NOW + MINUTE_MS).toLocaleTimeString(),
       ),
     )
     expect(label).toContain('This table has not updated since')
     expect(label).not.toContain('{time}')
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      expect(hilosTableFrozenLabel(Date.parse('2026-01-01T00:30:05Z'))).toBe(
+        'This table has not updated since 4:30:05 PM. The rows shown may be out of date.',
+      )
+      expect(hilosTableFrozenLabel(null)).toBeNull()
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)

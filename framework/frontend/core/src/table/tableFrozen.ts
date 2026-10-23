@@ -8,7 +8,7 @@
 // RT_STALENESS_COPY already carries (protocol/rtStaleness.ts): three shells wording
 // the same fact each in its own way is three different products.
 
-import { toLocal } from '../session/serverClock.js'
+import { formatMoment } from '../format/moment.js'
 
 /** The words a frozen table is spoken with — the live line, and its name once another message holds it. */
 export const TABLE_FROZEN_COPY = {
@@ -21,8 +21,8 @@ export const TABLE_FROZEN_COPY = {
 /**
  * The live line of a frozen table, with the moment in the reader's own timezone.
  *
- * The wire carries a server moment, so the conversion goes through `serverClock`, the
- * same way the page-wide mark of a lost source does (`rtStalenessLabel`).
+ * The wire's absolute server moment is displayed in the effective reader's zone,
+ * the same way the page-wide mark of a lost source is (`rtStalenessLabel`).
  *
  * @param since Server milliseconds of the first failure, or null while the table is live.
  * @returns The sentence, or null when the table is not frozen.
@@ -34,6 +34,6 @@ export function hilosTableFrozenLabel(since: number | null): string | null {
 
   return TABLE_FROZEN_COPY.bar.replace(
     '{time}',
-    new Date(toLocal(since)).toLocaleTimeString(),
+    formatMoment(since, { kind: 'time' }) ?? '—',
   )
 }

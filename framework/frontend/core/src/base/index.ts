@@ -769,6 +769,7 @@ export {
 } from '../auth/authSendProgress.js'
 export { formatCountdown } from '../format/duration.js'
 export { formatCalendarDate } from '../format/date.js'
+export { formatMoment, type MomentFormatOptions } from '../format/moment.js'
 export { formatInitials } from '../format/initials.js'
 export {
   AUTH_CONVERGE_SIGNAL,

@@ -7,6 +7,7 @@
 // effect runs twice over the same reader here.
 import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import {
   ActionLifecycle,
   CHANGE_LOG_OVERVIEW_SECTION,
@@ -20,6 +21,7 @@ import {
   type ActionSuccessSignal,
   type ConnectionState,
   type HilosChangeLogEntry,
+  type HilosChangeLogFeedRow,
   type HilosChangeLogOverview,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptHeader,
@@ -27,10 +29,12 @@ import {
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HilosChangeLogPage } from '../src/admin/changeLog/HilosChangeLogPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const TABLE = 'hilosChangeLogFeed'
 const OVERVIEW: HilosChangeLogOverview = {
@@ -111,6 +115,11 @@ class PageHost {
 
 // The host of the current case; one page is mounted per case.
 let fixture: ComponentFixture<PageHost>
+const releases: (() => void)[] = []
+afterEach(() => {
+  for (const release of releases.splice(0)) release()
+  vi.restoreAllMocks()
+})
 
 /** Let a settled action and the page's own re-render reach the document. */
 async function settle(): Promise<void> {
@@ -290,16 +299,14 @@ function harness(
   const listeners = new Set<WindowListener>()
   const registered = new Set<string>()
   const connection = {
-    registerTableWindow(key: string): void {
+    registerTableWindow: vi.fn((key: string): void => {
       registered.add(key)
-    },
-    unregisterTableWindow(key: string): void {
+    }),
+    unregisterTableWindow: vi.fn((key: string): void => {
       registered.delete(key)
-    },
+    }),
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): boolean {
-      return true
-    },
+    sendTableViewport: vi.fn(() => true),
     sendTableRendered(): boolean {
       return true
     },
@@ -333,7 +340,15 @@ function harness(
     }
     for (const listener of listeners) listener({ data })
   }
-  return { context, scope, pushWindow, source, listeners, registered }
+  return {
+    context,
+    scope,
+    connection,
+    pushWindow,
+    source,
+    listeners,
+    registered,
+  }
 }
 
 /**
@@ -387,6 +402,77 @@ describe('HilosChangeLogPage', () => {
     await settle()
     expect(tableFilter.textContent).toContain('bot')
     expect(tableFilter.textContent).toContain('hilos_user')
+  })
+
+  it('reformats the journal note from the live reader zone with an empty feed', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+    const overview = { ...OVERVIEW, oldestAt: '2026-01-31T22:30:00Z' }
+    const h = harness(overview)
+    const r = router()
+    const pushWindow = vi.spyOn(h, 'pushWindow')
+    await mountPage(h, false, r)
+
+    const page = fixture.debugElement.query(By.directive(HilosChangeLogPage))
+      .componentInstance as HilosChangeLogPage
+    const viewport = fixture.debugElement.query(
+      By.directive(HilosViewportTable),
+    ).componentInstance as HilosViewportTable<HilosChangeLogFeedRow>
+    const controller = viewport.controller()
+    const tile = element('hilos-change-log-tile-journal')
+    const note = tile.nextElementSibling!
+    const section = h.context.scopes.pageDataSignal(CHANGE_LOG_OVERVIEW_SECTION)
+    const snapshot = section.get()
+    const identity = r.identity.get()
+    const viewportRequests = h.connection.sendTableViewport.mock.calls.length
+    expect(said(note).trim()).toBe('2.0 KB · since January 2026')
+    expect(controller.rows.get()).toEqual([])
+    expect(
+      element('hilos-change-log-feed-empty').getAttribute('data-state'),
+    ).toBe('empty')
+
+    for (const [zone, expected] of [
+      ['Europe/Kyiv', '2.0 KB · since February 2026'],
+      [null, '2.0 KB · since January 2026'],
+    ] as const) {
+      timeZone.receive(zone)
+      await fixture.whenStable()
+      // Check the parent only: an unmarked OnPush page must stay skipped.
+      fixture.detectChanges()
+      expect(said(note).trim()).toBe(expected)
+      expect(element('hilos-change-log-tile-journal')).toBe(tile)
+      expect(tile.nextElementSibling).toBe(note)
+      expect(
+        fixture.debugElement.query(By.directive(HilosChangeLogPage))
+          .componentInstance,
+      ).toBe(page)
+      expect(
+        fixture.debugElement.query(By.directive(HilosViewportTable))
+          .componentInstance,
+      ).toBe(viewport)
+      expect(viewport.controller()).toBe(controller)
+      expect(controller.rows.get()).toEqual([])
+      expect(page.context()).toBe(h.context)
+      expect(section.get()).toBe(snapshot)
+      expect(r.identity.get()).toBe(identity)
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(h.source.sent).toEqual([])
+      expect(pushWindow).toHaveBeenCalledTimes(1)
+      expect(h.connection.registerTableWindow).toHaveBeenCalledTimes(1)
+      expect(h.connection.unregisterTableWindow).not.toHaveBeenCalled()
+      expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(
+        viewportRequests,
+      )
+    }
+
+    await unmount()
+    expect(h.registered.size).toBe(0)
+    expect(h.listeners.size).toBe(0)
+    expect(r.leaves.size).toBe(0)
+    expect(timeZone.listenerCount()).toBe(2)
+    timeZone.release()
+    expect(timeZone.listenerCount()).toBe(0)
   })
 
   it('offers the table names of a later page answer in the feed filter', async () => {

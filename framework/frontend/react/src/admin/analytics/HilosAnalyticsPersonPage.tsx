@@ -23,7 +23,7 @@ import {
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
@@ -55,6 +55,7 @@ export function HilosAnalyticsPersonPage({
   }
 
   const route = useSignal(router.currentRoute)
+  useSignal(hilosTimeZone)
   const userId = readAnalyticsRouteId(
     route.params[ANALYTICS_PERSON_ROUTE_PARAM],
   )

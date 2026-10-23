@@ -32,7 +32,7 @@ import {
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
 
 import {
   HilosFormError,
@@ -41,6 +41,7 @@ import {
   HilosLongText,
   HilosModal,
   HILOS_ROUTER,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** The read-only receipt dialog over the page's one shared reader. */
@@ -100,7 +101,9 @@ import {
         @if (attribution(); as shown) {
           <dl class="row mb-2">
             <dt class="col-sm-4">{{ copy.when }}</dt>
-            <dd class="col-sm-8">{{ shown.when }}</dd>
+            <dd class="col-sm-8" data-id="hilos-change-log-receipt-time">
+              {{ shown.when }}
+            </dd>
             <dt class="col-sm-4">{{ copy.who }}</dt>
             <dd class="col-sm-8 text-break">
               @if (isHidden(shown.actor.label)) {
@@ -328,7 +331,11 @@ export class HilosChangeLogReceiptModal {
 
   protected readonly copy = CHANGE_LOG_RECEIPT_COPY
   protected readonly isHidden = isHiddenValue
-  protected readonly time = formatChangeLogTime
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly time = (moment: string): string => {
+    this.timeZone()
+    return formatChangeLogTime(moment)
+  }
 
   // The navigator the record links resolve through; without one a record stays
   // text, as it does in Vue.
@@ -341,6 +348,7 @@ export class HilosChangeLogReceiptModal {
     formatChangeLogReceiptTitle(this.dialog()),
   )
   protected readonly attribution = computed(() => {
+    this.timeZone()
     const header = this.dialog()?.header
     return header ? changeLogReceiptAttribution(header) : null
   })

@@ -1,10 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {
   TableViewportController,
   createSignal,
   hilosTableFrozenLabel,
 } from '@hilos/core'
+import * as core from '@hilos/core/base'
+import { bindTimeZoneState, hilosTimeZone } from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -12,6 +16,11 @@ import type {
   HilosTableColumn,
   HilosTableProgress,
 } from '@hilos/core'
+import type {
+  HilosConnection,
+  ProjectSignal,
+  ReadonlySignal,
+} from '@hilos/core/base'
 import type { ReactNode } from 'react'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
@@ -20,6 +29,8 @@ import { HilosTableLive } from '../src/HilosTableLive.js'
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -116,6 +127,34 @@ function renderLive(
 
 function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector<HTMLElement>(`[data-id="${id}"]`)
+}
+
+/** The real zone binding consumes these connection events, as at boot. */
+function zoneConnection() {
+  const listeners = new Map<string, Set<(signal: ProjectSignal) => void>>()
+  return {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: ProjectSignal) => void) {
+      const eventListeners = listeners.get(event) ?? new Set()
+      eventListeners.add(listener)
+      listeners.set(event, eventListeners)
+      return () => eventListeners.delete(listener)
+    },
+    receive(timeZone: string | null) {
+      for (const listener of listeners.get('projectSignal') ?? []) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as ProjectSignal)
+      }
+    },
+    listenerCount() {
+      return [...listeners.values()].reduce(
+        (count, eventListeners) => count + eventListeners.size,
+        0,
+      )
+    },
+  }
 }
 
 describe('HilosTableLive', () => {
@@ -239,6 +278,141 @@ describe('HilosTableLive', () => {
     expect(byId(container, 'hilos-table-live-status')?.textContent).toBe(
       hilosTableFrozenLabel(since),
     )
+  })
+
+  it('updates the frozen line across UTC, Kyiv and Automatic without changing table data', () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    const connection = zoneConnection()
+    const release = bindTimeZoneState(connection as unknown as HilosConnection)
+    const receive = (timeZone: string | null) =>
+      act(() => connection.receive(timeZone))
+    receive('UTC')
+
+    const subscribe = core.subscribeSignal
+    const callbacks = vi.fn()
+    const releases = vi.fn()
+    let activeZoneSubscriptions = 0
+    const subscriptions = vi
+      .spyOn(core, 'subscribeSignal')
+      .mockImplementation(
+        <T,>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+          let active = true
+          const stop = subscribe(source, (value) => {
+            if (source === hilosTimeZone) callbacks(value)
+            listener(value)
+          })
+          if (source === hilosTimeZone) activeZoneSubscriptions++
+          return () => {
+            if (!active) return
+            active = false
+            if (source === hilosTimeZone) activeZoneSubscriptions--
+            releases()
+            stop()
+          }
+        },
+      )
+
+    const controller = makeController()
+    const since = Date.parse('2026-10-09T10:11:12.000Z')
+    controller.ingestFrozen(since)
+    const rows = controller.rows.get()
+    const expected = (timeZone: string) =>
+      `This table has not updated since ${new Intl.DateTimeFormat(undefined, {
+        timeStyle: 'medium',
+        timeZone,
+      }).format(since)}. The rows shown may be out of date.`
+    const mounted = render(
+      <StrictMode>
+        <HilosTableLive controller={controller} columns={COLUMNS} />
+      </StrictMode>,
+    )
+    const line = byId(mounted.container, 'hilos-table-frozen')!
+    const element = line
+    try {
+      expect(line.textContent).toBe(expected('UTC'))
+      expect(activeZoneSubscriptions).toBe(1)
+      expect(connection.listenerCount()).toBe(2)
+
+      receive('Europe/Kyiv')
+      expect(line.textContent).toBe(expected('Europe/Kyiv'))
+      expect(
+        byId(mounted.container, 'hilos-table-live-status')?.textContent,
+      ).toBe(expected('Europe/Kyiv'))
+      expect(byId(mounted.container, 'hilos-table-frozen')).toBe(element)
+      expect(controller.rows.get()).toBe(rows)
+      expect(controller.frozenSince.get()).toBe(since)
+      expect(activeZoneSubscriptions).toBe(1)
+      expect(callbacks).toHaveBeenCalledTimes(1)
+
+      receive('Europe/Kyiv')
+      expect(callbacks).toHaveBeenCalledTimes(1)
+      receive(null)
+      expect(line.textContent).toBe(expected('America/New_York'))
+      expect(byId(mounted.container, 'hilos-table-frozen')).toBe(element)
+      expect(controller.rows.get()).toBe(rows)
+      expect(controller.frozenSince.get()).toBe(since)
+      expect(callbacks).toHaveBeenCalledTimes(2)
+
+      mounted.unmount()
+      expect(activeZoneSubscriptions).toBe(0)
+      receive('UTC')
+      expect(callbacks).toHaveBeenCalledTimes(2)
+
+      release()
+      const rebound = zoneConnection()
+      const stop = bindTimeZoneState(rebound as unknown as HilosConnection)
+      const receiveRebound = (timeZone: string | null) =>
+        act(() => rebound.receive(timeZone))
+      receiveRebound('UTC')
+      const reboundMount = render(
+        <StrictMode>
+          <HilosTableLive controller={controller} columns={COLUMNS} />
+        </StrictMode>,
+      )
+      try {
+        expect(
+          byId(reboundMount.container, 'hilos-table-frozen')?.textContent,
+        ).toBe(expected('UTC'))
+        expect(activeZoneSubscriptions).toBe(1)
+        receiveRebound('Europe/Kyiv')
+        expect(
+          byId(reboundMount.container, 'hilos-table-frozen')?.textContent,
+        ).toBe(expected('Europe/Kyiv'))
+        expect(callbacks).toHaveBeenCalledTimes(3)
+        reboundMount.unmount()
+        expect(activeZoneSubscriptions).toBe(0)
+        receiveRebound(null)
+        expect(callbacks).toHaveBeenCalledTimes(3)
+      } finally {
+        stop()
+      }
+      expect(releases).toHaveBeenCalledTimes(subscriptions.mock.calls.length)
+    } finally {
+      mounted.unmount()
+      release()
+    }
+  })
+
+  it('renders its frozen label on the server without a window', () => {
+    const controller = makeController()
+    const since = Date.parse('2026-10-09T10:11:12.000Z')
+    controller.ingestFrozen(since)
+    const expected = hilosTableFrozenLabel(since)
+    vi.stubGlobal('window', undefined)
+
+    try {
+      expect(
+        renderToStaticMarkup(
+          <HilosTableLive controller={controller} columns={COLUMNS} />,
+        ),
+      ).toContain(expected)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps the frozen table as its snowflake after pending changes holding the line', () => {

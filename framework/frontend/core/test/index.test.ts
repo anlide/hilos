@@ -95,6 +95,8 @@ import {
   type DeferredDelay,
   type DeferredFlagState,
   logLineClock,
+  formatMoment,
+  type MomentFormatOptions,
 } from '../src/index.js'
 
 it('exports the @hilos/core public surface', () => {
@@ -199,4 +201,7 @@ it('exports the @hilos/core public surface', () => {
   expect(hilosTimeZone.get()).toBe('UTC')
   expect(hilosOwnTimeZone.get()).toBeNull()
   expect(hilosBrowserTimeZone.get()).toBeNull()
+  const momentOptions: MomentFormatOptions = { kind: 'date', locale: 'en-GB' }
+  expect(formatMoment('2026-01-01T00:00:00Z', momentOptions)).toBe('1 Jan 2026')
+  expect(formatMoment(NaN)).toBeNull()
 })

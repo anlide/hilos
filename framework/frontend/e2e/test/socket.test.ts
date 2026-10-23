@@ -3,6 +3,7 @@ import type { Page, WebSocketRoute } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
 import {
   createSocketFrameReader,
+  forwardSessionTimeZone,
   isApplicationSocket,
   watchSocketFrames,
 } from '../socket.js'
@@ -399,5 +400,118 @@ describe('real-message proxy holds', () => {
     expect(uploads.errors).toEqual([])
     route.close()
     expect(uploads.connections()).toEqual({ sockets: 1, closes: 1 })
+  })
+})
+
+describe('real-message session time zone forwarding', () => {
+  const session = (id: number, timeZone: string | null) => ({
+    type: 'handshake_response',
+    requestId: 'session-ask',
+    time: 123,
+    data: {
+      entities: {
+        currentUser: { id, timeZone, name: 'Original', isAdmin: true },
+        impersonatedBy: { id: 99, timeZone: 'America/New_York' },
+      },
+      data: { authority: 'server', pending: null },
+      lists: {},
+    },
+  })
+
+  it('changes only the own zone in single and batch replies and replays only the latest identity', async () => {
+    const route = proxy()
+    const forward = await forwardSessionTimeZone(route.page, 'Europe/Kyiv')
+    expect(route.routed).toEqual([isApplicationSocket])
+    expect(() => forward.replay(null)).toThrow('No live signed-in session')
+    const first = session(7, 'UTC')
+    route.incoming(JSON.stringify(first))
+    expect(JSON.parse(route.sent[0] as string)).toEqual(
+      session(7, 'Europe/Kyiv'),
+    )
+
+    const receipt = {
+      type: 'action_success',
+      data: { action: 'read', reply: 3 },
+    }
+    const latest = session(8, null)
+    const outer = {
+      type: 'signal_batch',
+      requestId: 'batch-ask',
+      extra: 'outer metadata',
+      data: {
+        frames: [welcome, latest, null, receipt],
+        extra: 'batch metadata',
+      },
+    }
+    const raw = JSON.stringify(outer)
+    route.incoming(raw)
+    expect(JSON.parse(route.sent[1] as string)).toEqual({
+      ...outer,
+      data: {
+        ...outer.data,
+        frames: [welcome, session(8, 'Europe/Kyiv'), null, receipt],
+      },
+    })
+    expect(forward.frames.map(({ wire }) => wire)).toEqual([
+      first,
+      welcome,
+      latest,
+      null,
+      receipt,
+    ])
+    expect(forward.frames.slice(1).map(({ raw }) => raw)).toEqual([
+      raw,
+      raw,
+      raw,
+      raw,
+    ])
+
+    forward.replay(null)
+    expect(JSON.parse(route.sent[2] as string)).toEqual(latest)
+    expect(forward.sessions).toEqual([
+      session(7, 'Europe/Kyiv'),
+      session(8, 'Europe/Kyiv'),
+      latest,
+    ])
+    expect(forward.frames).toHaveLength(5)
+    expect(forward.sockets()).toBe(1)
+    route.incoming(JSON.stringify(latest))
+    expect(JSON.parse(route.sent[3] as string)).toEqual(latest)
+    route.close()
+    expect(() => forward.replay('UTC')).toThrow('No live signed-in session')
+  })
+
+  it('forwards requests, bytes, malformed and guest messages unchanged and disposes into passthrough', async () => {
+    const route = proxy()
+    const forward = await forwardSessionTimeZone(route.page, 'Europe/Kyiv')
+    const request = '{"type":"action","action":"existing"}'
+    const bytes = Buffer.from([1, 2, 3])
+    route.outgoingMessage(request)
+    route.outgoingMessage(bytes)
+    expect(route.outgoing).toEqual([request, bytes])
+    const guest = JSON.stringify({
+      type: 'handshake_response',
+      data: { entities: { currentUser: null } },
+    })
+    const legacy = JSON.stringify({
+      type: 'handshake_response',
+      data: { entities: { currentUser: { id: 7 } } },
+    })
+    for (const message of [
+      bytes,
+      '{',
+      JSON.stringify(welcome),
+      guest,
+      legacy,
+    ]) {
+      route.incoming(message)
+      expect(route.sent.at(-1)).toBe(message)
+    }
+    expect(forward.sessions).toEqual([])
+    forward.dispose()
+    const raw = JSON.stringify(session(7, 'UTC'))
+    route.incoming(raw)
+    expect(route.sent.at(-1)).toBe(raw)
+    expect(() => forward.replay(null)).toThrow('No live signed-in session')
   })
 })

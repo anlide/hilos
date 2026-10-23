@@ -85,6 +85,7 @@ import {
   shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
+  hilosTimeZone,
   subscribeSignal,
   toFlowPatch,
 } from '@hilos/core/base'
@@ -2291,6 +2292,7 @@ export class HilosAuthSurface {
   // when the screen opened, because a computed only recomputes when something it
   // read changes.
   private readonly now = signal(Date.now())
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   private readonly identifierInput =
     viewChild<ElementRef<HTMLInputElement>>('identifierInput')
@@ -2334,6 +2336,7 @@ export class HilosAuthSurface {
     () => this.secondFactor()?.trustDeviceDays ?? null,
   )
   protected readonly resetDate = computed(() => {
+    this.timeZone()
     const moment = this.secondFactor()?.resetEffectiveAt ?? null
 
     return moment === null ? null : formatCalendarDate(moment)

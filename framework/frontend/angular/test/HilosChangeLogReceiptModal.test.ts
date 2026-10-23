@@ -15,10 +15,23 @@ import {
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it, vi } from 'vitest'
+import { formatChangeLogTime } from '@hilos/core/admin/change-log'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogReceiptModal } from '../src/admin/changeLog/HilosChangeLogReceiptModal.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import {
+  bindTestTimeZone,
+  type TimeZoneTestBinding,
+} from './timeZoneTestHarness.js'
+
+let timeZoneBinding: TimeZoneTestBinding | null = null
+
+afterEach(() => {
+  timeZoneBinding?.release()
+  timeZoneBinding = null
+  vi.restoreAllMocks()
+})
 
 function header(
   overrides: Partial<HilosChangeLogReceiptHeader> = {},
@@ -126,7 +139,8 @@ function render(value: HilosChangeLogReceiptDialog, navigator?: HilosRouter) {
   fixture.componentRef.setInput('reader', reader)
   fixture.detectChanges()
   return {
-    detail: document.querySelector(
+    fixture,
+    detail: fixture.nativeElement.querySelector(
       '[data-id="hilos-change-log-detail"]',
     ) as HTMLElement,
     reader,
@@ -134,6 +148,56 @@ function render(value: HilosChangeLogReceiptDialog, navigator?: HilosRouter) {
 }
 
 describe('HilosChangeLogReceiptModal', () => {
+  it('reformats an open receipt in the live reader zone and keeps the same dialog', () => {
+    const value = dialog()
+    const receiptHeader = value.header
+    if (receiptHeader === null) {
+      throw new Error('The receipt fixture must include its header.')
+    }
+    const mounted = render(value)
+    const when = mounted.detail.querySelector('dl dd') as HTMLElement
+    const reader = mounted.reader
+    timeZoneBinding = bindTestTimeZone('America/New_York')
+
+    const receiveAndRead = (timeZone: string | null): string => {
+      timeZoneBinding?.receive(timeZone)
+      mounted.fixture.detectChanges()
+      expect(mounted.fixture.componentInstance.dialog()).toBe(value)
+      expect(mounted.detail.querySelector('dl dd')).toBe(when)
+      const actual = when.textContent?.trim() ?? ''
+      expect(actual).toBe(formatChangeLogTime(receiptHeader.createdAt))
+      return actual
+    }
+
+    const utc = receiveAndRead('UTC')
+    const kyiv = receiveAndRead('Europe/Kyiv')
+    const automatic = receiveAndRead(null)
+    expect(utc).not.toBe(kyiv)
+    expect(kyiv).not.toBe(automatic)
+    expect(mounted.reader).toBe(reader)
+    expect(timeZoneBinding.listenerCount()).toBe(2)
+
+    mounted.fixture.destroy()
+    const destroyedText = when.textContent
+    timeZoneBinding.rebind()
+    expect(timeZoneBinding.listenerCount()).toBe(2)
+    timeZoneBinding.receive('UTC')
+    expect(when.textContent).toBe(destroyedText)
+
+    const rebound = TestBed.createComponent(HilosChangeLogReceiptModal)
+    rebound.componentRef.setInput('dialog', value)
+    rebound.componentRef.setInput('reader', reader)
+    rebound.detectChanges()
+    timeZoneBinding.receive('Europe/Kyiv')
+    rebound.detectChanges()
+    expect(
+      (rebound.nativeElement as HTMLElement)
+        .querySelector('[data-id="hilos-change-log-detail"] dl dd')
+        ?.textContent?.trim(),
+    ).toBe(formatChangeLogTime(receiptHeader.createdAt))
+    rebound.destroy()
+  })
+
   it('shows complete escaped long values and distinct absent, NULL, and empty sides', () => {
     const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)
     const newText = 'new <img src=x onerror=bad()>\n' + 'y'.repeat(6000)

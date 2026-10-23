@@ -44,7 +44,7 @@ import {
   type HilosLogsOverviewContext,
   type HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -59,6 +59,16 @@ const props = defineProps<{
 
 const handle = createHilosLogsOverview(props.context)
 const overview = useSignal(handle.overview)
+
+const timeZone = useSignal(hilosTimeZone)
+function rotationAt(moment: string | null): string {
+  void timeZone.value
+  return formatLogsOverviewRotationAt(moment)
+}
+function recentAt(moment: string): string {
+  void timeZone.value
+  return formatLogsOverviewRecentAt(moment)
+}
 
 // The frame arrives once as the answer to the subscription and again on every tick
 // where the cluster picture moved; nothing is ever re-requested.
@@ -116,7 +126,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
           rotation setting, which is not in this frame, and reassuring an admin
           falsely here costs more than saying less. -->
           <div class="fs-4 lh-1 mb-1" data-id="hilos-logs-tile-rotation">
-            {{ formatLogsOverviewRotationAt(overview?.lastRotationAt ?? null) }}
+            {{ rotationAt(overview?.lastRotationAt ?? null) }}
           </div>
           <div class="small text-body-secondary">
             {{ logsOverviewBatchesNote(overview) }}
@@ -327,7 +337,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
                 >{{ recentLevel }}</span
               >
               <span class="small text-body-secondary flex-shrink-0">
-                {{ formatLogsOverviewRecentAt(entry.at) }}
+                {{ recentAt(entry.at) }}
               </span>
               <span class="flex-grow-1 small">
                 <HilosHideable :value="entry.message" />
@@ -443,7 +453,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
               </td>
               <template v-else>
                 <td class="small">
-                  {{ formatLogsOverviewRotationAt(node.lastRotationAt) }}
+                  {{ rotationAt(node.lastRotationAt) }}
                 </td>
                 <td class="text-end d-none d-lg-table-cell">
                   {{ formatLogsOverviewBytes(node.liveBytes) }}

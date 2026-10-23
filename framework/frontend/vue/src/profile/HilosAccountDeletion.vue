@@ -18,6 +18,7 @@ import {
   focusInitial,
   formatAccountDeletionDays,
   formatCalendarDate,
+  hilosTimeZone,
   HILOS_ACCOUNT_DELETION_COPY as COPY,
   HILOS_STEP_UP_COPY,
   HILOS_DATA_EXPORT_COPY,
@@ -45,6 +46,7 @@ const props = defineProps<{
 const store = createHilosAccountDeletionStore(props.context)
 const flow = createHilosAccountDeletionFlow(props.context, store)
 const state = useSignal(store.state)
+const timeZone = useSignal(hilosTimeZone)
 const step = useSignal(flow.step)
 const opening = useSignal(flow.opening)
 const code = useSignal(flow.code)
@@ -132,6 +134,7 @@ function holdDataLink(event: MouseEvent): void {
 }
 
 function fill(template: string): string {
+  void timeZone.value
   const current = deletion.value
 
   return template

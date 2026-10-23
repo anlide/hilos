@@ -44,6 +44,7 @@ import {
   formatChangeLogWho,
   readHilosChangeLogOverview,
   type HilosChangeLogFeedRow,
+  type HilosChangeLogOverview,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptDialog,
 } from '@hilos/core/admin/change-log'
@@ -51,6 +52,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -62,6 +64,7 @@ import {
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
+  hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
@@ -229,9 +232,18 @@ export class HilosChangeLogPage {
     actions: HILOS_TABLE_ACTIONS_KEY,
   } as const
   protected readonly journalEntries = formatChangeLogEntries
-  protected readonly journalNote = changeLogJournalNote
+  protected readonly journalNote = (
+    overview: HilosChangeLogOverview,
+  ): string => {
+    this.timeZone()
+    return changeLogJournalNote(overview)
+  }
   protected readonly coverage = formatChangeLogCoverage
-  protected readonly time = formatChangeLogTime
+  private readonly timeZone = hilosSignal(hilosTimeZone)
+  protected readonly time = (moment: string): string => {
+    this.timeZone()
+    return formatChangeLogTime(moment)
+  }
   protected readonly who = formatChangeLogWho
   protected readonly onBehalfOf = formatChangeLogOnBehalfOf
   protected readonly channelBadge = changeLogChannelBadge

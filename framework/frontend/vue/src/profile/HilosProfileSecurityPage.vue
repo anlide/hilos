@@ -26,6 +26,7 @@ import {
   createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
+  hilosTimeZone,
   HILOS_STEP_UP_COPY,
   type HilosBackupCodeEntry,
   type HilosSecondFactorAuthenticator,
@@ -70,6 +71,7 @@ onMounted(() => store.start())
 onUnmounted(() => store.dispose())
 
 const state = useSignal(store.state)
+const timeZone = useSignal(hilosTimeZone)
 const view = useSignal(store.view)
 const apps = computed(() => state.value?.authenticators ?? [])
 const factorOn = computed(() => apps.value.length > 0)
@@ -81,9 +83,10 @@ const removalLocked = computed(
 /**
  * A moment as the day it falls on.
  *
- * @param moment The LOCAL epoch-ms moment.
+ * @param moment The absolute server epoch-ms moment.
  */
 function day(moment: number): string {
+  void timeZone.value
   return formatCalendarDate(moment)
 }
 

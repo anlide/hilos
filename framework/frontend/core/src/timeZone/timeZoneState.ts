@@ -45,9 +45,6 @@ const snapshotSignal = createSignal<TimeZoneSnapshot>(UNBOUND)
 /**
  * The zone this tab's reader reads every moment in: their own, else this
  * browser's, else the project's, else UTC. Always a usable IANA name.
- *
- * SCAFFOLD: no production reader yet — bound at boot by this leaf; the core
- * formatter (HIL-1584) is its first reader.
  */
 export const hilosTimeZone: ReadonlySignal<string> = computedSignal(() => {
   const snapshot = snapshotSignal.get()

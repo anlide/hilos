@@ -1,17 +1,22 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
-import { h } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { h, markRaw } from 'vue'
+import * as core from '@hilos/core/base'
 import {
   TableViewportController,
+  bindTimeZoneState,
   createSignal,
   hilosTableFrozenLabel,
 } from '@hilos/core/base'
 import type {
   ActionHandle,
+  HilosConnection,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
   HilosTableColumn,
   HilosTableProgress,
+  ProjectSignal,
+  ReadonlySignal,
 } from '@hilos/core/base'
 
 import HilosTableLive from './HilosTableLive.vue'
@@ -19,6 +24,7 @@ import HilosTableLive from './HilosTableLive.vue'
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  vi.restoreAllMocks()
 })
 
 const COLUMNS: HilosTableColumn[] = [
@@ -235,6 +241,86 @@ describe('HilosTableLive', () => {
     expect(wrapper.get('[data-id="hilos-table-live-status"]').text()).toBe(
       hilosTableFrozenLabel(since),
     )
+  })
+
+  it('updates the frozen line and announcement across UTC, Kyiv and Automatic without new table data', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const connection = {
+      projectTimeZone: 'UTC',
+      on(event: string, listener: (signal: ProjectSignal) => void) {
+        if (event === 'projectSignal') listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    }
+    const receive = (timeZone: string | null) => {
+      for (const listener of listeners) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as ProjectSignal)
+      }
+    }
+    const release = bindTimeZoneState(connection as unknown as HilosConnection)
+    receive('UTC')
+    const subscribe = core.subscribeSignal
+    const callbacks = vi.fn()
+    const releases = vi.fn()
+    const subscriptions = vi
+      .spyOn(core, 'subscribeSignal')
+      .mockImplementation(
+        <T>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+          const stop = subscribe(source, (value) => {
+            callbacks(value)
+            listener(value)
+          })
+          return () => {
+            releases()
+            stop()
+          }
+        },
+      )
+    const controller = markRaw(makeController())
+    const since = Date.parse('2026-10-09T10:11:12.000Z')
+    controller.ingestFrozen(since)
+    const wrapper = mountLive(controller)
+    const line = wrapper.get('[data-id="hilos-table-frozen"]')
+    const element = line.element
+    const rows = controller.rows.get()
+    const expected = (timeZone: string) =>
+      `This table has not updated since ${new Intl.DateTimeFormat(undefined, {
+        timeStyle: 'medium',
+        timeZone,
+      }).format(since)}. The rows shown may be out of date.`
+    try {
+      expect(line.text()).toBe(expected('UTC'))
+      for (const zone of ['Europe/Kyiv', null]) {
+        receive(zone)
+        await wrapper.vm.$nextTick()
+        expect(line.text()).toBe(expected(zone ?? 'America/New_York'))
+        expect(wrapper.get('[data-id="hilos-table-live-status"]').text()).toBe(
+          expected(zone ?? 'America/New_York'),
+        )
+        expect(wrapper.get('[data-id="hilos-table-frozen"]').element).toBe(
+          element,
+        )
+        expect(wrapper.props('controller')).toBe(controller)
+        expect(controller.rows.get()).toBe(rows)
+        expect(controller.frozenSince.get()).toBe(since)
+      }
+      expect(callbacks).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      receive('UTC')
+      release()
+      expect(releases).toHaveBeenCalledTimes(subscriptions.mock.calls.length)
+      expect(callbacks).toHaveBeenCalledTimes(2)
+      expect(listeners.size).toBe(0)
+    }
   })
 
   it('keeps the frozen table as its snowflake after pending changes holding the line', () => {

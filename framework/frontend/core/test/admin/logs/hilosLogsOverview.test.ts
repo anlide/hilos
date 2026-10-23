@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { applyServerTime } from '../../../src/session/serverClock.js'
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   formatLogsOverviewBytes,
@@ -807,3 +809,37 @@ describe('logsOverviewForecastNote', () => {
     ).toBe('At this rate the 20% threshold is 34 days away')
   })
 })
+
+it.each([-300_000, 300_000])(
+  'displays absolute moments in the reader zone with clock drift %i',
+  (drift) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    applyServerTime(Date.now() + drift)
+    try {
+      for (const at of [
+        '2026-01-01T00:30:05Z',
+        '2026-01-01T02:30:05+02:00',
+        '2025-12-31T19:30:05-0500',
+      ]) {
+        expect(formatLogsOverviewRotationAt(at)).toBe('12/31/2025, 4:30:05 PM')
+        expect(formatLogsOverviewRecentAt(at)).toBe('4:30:05 PM')
+      }
+      for (const at of [
+        '2026-01-01T00:30:05',
+        '2026-01-01',
+        'invalid',
+        '2026-01-01T00:30:05+25:00',
+        '2026-02-30T00:30:05+02:00',
+      ]) {
+        expect(formatLogsOverviewRotationAt(at)).toBe('—')
+        expect(formatLogsOverviewRecentAt(at)).toBe('—')
+      }
+      expect(formatLogsOverviewCount(1234)).toBe('1234')
+    } finally {
+      zone.mockRestore()
+      applyServerTime(Date.now())
+    }
+  },
+)
