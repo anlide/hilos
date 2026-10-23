@@ -286,7 +286,11 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 
 <template>
   <HilosLayout :connection="connection">
-    <template #brand>Hilos Chat</template>
+    <template #brand>
+      <i class="bi bi-chat-dots" aria-hidden="true"></i>
+      <span class="d-none d-md-inline ms-1">Hilos Chat</span>
+      <span class="visually-hidden d-md-none">Hilos Chat</span>
+    </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />
       <HilosLink

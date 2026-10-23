@@ -172,9 +172,9 @@ export const hilosAccountStanding: ReadonlySignal<HilosAccountStanding | null> =
 
 /**
  * The deletion strip this session is owed, or `null`: it stands while the
- * standing shown is a scheduled deletion and no takeover lasts — a takeover
- * speaks about the person taken over, and the administrator's own deletion
- * would only mislead there.
+ * standing shown is a scheduled deletion with a known erasure moment. Under
+ * a takeover it speaks about the person taken over, whose standing the session
+ * carries.
  */
 export const hilosDeletionStrip: ReadonlySignal<HilosDeletionStrip | null> =
   deletionStrip
@@ -215,8 +215,7 @@ export function bindAccountStanding(
 
     return value !== null &&
       value.shown === 'deletion_scheduled' &&
-      value.deletionEffectiveAt !== null &&
-      !impersonating.get()
+      value.deletionEffectiveAt !== null
       ? { effectiveAt: value.deletionEffectiveAt }
       : null
   })

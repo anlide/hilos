@@ -6,7 +6,7 @@
 // switching is off and under maintenance), the framework admin entry (the gear
 // linking to the Hilos dashboard, drawn for an admin and, in the admin view
 // mode, for a viewer), the live connection indicator the SDK owns
-// (core-and-connection.md), and, last, its tracked sign-out control while a
+// (core-and-connection.md), after its tracked sign-out control while a
 // person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
@@ -62,6 +62,7 @@ import {
   HILOS_FROZEN_OPEN_PAGES,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
+  HILOS_LAYOUT_COPY,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -83,14 +84,23 @@ import {
   hilosTimeZone,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
+  isDisplayed,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  rtStalenessCompactLabel,
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core/base'
-import { useContext, useEffect, useState } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosAccountBlocked } from './HilosAccountBlocked.js'
@@ -129,9 +139,9 @@ export interface HilosLayoutProps {
   /** The navigation region placed next to the brand. */
   nav?: ReactNode
   /**
-   * The right-aligned user region placed before the admin gear (the Vue shell's
+   * The right-aligned user region placed after the admin gear (the Vue shell's
    * `#user` slot): the profile link, the notification bell, a guest's Sign in.
-   * Additive — omit it and the shell still draws its own sign-out control last.
+   * Additive — omit it and the shell still draws its own sign-out control before the connection indicator.
    */
   user?: ReactNode
   /**
@@ -195,6 +205,12 @@ export function HilosLayout({
   useSignal(hilosTimeZone)
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
+  const subscribeBuild = useCallback(
+    (changed: () => void) => connection.on('handshake', () => changed()),
+    [connection],
+  )
+  const readBuild = useCallback(() => connection.build, [connection])
+  const build = useSyncExternalStore(subscribeBuild, readBuild, readBuild)
 
   // While the backend holds the node in protected mode the shell shows the
   // maintenance surface instead of the routed page, and drops everything that
@@ -244,8 +260,8 @@ export function HilosLayout({
   // The third framework strip (HIL-945): the session's own account is scheduled
   // for deletion, so the person is told when, and how long there is left to
   // think, on every page — the product still works, and the state lives beside
-  // the work. Not under a takeover: the shell then speaks about the person taken
-  // over, and the core leaves the strip down. "Keep my account" is the
+  // the work. Under a takeover it describes the person taken over without a
+  // personal cancellation control. "Keep my account" is the
   // impersonation strip's Stop once more — busy at once, a refusal is the error
   // toast, and success needs no toast: the strip leaves with the handshake that
   // no longer carries the deletion. The days left are counted again once a
@@ -335,6 +351,83 @@ export function HilosLayout({
   const router = useContext(HilosRouterContext)
   const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
   const currentRoute = useSignal(router?.currentRoute ?? NO_ROUTE)
+
+  // The disclosure is private to this mounted shell. Navigation still belongs
+  // to the existing router; server and shared runtime state do not hold it.
+  const [navOpen, setNavOpen] = useState(false)
+  const [hasNav, setHasNav] = useState(false)
+  const navPanel = useRef<HTMLDivElement>(null)
+  const navToggle = useRef<HTMLButtonElement>(null)
+  const firstNavLink = useCallback(
+    () =>
+      Array.from(
+        navPanel.current?.querySelectorAll<HTMLAnchorElement>(
+          'a[href]:not([aria-disabled="true"]):not([tabindex="-1"])',
+        ) ?? [],
+      ).find((link) => {
+        for (
+          let element: HTMLElement | null = link;
+          element && element !== navPanel.current;
+          element = element.parentElement
+        ) {
+          if (element.hidden || element.inert || !isDisplayed(element))
+            return false
+        }
+        return true
+      }),
+    [],
+  )
+  useEffect(() => {
+    const panel = navPanel.current
+    const read = (): void => {
+      const present =
+        !!panel &&
+        (!!panel.textContent?.trim() ||
+          panel.querySelector(
+            'a[href], button, input, select, textarea, img, svg',
+          ) !== null)
+      setHasNav(present)
+      if (!present) setNavOpen(false)
+    }
+    read()
+    if (!panel) return
+    const observer = new MutationObserver(read)
+    observer.observe(panel, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    return () => observer.disconnect()
+  }, [nav, underMaintenance, firstFrameHeld])
+  useEffect(() => {
+    setNavOpen(false)
+  }, [currentRoute])
+  useEffect(() => {
+    if (navOpen) firstNavLink()?.focus()
+  }, [navOpen, firstNavLink])
+  useEffect(() => {
+    const resize = (): void => {
+      const toggle = navToggle.current
+      const panel = navPanel.current
+      if (!toggle || !panel) return
+      const active = panel.ownerDocument.activeElement
+      if (!isDisplayed(toggle)) {
+        setNavOpen(false)
+        if (active === toggle) {
+          ;(
+            firstNavLink() ??
+            panel
+              .closest('nav')
+              ?.querySelector<HTMLElement>('[data-id="nav-brand"]')
+          )?.focus()
+        }
+      } else if (!navOpen && active && panel.contains(active)) {
+        toggle.focus()
+      }
+    }
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [navOpen, firstNavLink])
 
   // The fourth framework strip (HIL-1260): a viewer of the admin view mode, on
   // an admin route — the framework's and a project's alike, the dashboard
@@ -428,47 +521,48 @@ export function HilosLayout({
             {pageTitle}
           </div>
           <nav
-            className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
+            className="navbar navbar-expand-md bg-body-tertiary border-bottom flex-shrink-0"
             aria-label="Main"
           >
             <div className="container">
               {!underMaintenance && (
                 <HilosLink
                   to="/"
-                  className="navbar-brand mb-0 h1"
+                  className="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
                   data-id="nav-brand"
                 >
                   {brand}
                 </HilosLink>
               )}
-              {/* The auto margin lives on this region whether or not it holds
-              links, so the connection indicator keeps its place on the right
-              while the maintenance surface is up. */}
-              <div className="navbar-nav me-auto">
-                {underMaintenance ? null : nav}
-              </div>
-              <div className="d-flex align-items-center gap-3">
+              {!underMaintenance && nav != null && nav !== false && (
+                <div
+                  id="hilos-nav-panel"
+                  ref={navPanel}
+                  className={`collapse order-3 order-md-0${navOpen ? ' show' : ''}${hasNav ? ' navbar-collapse' : ' d-none'}`}
+                  data-id={hasNav ? 'nav-panel' : undefined}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && navOpen) {
+                      event.preventDefault()
+                      setNavOpen(false)
+                      navToggle.current?.focus()
+                    }
+                  }}
+                  onClick={(event) => {
+                    if (
+                      event.target instanceof Element &&
+                      event.target.closest('a[href]')
+                    ) {
+                      setNavOpen(false)
+                    }
+                  }}
+                >
+                  <div className="navbar-nav me-auto">{nav}</div>
+                </div>
+              )}
+              <div className="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0">
                 {!underMaintenance && (
                   <>
                     <HilosThemeMenu />
-                    {user}
-                    {reconsentDue !== null && (
-                      <button
-                        type="button"
-                        className="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
-                        data-id="legal-reconsent-icon"
-                        title={reconsentBadge}
-                        onClick={openLegalReconsent}
-                      >
-                        <i
-                          className="bi bi-file-earmark-text"
-                          aria-hidden="true"
-                        />
-                        <span className="visually-hidden">
-                          {reconsentBadge}
-                        </span>
-                      </button>
-                    )}
                     {adminAccess !== 'none' ? (
                       <HilosLink
                         className={`nav-link d-inline-flex align-items-center p-0 fs-5${adminAccess === 'view' ? ' position-relative' : ''}`}
@@ -493,7 +587,51 @@ export function HilosLayout({
                         <span className="visually-hidden">{adminLabel}</span>
                       </HilosLink>
                     ) : null}
+                    {user}
+                    {reconsentDue !== null && (
+                      <button
+                        type="button"
+                        className="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
+                        data-id="legal-reconsent-icon"
+                        title={reconsentBadge}
+                        onClick={openLegalReconsent}
+                      >
+                        <i
+                          className="bi bi-file-earmark-text"
+                          aria-hidden="true"
+                        />
+                        <span className="visually-hidden">
+                          {reconsentBadge}
+                        </span>
+                      </button>
+                    )}
                   </>
+                )}
+                {!underMaintenance && signedIn && (
+                  <LoadingButton
+                    className="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+                    data-id="nav-logout"
+                    aria-label={SIGN_OUT_COPY.label}
+                    title={SIGN_OUT_COPY.label}
+                    loading={signOutAction.busy}
+                    onClick={onSignOut}
+                  >
+                    <i className="bi bi-box-arrow-right" aria-hidden="true" />
+                  </LoadingButton>
+                )}
+                {!underMaintenance && hasNav && (
+                  <button
+                    ref={navToggle}
+                    type="button"
+                    className="btn btn-link nav-link d-md-none p-0 fs-5"
+                    data-id="nav-toggle"
+                    aria-label={HILOS_LAYOUT_COPY.navigation}
+                    aria-expanded={navOpen}
+                    aria-controls="hilos-nav-panel"
+                    onClick={() => setNavOpen((open) => !open)}
+                  >
+                    <i className="bi bi-list" aria-hidden="true" />
+                  </button>
                 )}
                 <span
                   className={`navbar-text d-inline-flex align-items-center fs-5 ${visual.color}`}
@@ -513,18 +651,6 @@ export function HilosLayout({
                   </span>
                   <span className="visually-hidden">{connLabel}</span>
                 </span>
-                {!underMaintenance && signedIn && (
-                  <LoadingButton
-                    className="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
-                    data-id="nav-logout"
-                    aria-label={SIGN_OUT_COPY.label}
-                    title={SIGN_OUT_COPY.label}
-                    loading={signOutAction.busy}
-                    onClick={onSignOut}
-                  >
-                    <i className="bi bi-box-arrow-right" aria-hidden="true" />
-                  </LoadingButton>
-                )}
               </div>
             </div>
           </nav>
@@ -534,6 +660,17 @@ export function HilosLayout({
             aria-live="polite"
             data-id="app-banner"
           >
+            {showsFrozenData && (
+              <div
+                className="d-md-none small text-body-secondary border-bottom py-1"
+                data-id="conn-stale-line"
+                aria-hidden="true"
+              >
+                <div className="container">
+                  {rtStalenessCompactLabel(staleness)}
+                </div>
+              </div>
+            )}
             {verificationBanner !== undefined && (
               <div
                 className="alert alert-warning border-0 rounded-0 mb-0 py-2"
@@ -590,14 +727,16 @@ export function HilosLayout({
                     <i className="bi bi-trash me-1" aria-hidden="true"></i>{' '}
                     {formatHilosDeletionStrip(deletionStrip, deletionNow)}
                   </span>
-                  <LoadingButton
-                    className="btn-sm btn-warning"
-                    data-id="account-deletion-strip-keep"
-                    loading={keepAccount.busy}
-                    onClick={onKeepAccount}
-                  >
-                    {ACCOUNT_STANDING_STRIP_COPY.keep}
-                  </LoadingButton>
+                  {impersonation === null && (
+                    <LoadingButton
+                      className="btn-sm btn-warning"
+                      data-id="account-deletion-strip-keep"
+                      loading={keepAccount.busy}
+                      onClick={onKeepAccount}
+                    >
+                      {ACCOUNT_STANDING_STRIP_COPY.keep}
+                    </LoadingButton>
+                  )}
                 </div>
               </div>
             )}
@@ -670,17 +809,26 @@ export function HilosLayout({
               className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
               data-id="app-footer"
             >
-              <div className="container d-flex flex-wrap justify-content-center gap-3 small">
-                {HILOS_FOOTER_LINKS.map((link) => (
-                  <HilosLink
-                    key={link.page}
-                    className="link-secondary text-decoration-none"
-                    to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
-                    data-id={`footer-link-${link.page}`}
-                  >
-                    {link.label}
-                  </HilosLink>
-                ))}
+              <div className="container d-md-flex align-items-center gap-3 small">
+                <div className="row row-cols-2 g-2 text-center d-md-flex flex-md-nowrap gap-md-3">
+                  {HILOS_FOOTER_LINKS.map((link) => (
+                    <div className="col col-md-auto" key={link.page}>
+                      <HilosLink
+                        className="link-secondary text-decoration-none"
+                        to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
+                        data-id={`footer-link-${link.page}`}
+                      >
+                        {link.label}
+                      </HilosLink>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  className={`text-center text-body-secondary mt-2 mt-md-0 ms-md-auto text-nowrap${build ? '' : ' invisible'}`}
+                  data-id="footer-build"
+                >
+                  {HILOS_LAYOUT_COPY.build} {build}
+                </div>
               </div>
             </footer>
           )}

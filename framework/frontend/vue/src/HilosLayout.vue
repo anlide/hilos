@@ -4,7 +4,7 @@ bar carrying the project's brand, nav, and user slots, the shell's theme icon
 first in the right-hand group (it disappears when switching is off and under
 maintenance), the framework admin entry (the gear linking to the Hilos dashboard,
 drawn for an admin and, in the admin view mode, for a viewer), the live connection
-indicator the SDK owns (core-and-connection.md), and, last, its tracked sign-out
+indicator the SDK owns (core-and-connection.md), after its tracked sign-out
 control while a person stands behind the session; a full-width banner region below
 the nav carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
@@ -53,6 +53,7 @@ import {
   HILOS_FROZEN_OPEN_PAGES,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
+  HILOS_LAYOUT_COPY,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -72,14 +73,25 @@ import {
   hilosTimeZone,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
+  isDisplayed,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  rtStalenessCompactLabel,
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core/base'
-import { computed, inject, onUnmounted, ref, watch } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onUpdated,
+  ref,
+  watch,
+} from 'vue'
 
 import HilosAccountBlocked from './HilosAccountBlocked.vue'
 import HilosLink from './HilosLink.vue'
@@ -114,6 +126,19 @@ const props = defineProps<{
 
 const connectionState = useConnectionState(props.connection)
 const timeZone = useSignal(hilosTimeZone)
+const build = ref(props.connection.build)
+watch(
+  () => props.connection,
+  (connection, _previous, onCleanup) => {
+    build.value = connection.build
+    onCleanup(
+      connection.on('handshake', () => {
+        build.value = connection.build
+      }),
+    )
+  },
+  { immediate: true },
+)
 
 // While the backend holds the node in protected mode the shell shows the
 // maintenance surface instead of the routed page, and drops everything that leads
@@ -166,8 +191,8 @@ const onImpersonationStop = (): void => {
 // The third framework strip (HIL-945): the session's own account is scheduled
 // for deletion, so the person is told when, and how long there is left to think,
 // on every page — the product still works, and the state lives beside the work.
-// Not under a takeover: the shell then speaks about the person taken over, and
-// the core leaves the strip down. "Keep my account" is the impersonation strip's
+// Under a takeover it describes the person taken over without a personal
+// cancellation control. "Keep my account" is the impersonation strip's
 // Stop once more — busy at once, a refusal is the error toast, and success needs
 // no toast: the strip leaves with the handshake that no longer carries the
 // deletion. The days left are counted again once a minute while it stands.
@@ -295,6 +320,103 @@ const pageTitle = router ? useSignal(router.currentTitle) : undefined
 // it should not be is the defect this closes.
 const currentRoute = router ? useSignal(router.currentRoute) : undefined
 
+// This disclosure belongs to this mounted shell only. The router and connection
+// remain the sources of navigation and server state; no shared state is needed.
+const navOpen = ref(false)
+const hasNav = ref(false)
+const navPanel = ref<HTMLElement>()
+const navToggle = ref<HTMLButtonElement>()
+const firstNavLink = (): HTMLAnchorElement | undefined =>
+  Array.from(
+    navPanel.value?.querySelectorAll<HTMLAnchorElement>(
+      'a[href]:not([aria-disabled="true"]):not([tabindex="-1"])',
+    ) ?? [],
+  ).find((link) => {
+    for (
+      let element: HTMLElement | null = link;
+      element && element !== navPanel.value;
+      element = element.parentElement
+    ) {
+      if (element.hidden || element.inert || !isDisplayed(element)) return false
+    }
+    return true
+  })
+const readNav = (): void => {
+  const panel = navPanel.value
+  hasNav.value =
+    !!panel &&
+    (!!panel.textContent?.trim() ||
+      panel.querySelector(
+        'a[href], button, input, select, textarea, img, svg',
+      ) !== null)
+  if (!hasNav.value) navOpen.value = false
+}
+onUpdated(readNav)
+watch(
+  navPanel,
+  (panel, _previous, onCleanup) => {
+    readNav()
+    if (!panel) return
+    const observer = new MutationObserver(readNav)
+    observer.observe(panel, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    onCleanup(() => observer.disconnect())
+  },
+  { flush: 'post' },
+)
+watch(
+  () => currentRoute?.value,
+  () => {
+    navOpen.value = false
+  },
+)
+watch(underMaintenance, () => {
+  navOpen.value = false
+})
+const toggleNav = async (): Promise<void> => {
+  navOpen.value = !navOpen.value
+  if (navOpen.value) {
+    await nextTick()
+    if (navOpen.value) firstNavLink()?.focus()
+  }
+}
+const onNavKeydown = (event: KeyboardEvent): void => {
+  if (event.key === 'Escape' && navOpen.value) {
+    event.preventDefault()
+    navOpen.value = false
+    navToggle.value?.focus()
+  }
+}
+const onNavClick = (event: MouseEvent): void => {
+  if (event.target instanceof Element && event.target.closest('a[href]')) {
+    navOpen.value = false
+  }
+}
+const onNavResize = (): void => {
+  const toggle = navToggle.value
+  const panel = navPanel.value
+  if (!toggle || !panel) return
+  const active = panel.ownerDocument.activeElement
+  if (!isDisplayed(toggle)) {
+    navOpen.value = false
+    if (active === toggle) {
+      ;(
+        firstNavLink() ??
+        panel
+          .closest('nav')
+          ?.querySelector<HTMLElement>('[data-id="nav-brand"]')
+      )?.focus()
+    }
+  } else if (!navOpen.value && active && panel.contains(active)) {
+    toggle.focus()
+  }
+}
+onMounted(() => window.addEventListener('resize', onNavResize))
+onUnmounted(() => window.removeEventListener('resize', onNavResize))
+
 // The fourth framework strip (HIL-1260): a viewer of the admin view mode, on an
 // admin route — the framework's and a project's alike, the dashboard included —
 // is told once that the screen may be looked at and not changed. Its text
@@ -366,6 +488,10 @@ const stalenessLabel = computed(() => {
   void timeZone.value
   return rtStalenessLabel(staleness.value)
 })
+const compactStalenessLabel = computed(() => {
+  void timeZone.value
+  return rtStalenessCompactLabel(staleness.value)
+})
 const showsFrozenData = computed(
   () => connectionState.value === 'connected' && staleness.value.stale,
 )
@@ -425,41 +551,39 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       {{ pageTitle }}
     </div>
     <nav
-      class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
+      class="navbar navbar-expand-md bg-body-tertiary border-bottom flex-shrink-0"
       aria-label="Main"
     >
       <div class="container">
         <HilosLink
           v-if="!underMaintenance"
           to="/"
-          class="navbar-brand mb-0 h1"
+          class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
           data-id="nav-brand"
         >
           <slot name="brand">Hilos</slot>
         </HilosLink>
-        <!-- The auto margin lives on this region whether or not it holds links,
-        so the connection indicator keeps its place on the right while the
-        maintenance surface is up. -->
-        <div class="navbar-nav me-auto">
-          <template v-if="!underMaintenance">
-            <slot name="nav" />
-          </template>
+        <div
+          v-if="!underMaintenance && $slots.nav"
+          id="hilos-nav-panel"
+          ref="navPanel"
+          class="collapse order-3 order-md-0"
+          :class="{
+            show: navOpen,
+            'navbar-collapse': hasNav,
+            'd-none': !hasNav,
+          }"
+          :data-id="hasNav ? 'nav-panel' : undefined"
+          @keydown="onNavKeydown"
+          @click="onNavClick"
+        >
+          <div class="navbar-nav me-auto"><slot name="nav" /></div>
         </div>
-        <div class="d-flex align-items-center gap-3">
+        <div
+          class="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0"
+        >
           <template v-if="!underMaintenance">
             <HilosThemeMenu />
-            <slot name="user" />
-            <button
-              v-if="reconsentDue !== null"
-              type="button"
-              class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
-              data-id="legal-reconsent-icon"
-              :title="reconsentBadge"
-              @click="openLegalReconsent"
-            >
-              <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
-              <span class="visually-hidden">{{ reconsentBadge }}</span>
-            </button>
             <HilosLink
               v-if="adminAccess !== 'none'"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
@@ -484,7 +608,43 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
               </span>
               <span class="visually-hidden">{{ adminLabel }}</span>
             </HilosLink>
+            <slot name="user" />
+            <button
+              v-if="reconsentDue !== null"
+              type="button"
+              class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
+              data-id="legal-reconsent-icon"
+              :title="reconsentBadge"
+              @click="openLegalReconsent"
+            >
+              <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+              <span class="visually-hidden">{{ reconsentBadge }}</span>
+            </button>
           </template>
+          <LoadingButton
+            v-if="!underMaintenance && signedIn"
+            class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+            data-id="nav-logout"
+            :aria-label="SIGN_OUT_COPY.label"
+            :title="SIGN_OUT_COPY.label"
+            :loading="signOutBusy"
+            @click="onSignOut"
+          >
+            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+          </LoadingButton>
+          <button
+            v-if="!underMaintenance && hasNav"
+            ref="navToggle"
+            type="button"
+            class="btn btn-link nav-link d-md-none p-0 fs-5"
+            data-id="nav-toggle"
+            :aria-label="HILOS_LAYOUT_COPY.navigation"
+            :aria-expanded="navOpen"
+            aria-controls="hilos-nav-panel"
+            @click="toggleNav"
+          >
+            <i class="bi bi-list" aria-hidden="true"></i>
+          </button>
           <span
             class="navbar-text d-inline-flex align-items-center fs-5"
             :class="connVisual.color"
@@ -503,17 +663,6 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             </span>
             <span class="visually-hidden">{{ connLabel }}</span>
           </span>
-          <LoadingButton
-            v-if="!underMaintenance && signedIn"
-            class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
-            data-id="nav-logout"
-            :aria-label="SIGN_OUT_COPY.label"
-            :title="SIGN_OUT_COPY.label"
-            :loading="signOutBusy"
-            @click="onSignOut"
-          >
-            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-          </LoadingButton>
         </div>
       </div>
     </nav>
@@ -523,6 +672,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       aria-live="polite"
       data-id="app-banner"
     >
+      <div
+        v-if="showsFrozenData"
+        class="d-md-none small text-body-secondary border-bottom py-1"
+        data-id="conn-stale-line"
+        aria-hidden="true"
+      >
+        <div class="container">{{ compactStalenessLabel }}</div>
+      </div>
       <div
         v-if="verificationBanner !== undefined"
         class="alert alert-warning border-0 rounded-0 mb-0 py-2"
@@ -580,6 +737,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             {{ deletionStripText }}
           </span>
           <LoadingButton
+            v-if="impersonation === null"
             class="btn-sm btn-warning"
             data-id="account-deletion-strip-keep"
             :loading="keepAccountBusy"
@@ -660,18 +818,31 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
       data-id="app-footer"
     >
-      <div
-        class="container d-flex flex-wrap justify-content-center gap-3 small"
-      >
-        <HilosLink
-          v-for="link in footerLinks"
-          :key="link.page"
-          class="link-secondary text-decoration-none"
-          :to="footerHref(link.page)"
-          :data-id="`footer-link-${link.page}`"
+      <div class="container d-md-flex align-items-center gap-3 small">
+        <div
+          class="row row-cols-2 g-2 text-center d-md-flex flex-md-nowrap gap-md-3"
         >
-          {{ link.label }}
-        </HilosLink>
+          <div
+            v-for="link in footerLinks"
+            :key="link.page"
+            class="col col-md-auto"
+          >
+            <HilosLink
+              class="link-secondary text-decoration-none"
+              :to="footerHref(link.page)"
+              :data-id="`footer-link-${link.page}`"
+            >
+              {{ link.label }}
+            </HilosLink>
+          </div>
+        </div>
+        <div
+          class="text-center text-body-secondary mt-2 mt-md-0 ms-md-auto text-nowrap"
+          :class="{ invisible: !build }"
+          data-id="footer-build"
+        >
+          {{ HILOS_LAYOUT_COPY.build }} {{ build }}
+        </div>
       </div>
     </footer>
     <!-- Transient notices float over the shell, so every page inside it can report

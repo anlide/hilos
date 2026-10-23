@@ -9,8 +9,12 @@ import {
   signUp,
   signUpWithVerifiedEmail,
 } from '../helpers/session'
-import { gotoPage } from '../helpers/page'
-import { expectPasswordVisibility } from '../../../../../framework/frontend/e2e/index.js'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
+import {
+  expectDesktopShell,
+  expectPasswordVisibility,
+  watchClientDocument,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -91,6 +95,19 @@ test('the shell exposes a skip link and marks the active nav item', async ({
     'aria-current',
     'page',
   )
+
+  await expectPageReady(page)
+  const build = await expectDesktopShell(expect, page, 'nav-profile')
+  const document = await watchClientDocument(page)
+  try {
+    await page.getByTestId('nav-brand').click()
+    await expect(page).toHaveURL('/')
+    await expectPageReady(page)
+    await document.unchanged()
+    expect(await expectDesktopShell(expect, page, 'nav-profile')).toBe(build)
+  } finally {
+    await document.dispose()
+  }
 })
 
 test('each page titles the tab and announces the page on navigation', async ({

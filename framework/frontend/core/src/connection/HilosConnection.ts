@@ -410,6 +410,8 @@ export class HilosConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private latchedBuild: string | undefined
+  /** Server build from the last welcome, independent of the comparison baseline. */
+  private buildValue: string | undefined
   /** Session cookie name from the last welcome; the auxiliary cookie's name derives from it. */
   private sessionCookieNameValue: string | undefined
   /** Project time zone from the last welcome; cleared when a welcome omits the field. */
@@ -591,6 +593,17 @@ export class HilosConnection {
    */
   get projectTimeZone(): string | undefined {
     return this.projectTimeZoneValue
+  }
+
+  /**
+   * The server build named by the last welcome.
+   *
+   * Undefined until the first welcome; retained across disconnects. Updated
+   * before build-mismatch and handshake listeners run, so late readers and
+   * listeners see the same snapshot on this connection.
+   */
+  get build(): string | undefined {
+    return this.buildValue
   }
 
   /**
@@ -1245,6 +1258,7 @@ export class HilosConnection {
   }
 
   private handleHandshake(signal: HandshakeSignal): void {
+    this.buildValue = signal.build
     const expected = this.expectedBuild ?? this.latchedBuild
     if (expected === undefined) {
       this.latchedBuild = signal.build

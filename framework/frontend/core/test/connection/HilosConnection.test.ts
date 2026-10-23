@@ -1580,32 +1580,68 @@ describe('page frame buffer', () => {
 describe('build-version check', () => {
   it('latches the first welcome build and flags a different one on reconnect', () => {
     const { connection } = createConnection()
+    expect(connection.build).toBeUndefined()
     const mismatches: { expected: string; received: string }[] = []
-    connection.on('buildMismatch', (mismatch) => mismatches.push(mismatch))
+    const seenInHandshake: Array<string | undefined> = []
+    const seenInMismatch: Array<string | undefined> = []
+    connection.on('handshake', () => seenInHandshake.push(connection.build))
+    connection.on('buildMismatch', (mismatch) => {
+      mismatches.push(mismatch)
+      seenInMismatch.push(connection.build)
+    })
 
     connection.connect()
     MockWebSocket.last.open()
     MockWebSocket.last.message(WELCOME_A)
     expect(mismatches).toEqual([])
+    expect(connection.build).toBe('build-a')
+    expect(seenInHandshake).toEqual(['build-a'])
 
     MockWebSocket.last.drop()
+    expect(connection.build).toBe('build-a')
     vi.advanceTimersByTime(1000)
     MockWebSocket.last.open()
     MockWebSocket.last.message(WELCOME_B)
 
     expect(mismatches).toEqual([{ expected: 'build-a', received: 'build-b' }])
+    expect(connection.build).toBe('build-b')
+    expect(seenInMismatch).toEqual(['build-b'])
+    expect(seenInHandshake).toEqual(['build-a', 'build-b'])
+    MockWebSocket.last.message(WELCOME_B)
+    expect(mismatches).toEqual([
+      { expected: 'build-a', received: 'build-b' },
+      { expected: 'build-a', received: 'build-b' },
+    ])
+  })
+
+  it('keeps the last welcome available to a late reader after an explicit close', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(WELCOME_A)
+
+    const lateReader = () => connection.build
+    expect(lateReader()).toBe('build-a')
+    connection.close()
+    expect(lateReader()).toBe('build-a')
+    expect(createConnection().connection.build).toBeUndefined()
   })
 
   it('compares against expectedBuild when configured', () => {
     const { connection } = createConnection({ expectedBuild: 'build-x' })
+    expect(connection.build).toBeUndefined()
     const mismatches: { expected: string; received: string }[] = []
-    connection.on('buildMismatch', (mismatch) => mismatches.push(mismatch))
+    connection.on('buildMismatch', (mismatch) => {
+      mismatches.push(mismatch)
+      expect(connection.build).toBe('build-a')
+    })
 
     connection.connect()
     MockWebSocket.last.open()
     MockWebSocket.last.message(WELCOME_A)
 
     expect(mismatches).toEqual([{ expected: 'build-x', received: 'build-a' }])
+    expect(connection.build).toBe('build-a')
   })
 
   it('unsubscribe stops a listener', () => {

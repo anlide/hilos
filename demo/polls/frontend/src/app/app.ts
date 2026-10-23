@@ -68,7 +68,11 @@ import { Terms } from './views/terms/terms'
   // Angular trap. ngProjectAs names the slot explicitly and the branches live
   // safely inside it.
   template: `<hilos-layout [connection]="connection">
-    <span brand>Hilos Polls</span>
+    <span brand>
+      <i class="bi bi-bar-chart" aria-hidden="true"></i>
+      <span class="d-none d-md-inline ms-1">Hilos Polls</span>
+      <span class="visually-hidden d-md-none">Hilos Polls</span>
+    </span>
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
         <hilos-notification-bell [connection]="connection" />

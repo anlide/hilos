@@ -133,6 +133,7 @@ function bind() {
   return {
     connection,
     source,
+    scopes,
     unbind(): void {
       unbindStanding()
       unbindStrip()
@@ -245,7 +246,7 @@ describe('the session standing (HIL-945)', () => {
     ['blocked', 'danger'],
     ['frozen', 'info'],
   ] as const)(
-    'under a takeover of a %s person colors the strip and the mark %s, and drops the deletion strip',
+    'under a takeover of a %s person colors the strip and the mark %s, and projects their deletion',
     (shown, tone) => {
       const booted = bind()
       unbind = booted.unbind
@@ -269,9 +270,118 @@ describe('the session standing (HIL-945)', () => {
         tone,
         icon: 'bi-people-fill',
       })
+      expect(hilosDeletionStrip.get()).toEqual(
+        shown === 'deletion_scheduled' ? { effectiveAt: NOW + DAY_MS } : null,
+      )
+    },
+  )
+
+  it.each([false, true])(
+    'draws no deletion strip without an erasure moment (takeover %s)',
+    (impersonatedBy) => {
+      const booted = bind()
+      unbind = booted.unbind
+      booted.connection.emitHandshakeResponse(
+        handshake(standing('deletion_scheduled'), impersonatedBy),
+      )
+
       expect(hilosDeletionStrip.get()).toBeNull()
     },
   )
+
+  it('follows the current identity through takeover, return and sign-out', () => {
+    const booted = bind()
+    unbind = booted.unbind
+    booted.connection.emitHandshakeResponse(
+      handshake(
+        standing('deletion_scheduled', { deletionEffectiveAt: NOW + DAY_MS }),
+        true,
+      ),
+    )
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+
+    booted.connection.emitHandshakeResponse({
+      ...handshake(
+        standing('deletion_scheduled', {
+          deletionEffectiveAt: NOW + 12 * DAY_MS,
+        }),
+      ),
+      entities: {
+        currentUser: { id: 1, name: 'Ada' },
+        impersonatedBy: null,
+      },
+    })
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + 12 * DAY_MS })
+    expect(hilosSessionAvatarMark.get()).toEqual({
+      tone: 'warning',
+      icon: 'bi-trash',
+    })
+
+    booted.connection.emitHandshakeResponse(handshake(standing('none'), true))
+    expect(hilosDeletionStrip.get()).toBeNull()
+
+    booted.connection.emitHandshakeResponse(
+      handshake(
+        standing('deletion_scheduled', { deletionEffectiveAt: NOW + DAY_MS }),
+        true,
+      ),
+    )
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+    booted.connection.emitHandshakeResponse({
+      data: { accountStanding: null },
+      entities: { currentUser: null, impersonatedBy: null },
+    })
+    expect(hilosAccountStanding.get()).toBeNull()
+    expect(hilosDeletionStrip.get()).toBeNull()
+    expect(hilosSessionAvatarMark.get()).toBeNull()
+  })
+
+  it('forgets a deletion when the session standing is reset', () => {
+    const booted = bind()
+    unbind = booted.unbind
+    booted.connection.emitHandshakeResponse(
+      handshake(
+        standing('deletion_scheduled', { deletionEffectiveAt: NOW + DAY_MS }),
+        true,
+      ),
+    )
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+
+    booted.scopes.session.data.set('accountStanding', undefined)
+    expect(hilosAccountStanding.get()).toBeNull()
+    expect(hilosDeletionStrip.get()).toBeNull()
+  })
+
+  it('releases the old binding without letting a stale release clear the new one', () => {
+    const previous = bind()
+    unbind = previous.unbind
+    previous.connection.emitHandshakeResponse(
+      handshake(
+        standing('deletion_scheduled', { deletionEffectiveAt: NOW + DAY_MS }),
+        true,
+      ),
+    )
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+
+    const current = bind()
+    unbind = current.unbind
+    expect(hilosDeletionStrip.get()).toBeNull()
+    current.connection.emitHandshakeResponse(
+      handshake(
+        standing('deletion_scheduled', {
+          deletionEffectiveAt: NOW + 12 * DAY_MS,
+        }),
+        true,
+      ),
+    )
+
+    previous.unbind()
+    previous.connection.emitHandshakeResponse(handshake(standing('none')))
+    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + 12 * DAY_MS })
+    current.unbind()
+    current.connection.emitHandshakeResponse(handshake(standing('none')))
+    expect(hilosDeletionStrip.get()).toBeNull()
+  })
 
   it('is null again once unbound', () => {
     const booted = bind()

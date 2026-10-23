@@ -57,6 +57,7 @@ export const RT_STALENESS_FRESH: RtStalenessStatus = {
 export const RT_STALENESS_COPY = {
   frozen:
     'Some data here may be out of date - the link to its source was lost at {time}.',
+  compact: 'Some data may be out of date since {time}',
 } as const
 
 /**
@@ -80,6 +81,22 @@ export function rtStalenessLabel(
   // together — but a mark with a broken sentence in it is worse than one without
   // a time, so the placeholder falls back to the words rather than to `NaN`.
   return RT_STALENESS_COPY.frozen.replace('{time}', formatSince(status.since))
+}
+
+/**
+ * The compact sentence for a narrow shell, sharing the full mark's time format.
+ *
+ * @param status The connection's frozen-replica state.
+ * @returns The sentence, or undefined when nothing is frozen.
+ */
+export function rtStalenessCompactLabel(
+  status: RtStalenessStatus,
+): string | undefined {
+  if (!status.stale) {
+    return undefined
+  }
+
+  return RT_STALENESS_COPY.compact.replace('{time}', formatSince(status.since))
 }
 
 /**

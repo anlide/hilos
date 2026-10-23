@@ -1076,11 +1076,13 @@ export {
   rtStalenessBlockSchema,
   toRtStalenessStatus,
   rtStalenessLabel,
+  rtStalenessCompactLabel,
   RT_STALENESS_FRESH,
   RT_STALENESS_COPY,
   type RtStalenessBlock,
   type RtStalenessStatus,
 } from '../protocol/rtStaleness.js'
+export { HILOS_LAYOUT_COPY } from '../layout.js'
 export {
   entityFragmentSchema,
   listItemSchema,

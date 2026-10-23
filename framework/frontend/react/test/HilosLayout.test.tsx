@@ -22,12 +22,15 @@ import {
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
+  rtStalenessCompactLabel,
+  rtStalenessLabel,
   ScopeManager,
 } from '@hilos/core'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
   ActionSuccessSignal,
+  ConnectionState,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
@@ -530,7 +533,7 @@ describe('HilosLayout account standing (HIL-945)', () => {
   })
 
   it('stands after the framework strips and before the project strip', () => {
-    // It never meets the impersonation strip: a takeover takes it down.
+    // This session has no takeover, so the protected-mode banner comes first.
     const session = bindSession()
     unbind = session.unbind
     session.handshake(
@@ -552,7 +555,9 @@ describe('HilosLayout account standing (HIL-945)', () => {
     ])
   })
 
-  it('draws no deletion strip under a takeover, nor under maintenance', () => {
+  it('draws the deletion strip under a takeover without a personal Keep action', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
     const session = bindSession()
     unbind = session.unbind
     session.handshake(
@@ -561,9 +566,18 @@ describe('HilosLayout account standing (HIL-945)', () => {
 
     const taken = renderShell(shellConnection())
     expect(surface(taken, 'impersonation-banner')).not.toBeNull()
-    expect(surface(taken, 'account-deletion-strip')).toBeNull()
-    cleanup()
+    expect(surface(taken, 'account-deletion-strip')).not.toBeNull()
+    expect(surface(taken, 'account-deletion-strip-keep')).toBeNull()
+    expect(
+      surface(taken, 'account-deletion-strip-text')?.textContent,
+    ).toContain(
+      `Your account will be deleted on ${formatCalendarDate(NOW + 3 * DAY_MS)} — 3 days left`,
+    )
+  })
 
+  it('draws no deletion strip under maintenance', () => {
+    const session = bindSession()
+    unbind = session.unbind
     session.handshake(
       standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
     )
@@ -853,7 +867,7 @@ describe('HilosLayout sign-out', () => {
   })
 
   it.each([{ entities: { currentUser: { id: 1, name: '' } } }, TAKEOVER])(
-    'draws the named control last, also while impersonated: %j',
+    'draws the named control before the final connection indicator, also while impersonated: %j',
     (payload) => {
       const session = bindSession()
       unbind = session.unbind
@@ -864,10 +878,10 @@ describe('HilosLayout sign-out', () => {
       expect(button.tagName).toBe('BUTTON')
       expect(button.getAttribute('aria-label')).toBe('Sign out')
       expect(button.title).toBe('Sign out')
-      expect(button.parentElement?.lastElementChild).toBe(button)
-      expect(button.previousElementSibling).toBe(
-        surface(container, 'conn-state'),
+      expect(button.parentElement?.lastElementChild).toBe(
+        button.nextElementSibling,
       )
+      expect(button.nextElementSibling).toBe(surface(container, 'conn-state'))
       expect(
         button
           .querySelector('.bi-box-arrow-right')
@@ -1527,7 +1541,7 @@ describe('HilosLayout theme icon (HIL-1440)', () => {
       session.handshake({ entities: { currentUser: user } })
       const container = renderThemed(shellConnection())
       const group = container.querySelector(
-        'nav .d-flex.align-items-center.gap-3',
+        'nav .d-flex.align-items-center.gap-2',
       ) as HTMLElement
       const theme = surface(group, 'nav-theme') as HTMLElement
 
@@ -1580,4 +1594,487 @@ describe('HilosLayout theme icon (HIL-1440)', () => {
       HILOS_IMPERSONATION_STRIP_TEXT_ID,
     )
   })
+})
+
+/** A shell connection with snapshots and individually removable event listeners. */
+function shellFeed(initialBuild?: string) {
+  const listeners = new Map<string, Set<(payload: never) => void>>()
+  const state = {
+    build: initialBuild,
+    state: 'connected' as ConnectionState,
+    protectedMode: PROTECTED_MODE_INACTIVE,
+    rtStaleness: RT_STALENESS_FRESH,
+    reconnectDragging: false,
+    firstFrameHeld: false,
+    on(event: string, listener: (payload: never) => void): () => void {
+      const set = listeners.get(event) ?? new Set()
+      listeners.set(event, set)
+      set.add(listener)
+      return () => {
+        set.delete(listener)
+      }
+    },
+  }
+  return {
+    connection: state as unknown as HilosConnection,
+    listeners,
+    push(
+      patch: Partial<Omit<typeof state, 'on'>>,
+      event:
+        | 'state'
+        | 'protectedMode'
+        | 'rtStaleness'
+        | 'handshake'
+        | 'firstFrameHold',
+    ): void {
+      Object.assign(state, patch)
+      const payload =
+        event === 'handshake'
+          ? {}
+          : event === 'firstFrameHold'
+            ? state.firstFrameHeld
+            : state[event]
+      for (const listener of listeners.get(event) ?? [])
+        listener(payload as never)
+    },
+  }
+}
+
+/** Mount the real node prop seam, retaining the shell while the host changes. */
+function renderResponsive(
+  feed: ReturnType<typeof shellFeed>,
+  initiallyVisible = true,
+) {
+  let bound = feed.connection
+  let visible = initiallyVisible
+  const route = createSignal<PageRouteMatch>({
+    page: null,
+    params: {},
+    admin: false,
+  })
+  const router = { ...routerOn(null), currentRoute: route } as HilosRouter
+  const draw = () => (
+    <HilosRouterContext.Provider value={router}>
+      <HilosLayout
+        connection={bound}
+        nav={
+          visible ? (
+            <>
+              <a href="/hidden" hidden>
+                Hidden
+              </a>
+              <a href="/first" data-id="project-nav-first">
+                First
+              </a>
+              <a href="/second" data-id="project-nav-second">
+                Second
+              </a>
+            </>
+          ) : null
+        }
+        user={
+          <>
+            <span data-id="user-bell">Bell</span>
+            <span data-id="user-avatar">Avatar</span>
+            <a href="/signin" data-id="user-signin">
+              Sign in
+            </a>
+          </>
+        }
+      >
+        <p>Page</p>
+      </HilosLayout>
+    </HilosRouterContext.Provider>
+  )
+  const view = render(draw())
+  const root = view.container
+  root.addEventListener('click', (event) => event.preventDefault())
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
+  const update = async (run: () => void): Promise<void> => {
+    await act(async () => {
+      run()
+      await Promise.resolve()
+    })
+  }
+  return {
+    root,
+    route,
+    settle,
+    update,
+    click: (element: HTMLElement) => update(() => element.click()),
+    key: (element: HTMLElement, key: string) =>
+      update(() =>
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      ),
+    nav: (value: boolean) =>
+      update(() => {
+        visible = value
+        view.rerender(draw())
+      }),
+    connection: (value: HilosConnection) =>
+      update(() => {
+        bound = value
+        view.rerender(draw())
+      }),
+    dispose(): void {
+      view.unmount()
+    },
+  }
+}
+
+describe('HilosLayout responsive shell (HIL-1647)', () => {
+  let shell: ReturnType<typeof renderResponsive> | undefined
+  let releaseSession: (() => void) | undefined
+  let wide = false
+
+  const surface = (id: string): HTMLElement | null =>
+    shell?.root.querySelector(`[data-id="${id}"]`) ?? null
+  const get = (id: string): HTMLElement => {
+    const element = surface(id)
+    expect(element, id).not.toBeNull()
+    return element!
+  }
+  // Model CSS visibility, not geometry: the production code asks isDisplayed.
+  function cssVisibility(): void {
+    const computedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      (element, pseudo) => {
+        if (element.getAttribute('data-id') === 'nav-toggle') {
+          return { display: wide ? 'none' : 'block' } as CSSStyleDeclaration
+        }
+        return computedStyle(element, pseudo)
+      },
+    )
+  }
+
+  afterEach(() => {
+    shell?.dispose()
+    shell = undefined
+    releaseSession?.()
+    releaseSession = undefined
+    vi.useRealTimers()
+    applyServerTime(Date.now())
+    wide = false
+    vi.restoreAllMocks()
+  })
+
+  it('uses one named native disclosure with an existing unique controlled panel', async () => {
+    shell = renderResponsive(shellFeed())
+    await shell.settle()
+    const toggle = get('nav-toggle')
+    const panel = get('nav-panel')
+    expect(toggle.tagName).toBe('BUTTON')
+    expect(toggle.getAttribute('type')).toBe('button')
+    expect(toggle.getAttribute('aria-label')).toBe('Navigation')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.getAttribute('aria-controls')).toBe(panel.id)
+    expect(document.querySelectorAll(`[id="${panel.id}"]`)).toHaveLength(1)
+    expect(
+      shell.root.querySelectorAll('[data-id="project-nav-first"]'),
+    ).toHaveLength(1)
+    expect(panel.classList.contains('show')).toBe(false)
+    expect(panel.getAttribute('role')).toBeNull()
+    expect(panel.getAttribute('aria-modal')).toBeNull()
+    expect(toggle.hasAttribute('data-bs-toggle')).toBe(false)
+  })
+
+  it('opens by native button activation, closes by Escape, link and route without stealing router focus', async () => {
+    cssVisibility()
+    shell = renderResponsive(shellFeed())
+    await shell.settle()
+    const toggle = get('nav-toggle')
+    // Enter and Space activate a native button as a click in a real browser.
+    for (const key of ['Enter', ' ']) {
+      toggle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await shell.click(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(get('nav-panel').classList.contains('show')).toBe(true)
+      expect(document.activeElement).toBe(get('project-nav-first'))
+      await shell.key(get('project-nav-first'), 'Escape')
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(toggle)
+    }
+    await shell.click(toggle)
+    const link = get('project-nav-second')
+    link.focus()
+    await shell.click(link)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(link)
+    await shell.click(toggle)
+    const main = shell.root.querySelector('main')!
+    main.focus()
+    await shell.update(() => {
+      shell!.route.set({ page: 'next', params: {}, admin: false })
+    })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(main)
+  })
+
+  it('removes empty or vanished content and resets when maintenance or the first-frame hold rises', async () => {
+    const feed = shellFeed()
+    shell = renderResponsive(feed)
+    await shell.settle()
+    await shell.click(get('nav-toggle'))
+    await shell.nav(false)
+    expect(surface('nav-toggle')).toBeNull()
+    expect(surface('nav-panel')).toBeNull()
+    await shell.nav(true)
+    expect(get('nav-toggle').getAttribute('aria-expanded')).toBe('false')
+    await shell.click(get('nav-toggle'))
+    await shell.update(() =>
+      feed.push({ protectedMode: FROZEN }, 'protectedMode'),
+    )
+    expect(surface('nav-toggle')).toBeNull()
+    expect(surface('nav-panel')).toBeNull()
+    expect(surface('nav-brand')).toBeNull()
+    expect(surface('nav-admin')).toBeNull()
+    expect(surface('nav-logout')).toBeNull()
+    expect(surface('conn-state')).not.toBeNull()
+    await shell.update(() =>
+      feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode'),
+    )
+    expect(get('nav-toggle').getAttribute('aria-expanded')).toBe('false')
+    await shell.update(() =>
+      feed.push({ firstFrameHeld: true }, 'firstFrameHold'),
+    )
+    expect(surface('app-root')).toBeNull()
+    expect(surface('hilos-boot-state')?.getAttribute('data-state')).toBe('held')
+  })
+
+  it('has no disclosure when the host starts with an empty nav', async () => {
+    shell = renderResponsive(shellFeed(), false)
+    await shell.settle()
+    expect(surface('nav-toggle')).toBeNull()
+    expect(surface('nav-panel')).toBeNull()
+  })
+
+  it('resets at CSS width changes and moves focus out of the hidden button or panel', async () => {
+    cssVisibility()
+    shell = renderResponsive(shellFeed())
+    await shell.settle()
+    const toggle = get('nav-toggle')
+    await shell.click(toggle)
+    wide = true
+    await shell.update(() => window.dispatchEvent(new Event('resize')))
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(get('project-nav-first'))
+    wide = false
+    await shell.update(() => window.dispatchEvent(new Event('resize')))
+    expect(document.activeElement).toBe(toggle)
+    expect(get('nav-panel').classList.contains('show')).toBe(false)
+    toggle.focus()
+    wide = true
+    await shell.update(() => window.dispatchEvent(new Event('resize')))
+    expect(document.activeElement).toBe(get('project-nav-first'))
+  })
+
+  it('reads the latest build snapshot, updates on welcome, keeps it on drop and releases replaced subscriptions', async () => {
+    const feed = shellFeed('A')
+    shell = renderResponsive(feed)
+    await shell.settle()
+    expect(get('footer-build').textContent?.trim()).toBe('build A')
+    await shell.update(() => feed.push({ build: 'B' }, 'handshake'))
+    expect(get('footer-build').textContent?.trim()).toBe('build B')
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    expect(get('footer-build').textContent?.trim()).toBe('build B')
+    const replacement = shellFeed('C')
+    await shell.connection(replacement.connection)
+    expect(get('footer-build').textContent?.trim()).toBe('build C')
+    expect(feed.listeners.get('handshake')?.size).toBe(0)
+    await shell.update(() => feed.push({ build: 'old' }, 'handshake'))
+    expect(get('footer-build').textContent?.trim()).toBe('build C')
+    await shell.update(() => replacement.push({ build: 'D' }, 'handshake'))
+    expect(get('footer-build').textContent?.trim()).toBe('build D')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
+    shell.dispose()
+    shell = undefined
+    expect(replacement.listeners.get('handshake')?.size).toBe(0)
+    expect(remove.mock.calls.some(([name]) => name === 'resize')).toBe(true)
+    expect(disconnect).toHaveBeenCalled()
+  })
+
+  it('reserves a hidden build line before welcome and keeps the four SPA links in a responsive grid', async () => {
+    shell = renderResponsive(shellFeed())
+    await shell.settle()
+    expect(get('footer-build').classList.contains('invisible')).toBe(true)
+    expect(get('footer-build').textContent?.trim()).toBe('build')
+    const footer = get('app-footer')
+    const grid = footer.querySelector('.row-cols-2')!
+    expect(grid.children).toHaveLength(4)
+    expect(grid.classList.contains('text-center')).toBe(true)
+    expect(grid.classList.contains('d-md-flex')).toBe(true)
+    expect(
+      Array.from(footer.querySelectorAll('a')).map((link) =>
+        link.getAttribute('href'),
+      ),
+    ).toEqual(['/about', '/terms', '/privacy', '/license'])
+  })
+
+  it('follows the current person live and preserves blocked/frozen priority over deletion', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+    const session = bindSession()
+    releaseSession = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
+    )
+    shell = renderResponsive(shellFeed())
+    await shell.settle()
+    expect(surface('account-deletion-strip-keep')).not.toBeNull()
+    await shell.update(() =>
+      session.handshake({
+        ...standingHandshake('deletion_scheduled', true, NOW + 5 * DAY_MS),
+        entities: {
+          currentUser: { id: 3, name: 'Eve' },
+          impersonatedBy: { id: 1, name: 'Ada' },
+        },
+      }),
+    )
+    expect(
+      get('impersonation-banner').querySelector('strong')?.textContent,
+    ).toBe('Eve')
+    expect(get('account-deletion-strip-text').textContent).toContain(
+      `Your account will be deleted on ${formatCalendarDate(NOW + 5 * DAY_MS)} — 5 days left`,
+    )
+    expect(surface('account-deletion-strip-keep')).toBeNull()
+    for (const [standing, tone] of [
+      ['blocked', 'alert-danger'],
+      ['frozen', 'alert-info'],
+    ] as const) {
+      await shell.update(() =>
+        session.handshake(standingHandshake(standing, true, NOW + 5 * DAY_MS)),
+      )
+      expect(surface('account-deletion-strip')).toBeNull()
+      expect(get('impersonation-banner').classList.contains(tone)).toBe(true)
+    }
+    await shell.update(() =>
+      session.handshake({
+        ...standingHandshake('deletion_scheduled', false, NOW + 7 * DAY_MS),
+        entities: {
+          currentUser: { id: 4, name: 'Carol' },
+          impersonatedBy: null,
+        },
+      }),
+    )
+    expect(surface('impersonation-banner')).toBeNull()
+    expect(surface('account-deletion-strip-keep')).not.toBeNull()
+    expect(get('account-deletion-strip-text').textContent).toContain(
+      `Your account will be deleted on ${formatCalendarDate(NOW + 7 * DAY_MS)} — 7 days left`,
+    )
+  })
+
+  it('shows one visual compact stale sentence including maintenance and updates without navigation', async () => {
+    const feed = shellFeed()
+    shell = renderResponsive(feed)
+    await shell.settle()
+    expect(surface('conn-stale-line')).toBeNull()
+    const stale = { stale: true, since: undefined }
+    await shell.update(() => feed.push({ rtStaleness: stale }, 'rtStaleness'))
+    const line = get('conn-stale-line')
+    expect(line.textContent?.trim()).toBe(
+      'Some data may be out of date since an unknown time',
+    )
+    expect(line.getAttribute('aria-hidden')).toBe('true')
+    expect(line.hasAttribute('aria-live')).toBe(false)
+    expect(line.hasAttribute('role')).toBe(false)
+    expect(get('app-banner').firstElementChild).toBe(line)
+    expect(get('conn-state').getAttribute('title')).toBe(
+      `connected - ${rtStalenessLabel(stale)}`,
+    )
+    expect(get('conn-state').querySelector('.bi-snow')).not.toBeNull()
+    expect(get('app-banner').querySelectorAll('[aria-live]')).toHaveLength(0)
+    const dated = { stale: true, since: Date.UTC(2026, 9, 21, 10) }
+    await shell.update(() => feed.push({ rtStaleness: dated }, 'rtStaleness'))
+    expect(line.textContent?.trim()).toBe(rtStalenessCompactLabel(dated))
+    await shell.update(() =>
+      feed.push({ protectedMode: FROZEN }, 'protectedMode'),
+    )
+    expect(surface('conn-stale-line')).toBe(line)
+    expect(surface('app-footer')).toBeNull()
+    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
+    expect(surface('conn-stale-line')).toBeNull()
+    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+    expect(surface('conn-stale-line')).not.toBeNull()
+    await shell.update(() =>
+      feed.push({ rtStaleness: RT_STALENESS_FRESH }, 'rtStaleness'),
+    )
+    expect(surface('conn-stale-line')).toBeNull()
+  })
+
+  it.each([
+    ['guest', null, false, false],
+    ['signed', { id: 2, name: 'Bob' }, false, false],
+    ['admin', { id: 2, name: 'Bob', admin: true }, false, false],
+    ['view', null, true, false],
+    ['takeover', { id: 2, name: 'Bob' }, false, true],
+  ] as const)(
+    'keeps actual control DOM order for %s',
+    async (_label, user, viewMode, takeover) => {
+      const session = bindSession()
+      releaseSession = session.unbind
+      session.handshake({
+        data: {
+          adminViewMode: viewMode,
+          accountStanding:
+            user === null
+              ? null
+              : {
+                  shown: 'none',
+                  blocked: false,
+                  frozen: false,
+                  deletionEffectiveAt: null,
+                  lapsed: [],
+                  window: [{ document: 'terms', deadline: '2099-11-10' }],
+                  mergedInto: null,
+                  mergedIntoName: null,
+                },
+        },
+        entities: {
+          currentUser: user,
+          impersonatedBy: takeover ? { id: 1, name: 'Ada' } : null,
+        },
+      })
+      shell = renderResponsive(shellFeed())
+      await shell.settle()
+      const ids = [
+        'nav-theme',
+        'nav-admin',
+        'user-bell',
+        'user-avatar',
+        'user-signin',
+        'legal-reconsent-icon',
+        'nav-logout',
+        'nav-toggle',
+        'conn-state',
+      ]
+      const present = ids
+        .map(surface)
+        .filter((element): element is HTMLElement => element !== null)
+      for (let index = 1; index < present.length; index++) {
+        expect(
+          present[index - 1]!.compareDocumentPosition(present[index]!) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0)
+      }
+      expect(get('conn-state').parentElement?.lastElementChild).toBe(
+        get('conn-state'),
+      )
+      expect(!!surface('nav-admin')).toBe(
+        viewMode || (user !== null && 'admin' in user),
+      )
+      expect(!!surface('nav-logout')).toBe(user !== null)
+      expect(!!surface('legal-reconsent-icon')).toBe(user !== null && !takeover)
+    },
+  )
 })

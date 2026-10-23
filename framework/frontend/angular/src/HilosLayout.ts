@@ -6,7 +6,7 @@
 // switching is off and under maintenance), the framework admin entry (the gear
 // linking to the Hilos dashboard, drawn for an admin and, in the admin view
 // mode, for a viewer), the live connection indicator the SDK owns
-// (core-and-connection.md), and, last, its tracked sign-out control while a
+// (core-and-connection.md), after its tracked sign-out control while a
 // person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
@@ -53,6 +53,9 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  afterRenderEffect,
+  viewChild,
   computed,
   effect,
   inject,
@@ -77,6 +80,7 @@ import {
   HILOS_FROZEN_OPEN_PAGES,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
+  HILOS_LAYOUT_COPY,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   PROTECTED_MODE_INACTIVE,
@@ -99,9 +103,11 @@ import {
   hilosTakeoverViewOnly,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
+  isDisplayed,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  rtStalenessCompactLabel,
   signOut,
   SIGN_OUT_COPY,
   stopImpersonation,
@@ -193,39 +199,41 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           {{ pageTitle() }}
         </div>
         <nav
-          class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
+          class="navbar navbar-expand-md bg-body-tertiary border-bottom flex-shrink-0"
           aria-label="Main"
         >
           <div class="container">
             @if (!underMaintenance()) {
-              <a hilosLink="/" class="navbar-brand mb-0 h1" data-id="nav-brand">
+              <a
+                hilosLink="/"
+                class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                data-id="nav-brand"
+              >
                 <ng-content select="[brand]">Hilos</ng-content>
               </a>
             }
-            <!-- The auto margin lives on this region whether or not it holds
-            links, so the connection indicator keeps its place on the right while
-            the maintenance surface is up. -->
-            <div class="navbar-nav me-auto">
-              @if (!underMaintenance()) {
-                <ng-content select="[nav]" />
-              }
-            </div>
-            <div class="d-flex align-items-center gap-3">
+            @if (!underMaintenance()) {
+              <div
+                id="hilos-nav-panel"
+                #navPanel
+                class="collapse order-3 order-md-0"
+                [class.show]="navOpen()"
+                [class.navbar-collapse]="hasNav()"
+                [class.d-none]="!hasNav()"
+                [attr.data-id]="hasNav() ? 'nav-panel' : null"
+                (keydown)="onNavKeydown($event)"
+                (click)="onNavClick($event)"
+              >
+                <div class="navbar-nav me-auto">
+                  <ng-content select="[nav]" />
+                </div>
+              </div>
+            }
+            <div
+              class="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0"
+            >
               @if (!underMaintenance()) {
                 <hilos-theme-menu />
-                <ng-content select="[user]" />
-                @if (reconsentDue() !== null) {
-                  <button
-                    type="button"
-                    class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
-                    data-id="legal-reconsent-icon"
-                    [attr.title]="reconsentBadge()"
-                    (click)="openReconsent()"
-                  >
-                    <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
-                    <span class="visually-hidden">{{ reconsentBadge() }}</span>
-                  </button>
-                }
                 @if (adminAccess() !== 'none') {
                   <a
                     [hilosLink]="adminHref"
@@ -254,6 +262,46 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     <span class="visually-hidden">{{ adminLabel() }}</span>
                   </a>
                 }
+                <ng-content select="[user]" />
+                @if (reconsentDue() !== null) {
+                  <button
+                    type="button"
+                    class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
+                    data-id="legal-reconsent-icon"
+                    [attr.title]="reconsentBadge()"
+                    (click)="openReconsent()"
+                  >
+                    <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                    <span class="visually-hidden">{{ reconsentBadge() }}</span>
+                  </button>
+                }
+              }
+              @if (!underMaintenance() && signedIn()) {
+                <button
+                  hilosLoadingButton
+                  class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+                  data-id="nav-logout"
+                  [attr.aria-label]="signOutCopy.label"
+                  [title]="signOutCopy.label"
+                  [loading]="signOutAction.busy()"
+                  (click)="onSignOut()"
+                >
+                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                </button>
+              }
+              @if (!underMaintenance() && hasNav()) {
+                <button
+                  #navToggle
+                  type="button"
+                  class="btn btn-link nav-link d-md-none p-0 fs-5"
+                  data-id="nav-toggle"
+                  [attr.aria-label]="layoutCopy.navigation"
+                  [attr.aria-expanded]="navOpen()"
+                  aria-controls="hilos-nav-panel"
+                  (click)="navOpen.set(!navOpen())"
+                >
+                  <i class="bi bi-list" aria-hidden="true"></i>
+                </button>
               }
               <span
                 [class]="connSpanClass()"
@@ -273,19 +321,6 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 </span>
                 <span class="visually-hidden">{{ connLabel() }}</span>
               </span>
-              @if (!underMaintenance() && signedIn()) {
-                <button
-                  hilosLoadingButton
-                  class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
-                  data-id="nav-logout"
-                  [attr.aria-label]="signOutCopy.label"
-                  [title]="signOutCopy.label"
-                  [loading]="signOutAction.busy()"
-                  (click)="onSignOut()"
-                >
-                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-                </button>
-              }
             </div>
           </div>
         </nav>
@@ -295,6 +330,15 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           aria-live="polite"
           data-id="app-banner"
         >
+          @if (showsFrozenData()) {
+            <div
+              class="d-md-none small text-body-secondary border-bottom py-1"
+              data-id="conn-stale-line"
+              aria-hidden="true"
+            >
+              <div class="container">{{ compactStalenessLabel() }}</div>
+            </div>
+          }
           @if (verificationBanner(); as bannerMessage) {
             <div
               class="alert alert-warning border-0 rounded-0 mb-0 py-2"
@@ -358,15 +402,17 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                   <i class="bi bi-trash me-1" aria-hidden="true"></i>
                   {{ deletionStripText() }}
                 </span>
-                <button
-                  hilosLoadingButton
-                  class="btn-sm btn-warning"
-                  data-id="account-deletion-strip-keep"
-                  [loading]="keepAccount.busy()"
-                  (click)="onKeepAccount()"
-                >
-                  {{ standingCopy.keep }}
-                </button>
+                @if (impersonation() === null) {
+                  <button
+                    hilosLoadingButton
+                    class="btn-sm btn-warning"
+                    data-id="account-deletion-strip-keep"
+                    [loading]="keepAccount.busy()"
+                    (click)="onKeepAccount()"
+                  >
+                    {{ standingCopy.keep }}
+                  </button>
+                }
               </div>
             </div>
           }
@@ -441,17 +487,28 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
             data-id="app-footer"
           >
-            <div
-              class="container d-flex flex-wrap justify-content-center gap-3 small"
-            >
-              @for (link of footerLinks; track link.page) {
-                <a
-                  [hilosLink]="link.href"
-                  class="link-secondary text-decoration-none"
-                  [attr.data-id]="'footer-link-' + link.page"
-                  >{{ link.label }}</a
-                >
-              }
+            <div class="container d-md-flex align-items-center gap-3 small">
+              <div
+                class="row row-cols-2 g-2 text-center d-md-flex flex-md-nowrap gap-md-3"
+              >
+                @for (link of footerLinks; track link.page) {
+                  <div class="col col-md-auto">
+                    <a
+                      [hilosLink]="link.href"
+                      class="link-secondary text-decoration-none"
+                      [attr.data-id]="'footer-link-' + link.page"
+                      >{{ link.label }}</a
+                    >
+                  </div>
+                }
+              </div>
+              <div
+                class="text-center text-body-secondary mt-2 mt-md-0 ms-md-auto text-nowrap"
+                [class.invisible]="!build()"
+                data-id="footer-build"
+              >
+                {{ layoutCopy.build }} {{ build() }}
+              </div>
             </div>
           </footer>
         }
@@ -504,6 +561,15 @@ export class HilosLayout {
    * noticed (toasts.md).
    */
   readonly toastCorner = input<HilosToastCorner>('bottom-end')
+
+  protected readonly layoutCopy = HILOS_LAYOUT_COPY
+  protected readonly build = signal<string | undefined>(undefined)
+  // Disclosure state belongs only to this mounted view, beside its DOM handles.
+  protected readonly navOpen = signal(false)
+  protected readonly hasNav = signal(false)
+  private readonly navPanel = viewChild<ElementRef<HTMLElement>>('navPanel')
+  private readonly navToggle =
+    viewChild<ElementRef<HTMLButtonElement>>('navToggle')
 
   // The admin gear (HIL-1253, HIL-1289): drawn for an admin and, on a node in the admin
   // view mode, for a viewer who may look and not act; the core derives which
@@ -567,8 +633,8 @@ export class HilosLayout {
   // The third framework strip (HIL-945): the session's own account is scheduled
   // for deletion, so the person is told when, and how long there is left to
   // think, on every page — the product still works, and the state lives beside
-  // the work. Not under a takeover: the shell then speaks about the person taken
-  // over, and the core leaves the strip down. "Keep my account" is the
+  // the work. Under a takeover it describes the person taken over without a
+  // personal cancellation control. "Keep my account" is the
   // impersonation strip's Stop once more — busy at once, a refusal is the error
   // toast, and success needs no toast: the strip leaves with the handshake that
   // no longer carries the deletion. The days left are counted again once a
@@ -621,9 +687,13 @@ export class HilosLayout {
   // problems. Only while the socket is up: while it is down the transport itself
   // is the news, and a stale copy is the least of what is out of date.
   protected readonly rtStaleness = signal<RtStalenessStatus>(RT_STALENESS_FRESH)
-  private readonly showsFrozenData = computed(
+  protected readonly showsFrozenData = computed(
     () => this.connState() === 'connected' && this.rtStaleness().stale,
   )
+  protected readonly compactStalenessLabel = computed(() => {
+    this.timeZone()
+    return rtStalenessCompactLabel(this.rtStaleness())
+  })
   protected readonly connIconClass = computed(() =>
     this.showsFrozenData()
       ? 'bi bi-snow'
@@ -731,6 +801,68 @@ export class HilosLayout {
   )
 
   constructor() {
+    effect((onCleanup) => {
+      const connection = this.connection()
+      this.build.set(connection.build)
+      onCleanup(
+        connection.on('handshake', () => this.build.set(connection.build)),
+      )
+    })
+    effect(() => {
+      this.currentRoute()
+      this.underMaintenance()
+      this.navOpen.set(false)
+    })
+    // DOM work starts after rendering, including projected content that can
+    // disappear without a new input. The observer and resize listener die here.
+    afterRenderEffect((onCleanup) => {
+      const panel = this.navPanel()?.nativeElement
+      const read = (): void => {
+        const present =
+          !!panel &&
+          (!!panel.textContent?.trim() ||
+            panel.querySelector(
+              'a[href], button, input, select, textarea, img, svg',
+            ) !== null)
+        this.hasNav.set(present)
+        if (!present) this.navOpen.set(false)
+      }
+      read()
+      if (!panel) return
+      const observer = new MutationObserver(read)
+      observer.observe(panel, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      })
+      const resize = (): void => {
+        const toggle = this.navToggle()?.nativeElement
+        if (!toggle) return
+        const active = panel.ownerDocument.activeElement
+        if (!isDisplayed(toggle)) {
+          this.navOpen.set(false)
+          if (active === toggle) {
+            ;(
+              this.firstNavLink() ??
+              panel
+                .closest('nav')
+                ?.querySelector<HTMLElement>('[data-id="nav-brand"]')
+            )?.focus()
+          }
+        } else if (!this.navOpen() && active && panel.contains(active)) {
+          toggle.focus()
+        }
+      }
+      window.addEventListener('resize', resize)
+      onCleanup(() => {
+        observer.disconnect()
+        window.removeEventListener('resize', resize)
+      })
+    })
+    afterRenderEffect(() => {
+      if (this.navOpen()) this.firstNavLink()?.focus()
+    })
+
     // Read the connection input once it is bound and mirror its machine state;
     // the effect's cleanup releases the listener when the shell is destroyed.
     effect((onCleanup) => {
@@ -837,6 +969,41 @@ export class HilosLayout {
         document.title = title
       }
     })
+  }
+
+  /** First available project link; the CSS answers which entries are displayed. */
+  private firstNavLink(): HTMLAnchorElement | undefined {
+    return Array.from(
+      this.navPanel()?.nativeElement.querySelectorAll<HTMLAnchorElement>(
+        'a[href]:not([aria-disabled="true"]):not([tabindex="-1"])',
+      ) ?? [],
+    ).find((link) => {
+      for (
+        let element: HTMLElement | null = link;
+        element && element !== this.navPanel()?.nativeElement;
+        element = element.parentElement
+      ) {
+        if (element.hidden || element.inert || !isDisplayed(element))
+          return false
+      }
+      return true
+    })
+  }
+
+  /** Escape closes this disclosure and returns focus to its button. */
+  protected onNavKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.navOpen()) {
+      event.preventDefault()
+      this.navOpen.set(false)
+      this.navToggle()?.nativeElement.focus()
+    }
+  }
+
+  /** A link leaves focus to the router that handles the successful transition. */
+  protected onNavClick(event: MouseEvent): void {
+    if (event.target instanceof Element && event.target.closest('a[href]')) {
+      this.navOpen.set(false)
+    }
   }
 
   /** Leave the takeover through the tracked driver; a second press while busy is dropped. */

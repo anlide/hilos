@@ -234,7 +234,11 @@ state internally, but per-element stale marks are not the Hilos standard.
 Projects and components may add extra connection-status indicators (not
 forbidden). And never show staleness **timestamps** ("synced 3 min ago"): with a
 connection the data is current, so a timestamp only deceives — not-current is
-surfaced only by the banner.
+surfaced by the global status surface, not as time since sync. In the shared
+shell, a connected stale replica also gets a compact sentence in the banner
+region below `md`, including during maintenance. The line uses
+`rtStalenessCompactLabel()` and is `aria-hidden`; the persistent connection
+indicator keeps the full title and screen-reader label.
 
 For `/status` alone, the heartbeat's age determines current knowledge even
 with a live socket. A stale heartbeat means **not responding since** `<aliveAt>`
@@ -242,6 +246,14 @@ and Unknown components; the [Status reader](../architecture/status-page.md#readi
 defines coherent rereads and the fresh-heartbeat/disconnected case. This is the
 explicit exception to the ordinary banner and timestamp rule.
 (not in the code yet — HIL-1690)
+
+## SDK shell
+
+Project navigation stays in one panel: inline at `md` and wider, with a toggle
+for that panel on narrower screens when the project has navigation to show.
+The footer's build row stays invisible in its place until the welcome supplies
+a value; the `HilosConnection.build` getter is a read-only snapshot of the
+`build` already carried by that welcome. This adds no wire field.
 
 ## Identity-driven rendering
 

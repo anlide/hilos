@@ -249,12 +249,15 @@ costs an array comparison.
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
-- **Deletion strip** (`hilosDeletionStrip`) — the session's own standing is
-  `deletion_scheduled` and there is no takeover. "Your account will be deleted on
-  {date} — {days} left" and "Keep my account" (`keepMyAccount()`, the tracked
-  `hilos_account_deletion_cancel`). `HilosLayout` draws it right after the
-  impersonation strip and before the project's banner slot; the days are counted
-  again once a minute from the moment the strip appears.
+- **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
+  is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during
+  a takeover too, for the represented person. "Your account will be deleted on
+  {date} — {days} left" remains visible, but "Keep my account"
+  (`keepMyAccount()`, the tracked `hilos_account_deletion_cancel`) is absent;
+  the server also refuses that personal action during a takeover. `HilosLayout`
+  draws the strip right after the impersonation strip and before the project's
+  banner slot; the days are counted again once a minute from the moment the
+  strip appears.
 - **Impersonation strip** — `alert-{tone}` by the represented person's shown
   standing (`hilosStandingTone()`): blocked → `danger`, frozen → `info`,
   otherwise `warning`.
