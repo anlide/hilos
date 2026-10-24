@@ -2,9 +2,9 @@
 // edit-in-modal dialog runs, with no DOM and no framework. Closing a dirty modal
 // raises a confirm step ("Discard changes?") instead of closing at once; Escape
 // and a backdrop click route through the same guard. While the dialog is busy
-// (its request in flight) no user gesture closes it or raises the confirm step,
-// and a suppressed gesture is not replayed once busy clears; the parent may
-// still close it programmatically. The view owns rendering, the portal, and the
+// (its request in flight) or interaction is blocked, no user gesture changes the
+// confirm step or closes it. Suppressed gestures are never replayed; the parent
+// may still close it programmatically. The view owns rendering, the portal, and the
 // focus trap (core/dom); this owns only the confirm-step state and the
 // close-decision logic (busy guard included), identical across the view layers
 // (multiframework-core.md). Config arrives as getters so a view keeps it
@@ -26,6 +26,11 @@ export interface ModalControllerOptions {
    * the confirm step, over `closeOnEsc` and `closeOnBackdrop`.
    */
   busy?: () => boolean
+  /**
+   * Whether interaction is independently blocked; read on each attempt.
+   * Defaults to false. This blocks user gestures without starting loading.
+   */
+  interactionBlocked?: () => boolean
   /** Actually close the dialog — the view wires its own close event here. */
   onClose: () => void
 }
@@ -36,25 +41,25 @@ export interface ModalController {
   readonly confirmVisible: ReadonlySignal<boolean>
   /**
    * Attempt to close: raise the confirm step when guarding, else close. Does
-   * nothing while busy.
+   * nothing while busy or interaction is blocked.
    */
   requestClose(): void
   /**
    * Escape pressed: back out of the confirm step, else attempt to close. Does
-   * nothing while busy — an open confirm step stays.
+   * nothing while busy or interaction is blocked — an open confirm step stays.
    */
   onEsc(): void
   /**
    * Backdrop clicked: attempt to close unless guarding or in the confirm step.
-   * Does nothing while busy.
+   * Does nothing while busy or interaction is blocked.
    */
   onBackdrop(): void
   /**
    * Discard the draft: leave the confirm step and close. Does nothing while
-   * busy — the confirm step stays.
+   * busy or interaction is blocked — the confirm step stays.
    */
   discard(): void
-  /** Keep editing: leave the confirm step without closing. */
+  /** Keep editing: leave the confirm step unless busy or interaction is blocked. */
   keepEditing(): void
   /** Clear the confirm step; call it when the dialog (re)opens. */
   reset(): void
@@ -63,7 +68,7 @@ export interface ModalController {
 /**
  * Create the headless confirm-on-close state machine for a modal.
  *
- * @param options Close-guard and busy getters and the view's close callback.
+ * @param options Close and interaction guard getters and the view's close callback.
  */
 export function createModalController(
   options: ModalControllerOptions,
@@ -73,9 +78,10 @@ export function createModalController(
   const closeOnEsc = options.closeOnEsc ?? (() => true)
   const closeOnBackdrop = options.closeOnBackdrop ?? (() => true)
   const busy = options.busy ?? (() => false)
+  const interactionBlocked = options.interactionBlocked ?? (() => false)
 
   function requestClose(): void {
-    if (busy()) {
+    if (busy() || interactionBlocked()) {
       return
     }
     if (confirmOnClose()) {
@@ -90,7 +96,7 @@ export function createModalController(
     confirmVisible,
     requestClose,
     onEsc(): void {
-      if (busy()) {
+      if (busy() || interactionBlocked()) {
         return
       }
       if (confirmVisible.get()) {
@@ -103,19 +109,27 @@ export function createModalController(
       }
     },
     onBackdrop(): void {
-      if (busy() || confirmVisible.get() || !closeOnBackdrop()) {
+      if (
+        busy() ||
+        interactionBlocked() ||
+        confirmVisible.get() ||
+        !closeOnBackdrop()
+      ) {
         return
       }
       requestClose()
     },
     discard(): void {
-      if (busy()) {
+      if (busy() || interactionBlocked()) {
         return
       }
       confirmVisible.set(false)
       options.onClose()
     },
     keepEditing(): void {
+      if (busy() || interactionBlocked()) {
+        return
+      }
       confirmVisible.set(false)
     },
     reset(): void {

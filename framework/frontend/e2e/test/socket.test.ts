@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
 import type { Page, WebSocketRoute } from '@playwright/test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  controlSocketReconnect,
   createSocketFrameReader,
   forwardSessionTimeZone,
   isApplicationSocket,
@@ -81,6 +82,277 @@ function proxy() {
     close: () => close(1000, 'test'),
   }
 }
+
+/** Model the public routing lifecycle, including the automatic mock-open. */
+function reconnectBrowser() {
+  const events = new EventEmitter()
+  const mainFrame = {}
+  const page = events as unknown as Page
+  let closed = false
+  let handler!: (route: WebSocketRoute) => void | Promise<void>
+  const routed: Parameters<Page['routeWebSocket']>[0][] = []
+  page.routeWebSocket = async (url, callback) => {
+    if (typeof callback !== 'function') throw new Error('Expected a handler')
+    routed.push(url)
+    handler = callback
+  }
+  page.isClosed = () => closed
+  page.mainFrame = () => mainFrame as ReturnType<Page['mainFrame']>
+  // The routed controller must not rely on constructor-init-script ordering.
+  page.addInitScript = vi.fn(() => {
+    throw new Error('Unexpected constructor wrapper')
+  })
+
+  function open() {
+    let live = true
+    let serverLive = true
+    let onClientClose = () => {}
+    let onServerClose = () => {}
+    let settled = false
+    let mockOpened = false
+    const server = {
+      onClose: vi.fn((listener: () => void) => {
+        onServerClose = listener
+      }),
+      close: vi.fn(async () => {
+        if (!serverLive) return
+        serverLive = false
+        onServerClose()
+      }),
+      onMessage: vi.fn(),
+      send: vi.fn(),
+    }
+    const client = {
+      connectToServer: vi.fn(() => {
+        if (!live) throw new Error('Connected a dead route')
+        return server
+      }),
+      onClose: vi.fn((listener: () => void) => {
+        onClientClose = listener
+      }),
+      close: vi.fn(async () => {
+        if (!live) return
+        live = false
+        onClientClose()
+      }),
+      onMessage: vi.fn(),
+      send: vi.fn(),
+    }
+    const handled = Promise.resolve(
+      handler(client as unknown as WebSocketRoute),
+    ).then(() => {
+      // Playwright's after-handler mock-open only opens a CONNECTING socket.
+      mockOpened = live && client.connectToServer.mock.calls.length === 0
+      settled = true
+    })
+    return {
+      client,
+      server,
+      handled,
+      settled: () => settled,
+      mockOpened: () => mockOpened,
+    }
+  }
+
+  return {
+    page,
+    routed,
+    open,
+    events,
+    close() {
+      closed = true
+      events.emit('close')
+    },
+    navigate(frame = mainFrame, navigation = true) {
+      events.emit('request', {
+        isNavigationRequest: () => navigation,
+        frame: () => frame,
+      })
+    },
+  }
+}
+
+describe('controlled socket reconnect', () => {
+  it('passes initial real connections through without taking over any frames', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    expect(browser.routed).toEqual([isApplicationSocket])
+    const route = browser.open()
+    await route.handled
+    expect(route.client.connectToServer).toHaveBeenCalledExactlyOnceWith()
+    expect(route.client.onMessage).not.toHaveBeenCalled()
+    expect(route.server.onMessage).not.toHaveBeenCalled()
+    expect(route.client.send).not.toHaveBeenCalled()
+    expect(route.server.send).not.toHaveBeenCalled()
+    expect(route.mockOpened()).toBe(false)
+    await control.dispose()
+  })
+
+  it('holds a session rotation without closing the still-live current socket', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    const initial = browser.open()
+    await initial.handled
+    await control.hold()
+    expect(initial.client.close).not.toHaveBeenCalled()
+    expect(initial.server.close).not.toHaveBeenCalled()
+    const next = browser.open()
+    expect(next.settled()).toBe(false)
+    expect(next.client.connectToServer).not.toHaveBeenCalled()
+    await control.release()
+    await next.handled
+    expect(next.client.connectToServer).toHaveBeenCalledExactlyOnceWith()
+    expect(next.mockOpened()).toBe(false)
+    await control.dispose()
+    await expect(control.hold()).rejects.toThrow('disposed')
+  })
+
+  it('can drop the live socket after arming a hold without retiring waiting routes', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    const initial = browser.open()
+    await initial.handled
+    await control.hold()
+    const waiting = browser.open()
+    await control.drop()
+    expect(initial.client.close).toHaveBeenCalledOnce()
+    expect(waiting.client.close).not.toHaveBeenCalled()
+    expect(waiting.client.connectToServer).not.toHaveBeenCalled()
+    await control.release()
+    await waiting.handled
+    expect(waiting.client.connectToServer).toHaveBeenCalledOnce()
+    await control.dispose()
+  })
+
+  it('holds the handler itself until release connects to the real server', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    const initial = browser.open()
+    await initial.handled
+    // A reconnect starting during close already has to see the hold.
+    let reconnect!: ReturnType<typeof browser.open>
+    initial.server.close.mockImplementationOnce(async () => {
+      reconnect = browser.open()
+    })
+    await control.drop()
+    expect(initial.client.close).toHaveBeenCalledOnce()
+    expect(initial.server.close).toHaveBeenCalledOnce()
+    expect(reconnect.client.connectToServer).not.toHaveBeenCalled()
+    expect(reconnect.settled()).toBe(false)
+    expect(reconnect.mockOpened()).toBe(false)
+    await control.release()
+    expect(reconnect.settled()).toBe(true)
+    expect(reconnect.client.connectToServer).toHaveBeenCalledExactlyOnceWith()
+    expect(reconnect.mockOpened()).toBe(false)
+    await control.dispose()
+  })
+
+  it('supports repeated cycles and idempotent release, drop and disposal', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await control.drop()
+      const reconnect = browser.open()
+      await control.drop()
+      expect(reconnect.client.close).not.toHaveBeenCalled()
+      expect(reconnect.settled()).toBe(false)
+      await control.release()
+      await control.release()
+      expect(reconnect.client.connectToServer).toHaveBeenCalledOnce()
+    }
+    await control.dispose()
+    await control.dispose()
+    await control.release()
+    expect(browser.events.listenerCount('request')).toBe(0)
+    expect(browser.events.listenerCount('close')).toBe(0)
+    const later = browser.open()
+    await later.handled
+    expect(later.client.connectToServer).toHaveBeenCalledOnce()
+    expect(later.client.onClose).not.toHaveBeenCalled()
+    await expect(control.drop()).rejects.toThrow('disposed')
+  })
+
+  it('disposes a live hold into transparent routing without closing the page', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    await control.drop()
+    const reconnect = browser.open()
+    await control.dispose()
+    expect(reconnect.settled()).toBe(true)
+    expect(reconnect.client.connectToServer).toHaveBeenCalledOnce()
+    expect(reconnect.client.close).not.toHaveBeenCalled()
+    // After detachment, closing either peer still closes its real counterpart.
+    await reconnect.server.close()
+    expect(reconnect.client.close).toHaveBeenCalledOnce()
+    expect(browser.events.eventNames()).toEqual([])
+  })
+
+  it('settles a closed pending socket and never connects it on release', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    await control.drop()
+    const stale = browser.open()
+    await stale.client.close()
+    await stale.handled
+    const live = browser.open()
+    await control.release()
+    expect(stale.client.connectToServer).not.toHaveBeenCalled()
+    expect(stale.mockOpened()).toBe(false)
+    expect(live.client.connectToServer).toHaveBeenCalledOnce()
+    await control.dispose()
+  })
+
+  it('cleans connected routes when the server closes', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    const initial = browser.open()
+    await initial.handled
+    await initial.server.close()
+    await control.drop()
+    expect(initial.client.close).toHaveBeenCalledOnce()
+    await control.dispose()
+  })
+
+  it('settles pending handlers on page close, including late route deliveries', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    const initial = browser.open()
+    await initial.handled
+    await control.drop()
+    const pending = browser.open()
+    browser.close()
+    await pending.handled
+    await control.dispose()
+    await control.release()
+    expect(pending.client.connectToServer).not.toHaveBeenCalled()
+    expect(pending.mockOpened()).toBe(false)
+    const late = browser.open()
+    await late.handled
+    expect(late.client.connectToServer).not.toHaveBeenCalled()
+    expect(late.client.close).toHaveBeenCalledOnce()
+    expect(browser.events.eventNames()).toEqual([])
+  })
+
+  it('retires old document waits on navigation, but ignores assets and subframes', async () => {
+    const browser = reconnectBrowser()
+    const control = await controlSocketReconnect(browser.page)
+    await control.drop()
+    const old = browser.open()
+    browser.navigate({}, true)
+    browser.navigate(undefined, false)
+    expect(old.client.close).not.toHaveBeenCalled()
+    expect(old.settled()).toBe(false)
+    browser.navigate()
+    await old.handled
+    const current = browser.open()
+    expect(current.settled()).toBe(false)
+    await control.release()
+    expect(old.client.connectToServer).not.toHaveBeenCalled()
+    expect(old.mockOpened()).toBe(false)
+    expect(current.client.connectToServer).toHaveBeenCalledOnce()
+    await control.dispose()
+  })
+})
 
 describe('shared incoming socket observations', () => {
   it('keeps inner order, metadata, exact raw and physical identities', () => {

@@ -10,7 +10,13 @@ import {
 
 import {
   armSocketDrop,
+  controlSocketReconnect,
+  countSentFrames,
+  expectWelcomedSockets,
+  nextClientPaint,
   readMonopolisticWorker,
+  watchClientDocument,
+  watchOpenedSockets,
   watchUploadFrames,
   dropFiles,
   dropSocket,
@@ -34,6 +40,11 @@ import {
   UPLOADS_WORKER_AGENT,
   withStoppedUploadWorker,
 } from '../../../../../framework/frontend/scripts/stoppedUploadWorker.mjs'
+import {
+  AUTH_ACTION_LOGIN,
+  SIGN_OUT_ACTION,
+  UPLOAD_ACTION_CANCEL,
+} from '../../../../../framework/frontend/core/src/base/index.js'
 
 // spec-owner: demo — files attached to chat's messages
 
@@ -312,6 +323,199 @@ test('signing out drops the files waiting for a message', async ({ page }) => {
 
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
   await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+})
+
+test('identifier input keeps its prefix and drops only keys pressed during reconnect', async ({
+  page,
+}, info) => {
+  const reconnect = await controlSocketReconnect(page)
+  const sockets = watchOpenedSockets(page)
+  try {
+    const user = await signUp(page)
+    await attachPng(page, `${modelKey()}.png`)
+    await logout(page)
+    await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+    await page.getByTestId('message-signin').click()
+    const field = page.getByTestId('auth-identifier')
+    const journal = await field.evaluateHandle((node) => {
+      const field = node as HTMLInputElement
+      const events: {
+        kind: string
+        key: string | null
+        value: string
+        blocked: boolean
+        same: boolean
+        state: string | null
+        focus: string | null
+        selection: [number | null, number | null]
+      }[] = []
+      const record = (kind: string, key: string | null = null): void => {
+        events.push({
+          kind,
+          key,
+          value: field.value,
+          blocked: field.matches(':disabled'),
+          same: document.querySelector('[data-id="auth-identifier"]') === field,
+          state:
+            document
+              .querySelector('[data-id="conn-state"]')
+              ?.getAttribute('title') ?? null,
+          focus: document.activeElement?.getAttribute('data-id') ?? null,
+          selection: [field.selectionStart, field.selectionEnd],
+        })
+      }
+      const input = (event: Event): void => {
+        if (event.type === 'input' && event.target !== field) return
+        record(event.type, event instanceof KeyboardEvent ? event.key : null)
+      }
+      document.addEventListener('keydown', input, true)
+      document.addEventListener('input', input, true)
+      const observer = new MutationObserver(() => record('dom'))
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'title'],
+      })
+      record('start')
+      return {
+        events,
+        stop(): void {
+          observer.disconnect()
+          document.removeEventListener('keydown', input, true)
+          document.removeEventListener('input', input, true)
+        },
+      }
+    })
+    const documentWatch = await watchClientDocument(page)
+    try {
+      const prefix = user.email.slice(0, 3)
+      const blockedKeys = user.email.slice(3, 7)
+      const tail = user.email.slice(7)
+      await typeInto(field, prefix)
+      await expect(field).toHaveValue(prefix)
+      const before = sockets.length
+      await reconnect.drop()
+      await expect(field).toBeDisabled()
+      await field.pressSequentially(blockedKeys, { delay: 10 })
+      await expect(field).toHaveValue(prefix)
+      await reconnect.release()
+      await expectWelcomedSockets(expect, sockets, before + 1)
+      await expect(field).toBeEnabled()
+      await expect(field).toHaveValue(prefix)
+      // The first gesture after the known drop resumes at the end. Playwright's
+      // sequential typing focuses an unfocused field with its caret at zero.
+      await field.press('End')
+      await field.pressSequentially(tail, { delay: 10 })
+      await expect(field).toHaveValue(prefix + tail)
+      const events = await journal.evaluate((journal) => journal.events)
+      await info.attach('identifier-reconnect-events', {
+        body: JSON.stringify({
+          requested: user.email,
+          actual: prefix + tail,
+          events,
+        }),
+        contentType: 'application/json',
+      })
+      expect(events.every(({ same }) => same)).toBe(true)
+      expect(
+        events.filter(({ kind, blocked }) => kind === 'input' && blocked),
+      ).toEqual([])
+      expect(
+        events
+          .filter(({ kind, blocked }) => kind === 'keydown' && blocked)
+          .map(({ key }) => key),
+      ).toEqual([...blockedKeys])
+      // An explicit new gesture after the observed drop: sign in to the same
+      // account. The helper neither retries nor repairs a mismatched identifier.
+      await login(page, user.email)
+      await expect(page.getByTestId('self-user-id')).toHaveText(
+        String(user.userId),
+      )
+      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+      await documentWatch.unchanged()
+    } finally {
+      await journal.evaluate((journal) => journal.stop())
+      await journal.dispose()
+      await documentWatch.dispose()
+    }
+  } finally {
+    await reconnect.dispose()
+  }
+})
+
+// The anonymous identity precedes completion of the logout's socket rotation.
+// Hold the real next connection so readiness cannot pass on the old identity.
+test('signing out waits for rotation before typing the original identifier', async ({
+  page,
+}, info) => {
+  const reconnect = await controlSocketReconnect(page)
+  const sockets = watchOpenedSockets(page)
+  const actions = countSentFrames(page, '"type":"action"')
+  const logouts = countSentFrames(page, `"action":"${SIGN_OUT_ACTION}"`)
+  const cancels = countSentFrames(page, `"action":"${UPLOAD_ACTION_CANCEL}"`)
+  const logins = countSentFrames(page, `"action":"${AUTH_ACTION_LOGIN}"`)
+  let settled = false
+  let signingOut: Promise<void> | undefined
+  try {
+    const user = await signUp(page)
+    await attachPng(page, `${modelKey()}.png`)
+    const document = await watchClientDocument(page)
+    try {
+      const before = sockets.length
+      const beforeActions = actions()
+      const beforeLogouts = logouts()
+      const beforeCancels = cancels()
+      const beforeLogins = logins()
+      await reconnect.hold()
+      signingOut = logout(page).then(() => {
+        settled = true
+      })
+      await expect(page.getByTestId('nav-profile')).toHaveCount(0)
+      await expect(page.getByTestId('conn-state')).toHaveAttribute(
+        'title',
+        /^(connecting|reconnecting)\b/,
+      )
+      await expect(page.getByTestId('page-interaction-scope')).toHaveJSProperty(
+        'disabled',
+        true,
+      )
+      await nextClientPaint(page)
+      await info.attach('logout-rotation-held', {
+        body: JSON.stringify({
+          settled,
+          sockets: sockets.map(({ welcomed }) => welcomed),
+          state: await page.getByTestId('conn-state').textContent(),
+        }),
+        contentType: 'application/json',
+      })
+      expect(settled, 'logout must wait for its new server welcome').toBe(false)
+      // Clearing the waiting file also cancels its upload once.
+      expect(actions() - beforeActions).toBe(2)
+      expect(logouts() - beforeLogouts).toBe(1)
+      expect(cancels() - beforeCancels).toBe(1)
+      expect(logins() - beforeLogins).toBe(0)
+      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+
+      await reconnect.release()
+      await signingOut
+      await expectWelcomedSockets(expect, sockets, before + 1)
+      await page.getByTestId('message-signin').click()
+      await login(page, user.email)
+      await expect(page.getByTestId('self-user')).toHaveText(user.name)
+      await expect(page.getByTestId('self-user-id')).toHaveText(
+        String(user.userId),
+      )
+      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+      expect(logins() - beforeLogins).toBe(1)
+      await document.unchanged()
+    } finally {
+      await document.dispose()
+    }
+  } finally {
+    await reconnect.dispose()
+    await signingOut
+  }
 })
 
 const SMALL_POOL_BYTES = 131_072

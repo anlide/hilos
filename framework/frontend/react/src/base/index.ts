@@ -25,6 +25,11 @@ export { useRtStaleness } from '../useRtStaleness.js'
 export { useReconnectDragging } from '../useReconnectDragging.js'
 export { useFirstFrameHold } from '../useFirstFrameHold.js'
 export { useSignal } from '../useSignal.js'
+export {
+  HilosConnectionInteractionContext,
+  useConnectionInteraction,
+  type ConnectionInteraction,
+} from '../hilosConnectionInteraction.js'
 export { usePageInstanceName } from '../usePageInstanceName.js'
 export { useEntity } from '../useEntity.js'
 export { useTrackedAction, type TrackedAction } from '../useTrackedAction.js'

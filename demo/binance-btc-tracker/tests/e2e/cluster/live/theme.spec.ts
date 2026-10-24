@@ -21,6 +21,7 @@ import {
   expectAppearanceRows,
   expectThemeHeader,
   expectThemeMode,
+  expectUnavailableThemeHeader,
   openAppearanceSetting,
   readClusterBrowserStand,
   saveAppearanceDefaultTheme,
@@ -101,6 +102,7 @@ function expectIdentity(frame: ThemeFrameLog, client: ThemeBrowser): void {
 async function expectBrowserTheme(
   client: ThemeBrowser,
   settings: ThemeSettings,
+  expectedHeaderAvailability: 'available' | 'unavailable' = 'available',
 ): Promise<void> {
   const position = settings.switchingEnabled
     ? (client.pick ?? settings.defaultTheme)
@@ -111,7 +113,16 @@ async function expectBrowserTheme(
     position === 'system' ? client.system : position,
   )
   if (settings.switchingEnabled) {
-    await expectThemeHeader(expect, client.page, position, client.pick === null)
+    if (expectedHeaderAvailability === 'unavailable') {
+      await expectUnavailableThemeHeader(expect, client.page, position)
+    } else {
+      await expectThemeHeader(
+        expect,
+        client.page,
+        position,
+        client.pick === null,
+      )
+    }
   } else {
     await expect(client.page.getByTestId('nav-theme')).toHaveCount(0)
   }
@@ -738,7 +749,7 @@ test('cluster theme stale Dark session reconnects after remote reset without ado
     await chooseHeaderTheme(expect, first.page, null)
     await expectAccountDelivery([first], [resetStart], settings)
     // The disconnected browser still has a real former account choice.
-    await expectBrowserTheme(stale, settings)
+    await expectBrowserTheme(stale, settings, 'unavailable')
     expect(stale.frames).toHaveLength(offlineStart)
 
     stale.pick = null

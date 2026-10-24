@@ -49,12 +49,17 @@
 // (src/index.ts) like Bootstrap.
 import type {
   ConnectionState,
+  ConnectionInteractionState,
   HilosConnection,
   PageRouteMatch,
+  ReadonlySignal,
 } from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
+  bindInteractionBlock,
+  createConnectionInteractionState,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   closeLegalReconsent,
   formatHilosDeletionStrip,
   formatHilosLegalReconsentBadge,
@@ -97,6 +102,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -114,6 +120,7 @@ import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { HilosTakeoverViewOnlyContext } from './hilosLookOnly.js'
+import { HilosConnectionInteractionContext } from './hilosConnectionInteraction.js'
 import { HilosThemeMenu } from './HilosThemeMenu.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
@@ -127,6 +134,8 @@ import { useTrackedAction } from './useTrackedAction.js'
 export interface HilosLayoutProps {
   /** The connection whose live state the shell indicator mirrors. */
   connection: HilosConnection
+  /** Allow local page interaction without changing the availability of shell requests. */
+  allowDisconnectedInteraction?: boolean
   /**
    * Which corner the toast stack sits in; the bottom end by default. A project
    * chooses it once here and never per notice: different corners in different
@@ -176,6 +185,9 @@ const ADMIN_HREF = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
 // A stable empty fallback so useSignal always has a real signal without a router
 // (tests, the hard-link fallback); the page title then stays empty.
 const NO_TITLE = createSignal('')
+const NO_UNAVAILABILITY: ReadonlySignal<boolean> = Object.freeze({
+  get: () => false,
+})
 
 // The same for the route: without a router there is no route and therefore no
 // administrative surface, so the maintenance surface hides the verifier's code
@@ -195,6 +207,7 @@ const NO_ROUTE = createSignal<PageRouteMatch>({
  */
 export function HilosLayout({
   connection,
+  allowDisconnectedInteraction = false,
   toastCorner,
   brand = 'Hilos',
   nav,
@@ -202,6 +215,37 @@ export function HilosLayout({
   banner,
   children,
 }: HilosLayoutProps) {
+  // Rendering (including a discarded StrictMode render or SSR) creates no
+  // connection subscription. Effect replay gets a fresh core instance after
+  // disposal; committed input changes update that instance in place.
+  const [interactionHolder] = useState(() =>
+    createSignal<ConnectionInteractionState | null>(null),
+  )
+  const interaction = useSignal(interactionHolder)
+  const unavailable = useSignal(interaction?.unavailable ?? NO_UNAVAILABILITY)
+  useLayoutEffect(() => {
+    let state = interactionHolder.get()
+    if (state === null) {
+      state = createConnectionInteractionState(
+        connection,
+        allowDisconnectedInteraction,
+      )
+      interactionHolder.set(state)
+    } else {
+      state.setConnection(connection)
+      state.setAllowDisconnectedInteraction(allowDisconnectedInteraction)
+    }
+  }, [interactionHolder, connection, allowDisconnectedInteraction])
+  useLayoutEffect(
+    () => () => {
+      interactionHolder.get()?.dispose()
+      interactionHolder.set(null)
+    },
+    [interactionHolder],
+  )
+
+  const pageRoot = useRef<HTMLElement>(null)
+  const pageFieldset = useRef<HTMLFieldSetElement>(null)
   useSignal(hilosTimeZone)
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
@@ -251,7 +295,10 @@ export function HilosLayout({
   // node comes first.
   const accountBlocked = useSignal(hilosAccountBlocked)
   const onImpersonationStop = (): void => {
-    if (impersonationStop.busy) {
+    if (
+      (interactionHolder.get()?.unavailable.get() ?? true) ||
+      impersonationStop.busy
+    ) {
       return
     }
     void impersonationStop.run(stopImpersonation())
@@ -283,7 +330,10 @@ export function HilosLayout({
   }, [deletionStanding])
   const keepAccount = useTrackedAction()
   const onKeepAccount = (): void => {
-    if (keepAccount.busy) {
+    if (
+      (interactionHolder.get()?.unavailable.get() ?? true) ||
+      keepAccount.busy
+    ) {
       return
     }
     void keepAccount.run(keepMyAccount())
@@ -303,7 +353,10 @@ export function HilosLayout({
   const signedIn = useSignal(hilosSignedIn)
   const signOutAction = useTrackedAction()
   const onSignOut = (): void => {
-    if (signOutAction.busy) {
+    if (
+      (interactionHolder.get()?.unavailable.get() ?? true) ||
+      signOutAction.busy
+    ) {
       return
     }
     void signOutAction.run(signOut())
@@ -490,8 +543,19 @@ export function HilosLayout({
     }
   }, [pageTitle])
 
+  useLayoutEffect(() => {
+    const root = pageRoot.current
+    const fieldset = pageFieldset.current
+    if (!root || !fieldset || !interaction) return
+    return bindInteractionBlock(root, {
+      fieldset,
+      blocked: interaction.blocked,
+      descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
+    })
+  }, [interaction, underMaintenance, firstFrameHeld])
+
   return (
-    <>
+    <HilosConnectionInteractionContext.Provider value={interaction}>
       {/* The one place the two boot outcomes are named, on the marker a test
       waits for rather than polling for chrome that is absent by design while
       held. */}
@@ -614,6 +678,10 @@ export function HilosLayout({
                     aria-label={SIGN_OUT_COPY.label}
                     title={SIGN_OUT_COPY.label}
                     loading={signOutAction.busy}
+                    disabled={unavailable}
+                    aria-describedby={
+                      unavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : undefined
+                    }
                     onClick={onSignOut}
                   >
                     <i className="bi bi-box-arrow-right" aria-hidden="true" />
@@ -649,7 +717,12 @@ export function HilosLayout({
                       />
                     )}
                   </span>
-                  <span className="visually-hidden">{connLabel}</span>
+                  <span
+                    id={HILOS_CONNECTION_STATUS_TEXT_ID}
+                    className="visually-hidden"
+                  >
+                    {connLabel}
+                  </span>
                 </span>
               </div>
             </div>
@@ -710,6 +783,10 @@ export function HilosLayout({
                     className={`btn-sm btn-${impersonation.tone}`}
                     data-id="impersonation-stop"
                     loading={impersonationStop.busy}
+                    disabled={unavailable}
+                    aria-describedby={
+                      unavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : undefined
+                    }
                     onClick={onImpersonationStop}
                   >
                     {IMPERSONATION_STRIP_COPY.stop}
@@ -732,6 +809,12 @@ export function HilosLayout({
                       className="btn-sm btn-warning"
                       data-id="account-deletion-strip-keep"
                       loading={keepAccount.busy}
+                      disabled={unavailable}
+                      aria-describedby={
+                        unavailable
+                          ? HILOS_CONNECTION_STATUS_TEXT_ID
+                          : undefined
+                      }
                       onClick={onKeepAccount}
                     >
                       {ACCOUNT_STANDING_STRIP_COPY.keep}
@@ -758,6 +841,7 @@ export function HilosLayout({
           </div>
           <main
             id="hilos-main-content"
+            ref={pageRoot}
             tabIndex={-1}
             className={`container flex-grow-1 min-h-0 overflow-auto py-4${
               underMaintenance ? ' d-flex flex-column' : ''
@@ -769,39 +853,51 @@ export function HilosLayout({
                 connection={connection}
                 adminSurface={currentRoute.admin}
               />
-            ) : accountBlocked !== null ? (
-              <HilosAccountBlocked notice={accountBlocked} />
-            ) : frozenShown ? (
-              <div
-                className="row justify-content-center"
-                data-id="legal-frozen-screen"
-              >
-                <div className="col-12 col-md-10 col-lg-8">
-                  <div className="text-center mb-3">
-                    <span className="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1">
-                      <i className="bi bi-snow" aria-hidden="true" />
-                    </span>
-                  </div>
-                  <HilosLegalReconsent
-                    variant="frozen"
-                    content={reconsentContent}
-                    view={reconsentView}
-                    loading={reconsentLoading}
-                    error={reconsentError}
-                    busy={reconsentBusy}
-                    person={reconsentPerson}
-                    deletionScheduled={standing?.deletionEffectiveAt != null}
-                    now={reconsentNow}
-                    onAccept={() => void hilosLegalReconsent.accept()}
-                    onRetry={() => void hilosLegalReconsent.load()}
-                    onShow={hilosLegalReconsent.show}
-                  />
-                </div>
-              </div>
             ) : (
-              <HilosTakeoverViewOnlyContext.Provider value={takeoverViewOnly}>
-                {children}
-              </HilosTakeoverViewOnlyContext.Provider>
+              <fieldset
+                ref={pageFieldset}
+                className="border-0 m-0 p-0 min-w-0 h-100"
+                data-id="page-interaction-scope"
+              >
+                {accountBlocked !== null ? (
+                  <HilosAccountBlocked notice={accountBlocked} />
+                ) : frozenShown ? (
+                  <div
+                    className="row justify-content-center"
+                    data-id="legal-frozen-screen"
+                  >
+                    <div className="col-12 col-md-10 col-lg-8">
+                      <div className="text-center mb-3">
+                        <span className="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1">
+                          <i className="bi bi-snow" aria-hidden="true" />
+                        </span>
+                      </div>
+                      <HilosLegalReconsent
+                        variant="frozen"
+                        content={reconsentContent}
+                        view={reconsentView}
+                        loading={reconsentLoading}
+                        error={reconsentError}
+                        busy={reconsentBusy}
+                        person={reconsentPerson}
+                        deletionScheduled={
+                          standing?.deletionEffectiveAt != null
+                        }
+                        now={reconsentNow}
+                        onAccept={() => void hilosLegalReconsent.accept()}
+                        onRetry={() => void hilosLegalReconsent.load()}
+                        onShow={hilosLegalReconsent.show}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <HilosTakeoverViewOnlyContext.Provider
+                    value={takeoverViewOnly}
+                  >
+                    {children}
+                  </HilosTakeoverViewOnlyContext.Provider>
+                )}
+              </fieldset>
             )}
           </main>
           {!underMaintenance && (
@@ -870,6 +966,6 @@ export function HilosLayout({
           </HilosModal>
         </div>
       )}
-    </>
+    </HilosConnectionInteractionContext.Provider>
   )
 }

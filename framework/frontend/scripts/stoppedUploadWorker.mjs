@@ -5,6 +5,7 @@ import process from 'node:process'
 /** Only the actual isolated uploads worker may be held by this proof. */
 export const UPLOADS_WORKER_AGENT = 'hilos_uploads'
 const WATCHDOG_MS = 10_000
+const STOP_POLL_MS = 10
 
 /**
  * @typedef {object} UploadWorker
@@ -146,6 +147,27 @@ export async function withStoppedUploadWorker(worker, record, run) {
       start: birth.start,
       watchdogMs: WATCHDOG_MS,
     })
+    // STOP delivery is asynchronous. Readiness spends the original watchdog
+    // budget; only a real T on this incarnation admits the strict observations.
+    for (;;) {
+      const current = await identity(worker.pid)
+      const elapsedMs = Date.now() - stoppedAt
+      if (
+        current.start !== birth.start ||
+        !['R', 'S', 'T'].includes(current.state) ||
+        elapsedMs >= WATCHDOG_MS
+      )
+        throw new Error(
+          'The upload worker did not reach its exact stopped incarnation within the watchdog window',
+        )
+      if (current.state === 'T') {
+        record({ kind: 'worker-ready', ...current, elapsedMs })
+        break
+      }
+      await new Promise((resolve) =>
+        globalThis.setTimeout(resolve, STOP_POLL_MS),
+      )
+    }
     await assertStopped()
     await run({ assertStopped })
     await assertStopped()

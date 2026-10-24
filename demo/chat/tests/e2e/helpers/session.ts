@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
-import { readRegisterCode, waitForMailCode } from './mail'
-import { gotoPage } from './page'
+import { readRegisterCode, waitForMailCode } from './mail.js'
+import { gotoPage } from './page.js'
+import { expectSessionRotation } from '../../../../../framework/frontend/e2e/index.js'
 import {
   uniquePhone,
   waitForAnotherSmsCode,
@@ -186,7 +187,9 @@ export async function enterIdentifierAndPassword(
   identifier: string,
   password: string,
 ): Promise<void> {
-  await typeInto(page.getByTestId('auth-identifier'), identifier)
+  const identifierField = page.getByTestId('auth-identifier')
+  await typeInto(identifierField, identifier)
+  await expect(identifierField).toHaveValue(identifier)
   const passwordField = page.getByTestId('auth-password')
   await expect(passwordField).toBeVisible()
   await typeInto(passwordField, password)
@@ -393,12 +396,19 @@ export async function signInByPhone(
   return code
 }
 
-/** Log out through the shell control and wait for the anonymous state to settle
- * (the navbar profile link is bound to a named user, so its removal confirms the
- * backend processed the logout before the next navigation reconnects). */
+/**
+ * Log out through the shell, then wait for the anonymous identity and the new
+ * socket's server welcome. Identity arrives before token rotation completes;
+ * typing on the old connected socket can run into its subsequent input lock.
+ *
+ * @param page The signed-in page.
+ */
 export async function logout(page: Page): Promise<void> {
-  await page.getByTestId('nav-logout').click()
-  await expect(page.getByTestId('nav-profile')).toHaveCount(0)
+  await expectSessionRotation(expect, page, async () => {
+    await page.getByTestId('nav-logout').click()
+    await expect(page.getByTestId('nav-profile')).toHaveCount(0)
+  })
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
 }
 
 /** A registered session: the account's email, its derived display name, and its

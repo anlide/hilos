@@ -7,11 +7,13 @@ Open/close, outside-click, Escape and arrow-roving mirror HilosNotificationBell.
 The positions are menuitemradio and the reset is menuitem,
 not a listbox: HilosDropdown is a full-width select with a caret, and this
 control is a bare icon. A guest's choice is applied and remembered immediately;
-an account choice waits for the server's handshake. Both close and return focus. The
+account actions are disabled while the shell connection is unavailable and wait
+for the server's handshake when sent. Both close and return focus. The
 shell mounts it; a project passes nothing. Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
   formatHilosThemeLabel,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosImpersonation,
   hilosSignedIn,
@@ -33,14 +35,31 @@ import {
 } from 'vue'
 
 import { useSignal } from './useSignal.js'
+import { useConnectionInteraction } from './hilosConnectionInteraction.js'
 import { useTrackedAction } from './useTrackedAction.js'
 
 const choice = useSignal(hilosThemeChoice)
 const signedIn = useSignal(hilosSignedIn)
 const impersonation = useSignal(hilosImpersonation)
+const interaction = useConnectionInteraction()
+const unavailable = useSignal(interaction.unavailable)
 const action = useTrackedAction()
 const busy = computed(() => action.busy.value)
 const loading = computed(() => action.loading.value)
+const accountConnectionUnavailable = computed(
+  () => signedIn.value && unavailable.value,
+)
+const toggleDescribedBy = computed(() => {
+  const descriptions = []
+  if (impersonation.value !== null) {
+    descriptions.push(HILOS_IMPERSONATION_STRIP_TEXT_ID)
+  }
+  if (accountConnectionUnavailable.value) {
+    descriptions.push(HILOS_CONNECTION_STATUS_TEXT_ID)
+  }
+
+  return descriptions.length > 0 ? descriptions.join(' ') : undefined
+})
 const view = computed(() => {
   const current = choice.value
   if (current === null) {
@@ -69,7 +88,7 @@ function itemButtons(): HTMLButtonElement[] {
         menu.value.querySelectorAll<HTMLButtonElement>(
           '[role="menuitemradio"], [role="menuitem"]',
         ),
-      )
+      ).filter((button) => !button.disabled)
     : []
 }
 
@@ -83,7 +102,8 @@ function openMenu(focus: 'first' | 'last' | 'none' = 'none'): void {
   if (
     action.busy.value ||
     hilosThemeChoice.get() === null ||
-    hilosImpersonation.get() !== null
+    hilosImpersonation.get() !== null ||
+    (hilosSignedIn.get() && interaction.unavailable.get())
   ) {
     return
   }
@@ -144,6 +164,9 @@ function onMenuKeydown(event: KeyboardEvent): void {
 }
 
 function choose(pick: ThemePick): void {
+  if (hilosSignedIn.get() && interaction.unavailable.get()) {
+    return
+  }
   if (
     action.busy.value ||
     hilosThemeChoice.get() === null ||
@@ -208,10 +231,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       ref="toggleButton"
       type="button"
       class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 position-relative"
-      :disabled="busy || impersonation !== null"
-      :aria-describedby="
-        impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
-      "
+      :disabled="busy || impersonation !== null || accountConnectionUnavailable"
+      :aria-describedby="toggleDescribedBy"
       :aria-busy="busy || undefined"
       :aria-expanded="open"
       :aria-controls="menuId"
@@ -257,7 +278,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         :class="{ active: row.value === view.position }"
         role="menuitemradio"
         :aria-checked="row.value === view.position"
-        :disabled="busy"
+        :disabled="busy || accountConnectionUnavailable"
+        :aria-describedby="
+          accountConnectionUnavailable
+            ? HILOS_CONNECTION_STATUS_TEXT_ID
+            : undefined
+        "
         :data-id="`nav-theme-option-${row.value}`"
         @click="choose(row.value)"
       >
@@ -279,7 +305,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         type="button"
         class="dropdown-item"
         role="menuitem"
-        :disabled="busy"
+        :disabled="busy || accountConnectionUnavailable"
+        :aria-describedby="
+          accountConnectionUnavailable
+            ? HILOS_CONNECTION_STATUS_TEXT_ID
+            : undefined
+        "
         data-id="nav-theme-default"
         @click="choose(null)"
       >

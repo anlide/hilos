@@ -53,6 +53,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   afterRenderEffect,
   viewChild,
@@ -65,15 +66,22 @@ import {
 } from '@angular/core'
 import type {
   ConnectionState,
+  ConnectionInteractionState,
   HilosConnection,
   PageRouteMatch,
   ProtectedModeStatus,
+  ReadonlySignal,
   RtStalenessStatus,
 } from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
+  bindInteractionBlock,
+  createConnectionInteractionState,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   closeLegalReconsent,
+  createSignal,
+  computedSignal,
   formatHilosDeletionStrip,
   formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
@@ -124,6 +132,7 @@ import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { HILOS_TAKEOVER_VIEW_ONLY } from './hilosLookOnly.js'
+import { HILOS_CONNECTION_INTERACTION } from './hilosConnectionInteraction.js'
 import { HilosThemeMenu } from './HilosThemeMenu.js'
 import { hilosSignal } from './hilosSignal.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
@@ -154,6 +163,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [
+    {
+      provide: HILOS_CONNECTION_INTERACTION,
+      useFactory: () => inject(HilosLayout).connectionInteraction,
+    },
     {
       provide: HILOS_TAKEOVER_VIEW_ONLY,
       useFactory: () => hilosSignal(hilosTakeoverViewOnly),
@@ -284,6 +297,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                   [attr.aria-label]="signOutCopy.label"
                   [title]="signOutCopy.label"
                   [loading]="signOutAction.busy()"
+                  [disabled]="unavailable()"
+                  [attr.aria-describedby]="
+                    unavailable() ? connectionStatusTextId : null
+                  "
                   (click)="onSignOut()"
                 >
                   <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
@@ -319,7 +336,9 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     ></i>
                   }
                 </span>
-                <span class="visually-hidden">{{ connLabel() }}</span>
+                <span [id]="connectionStatusTextId" class="visually-hidden">{{
+                  connLabel()
+                }}</span>
               </span>
             </div>
           </div>
@@ -382,6 +401,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     [class]="'btn-' + strip.tone"
                     data-id="impersonation-stop"
                     [loading]="impersonationStop.busy()"
+                    [disabled]="unavailable()"
+                    [attr.aria-describedby]="
+                      unavailable() ? connectionStatusTextId : null
+                    "
                     (click)="onImpersonationStop()"
                   >
                     {{ stripCopy.stop }}
@@ -408,6 +431,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     class="btn-sm btn-warning"
                     data-id="account-deletion-strip-keep"
                     [loading]="keepAccount.busy()"
+                    [disabled]="unavailable()"
+                    [attr.aria-describedby]="
+                      unavailable() ? connectionStatusTextId : null
+                    "
                     (click)="onKeepAccount()"
                   >
                     {{ standingCopy.keep }}
@@ -436,6 +463,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         </div>
         <main
           id="hilos-main-content"
+          #pageRoot
           tabindex="-1"
           class="container flex-grow-1 min-h-0 overflow-auto py-4"
           [class.d-flex]="underMaintenance()"
@@ -447,39 +475,47 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
               [connection]="connection()"
               [adminSurface]="adminSurface()"
             />
-          } @else if (accountBlocked(); as notice) {
-            <hilos-account-blocked [notice]="notice" />
-          } @else if (frozenShown()) {
-            <div
-              class="row justify-content-center"
-              data-id="legal-frozen-screen"
-            >
-              <div class="col-12 col-md-10 col-lg-8">
-                <div class="text-center mb-3">
-                  <span
-                    class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
-                  >
-                    <i class="bi bi-snow" aria-hidden="true"></i>
-                  </span>
-                </div>
-                <hilos-legal-reconsent
-                  variant="frozen"
-                  [content]="reconsentContent()"
-                  [view]="reconsentView()"
-                  [loading]="reconsentLoading()"
-                  [error]="reconsentError()"
-                  [busy]="reconsentBusy()"
-                  [person]="reconsentPerson()"
-                  [deletionScheduled]="deletionScheduled()"
-                  [now]="reconsentNow()"
-                  (accept)="onReconsentAccept()"
-                  (retry)="onReconsentRetry()"
-                  (show)="reconsent.show($event)"
-                />
-              </div>
-            </div>
           } @else {
-            <ng-content />
+            <fieldset
+              #pageFieldset
+              class="border-0 m-0 p-0 min-w-0 h-100"
+              data-id="page-interaction-scope"
+            >
+              @if (accountBlocked(); as notice) {
+                <hilos-account-blocked [notice]="notice" />
+              } @else if (frozenShown()) {
+                <div
+                  class="row justify-content-center"
+                  data-id="legal-frozen-screen"
+                >
+                  <div class="col-12 col-md-10 col-lg-8">
+                    <div class="text-center mb-3">
+                      <span
+                        class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+                      >
+                        <i class="bi bi-snow" aria-hidden="true"></i>
+                      </span>
+                    </div>
+                    <hilos-legal-reconsent
+                      variant="frozen"
+                      [content]="reconsentContent()"
+                      [view]="reconsentView()"
+                      [loading]="reconsentLoading()"
+                      [error]="reconsentError()"
+                      [busy]="reconsentBusy()"
+                      [person]="reconsentPerson()"
+                      [deletionScheduled]="deletionScheduled()"
+                      [now]="reconsentNow()"
+                      (accept)="onReconsentAccept()"
+                      (retry)="onReconsentRetry()"
+                      (show)="reconsent.show($event)"
+                    />
+                  </div>
+                </div>
+              } @else {
+                <ng-content />
+              }
+            </fieldset>
           }
         </main>
         @if (!underMaintenance()) {
@@ -554,6 +590,29 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 export class HilosLayout {
   /** The connection whose live state the shell indicator mirrors. */
   readonly connection = input.required<HilosConnection>()
+  /** Allow local page interaction without changing the availability of shell requests. */
+  readonly allowDisconnectedInteraction = input(false)
+
+  // Required inputs are not readable during construction or provider creation.
+  // Publish the core instance from the input effect, with one holder per shell.
+  private readonly interactionHolder =
+    createSignal<ConnectionInteractionState | null>(null)
+  /** The readonly core-state holder supplied to projection and the shell's view. */
+  readonly connectionInteraction: ReadonlySignal<ConnectionInteractionState | null> =
+    this.interactionHolder
+  private readonly interaction = {
+    unavailable: computedSignal(
+      () => this.connectionInteraction.get()?.unavailable.get() ?? false,
+    ),
+    blocked: computedSignal(
+      () => this.connectionInteraction.get()?.blocked.get() ?? false,
+    ),
+  }
+  protected readonly unavailable = hilosSignal(this.interaction.unavailable)
+  protected readonly connectionStatusTextId = HILOS_CONNECTION_STATUS_TEXT_ID
+  private readonly pageRoot = viewChild<ElementRef<HTMLElement>>('pageRoot')
+  private readonly pageFieldset =
+    viewChild<ElementRef<HTMLFieldSetElement>>('pageFieldset')
   /**
    * Which corner the toast stack sits in; the bottom end by default. A project
    * chooses it once here and never per notice: different corners in different
@@ -801,6 +860,34 @@ export class HilosLayout {
   )
 
   constructor() {
+    inject(DestroyRef).onDestroy(() =>
+      this.connectionInteraction.get()?.dispose(),
+    )
+    effect(() => {
+      const connection = this.connection()
+      const allow = this.allowDisconnectedInteraction()
+      const state = this.connectionInteraction.get()
+      if (state === null) {
+        this.interactionHolder.set(
+          createConnectionInteractionState(connection, allow),
+        )
+      } else {
+        state.setConnection(connection)
+        state.setAllowDisconnectedInteraction(allow)
+      }
+    })
+    afterRenderEffect((onCleanup) => {
+      const root = this.pageRoot()?.nativeElement
+      const fieldset = this.pageFieldset()?.nativeElement
+      if (!root || !fieldset) return
+      onCleanup(
+        bindInteractionBlock(root, {
+          fieldset,
+          blocked: this.interaction.blocked,
+          descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
+        }),
+      )
+    })
     effect((onCleanup) => {
       const connection = this.connection()
       this.build.set(connection.build)
@@ -1008,7 +1095,7 @@ export class HilosLayout {
 
   /** Leave the takeover through the tracked driver; a second press while busy is dropped. */
   protected onImpersonationStop(): void {
-    if (this.impersonationStop.busy()) {
+    if (this.interaction.unavailable.get() || this.impersonationStop.busy()) {
       return
     }
     void this.impersonationStop.run(stopImpersonation())
@@ -1016,7 +1103,7 @@ export class HilosLayout {
 
   /** Keep the account through the tracked driver; a second press while busy is dropped. */
   protected onKeepAccount(): void {
-    if (this.keepAccount.busy()) {
+    if (this.interaction.unavailable.get() || this.keepAccount.busy()) {
       return
     }
     void this.keepAccount.run(keepMyAccount())
@@ -1044,7 +1131,7 @@ export class HilosLayout {
 
   /** Sign out through the tracked driver; a second press while busy is dropped. */
   protected onSignOut(): void {
-    if (this.signOutAction.busy()) {
+    if (this.interaction.unavailable.get() || this.signOutAction.busy()) {
       return
     }
     void this.signOutAction.run(signOut())

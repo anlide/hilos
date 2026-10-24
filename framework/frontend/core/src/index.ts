@@ -1401,6 +1401,14 @@ export {
   isReconnectDragging,
   RECONNECT_DRAGGING_COPY,
 } from './connection/reconnectDragging.js'
+export {
+  createConnectionInteractionState,
+  CONNECTION_INTERACTION_COPY,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
+  type ConnectionInteractionState,
+} from './base/index.js'
 // The key alone, not the accessors around it: the hint is the connection's own
 // business, and the one thing outside it that has any use for the key is a test
 // or a tool that wants to seed or clear the flash it guards against.
@@ -2672,5 +2680,6 @@ export {
   type HilosBackupProgressClock,
 } from './connection/restoreProgress.js'
 
+export { bindInteractionBlock } from './base/index.js'
 // Status remains behind its section entry; base imports no Status implementation.
 export * from './admin/status/index.js'

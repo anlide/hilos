@@ -550,7 +550,10 @@ describe('HilosAppearancePage Default theme window', () => {
         expect(named.querySelector('.badge') !== null).toBe(value === 'system')
       }
       expect(
-        modal.querySelector('fieldset')?.getAttribute('aria-describedby'),
+        modal
+          .querySelector('legend')
+          ?.closest('fieldset')
+          ?.getAttribute('aria-describedby'),
       ).toBe('appearance-default-theme-hint')
       expect(
         modal.querySelector('[data-id="appearance-default-theme-notice-idle"]'),

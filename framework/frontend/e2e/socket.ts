@@ -1,5 +1,6 @@
 import type {
   Page,
+  Request,
   WebSocket as PlaywrightWebSocket,
   WebSocketRoute,
 } from '@playwright/test'
@@ -269,6 +270,175 @@ export function dropSocket(page: Page): Promise<void> {
   return page.evaluate((hook) => {
     ;(window as unknown as Record<string, () => void>)[hook]()
   }, DROP_SOCKET_HOOK)
+}
+
+/** An installed, page-local reconnect controller. Await operations in order. */
+export interface SocketReconnectControl {
+  /** Hold future reconnects without interrupting the current live socket. */
+  hold(): Promise<void>
+  /** Hold reconnects, then close both sides of the current application sockets. */
+  drop(): Promise<void>
+  /** Connect live waiting routes; completion is not a server-welcome barrier. */
+  release(): Promise<void>
+  /** Release live waits and listeners, leaving future routes transparent. */
+  dispose(): Promise<void>
+}
+
+/**
+ * Install before navigation on a fresh page. Only application `/ws` routes are
+ * controlled, including their query. Frames pass unchanged through the real
+ * server; no application messages are buffered or synthesized here.
+ *
+ * A held async handler must stay pending: Playwright opens a mock socket when a
+ * handler returns without connecting. Closing the owned routes also avoids the
+ * unspecified ordering between its constructor init script and armSocketDrop's
+ * constructor wrapper; this controller does not need that wrapper.
+ *
+ * Await drop before checking disconnected UI, then release before waiting for
+ * the real welcome/connected state with the existing observers. Repeated drops
+ * during one hold and repeated releases/disposals are harmless. After dispose,
+ * drop rejects. Main-document navigation requests retire the old routes; closing
+ * the page releases all waits without connecting them. Disposal of a live page
+ * releases its live waits, and can safely run in finally after the page closes.
+ * Playwright has no public WebSocket unroute: the installed handler remains a
+ * transparent connectToServer after disposal.
+ *
+ * @param page A fresh page whose application socket has not opened yet.
+ * @returns The installed controller; each operation waits for its route cleanup.
+ */
+export async function controlSocketReconnect(
+  page: Page,
+): Promise<SocketReconnectControl> {
+  interface Connection {
+    client: WebSocketRoute
+    server?: WebSocketRoute
+    live: boolean
+    waiting: boolean
+    wake: () => void
+    handled: Promise<void>
+  }
+  const connections = new Set<Connection>()
+  const closing = new Set<Promise<void>>()
+  let held = false
+  let disposed = false
+
+  function retire(connection: Connection): Promise<void> {
+    if (!connection.live) return Promise.resolve()
+    connection.live = false
+    connections.delete(connection)
+    connection.client.onClose(() => {})
+    connection.server?.onClose(() => {})
+    // Close the page side before allowing the handler to return, so Playwright's
+    // automatic mock-open cannot revive a canceled CONNECTING socket.
+    const done = Promise.allSettled([
+      connection.client.close(),
+      connection.server?.close(),
+    ]).then(async () => {
+      connection.wake()
+      await connection.handled
+    })
+    closing.add(done)
+    void done.then(() => closing.delete(done))
+    return done
+  }
+
+  function detach(connection: Connection): void {
+    const { client, server } = connection
+    if (!server) return
+    // Public onClose replaces the callback. These transparent callbacks retain
+    // only the paired routes, releasing the controller's tracking references.
+    client.onClose((code, reason) => server.close({ code, reason }))
+    server.onClose((code, reason) => client.close({ code, reason }))
+    connections.delete(connection)
+  }
+
+  async function release(): Promise<void> {
+    held = false
+    const waiting = [...connections].filter((connection) => connection.waiting)
+    for (const connection of waiting) connection.wake()
+    await Promise.all(waiting.map((connection) => connection.handled))
+    await Promise.all(closing)
+  }
+
+  function removeListeners(): void {
+    page.off('close', closed)
+    page.off('request', navigating)
+  }
+
+  function closed(): void {
+    disposed = true
+    held = false
+    removeListeners()
+    for (const connection of connections) void retire(connection)
+  }
+
+  function navigating(request: Request): void {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      for (const connection of connections) void retire(connection)
+    }
+  }
+
+  await page.routeWebSocket(isApplicationSocket, async (client) => {
+    if (page.isClosed()) {
+      await client.close()
+      return
+    }
+    if (disposed) {
+      client.connectToServer()
+      return
+    }
+    let wake!: () => void
+    const gate = new Promise<void>((resolve) => {
+      wake = resolve
+    })
+    let handled!: () => void
+    const connection: Connection = {
+      client,
+      live: true,
+      waiting: held,
+      wake,
+      handled: new Promise<void>((resolve) => {
+        handled = resolve
+      }),
+    }
+    connections.add(connection)
+    client.onClose(() => retire(connection))
+    try {
+      if (connection.waiting) await gate
+      connection.waiting = false
+      if (!connection.live || page.isClosed()) return
+      connection.server = client.connectToServer()
+      connection.server.onClose(() => retire(connection))
+      if (disposed) detach(connection)
+    } finally {
+      handled()
+    }
+  })
+  page.on('close', closed)
+  page.on('request', navigating)
+
+  return {
+    async hold(): Promise<void> {
+      if (disposed) throw new Error('Socket reconnect control is disposed.')
+      held = true
+    },
+    async drop(): Promise<void> {
+      if (disposed) throw new Error('Socket reconnect control is disposed.')
+      held = true
+      await Promise.all(
+        [...connections]
+          .filter((connection) => !connection.waiting)
+          .map(retire),
+      )
+    },
+    release,
+    async dispose(): Promise<void> {
+      disposed = true
+      removeListeners()
+      await release()
+      for (const connection of connections) detach(connection)
+    },
+  }
 }
 
 /**

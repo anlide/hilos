@@ -47,6 +47,11 @@ export { HilosHideable, type HilosHideableContext } from '../HilosHideable.js'
 export { ErrorPage } from '../ErrorPage.js'
 export { HilosMaintenance } from '../HilosMaintenance.js'
 export { HilosLayout } from '../HilosLayout.js'
+export {
+  HILOS_CONNECTION_INTERACTION,
+  injectConnectionInteraction,
+  type ConnectionInteraction,
+} from '../hilosConnectionInteraction.js'
 export { HilosThemeMenu } from '../HilosThemeMenu.js'
 export { HilosStaticPage } from '../HilosStaticPage.js'
 export { HilosAboutPage } from '../public/HilosAboutPage.js'

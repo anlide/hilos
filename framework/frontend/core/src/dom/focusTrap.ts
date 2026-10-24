@@ -6,8 +6,13 @@
 // moves focus through the element passed in and that element's ownerDocument, so
 // it never touches a global and stays usable in any document.
 
+import {
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
+} from '../connection/interactionBlock.js'
+
 const FOCUSABLE_SELECTOR =
-  'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  'a[href], summary, button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])'
 
 const FOCUS_RETURN_REQUEST = 'hilos-focus-return-request'
 
@@ -23,6 +28,13 @@ interface FocusReturnRequest {
 export function available(element: HTMLElement | null): element is HTMLElement {
   if (!element?.isConnected || element.matches(':disabled')) return false
   if (element.closest('[hidden], [inert]')) return false
+  if (element.getAttribute('aria-disabled') === 'true') return false
+  if (
+    element
+      .closest(`[${HILOS_INTERACTION_REGION_ATTR}]`)
+      ?.hasAttribute(HILOS_INTERACTION_BLOCKED_ATTR)
+  )
+    return false
   for (
     let node: HTMLElement | null = element;
     node;
@@ -102,11 +114,15 @@ export type FocusPlacement = 'marked' | 'dialog'
 /**
  * The tabbable elements inside `root`, in DOM order. A control that matches
  * `:disabled` is left out, including one disabled only by its `fieldset`.
+ * Hidden, ARIA-disabled and connection-blocked controls are unavailable too.
  */
 export function focusableElements(root: HTMLElement): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-  ).filter((element) => !element.matches(':disabled'))
+  ).filter(
+    (element) =>
+      available(element) && element.getAttribute('tabindex') !== '-1',
+  )
 }
 
 /**
@@ -131,7 +147,7 @@ function checkedRadioOf(
   for (const radio of root.querySelectorAll<HTMLInputElement>(
     'input[type="radio"]',
   )) {
-    if (radio.name === name && radio.checked && !radio.matches(':disabled')) {
+    if (radio.name === name && radio.checked && available(radio)) {
       return radio
     }
   }
@@ -161,7 +177,12 @@ export function focusInitial(
   }
   const autofocus = Array.from(
     root.querySelectorAll<HTMLElement>('[data-autofocus]'),
-  ).find((mark) => !mark.matches(':disabled'))
+  ).find(
+    (mark) =>
+      available(mark) &&
+      (!root.hasAttribute(HILOS_INTERACTION_REGION_ATTR) ||
+        mark.closest(`[${HILOS_INTERACTION_REGION_ATTR}]`) === root),
+  )
   if (!autofocus) {
     root.focus()
 

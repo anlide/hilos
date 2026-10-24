@@ -7,8 +7,12 @@ import {
   bindSessionScope,
   bindSignOut,
   bindThemeState,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosThemePick,
   hilosToasts,
+  PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
   ScopeManager,
   setHilosThemePick,
   type ActionLifecycleSource,
@@ -24,6 +28,7 @@ import {
   THEME_PICK_STORAGE_KEY,
   THEME_SETTINGS_STORAGE_KEY,
 } from '../../core/src/theme/themeBrowser.js'
+import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosThemeMenu } from '../src/HilosThemeMenu.js'
 
 function dummyConnection(): HilosConnection {
@@ -77,15 +82,34 @@ function bindAccount(
   releaseTheme?.()
   vi.stubGlobal('localStorage', memoryStorage({}))
   const listeners = new Map<string, Set<(payload: never) => void>>()
+  const emitRaw = (event: string, data: unknown): void => {
+    for (const listener of listeners.get(event) ?? []) listener(data as never)
+  }
   const emit = (event: string, data: unknown): void => {
     act(() => {
-      for (const listener of listeners.get(event) ?? []) listener(data as never)
+      emitRaw(event, data)
     })
   }
   const sendAction = vi.fn<
     (action: string, data: unknown, requestId?: string) => boolean
   >(() => true)
+  let connectionState: ConnectionState = 'connected'
   const connection = {
+    get state(): ConnectionState {
+      return connectionState
+    },
+    get protectedMode() {
+      return PROTECTED_MODE_INACTIVE
+    },
+    get rtStaleness() {
+      return RT_STALENESS_FRESH
+    },
+    get reconnectDragging(): boolean {
+      return false
+    },
+    get firstFrameHeld(): boolean {
+      return false
+    },
     sendAction,
     on(event: string, listener: (payload: never) => void): () => void {
       const callbacks = listeners.get(event) ?? new Set()
@@ -113,12 +137,13 @@ function bindAccount(
     actions,
   )
 
-  function handshake(
+  function handshakeWith(
+    dispatch: (event: string, data: unknown) => void,
     themePick: ThemePick,
     userId: number | null = 1,
     themePickInitialized = themePick !== null,
   ): void {
-    emit('projectSignal', {
+    dispatch('projectSignal', {
       type: 'handshake_response',
       data: {
         entities: {
@@ -136,18 +161,37 @@ function bindAccount(
       },
     })
   }
+  const handshake = (
+    themePick: ThemePick,
+    userId: number | null = 1,
+    themePickInitialized = themePick !== null,
+  ): void => handshakeWith(emit, themePick, userId, themePickInitialized)
+  const handshakeRaw = (
+    themePick: ThemePick,
+    userId: number | null = 1,
+    themePickInitialized = themePick !== null,
+  ): void => handshakeWith(emitRaw, themePick, userId, themePickInitialized)
   handshake(pick)
 
   return {
     sendAction,
+    connection: connection as unknown as HilosConnection,
     handshake,
+    handshakeRaw,
     impersonate: () =>
       act(() =>
         scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 }),
       ),
     settings: (next: ThemeSettings) =>
       emit('projectSignal', { type: 'hilos_theme_settings', data: next }),
-    state: (state: ConnectionState) => emit('state', state),
+    state: (state: ConnectionState) => {
+      connectionState = state
+      emit('state', state)
+    },
+    stateRaw: (state: ConnectionState) => {
+      connectionState = state
+      emitRaw('state', state)
+    },
     async reply(
       outcome: 'success' | 'fail',
       requestId = sendAction.mock.lastCall?.[2],
@@ -278,7 +322,202 @@ function mountMenu() {
   return render(<HilosThemeMenu />)
 }
 
+/** Mount the theme control under the real shell's live interaction context. */
+function mountInShell(
+  connection: HilosConnection,
+  allowDisconnectedInteraction = false,
+) {
+  return render(
+    <HilosLayout
+      connection={connection}
+      allowDisconnectedInteraction={allowDisconnectedInteraction}
+    >
+      <p data-id="page-body">Page</p>
+    </HilosLayout>,
+  )
+}
+
 describe('HilosThemeMenu', () => {
+  it('locks an open account menu while unavailable and sends only a new choice after reconnect', async () => {
+    const server = bindAccount('dark')
+    const view = mountInShell(server.connection, true)
+    fireEvent.click(toggle())
+    const menu = byId('nav-theme-menu')
+    const light = byId('nav-theme-option-light')
+
+    for (const state of [
+      'connecting',
+      'reconnecting',
+      'disconnected',
+    ] as const) {
+      if (state === 'connecting') {
+        act(() => {
+          server.stateRaw(state)
+          fireEvent.click(byId('nav-theme-default'))
+          fireEvent.click(light)
+        })
+        expect(server.sendAction).not.toHaveBeenCalled()
+        expect(hilosThemePick.get()).toBe('dark')
+      } else {
+        act(() => server.stateRaw(state))
+      }
+      expect(byId('nav-theme-menu')).toBe(menu)
+      expect(toggle().getAttribute('aria-expanded')).toBe('true')
+      expect(toggle().disabled).toBe(true)
+      expect(toggle().getAttribute('aria-describedby')).toBe(
+        HILOS_CONNECTION_STATUS_TEXT_ID,
+      )
+      expect(
+        view.container.querySelector(`#${HILOS_CONNECTION_STATUS_TEXT_ID}`),
+      ).not.toBeNull()
+      for (const id of [
+        'nav-theme-option-light',
+        'nav-theme-option-dark',
+        'nav-theme-option-system',
+        'nav-theme-default',
+      ]) {
+        expect(byId(id).disabled).toBe(true)
+        expect(byId(id).getAttribute('aria-describedby')).toBe(
+          HILOS_CONNECTION_STATUS_TEXT_ID,
+        )
+      }
+      fireEvent.keyDown(menu, { key: 'Home' })
+      expect(
+        [
+          ...view.container.querySelectorAll<HTMLButtonElement>(
+            '[data-id="nav-theme-menu"] button',
+          ),
+        ].some(
+          (button) => button.disabled && button === document.activeElement,
+        ),
+      ).toBe(false)
+      expect(maybe('nav-theme-loading')).toBeNull()
+    }
+
+    act(() => server.stateRaw('connected'))
+    expect(byId('nav-theme-menu')).toBe(menu)
+    expect(toggle().disabled).toBe(false)
+    expect(byId('nav-theme-option-light')).toBe(light)
+    fireEvent.click(light)
+    expect(server.sendAction).toHaveBeenCalledExactlyOnceWith(
+      'hilos_theme_pick',
+      { themePick: 'light' },
+      '1',
+    )
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(maybe('nav-theme-loading')).toBeNull()
+    await server.reply('success')
+    expect(hilosThemePick.get()).toBe('dark')
+  })
+
+  it('keeps every guest theme choice and reset local during disconnect states', () => {
+    const server = bindAccount('dark')
+    server.handshake('dark', null)
+    const view = mountInShell(server.connection)
+
+    for (const [state, pick] of [
+      ['connecting', 'light'],
+      ['reconnecting', 'dark'],
+      ['disconnected', 'system'],
+    ] as const) {
+      act(() => server.stateRaw(state))
+      expect(toggle().disabled).toBe(false)
+      expect(toggle().getAttribute('aria-describedby')).toBeNull()
+      fireEvent.click(toggle())
+      fireEvent.click(byId(`nav-theme-option-${pick}`))
+      expect(hilosThemePick.get()).toBe(pick)
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe(pick)
+    }
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      fireEvent.click(toggle())
+      fireEvent.click(byId('nav-theme-default'))
+      expect(hilosThemePick.get()).toBeNull()
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    }
+    expect(server.sendAction).not.toHaveBeenCalled()
+    expect(
+      view.container.querySelector('[data-id="nav-theme-menu"]'),
+    ).toBeNull()
+  })
+
+  it('reads sign-in and availability live before React flushes the open menu', () => {
+    const server = bindAccount('dark')
+    server.handshake('dark', null)
+    mountInShell(server.connection, true)
+    fireEvent.click(toggle())
+    const light = byId('nav-theme-option-light')
+
+    act(() => {
+      server.stateRaw('disconnected')
+      server.handshakeRaw('dark', 1)
+      fireEvent.click(light)
+    })
+
+    expect(server.sendAction).not.toHaveBeenCalled()
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(toggle().disabled).toBe(true)
+    expect(toggle().getAttribute('aria-describedby')).toBe(
+      HILOS_CONNECTION_STATUS_TEXT_ID,
+    )
+  })
+
+  it('keeps the impersonation and connection reasons on a disabled toggle', () => {
+    const server = bindAccount('dark')
+    server.impersonate()
+    server.state('disconnected')
+    const view = mountInShell(server.connection)
+    const theme = toggle()
+
+    expect(theme.disabled).toBe(true)
+    expect(theme.getAttribute('aria-describedby')).toBe(
+      `${HILOS_IMPERSONATION_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+    )
+    expect(
+      view.container.querySelector(`#${HILOS_IMPERSONATION_STRIP_TEXT_ID}`),
+    ).not.toBeNull()
+    expect(
+      view.container.querySelector(`#${HILOS_CONNECTION_STATUS_TEXT_ID}`),
+    ).not.toBeNull()
+  })
+
+  it('uses the readonly false connection fallback outside the shell', () => {
+    const server = bindAccount('dark')
+    server.state('disconnected')
+    mountMenu()
+
+    expect(toggle().disabled).toBe(false)
+    expect(toggle().getAttribute('aria-describedby')).toBeNull()
+    expect(document.getElementById(HILOS_CONNECTION_STATUS_TEXT_ID)).toBeNull()
+    fireEvent.click(toggle())
+    expect(byId('nav-theme-option-light').disabled).toBe(false)
+  })
+
+  it('keeps a pending action busy when the connection reconnects', async () => {
+    const server = bindAccount('dark')
+    mountInShell(server.connection)
+    fireEvent.click(toggle())
+    fireEvent.click(byId('nav-theme-option-light'))
+    expect(toggle().disabled).toBe(true)
+    expect(toggle().getAttribute('aria-busy')).toBe('true')
+
+    server.state('connecting')
+    expect(toggle().getAttribute('aria-describedby')).toBe(
+      HILOS_CONNECTION_STATUS_TEXT_ID,
+    )
+    server.state('connected')
+    expect(toggle().disabled).toBe(true)
+    expect(toggle().getAttribute('aria-busy')).toBe('true')
+    expect(toggle().getAttribute('aria-describedby')).toBeNull()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(maybe('nav-theme-loading')).not.toBeNull()
+    await server.reply('success')
+    expect(toggle().disabled).toBe(false)
+    expect(hilosThemePick.get()).toBe('dark')
+  })
+
   it('shows the position icon and its Theme label', () => {
     bindSnapshot({ switchingEnabled: true, defaultTheme: 'system' }, 'light')
     mountMenu()

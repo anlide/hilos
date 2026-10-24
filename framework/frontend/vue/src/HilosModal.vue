@@ -19,6 +19,9 @@ inert or aria-hidden, so the text, the draft and the refusal regions stay
 readable. When `busy` clears, focus left on the dialog itself — because the
 step that moved in flight found its field locked — or on the page's body goes
 to the initial element again, as on opening; any other element keeps it.
+The shell connection lock is independent of busy: permanent fieldsets cover
+the whole dialog and its confirm layer, including custom slots, and core binds
+the real roots without restarting the focus trap or scroll lock.
 The body is what scrolls, always: the dialog is never taller than the window
 (modal-dialog-scrollable), the header and the footer stay put, and a short
 dialog is not changed by it at all. On a narrow screen the dialog becomes a
@@ -49,9 +52,11 @@ layer through `--hilos-modal-depth`: each layer dims everything under it and
 stands one step narrower (mockups/components/modal, the node for a modal over
 a modal). -->
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
 import {
+  CONNECTION_INTERACTION_COPY,
   FocusTrap,
+  bindInteractionBlock,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -64,6 +69,7 @@ import {
   unlockBodyScroll,
 } from '@hilos/core/base'
 
+import { useConnectionInteraction } from './hilosConnectionInteraction.js'
 import { useSignal } from './useSignal.js'
 
 /**
@@ -176,6 +182,12 @@ const emit = defineEmits<{
 
 const dialog = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
+const interactionScope = ref<HTMLFieldSetElement>()
+const confirmInteractionScope = ref<HTMLFieldSetElement>()
+const interaction = useConnectionInteraction()
+const interactionBlocked = useSignal(interaction.blocked)
+const connectionDescriptionId = `hilos-modal-connection-${useId()}`
+const confirmConnectionDescriptionId = `${connectionDescriptionId}-confirm`
 const trap = new FocusTrap()
 let disposed = false
 let activation = 0
@@ -192,12 +204,42 @@ const modal = createModalController({
   closeOnEsc: () => props.closeOnEsc,
   closeOnBackdrop: () => props.closeOnBackdrop,
   busy: () => props.busy,
+  interactionBlocked: () => interaction.blocked.get(),
   onClose: () => {
     emit('update:modelValue', false)
     emit('cancel')
   },
 })
 const confirmVisible = useSignal(modal.confirmVisible)
+
+watch(
+  [dialog, interactionScope],
+  ([root, fieldset], _previous, onCleanup) => {
+    if (!root || !fieldset) return
+    onCleanup(
+      bindInteractionBlock(root, {
+        fieldset,
+        blocked: interaction.blocked,
+        descriptionId: connectionDescriptionId,
+      }),
+    )
+  },
+  { flush: 'post' },
+)
+watch(
+  [confirmDialog, confirmInteractionScope],
+  ([root, fieldset], _previous, onCleanup) => {
+    if (!root || !fieldset) return
+    onCleanup(
+      bindInteractionBlock(root, {
+        fieldset,
+        blocked: interaction.blocked,
+        descriptionId: confirmConnectionDescriptionId,
+      }),
+    )
+  },
+  { flush: 'post' },
+)
 
 const copied = ref(false)
 const showCopy = computed(() => props.copyText !== '' && isClipboardAvailable())
@@ -321,7 +363,18 @@ function onTab(event: KeyboardEvent): void {
           class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
           :class="{ 'modal-lg': size === 'wide' }"
         >
-          <div class="modal-content">
+          <fieldset
+            ref="interactionScope"
+            class="modal-content m-0 p-0"
+            data-id="modal-interaction-scope"
+          >
+            <span
+              :id="connectionDescriptionId"
+              class="visually-hidden"
+              data-id="modal-connection-description"
+              :hidden="!interactionBlocked"
+              >{{ CONNECTION_INTERACTION_COPY.unavailable }}</span
+            >
             <div class="modal-header">
               <slot name="header">
                 <!-- No title, no heading: an empty one is a heading in the
@@ -367,7 +420,7 @@ function onTab(event: KeyboardEvent): void {
               </button>
               <slot name="actions" :request-close="modal.requestClose" />
             </div>
-          </div>
+          </fieldset>
         </div>
       </div>
       <template v-if="confirmVisible">
@@ -390,7 +443,18 @@ function onTab(event: KeyboardEvent): void {
           <div
             class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
           >
-            <div class="modal-content">
+            <fieldset
+              ref="confirmInteractionScope"
+              class="modal-content m-0 p-0"
+              data-id="modal-confirm-interaction-scope"
+            >
+              <span
+                :id="confirmConnectionDescriptionId"
+                class="visually-hidden"
+                data-id="modal-connection-description"
+                :hidden="!interactionBlocked"
+                >{{ CONNECTION_INTERACTION_COPY.unavailable }}</span
+              >
               <div class="modal-header">
                 <h5 class="modal-title mb-0">{{ confirmTitle }}</h5>
               </div>
@@ -415,7 +479,7 @@ function onTab(event: KeyboardEvent): void {
                   {{ confirmOkText }}
                 </button>
               </div>
-            </div>
+            </fieldset>
           </div>
         </div>
       </template>

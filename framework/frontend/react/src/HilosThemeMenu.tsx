@@ -4,14 +4,16 @@
 // named "Theme: Light" and so on; the menu is Light · Dark · System, then Use site
 // default. The current position is checked, with a "default" badge when there is
 // no personal pick. Open/close, outside-click, Escape and arrow-roving mirror
-// HilosNotificationBell, and like it the menu is rendered only while open. The
-// positions are menuitemradio and the reset is menuitem, not a listbox:
+// HilosNotificationBell, and like it the menu is rendered only while open. Guest
+// picks apply locally and immediately; account actions are disabled while the
+// shell connection is unavailable and use the server's handshake when sent.
+// The positions are menuitemradio and the reset is menuitem, not a listbox:
 // HilosDropdown is a full-width select with a caret, and this control is a bare
-// icon. A guest's choice is applied and remembered immediately; an account choice
-// waits for the server's handshake. Both close and return focus. The shell mounts
-// it; a project passes nothing. Bootstrap classes only, no CSS of its own.
+// icon. Both close and return focus. The shell mounts it; a project passes
+// nothing. Bootstrap classes only, no CSS of its own.
 import {
   formatHilosThemeLabel,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosImpersonation,
   hilosSignedIn,
@@ -25,6 +27,7 @@ import {
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 
+import { useConnectionInteraction } from './hilosConnectionInteraction.js'
 import { useSignal } from './useSignal.js'
 import { useTrackedAction } from './useTrackedAction.js'
 
@@ -44,8 +47,18 @@ export function HilosThemeMenu() {
   const choice = useSignal(hilosThemeChoice)
   const signedIn = useSignal(hilosSignedIn)
   const impersonation = useSignal(hilosImpersonation)
+  const interaction = useConnectionInteraction()
+  const unavailable = useSignal(interaction.unavailable)
   const action = useTrackedAction()
   const busy = action.busy
+  const accountConnectionUnavailable = signedIn && unavailable
+  const toggleDescription = [
+    impersonation !== null ? HILOS_IMPERSONATION_STRIP_TEXT_ID : null,
+    accountConnectionUnavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : null,
+  ]
+    .filter((id): id is string => id !== null)
+    .join(' ')
+  const describedBy = toggleDescription || undefined
 
   const [open, setOpen] = useState(false)
   const menuId = useId()
@@ -71,7 +84,7 @@ export function HilosThemeMenu() {
           menu.current.querySelectorAll<HTMLButtonElement>(
             '[role="menuitemradio"], [role="menuitem"]',
           ),
-        )
+        ).filter((button) => !button.disabled)
       : []
   }
 
@@ -82,7 +95,11 @@ export function HilosThemeMenu() {
   }
 
   function openMenu(focus: 'first' | 'last' | 'none' = 'none'): void {
-    if (sending.current || !switchable()) {
+    if (
+      sending.current ||
+      !switchable() ||
+      (hilosSignedIn.get() && interaction.unavailable.get())
+    ) {
       return
     }
     setOpen(true)
@@ -157,6 +174,14 @@ export function HilosThemeMenu() {
   }
 
   async function send(pick: ThemePick): Promise<void> {
+    if (
+      sending.current ||
+      !hilosSignedIn.get() ||
+      interaction.unavailable.get() ||
+      !switchable()
+    ) {
+      return
+    }
     sending.current = true
     try {
       await action.run(sendHilosThemePick(pick))
@@ -166,11 +191,16 @@ export function HilosThemeMenu() {
   }
 
   function choose(pick: ThemePick): void {
-    close(true)
-    if (sending.current || !switchable()) {
+    const signedInNow = hilosSignedIn.get()
+    if (signedInNow && interaction.unavailable.get()) {
       return
     }
-    if (hilosSignedIn.get()) {
+    if (sending.current || !switchable()) {
+      close(true)
+      return
+    }
+    close(true)
+    if (signedInNow) {
       void send(pick)
     } else {
       setHilosThemePick(pick)
@@ -236,10 +266,10 @@ export function HilosThemeMenu() {
         ref={toggleButton}
         type="button"
         className="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 position-relative"
-        disabled={busy || impersonation !== null}
-        aria-describedby={
-          impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+        disabled={
+          busy || impersonation !== null || accountConnectionUnavailable
         }
+        aria-describedby={describedBy}
         aria-busy={busy || undefined}
         aria-expanded={open}
         aria-controls={menuId}
@@ -282,7 +312,12 @@ export function HilosThemeMenu() {
               className={`dropdown-item d-flex align-items-center gap-2${row.value === choice.position ? ' active' : ''}`}
               role="menuitemradio"
               aria-checked={row.value === choice.position}
-              disabled={busy}
+              disabled={busy || accountConnectionUnavailable}
+              aria-describedby={
+                accountConnectionUnavailable
+                  ? HILOS_CONNECTION_STATUS_TEXT_ID
+                  : undefined
+              }
               data-id={`nav-theme-option-${row.value}`}
               onClick={() => choose(row.value)}
             >
@@ -303,7 +338,12 @@ export function HilosThemeMenu() {
             type="button"
             className="dropdown-item"
             role="menuitem"
-            disabled={busy}
+            disabled={busy || accountConnectionUnavailable}
+            aria-describedby={
+              accountConnectionUnavailable
+                ? HILOS_CONNECTION_STATUS_TEXT_ID
+                : undefined
+            }
             data-id="nav-theme-default"
             onClick={() => choose(null)}
           >

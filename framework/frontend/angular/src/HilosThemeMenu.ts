@@ -8,9 +8,10 @@
 // rendered only while open. The positions are menuitemradio and the reset is
 // menuitem, not a listbox: HilosDropdown is a full-width select with a caret,
 // and this control is a bare icon. A guest's choice is applied and remembered
-// immediately; an account choice waits for the server's handshake. Both close
-// and return focus. The shell mounts it; a project passes nothing. Bootstrap
-// classes only, no CSS of its own.
+// immediately; account actions are disabled while the shell connection is
+// unavailable and wait for the server's handshake when sent. Both close and
+// return focus. The shell mounts it; a project passes nothing. Bootstrap classes
+// only, no CSS of its own.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -28,6 +29,7 @@ import {
 } from '@angular/core'
 import {
   formatHilosThemeLabel,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosImpersonation,
   hilosSignedIn,
@@ -40,6 +42,7 @@ import {
 } from '@hilos/core/base'
 
 import { hilosSignal } from './hilosSignal.js'
+import { injectConnectionInteraction } from './hilosConnectionInteraction.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
 // Distinct ids so two menus on one page never share an `aria-controls` target.
@@ -70,8 +73,10 @@ function switchable(): boolean {
           #themeToggle
           type="button"
           class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 position-relative"
-          [disabled]="busy() || impersonation() !== null"
-          [attr.aria-describedby]="impersonation() ? stripTextId : null"
+          [disabled]="
+            busy() || impersonation() !== null || accountConnectionUnavailable()
+          "
+          [attr.aria-describedby]="toggleDescription()"
           [attr.aria-busy]="busy() || null"
           [attr.aria-expanded]="open()"
           [attr.aria-controls]="menuId"
@@ -117,7 +122,10 @@ function switchable(): boolean {
                 [class.active]="row.value === current.position"
                 role="menuitemradio"
                 [attr.aria-checked]="row.value === current.position"
-                [disabled]="busy()"
+                [disabled]="busy() || accountConnectionUnavailable()"
+                [attr.aria-describedby]="
+                  accountConnectionUnavailable() ? connectionStatusTextId : null
+                "
                 [attr.data-id]="'nav-theme-option-' + row.value"
                 (click)="choose(row.value)"
               >
@@ -139,7 +147,10 @@ function switchable(): boolean {
               type="button"
               class="dropdown-item"
               role="menuitem"
-              [disabled]="busy()"
+              [disabled]="busy() || accountConnectionUnavailable()"
+              [attr.aria-describedby]="
+                accountConnectionUnavailable() ? connectionStatusTextId : null
+              "
               data-id="nav-theme-default"
               (click)="choose(null)"
             >
@@ -155,6 +166,22 @@ export class HilosThemeMenu {
   protected readonly choice = hilosSignal(hilosThemeChoice)
   private readonly signedIn = hilosSignal(hilosSignedIn)
   protected readonly impersonation = hilosSignal(hilosImpersonation)
+  private readonly interaction = injectConnectionInteraction()
+  private readonly unavailable = hilosSignal(this.interaction.unavailable)
+  protected readonly accountConnectionUnavailable = computed(
+    () => this.signedIn() && this.unavailable(),
+  )
+  protected readonly toggleDescription = computed(() => {
+    const descriptions: string[] = []
+    if (this.impersonation() !== null) {
+      descriptions.push(HILOS_IMPERSONATION_STRIP_TEXT_ID)
+    }
+    if (this.accountConnectionUnavailable()) {
+      descriptions.push(HILOS_CONNECTION_STATUS_TEXT_ID)
+    }
+
+    return descriptions.length > 0 ? descriptions.join(' ') : null
+  })
   protected readonly view = computed(() => {
     const current = this.choice()
     if (current === null) {
@@ -175,7 +202,7 @@ export class HilosThemeMenu {
   protected readonly loading = this.action.loading
   protected readonly positions = THEME_POSITIONS
   protected readonly copy = THEME_COPY
-  protected readonly stripTextId = HILOS_IMPERSONATION_STRIP_TEXT_ID
+  protected readonly connectionStatusTextId = HILOS_CONNECTION_STATUS_TEXT_ID
 
   protected readonly open = signal(false)
   protected readonly menuId = `hilos-theme-menu-${themeMenuSeq++}`
@@ -261,11 +288,16 @@ export class HilosThemeMenu {
   }
 
   protected choose(pick: ThemePick): void {
-    this.close(true)
-    if (this.action.busy() || !switchable()) {
+    const signedInNow = hilosSignedIn.get()
+    if (signedInNow && this.interaction.unavailable.get()) {
       return
     }
-    if (hilosSignedIn.get()) {
+    if (this.action.busy() || !switchable()) {
+      this.close(true)
+      return
+    }
+    this.close(true)
+    if (signedInNow) {
       void this.send(pick)
     } else {
       setHilosThemePick(pick)
@@ -273,7 +305,11 @@ export class HilosThemeMenu {
   }
 
   private openMenu(focus: 'first' | 'last' | 'none' = 'none'): void {
-    if (this.action.busy() || !switchable()) {
+    if (
+      this.action.busy() ||
+      !switchable() ||
+      (hilosSignedIn.get() && this.interaction.unavailable.get())
+    ) {
       return
     }
     this.open.set(true)
@@ -297,6 +333,13 @@ export class HilosThemeMenu {
   // once the re-enabled button is on screen, while the control is still there
   // to take it.
   private async send(pick: ThemePick): Promise<void> {
+    if (
+      !hilosSignedIn.get() ||
+      this.interaction.unavailable.get() ||
+      !switchable()
+    ) {
+      return
+    }
     await this.action.run(sendHilosThemePick(pick))
     if (this.destroyed) {
       return
@@ -325,7 +368,7 @@ export class HilosThemeMenu {
           menu.querySelectorAll<HTMLButtonElement>(
             '[role="menuitemradio"], [role="menuitem"]',
           ),
-        )
+        ).filter((button) => !button.disabled)
       : []
   }
 

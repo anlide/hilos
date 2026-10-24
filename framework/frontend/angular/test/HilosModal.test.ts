@@ -4,10 +4,23 @@
 // the modal layer each of those instances stands on, and the landing place of
 // focus when a dialog opens.
 import { Component, signal } from '@angular/core'
+import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  CONNECTION_INTERACTION_COPY,
+  FocusTrap,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
+  type ConnectionState,
+  type HilosConnection,
+  type ModalController,
+} from '@hilos/core/base'
 
+import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosModal } from '../src/HilosModal.js'
+import { LoadingButton } from '../src/LoadingButton.js'
 
 /** A host that can draw either nested modals or two sibling modals. */
 @Component({
@@ -654,5 +667,482 @@ describe('HilosModal', () => {
     expect(document.body.classList.contains('modal-open')).toBe(false)
     expect(document.activeElement).toBe(opener)
     opener.remove()
+  })
+})
+
+/** A live shell source; the real layout owns the availability state and subscriptions. */
+function modalFeed() {
+  const listeners = new Map<string, Set<(value: never) => void>>()
+  const source = {
+    state: 'connected' as ConnectionState,
+    protectedMode: PROTECTED_MODE_INACTIVE,
+    rtStaleness: RT_STALENESS_FRESH,
+    reconnectDragging: false,
+    firstFrameHeld: false,
+    on(event: string, listener: (value: never) => void): () => void {
+      const set = listeners.get(event) ?? new Set()
+      listeners.set(event, set)
+      set.add(listener)
+      return () => {
+        set.delete(listener)
+      }
+    },
+  }
+  return {
+    connection: source as unknown as HilosConnection,
+    listeners,
+    push(state: ConnectionState): void {
+      source.state = state
+      for (const listener of listeners.get('state') ?? [])
+        listener(state as never)
+    },
+  }
+}
+
+/** Projected content stays inside the real main fieldset and inherits the shell's DI. */
+@Component({
+  selector: 'test-connected-modal',
+  imports: [HilosLayout, HilosModal, LoadingButton],
+  template: `
+    <hilos-layout
+      [connection]="connection()"
+      [allowDisconnectedInteraction]="allow()"
+    >
+      <a nav href="#nav" data-id="modal-nav">Navigation</a>
+      <button
+        hilosLoadingButton
+        type="button"
+        [opensWindow]="true"
+        data-id="modal-open"
+        (click)="clicks()"
+      >
+        Open
+      </button>
+      @if (present()) {
+        <hilos-modal
+          [(open)]="open"
+          [busy]="busy()"
+          [confirmOnClose]="dirty()"
+          title="Edit"
+          copyText="technical details"
+          (cancel)="canceled()"
+        >
+          <a
+            modalHeader
+            href="#header"
+            data-id="header-action"
+            (click)="clicks()"
+            >Header action</a
+          >
+          <form data-id="modal-form" (submit)="clicks()">
+            <input
+              data-autofocus
+              data-id="modal-draft"
+              [disabled]="disabled()"
+              [attr.aria-describedby]="description()"
+              (beforeinput)="clicks()"
+              (drop)="clicks()"
+            />
+            <input type="file" data-id="modal-file" />
+            <select data-id="modal-choice">
+              <option value="a">A</option>
+              <option value="b">B</option>
+            </select>
+            <button type="button" data-id="body-action" (click)="clicks()">
+              Body action
+            </button>
+            <a
+              href="#action"
+              role="button"
+              data-id="body-link"
+              (click)="clicks()"
+              (keydown)="clicks()"
+              >Link action</a
+            >
+            <button
+              hilosLoadingButton
+              type="button"
+              [loading]="busy()"
+              data-id="modal-save"
+              (click)="clicks()"
+            >
+              Save
+            </button>
+          </form>
+          <ng-template #modalActions let-requestClose="requestClose">
+            <button
+              type="button"
+              data-id="modal-cancel"
+              (click)="requestClose()"
+            >
+              Cancel
+            </button>
+          </ng-template>
+        </hilos-modal>
+      }
+      @if (second()) {
+        <hilos-modal [open]="true" title="Second" [confirmOnClose]="true" />
+      }
+    </hilos-layout>
+  `,
+})
+class ConnectedModalHost {
+  readonly connection = signal(modalFeed().connection)
+  readonly open = signal(true)
+  readonly present = signal(true)
+  readonly second = signal(false)
+  readonly allow = signal(false)
+  readonly busy = signal(false)
+  readonly dirty = signal(false)
+  readonly disabled = signal(false)
+  readonly description = signal('validation')
+  readonly clicks = vi.fn()
+  readonly canceled = vi.fn()
+}
+
+/** Mount the actual layout and projected modal and expose the controller's issued close API. */
+async function connectedModal(initiallyOpen = true) {
+  const feed = modalFeed()
+  const fixture = TestBed.createComponent(ConnectedModalHost)
+  const host = fixture.componentInstance
+  host.connection.set(feed.connection)
+  host.open.set(initiallyOpen)
+  const settle = async () => {
+    fixture.detectChanges()
+    await fixture.whenStable()
+    fixture.detectChanges()
+    await Promise.resolve()
+  }
+  await settle()
+  return {
+    fixture,
+    feed,
+    host,
+    settle,
+    close(): void {
+      const instance = fixture.debugElement.query(By.directive(HilosModal))
+        .componentInstance as unknown as { modal: ModalController }
+      instance.modal.requestClose()
+    },
+    async push(state: ConnectionState): Promise<void> {
+      feed.push(state)
+      await settle()
+    },
+  }
+}
+
+/** The required surface of a connected modal, never a stub component. */
+function modalElement(id: string): HTMLElement {
+  const element = byId(id)
+  expect(element).not.toBeNull()
+  return element!
+}
+
+/** Check the description's reading visibility, independently of aria-describedby. */
+function expectConnectionDescription(
+  root: HTMLElement,
+  blocked: boolean,
+): void {
+  const description = root.querySelector<HTMLElement>(
+    '[data-id="modal-connection-description"]',
+  )!
+  expect(description).not.toBeNull()
+  expect(description.textContent).toBe(CONNECTION_INTERACTION_COPY.unavailable)
+  expect(description.hidden).toBe(!blocked)
+  if (blocked) expect(getComputedStyle(description).display).not.toBe('none')
+  else expect(getComputedStyle(description).display).toBe('none')
+}
+
+describe('HilosModal connection interaction (HIL-1651)', () => {
+  const realClipboard = navigator.clipboard
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: realClipboard,
+    })
+  })
+
+  it('keeps projected draft, selection, files, scroll and lifecycle through every outage state', async () => {
+    const activate = vi.spyOn(FocusTrap.prototype, 'activate')
+    const written: string[] = []
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          written.push(text)
+        },
+      },
+    })
+    const shell = await connectedModal()
+    const root = modalElement('modal')
+    expectConnectionDescription(root, false)
+    const field = modalElement('modal-draft') as HTMLInputElement
+    const file = modalElement('modal-file') as HTMLInputElement
+    const files = file.files
+    const choice = modalElement('modal-choice') as HTMLSelectElement
+    const scope = modalElement('modal-interaction-scope')
+    const body = root.querySelector('.modal-body')!
+    const layers = layerDepths('.hilos-modal-layer')
+    const activations = activate.mock.calls.length
+    field.value = 'draft remains'
+    field.setSelectionRange(2, 7)
+    choice.value = 'b'
+    body.scrollTop = 83
+    field.focus()
+    expect(document.querySelector('main')?.contains(root)).toBe(true)
+    for (const state of [
+      'connecting',
+      'reconnecting',
+      'disconnected',
+    ] as const) {
+      shell.feed.push(state)
+      shell.close()
+      expect(shell.host.open()).toBe(true)
+      expect(field.matches(':disabled')).toBe(true)
+      expect(document.activeElement).toBe(root)
+      expect(modalElement('modal-open').matches(':disabled')).toBe(true)
+      for (const id of [
+        'modal-close',
+        'modal-copy',
+        'modal-cancel',
+        'header-action',
+        'body-action',
+        'body-link',
+        'modal-save',
+      ])
+        modalElement(id).dispatchEvent(
+          new MouseEvent('click', { bubbles: true, cancelable: true }),
+        )
+      for (const key of ['Enter', ' ']) press(modalElement('body-link'), key)
+      for (const type of ['beforeinput', 'drop']) {
+        const event = new Event(type, { bubbles: true, cancelable: true })
+        field.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+      }
+      modalElement('modal-form').dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+      press(root, 'Escape')
+      root.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      press(root, 'Tab')
+      await shell.settle()
+      expectConnectionDescription(root, true)
+      expect(shell.host.clicks).not.toHaveBeenCalled()
+      expect(shell.host.canceled).not.toHaveBeenCalled()
+      expect(written).toEqual([])
+      expect(modalElement('modal-draft')).toBe(field)
+      expect(modalElement('modal-file')).toBe(file)
+      expect(file.files).toBe(files)
+      expect(modalElement('modal-interaction-scope')).toBe(scope)
+      expect(choice.value).toBe('b')
+      expect(field.value).toBe('draft remains')
+      expect([field.selectionStart, field.selectionEnd]).toEqual([2, 7])
+      expect(body.scrollTop).toBe(83)
+      expect(layerDepths('.hilos-modal-layer')).toEqual(layers)
+      expect(document.body.classList.contains('modal-open')).toBe(true)
+      expect(activate.mock.calls).toHaveLength(activations)
+      expect(
+        root.querySelector('[data-id="loading-button-spinner"]'),
+      ).toBeNull()
+    }
+    await shell.push('connected')
+    expectConnectionDescription(root, false)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(field)
+    expect(shell.host.clicks).not.toHaveBeenCalled()
+    modalElement('body-action').click()
+    expect(shell.host.clicks).toHaveBeenCalledTimes(1)
+    shell.close()
+    await shell.settle()
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('holds an existing confirm, its local description and focus until a fresh gesture', async () => {
+    const shell = await connectedModal()
+    shell.host.dirty.set(true)
+    await shell.settle()
+    shell.close()
+    await shell.settle()
+    const confirm = modalElement('modal-confirm')
+    expectConnectionDescription(modalElement('modal'), false)
+    expectConnectionDescription(confirm, false)
+    modalElement('modal-confirm-discard').focus()
+    await shell.push('disconnected')
+    expect(document.activeElement).toBe(confirm)
+    const ids = [modalElement('modal'), confirm].map((dialog) => {
+      const description = dialog.querySelector<HTMLElement>(
+        '[data-id="modal-connection-description"]',
+      )!
+      expect(description.textContent).toBe(
+        CONNECTION_INTERACTION_COPY.unavailable,
+      )
+      expectConnectionDescription(dialog, true)
+      expect(description.classList.contains('visually-hidden')).toBe(true)
+      expect(
+        description.closest('[aria-hidden="true"], [inert], [aria-live]'),
+      ).toBeNull()
+      expect(dialog.getAttribute('aria-describedby')).toBe(description.id)
+      for (const button of dialog.querySelectorAll('button')) {
+        expect(button.matches(':disabled')).toBe(true)
+        expect(button.getAttribute('aria-describedby')).toContain(
+          description.id,
+        )
+      }
+      return description.id
+    })
+    expect(new Set(ids).size).toBe(2)
+    expect(ids).not.toContain(HILOS_CONNECTION_STATUS_TEXT_ID)
+    for (const id of ['modal-confirm-cancel', 'modal-confirm-discard'])
+      modalElement(id).click()
+    press(confirm, 'Escape')
+    shell.close()
+    await shell.settle()
+    expect(modalElement('modal-confirm')).toBe(confirm)
+    await shell.push('connected')
+    expect(modalElement('modal-confirm')).toBe(confirm)
+    expectConnectionDescription(modalElement('modal'), false)
+    expectConnectionDescription(confirm, false)
+    expect(confirm.hasAttribute('aria-describedby')).toBe(false)
+    modalElement('modal-confirm-cancel').click()
+    await shell.settle()
+    expect(byId('modal-confirm')).toBeNull()
+    shell.close()
+    await shell.settle()
+    modalElement('modal-confirm-discard').click()
+    await shell.settle()
+    expect(shell.host.open()).toBe(false)
+  })
+
+  it('preserves live owner disabled, descriptions and busy without taking a different focus choice', async () => {
+    const shell = await connectedModal()
+    await shell.push('disconnected')
+    shell.host.disabled.set(true)
+    shell.host.description.set('new-validation look-only')
+    shell.host.busy.set(true)
+    await shell.settle()
+    const field = modalElement('modal-draft')
+    expect(field.getAttribute('aria-describedby')).toContain(
+      'new-validation look-only',
+    )
+    modalElement('modal-nav').focus()
+    await shell.push('connected')
+    expect(document.activeElement).toBe(modalElement('modal-nav'))
+    expect(field.matches(':disabled')).toBe(true)
+    expect(field.getAttribute('aria-describedby')).toBe(
+      'new-validation look-only',
+    )
+    expect(closeButton()?.disabled).toBe(true)
+    expect(
+      (modalElement('modal-interaction-scope') as HTMLFieldSetElement).disabled,
+    ).toBe(false)
+    shell.close()
+    expect(shell.host.open()).toBe(true)
+    shell.host.busy.set(false)
+    await shell.settle()
+    expect(field.matches(':disabled')).toBe(true)
+  })
+
+  it('honors opt-out and external close and cleans each projected root on replacement and unmount', async () => {
+    const shell = await connectedModal()
+    const old = modalElement('modal')
+    await shell.push('disconnected')
+    shell.host.allow.set(true)
+    await shell.settle()
+    expectConnectionDescription(modalElement('modal'), false)
+    expect(modalElement('modal-draft').matches(':disabled')).toBe(false)
+    modalElement('body-action').click()
+    expect(shell.host.clicks).toHaveBeenCalledTimes(1)
+    shell.host.allow.set(false)
+    await shell.settle()
+    shell.host.open.set(false)
+    await shell.settle()
+    expect(old.hasAttribute('data-hilos-interaction-region')).toBe(false)
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+    expect(shell.host.canceled).not.toHaveBeenCalled()
+    shell.host.open.set(true)
+    await shell.settle()
+    expect(modalElement('modal')).not.toBe(old)
+    expect(modalElement('modal-draft').matches(':disabled')).toBe(true)
+    shell.host.present.set(false)
+    await shell.settle()
+    shell.host.present.set(true)
+    await shell.settle()
+    shell.fixture.destroy()
+    expect(
+      [...shell.feed.listeners.values()].every((set) => set.size === 0),
+    ).toBe(true)
+    shell.feed.push('connected')
+    expect(old.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('keeps the projected confirm in charge when the main binding was established before opening', async () => {
+    const shell = await connectedModal(false)
+    shell.host.open.set(true)
+    shell.host.dirty.set(true)
+    await shell.settle()
+    shell.close()
+    await shell.settle()
+    const confirm = modalElement('modal-confirm')
+    const discard = modalElement('modal-confirm-discard')
+    discard.focus()
+    await shell.push('disconnected')
+    expect(document.activeElement).toBe(confirm)
+    expect(discard.matches(':disabled')).toBe(true)
+    press(confirm, 'Tab')
+    expect(document.activeElement).toBe(confirm)
+    await shell.push('connected')
+    expect(document.activeElement).toBe(discard)
+    expect(modalElement('modal-confirm')).toBe(confirm)
+  })
+
+  it('keeps a standalone modal interactive beside an unavailable shell', async () => {
+    const shell = await connectedModal()
+    await shell.push('disconnected')
+    const standalone = TestBed.createComponent(HilosModal)
+    standalone.componentRef.setInput('open', true)
+    standalone.componentRef.setInput('title', 'Standalone')
+    standalone.detectChanges()
+    const root = standalone.nativeElement.querySelector(
+      '[data-id="modal"]',
+    ) as HTMLElement
+    const close = root.querySelector<HTMLButtonElement>(
+      '[data-id="modal-close"]',
+    )!
+    expectConnectionDescription(root, false)
+    expect(close.matches(':disabled')).toBe(false)
+    expect(root.hasAttribute('aria-describedby')).toBe(false)
+    close.click()
+    standalone.detectChanges()
+    expect(standalone.componentInstance.open()).toBe(false)
+    expect(shell.host.open()).toBe(true)
+  })
+
+  it('gives concurrent instances and their confirm layers four different local descriptions', async () => {
+    const shell = await connectedModal()
+    shell.host.dirty.set(true)
+    await shell.settle()
+    shell.close()
+    await shell.settle()
+    shell.host.second.set(true)
+    await shell.settle()
+    document
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Second"] [data-id="modal-close"]',
+      )!
+      .click()
+    await shell.settle()
+    await shell.push('disconnected')
+    const descriptions = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-id="modal-connection-description"]',
+      ),
+    ]
+    expect(descriptions).toHaveLength(4)
+    expect(new Set(descriptions.map((node) => node.id)).size).toBe(4)
+    for (const node of descriptions)
+      expect(
+        node.closest('[aria-modal]')?.getAttribute('aria-describedby'),
+      ).toBe(node.id)
   })
 })

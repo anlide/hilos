@@ -6,6 +6,9 @@
 // template is declared or a `copyText` is given: a dialog with neither gets no
 // footer element — neither buttons nor the bordered strip — and there is no
 // default footer to opt out of.
+// The shell connection lock is independent of busy: permanent fieldsets cover
+// the whole dialog and its confirm layer, including custom content. Core binds
+// the real roots without restarting the focus trap or scroll lock.
 // The body is what scrolls, always: the dialog is never taller than the window
 // (modal-dialog-scrollable), the header and the footer stay put, and a short
 // dialog is not changed by it at all. On a narrow screen the dialog becomes a
@@ -44,6 +47,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  afterRenderEffect,
   computed,
   contentChild,
   effect,
@@ -56,7 +60,9 @@ import {
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
 import {
+  CONNECTION_INTERACTION_COPY,
   FocusTrap,
+  bindInteractionBlock,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -69,7 +75,11 @@ import {
   unlockBodyScroll,
 } from '@hilos/core/base'
 
+import { injectConnectionInteraction } from './hilosConnectionInteraction.js'
 import { hilosSignal } from './hilosSignal.js'
+
+// Distinct targets for concurrent dialogs and their confirm layers.
+let modalConnectionSeq = 0
 
 /**
  * The trap placement the prop maps onto: `'dialog'` when there is nothing to
@@ -119,7 +129,18 @@ export interface ModalActionsContext {
           class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
           [class.modal-lg]="size() === 'wide'"
         >
-          <div class="modal-content">
+          <fieldset
+            #interactionScope
+            class="modal-content m-0 p-0"
+            data-id="modal-interaction-scope"
+          >
+            <span
+              [id]="connectionDescriptionId"
+              class="visually-hidden"
+              data-id="modal-connection-description"
+              [hidden]="!interactionBlocked()"
+              >{{ connectionUnavailableCopy }}</span
+            >
             <div class="modal-header">
               <ng-content select="[modalHeader]">
                 <!-- No title, no heading: an empty one is a heading in the
@@ -163,7 +184,7 @@ export interface ModalActionsContext {
                 }
               </div>
             }
-          </div>
+          </fieldset>
         </div>
       </div>
       @if (confirmVisible()) {
@@ -185,7 +206,18 @@ export interface ModalActionsContext {
           <div
             class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
           >
-            <div class="modal-content">
+            <fieldset
+              #confirmInteractionScope
+              class="modal-content m-0 p-0"
+              data-id="modal-confirm-interaction-scope"
+            >
+              <span
+                [id]="confirmConnectionDescriptionId"
+                class="visually-hidden"
+                data-id="modal-connection-description"
+                [hidden]="!interactionBlocked()"
+                >{{ connectionUnavailableCopy }}</span
+              >
               <div class="modal-header">
                 <h5 class="modal-title mb-0">{{ confirmTitle() }}</h5>
               </div>
@@ -210,7 +242,7 @@ export interface ModalActionsContext {
                   {{ confirmOkText() }}
                 </button>
               </div>
-            </div>
+            </fieldset>
           </div>
         </div>
       }
@@ -292,12 +324,24 @@ export class HilosModal {
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog')
   private readonly confirmDialog =
     viewChild<ElementRef<HTMLElement>>('confirmDialog')
+  private readonly interactionScope =
+    viewChild<ElementRef<HTMLFieldSetElement>>('interactionScope')
+  private readonly confirmInteractionScope = viewChild<
+    ElementRef<HTMLFieldSetElement>
+  >('confirmInteractionScope')
+  private readonly interaction = injectConnectionInteraction()
+  protected readonly interactionBlocked = hilosSignal(this.interaction.blocked)
+  protected readonly connectionDescriptionId = `hilos-modal-connection-${modalConnectionSeq++}`
+  protected readonly confirmConnectionDescriptionId = `${this.connectionDescriptionId}-confirm`
+  protected readonly connectionUnavailableCopy =
+    CONNECTION_INTERACTION_COPY.unavailable
 
   protected readonly modal = createModalController({
     confirmOnClose: () => this.confirmOnClose(),
     closeOnEsc: () => this.closeOnEsc(),
     closeOnBackdrop: () => this.closeOnBackdrop(),
     busy: () => this.busy(),
+    interactionBlocked: () => this.interaction.blocked.get(),
     onClose: () => {
       this.open.set(false)
       this.cancel.emit()
@@ -318,6 +362,30 @@ export class HilosModal {
   }
 
   constructor() {
+    afterRenderEffect((onCleanup) => {
+      const root = this.dialog()?.nativeElement
+      const fieldset = this.interactionScope()?.nativeElement
+      if (!root || !fieldset) return
+      onCleanup(
+        bindInteractionBlock(root, {
+          fieldset,
+          blocked: this.interaction.blocked,
+          descriptionId: this.connectionDescriptionId,
+        }),
+      )
+    })
+    afterRenderEffect((onCleanup) => {
+      const root = this.confirmDialog()?.nativeElement
+      const fieldset = this.confirmInteractionScope()?.nativeElement
+      if (!root || !fieldset) return
+      onCleanup(
+        bindInteractionBlock(root, {
+          fieldset,
+          blocked: this.interaction.blocked,
+          descriptionId: this.confirmConnectionDescriptionId,
+        }),
+      )
+    })
     // Lock scroll, enter the modal layer and trap focus once while open; the
     // cleanup runs on close.
     effect((onCleanup) => {

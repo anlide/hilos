@@ -5,6 +5,9 @@
 // guard). The footer exists exactly when `actions` is given or a `copyText` is:
 // a dialog with neither gets no footer element — neither buttons nor the
 // bordered strip — and there is no default footer to opt out of.
+// The shell connection lock is independent of busy: permanent fieldsets cover
+// the whole dialog and its confirm layer, including custom content. Core binds
+// the real roots without restarting the focus trap or scroll lock.
 // The body is what scrolls, always: the dialog is never taller than the window
 // (modal-dialog-scrollable), the header and the footer stay put, and a short
 // dialog is not changed by it at all. On a narrow screen the dialog becomes a
@@ -34,11 +37,20 @@
 // layer through `--hilos-modal-depth`: each layer dims everything under it and
 // stands one step narrower (mockups/components/modal, the node for a modal over
 // a modal).
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import {
+  CONNECTION_INTERACTION_COPY,
   FocusTrap,
+  bindInteractionBlock,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -51,6 +63,7 @@ import {
   unlockBodyScroll,
 } from '@hilos/core/base'
 
+import { useConnectionInteraction } from './hilosConnectionInteraction.js'
 import { useSignal } from './useSignal.js'
 
 /**
@@ -169,6 +182,12 @@ export function HilosModal({
 }: HilosModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
+  const interactionScope = useRef<HTMLFieldSetElement>(null)
+  const confirmInteractionScope = useRef<HTMLFieldSetElement>(null)
+  const interaction = useConnectionInteraction()
+  const interactionBlocked = useSignal(interaction.blocked)
+  const connectionDescriptionId = `hilos-modal-connection-${useId()}`
+  const confirmConnectionDescriptionId = `${connectionDescriptionId}-confirm`
   const trap = useRef(new FocusTrap()).current
   const scrollLockOwner = useRef<ScrollLockOwner>({}).current
   const modalLayerOwner = useRef<ModalLayerOwner>({}).current
@@ -184,9 +203,17 @@ export function HilosModal({
     closeOnEsc,
     closeOnBackdrop,
     busy,
+    interaction,
     onClose,
   })
-  cfg.current = { confirmOnClose, closeOnEsc, closeOnBackdrop, busy, onClose }
+  cfg.current = {
+    confirmOnClose,
+    closeOnEsc,
+    closeOnBackdrop,
+    busy,
+    interaction,
+    onClose,
+  }
 
   const modal = useMemo(
     () =>
@@ -195,11 +222,39 @@ export function HilosModal({
         closeOnEsc: () => cfg.current.closeOnEsc,
         closeOnBackdrop: () => cfg.current.closeOnBackdrop,
         busy: () => cfg.current.busy,
+        interactionBlocked: () => cfg.current.interaction.blocked.get(),
         onClose: () => cfg.current.onClose?.(),
       }),
     [],
   )
   const confirmVisible = useSignal(modal.confirmVisible)
+
+  useLayoutEffect(() => {
+    const root = dialogRef.current
+    const fieldset = interactionScope.current
+    if (!root || !fieldset) return
+    return bindInteractionBlock(root, {
+      fieldset,
+      blocked: interaction.blocked,
+      descriptionId: connectionDescriptionId,
+    })
+  }, [open, interaction.blocked, connectionDescriptionId])
+
+  useLayoutEffect(() => {
+    const root = confirmRef.current
+    const fieldset = confirmInteractionScope.current
+    if (!root || !fieldset) return
+    return bindInteractionBlock(root, {
+      fieldset,
+      blocked: interaction.blocked,
+      descriptionId: confirmConnectionDescriptionId,
+    })
+  }, [
+    open,
+    confirmVisible,
+    interaction.blocked,
+    confirmConnectionDescriptionId,
+  ])
 
   useEffect(() => {
     if (!open) {
@@ -304,7 +359,19 @@ export function HilosModal({
         <div
           className={`modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet${size === 'wide' ? ' modal-lg' : ''}`}
         >
-          <div className="modal-content">
+          <fieldset
+            ref={interactionScope}
+            className="modal-content m-0 p-0"
+            data-id="modal-interaction-scope"
+          >
+            <span
+              id={connectionDescriptionId}
+              className="visually-hidden"
+              data-id="modal-connection-description"
+              hidden={!interactionBlocked}
+            >
+              {CONNECTION_INTERACTION_COPY.unavailable}
+            </span>
             <div className="modal-header">
               {header ??
                 /* No title, no heading: an empty one is a heading in the
@@ -340,7 +407,7 @@ export function HilosModal({
                 {actions?.({ requestClose: () => modal.requestClose() })}
               </div>
             ) : null}
-          </div>
+          </fieldset>
         </div>
       </div>
       {confirmVisible ? (
@@ -361,7 +428,19 @@ export function HilosModal({
             onKeyDown={(event) => onKeyDown(event, confirmRef.current)}
           >
             <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
-              <div className="modal-content">
+              <fieldset
+                ref={confirmInteractionScope}
+                className="modal-content m-0 p-0"
+                data-id="modal-confirm-interaction-scope"
+              >
+                <span
+                  id={confirmConnectionDescriptionId}
+                  className="visually-hidden"
+                  data-id="modal-connection-description"
+                  hidden={!interactionBlocked}
+                >
+                  {CONNECTION_INTERACTION_COPY.unavailable}
+                </span>
                 <div className="modal-header">
                   <h5 className="modal-title mb-0">{confirmTitle}</h5>
                 </div>
@@ -386,7 +465,7 @@ export function HilosModal({
                     {confirmOkText}
                   </button>
                 </div>
-              </div>
+              </fieldset>
             </div>
           </div>
         </>

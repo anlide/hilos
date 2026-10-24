@@ -118,13 +118,7 @@ export async function expectThemeHeader(
   isDefault = false,
 ): Promise<void> {
   const toggle = page.getByTestId('nav-theme')
-  await expect(toggle).toHaveAttribute('data-position', position)
-  await expect(toggle).toHaveAccessibleName(
-    `Theme: ${THEME_TEST_LABELS[position]}`,
-  )
-  await expect(toggle.locator('i')).toHaveClass(
-    `bi ${THEME_TEST_ICONS[position]}`,
-  )
+  await expectThemeHeaderPresentation(expect, page, position)
   await clickControl(expect, toggle)
   await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
   for (const row of THEME_TEST_POSITIONS) {
@@ -156,6 +150,38 @@ export async function expectThemeHeader(
   await toggle.press('Escape')
   await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
   await expect(toggle).toBeFocused()
+}
+
+/** Check the header while an account theme choice is unavailable. */
+export async function expectUnavailableThemeHeader(
+  expect: Expect,
+  page: Page,
+  position: ThemeTestPosition,
+): Promise<void> {
+  const toggle = page.getByTestId('nav-theme')
+  await expectThemeHeaderPresentation(expect, page, position)
+  await expect(toggle).toBeDisabled()
+  await expect(toggle).toHaveAttribute(
+    'aria-describedby',
+    'hilos-connection-status-text',
+  )
+  await expect(page.locator('#hilos-connection-status-text')).toHaveCount(1)
+  await expect(page.getByTestId('nav-theme-menu')).toBeHidden()
+}
+
+async function expectThemeHeaderPresentation(
+  expect: Expect,
+  page: Page,
+  position: ThemeTestPosition,
+): Promise<void> {
+  const toggle = page.getByTestId('nav-theme')
+  await expect(toggle).toHaveAttribute('data-position', position)
+  await expect(toggle).toHaveAccessibleName(
+    `Theme: ${THEME_TEST_LABELS[position]}`,
+  )
+  await expect(toggle.locator('i')).toHaveClass(
+    `bi ${THEME_TEST_ICONS[position]}`,
+  )
 }
 
 /** Check the profile line and live window, preserving a window the caller opened. */

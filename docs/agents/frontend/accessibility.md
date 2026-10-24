@@ -113,6 +113,39 @@ The empty default of `initialFocus` means the mark is in this file. The confirm
 step a dirty close raises is always the dialog itself: it has a heading, a
 sentence and two buttons, never a field. Checked automatically: `MODAL-FOCUS`.
 
+## Connection-blocked interaction
+
+When the shell's connection state is not `connected`, the ordinary page remains
+mounted and its controls become unavailable. Native controls inherit `disabled`
+from the page's permanent fieldset. Links, role-based controls and editable
+regions receive `aria-disabled`, leave the tab sequence, and are guarded against
+activation and input. The shell's existing connection explanation is attached
+through `aria-describedby` using `HILOS_CONNECTION_STATUS_TEXT_ID`
+(`hilos-connection-status-text`); the blocker appends its id without removing a
+control's own descriptions. This reason is independent of a control's `busy`
+state. The blocker adds no visible connection strip or extra live region. The
+default page policy and explicit layout opt-out are documented in
+[core-and-connection.md](core-and-connection.md#disconnect-behavior).
+
+The blocker does not use an overlay, `inert`, or `aria-hidden` on the page.
+Existing content and draft nodes remain available to read, select and copy;
+scrolling and ordinary Tab are not globally suppressed. This is an in-place
+interaction guard, not draft recovery after reload. Focus moves from a newly
+blocked control to its nearest region root (main, dialog or confirm). The shared
+focus path excludes blocked controls and returns to the previous available
+target only when focus is still on that region or the document body; otherwise
+it preserves the reader's focus. If the previous target is no longer available,
+the region's initial focus is used. A modal's existing focus trap retains its
+exact opener for its later close path.
+
+A modal and its discard-confirm step each carry a unique hidden description
+inside the `aria-modal` region, because the page behind that region is not
+available to its reader. The description uses the shared connection copy, while
+the existing live connection indicator remains the connection live surface; the
+modal does not add a second live region. Existing modal `aria-describedby`
+values are retained. The shared state and DOM binding are described in
+[multiframework-core.md](multiframework-core.md#connection-scoped-interaction).
+
 ## A name that lives in another component
 
 A dialog or a region whose name is written by a **different** component points at

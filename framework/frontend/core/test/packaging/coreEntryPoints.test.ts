@@ -135,6 +135,16 @@ const tableTextTypes = [
 /** Explicit table focus return additions, with one DOM owner for root and base. */
 const tableFocusReturnValues = ['captureTableFocusReturnTarget']
 const tableFocusReturnTypes = ['TableFocusReturnRow']
+/** Connection interaction APIs added to the shared shell's core surface. */
+const connectionInteractionValues = [
+  'bindInteractionBlock',
+  'createConnectionInteractionState',
+  'CONNECTION_INTERACTION_COPY',
+  'HILOS_CONNECTION_STATUS_TEXT_ID',
+  'HILOS_INTERACTION_BLOCKED_ATTR',
+  'HILOS_INTERACTION_REGION_ATTR',
+]
+const connectionInteractionTypes = ['ConnectionInteractionState']
 /**
  * The photo's own check frame gave way to the shared moderation one: the two
  * names it took out of the frozen snapshot and the three it added, by hand.
@@ -217,6 +227,7 @@ const expectedValues = [
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
+  ...connectionInteractionValues,
   ...statusValues,
   ...profileRenameValues,
   ...userOverviewValues,
@@ -349,6 +360,7 @@ describe('core public entries', () => {
       ...tableTextValues,
       ...tableFocusReturnValues,
       ...moderationValues,
+      ...connectionInteractionValues,
       ...profileRenameValues,
     ]) {
       expect(base, name).toHaveProperty(name)
@@ -487,6 +499,7 @@ describe('core public entries', () => {
         ...momentTypes,
         ...tableTextTypes,
         ...tableFocusReturnTypes,
+        ...connectionInteractionTypes,
         ...statusTypes,
       ].sort(),
     )
@@ -500,6 +513,8 @@ describe('core public entries', () => {
       ...tableTextValues,
       ...tableFocusReturnTypes,
       ...tableFocusReturnValues,
+      ...connectionInteractionTypes,
+      ...connectionInteractionValues,
     ]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))
@@ -583,6 +598,8 @@ describe('core public entries', () => {
   it.each([
     'base/index.ts',
     'connection/HilosConnection.ts',
+    'connection/interactionBlock.ts',
+    'dom/interactionBlock.ts',
     'dom/focusTrap.ts',
     'dom/tableFocusReturn.ts',
     'format/moment.ts',

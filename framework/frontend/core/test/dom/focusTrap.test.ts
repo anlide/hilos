@@ -706,3 +706,78 @@ describe('registerFocusReturnFallback replacement capture', () => {
     expect(readReplacement).not.toHaveBeenCalled()
   })
 })
+
+describe('connection interaction availability', () => {
+  it('excludes blocked links, roles, marks and roots from tab and initial focus', () => {
+    const root = mountRoot(
+      '<section data-hilos-interaction-region data-hilos-interaction-blocked tabindex="-1" data-id="region">' +
+        '<a href="/next" data-autofocus data-id="link">Next</a>' +
+        '<div role="button" tabindex="0" data-id="role">Action</div>' +
+        '<input data-id="input">' +
+        '</section>' +
+        '<a href="/own" aria-disabled="true" data-autofocus data-id="own">Own</a>' +
+        '<input data-autofocus data-id="ready">',
+    )
+    expect(focusableIds(root)).toEqual(['ready'])
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-id="ready"]'))
+  })
+
+  it('skips a disabled checked radio in favor of the available marked radio', () => {
+    const root = mountRoot(
+      '<input type="radio" name="group" data-autofocus>' +
+        '<section data-hilos-interaction-region data-hilos-interaction-blocked>' +
+        '<input type="radio" name="group" checked>' +
+        '</section>',
+    )
+    focusInitial(root)
+    expect(document.activeElement).toBe(root.querySelector('[data-autofocus]'))
+  })
+
+  it.each([
+    '<a href="/next" aria-disabled="true">Opener</a>',
+    '<div role="button" tabindex="0" aria-disabled="true">Opener</div>',
+    '<main data-hilos-interaction-region data-hilos-interaction-blocked tabindex="-1">Opener</main>',
+  ])(
+    'returns to the nearest available fallback when the original target is unavailable: %s',
+    (html) => {
+      const surface = mountRoot(html + '<button>Fallback</button>')
+      const opener = surface.firstElementChild as HTMLElement
+      const fallback = surface.querySelector('button')!
+      const unregister = registerFocusReturnFallback(surface, () => fallback)
+      const { trap } = openFrom(opener)
+      trap.release()
+      expect(document.activeElement).toBe(fallback)
+      unregister()
+    },
+  )
+
+  it('never substitutes an unmarked lookalike for the unavailable exact opener', () => {
+    const surface = mountRoot(
+      '<a href="/next">Opener</a><button>Fallback</button>',
+    )
+    const original = surface.querySelector('a')!
+    const fallback = surface.querySelector('button')!
+    const unregister = registerFocusReturnFallback(surface, () => fallback)
+    const { trap } = openFrom(original)
+    original.setAttribute('aria-disabled', 'true')
+    const lookalike = document.createElement('a')
+    lookalike.href = '/next'
+    lookalike.textContent = 'Opener'
+    original.after(lookalike)
+    trap.release()
+    expect(document.activeElement).toBe(fallback)
+    unregister()
+  })
+
+  it('preserves an explicit focus choice even when the opener is connection-blocked', () => {
+    const openerRegion = mountRoot('<a href="/next">Opener</a>')
+    const { trap } = openFrom(openerRegion.querySelector('a')!)
+    openerRegion.setAttribute('data-hilos-interaction-region', '')
+    openerRegion.setAttribute('data-hilos-interaction-blocked', '')
+    const outside = strayButton()
+    outside.focus()
+    trap.release()
+    expect(document.activeElement).toBe(outside)
+  })
+})

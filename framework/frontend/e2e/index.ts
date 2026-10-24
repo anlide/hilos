@@ -49,11 +49,13 @@ export {
 } from './geometry.js'
 export {
   armSocketDrop,
+  controlSocketReconnect,
   countSentFrames,
   createSocketFrameReader,
   dropSocket,
   forwardSessionTimeZone,
   watchSocketFrames,
+  type SocketReconnectControl,
   type SocketFrame,
 } from './socket.js'
 export {
@@ -63,8 +65,14 @@ export {
   type RawWebSocketStand,
 } from './rawWebSocket.js'
 export {
+  clickUnavailableControl,
+  expectConnectedInteraction,
+  expectDisconnectedInteraction,
   expectWelcomedSockets,
+  expectSessionRotation,
+  watchInteractionNodes,
   watchOpenedSockets,
+  type DisconnectedInteractionControls,
   type OpenedSocket,
 } from './connection.js'
 export {
@@ -307,6 +315,7 @@ export {
   expectThemeFirstFrame,
   expectThemeHeader,
   expectThemeMode,
+  expectUnavailableThemeHeader,
   openProfileTheme,
   type ThemeTestPick,
   type ThemeTestPosition,

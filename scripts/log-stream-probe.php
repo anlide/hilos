@@ -11,7 +11,7 @@ declare(strict_types=1);
  * lever that puts no self-destruct into product code is this file: copied
  * into the container's own layer by `scripts/check-log-streams.php`, named as `auto_prepend_file`
  * in a `conf.d` ini the same scenario writes, and removed with it at any outcome. It ships as a
- * file of the check and is wired nowhere; the repository's own tests never load it.
+ * file of the check and is wired nowhere; a unit regression also loads its warning callback.
  *
  * It returns at once unless the script PHP is about to run is `daemon.php` or `worker.php`, so
  * the cli container and the watchdog run untouched under the same ini. What it arms is:
@@ -62,13 +62,19 @@ if (
 pcntl_async_signals(true);
 
 pcntl_signal(SIGUSR2, static function () use ($script): void {
-    // A real E_WARNING past nothing: the whole reason this file exists.
-    fopen(
-        basename($script) === LOG_STREAM_PROBE_WORKER_SCRIPT
-            ? LOG_STREAM_PROBE_WORKER_WARNING_PATH
-            : LOG_STREAM_PROBE_WARNING_PATH,
-        'r',
-    );
+    // A signal can interrupt an @ expression; only this intentional warning must be active.
+    $reporting = error_reporting(error_reporting() | E_WARNING);
+    try {
+        // A real E_WARNING past nothing: the whole reason this file exists.
+        fopen(
+            basename($script) === LOG_STREAM_PROBE_WORKER_SCRIPT
+                ? LOG_STREAM_PROBE_WORKER_WARNING_PATH
+                : LOG_STREAM_PROBE_WARNING_PATH,
+            'r',
+        );
+    } finally {
+        error_reporting($reporting);
+    }
 });
 
 if (basename($script) === LOG_STREAM_PROBE_DAEMON_SCRIPT) {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
@@ -13,6 +14,9 @@ import {
   DEFAULT_IMPERSONATION_POLICY,
   formatCalendarDate,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   bindSessionScope,
@@ -41,6 +45,11 @@ import type {
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
 import { LoadingButton } from '../src/LoadingButton.js'
+import {
+  useConnectionInteraction,
+  type ConnectionInteraction,
+} from '../src/hilosConnectionInteraction.js'
+import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** A node frozen for a restore: the shell turns into the maintenance surface. */
@@ -91,6 +100,7 @@ class ReplyingSource implements ActionLifecycleSource {
   readonly sent: { action: string; data: unknown; requestId?: string }[] = []
   private readonly success: ((signal: ActionSuccessSignal) => void)[] = []
   private readonly error: ((signal: ActionErrorSignal) => void)[] = []
+  private readonly state: ((state: ConnectionState) => void)[] = []
 
   sendAction(action: string, data: unknown, requestId?: string): boolean {
     this.sent.push({ action, data, requestId })
@@ -105,8 +115,17 @@ class ReplyingSource implements ActionLifecycleSource {
     if (event === 'actionError') {
       this.error.push(listener as (signal: ActionErrorSignal) => void)
     }
+    if (event === 'state') {
+      this.state.push(listener as (state: ConnectionState) => void)
+    }
 
     return () => {}
+  }
+
+  disconnect(): void {
+    for (const listener of this.state) {
+      listener('disconnected')
+    }
   }
 
   succeed(
@@ -166,16 +185,24 @@ function bindSession() {
   const unbindSignOut = bindSignOut(scopes, actions)
   const unbindAdminAccess = bindAdminAccess(scopes)
   const unbindReconsent = bindLegalReconsent(scopes, actions)
+  let released = false
 
   return {
     source,
-    unbind(): void {
-      unbindStrip()
-      unbindCard()
-      unbindStanding()
-      unbindSignOut()
-      unbindAdminAccess()
-      unbindReconsent()
+    async unbind(): Promise<void> {
+      if (released) return
+      released = true
+      // A dropped source settles every pending action and clears both timers.
+      // Flush its promise callbacks while React and the DOM still belong to the test.
+      await act(async () => {
+        source.disconnect()
+        unbindStrip()
+        unbindCard()
+        unbindStanding()
+        unbindSignOut()
+        unbindAdminAccess()
+        unbindReconsent()
+      })
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -206,13 +233,65 @@ function surface(container: HTMLElement, id: string): Element | null {
   return container.querySelector(`[data-id="${id}"]`)
 }
 
-describe('HilosLayout impersonation strip', () => {
-  let unbind: (() => void) | undefined
+describe('HilosLayout session fixture lifecycle (HIL-1651)', () => {
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
+    hilosToasts.clear()
+    vi.useRealTimers()
+  })
+
+  it.each([0, 300])(
+    'settles pending actions at fixture teardown after %d ms',
+    async (elapsed) => {
+      vi.useFakeTimers()
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(TAKEOVER)
+      const container = renderShell(shellConnection())
+      act(() => {
+        fireEvent.click(surface(container, 'impersonation-stop')!)
+        fireEvent.click(surface(container, 'nav-logout')!)
+        vi.advanceTimersByTime(elapsed)
+      })
+      expect(session.source.sent.map(({ action }) => action)).toEqual([
+        'hilos_impersonate_stop',
+        'hilos_logout',
+      ])
+
+      await session.unbind()
+      cleanup()
+
+      expect(vi.getTimerCount()).toBe(0)
+      const settledToasts = hilosToasts.toasts.get()
+      expect(settledToasts).toEqual([
+        expect.objectContaining({
+          severity: 'error',
+          message:
+            'The connection dropped before the action completed. Please try again.',
+          repeats: 2,
+        }),
+      ])
+      await session.unbind()
+      await act(async () => {
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(vi.getTimerCount()).toBe(0)
+      expect(hilosToasts.toasts.get()).toEqual(settledToasts)
+    },
+  )
+})
+
+describe('HilosLayout impersonation strip', () => {
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
+
+  afterEach(async () => {
+    await unbind?.()
+    unbind = undefined
+    cleanup()
     hilosToasts.clear()
   })
 
@@ -410,7 +489,7 @@ describe('HilosLayout impersonation strip', () => {
     ).toBe(true)
   })
 
-  it('adds no live region of its own when the strip goes up', () => {
+  it('adds no live region of its own when the strip goes up', async () => {
     // Counted before the strip goes up: both shells read the one store, so the
     // plain one would grow the strip too once the takeover lands.
     const live = '[role="status"][aria-live="polite"]'
@@ -418,8 +497,8 @@ describe('HilosLayout impersonation strip', () => {
     plain.handshake({ entities: { currentUser: { id: 1, name: 'Ada' } } })
     const liveWithout =
       renderShell(shellConnection()).querySelectorAll(live).length
+    await plain.unbind()
     cleanup()
-    plain.unbind()
 
     const session = bindSession()
     unbind = session.unbind
@@ -471,12 +550,12 @@ function standingHandshake(
 }
 
 describe('HilosLayout account standing (HIL-945)', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
     hilosToasts.clear()
     applyServerTime(Date.now())
     vi.useRealTimers()
@@ -676,7 +755,7 @@ describe('HilosLayout account standing (HIL-945)', () => {
 })
 
 describe('HilosLayout admin gear', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
   /**
    * One handshake: who is behind the session, if anybody, and the node's admin
@@ -706,10 +785,10 @@ describe('HilosLayout admin gear', () => {
     return { container, link: surface(container, 'nav-admin') }
   }
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
   })
 
   it('draws no gear for a guest on a node without the view mode', () => {
@@ -849,12 +928,12 @@ describe('HilosLayout admin gear', () => {
 })
 
 describe('HilosLayout sign-out', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
     hilosToasts.clear()
   })
 
@@ -1000,12 +1079,12 @@ const BLOCKED = {
 }
 
 describe('HilosLayout account blocked card', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
     hilosToasts.clear()
   })
 
@@ -1169,16 +1248,16 @@ function routerOn(page: string | null, admin = false): HilosRouter {
 }
 
 describe('HilosLayout "the terms have changed" (HIL-500)', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
   const inWindow = { window: [{ document: 'terms', deadline: '2026-11-10' }] }
   const lapsed = { lapsed: [{ document: 'terms', deadline: '2026-09-01' }] }
   const windowShown = (): boolean =>
     document.body.querySelector('[data-id="legal-reconsent-modal"]') !== null
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
     vi.useRealTimers()
   })
 
@@ -1307,12 +1386,12 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
 })
 
 describe('HilosLayout view-mode strip (HIL-1260)', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
   })
 
   /**
@@ -1454,7 +1533,7 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
 })
 
 describe('HilosLayout theme icon (HIL-1440)', () => {
-  let unbind: (() => void) | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
   let releaseTheme: (() => void) | undefined
   const themeActions = new ActionLifecycle(new ReplyingSource())
 
@@ -1515,10 +1594,10 @@ describe('HilosLayout theme icon (HIL-1440)', () => {
     ).container
   }
 
-  afterEach(() => {
-    cleanup()
-    unbind?.()
+  afterEach(async () => {
+    await unbind?.()
     unbind = undefined
+    cleanup()
     releaseTheme?.()
     releaseTheme = undefined
     vi.unstubAllGlobals()
@@ -1734,7 +1813,7 @@ function renderResponsive(
 
 describe('HilosLayout responsive shell (HIL-1647)', () => {
   let shell: ReturnType<typeof renderResponsive> | undefined
-  let releaseSession: (() => void) | undefined
+  let releaseSession: ReturnType<typeof bindSession>['unbind'] | undefined
   let wide = false
 
   const surface = (id: string): HTMLElement | null =>
@@ -1757,11 +1836,11 @@ describe('HilosLayout responsive shell (HIL-1647)', () => {
     )
   }
 
-  afterEach(() => {
+  afterEach(async () => {
+    await releaseSession?.()
+    releaseSession = undefined
     shell?.dispose()
     shell = undefined
-    releaseSession?.()
-    releaseSession = undefined
     vi.useRealTimers()
     applyServerTime(Date.now())
     wide = false
@@ -2077,4 +2156,420 @@ describe('HilosLayout responsive shell (HIL-1647)', () => {
       expect(!!surface('legal-reconsent-icon')).toBe(user !== null && !takeover)
     },
   )
+})
+
+/** A context consumer placed in the page, shell user region and a real portal. */
+function InteractionProbe({
+  capture,
+}: {
+  capture: (value: ConnectionInteraction) => void
+}) {
+  capture(useConnectionInteraction())
+  return null
+}
+
+/** The actual shell retained across input changes, including StrictMode replay. */
+function renderInteraction(feed: ReturnType<typeof shellFeed>, allow = false) {
+  let bound = feed.connection
+  let allowed = allow
+  let ownDisabled = false
+  let ownDescription = 'validation'
+  const interactions = new Map<string, ConnectionInteraction>()
+  const clicks = vi.fn()
+  const capture = (place: string) => (value: ConnectionInteraction) => {
+    interactions.set(place, value)
+  }
+  const router = routerOn(null, true)
+  const draw = () => (
+    <StrictMode>
+      <HilosRouterContext.Provider value={router}>
+        <HilosLayout
+          connection={bound}
+          allowDisconnectedInteraction={allowed}
+          nav={<a href="/next">Next</a>}
+          user={
+            <>
+              <InteractionProbe capture={capture('shell')} />
+              {createPortal(
+                <InteractionProbe capture={capture('portal')} />,
+                document.body,
+              )}
+            </>
+          }
+        >
+          <InteractionProbe capture={capture('page')} />
+          <HilosAdminViewModeContext.Provider value={true}>
+            <LoadingButton data-id="page-view" aria-describedby="validation">
+              View
+            </LoadingButton>
+          </HilosAdminViewModeContext.Provider>
+          <input
+            data-id="draft"
+            aria-describedby={ownDescription}
+            disabled={ownDisabled}
+          />
+          <input type="file" data-id="file" />
+          <select data-id="choice" defaultValue="a">
+            <option value="a">A</option>
+            <option value="b">B</option>
+          </select>
+          <LoadingButton opensWindow onClick={clicks} data-id="page-open">
+            Open
+          </LoadingButton>
+          <LoadingButton onClick={clicks} data-id="page-mutate">
+            Save
+          </LoadingButton>
+          <a href="/action" onClick={clicks} data-id="page-link">
+            Action
+          </a>
+        </HilosLayout>
+      </HilosRouterContext.Provider>
+    </StrictMode>
+  )
+  const view = render(draw())
+  const settle = async () => {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
+  const update = async (run: () => void) => {
+    await act(async () => {
+      run()
+      await Promise.resolve()
+    })
+  }
+  return {
+    root: view.container,
+    interactions,
+    clicks,
+    settle,
+    update,
+    configure: (options: {
+      connection?: HilosConnection
+      allow?: boolean
+      disabled?: boolean
+      description?: string
+    }) =>
+      update(() => {
+        bound = options.connection ?? bound
+        allowed = options.allow ?? allowed
+        ownDisabled = options.disabled ?? ownDisabled
+        ownDescription = options.description ?? ownDescription
+        view.rerender(draw())
+      }),
+    dispose() {
+      view.unmount()
+    },
+  }
+}
+
+describe('HilosLayout connection interaction (HIL-1651)', () => {
+  let shell: ReturnType<typeof renderInteraction> | undefined
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
+  afterEach(async () => {
+    await unbind?.()
+    unbind = undefined
+    shell?.dispose()
+    shell = undefined
+    cleanup()
+    hilosToasts.clear()
+  })
+  const get = <T extends HTMLElement = HTMLElement>(id: string): T =>
+    shell!.root.querySelector<T>(`[data-id="${id}"]`)!
+
+  it('keeps the main, fieldset, draft, file, choice and scroll through every unavailable state', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    const main = shell.root.querySelector('main')!
+    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+    const draft = get<HTMLInputElement>('draft')
+    const file = get<HTMLInputElement>('file')
+    const files = Object.freeze([new File(['draft'], 'draft.txt')])
+    Object.defineProperty(file, 'files', { value: files })
+    draft.value = 'Keep this draft'
+    draft.setSelectionRange(2, 6)
+    get<HTMLSelectElement>('choice').value = 'b'
+    main.scrollTop = 137
+    for (const state of [
+      'connecting',
+      'reconnecting',
+      'disconnected',
+    ] as const) {
+      await shell.update(() => {
+        feed.push({ state }, 'state')
+        expect(fieldset.disabled).toBe(true)
+      })
+      expect(get('draft')).toBe(draft)
+      expect(draft.matches(':disabled')).toBe(true)
+      expect(get('page-open').matches(':disabled')).toBe(true)
+      await shell.update(() => {
+        get('page-open').click()
+        get('page-link').click()
+      })
+      expect(shell.clicks).not.toHaveBeenCalled()
+      expect(get('page-view').getAttribute('aria-describedby')).toBe(
+        `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+      )
+      expect(draft.getAttribute('aria-describedby')).toBe(
+        `validation ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+      )
+      expect(
+        shell.root.querySelectorAll(`#${HILOS_CONNECTION_STATUS_TEXT_ID}`),
+      ).toHaveLength(1)
+    }
+    await shell.configure({ disabled: true, description: 'new-validation' })
+    await shell.update(() => {
+      feed.push({ state: 'connected' }, 'state')
+      feed.push(
+        { rtStaleness: { stale: true, since: undefined } },
+        'rtStaleness',
+      )
+    })
+    expect(shell.root.querySelector('main')).toBe(main)
+    expect(get('page-interaction-scope')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(false)
+    expect(draft.disabled).toBe(true)
+    expect(get<HTMLButtonElement>('page-view').disabled).toBe(true)
+    expect(get('page-view').getAttribute('aria-describedby')).toBe(
+      `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`,
+    )
+    expect(draft.getAttribute('aria-describedby')).toBe('new-validation')
+    expect(draft.value).toBe('Keep this draft')
+    expect([draft.selectionStart, draft.selectionEnd]).toEqual([2, 6])
+    expect(file.files).toBe(files)
+    expect(get<HTMLSelectElement>('choice').value).toBe('b')
+    expect(main.scrollTop).toBe(137)
+    expect(shell.clicks).not.toHaveBeenCalled()
+    await shell.update(() => get('page-open').click())
+    expect(shell.clicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares one core state through page, shell and portal, with a readonly standalone fallback', async () => {
+    let outside: ConnectionInteraction | undefined
+    const probe = render(
+      <InteractionProbe
+        capture={(value) => {
+          outside = value
+        }}
+      />,
+    )
+    expect(outside!.unavailable.get()).toBe(false)
+    expect(outside!.blocked.get()).toBe(false)
+    expect('set' in outside!.blocked).toBe(false)
+    probe.unmount()
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    expect(new Set(shell.interactions.values()).size).toBe(1)
+    expect([...shell.interactions.keys()].sort()).toEqual([
+      'page',
+      'portal',
+      'shell',
+    ])
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    expect(shell.interactions.get('page')!.unavailable.get()).toBe(true)
+    const independent = renderInteraction(shellFeed())
+    expect(independent.interactions.get('page')!.blocked.get()).toBe(false)
+    independent.dispose()
+  })
+
+  it('updates opt-out and the connection live, releases replaced sources and remounts cleanly', async () => {
+    const old = shellFeed()
+    old.push({ state: 'disconnected' }, 'state')
+    shell = renderInteraction(old)
+    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+    await shell.configure({ allow: true })
+    expect(fieldset.disabled).toBe(false)
+    expect(shell.interactions.get('page')!.unavailable.get()).toBe(true)
+    const next = shellFeed()
+    await shell.configure({ allow: false, connection: next.connection })
+    expect(fieldset.disabled).toBe(false)
+    await shell.update(() => old.push({ state: 'connecting' }, 'state'))
+    expect(fieldset.disabled).toBe(false)
+    expect(old.listeners.get('state')?.size).toBe(0)
+    await shell.update(() => next.push({ state: 'reconnecting' }, 'state'))
+    expect(fieldset.disabled).toBe(true)
+    shell.dispose()
+    shell = undefined
+    expect([...next.listeners.values()].every((set) => set.size === 0)).toBe(
+      true,
+    )
+    shell = renderInteraction(next)
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
+
+  it.each(['nav-logout', 'impersonation-stop', 'account-deletion-strip-keep'])(
+    'guards %s before render, independently of page opt-out and busy',
+    async (id) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        id === 'impersonation-stop'
+          ? TAKEOVER
+          : standingHandshake('deletion_scheduled', false, Date.now() + DAY_MS),
+      )
+      const feed = shellFeed()
+      shell = renderInteraction(feed, true)
+      const button = get<HTMLButtonElement>(id)
+      // The old React click closure is still mounted within this batch. The core
+      // state has already changed, so only the handler's synchronous guard can stop it.
+      await shell.update(() => {
+        feed.push({ state: 'reconnecting' }, 'state')
+        button.click()
+        expect(session.source.sent).toHaveLength(0)
+      })
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(button.getAttribute('aria-describedby')).toBe(
+        HILOS_CONNECTION_STATUS_TEXT_ID,
+      )
+      expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+        false,
+      )
+      expect(get('nav-brand').hasAttribute('aria-disabled')).toBe(false)
+      expect(
+        get('app-footer').querySelector('a')!.hasAttribute('aria-disabled'),
+      ).toBe(false)
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(0)
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(1)
+      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(1)
+      await shell.update(() => {
+        const sent = session.source.sent[0]!
+        session.source.succeed(sent.requestId, sent.action)
+      })
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(button.getAttribute('aria-disabled')).toBeNull()
+      expect(hilosToasts.toasts.get()).toEqual([])
+    },
+  )
+
+  it('releases only the connection cause while takeover restrictions still apply', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({
+      ...TAKEOVER,
+      data: {
+        impersonationPolicy: {
+          ...DEFAULT_IMPERSONATION_POLICY,
+          viewOnly: true,
+        },
+      },
+    })
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    const action = get<HTMLButtonElement>('page-mutate')
+    expect(action.disabled).toBe(true)
+    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
+    expect(action.getAttribute('aria-describedby')).toBe(
+      `${HILOS_IMPERSONATION_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+    )
+    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+    expect(action.disabled).toBe(true)
+    expect(action.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
+    expect(get<HTMLButtonElement>('page-open').disabled).toBe(false)
+    expect(get<HTMLButtonElement>('impersonation-stop').disabled).toBe(false)
+  })
+
+  it('leaves shell navigation, dashboard links and mobile disclosure available during a drop', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({
+      entities: { currentUser: { id: 2, name: 'Bob', admin: true } },
+    })
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    await shell.settle()
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    for (const id of ['nav-brand', 'nav-admin']) {
+      expect(get(id).hasAttribute('aria-disabled')).toBe(false)
+      expect(get(id).closest('fieldset')).toBeNull()
+    }
+    const toggle = get<HTMLButtonElement>('nav-toggle')
+    expect(toggle.disabled).toBe(false)
+    await shell.update(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(get('app-footer').closest('fieldset')).toBeNull()
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+    const main = shell.root.querySelector('main')!
+    await shell.update(() =>
+      feed.push({ firstFrameHeld: true }, 'firstFrameHold'),
+    )
+    expect(shell.root.querySelector('main')).toBeNull()
+    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
+    await shell.update(() =>
+      feed.push({ firstFrameHeld: false }, 'firstFrameHold'),
+    )
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
+
+  it.each(['blocked', 'frozen'])(
+    'gates the %s account branch without replacing it on reconnect',
+    async (branch) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        branch === 'blocked'
+          ? BLOCKED
+          : reconsentHandshake({ frozen: true, shown: 'frozen' }),
+      )
+      const feed = shellFeed()
+      shell = renderInteraction(feed)
+      const content = get(
+        branch === 'blocked' ? 'account-blocked' : 'legal-frozen-screen',
+      )
+      const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+      expect(fieldset.contains(content)).toBe(true)
+      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+      expect(fieldset.disabled).toBe(true)
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      expect(content.isConnected).toBe(true)
+      expect(fieldset.disabled).toBe(false)
+    },
+  )
+
+  it('removes the main capture gate for maintenance and rebinds the ordinary branch', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    const main = shell.root.querySelector('main')!
+    expect(main.hasAttribute(HILOS_INTERACTION_BLOCKED_ATTR)).toBe(true)
+    await shell.update(() =>
+      feed.push(
+        { protectedMode: { ...FROZEN, acceptsPass: true, passIssued: true } },
+        'protectedMode',
+      ),
+    )
+    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
+    expect(
+      shell.root.querySelector('[data-id="page-interaction-scope"]'),
+    ).toBeNull()
+    const input = get<HTMLInputElement>('maintenance-pass')
+    expect(input.matches(':disabled')).toBe(false)
+    const inputEvent = new Event('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+    })
+    input.dispatchEvent(inputEvent)
+    expect(inputEvent.defaultPrevented).toBe(false)
+    await shell.update(() =>
+      feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode'),
+    )
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
 })

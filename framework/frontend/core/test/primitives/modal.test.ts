@@ -11,6 +11,7 @@ interface Flags {
   closeOnEsc?: boolean
   closeOnBackdrop?: boolean
   busy?: boolean
+  interactionBlocked?: boolean
 }
 
 function setup(flags: Flags = {}) {
@@ -20,6 +21,7 @@ function setup(flags: Flags = {}) {
     closeOnEsc: () => flags.closeOnEsc ?? true,
     closeOnBackdrop: () => flags.closeOnBackdrop ?? true,
     busy: () => flags.busy ?? false,
+    interactionBlocked: () => flags.interactionBlocked ?? false,
     onClose: () => {
       closed += 1
     },
@@ -28,7 +30,7 @@ function setup(flags: Flags = {}) {
   return { modal, closed: () => closed }
 }
 
-/** Every user close gesture the busy guard suppresses. */
+/** Every user close gesture either independent guard suppresses. */
 const closeGestures: ReadonlyArray<
   readonly [string, (modal: ModalController) => void]
 > = [
@@ -40,6 +42,17 @@ const closeGestures: ReadonlyArray<
 
 /** The gestures that raise the confirm step over a dirty draft. */
 const confirmGestures = closeGestures.filter(([name]) => name !== 'discard')
+
+const userGestures: typeof closeGestures = [
+  ...closeGestures,
+  ['keepEditing', (modal) => modal.keepEditing()],
+]
+
+const blockingReasons: ReadonlyArray<readonly [string, Flags]> = [
+  ['busy', { busy: true }],
+  ['interactionBlocked', { interactionBlocked: true }],
+  ['both', { busy: true, interactionBlocked: true }],
+]
 
 describe('createModalController', () => {
   it('closes immediately when not guarding', () => {
@@ -119,7 +132,7 @@ describe('createModalController', () => {
     expect(modal.confirmVisible.get()).toBe(false)
   })
 
-  it('is idle when no busy getter is given', () => {
+  it('is idle and interactive when neither optional guard is given', () => {
     let closed = 0
     const modal = createModalController({
       onClose: () => {
@@ -181,16 +194,13 @@ describe('createModalController', () => {
     expect(closed()).toBe(1)
   })
 
-  it('keeps editing and resets while busy', () => {
+  it('keeps the confirm step while busy but still allows an internal reset', () => {
     const flags: Flags = { confirmOnClose: true }
     const { modal, closed } = setup(flags)
     modal.requestClose()
     flags.busy = true
     modal.keepEditing()
-    expect(modal.confirmVisible.get()).toBe(false)
-    flags.busy = false
-    modal.requestClose()
-    flags.busy = true
+    expect(modal.confirmVisible.get()).toBe(true)
     modal.reset()
     expect(modal.confirmVisible.get()).toBe(false)
     expect(closed()).toBe(0)
@@ -213,4 +223,130 @@ describe('createModalController', () => {
     modal.onBackdrop()
     expect(closed()).toBe(0)
   })
+
+  describe.each(blockingReasons)(
+    '%s blocks interaction',
+    (_reason, blockers) => {
+      it.each(closeGestures)(
+        '%s closes only after an explicit new gesture',
+        (_name, gesture) => {
+          const flags: Flags = { ...blockers }
+          const { modal, closed } = setup(flags)
+          gesture(modal)
+          expect(closed()).toBe(0)
+          expect(modal.confirmVisible.get()).toBe(false)
+          flags.busy = false
+          flags.interactionBlocked = false
+          expect(closed()).toBe(0)
+          expect(modal.confirmVisible.get()).toBe(false)
+          gesture(modal)
+          expect(closed()).toBe(1)
+        },
+      )
+
+      it.each(confirmGestures)(
+        '%s raises no confirm step and never replays',
+        (_name, gesture) => {
+          const flags: Flags = { confirmOnClose: true, ...blockers }
+          const { modal, closed } = setup(flags)
+          gesture(modal)
+          expect(modal.confirmVisible.get()).toBe(false)
+          flags.busy = false
+          flags.interactionBlocked = false
+          expect(modal.confirmVisible.get()).toBe(false)
+          expect(closed()).toBe(0)
+          gesture(modal)
+          expect(modal.confirmVisible.get()).toBe(true)
+          expect(closed()).toBe(0)
+        },
+      )
+
+      it.each(userGestures)(
+        '%s preserves an already open confirm step',
+        (_name, gesture) => {
+          const flags: Flags = { confirmOnClose: true }
+          const { modal, closed } = setup(flags)
+          modal.requestClose()
+          Object.assign(flags, blockers)
+          gesture(modal)
+          expect(modal.confirmVisible.get()).toBe(true)
+          expect(closed()).toBe(0)
+          flags.busy = false
+          flags.interactionBlocked = false
+          expect(modal.confirmVisible.get()).toBe(true)
+          expect(closed()).toBe(0)
+          modal.keepEditing()
+          expect(modal.confirmVisible.get()).toBe(false)
+          expect(closed()).toBe(0)
+        },
+      )
+
+      it('allows an owner to close externally and reset before reopening', () => {
+        const flags: Flags = {}
+        let open = true
+        const onClose = () => {
+          open = false
+        }
+        const modal = createModalController({
+          confirmOnClose: () => true,
+          busy: () => flags.busy ?? false,
+          interactionBlocked: () => flags.interactionBlocked ?? false,
+          onClose,
+        })
+        modal.requestClose()
+        expect(modal.confirmVisible.get()).toBe(true)
+        Object.assign(flags, blockers)
+        onClose()
+        expect(open).toBe(false)
+        modal.reset()
+        expect(modal.confirmVisible.get()).toBe(false)
+        open = true
+        modal.onEsc()
+        expect(open).toBe(true)
+        expect(modal.confirmVisible.get()).toBe(false)
+      })
+
+      it('preserves the Escape and backdrop preferences when interaction returns', () => {
+        const flags: Flags = {
+          closeOnEsc: false,
+          closeOnBackdrop: false,
+          ...blockers,
+        }
+        const { modal, closed } = setup(flags)
+        modal.onEsc()
+        modal.onBackdrop()
+        flags.busy = false
+        flags.interactionBlocked = false
+        modal.onEsc()
+        modal.onBackdrop()
+        expect(closed()).toBe(0)
+        expect(modal.confirmVisible.get()).toBe(false)
+      })
+    },
+  )
+
+  describe.each(userGestures)(
+    '%s and independent reasons',
+    (_name, gesture) => {
+      it.each(['busy', 'interactionBlocked'] as const)(
+        'stays blocked when only %s clears',
+        (cleared) => {
+          const flags: Flags = { confirmOnClose: true }
+          const { modal, closed } = setup(flags)
+          modal.requestClose()
+          flags.busy = true
+          flags.interactionBlocked = true
+          gesture(modal)
+          flags[cleared] = false
+          gesture(modal)
+          expect(modal.confirmVisible.get()).toBe(true)
+          expect(closed()).toBe(0)
+          flags.busy = false
+          flags.interactionBlocked = false
+          expect(modal.confirmVisible.get()).toBe(true)
+          expect(closed()).toBe(0)
+        },
+      )
+    },
+  )
 })

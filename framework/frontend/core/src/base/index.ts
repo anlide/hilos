@@ -1155,6 +1155,14 @@ export {
   isReconnectDragging,
   RECONNECT_DRAGGING_COPY,
 } from '../connection/reconnectDragging.js'
+export {
+  createConnectionInteractionState,
+  CONNECTION_INTERACTION_COPY,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
+  type ConnectionInteractionState,
+} from '../connection/interactionBlock.js'
 export { PROTECTED_MODE_HINT_STORAGE_KEY } from '../connection/maintenanceHint.js'
 export {
   HilosConnection,
@@ -1462,3 +1470,5 @@ export {
   type HilosRestoreProgress,
   type HilosBackupProgressClock,
 } from '../connection/restoreProgress.js'
+
+export { bindInteractionBlock } from '../dom/interactionBlock.js'

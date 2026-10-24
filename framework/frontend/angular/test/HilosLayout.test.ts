@@ -39,7 +39,8 @@
 // The wiring these cases run on — the DOM environment, the TestBed platform, and
 // the module reset between cases — lives in the package's vitest.setup.ts and was
 // laid down by HIL-848; this file configures none of it.
-import { Component, signal } from '@angular/core'
+import { Component, inject, signal } from '@angular/core'
+import { By } from '@angular/platform-browser'
 import { TestBed } from '@angular/core/testing'
 import {
   ActionLifecycle,
@@ -53,6 +54,10 @@ import {
   DEFAULT_IMPERSONATION_POLICY,
   formatCalendarDate,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
   HilosPages,
   bindSessionScope,
   bindSignOut,
@@ -80,6 +85,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
 import { LoadingButton } from '../src/LoadingButton.js'
+import { HilosModal } from '../src/HilosModal.js'
+import {
+  HILOS_CONNECTION_INTERACTION,
+  injectConnectionInteraction,
+} from '../src/hilosConnectionInteraction.js'
+import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /**
@@ -2359,4 +2370,430 @@ describe('HilosLayout responsive shell (HIL-1647)', () => {
       expect(!!surface('legal-reconsent-icon')).toBe(user !== null && !takeover)
     },
   )
+})
+
+/** A real projected consumer; the shell's own view must see this same core instance. */
+@Component({ selector: 'test-interaction-probe', template: '' })
+class InteractionProbe {
+  readonly interaction = injectConnectionInteraction()
+  readonly state = inject(HILOS_CONNECTION_INTERACTION, { optional: true })
+}
+
+@Component({
+  selector: 'test-viewing-action',
+  imports: [LoadingButton],
+  providers: [
+    { provide: HILOS_ADMIN_VIEW_MODE, useValue: signal(true).asReadonly() },
+  ],
+  template:
+    '<button hilosLoadingButton data-id="page-view" aria-describedby="validation">View</button>',
+})
+class ViewingAction {}
+
+@Component({
+  selector: 'test-interaction-host',
+  providers: [
+    { provide: HILOS_ROUTER, useFactory: () => routerOn(null, true) },
+  ],
+  imports: [HilosLayout, LoadingButton, InteractionProbe, ViewingAction],
+  template: `
+    <hilos-layout
+      [connection]="connection()"
+      [allowDisconnectedInteraction]="allow()"
+    >
+      <a nav href="/next">Next</a>
+      <test-interaction-probe user />
+      <test-interaction-probe />
+      <test-viewing-action />
+      <input
+        data-id="draft"
+        [attr.aria-describedby]="description()"
+        [disabled]="disabled()"
+      />
+      <input type="file" data-id="file" />
+      <select data-id="choice">
+        <option value="a">A</option>
+        <option value="b">B</option>
+      </select>
+      <button
+        hilosLoadingButton
+        [opensWindow]="true"
+        data-id="page-open"
+        (click)="clicks()"
+      >
+        Open
+      </button>
+      <button hilosLoadingButton data-id="page-mutate" (click)="clicks()">
+        Save
+      </button>
+      <a href="/action" data-id="page-link" (click)="clicks()">Action</a>
+    </hilos-layout>
+  `,
+})
+class InteractionHost {
+  readonly connection = signal(fakeConnection())
+  readonly allow = signal(false)
+  readonly disabled = signal(false)
+  readonly description = signal('validation')
+  readonly clicks = vi.fn()
+}
+
+/** Retain the actual shell, projected nodes and injector over live input changes. */
+function renderInteraction(feed: ReturnType<typeof shellFeed>, allow = false) {
+  const fixture = TestBed.createComponent(InteractionHost)
+  const host = fixture.componentInstance
+  host.connection.set(feed.connection)
+  host.allow.set(allow)
+  fixture.detectChanges()
+  const settle = async () => {
+    fixture.detectChanges()
+    await fixture.whenStable()
+    fixture.detectChanges()
+  }
+  const update = async (run: () => void) => {
+    run()
+    await settle()
+  }
+  const probes = fixture.debugElement
+    .queryAll(By.directive(InteractionProbe))
+    .map((element) => element.componentInstance as InteractionProbe)
+  const layout = fixture.debugElement.query(By.directive(HilosLayout))
+  return {
+    root: fixture.nativeElement as HTMLElement,
+    probes,
+    layout,
+    fixture,
+    clicks: host.clicks,
+    settle,
+    update,
+    configure: (options: {
+      connection?: HilosConnection
+      allow?: boolean
+      disabled?: boolean
+      description?: string
+    }) =>
+      update(() => {
+        if (options.connection !== undefined)
+          host.connection.set(options.connection)
+        if (options.allow !== undefined) host.allow.set(options.allow)
+        if (options.disabled !== undefined) host.disabled.set(options.disabled)
+        if (options.description !== undefined)
+          host.description.set(options.description)
+      }),
+    dispose() {
+      fixture.destroy()
+    },
+  }
+}
+describe('HilosLayout connection interaction (HIL-1651)', () => {
+  let shell: ReturnType<typeof renderInteraction> | undefined
+  let unbind: (() => void) | undefined
+  afterEach(() => {
+    shell?.dispose()
+    shell = undefined
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+  })
+  const get = <T extends HTMLElement = HTMLElement>(id: string): T =>
+    shell!.root.querySelector<T>(`[data-id="${id}"]`)!
+
+  it('keeps the main, fieldset, draft, file, choice and scroll through every unavailable state', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    const main = shell.root.querySelector('main')!
+    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+    const draft = get<HTMLInputElement>('draft')
+    const file = get<HTMLInputElement>('file')
+    const files = Object.freeze([new File(['draft'], 'draft.txt')])
+    Object.defineProperty(file, 'files', { value: files })
+    draft.value = 'Keep this draft'
+    draft.setSelectionRange(2, 6)
+    get<HTMLSelectElement>('choice').value = 'b'
+    main.scrollTop = 137
+    for (const state of [
+      'connecting',
+      'reconnecting',
+      'disconnected',
+    ] as const) {
+      await shell.update(() => {
+        feed.push({ state }, 'state')
+        expect(fieldset.disabled).toBe(true)
+      })
+      expect(get('draft')).toBe(draft)
+      expect(draft.matches(':disabled')).toBe(true)
+      expect(get('page-open').matches(':disabled')).toBe(true)
+      await shell.update(() => {
+        get('page-open').click()
+        get('page-link').click()
+      })
+      expect(shell.clicks).not.toHaveBeenCalled()
+      expect(get('page-view').getAttribute('aria-describedby')).toBe(
+        `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+      )
+      expect(draft.getAttribute('aria-describedby')).toBe(
+        `validation ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+      )
+      expect(
+        shell.root.querySelectorAll(`#${HILOS_CONNECTION_STATUS_TEXT_ID}`),
+      ).toHaveLength(1)
+    }
+    await shell.configure({ disabled: true, description: 'new-validation' })
+    await shell.update(() => {
+      feed.push({ state: 'connected' }, 'state')
+      feed.push(
+        { rtStaleness: { stale: true, since: undefined } },
+        'rtStaleness',
+      )
+    })
+    expect(shell.root.querySelector('main')).toBe(main)
+    expect(get('page-interaction-scope')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(false)
+    expect(draft.disabled).toBe(true)
+    expect(get<HTMLButtonElement>('page-view').disabled).toBe(true)
+    expect(get('page-view').getAttribute('aria-describedby')).toBe(
+      `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`,
+    )
+    expect(draft.getAttribute('aria-describedby')).toBe('new-validation')
+    expect(draft.value).toBe('Keep this draft')
+    expect([draft.selectionStart, draft.selectionEnd]).toEqual([2, 6])
+    expect(file.files).toBe(files)
+    expect(get<HTMLSelectElement>('choice').value).toBe('b')
+    expect(main.scrollTop).toBe(137)
+    expect(shell.clicks).not.toHaveBeenCalled()
+    await shell.update(() => get('page-open').click())
+    expect(shell.clicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares one core state through projection and the shell-owned modal DI, with a readonly standalone fallback', async () => {
+    const outside = TestBed.runInInjectionContext(() =>
+      injectConnectionInteraction(),
+    )
+    expect(outside.unavailable.get()).toBe(false)
+    expect(outside.blocked.get()).toBe(false)
+    expect('set' in outside.blocked).toBe(false)
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    expect(shell.probes).toHaveLength(2)
+    const state = shell.probes[0]!.state!.get()
+    expect(shell.probes[1]!.state!.get()).toBe(state)
+    const modal = shell.fixture.debugElement.query(By.directive(HilosModal))
+    expect(modal.injector.get(HILOS_CONNECTION_INTERACTION).get()).toBe(state)
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    for (const probe of shell.probes) {
+      expect(probe.interaction.unavailable.get()).toBe(true)
+      expect(probe.interaction.blocked.get()).toBe(true)
+    }
+    const independent = TestBed.createComponent(HilosLayout)
+    independent.componentRef.setInput('connection', fakeConnection())
+    independent.detectChanges()
+    expect(
+      independent.componentInstance.connectionInteraction.get()?.blocked.get(),
+    ).toBe(false)
+    independent.destroy()
+  })
+
+  it('updates opt-out and the connection live, releases replaced sources and remounts cleanly', async () => {
+    const old = shellFeed()
+    old.push({ state: 'disconnected' }, 'state')
+    shell = renderInteraction(old)
+    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+    await shell.configure({ allow: true })
+    expect(fieldset.disabled).toBe(false)
+    expect(shell.probes[0]!.interaction.unavailable.get()).toBe(true)
+    const next = shellFeed()
+    await shell.configure({ allow: false, connection: next.connection })
+    expect(fieldset.disabled).toBe(false)
+    await shell.update(() => old.push({ state: 'connecting' }, 'state'))
+    expect(fieldset.disabled).toBe(false)
+    expect(old.listeners.get('state')?.size).toBe(0)
+    await shell.update(() => next.push({ state: 'reconnecting' }, 'state'))
+    expect(fieldset.disabled).toBe(true)
+    shell.dispose()
+    shell = undefined
+    expect([...next.listeners.values()].every((set) => set.size === 0)).toBe(
+      true,
+    )
+    shell = renderInteraction(next)
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
+
+  it.each(['nav-logout', 'impersonation-stop', 'account-deletion-strip-keep'])(
+    'guards %s before render, independently of page opt-out and busy',
+    async (id) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        id === 'impersonation-stop'
+          ? TAKEOVER
+          : standingHandshake('deletion_scheduled', false, Date.now() + DAY_MS),
+      )
+      const feed = shellFeed()
+      shell = renderInteraction(feed, true)
+      const button = get<HTMLButtonElement>(id)
+      // Call the mounted listener and the shell method before Angular's next render.
+      await shell.update(() => {
+        feed.push({ state: 'reconnecting' }, 'state')
+        button.click()
+        const handler =
+          id === 'nav-logout'
+            ? 'onSignOut'
+            : id === 'impersonation-stop'
+              ? 'onImpersonationStop'
+              : 'onKeepAccount'
+        const layout = shell!.layout.componentInstance as Record<
+          string,
+          () => void
+        >
+        layout[handler]!()
+        expect(session.source.sent).toHaveLength(0)
+      })
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+      expect(button.getAttribute('aria-describedby')).toBe(
+        HILOS_CONNECTION_STATUS_TEXT_ID,
+      )
+      expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+        false,
+      )
+      expect(get('nav-brand').hasAttribute('aria-disabled')).toBe(false)
+      expect(
+        get('app-footer').querySelector('a')!.hasAttribute('aria-disabled'),
+      ).toBe(false)
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(0)
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(1)
+      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      await shell.update(() => button.click())
+      expect(session.source.sent).toHaveLength(1)
+    },
+  )
+
+  it('releases only the connection cause while takeover restrictions still apply', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({
+      ...TAKEOVER,
+      data: {
+        impersonationPolicy: {
+          ...DEFAULT_IMPERSONATION_POLICY,
+          viewOnly: true,
+        },
+      },
+    })
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    const action = get<HTMLButtonElement>('page-mutate')
+    expect(action.disabled).toBe(true)
+    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
+    expect(action.getAttribute('aria-describedby')).toBe(
+      `${HILOS_IMPERSONATION_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
+    )
+    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+    expect(action.disabled).toBe(true)
+    expect(action.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
+    expect(get<HTMLButtonElement>('page-open').disabled).toBe(false)
+    expect(get<HTMLButtonElement>('impersonation-stop').disabled).toBe(false)
+  })
+
+  it('leaves shell navigation, dashboard links and mobile disclosure available during a drop', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({
+      entities: { currentUser: { id: 2, name: 'Bob', admin: true } },
+    })
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    await shell.settle()
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    for (const id of ['nav-brand', 'nav-admin']) {
+      expect(get(id).hasAttribute('aria-disabled')).toBe(false)
+      expect(get(id).closest('fieldset')).toBeNull()
+    }
+    const toggle = get<HTMLButtonElement>('nav-toggle')
+    expect(toggle.disabled).toBe(false)
+    await shell.update(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(get('app-footer').closest('fieldset')).toBeNull()
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+    const main = shell.root.querySelector('main')!
+    await shell.update(() =>
+      feed.push({ firstFrameHeld: true }, 'firstFrameHold'),
+    )
+    expect(shell.root.querySelector('main')).toBeNull()
+    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
+    await shell.update(() =>
+      feed.push({ firstFrameHeld: false }, 'firstFrameHold'),
+    )
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
+
+  it.each(['blocked', 'frozen'])(
+    'gates the %s account branch without replacing it on reconnect',
+    async (branch) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        branch === 'blocked'
+          ? BLOCKED
+          : reconsentHandshake({ frozen: true, shown: 'frozen' }),
+      )
+      const feed = shellFeed()
+      shell = renderInteraction(feed)
+      const content = get(
+        branch === 'blocked' ? 'account-blocked' : 'legal-frozen-screen',
+      )
+      const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
+      expect(fieldset.contains(content)).toBe(true)
+      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+      expect(fieldset.disabled).toBe(true)
+      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+      expect(content.isConnected).toBe(true)
+      expect(fieldset.disabled).toBe(false)
+    },
+  )
+
+  it('removes the main capture gate for maintenance and rebinds the ordinary branch', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    const main = shell.root.querySelector('main')!
+    expect(main.hasAttribute(HILOS_INTERACTION_BLOCKED_ATTR)).toBe(true)
+    await shell.update(() =>
+      feed.push(
+        { protectedMode: { ...FROZEN, acceptsPass: true, passIssued: true } },
+        'protectedMode',
+      ),
+    )
+    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
+    expect(
+      shell.root.querySelector('[data-id="page-interaction-scope"]'),
+    ).toBeNull()
+    const input = get<HTMLInputElement>('maintenance-pass')
+    expect(input.matches(':disabled')).toBe(false)
+    const inputEvent = new Event('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+    })
+    input.dispatchEvent(inputEvent)
+    expect(inputEvent.defaultPrevented).toBe(false)
+    await shell.update(() =>
+      feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode'),
+    )
+    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
+      true,
+    )
+  })
 })

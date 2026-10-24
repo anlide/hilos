@@ -71,8 +71,8 @@ describe('HilosStatusIncidentModal with real modal and LoadingButton', () => {
       const modal = body().get('[data-id="modal"]')
       expect(document.activeElement).toBe(modal.element)
       expect(modal.text()).toContain('Service · #11')
-      const fieldset = modal.get('fieldset').element
-      const form = modal.get('form')
+      const form = modal.get('[data-id="hilos-status-incident-form"]')
+      const fieldset = form.element.closest('fieldset')
       await form.trigger('keydown', { key: 'Enter' })
       expect(sent).toEqual([
         { action, data: { incidentId: 11 }, requestId: expect.any(String) },
@@ -80,8 +80,18 @@ describe('HilosStatusIncidentModal with real modal and LoadingButton', () => {
       const confirm = body().get('[data-id="hilos-status-incident-confirm"]')
       expect(confirm.attributes('aria-busy')).toBe('true')
       expect(confirm.attributes('disabled')).toBeUndefined()
-      expect(body().get('fieldset').element).toBe(fieldset)
+      expect(
+        body()
+          .get('[data-id="hilos-status-incident-form"]')
+          .element.closest('fieldset'),
+      ).toBe(fieldset)
       expect((fieldset as HTMLFieldSetElement).disabled).toBe(true)
+      expect(
+        (
+          modal.get('[data-id="modal-interaction-scope"]')
+            .element as HTMLFieldSetElement
+        ).disabled,
+      ).toBe(false)
       await confirm.trigger('click')
       await form.trigger('submit')
       await form.trigger('keydown', { key: 'Enter' })

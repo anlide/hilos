@@ -227,6 +227,57 @@ per-engine guides ([frontend-vue.md](../../new-project/frontend-vue.md),
 [frontend-react.md](../../new-project/frontend-react.md),
 [frontend-angular.md](../../new-project/frontend-angular.md)).
 
+## Connection-scoped interaction
+
+[`createConnectionInteractionState`](../../../framework/frontend/core/src/connection/interactionBlock.ts)
+owns the live interaction state for one shell. Its readonly `unavailable`
+signal is true for every connection state other than `connected`; its readonly
+`blocked` signal combines availability with the shell's local policy. A
+connected but stale replica remains available. The instance can follow a
+replacement connection, update the opt-out and dispose its listener; a
+generation guard prevents a replaced connection's late callback from publishing.
+It does not add transport, reconnect or replay behavior.
+
+Each `HilosLayout` owns one instance. The optional
+`allowDisconnectedInteraction` defaults to false and applies only to the
+ordinary page region. The page's permanent fieldset and
+[`bindInteractionBlock`](../../../framework/frontend/core/src/dom/interactionBlock.ts)
+keep its existing DOM mounted while blocking interaction. The maintenance
+surface is outside that binding. Header, navigation and footer are outside it
+too; sign out, Stop and Keep my account use `unavailable` for their own disabled
+states and live guards, regardless of the page opt-out. Those controls point to
+`HILOS_CONNECTION_STATUS_TEXT_ID`, the hidden explanation in the existing
+connection indicator.
+
+Vue and React expose `useConnectionInteraction()`; Angular exposes
+`injectConnectionInteraction()`. These thin readers return only the readonly
+`unavailable` and `blocked` signals, and both are false outside a layout. Vue
+teleports and React portals retain the shell context. Angular publishes the
+core instance after its required inputs are available, without introducing a
+second availability machine.
+
+`HilosModal` reads the same context through its teleport, portal or Angular
+injection. Its dialog and discard-confirm step each keep a permanent interaction
+fieldset, so a disconnect leaves the dialog, body, draft and layer mounted.
+Connection blocking is independent of `busy`: user close and confirm gestures
+are guarded while blocked, but the owner's reset and programmatic close still
+work. Returning to connected does not replay a gesture or submit an action.
+Each modal region has its own visually hidden description with
+`CONNECTION_INTERACTION_COPY.unavailable`; its id is appended to existing
+`aria-describedby` values.
+
+The theme menu also reads `unavailable`: signed-in account theme changes and
+reset are guarded, including stale gestures on an open menu. Guest theme changes
+remain local; a signed-in change still waits for its server acknowledgement.
+Existing busy and impersonation guards remain in place. `/status` has the shell
+opt-out seam only; its page, route and subscription are still future work. These
+APIs are re-exported from `@hilos/core/base` and the explicit core root barrel.
+The context readers are safe to import without a browser; each shell state and
+DOM binding is disposed with its owning shell or root.
+See [core-and-connection.md](core-and-connection.md#disconnect-behavior) for the
+user-visible behavior and [accessibility.md](accessibility.md#connection-blocked-interaction)
+for its accessibility semantics.
+
 ## Conformance demos, not full parity
 
 This is about the **demo apps** — the React and Angular *pages*. They are **not**

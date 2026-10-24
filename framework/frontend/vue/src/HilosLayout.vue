@@ -46,6 +46,9 @@ import type { ConnectionState, HilosConnection } from '@hilos/core/base'
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
+  bindInteractionBlock,
+  createConnectionInteractionState,
+  HILOS_CONNECTION_STATUS_TEXT_ID,
   formatHilosDeletionStrip,
   closeLegalReconsent,
   formatHilosLegalReconsentBadge,
@@ -87,8 +90,11 @@ import {
   inject,
   nextTick,
   onMounted,
+  onScopeDispose,
+  onServerPrefetch,
   onUnmounted,
   onUpdated,
+  provide,
   ref,
   watch,
 } from 'vue'
@@ -105,7 +111,7 @@ import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
 import HilosModal from './HilosModal.vue'
 import HilosLegalReconsent from './legal/HilosLegalReconsent.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
-import { useConnectionState } from './useConnectionState.js'
+import { hilosConnectionInteractionKey } from './hilosConnectionInteraction.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
 import { useReconnectDragging } from './useReconnectDragging.js'
@@ -115,6 +121,8 @@ import { useTrackedAction } from './useTrackedAction.js'
 
 const props = defineProps<{
   connection: HilosConnection
+  /** Allow local page interaction without changing the availability of shell requests. */
+  allowDisconnectedInteraction?: boolean
   /**
    * Which corner the toast stack sits in; the bottom end by default. A project
    * chooses it once here and never per notice: different corners in different
@@ -124,7 +132,56 @@ const props = defineProps<{
   toastCorner?: HilosToastCorner
 }>()
 
-const connectionState = useConnectionState(props.connection)
+const connectionInteraction = createConnectionInteractionState(
+  props.connection,
+  props.allowDisconnectedInteraction,
+)
+provide(hilosConnectionInteractionKey, connectionInteraction)
+const unavailable = useSignal(connectionInteraction.unavailable)
+watch(() => props.connection, connectionInteraction.setConnection, {
+  flush: 'sync',
+})
+watch(
+  () => props.allowDisconnectedInteraction ?? false,
+  connectionInteraction.setAllowDisconnectedInteraction,
+  { flush: 'sync' },
+)
+onScopeDispose(connectionInteraction.dispose)
+// A server render has no unmount phase; retain its snapshot, not a live source.
+onServerPrefetch(async () => connectionInteraction.dispose())
+
+const pageRoot = ref<HTMLElement>()
+const pageFieldset = ref<HTMLFieldSetElement>()
+// The fieldset exists only in the ordinary branch. Removing it also removes
+// the main's capture gate, so maintenance can establish its own pass connection.
+watch(
+  [pageRoot, pageFieldset],
+  ([root, fieldset], _previous, onCleanup) => {
+    if (!root || !fieldset) return
+    onCleanup(
+      bindInteractionBlock(root, {
+        fieldset,
+        blocked: connectionInteraction.blocked,
+        descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
+      }),
+    )
+  },
+  { flush: 'post' },
+)
+
+const connectionState = ref<ConnectionState>(props.connection.state)
+watch(
+  () => props.connection,
+  (connection, _previous, onCleanup) => {
+    connectionState.value = connection.state
+    onCleanup(
+      connection.on('state', (next) => {
+        connectionState.value = next
+      }),
+    )
+  },
+  { immediate: true },
+)
 const timeZone = useSignal(hilosTimeZone)
 const build = ref(props.connection.build)
 watch(
@@ -182,7 +239,7 @@ const accountBlocked = useSignal(hilosAccountBlocked)
 const { busy: impersonationStopBusy, run: runImpersonationStop } =
   useTrackedAction()
 const onImpersonationStop = (): void => {
-  if (impersonationStopBusy.value) {
+  if (connectionInteraction.unavailable.get() || impersonationStopBusy.value) {
     return
   }
   void runImpersonationStop(stopImpersonation())
@@ -222,7 +279,7 @@ const deletionStripText = computed(() => {
 })
 const { busy: keepAccountBusy, run: runKeepAccount } = useTrackedAction()
 const onKeepAccount = (): void => {
-  if (keepAccountBusy.value) {
+  if (connectionInteraction.unavailable.get() || keepAccountBusy.value) {
     return
   }
   void runKeepAccount(keepMyAccount())
@@ -287,7 +344,7 @@ const adminLabel = computed(() =>
 )
 const { busy: signOutBusy, run: runSignOut } = useTrackedAction()
 const onSignOut = (): void => {
-  if (signOutBusy.value) {
+  if (connectionInteraction.unavailable.get() || signOutBusy.value) {
     return
   }
   void runSignOut(signOut())
@@ -628,6 +685,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             :aria-label="SIGN_OUT_COPY.label"
             :title="SIGN_OUT_COPY.label"
             :loading="signOutBusy"
+            :disabled="unavailable"
+            :aria-describedby="
+              unavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : undefined
+            "
             @click="onSignOut"
           >
             <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
@@ -661,7 +722,11 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
                 aria-hidden="true"
               ></i>
             </span>
-            <span class="visually-hidden">{{ connLabel }}</span>
+            <span
+              :id="HILOS_CONNECTION_STATUS_TEXT_ID"
+              class="visually-hidden"
+              >{{ connLabel }}</span
+            >
           </span>
         </div>
       </div>
@@ -718,6 +783,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             :class="`btn-${impersonation.tone}`"
             data-id="impersonation-stop"
             :loading="impersonationStopBusy"
+            :disabled="unavailable"
+            :aria-describedby="
+              unavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : undefined
+            "
             @click="onImpersonationStop"
           >
             {{ IMPERSONATION_STRIP_COPY.stop }}
@@ -741,6 +810,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             class="btn-sm btn-warning"
             data-id="account-deletion-strip-keep"
             :loading="keepAccountBusy"
+            :disabled="unavailable"
+            :aria-describedby="
+              unavailable ? HILOS_CONNECTION_STATUS_TEXT_ID : undefined
+            "
             @click="onKeepAccount"
           >
             {{ ACCOUNT_STANDING_STRIP_COPY.keep }}
@@ -766,6 +839,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     </div>
     <main
       id="hilos-main-content"
+      ref="pageRoot"
       tabindex="-1"
       class="container flex-grow-1 min-h-0 overflow-auto py-4"
       :class="{ 'd-flex flex-column': underMaintenance }"
@@ -776,42 +850,49 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         :connection="props.connection"
         :admin-surface="currentRoute?.admin ?? false"
       />
-      <HilosAccountBlocked
-        v-else-if="accountBlocked !== null"
-        :notice="accountBlocked"
-      />
-      <div
-        v-else-if="frozenShown"
-        class="row justify-content-center"
-        data-id="legal-frozen-screen"
+      <fieldset
+        v-else
+        ref="pageFieldset"
+        class="border-0 m-0 p-0 min-w-0 h-100"
+        data-id="page-interaction-scope"
       >
-        <div class="col-12 col-md-10 col-lg-8">
-          <div class="text-center mb-3">
-            <span
-              class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
-            >
-              <i class="bi bi-snow" aria-hidden="true"></i>
-            </span>
+        <HilosAccountBlocked
+          v-if="accountBlocked !== null"
+          :notice="accountBlocked"
+        />
+        <div
+          v-else-if="frozenShown"
+          class="row justify-content-center"
+          data-id="legal-frozen-screen"
+        >
+          <div class="col-12 col-md-10 col-lg-8">
+            <div class="text-center mb-3">
+              <span
+                class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+              >
+                <i class="bi bi-snow" aria-hidden="true"></i>
+              </span>
+            </div>
+            <HilosLegalReconsent
+              variant="frozen"
+              :content="reconsentContent"
+              :view="reconsentView"
+              :loading="reconsentLoading"
+              :error="reconsentError"
+              :busy="reconsentBusy"
+              :person="reconsentPerson"
+              :deletion-scheduled="standing?.deletionEffectiveAt != null"
+              :now="reconsentNow"
+              @accept="onReconsentAccept"
+              @retry="onReconsentRetry"
+              @show="hilosLegalReconsent.show"
+            />
           </div>
-          <HilosLegalReconsent
-            variant="frozen"
-            :content="reconsentContent"
-            :view="reconsentView"
-            :loading="reconsentLoading"
-            :error="reconsentError"
-            :busy="reconsentBusy"
-            :person="reconsentPerson"
-            :deletion-scheduled="standing?.deletionEffectiveAt != null"
-            :now="reconsentNow"
-            @accept="onReconsentAccept"
-            @retry="onReconsentRetry"
-            @show="hilosLegalReconsent.show"
-          />
         </div>
-      </div>
-      <HilosTakeoverScope v-else>
-        <slot />
-      </HilosTakeoverScope>
+        <HilosTakeoverScope v-else>
+          <slot />
+        </HilosTakeoverScope>
+      </fieldset>
     </main>
     <footer
       v-if="!underMaintenance"

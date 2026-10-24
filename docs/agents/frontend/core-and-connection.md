@@ -16,8 +16,9 @@ view renders its structure immediately and fills each region as data arrives
 components in [sdk-packaging.md](sdk-packaging.md)).
 
 There is an explicit, separate behavior when there is **no** connection — never
-an undefined or frozen state. What that behavior is per view is a project choice
-(see Disconnect behavior).
+an undefined or frozen state. The ordinary shell keeps the page visible and
+blocks its controls; the SDK provides an explicit shell opt-out seam for
+`/status` (see Disconnect behavior).
 
 Changing a cluster's LEADER page owner also preserves the live document and
 socket. Each source master, including one that remains a follower, asks its
@@ -209,18 +210,35 @@ has just written makes the person's next action on an open screen fail — see
 
 ## Disconnect behavior
 
-The framework provides **both** disconnect modes, and the project picks per view
-— there is no single global policy:
+The ordinary `HilosLayout` behavior is one default: while the connection state
+is anything other than `connected`, the existing page stays visible and its
+controls are blocked. The optional `allowDisconnectedInteraction` input opts
+that layout's page content into local interaction. It does not make the
+connection available for requests: `unavailable` remains true for
+connection-dependent shell actions, while `blocked` reflects the page policy.
+A connected connection with a stale replica is still connected; its stale-data
+notice is described below.
 
-- **read-only last-known** — keep showing the last data, disable mutation;
-- **hard block** — overlay the view and prevent interaction until reconnected.
+The page is not covered by an overlay or replaced. Its existing nodes, draft,
+selection and scroll remain in place; reading, selecting or copying text,
+scrolling and ordinary Tab behavior are not globally suppressed. Native controls
+are disabled through the page's permanent fieldset, while the local DOM binder
+guards other actions and input. This does not promise draft recovery after a
+reload. The binding and its focus behavior are described in
+[accessibility.md](accessibility.md#connection-blocked-interaction), and the
+shared core and framework adapters in
+[multiframework-core.md](multiframework-core.md#connection-scoped-interaction).
 
-A long-lived view that is safe to keep visible favors read-only; a view where
-acting on stale data is dangerous favors hard-block.
+The maintenance surface is structurally outside the ordinary page binding and
+keeps its own connection path. Header, navigation, footer and mobile navigation
+also stay outside the page binding. Sign out, Stop and Keep my account remain
+independently disabled while the connection is unavailable, even when the page
+opts into local interaction.
 
-`/status` keeps reading its files on a timer without usable live connection,
-including under freeze; no disconnect overlay may block it. The shell may mark
-the break. See [Status reading](../architecture/status-page.md#reading-status).
+The planned `/status` file reader needs an SDK shell opt-out to read without a
+usable live connection, including under freeze. That shell seam exists; the
+page, route and subscription work remain future work. See
+[Status reading](../architecture/status-page.md#reading-status).
 (not in the code yet — HIL-1690)
 Its subscription button is absent without usable live connection.
 (not in the code yet — HIL-1691)

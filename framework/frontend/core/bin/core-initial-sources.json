@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "70c7ac4540df915e511afce5039a082417343ffcc7188d9cd2332b0654115204",
-    "outputSha256": "87f13e8008d4d69a510b89ef69bbaf6c6cb646354ab01de105b7f570d093aa66"
+    "sourceSha256": "2cb717d0f8d5f7bf9d05fa9c2a98f4327507b94fc64b378bc2c785325f520074",
+    "outputSha256": "95d1a6123cbbc22ca42fa4820dc76d92f7cf64311e735344c482c099861f8d54"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "a5ddce13305c6fff6e7f1e6b299e31b400ba1ed59dc0c87c1bfe874c11949cfa",
@@ -151,6 +151,10 @@
     "sourceSha256": "eef17f3fca514b30b5727827e7e734a9a20d4a7c79d7e1ff85f5b749253740d8",
     "outputSha256": "16a3f7d35dd2c6959ce3854ae2147c116e74f04b9d42c9e3aadff13ff97cd69a"
   },
+  "src/connection/interactionBlock.ts": {
+    "sourceSha256": "1b104adefb959e78d83a06188aa71a853dc05643667e92921d825156c98fea68",
+    "outputSha256": "495462cbbdd1797597200d85f0cf5a9a57c235749cc61af0d2552a6506f0e12b"
+  },
   "src/connection/maintenanceHint.ts": {
     "sourceSha256": "31d3e7ca8df2a2492a1edbbf7376b9b43c39174d6c61ddb1ae57c74f23886c50",
     "outputSha256": "6e5d381cf33dc66f73aef8006bc559be81e14baaae054d7ee4a61bd551c206d8"
@@ -184,8 +188,12 @@
     "outputSha256": "29378f376c1723a7891df533629ceb8ae704ef5e6d49526f1d6d6fab4658e7c3"
   },
   "src/dom/focusTrap.ts": {
-    "sourceSha256": "699a4b3381f1ec61e2d617b30fb3300477cf490582e15f2f0df60cc28d0967ee",
-    "outputSha256": "699fbe473f00c587693d39081e6bbb3300a3ca08a44722f0773cce78fb2d82be"
+    "sourceSha256": "72c6af82cf3f28fb1de6492a6266d43a4ce80edf67928bb40725ac2351fe57a0",
+    "outputSha256": "2c7be7e79d5710504a15248828eaa04e1fb6e533106b0aba2bfd8dae0d157c55"
+  },
+  "src/dom/interactionBlock.ts": {
+    "sourceSha256": "b380f6111d20cb956ca043eecde9f10c60b73bed8c4686aac61e52409851d613",
+    "outputSha256": "2f7900680ae5db48e28767f2767442b3f976e34b77f0a39dc58764b3a9c6bcd8"
   },
   "src/dom/modalStack.ts": {
     "sourceSha256": "46784c5166ed420458902b6d0bcbf0f2ab27537cb78e19498d3e1007ecb385f2",
@@ -288,8 +296,8 @@
     "outputSha256": "f4eb255d7e0c48c2f804aefb2ec677056fe8d325aa1d5ac7f7657c2dafd2234f"
   },
   "src/primitives/modal.ts": {
-    "sourceSha256": "3685883002fda6f9644ceec7a1225117183ffaa9080c6910ecf1738c0f20fa73",
-    "outputSha256": "cf3fd8112f199b0f550e5bd66c891192f041bc9d6dc5ad84b2704735bba12df4"
+    "sourceSha256": "8bf00753a7cdbbfed2d9a41cc96dd5150ff01769e18be4bea9aaa053889d96ac",
+    "outputSha256": "8958682d88881795658819c7f8ee59f142fb4d03beb7cd84487e539b67be2703"
   },
   "src/primitives/passwordVisibility.ts": {
     "sourceSha256": "dbe966a248ede5fe73500b440aa42fcfca3d0ddb9c53d414392be9f2570578a7",
