@@ -15,7 +15,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonHttpContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import {
   computed,
   inject,
@@ -53,9 +53,11 @@ const emptyState = computed(() =>
   daemonHttpEmptyState(heading.value, summary.value),
 )
 const silent = computed(() => heading.value?.state === DAEMON_NODE_STATE_SILENT)
-const silentSince = computed(() =>
-  formatDaemonNodeSilentSince(heading.value, Date.now()),
-)
+const timeZone = useSignal(hilosTimeZone)
+const silentSince = computed(() => {
+  void timeZone.value
+  return formatDaemonNodeSilentSince(heading.value, Date.now())
+})
 const period = computed(() =>
   summary.value === null ? '—' : formatDaemonHttpPeriod(summary.value),
 )

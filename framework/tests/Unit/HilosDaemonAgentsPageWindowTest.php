@@ -282,7 +282,7 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
     private function deliver(DaemonAgentsWindowTestAgent $agent, DaemonProcessRoster $roster, bool $cron = false): void
     {
         $cronPicture = $cron ? new DaemonCronPicture(null, [
-            new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120),
+            new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000),
         ]) : null;
         $this->deliverNodes($agent, [$this->node('n1', true, $roster, $cronPicture)]);
     }

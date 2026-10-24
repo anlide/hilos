@@ -103,6 +103,16 @@ final class HilosDaemonCronPageAnswerTest extends TestCase
             $page->payload($this->address())->data[AbstractHilosDaemonCronPage::NODE]);
     }
 
+    public function testInitialSilentAnswerProjectsArrivalToMilliseconds(): void
+    {
+        $this->publish(new DaemonCronPicture(null, []), online: false);
+        $page = new DaemonCronAnswerTestPage(new DaemonCollectorAgent());
+        self::assertSame([
+            AbstractHilosDaemonCronPage::NODE => ['clustered' => false, 'state' => 'silent', 'silentSince' => 10000, 'role' => 'master'],
+            AbstractHilosDaemonCronPage::CRON_REPORTED => true,
+        ], $page->payload($this->address())->data);
+    }
+
     /** @return PageRouteParams Address of the test node */
     private function address(): PageRouteParams
     {
@@ -112,11 +122,12 @@ final class HilosDaemonCronPageAnswerTest extends TestCase
     /**
      * @param ?DaemonCronPicture $cron Last schedule, or not yet reported
      * @param NodeRole $role Node role
+     * @param bool $online Whether the node is still answering
      */
-    private function publish(?DaemonCronPicture $cron, NodeRole $role = NodeRole::Master): void
+    private function publish(?DaemonCronPicture $cron, NodeRole $role = NodeRole::Master, bool $online = true): void
     {
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
-            new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot(
+            new ClusterDaemonNodeView('n1', $online, new ClusterDaemonNodeSlot(
                 'n1', new NodeDaemonPicture('n1', $role, 10, cron: $cron), 10,
             )),
         ]));

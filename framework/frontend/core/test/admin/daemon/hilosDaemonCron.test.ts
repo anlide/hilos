@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosDaemonCronTable,
@@ -20,8 +20,15 @@ import {
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
+import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
+import { applyServerTime } from '../../../src/session/serverClock.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import {
+  bindTimeZoneState,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '../../../src/timeZone/timeZoneState.js'
 
 function row(overrides: Partial<HilosDaemonCronRow> = {}): HilosDaemonCronRow {
   return {
@@ -85,12 +92,12 @@ describe('daemon cron row', () => {
           name: 'cleanup',
           expression: '0 3 * * *',
           lastRunAt: null,
-          nextRunAt: 1_800_000_000,
+          nextRunAt: 1_800_000_000_000,
           idleReason: null,
           rowKey: 'wrong-slot-key',
         }),
       ),
-    ).toEqual(row({ nextRunAt: 1_800_000_000 }))
+    ).toEqual(row({ nextRunAt: 1_800_000_000_000 }))
 
     expect(
       resolveHilosDaemonCronRow(
@@ -98,7 +105,7 @@ describe('daemon cron row', () => {
           agentId: 'log',
           name: 'rotate',
           expression: '0 * * * *',
-          lastRunAt: 1_800_000_000,
+          lastRunAt: 1_800_000_000_000,
           nextRunAt: null,
           idleReason: null,
         }),
@@ -109,7 +116,7 @@ describe('daemon cron row', () => {
         agentId: 'log',
         name: 'rotate',
         expression: '0 * * * *',
-        lastRunAt: 1_800_000_000,
+        lastRunAt: 1_800_000_000_000,
       }),
     )
   })
@@ -189,7 +196,7 @@ describe('daemon cron empty state', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 42,
+      silentSince: 42000,
     }
 
     expect(daemonCronEmptyState(null, true)).toBe('none')
@@ -201,7 +208,7 @@ describe('daemon cron empty state', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 42,
+      silentSince: 42000,
     }
 
     expect(daemonCronEmptyState(silent, false)).toBe('silent')
@@ -294,7 +301,44 @@ describe('daemon cron idle notice', () => {
 })
 
 describe('daemon cron cell text', () => {
-  const now = new Date(2026, 9, 8, 12, 0).getTime()
+  const now = Date.parse('2025-12-31T23:30:00Z')
+  const resolved = new Intl.DateTimeFormat().resolvedOptions()
+  let release: () => void
+  let choose: (zone: string) => void
+
+  beforeEach(() => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/Los_Angeles',
+    })
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const connection = {
+      projectTimeZone: 'Asia/Tokyo',
+      on(event: string, listener: (payload: never) => void): () => void {
+        const receive = listener as (signal: ProjectSignal) => void
+        if (event === 'projectSignal') listeners.add(receive)
+        return () => listeners.delete(receive)
+      },
+    }
+    release = bindTimeZoneState(connection as unknown as HilosConnection)
+    choose = (timeZone) => {
+      for (const listener of listeners) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as ProjectSignal)
+      }
+    }
+    choose('Europe/Kyiv')
+    applyServerTime(Date.now())
+  })
+
+  afterEach(() => {
+    release()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    applyServerTime(Date.now())
+  })
 
   it('names daemon and agent executors by installation mode', () => {
     expect(formatDaemonCronExecutor(row(), true)).toBe('Daemon (leader)')
@@ -310,34 +354,82 @@ describe('daemon cron cell text', () => {
     expect(formatDaemonCronNextRun(idle, now)).toBe('—')
     expect(formatDaemonCronLastRun(row(), now)).toBe('Not yet')
     expect(formatDaemonCronNextRun(row(), now)).toBe('Never')
-    const agent = row({ agentId: 'log', nextRunAt: now / 1000 })
-    expect(formatDaemonCronNextRun(agent, now)).toContain('Today, ')
+    const agent = row({ agentId: 'log', lastRunAt: now, nextRunAt: now })
+    expect(formatDaemonCronLastRun(agent, now)).toBe('today, 01:30 AM')
+    expect(formatDaemonCronNextRun(agent, now)).toBe('today, 01:30 AM')
   })
 
-  it('uses browser-local calendar days around today', () => {
-    const today = new Date(2026, 9, 8, 3, 15)
-    const tomorrow = new Date(2026, 9, 9, 3, 15)
-    const yesterday = new Date(2026, 9, 7, 3, 15)
-    const later = new Date(2026, 9, 12, 3, 15)
-    const localTime = today.toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+  it('uses the own zone rather than browser or project at a year boundary', () => {
+    expect(hilosBrowserTimeZone.get()).toBe('America/Los_Angeles')
+    expect(hilosTimeZone.get()).toBe('Europe/Kyiv')
+    expect(
+      formatDaemonCronMoment(Date.parse('2025-12-31T21:30:00Z'), now),
+    ).toBe('yesterday, 11:30 PM')
+    expect(
+      formatDaemonCronMoment(Date.parse('2026-01-01T22:15:00Z'), now),
+    ).toBe('tomorrow, 12:15 AM')
+    expect(
+      formatDaemonCronMoment(Date.parse('2026-01-05T22:15:00Z'), now),
+    ).toBe('Jan 6, 2026, 12:15 AM')
+    choose('America/Los_Angeles')
+    expect(formatDaemonCronMoment(now, now)).toBe('today, 03:30 PM')
+  })
 
-    expect(formatDaemonCronMoment(today.getTime() / 1000, now)).toBe(
-      `Today, ${localTime}`,
+  it.each([
+    ['2026-03-28T22:30:00Z', '2026-03-29T21:30:00Z', 'tomorrow, 12:30 AM'],
+    ['2026-03-29T21:30:00Z', '2026-03-28T22:30:00Z', 'yesterday, 12:30 AM'],
+    ['2026-10-24T21:30:00Z', '2026-10-25T22:30:00Z', 'tomorrow, 12:30 AM'],
+    ['2026-10-25T22:30:00Z', '2026-10-24T21:30:00Z', 'yesterday, 12:30 AM'],
+  ])('compares calendar days over DST: %s to %s', (reference, at, expected) => {
+    expect(formatDaemonCronMoment(Date.parse(at), Date.parse(reference))).toBe(
+      expected,
     )
-    expect(formatDaemonCronMoment(tomorrow.getTime() / 1000, now)).toBe(
-      `Tomorrow, ${localTime}`,
-    )
-    expect(formatDaemonCronMoment(yesterday.getTime() / 1000, now)).toBe(
-      `Yesterday, ${localTime}`,
-    )
-    expect(formatDaemonCronMoment(later.getTime() / 1000, now)).toBe(
-      later.toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }),
-    )
+  })
+
+  it.each([-300_000, 300_000])(
+    'corrects only the calendar reference for a %i ms browser offset',
+    (offset) => {
+      const serverNow = Date.parse(
+        offset > 0 ? '2025-12-31T22:02:00Z' : '2025-12-31T21:58:00Z',
+      )
+      const browserNow = serverNow - offset
+      vi.spyOn(Date, 'now').mockReturnValue(browserNow)
+      applyServerTime(serverNow)
+      const at = Date.parse('2025-12-31T21:59:00Z')
+      expect(formatDaemonCronMoment(at, browserNow)).toBe(
+        offset > 0 ? 'yesterday, 11:59 PM' : 'today, 11:59 PM',
+      )
+      expect(formatDaemonCronMoment(serverNow, browserNow)).toBe(
+        offset > 0 ? 'today, 12:02 AM' : 'today, 11:58 PM',
+      )
+    },
+  )
+
+  it('treats even a small number as milliseconds without guessing seconds', () => {
+    choose('UTC')
+    expect(
+      formatDaemonCronMoment(1000, Date.parse('1970-01-01T12:00:00Z')),
+    ).toBe('today, 12:00 AM')
+  })
+
+  it.each([NaN, Infinity, -Infinity, 8.64e15 + 1])(
+    'keeps an invalid non-null moment %s distinct from a missing run',
+    (at) => {
+      expect(formatDaemonCronMoment(at, now)).toBe('—')
+      expect(formatDaemonCronLastRun(row({ lastRunAt: at }), now)).toBe('—')
+      expect(formatDaemonCronNextRun(row({ nextRunAt: at }), now)).toBe('—')
+    },
+  )
+
+  it('returns a dash for an invalid reference or an unavailable formatter', () => {
+    expect(formatDaemonCronMoment(now, NaN)).toBe('—')
+    vi.stubGlobal('Intl', { ...Intl, DateTimeFormat: undefined })
+    expect(formatDaemonCronMoment(now, now)).toBe('—')
+    vi.stubGlobal('Intl', undefined)
+    expect(formatDaemonCronMoment(now, now)).toBe('—')
+    expect(formatDaemonCronLastRun(row({ lastRunAt: now }), now)).toBe('—')
+    expect(formatDaemonCronNextRun(row({ nextRunAt: now }), now)).toBe('—')
+    expect(formatDaemonCronLastRun(row(), now)).toBe('Not yet')
+    expect(formatDaemonCronNextRun(row(), now)).toBe('Never')
   })
 })

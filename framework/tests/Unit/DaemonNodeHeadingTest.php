@@ -50,7 +50,7 @@ final class DaemonNodeHeadingTest extends TestCase
             )))
             ->withNode(new ClusterDaemonNodeView('without-slot', false, null));
 
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 42, 'role' => 'master'],
+        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 42000, 'role' => 'master'],
             DaemonNodeHeading::of($picture, 'with-slot', true)->toArray());
         self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => null],
             DaemonNodeHeading::of($picture, 'without-slot', true)->toArray());

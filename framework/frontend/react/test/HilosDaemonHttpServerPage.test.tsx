@@ -152,7 +152,7 @@ const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
   role: null,
   state: 'silent',
-  silentSince: 1700000000,
+  silentSince: 1700000000000,
 }
 function summary(
   overrides: Partial<HilosDaemonHttpSummary> = {},

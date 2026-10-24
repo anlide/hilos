@@ -38,6 +38,7 @@ export const daemonOverviewNodeSchema = z
     online: z.boolean(),
     role: z.enum(['master', 'slave']).nullable(),
     state: z.enum(['leader', 'standby', 'data', 'silent']).nullable(),
+    /** Last report arrival in epoch milliseconds, only while silent. */
     silentSince: z.number().int().nullable(),
     workers: z.array(daemonOverviewWorkerSchema).readonly().nullable(),
     measurements: z

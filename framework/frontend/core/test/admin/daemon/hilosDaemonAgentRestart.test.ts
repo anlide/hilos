@@ -163,7 +163,7 @@ describe('daemon restart confirmation', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 10,
+      silentSince: 10000,
     })
     expect(h.restart.canSubmit.get()).toBe(false)
     h.page.data.set('node', {

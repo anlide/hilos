@@ -12,6 +12,7 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
+  hilosTimeZone,
 } from '@hilos/core/base'
 import { computed, inject, onUnmounted } from 'vue'
 
@@ -83,9 +84,11 @@ const logPath = computed(() =>
     ? daemonNodeLogPath(router.resolvePath, current.value.nodeId)
     : undefined,
 )
-const silentSince = computed(() =>
-  formatDaemonNodeSilentSince(heading.value ?? null, Date.now()),
-)
+const timeZone = useSignal(hilosTimeZone)
+const silentSince = computed(() => {
+  void timeZone.value
+  return formatDaemonNodeSilentSince(heading.value ?? null, Date.now())
+})
 
 /** @param state The backend's cluster verdict, independent of the declared role. */
 function stateClass(state: string): string {

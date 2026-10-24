@@ -21,7 +21,7 @@ import {
   readHilosDaemonNodeOverview,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, ref, watch } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
@@ -68,9 +68,11 @@ const memory = computed(() =>
 const memoryPercent = computed(() =>
   daemonPercentage(memory.value, measurements.value?.memoryCeiling),
 )
-const silentSince = computed(() =>
-  formatDaemonNodeSilentSince(heading.value ?? null, Date.now()),
-)
+const timeZone = useSignal(hilosTimeZone)
+const silentSince = computed(() => {
+  void timeZone.value
+  return formatDaemonNodeSilentSince(heading.value ?? null, Date.now())
+})
 const envPath = computed(() =>
   node.value
     ? router.resolvePath(

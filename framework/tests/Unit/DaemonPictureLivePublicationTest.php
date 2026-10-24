@@ -399,7 +399,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
             }
             $report = new NodeDaemonPicture($nodeId, NodeRole::Master, 100,
                 new DaemonProcessRoster([new DaemonWorkerPicture(1, 'regular', 123, $version * 100, $agents)], [], 0),
-                new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, $version * 120)]),
+                new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, $version * 120000)]),
                 new NodeEnvironmentSummary(2, 0, 0, 0, 0, [
                     new NodeEnvironmentFingerprint('DIVERGED', 'string', EnvSource::PROCESS, false,
                         $nodeId === 'n1' ? 'aaaaaaaaaaaaaaaa' : ($version === 1 ? 'bbbbbbbbbbbbbbbb' : 'cccccccccccccccc')),

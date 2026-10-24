@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Closure;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
@@ -89,9 +90,11 @@ final class HilosDaemonCronPageWindowTest extends TestCase
     public function testOnlyCronChangesPublishMutationsAndForgetAllowsTheSamePictureAgain(): void
     {
         $agent = new DaemonCronWindowTestAgent();
-        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120)]);
+        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000)]);
         $agent->onSignalAgent(new AgentSignalData($this->portion($cron)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->mutations);
+        self::assertNull($this->browser()->rowMutations[0]->row?->toArray()['lastRunAt']);
+        self::assertSame(120000, $this->browser()->rowMutations[0]->row?->toArray()['nextRunAt']);
 
         $this->browser()->mutations = [];
         $agent->onSignalAgent(new AgentSignalData($this->portion($cron)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
@@ -102,9 +105,12 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         );
         self::assertSame([], $this->browser()->mutations);
 
-        $changed = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', 120, 180)]);
+        $changed = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', 120000, 180000)]);
         $agent->onSignalAgent(new AgentSignalData($this->portion($changed)), 'collector', HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->mutations);
+        self::assertSame('/cleanup', $this->browser()->rowMutations[1]->rowKey);
+        self::assertSame(120000, $this->browser()->rowMutations[1]->row?->toArray()['lastRunAt']);
+        self::assertSame(180000, $this->browser()->rowMutations[1]->row?->toArray()['nextRunAt']);
 
         $this->browser()->mutations = [];
         $agent->onStop();
@@ -121,7 +127,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonCronWindowTestAgent();
-        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120)]);
+        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000)]);
         $this->deliverNodes($agent, [$this->node('n1', true, $cron)]);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->pageData);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->mutations);
@@ -131,6 +137,8 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         $this->deliverNodes($agent, [$this->node('n1', false, $cron)]);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->pageData);
         self::assertSame([], $this->browser()->mutations);
+        self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 10000, 'role' => 'master'],
+            $this->browser()->pagePayloads[1]->data['node']);
 
         $this->browser()->pageData = [];
         $this->deliverNodes($agent, [$this->node('n1', false, $cron)]);
@@ -182,7 +190,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         self::assertSame([], $this->browser()->mutations);
 
         $this->browser()->pageData = [];
-        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120)]);
+        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000)]);
         $this->deliverNodes($agent, [$this->node('n1', true, $cron)]);
         self::assertSame([], $this->browser()->pageData);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->mutations);
@@ -283,6 +291,12 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
     /** @var list<array{string, string}> Re-answered page and connection pairs */
     public array $pageData = [];
 
+    /** @var list<TableRowMutationDTO> Actual row changes sent for the held viewport */
+    public array $rowMutations = [];
+
+    /** @var list<PagePayload> Actual data-only page answers */
+    public array $pagePayloads = [];
+
     public function __construct()
     {
         parent::__construct(userId: 1, admin: true);
@@ -297,6 +311,7 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
         }
         TestCase::assertSame(['data'], array_keys($payload->toArray()));
         $this->pageData[] = [$page, $acceptKey];
+        $this->pagePayloads[] = $payload;
     }
 
     /** Records only nonempty typed diffs for the actual held subject and query. */
@@ -310,6 +325,7 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
         $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
         if ($mutations !== []) {
             $this->mutations[] = [$page, $acceptKey];
+            array_push($this->rowMutations, ...$mutations);
         }
     }
 }

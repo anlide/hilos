@@ -97,7 +97,7 @@ final class HilosDaemonWorkersPageWindowTest extends TestCase
         $this->deliver($agent, $roster);
         $this->deliver($agent, new DaemonProcessRoster($roster->workers, ['unplaced'], 1));
         $this->deliver($agent, $roster, new DaemonCronPicture(null, [
-            new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120),
+            new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000),
         ]));
         self::assertSame([], $this->browser()->mutations);
 

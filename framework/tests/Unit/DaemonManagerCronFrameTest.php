@@ -118,7 +118,13 @@ final class DaemonManagerCronFrameTest extends TestCase
         $manager->fireDueCron();
         $manager->tickCronAt(101.0);
         self::assertCount(2, $server->delivered);
-        self::assertGreaterThan(0, $server->frame(1)->rules[0]->lastRunAt);
+        $firedAt = $manager->getCronRules()['always']->lastFiredAt;
+        self::assertNotNull($firedAt);
+        self::assertGreaterThanOrEqual(time() - 1, $firedAt);
+        self::assertLessThanOrEqual(time(), $firedAt);
+        self::assertSame($firedAt * 1000, $server->frame(1)->rules[0]->lastRunAt);
+        $frame = $server->frame(1);
+        self::assertSame($frame->toArray(), DaemonMasterCronSignalData::fromArray($frame->toArray())->toArray());
     }
 
     public function testFreezeAndMissingNodeAgentKeepTheFrameLocal(): void

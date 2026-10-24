@@ -14,6 +14,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Action\LookOnlyActions;
@@ -1190,7 +1191,11 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     {
         $rows = [];
         foreach ($this->cronRules() as $rule) {
-            $rows[] = new DaemonCronRuleReport($rule->name, $rule->expression, $rule->lastFiredAt);
+            $rows[] = new DaemonCronRuleReport(
+                $rule->name,
+                $rule->expression,
+                $rule->lastFiredAt === null ? null : $rule->lastFiredAt * TimeConstants::MS_PER_SECOND,
+            );
         }
         if ($rows === [] && $this->reportedCronRows === null) {
             return;

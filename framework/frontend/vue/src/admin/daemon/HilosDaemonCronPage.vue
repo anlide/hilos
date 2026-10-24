@@ -14,8 +14,8 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
-import { computed, inject, onMounted, onUnmounted } from 'vue'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -48,13 +48,38 @@ const notice = computed(() => daemonCronIdleNotice(rules.value, heading.value))
 const holdsNotice = computed(() =>
   daemonCronHoldsIdleNotice(rules.value, heading.value),
 )
-const silentSince = computed(() =>
-  formatDaemonNodeSilentSince(heading.value, Date.now()),
-)
+const timeZone = useSignal(hilosTimeZone)
+const silentSince = computed(() => {
+  void timeZone.value
+  return formatDaemonNodeSilentSince(heading.value, Date.now())
+})
 const clustered = computed(() => heading.value?.clustered === true)
+const runTimes = computed(() => {
+  void timeZone.value
+  const now = Date.now()
+  return new Map(
+    rules.value.map((row) => [
+      row.rowKey,
+      {
+        lastRun: formatDaemonCronLastRun(row, now),
+        nextRun: formatDaemonCronNextRun(row, now),
+      },
+    ]),
+  )
+})
+const projectTimeZone = ref(props.context.connection.projectTimeZone)
+const stopHandshake = props.context.connection.on('handshake', () => {
+  projectTimeZone.value = props.context.connection.projectTimeZone
+})
 
-onMounted(() => cron.start())
-onUnmounted(() => cron.dispose())
+onMounted(() => {
+  projectTimeZone.value = props.context.connection.projectTimeZone
+  cron.start()
+})
+onUnmounted(() => {
+  stopHandshake()
+  cron.dispose()
+})
 </script>
 
 <template>
@@ -99,6 +124,18 @@ onUnmounted(() => cron.dispose())
         </div>
       </div>
     </div>
+    <p
+      class="small text-body-secondary mb-2"
+      data-id="hilos-daemon-cron-time-zone"
+    >
+      <i class="bi bi-clock me-1" aria-hidden="true"></i>Expressions are
+      evaluated in the project's time zone —
+      <span
+        class="font-monospace text-break"
+        data-id="hilos-daemon-cron-project-time-zone"
+        >{{ projectTimeZone ?? '—' }}</span
+      >. Run times are shown in your time zone.
+    </p>
     <HilosViewportTable :controller="cron.controller">
       <template #cell-name="{ row }">
         <code class="fw-semibold text-break">{{ row.name }}</code>
@@ -128,7 +165,7 @@ onUnmounted(() => cron.dispose())
             'text-body-secondary':
               row.idleReason !== null || row.lastRunAt === null,
           }"
-          >{{ formatDaemonCronLastRun(row, Date.now()) }}</span
+          >{{ runTimes.get(row.rowKey)?.lastRun ?? '—' }}</span
         >
       </template>
       <template #cell-nextRunAt="{ row }">
@@ -138,7 +175,7 @@ onUnmounted(() => cron.dispose())
             'text-body-secondary':
               row.idleReason !== null || row.nextRunAt === null,
           }"
-          >{{ formatDaemonCronNextRun(row, Date.now()) }}</span
+          >{{ runTimes.get(row.rowKey)?.nextRun ?? '—' }}</span
         >
       </template>
       <template #empty>

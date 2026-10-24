@@ -1,7 +1,9 @@
 import type { Expect, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
 import { fitsInScrollport } from './geometry.js'
-import { watchSocketFrames } from './socket.js'
+import { watchSocketFrames, type SocketFrame } from './socket.js'
+import { deliveryObject } from './deliveryFrames.js'
+import { watchClientDocument } from './lazyBundles.js'
 import type {
   HilosDaemonNodeHeading,
   HilosDaemonNodeOverviewData,
@@ -368,6 +370,163 @@ export async function expectStandaloneCron(
     ),
   ).toBeVisible()
   await expect(page.getByTestId('hilos-daemon-cron-not-leader')).toHaveCount(0)
+}
+
+/** Read one row from the latest real Cron window and its subsequent live edits. */
+export function readDaemonCronMoment(
+  frames: readonly SocketFrame[],
+  rowKey: string,
+) {
+  let current: { frame: SocketFrame; rule: Record<string, unknown> } | undefined
+  for (const frame of frames) {
+    const wire = deliveryObject(frame.wire)
+    const data = deliveryObject(wire.data)
+    if (data.page !== 'hilos_daemon_cron') continue
+    const window =
+      wire.type === 'page_response'
+        ? deliveryObject(
+            deliveryObject(deliveryObject(data.payload).windows)
+              .hilosDaemonCron,
+          )
+        : wire.type === 'table_window' && data.tableKey === 'hilosDaemonCron'
+          ? data
+          : undefined
+    if (Array.isArray(window?.rows)) {
+      const row = window.rows.find(
+        (value) => deliveryObject(value).rowKey === rowKey,
+      )
+      current = row
+        ? {
+            frame,
+            rule: deliveryObject(
+              deliveryObject(deliveryObject(row).slots).rule,
+            ),
+          }
+        : undefined
+    } else if (
+      wire.type === 'table_viewport_delta' &&
+      data.tableKey === 'hilosDaemonCron' &&
+      data.rowKey === rowKey
+    ) {
+      if (data.kind === 'row_removed') current = undefined
+      else if (data.kind === 'row_updated' || data.kind === 'row_moved') {
+        current = {
+          frame,
+          rule: deliveryObject(
+            deliveryObject(deliveryObject(data.row).slots).rule,
+          ),
+        }
+      }
+    }
+  }
+  return current
+}
+
+/** Independent browser Intl oracle for the real wire moments, never the SDK formatter. */
+export async function expectDaemonCronMoments(
+  expect: Expect,
+  page: Page,
+  frames: readonly SocketFrame[],
+  rowKey: string,
+  timeZone: string,
+): Promise<{ lastRun: string; nextRun: string }> {
+  await expect.poll(() => readDaemonCronMoment(frames, rowKey)).toBeDefined()
+  expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
+  const { frame, rule } = readDaemonCronMoment(frames, rowKey)!
+  expect(frame.raw).toEqual(expect.any(String))
+  expect(rule).toMatchObject({ rowKey, idleReason: null })
+  for (const value of [rule.lastRunAt, rule.nextRunAt]) {
+    if (value === null) continue
+    expect(Number.isSafeInteger(value)).toBe(true)
+    // Contemporary epoch milliseconds; epoch seconds and double conversion fail.
+    expect(value).toBeGreaterThan(Date.UTC(2020, 0))
+    expect(value).toBeLessThan(Date.UTC(2100, 0))
+  }
+  expect(rule.nextRunAt).not.toBeNull()
+  const expected = await page.evaluate(
+    ({ lastRunAt, nextRunAt, timeZone }) => {
+      const calendar = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+      })
+      const dayNumber = (at: number) => {
+        const parts = calendar.formatToParts(at)
+        const part = (type: string) =>
+          Number(parts.find((part) => part.type === type)!.value)
+        return (
+          Date.UTC(part('year'), part('month') - 1, part('day')) / 86_400_000
+        )
+      }
+      const now = dayNumber(Date.now())
+      const moment = (at: number) => {
+        const days = dayNumber(at) - now
+        const date =
+          Math.abs(days) <= 1
+            ? new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' }).format(
+                days,
+                'day',
+              )
+            : new Intl.DateTimeFormat('en-US', {
+                timeZone,
+                dateStyle: 'medium',
+              }).format(at)
+        const time = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(at)
+        return `${date}, ${time}`
+      }
+      return {
+        lastRun: lastRunAt === null ? 'Not yet' : moment(lastRunAt),
+        nextRun: moment(nextRunAt),
+      }
+    },
+    {
+      lastRunAt: rule.lastRunAt as number | null,
+      nextRunAt: rule.nextRunAt as number,
+      timeZone,
+    },
+  )
+  const row = shownByTestId(page, `hilos-table-row-${rowKey}`)
+  await expect(row).toBeVisible()
+  await expect(row.getByRole('cell')).toContainText([
+    expected.lastRun,
+    expected.nextRun,
+  ])
+  return expected
+}
+
+/** Retain the actual document, table and row while the session restates its zone. */
+export async function watchDaemonCronDisplay(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+) {
+  const documentWatch = await watchClientDocument(page)
+  const table = await page.getByTestId('hilos-viewport-table').elementHandle()
+  const row = await shownByTestId(
+    page,
+    `hilos-table-row-${rowKey}`,
+  ).elementHandle()
+  if (table === null || row === null)
+    throw new Error('A mounted Cron row is required.')
+  return {
+    async unchanged(): Promise<void> {
+      await documentWatch.unchanged()
+      expect(await table.evaluate((original) => original.isConnected)).toBe(
+        true,
+      )
+      expect(await row.evaluate((original) => original.isConnected)).toBe(true)
+    },
+    async dispose(): Promise<void> {
+      await table.dispose()
+      await row.dispose()
+      await documentWatch.dispose()
+    },
+  }
 }
 
 /** Read the live HTTP listener, totals and routes in either table projection. */

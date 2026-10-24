@@ -298,7 +298,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertNull($this->onlyResponse()->payload->data['overview']);
         $this->deliver([$this->node($this->report('a'), false, 777)]);
         $response = $this->onlyResponse();
-        self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 777, 'role' => 'master'], $response->payload->data['node']);
+        self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master'], $response->payload->data['node']);
         self::assertFalse($response->payload->data['overview']['online']);
         self::assertSame(2, $response->payload->data['overview']['uptimeMinutes']);
     }

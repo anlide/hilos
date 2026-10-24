@@ -367,7 +367,7 @@ final class HilosDaemonHttpServerPageWindowTest extends TestCase
             NodeRole::Master,
             10,
             cron: $cron ? new DaemonCronPicture(null, [
-                new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120),
+                new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000),
             ]) : null,
             http: $http,
         );

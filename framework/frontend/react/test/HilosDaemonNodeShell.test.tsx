@@ -140,7 +140,7 @@ describe('HilosDaemonNodeShell', () => {
           nodeHeading({
             state,
             role,
-            silentSince: state === 'silent' ? 1_700_000_000 : null,
+            silentSince: state === 'silent' ? 1_700_000_000_000 : null,
           }),
         ),
       )
@@ -189,7 +189,7 @@ describe('HilosDaemonNodeShell', () => {
           clustered: false,
           state: 'silent',
           role: 'master',
-          silentSince: 1_700_000_000,
+          silentSince: 1_700_000_000_000,
         }),
       ),
     )

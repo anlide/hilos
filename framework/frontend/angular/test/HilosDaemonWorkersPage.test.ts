@@ -39,7 +39,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-node-state')?.textContent).toContain('Silent')
@@ -61,7 +61,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-workers-silent')?.textContent).toContain(

@@ -202,7 +202,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             sampledAt: 3610, online: false, receivedAt: 200000);
         $page = new DaemonHttpServerAnswerTestPage(new DaemonCollectorAgent());
 
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 200000, 'role' => 'master'],
+        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 200000000, 'role' => 'master'],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         self::assertSame(1, $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::HTTP]['countingHours']);
     }

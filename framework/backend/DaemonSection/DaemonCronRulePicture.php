@@ -13,8 +13,8 @@ final readonly class DaemonCronRulePicture
      * @param ?string $agentId Null for a master's rule, otherwise a non-empty agent id
      * @param string $name Non-empty rule name
      * @param string $expression Cron expression
-     * @param ?int $lastRunAt Unix time of the last actual firing
-     * @param ?int $nextRunAt Unix time of the next matching minute, if one is known
+     * @param ?int $lastRunAt Last actual firing in epoch milliseconds
+     * @param ?int $nextRunAt Next matching minute in epoch milliseconds, if one is known
      * @throws InvalidFormatException When an identity is empty
      */
     public function __construct(

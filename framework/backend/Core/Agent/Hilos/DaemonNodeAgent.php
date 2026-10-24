@@ -9,6 +9,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\DirectoryWatchTrait;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -236,7 +237,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         }
         $now = time();
         foreach ($this->picture->cron?->rules ?? [] as $rule) {
-            if ($rule->nextRunAt !== null && $rule->nextRunAt <= $now) {
+            if ($rule->nextRunAt !== null && $rule->nextRunAt <= $now * TimeConstants::MS_PER_SECOND) {
                 $this->rebuildCron($now);
                 break;
             }
@@ -305,24 +306,26 @@ final class DaemonNodeAgent extends AbstractHilosAgent
 
         $rows = [];
         foreach ($this->masterCron->rules as $rule) {
+            $nextRunAt = $this->masterCron->idleReason === null ? CronRule::nextRunAfter($rule->expression, $now) : null;
             $rows[] = new DaemonCronRulePicture(
                 null,
                 $rule->name,
                 $rule->expression,
                 $rule->lastRunAt,
-                $this->masterCron->idleReason === null ? CronRule::nextRunAfter($rule->expression, $now) : null,
+                $nextRunAt === null ? null : $nextRunAt * TimeConstants::MS_PER_SECOND,
             );
         }
         $agentCron = $this->agentCron;
         ksort($agentCron, SORT_STRING);
         foreach ($agentCron as $agentId => $rules) {
             foreach ($rules as $rule) {
+                $nextRunAt = CronRule::nextRunAfter($rule->expression, $now);
                 $rows[] = new DaemonCronRulePicture(
                     $agentId,
                     $rule->name,
                     $rule->expression,
                     $rule->lastRunAt,
-                    CronRule::nextRunAfter($rule->expression, $now),
+                    $nextRunAt === null ? null : $nextRunAt * TimeConstants::MS_PER_SECOND,
                 );
             }
         }

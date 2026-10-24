@@ -25,8 +25,8 @@ function rule(
         name,
         agentId,
         expression: '*/30 * * * *',
-        lastRunAt: 1700000000,
-        nextRunAt: 1700001800,
+        lastRunAt: 1700000000000,
+        nextRunAt: 1700001800000,
         idleReason,
       },
     },
@@ -45,7 +45,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-cron-empty-silent')).not.toBeNull()
@@ -91,7 +91,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-cron-silent')?.textContent).toContain(
@@ -131,7 +131,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-node-state')?.textContent).toContain('Leader')

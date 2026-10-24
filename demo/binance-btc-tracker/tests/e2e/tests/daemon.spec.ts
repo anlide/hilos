@@ -45,6 +45,11 @@ import {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  readDaemonCronMoment,
+  expectDaemonCronMoments,
+  watchDaemonCronDisplay,
+  forwardSessionTimeZone,
+  deliveryObject,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
   expectStandaloneMismatch,
@@ -670,6 +675,147 @@ test.describe('daemon overview', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
+    }
+  })
+})
+
+test.describe('Cron reader time zone', () => {
+  test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })
+
+  test('reads real millisecond runs in own zones and Automatic while the project stays Warsaw', async ({
+    page,
+  }) => {
+    // One real minute firing can take 60 s. This is a clock wait, not a fixed sleep.
+    test.slow()
+    const FIRING_TIMEOUT_MS = 70_000
+    const browserZone = 'America/Los_Angeles'
+    const projectZone = 'Europe/Warsaw'
+    const expireKey = 'hilos_sessions_library/hilos_sessions_expire'
+    const minuteKey = 'hilos_sessions_library/hilos_account_deletion_sweep'
+    const windows = await watchTableSearch(page, {
+      page: 'hilos_daemon_cron',
+      tableKey: 'hilosDaemonCron',
+    })
+    // Only currentUser.timeZone is projected. Cron/welcome frames below are the
+    // unmodified daemon evidence; backend own-zone persistence belongs to HIL-1593.
+    const socket = await forwardSessionTimeZone(page, browserZone)
+    try {
+      const userId = await signUpAdmin(page)
+      const welcomes = () =>
+        socket.frames.filter(
+          (frame) => deliveryObject(frame.wire).type === 'handshake',
+        )
+      await expect.poll(() => welcomes().length).toBeGreaterThan(0)
+      for (const frame of welcomes()) {
+        expect(frame.failure).toBeUndefined()
+        expect(
+          deliveryObject(deliveryObject(frame.wire).data).projectTimeZone,
+          'Binance tests/.env must declare HILOS_PROJECT_TIME_ZONE=Europe/Warsaw',
+        ).toBe(projectZone)
+      }
+      expect(
+        await page.evaluate(() => ({
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          locale: navigator.language,
+        })),
+      ).toEqual({ timeZone: browserZone, locale: 'en-US' })
+      expect(browserZone).not.toBe(projectZone)
+      await gotoPage(page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
+      await expectStandaloneCron(expect, page)
+      await expect
+        .poll(() => readDaemonCronMoment(socket.frames, minuteKey))
+        .toBeDefined()
+      const before = readDaemonCronMoment(socket.frames, minuteKey)!.rule
+        .lastRunAt
+      // A fresh real firing also leaves a whole minute for the live projection checks.
+      await expect
+        .poll(
+          () => {
+            const last = readDaemonCronMoment(socket.frames, minuteKey)?.rule
+              .lastRunAt
+            return (
+              typeof last === 'number' &&
+              (before === null || last > Number(before))
+            )
+          },
+          { timeout: FIRING_TIMEOUT_MS },
+        )
+        .toBe(true)
+      const display = await watchDaemonCronDisplay(expect, page, minuteKey)
+      try {
+        const requests = (state: Awaited<ReturnType<typeof windows.read>>) =>
+          state.frames.filter((frame) => frame.direction === 'sent')
+        const baseline = await windows.read()
+        expect(baseline.application).toHaveLength(1)
+        expect(requests(baseline).length).toBeGreaterThan(0)
+        const connections = socket.sockets()
+        const expire = readDaemonCronMoment(socket.frames, expireKey)!.rule
+        const minute = readDaemonCronMoment(socket.frames, minuteKey)!.rule
+        expect(minute.lastRunAt).toEqual(expect.any(Number))
+        let initial:
+          Awaited<ReturnType<typeof expectDaemonCronMoments>> | undefined
+        for (const own of [browserZone, 'Asia/Tokyo', null]) {
+          if (own !== browserZone) socket.replay(own)
+          const zone = own ?? browserZone
+          const times = await expectDaemonCronMoments(
+            expect,
+            page,
+            socket.frames,
+            minuteKey,
+            zone,
+          )
+          await expectDaemonCronMoments(
+            expect,
+            page,
+            socket.frames,
+            expireKey,
+            zone,
+          )
+          if (own === browserZone) initial = times
+          else if (own === null) expect(times).toEqual(initial)
+          else expect(times).not.toEqual(initial)
+          expect(socket.sessions.at(-1)).toMatchObject({
+            data: { entities: { currentUser: { id: userId, timeZone: own } } },
+          })
+          await expect(
+            page.getByTestId('hilos-daemon-cron-project-time-zone'),
+          ).toHaveText(projectZone)
+          await expect(
+            page.getByTestId('hilos-daemon-cron-time-zone'),
+          ).toHaveText(
+            `Expressions are evaluated in the project's time zone — ${projectZone}. Run times are shown in your time zone.`,
+          )
+          expect(readDaemonCronMoment(socket.frames, expireKey)!.rule).toEqual(
+            expire,
+          )
+          expect(readDaemonCronMoment(socket.frames, minuteKey)!.rule).toEqual(
+            minute,
+          )
+          const current = await windows.read()
+          expect(requests(current)).toEqual(requests(baseline))
+          expect(current.application).toEqual(baseline.application)
+          expect(socket.sockets()).toBe(connections)
+          await display.unchanged()
+        }
+      } finally {
+        await display.dispose()
+      }
+    } finally {
+      socket.dispose()
+      await test.info().attach('cron-original-server-frames', {
+        body: JSON.stringify(
+          socket.frames.filter(({ wire }) => {
+            const frame = deliveryObject(wire)
+            return (
+              frame.type === 'handshake' ||
+              deliveryObject(frame.data).page === 'hilos_daemon_cron'
+            )
+          }),
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
     }
   })
 })

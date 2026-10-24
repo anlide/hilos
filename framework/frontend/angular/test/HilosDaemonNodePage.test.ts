@@ -200,7 +200,7 @@ describe('HilosDaemonNodePage', () => {
       h.act(() =>
         h.answer(
           nodeOverview({ online: false }),
-          nodeHeading({ state: 'silent', silentSince: 1_700_000_000 }),
+          nodeHeading({ state: 'silent', silentSince: 1_700_000_000_000 }),
         ),
       )
       expect(text('report-notice')).toContain(
@@ -372,7 +372,7 @@ describe('HilosDaemonNodePage', () => {
     h.act(() =>
       h.answer(
         nodeOverview({ online: false }),
-        nodeHeading({ state: 'silent', silentSince: 1_700_000_000 }),
+        nodeHeading({ state: 'silent', silentSince: 1_700_000_000_000 }),
       ),
     )
     const opener = el('report-details')!
@@ -385,7 +385,7 @@ describe('HilosDaemonNodePage', () => {
     h.act(() =>
       h.publish({
         overview: nodeOverview({ online: false, workerRestarts24h: 1 }),
-        node: nodeHeading({ state: 'silent', silentSince: 1_700_000_030 }),
+        node: nodeHeading({ state: 'silent', silentSince: 1_700_000_030_000 }),
       }),
     )
     expect(document.querySelector('[role="dialog"]')).toBe(dialog)

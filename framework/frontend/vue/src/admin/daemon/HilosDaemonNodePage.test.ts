@@ -1,5 +1,5 @@
 import { enableAutoUnmount } from '@vue/test-utils'
-import { HilosPages } from '@hilos/core/base'
+import { bindTimeZoneState, HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -11,8 +11,66 @@ import {
 
 const id = (name: string) => `[data-id="hilos-daemon-${name}"]`
 enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 
 describe('HilosDaemonNodePage', () => {
+  it('updates the saved-report notice, open details and shared head in the reader zone', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    const h = nodeHarness()
+    const release = bindTimeZoneState(h.connection)
+    try {
+      const at = Date.parse('2026-10-09T10:11:12Z')
+      h.answer(
+        nodeOverview({ online: false }),
+        nodeHeading({ state: 'silent', silentSince: at }),
+      )
+      await nextTick()
+      await h.view.get(id('report-details')).trigger('click')
+      const dialog = document.querySelector('[role="dialog"]')!
+      const body = h.view.get(id('node-overview')).element
+      const page = h.scopes.page()
+      for (const [own, zone] of [
+        ['UTC', 'UTC'],
+        ['Europe/Kyiv', 'Europe/Kyiv'],
+        [null, 'America/New_York'],
+      ] as const) {
+        h.emit('projectSignal', {
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 3, timeZone: own } } },
+        })
+        await nextTick()
+        const date = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          dateStyle: 'medium',
+        }).format(at)
+        const time = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(at)
+        const notice = `Silent · values from the last report. Last arrival: ${date}, ${time}.`
+        expect(hilosTimeZone.get()).toBe(zone)
+        expect(h.view.get(id('report-notice')).text()).toBe(notice)
+        expect(dialog.textContent).toContain(notice)
+        expect(h.view.get(id('node-silent')).text()).toBe(
+          `Silent since ${date}, ${time}`,
+        )
+        expect(document.querySelector('[role="dialog"]')).toBe(dialog)
+        expect(h.view.get(id('node-overview')).element).toBe(body)
+        expect(h.scopes.page()).toBe(page)
+        expect(h.send).not.toHaveBeenCalled()
+        expect(h.registerTableWindow).not.toHaveBeenCalled()
+      }
+    } finally {
+      h.view.unmount()
+      release()
+    }
+  })
+
   it('waits for the complete addressed picture, then renders 4 CPU, 4 memory, Node and Environment tiles', async () => {
     const h = nodeHarness()
     expect(h.view.get(id('node-waiting')).text()).toContain(
@@ -192,7 +250,7 @@ describe('HilosDaemonNodePage', () => {
     try {
       const silent = nodeHeading({
         state: 'silent',
-        silentSince: 1_700_000_000,
+        silentSince: 1_700_000_000_000,
       })
       h.answer(nodeOverview({ online: false }), silent)
       await nextTick()
@@ -310,7 +368,7 @@ describe('HilosDaemonNodePage', () => {
     const h = nodeHarness()
     h.answer(
       nodeOverview({ online: false }),
-      nodeHeading({ state: 'silent', silentSince: 1_700_000_000 }),
+      nodeHeading({ state: 'silent', silentSince: 1_700_000_000_000 }),
     )
     await nextTick()
     const opener = h.view.get<HTMLButtonElement>(id('report-details'))
@@ -322,7 +380,7 @@ describe('HilosDaemonNodePage', () => {
     expect(document.activeElement).toBe(dialog)
     h.publish({
       overview: nodeOverview({ online: false, workerRestarts24h: 1 }),
-      node: nodeHeading({ state: 'silent', silentSince: 1_700_000_030 }),
+      node: nodeHeading({ state: 'silent', silentSince: 1_700_000_030_000 }),
     })
     await nextTick()
     expect(document.querySelector('[role="dialog"]')).toBe(dialog)

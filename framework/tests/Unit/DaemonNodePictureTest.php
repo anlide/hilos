@@ -37,12 +37,19 @@ use Hilos\DaemonSection\DaemonCronRulePicture;
 use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonWorkerPicture;
+use Hilos\DaemonSection\ClusterDaemonNodeSlot;
+use Hilos\DaemonSection\ClusterDaemonNodeView;
+use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Hilos;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use ReflectionProperty;
 
 /** The node sends a complete frame at start, on change and periodically. */
@@ -313,7 +320,7 @@ final class DaemonNodePictureTest extends TestCase
             NodeRole::Master,
             12,
             null,
-            new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'daily', '0 3 * * *', null, 100)]),
+            new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'daily', '0 3 * * *', null, 100000)]),
         ));
         self::assertEquals($known, DaemonNodePictureSignalData::fromArray($known->toArray()));
         $incomplete = $known->toArray();
@@ -424,6 +431,63 @@ final class DaemonNodePictureTest extends TestCase
         DaemonMasterCronSignalData::fromArray($wire);
     }
 
+    public function testCronMillisecondsSurviveReportsPictureClusterAndTable(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $master = new DaemonMasterCronSignalData('standalone', null, [
+            new DaemonCronRuleReport('minute', '* * * * *', 1_767_225_540_000),
+            new DaemonCronRuleReport('never', 'invalid', null),
+        ]);
+        $agentReport = new DaemonAgentCronSignalData('a-agent', [
+            new DaemonCronRuleReport('minute', '* * * * *', 1_767_225_540_000),
+            new DaemonCronRuleReport('never', 'invalid', null),
+        ]);
+        $agent->onSignalAgent(
+            new AgentSignalData(data: DaemonMasterCronSignalData::fromArray(json_decode(json_encode($master->toArray()), true))),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_CRON,
+        );
+        $agent->onSignalAgent(
+            new AgentSignalData(data: DaemonAgentCronSignalData::fromArray(json_decode(json_encode($agentReport->toArray()), true))),
+            'agent/a-agent',
+            HilosSignalConstants::DAEMON_AGENT_CRON,
+        );
+        self::assertSame(1_767_225_660, CronRule::nextRunAfter('* * * * *', 1_767_225_600));
+        new ReflectionMethod(DaemonNodeAgent::class, 'rebuildCron')->invoke($agent, 1_767_225_600);
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        $node = DaemonNodePictureSignalData::fromArray(json_decode(json_encode($reported->toArray()), true));
+        self::assertSame($reported->toArray(), $node->toArray());
+        $portion = new DaemonClusterPicturePortionSignalData(true, [new ClusterDaemonNodeView(
+            'standalone', true, new ClusterDaemonNodeSlot('standalone', $node->picture, 42),
+        )]);
+        $cluster = DaemonClusterPicturePortionSignalData::fromArray(json_decode(json_encode($portion->toArray()), true));
+        self::assertSame($portion->toArray(), $cluster->toArray());
+        self::assertSame(42, $cluster->nodes[0]->slot?->receivedAt);
+        ClusterDaemonPictureMirror::forgetPicture();
+        try {
+            ClusterDaemonPictureMirror::applyPortion($cluster);
+            $rows = new HilosDaemonCronTable()->getPage(new TableQueryDTO(filter: ['node' => 'standalone']))->rows;
+            self::assertSame(['/minute', '/never', 'a-agent/minute', 'a-agent/never'], array_map(
+                static fn ($row): string => $row->rowKey,
+                $rows,
+            ));
+            foreach ([0, 2] as $index) {
+                self::assertSame(1_767_225_540_000, $rows[$index]->toArray()['lastRunAt']);
+                self::assertSame(1_767_225_660_000, $rows[$index]->toArray()['nextRunAt']);
+            }
+            foreach ([1, 3] as $index) {
+                self::assertNull($rows[$index]->toArray()['lastRunAt']);
+                self::assertNull($rows[$index]->toArray()['nextRunAt']);
+            }
+        } finally {
+            ClusterDaemonPictureMirror::forgetPicture();
+        }
+    }
+
     public function testCronPictureRejectsUnsortedRows(): void
     {
         $this->expectException(InvalidFormatException::class);
@@ -445,7 +509,7 @@ final class DaemonNodePictureTest extends TestCase
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
         );
         $master = new DaemonMasterCronSignalData('standalone', null, [
-            new DaemonCronRuleReport('daily', '0 3 * * *', 123),
+            new DaemonCronRuleReport('daily', '0 3 * * *', 123000),
         ]);
         $agent->onSignalAgent(new AgentSignalData(data: $master), SignalSource::DAEMON, HilosSignalConstants::DAEMON_MASTER_CRON);
         $agent->reportIfDue(microtime(true) + 6.0);
@@ -453,8 +517,8 @@ final class DaemonNodePictureTest extends TestCase
         self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
         self::assertEquals($roster, $reported->picture->processes);
         self::assertSame('daily', $reported->picture->cron?->rules[0]->name);
-        self::assertSame(123, $reported->picture->cron?->rules[0]->lastRunAt);
-        self::assertGreaterThan(time(), $reported->picture->cron?->rules[0]->nextRunAt);
+        self::assertSame(123000, $reported->picture->cron?->rules[0]->lastRunAt);
+        self::assertGreaterThan(time() * 1000, $reported->picture->cron?->rules[0]->nextRunAt);
 
         $agent->onSignalAgent(
             new AgentSignalData(data: new DaemonMasterCronSignalData('standalone', DaemonCronPicture::IDLE_NOT_LEADER, $master->rules)),
@@ -495,12 +559,18 @@ final class DaemonNodePictureTest extends TestCase
             HilosSignalConstants::DAEMON_MASTER_CRON,
         );
         $pictureProperty = new ReflectionProperty(DaemonNodeAgent::class, 'picture');
-        $picture = $pictureProperty->getValue($agent);
+        $picture = $pictureProperty->getValue($agent)->withCron(new DaemonCronPicture(null, [
+            new DaemonCronRulePicture(null, 'each-minute', '* * * * *', null, (time() + 3600) * 1000),
+        ]));
+        $pictureProperty->setValue($agent, $picture);
+        $agent->onTick();
+        self::assertSame($picture, $pictureProperty->getValue($agent));
         $pictureProperty->setValue($agent, $picture->withCron(new DaemonCronPicture(null, [
-            new DaemonCronRulePicture(null, 'each-minute', '* * * * *', null, time() - 1),
+            new DaemonCronRulePicture(null, 'each-minute', '* * * * *', null, intdiv(time(), 60) * 60000),
         ])));
         $agent->onTick();
-        self::assertGreaterThan(time(), $pictureProperty->getValue($agent)->cron->rules[0]->nextRunAt);
+        self::assertGreaterThan(time() * 1000, $pictureProperty->getValue($agent)->cron->rules[0]->nextRunAt);
+        self::assertLessThanOrEqual((time() + 60) * 1000, $pictureProperty->getValue($agent)->cron->rules[0]->nextRunAt);
     }
 
     public function testAgentRowsAreSortedThenPrunedByRosterAndEmptyReport(): void
@@ -518,7 +588,7 @@ final class DaemonNodePictureTest extends TestCase
         foreach (['z-agent', 'a-agent'] as $agentId) {
             $agent->onSignalAgent(
                 new AgentSignalData(data: new DaemonAgentCronSignalData($agentId, [
-                    new DaemonCronRuleReport('daily', '0 3 * * *', 123),
+                    new DaemonCronRuleReport('daily', '0 3 * * *', 123000),
                 ])),
                 'agent/' . $agentId,
                 HilosSignalConstants::DAEMON_AGENT_CRON,
@@ -531,7 +601,7 @@ final class DaemonNodePictureTest extends TestCase
             static fn (DaemonCronRulePicture $rule): ?string => $rule->agentId,
             $reported->picture->cron?->rules ?? [],
         ));
-        self::assertGreaterThan(time(), $reported->picture->cron?->rules[1]->nextRunAt);
+        self::assertGreaterThan(time() * 1000, $reported->picture->cron?->rules[1]->nextRunAt);
 
         $roster = new DaemonProcessRoster([
             new DaemonWorkerPicture(1, 'regular', 101, 4096, [new DaemonAgentPicture('z-agent', 'node', 'node')]),
@@ -575,14 +645,14 @@ final class DaemonNodePictureTest extends TestCase
         $before = time();
         $agent->onSignalAgent(
             new AgentSignalData(data: new DaemonMasterCronSignalData('standalone', null, [
-                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 123),
+                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 123000),
             ])),
             SignalSource::DAEMON,
             HilosSignalConstants::DAEMON_MASTER_CRON,
         );
         $agent->onSignalAgent(
             new AgentSignalData(data: new DaemonAgentCronSignalData('a-agent', [
-                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 456),
+                new DaemonCronRuleReport('daily', self::DAILY_AT_THREE, 456000),
             ])),
             'agent/a-agent',
             HilosSignalConstants::DAEMON_AGENT_CRON,
@@ -597,7 +667,7 @@ final class DaemonNodePictureTest extends TestCase
             static fn (DaemonCronRulePicture $rule): ?string => $rule->agentId,
             $rules,
         ));
-        self::assertSame([123, 456], array_map(
+        self::assertSame([123000, 456000], array_map(
             static fn (DaemonCronRulePicture $rule): ?int => $rule->lastRunAt,
             $rules,
         ));
@@ -621,22 +691,22 @@ final class DaemonNodePictureTest extends TestCase
     }
 
     /**
-     * @param int|null $nextRunAt Next run as the picture carries it
+     * @param int|null $nextRunAt Next run in epoch milliseconds
      * @param int $before Unix time read before the node counted the run
      * @param int $after Unix time read after the node counted the run
      */
     private function assertDailyRunOnTheProjectClock(?int $nextRunAt, int $before, int $after): void
     {
         self::assertIsInt($nextRunAt);
-        // The frame still carries seconds: a daily run is within two days of now, milliseconds would not be.
-        self::assertGreaterThan($before, $nextRunAt);
-        self::assertLessThanOrEqual($after + 2 * self::SECONDS_PER_DAY, $nextRunAt);
+        // The picture carries milliseconds; the scheduler still calculates in seconds.
+        self::assertGreaterThan($before * 1000, $nextRunAt);
+        self::assertLessThanOrEqual(($after + 2 * self::SECONDS_PER_DAY) * 1000, $nextRunAt);
 
-        $moment = new DateTimeImmutable('@' . $nextRunAt);
+        $moment = new DateTimeImmutable('@' . intdiv($nextRunAt, 1000));
         self::assertSame('03:00', $moment->setTimezone(new DateTimeZone(self::WARSAW))->format(self::CLOCK_FORMAT));
         // 03:00 in Warsaw is 02:00Z in winter and 01:00Z in summer, never 03:00Z of the process zone.
         self::assertContains($moment->format(self::CLOCK_FORMAT), ['01:00', '02:00']);
-        self::assertContains($nextRunAt, [
+        self::assertContains(intdiv($nextRunAt, 1000), [
             CronRule::nextRunAfter(self::DAILY_AT_THREE, $before),
             CronRule::nextRunAfter(self::DAILY_AT_THREE, $after),
         ]);

@@ -357,6 +357,63 @@ The resulting next run is still an absolute moment: on the wire it follows
 [A Moment On The Wire](#a-moment-on-the-wire). A calendar used to calculate a
 moment does not become a different wire format.
 
+### Daemon Cron And Node Heading Moments
+
+The [agent](../../../framework/backend/Core/Agent/AbstractAgent.php) and
+[daemon](../../../framework/backend/Core/Daemon/DaemonManager.php) report
+producers convert nullable `CronRule.lastFiredAt` seconds to milliseconds once
+when they build a
+[report row](../../../framework/backend/DaemonSection/DaemonCronRuleReport.php).
+[`DaemonNodeAgent`](../../../framework/backend/Core/Agent/Hilos/DaemonNodeAgent.php)
+keeps [`CronRule::nextRunAfter()`](../../../framework/backend/Core/Daemon/Cron/CronRule.php)
+in seconds and converts each non-null result once when it builds a
+[picture row](../../../framework/backend/DaemonSection/DaemonCronRulePicture.php).
+Its stale-next check compares the picture's millisecond `nextRunAt` with
+`now * MS_PER_SECOND`. The [master](../../../framework/backend/DaemonSection/DTO/DaemonMasterCronSignalData.php)
+and [agent](../../../framework/backend/DaemonSection/DTO/DaemonAgentCronSignalData.php)
+report DTOs and the [node](../../../framework/backend/DaemonSection/DTO/DaemonNodePictureSignalData.php)
+and [cluster](../../../framework/backend/DaemonSection/DTO/DaemonClusterPicturePortionSignalData.php)
+picture DTOs serialize and hydrate those values unchanged. The
+[Cron table](../../../framework/backend/Tables/Daemon/HilosDaemonCronTable.php)
+carries the same milliseconds into initial and live rows without formatting or
+conversion. The [browser row](../../../framework/frontend/core/src/admin/daemon/hilosDaemonCron.ts)
+passes the nullable millisecond fields to the formatter as-is.
+
+[`DaemonNodeHeading::of()`](../../../framework/backend/DaemonSection/DaemonNodeHeading.php)
+projects nullable `slot.receivedAt` seconds to millisecond `silentSince`; a
+missing arrival stays `null`. The
+[Daemon overview](../../../framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php)
+forwards that heading value without another conversion. This projection leaves
+other Daemon moments, including `receivedAt`, `sampledAt` and
+`measurements.startedAt`, untouched, and preserves the declared `role` in the
+shared node heading introduced by HIL-1705.
+
+[`formatDaemonCronMoment()`](../../../framework/frontend/core/src/admin/daemon/hilosDaemonCron.ts)
+accepts epoch milliseconds and calls the shared
+[`formatMoment()`](../../../framework/frontend/core/src/format/moment.ts)
+separately for a calendar label and a time.
+[`offsetMs()`](../../../framework/frontend/core/src/session/serverClock.ts)
+adjusts only the calendar reference (`nowMs + offsetMs()`); both calls format
+the same absolute `atMs`, so the displayed clock time is not shifted. Far dates
+use the ordinary medium date. If either call returns `null` for an invalid
+moment or unavailable `Intl`, the helper returns `—`. It does not guess seconds,
+call [`serverClock.toLocal()`](../../../framework/frontend/core/src/session/serverClock.ts),
+or format with its own `Intl` code. Row state is resolved first: an idle last
+run says `Not on this node`, an idle next run is `—`, and otherwise a null last
+or next value says `Not yet` or `Never`.
+
+In Vue, the Cron page reads its project-zone line from the
+[connection's `projectTimeZone` getter](../../../framework/frontend/core/src/connection/HilosConnection.ts)
+and refreshes it on every welcome; a welcome without a zone clears the line to
+`—`. Its `useSignal(hilosTimeZone)` bridge reformats open Last/Next cells and
+the silent notices and shared node head when the reader zone changes. The same
+signal is used by the seven current Vue silent-time readers, including the
+[overview root](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonPage.vue)
+and [shared node head](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonNodeShell.vue).
+The existing table, controller, rows, viewport windows and subscriptions stay
+in place; the update adds no timer, request or action. See the
+[Cron page](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonCronPage.vue).
+
 On disk, a log line's timestamp is `[YYYY-MM-DDTHH:mm:ss.SSSZ]`.
 `TimeHelper::getTimestampWithMs()` writes it in explicit UTC, and
 `LogLineReader` parses it in UTC without dropping its milliseconds. A rotation
@@ -495,7 +552,6 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | People | (not in the code yet — HIL-1588) |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | (not in the code yet — HIL-1591) |
-| Cron | (not in the code yet — HIL-1592) |
 | React | (not in the code yet — HIL-1594) |
 | Angular | (not in the code yet — HIL-1595) |
 

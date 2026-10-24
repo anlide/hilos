@@ -1296,7 +1296,11 @@ abstract class DaemonManager extends BaseManager implements
             ksort($rules, SORT_STRING);
             $rows = [];
             foreach ($rules as $rule) {
-                $rows[] = new DaemonCronRuleReport($rule->name, $rule->expression, $rule->lastFiredAt);
+                $rows[] = new DaemonCronRuleReport(
+                    $rule->name,
+                    $rule->expression,
+                    $rule->lastFiredAt === null ? null : $rule->lastFiredAt * TimeConstants::MS_PER_SECOND,
+                );
             }
             $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
             $this->sendToAgent(

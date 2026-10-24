@@ -130,7 +130,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     expect(h.find('hilos-daemon-workers-empty-silent')?.textContent).toContain(
       'never reported',
@@ -209,7 +209,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     expect(h.find('hilos-daemon-workers-silent')?.textContent).toContain(
       'from its last report',

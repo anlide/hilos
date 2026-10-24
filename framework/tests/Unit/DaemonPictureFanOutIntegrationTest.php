@@ -291,7 +291,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
         );
         $cron = new DaemonMasterCronSignalData('standalone', null, [
-            new DaemonCronRuleReport('daily', '0 3 * * *', 123),
+            new DaemonCronRuleReport('daily', '0 3 * * *', 123000),
         ]);
         $node->onSignalAgent(
             new AgentSignalData(data: DaemonMasterCronSignalData::fromArray($cron->toArray())),

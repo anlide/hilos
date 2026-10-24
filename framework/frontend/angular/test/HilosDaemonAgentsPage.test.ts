@@ -170,7 +170,7 @@ describe('HilosDaemonAgentsPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(confirm().disabled).toBe(true)
@@ -238,7 +238,7 @@ describe('HilosDaemonAgentsPage', () => {
           clustered: true,
           role: null,
           state: 'silent',
-          silentSince: 1700000000,
+          silentSince: 1700000000000,
         })
       if (state === 'restarting') h.window(true)
       if (state === 'frozen')

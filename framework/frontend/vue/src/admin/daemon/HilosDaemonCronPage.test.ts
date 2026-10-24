@@ -1,21 +1,30 @@
 import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount } from '@vue/test-utils'
+import * as core from '@hilos/core/base'
 import {
   DAEMON_CRON_IDLE_NOT_LEADER,
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
+  type HilosDaemonCronRow,
   type HilosDaemonNodeHeading,
 } from '@hilos/core/admin/daemon'
 import {
   HilosPages,
   ScopeManager,
+  bindTimeZoneState,
+  bindAdminAccess,
+  hilosAdminAccess,
+  ingest,
+  hilosTimeZone,
+  type ReadonlySignal,
+  type TableViewportController,
   pageIdentity,
   createSignal,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core/base'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonCronPage from './HilosDaemonCronPage.vue'
@@ -50,22 +59,37 @@ function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
   }
 }
 
-function harness(diagramBuilt = false) {
+afterEach(() => vi.restoreAllMocks())
+
+function harness(diagramBuilt = false, initialProjectZone?: string) {
   const scopes = markRaw(new ScopeManager())
   const scope = openNodePage(scopes, HilosPages.DAEMON_CRON)
-  const listeners: Array<(signal: { data: unknown }) => void> = []
+  const listeners = new Map<string, Set<(signal: never) => void>>()
+  let projectTimeZone = initialProjectZone
+  const emit = (event: string, payload: unknown) => {
+    for (const listener of listeners.get(event) ?? [])
+      listener(payload as never)
+  }
+  const register = vi.fn()
+  const unregister = vi.fn()
+  const sendViewport = vi.fn(() => true)
+  const send = vi.fn(() => true)
   const connection = {
-    on(event: string, listener: (signal: never) => void): () => void {
-      if (event === 'tableWindow') {
-        listeners.push(listener as (signal: { data: unknown }) => void)
-      }
-      return () => {}
+    get projectTimeZone() {
+      return projectTimeZone
     },
-    registerTableWindow(): void {},
-    unregisterTableWindow(): void {},
+    on(event: string, listener: (signal: never) => void): () => void {
+      const group = listeners.get(event) ?? new Set()
+      group.add(listener)
+      listeners.set(event, group)
+      return () => group.delete(listener)
+    },
+    registerTableWindow: register,
+    unregisterTableWindow: unregister,
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): void {},
+    sendTableViewport: sendViewport,
     sendTableRendered(): void {},
+    send,
   } as unknown as HilosConnection
   const view = mount(HilosDaemonCronPage, {
     props: { context: { connection, scopes } },
@@ -76,6 +100,22 @@ function harness(diagramBuilt = false) {
 
   return {
     view,
+    connection,
+    listeners,
+    register,
+    unregister,
+    sendViewport,
+    send,
+    welcome(zone?: string): void {
+      projectTimeZone = zone
+      emit('handshake', { projectTimeZone: zone })
+    },
+    ownZone(timeZone: string | null): void {
+      emit('projectSignal', {
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 3, timeZone } } },
+      })
+    },
     heading(value: HilosDaemonNodeHeading): void {
       scope.data.set(DAEMON_NODE_DATA, value)
     },
@@ -83,19 +123,17 @@ function harness(diagramBuilt = false) {
       scope.data.set(DAEMON_CRON_REPORTED_DATA, value)
     },
     window(rows: Record<string, unknown>[]): void {
-      for (const listener of listeners) {
-        listener({
-          data: {
-            page: HilosPages.DAEMON_CRON,
-            tableKey: 'hilosDaemonCron',
-            rows: rows.map((rule) => ({
-              rowKey: String(rule.rowKey),
-              slots: { rule },
-            })),
-            totalCount: rows.length,
-          },
-        })
-      }
+      emit('tableWindow', {
+        data: {
+          page: HilosPages.DAEMON_CRON,
+          tableKey: 'hilosDaemonCron',
+          rows: rows.map((rule) => ({
+            rowKey: String(rule.rowKey),
+            slots: { rule },
+          })),
+          totalCount: rows.length,
+        },
+      })
     },
   }
 }
@@ -108,14 +146,168 @@ function rule(
     agentId: null,
     name: 'cleanup_history',
     expression: '*/30 * * * *',
-    lastRunAt: 1_700_000_000,
-    nextRunAt: 1_700_001_800,
+    lastRunAt: 1_700_000_000_000,
+    nextRunAt: 1_700_001_800_000,
     idleReason: null,
     ...overrides,
   }
 }
 
 describe('HilosDaemonCronPage', () => {
+  it('keeps mounted run times and both silence readers live through own zone changes and Automatic', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T00:15:00Z'))
+    const nativeSubscribe = core.subscribeSignal
+    const callbacks = vi.fn()
+    const releases = vi.fn()
+    vi.spyOn(core, 'subscribeSignal').mockImplementation(
+      <T>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
+        const stop = nativeSubscribe(source, (value) => {
+          if (source === hilosTimeZone) callbacks(value)
+          listener(value)
+        })
+        return () => {
+          if (source === hilosTimeZone) releases()
+          stop()
+        }
+      },
+    )
+    const h = harness(false, 'Europe/Warsaw')
+    const release = bindTimeZoneState(h.connection)
+    try {
+      h.ownZone('UTC')
+      const at = Date.parse('2026-10-24T03:30:00Z')
+      h.heading({
+        clustered: true,
+        role: 'master',
+        state: 'silent',
+        silentSince: at,
+      })
+      h.reported(true)
+      h.window([rule({ lastRunAt: at, nextRunAt: at + 3_600_000 })])
+      await nextTick()
+      const table = h.view.getComponent({ name: 'HilosViewportTable' })
+      const controller = table.props(
+        'controller',
+      ) as TableViewportController<HilosDaemonCronRow>
+      const window = controller.rows.get()
+      const row = h.view.get('[data-id="hilos-table-row-/cleanup_history"]')
+      const dataRow = window[0].row
+      const page = h.view.props('context').scopes.page()
+      const requests = h.sendViewport.mock.calls.length
+      const registrations = h.register.mock.calls.length
+      const expected = (zone: string, moment: number, day: string) =>
+        `${day}, ${new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(moment)}`
+      for (const [own, zone, day, nextDay] of [
+        ['UTC', 'UTC', 'today', 'today'],
+        ['Pacific/Honolulu', 'Pacific/Honolulu', 'today', 'today'],
+        [null, 'America/New_York', 'today', 'tomorrow'],
+      ] as const) {
+        h.ownZone(own)
+        await nextTick()
+        expect(hilosTimeZone.get()).toBe(zone)
+        expect(row.findAll('td')[3].text()).toBe(expected(zone, at, day))
+        expect(row.findAll('td')[4].text()).toBe(
+          expected(zone, at + 3_600_000, nextDay),
+        )
+        expect(h.view.get('[data-id="hilos-daemon-cron-silent"]').text()).toBe(
+          `This node has been silent since ${expected(zone, at, day)}. The rules below are from its last report.`,
+        )
+        expect(h.view.get('[data-id="hilos-daemon-node-silent"]').text()).toBe(
+          `Silent since ${expected(zone, at, day)}`,
+        )
+        expect(
+          h.view.get('[data-id="hilos-daemon-cron-project-time-zone"]').text(),
+        ).toBe('Europe/Warsaw')
+        expect(table.props('controller')).toBe(controller)
+        expect(controller.rows.get()).toBe(window)
+        expect(controller.rows.get()[0].row).toBe(dataRow)
+        expect(h.view.props('context').scopes.page()).toBe(page)
+        expect(
+          h.view.get('[data-id="hilos-table-row-/cleanup_history"]').element,
+        ).toBe(row.element)
+        expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+        expect(h.register).toHaveBeenCalledTimes(registrations)
+        expect(h.send).not.toHaveBeenCalled()
+      }
+      const callbackCount = callbacks.mock.calls.length
+      h.view.unmount()
+      // Cron, shared head and the table's existing live-status formatter.
+      expect(releases).toHaveBeenCalledTimes(3)
+      expect(h.unregister).toHaveBeenCalledTimes(1)
+      expect(h.listeners.get('handshake')?.size).toBe(1)
+      h.ownZone('Asia/Tokyo')
+      expect(callbacks).toHaveBeenCalledTimes(callbackCount)
+    } finally {
+      h.view.unmount()
+      release()
+    }
+    expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(
+      true,
+    )
+  })
+
+  it.each([true, false])(
+    'seeds and refreshes the project zone for admin=%s, clearing an omitted zone',
+    async (admin) => {
+      const h = harness(false, 'America/Argentina/ComodRivadavia')
+      const scopes = h.view.props('context').scopes
+      ingest(scopes.session, {
+        entities: { currentUser: { id: 3, admin } },
+        data: { adminViewMode: true },
+      })
+      const releaseAccess = bindAdminAccess(scopes)
+      try {
+        await nextTick()
+        expect(hilosAdminAccess.get()).toBe(admin ? 'full' : 'view')
+        const line = h.view.get('[data-id="hilos-daemon-cron-time-zone"]')
+        const zone = h.view.get(
+          '[data-id="hilos-daemon-cron-project-time-zone"]',
+        )
+        expect(line.text()).toBe(
+          "Expressions are evaluated in the project's time zone — America/Argentina/ComodRivadavia. Run times are shown in your time zone.",
+        )
+        expect(line.element.tagName).toBe('P')
+        expect(line.classes()).toEqual(['small', 'text-body-secondary', 'mb-2'])
+        expect(line.attributes('role')).toBeUndefined()
+        expect(line.attributes('aria-live')).toBeUndefined()
+        expect(line.get('i').attributes('aria-hidden')).toBe('true')
+        expect(zone.classes()).toContain('text-break')
+        expect(h.view.findAll('h1')).toHaveLength(1)
+        h.welcome('Asia/Tokyo')
+        await nextTick()
+        expect(zone.text()).toBe('Asia/Tokyo')
+        expect(
+          h.view.get('[data-id="hilos-daemon-cron-time-zone"]').element,
+        ).toBe(line.element)
+        h.welcome()
+        await nextTick()
+        expect(zone.text()).toBe('—')
+        expect(h.send).not.toHaveBeenCalled()
+        h.view.unmount()
+        expect(h.listeners.get('handshake')?.size).toBe(0)
+      } finally {
+        h.view.unmount()
+        releaseAccess()
+      }
+      const older = harness()
+      expect(
+        older.view
+          .get('[data-id="hilos-daemon-cron-project-time-zone"]')
+          .text(),
+      ).toBe('—')
+      older.view.unmount()
+    },
+  )
+
   it('shows a cluster state and the diagram only when the root is built', async () => {
     const built = harness(true)
     built.heading({
@@ -185,7 +377,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     await nextTick()
     const silent = h.view.find('[data-id="hilos-daemon-cron-empty-silent"]')
@@ -230,7 +422,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     await nextTick()
     expect(
@@ -263,7 +455,7 @@ describe('HilosDaemonCronPage', () => {
         clustered: true,
         role: null,
         state,
-        silentSince: state === 'silent' ? 1_700_000_000 : null,
+        silentSince: state === 'silent' ? 1_700_000_000_000 : null,
       })
       h.reported(true)
       h.window([rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })])

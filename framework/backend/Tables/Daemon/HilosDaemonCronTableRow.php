@@ -23,8 +23,8 @@ final class HilosDaemonCronTableRow extends AbstractTableRow
      * @param ?string $agentId Agent owner, or null for a daemon rule
      * @param string $name Rule name
      * @param string $expression Cron expression
-     * @param ?int $lastRunAt Last actual firing, in Unix seconds
-     * @param ?int $nextRunAt Next matching minute, in Unix seconds
+     * @param ?int $lastRunAt Last actual firing in epoch milliseconds
+     * @param ?int $nextRunAt Next matching minute in epoch milliseconds
      * @param ?string $idleReason Why a daemon rule does not run on this node
      */
     public function __construct(

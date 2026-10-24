@@ -46,7 +46,7 @@ describe('HilosDaemonHttpServerPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1700000000,
+      silentSince: 1700000000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-http-status')?.getAttribute('data-status')).toBe(

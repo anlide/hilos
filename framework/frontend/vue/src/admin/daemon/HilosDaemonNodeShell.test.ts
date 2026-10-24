@@ -1,6 +1,12 @@
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
-import { bindAdminAccess, HilosPages, hilosAdminAccess } from '@hilos/core/base'
-import { afterEach, describe, expect, it } from 'vitest'
+import {
+  bindAdminAccess,
+  bindTimeZoneState,
+  HilosPages,
+  hilosAdminAccess,
+  hilosTimeZone,
+} from '@hilos/core/base'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import {
@@ -12,6 +18,7 @@ import {
 
 const id = (name: string) => `[data-id="hilos-daemon-node-${name}"]`
 enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 
 describe('HilosDaemonNodeShell', () => {
   it('uses the shared entity skeleton until the permitted answer arrives', async () => {
@@ -138,7 +145,7 @@ describe('HilosDaemonNodeShell', () => {
         nodeHeading({
           state,
           role,
-          silentSince: state === 'silent' ? 1_700_000_000 : null,
+          silentSince: state === 'silent' ? 1_700_000_000_000 : null,
         }),
       )
       await nextTick()
@@ -185,7 +192,7 @@ describe('HilosDaemonNodeShell', () => {
         clustered: false,
         state: 'silent',
         role: 'master',
-        silentSince: 1_700_000_000,
+        silentSince: 1_700_000_000_000,
       }),
     )
     await nextTick()
@@ -365,6 +372,132 @@ describe('HilosDaemonNodeShell', () => {
 })
 
 describe('actual node child pages', () => {
+  it.each([
+    {
+      page: HilosPages.DAEMON_WORKERS,
+      table: 'hilosDaemonWorkers',
+      slot: 'worker',
+      row: {
+        index: 0,
+        kind: 'regular',
+        pid: 123,
+        memoryBytes: 1024,
+        agentCount: 0,
+        agentIds: [],
+        logStream: 'worker.log',
+      },
+      notice: 'hilos-daemon-workers-silent',
+    },
+    {
+      page: HilosPages.DAEMON_AGENTS,
+      table: 'hilosDaemonAgents',
+      slot: 'agent',
+      row: {
+        agentId: 'library',
+        restarting: false,
+        workerIndex: 0,
+        workerKind: 'regular',
+        placement: 'node',
+        idle: false,
+        ownsRt: [],
+        ownsDb: [],
+        logStream: 'agent.log',
+      },
+      notice: 'hilos-daemon-agents-silent',
+    },
+    {
+      page: HilosPages.DAEMON_HTTP_SERVER,
+      table: 'hilosDaemonHttpRoutes',
+      slot: 'route',
+      row: {
+        method: 'GET',
+        path: '/status',
+        agentType: null,
+        requests: 1,
+        serverErrors: 0,
+        slowestMs: 12,
+      },
+      notice: 'hilos-daemon-http-status',
+    },
+  ])(
+    'updates $page silence in its saved-report notice and shared head without a new window',
+    async ({ page, table, slot, row, notice }) => {
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockReturnValue({ ...resolved, timeZone: 'America/New_York' })
+      const h = nodeHarness({ child: true, page })
+      const release = bindTimeZoneState(h.connection)
+      try {
+        const at = Date.parse('2026-10-09T10:11:12Z')
+        h.answer(null, nodeHeading({ state: 'silent', silentSince: at }))
+        h.publish({
+          http: {
+            host: '0.0.0.0',
+            port: 8080,
+            countingHours: 24,
+            requests: 1,
+            serverErrors: 0,
+            slow: 0,
+          },
+        })
+        h.emit('tableWindow', {
+          data: {
+            page,
+            tableKey: table,
+            rows: [{ rowKey: 'one', slots: { [slot]: row } }],
+            totalCount: 1,
+          },
+        })
+        await nextTick()
+        const controller = h.registerTableWindow.mock.calls[0][1]
+        const window = controller.rows.get()
+        const rowElement = h.view.get('[data-id="hilos-table-row-one"]').element
+        const header = h.view.get('h1').element
+        const requests = h.sendViewport.mock.calls.length
+        for (const [own, zone] of [
+          ['UTC', 'UTC'],
+          ['Europe/Kyiv', 'Europe/Kyiv'],
+          [null, 'America/New_York'],
+        ] as const) {
+          h.emit('projectSignal', {
+            type: 'handshake_response',
+            data: { entities: { currentUser: { id: 3, timeZone: own } } },
+          })
+          await nextTick()
+          const date = new Intl.DateTimeFormat(undefined, {
+            timeZone: zone,
+            dateStyle: 'medium',
+          }).format(at)
+          const time = new Intl.DateTimeFormat(undefined, {
+            timeZone: zone,
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(at)
+          expect(hilosTimeZone.get()).toBe(zone)
+          expect(h.view.get(id('silent')).text()).toBe(
+            `Silent since ${date}, ${time}`,
+          )
+          expect(h.view.get(`[data-id="${notice}"]`).text()).toBe(
+            `This node has been silent since ${date}, ${time}. The ${page === HilosPages.DAEMON_HTTP_SERVER ? 'values' : page === HilosPages.DAEMON_WORKERS ? 'workers' : 'agents'} below are from its last report.`,
+          )
+          expect(h.view.get('h1').element).toBe(header)
+          expect(h.view.get('[data-id="hilos-table-row-one"]').element).toBe(
+            rowElement,
+          )
+          expect(controller.rows.get()).toBe(window)
+          expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+          expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
+          expect(h.send).not.toHaveBeenCalled()
+        }
+      } finally {
+        h.view.unmount()
+        release()
+      }
+    },
+  )
+
   it.each(
     nodeTabs.filter(
       (tab) =>

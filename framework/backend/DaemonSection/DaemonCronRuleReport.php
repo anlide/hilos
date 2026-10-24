@@ -12,7 +12,7 @@ final readonly class DaemonCronRuleReport
     /**
      * @param string $name Non-empty rule name
      * @param string $expression Cron expression, including an expression the runner cannot use
-     * @param ?int $lastRunAt Unix time of the last actual firing
+     * @param ?int $lastRunAt Last actual firing in epoch milliseconds
      * @throws InvalidFormatException When the name is empty
      */
     public function __construct(

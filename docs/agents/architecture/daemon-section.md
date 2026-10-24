@@ -122,14 +122,18 @@ feature sends no such agent reports. An empty report withdraws a former set.
 
 The node agent combines these reports into flat rows: `agentId` is null for a
 daemon rule and names its agent otherwise. Each row carries the rule's name,
-expression, last actual firing (`lastRunAt`), and the next matching local minute
-as Unix seconds (`nextRunAt`). "Local" is the project time zone
-(`HILOS_PROJECT_TIME_ZONE`), the same one the runner matches the rule in. The
-node agent computes that next minute with `CronRule::nextRunAfter()`, using the
-same field rules as the runner: the day of month and weekday must both match. Null means no match in the bounded search or
-an invalid expression. Daemon rules have no next run on a node that is not the
-leader; `idleReason: not_leader` says why. Agent rules continue to have next
-runs on that node.
+expression, the last actual firing (`lastRunAt`) as a nullable epoch-millisecond
+moment in report and picture rows, and the next matching local minute
+(`nextRunAt`) as a nullable epoch-millisecond moment in the picture row. The
+project time zone (`HILOS_PROJECT_TIME_ZONE`) still determines that minute,
+using the same field rules as the runner: the day of month and weekday must
+both match. `CronRule::nextRunAfter()` remains an internal seconds API; the node
+agent converts its non-null result to milliseconds once when building a picture
+row. See
+[Daemon Cron and Node Heading Moments](time-zones.md#daemon-cron-and-node-heading-moments).
+Null means no match in the bounded search or an invalid expression. Daemon rules
+have no next run on a node that is not the leader; `idleReason: not_leader` says
+why. Agent rules continue to have next runs on that node.
 
 Until the master's cron part arrives, the `cron` section is null rather than an
 empty rule list. Rows are sorted with daemon rules first, then by agent id and

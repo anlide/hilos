@@ -21,6 +21,7 @@ export const DAEMON_NODE_STATE_SILENT = 'silent'
 export const daemonNodeHeadingSchema = z.strictObject({
   clustered: z.boolean(),
   state: z.string().nullable(),
+  /** Last report arrival in epoch milliseconds, only while silent. */
   silentSince: z.number().int().nullable(),
   role: z.enum(['master', 'slave']).nullable(),
 })

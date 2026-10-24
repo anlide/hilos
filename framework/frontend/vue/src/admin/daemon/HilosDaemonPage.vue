@@ -19,7 +19,7 @@ import {
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -36,12 +36,14 @@ const placementActive = ref(false)
 const placementOpened = ref(false)
 const overview = useSignal(daemon.overview)
 const database = useSignal(daemon.database)
+const timeZone = useSignal(hilosTimeZone)
 const router = inject(hilosRouterKey)
 if (!router)
   throw new Error('HilosDaemonPage requires a provided Hilos router.')
 
 /** @param node The silent node's last-known silence boundary. */
 function formatSilentSince(node: HilosDaemonOverviewNode): string | null {
+  void timeZone.value
   return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
 }
 

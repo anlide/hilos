@@ -190,7 +190,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
             'measurements' => null, 'standing' => null,
         ], $nodes[0]);
         self::assertSame('silent', $nodes[1]['state']);
-        self::assertSame(90, $nodes[1]['silentSince']);
+        self::assertSame(90000, $nodes[1]['silentSince']);
         self::assertSame('slave', $nodes[1]['role']);
         self::assertSame('silent', $nodes[2]['state']);
         self::assertNull($nodes[2]['silentSince']);

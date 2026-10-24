@@ -9,7 +9,9 @@ import {
   type HilosDaemonNodeHeading,
 } from './hilosDaemonNode.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatMoment } from '../../format/moment.js'
 import { HilosPages } from '../../routing/hilosPages.js'
+import { offsetMs } from '../../session/serverClock.js'
 import {
   readNumberOrNull,
   readString,
@@ -53,7 +55,9 @@ export interface HilosDaemonCronRow {
   readonly agentId: string | null
   readonly name: string
   readonly expression: string
+  /** Last actual firing in epoch milliseconds. */
   readonly lastRunAt: number | null
+  /** Next matching minute in epoch milliseconds. */
   readonly nextRunAt: number | null
   readonly idleReason: string | null
 }
@@ -272,39 +276,21 @@ export function formatDaemonCronNextRun(
 }
 
 /**
- * Render a Unix second as a browser-local calendar moment.
+ * Render an epoch millisecond moment in the reader's time zone.
  *
- * @param atSeconds Instant to show, in Unix seconds.
+ * @param atMs Instant to show, in epoch milliseconds.
  * @param nowMs Current instant in browser milliseconds.
  */
-export function formatDaemonCronMoment(
-  atSeconds: number,
-  nowMs: number,
-): string {
-  const at = new Date(atSeconds * 1000)
-  const now = new Date(nowMs)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime()
-  const time = at.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
+export function formatDaemonCronMoment(atMs: number, nowMs: number): string {
+  const day = formatMoment(atMs, {
+    kind: 'calendar',
+    now: nowMs + offsetMs(),
+    format: { dateStyle: 'medium' },
+  })
+  const time = formatMoment(atMs, {
+    kind: 'time',
+    format: { hour: '2-digit', minute: '2-digit' },
   })
 
-  if (day === today.getTime()) {
-    return `Today, ${time}`
-  }
-  if (day === tomorrow.getTime()) {
-    return `Tomorrow, ${time}`
-  }
-  if (day === yesterday.getTime()) {
-    return `Yesterday, ${time}`
-  }
-  return at.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return day === null || time === null ? '—' : `${day}, ${time}`
 }

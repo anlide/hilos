@@ -99,7 +99,7 @@ describe('daemon HTTP empty state', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 42,
+      silentSince: 42000,
     }
     const leader = {
       clustered: true,

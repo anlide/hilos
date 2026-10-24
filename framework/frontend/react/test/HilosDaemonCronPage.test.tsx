@@ -108,8 +108,8 @@ function rule(
     agentId: null,
     name: 'cleanup',
     expression: '*/30 * * * *',
-    lastRunAt: 1_700_000_000,
-    nextRunAt: 1_700_001_800,
+    lastRunAt: 1_700_000_000_000,
+    nextRunAt: 1_700_001_800_000,
     idleReason: null,
     ...overrides,
   }
@@ -126,7 +126,7 @@ describe('HilosDaemonCronPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     expect(h.find('hilos-daemon-cron-empty-silent')?.textContent).toContain(
       'never reported',
@@ -163,7 +163,7 @@ describe('HilosDaemonCronPage', () => {
         clustered: true,
         role: null,
         state,
-        silentSince: state === 'silent' ? 1_700_000_000 : null,
+        silentSince: state === 'silent' ? 1_700_000_000_000 : null,
       })
       h.window([
         rule({ idleReason: 'not_leader' }),

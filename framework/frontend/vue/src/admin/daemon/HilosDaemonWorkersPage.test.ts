@@ -179,7 +179,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
@@ -273,7 +273,7 @@ describe('HilosDaemonWorkersPage', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     await nextTick()
     expect(

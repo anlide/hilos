@@ -15,7 +15,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
@@ -43,9 +43,11 @@ const rows = useSignal(workers.controller.rows)
 const emptyState = computed(() =>
   daemonProcessesEmptyState(heading.value, reported.value),
 )
-const silentSince = computed(() =>
-  formatDaemonNodeSilentSince(heading.value, Date.now()),
-)
+const timeZone = useSignal(hilosTimeZone)
+const silentSince = computed(() => {
+  void timeZone.value
+  return formatDaemonNodeSilentSince(heading.value, Date.now())
+})
 
 onMounted(() => workers.start())
 onUnmounted(() => workers.dispose())

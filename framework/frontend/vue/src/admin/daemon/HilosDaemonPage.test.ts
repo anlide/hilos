@@ -3,6 +3,8 @@ import {
   HilosPages,
   ScopeManager,
   bindPageScope,
+  bindTimeZoneState,
+  hilosTimeZone,
   bindAdminAccess,
   createAppPageRouter,
   createHilosRouter,
@@ -17,7 +19,7 @@ import {
   type HilosDaemonOverviewNode,
   type HilosDaemonDatabaseData,
 } from '@hilos/core/admin/daemon'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosDaemonPage from './HilosDaemonPage.vue'
@@ -218,6 +220,7 @@ function harness(
     view,
     page,
     scopes,
+    connection,
     router,
     matcher,
     send,
@@ -251,7 +254,64 @@ function harness(
   }
 }
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('HilosDaemonPage', () => {
+  it('updates a mounted silent node in the reader zone without requesting another picture', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    const at = Date.parse('2026-10-09T10:11:12Z')
+    const h = harness(
+      true,
+      picture([
+        node('n1', { online: false, state: 'silent', silentSince: at }),
+      ]),
+    )
+    const release = bindTimeZoneState(h.connection)
+    try {
+      await nextTick()
+      const line = h.view.get('[data-id="hilos-daemon-silent-n1"]')
+      const page = h.scopes.page()
+      const registrations = h.register.mock.calls.length
+      const requests = h.sendViewport.mock.calls.length
+      for (const [own, zone] of [
+        ['UTC', 'UTC'],
+        ['Europe/Kyiv', 'Europe/Kyiv'],
+        [null, 'America/New_York'],
+      ] as const) {
+        h.emit('projectSignal', {
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 3, timeZone: own } } },
+        })
+        await nextTick()
+        const date = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          dateStyle: 'medium',
+        }).format(at)
+        const time = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(at)
+        expect(hilosTimeZone.get()).toBe(zone)
+        expect(line.text()).toBe(`Silent since ${date}, ${time}`)
+        expect(h.view.get('[data-id="hilos-daemon-silent-n1"]').element).toBe(
+          line.element,
+        )
+        expect(h.scopes.page()).toBe(page)
+        expect(h.register).toHaveBeenCalledTimes(registrations)
+        expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+        expect(h.send).not.toHaveBeenCalled()
+      }
+    } finally {
+      h.view.unmount()
+      release()
+    }
+  })
+
   it('reads the lean root, identity and database from one answer and distinguishes unknown, empty and zero', async () => {
     const h = harness()
     expect(
@@ -351,7 +411,7 @@ describe('HilosDaemonPage', () => {
     const silent = node('n1', {
       online: false,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     h.update(picture([silent]))
     await nextTick()

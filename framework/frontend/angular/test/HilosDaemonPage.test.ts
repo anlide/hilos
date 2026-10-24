@@ -91,7 +91,7 @@ describe('HilosDaemonPage', () => {
         daemonNode('n1', {
           online: false,
           state: 'silent',
-          silentSince: 1_700_000_000,
+          silentSince: 1_700_000_000_000,
         }),
       ]),
     )

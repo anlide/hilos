@@ -169,7 +169,7 @@ const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
   role: null,
   state: 'silent',
-  silentSince: 1_700_000_000,
+  silentSince: 1_700_000_000_000,
 }
 function agent(
   overrides: Record<string, unknown> = {},

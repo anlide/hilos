@@ -34,7 +34,7 @@ final class HilosDaemonCronTableTest extends TestCase
 
     public function testPictureDiffKeepsSilentRowsAndDistinguishesReportedEmpty(): void
     {
-        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120)]);
+        $cron = new DaemonCronPicture(null, [new DaemonCronRulePicture(null, 'cleanup', '* * * * *', null, 120000)]);
         $this->picture($this->node('n1', $cron));
         $before = ClusterDaemonPictureMirror::picture();
         $this->picture($this->node('n1', $cron, false));
@@ -74,9 +74,9 @@ final class HilosDaemonCronTableTest extends TestCase
     public function testRulesKeepPictureOrderAndAllFields(): void
     {
         $this->picture($this->node('n1', new DaemonCronPicture(null, [
-            $this->rule(null, 'cleanup', last: null, next: 200),
-            $this->rule('a', 'rotate', last: 100, next: 200),
-            $this->rule('b', 'rotate', last: 150, next: 250),
+            $this->rule(null, 'cleanup', last: null, next: 200000),
+            $this->rule('a', 'rotate', last: 100000, next: 200000),
+            $this->rule('b', 'rotate', last: 150000, next: 250000),
         ])));
 
         $rows = $this->rows('n1');
@@ -87,12 +87,14 @@ final class HilosDaemonCronTableTest extends TestCase
             HilosDaemonCronTableRow::name => 'cleanup',
             HilosDaemonCronTableRow::expression => '* * * * *',
             HilosDaemonCronTableRow::lastRunAt => null,
-            HilosDaemonCronTableRow::nextRunAt => 200,
+            HilosDaemonCronTableRow::nextRunAt => 200000,
             HilosDaemonCronTableRow::idleReason => null,
         ], $rows[0]->toArray());
         self::assertSame(['a', 'b'], [$rows[1]->agentId, $rows[2]->agentId]);
-        self::assertSame(100, $rows[1]->lastRunAt);
-        self::assertSame(250, $rows[2]->nextRunAt);
+        self::assertSame(100000, $rows[1]->lastRunAt);
+        self::assertSame(250000, $rows[2]->nextRunAt);
+        self::assertSame(100000, new HilosDaemonCronTable()->browserRow($rows[1])['sources']['rule']['lastRunAt']);
+        self::assertSame(200000, new HilosDaemonCronTable()->browserRow($rows[1])['sources']['rule']['nextRunAt']);
         self::assertSame(array_keys($rows[0]->toArray()), array_keys(new HilosDaemonCronTable()->wireFields()));
         self::assertNull(new HilosDaemonCronTable()->defaultSort());
     }
@@ -100,15 +102,15 @@ final class HilosDaemonCronTableTest extends TestCase
     public function testIdleReasonAffectsOnlyDaemonRulesAndSilentNodeKeepsItsRows(): void
     {
         $this->picture($this->node('n1', new DaemonCronPicture(DaemonCronPicture::IDLE_NOT_LEADER, [
-            $this->rule(null, 'cleanup', last: 100, next: null),
-            $this->rule('log', 'rotate', last: 110, next: 200),
+            $this->rule(null, 'cleanup', last: 100000, next: null),
+            $this->rule('log', 'rotate', last: 110000, next: 200000),
         ]), online: false));
 
         $rows = $this->rows('n1');
         self::assertSame(DaemonCronPicture::IDLE_NOT_LEADER, $rows[0]->idleReason);
         self::assertNull($rows[0]->nextRunAt);
         self::assertNull($rows[1]->idleReason);
-        self::assertSame(200, $rows[1]->nextRunAt);
+        self::assertSame(200000, $rows[1]->nextRunAt);
     }
 
     public function testEncodedOwnerAndNamePairsDoNotCollide(): void

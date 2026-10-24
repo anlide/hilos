@@ -46,7 +46,7 @@ final class AgentCronReportTest extends TestCase
     public function testChangeFiringRepairAndWithdrawal(): void
     {
         $agent = new CronReportProbeAgent();
-        $first = new CronRule('z-last', '* * * * *');
+        $first = new CronReportFixedClockRule('z-last', '* * * * *');
         $second = new CronRule('a-first', '0 3 * * *');
         $agent->rules = [$first, $second];
         $agent->reportCronRulesIfDue(100.0);
@@ -54,13 +54,19 @@ final class AgentCronReportTest extends TestCase
         self::assertSame('cron_probe', $reported->agentId);
         self::assertSame(['a-first', 'z-last'], array_map(static fn ($rule): string => $rule->name, $reported->rules));
         self::assertEquals($reported, DaemonAgentCronSignalData::fromArray($reported->toArray()));
+        self::assertNull($reported->rules[0]->lastRunAt);
+        self::assertNull($reported->rules[1]->lastRunAt);
 
         $agent->reportCronRulesIfDue(101.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         $first->lastRun = 0.0;
         self::assertTrue($first->shouldRun());
+        self::assertSame(1_767_225_600, $first->lastFiredAt);
+        self::assertFalse($first->shouldRun());
         $agent->reportCronRulesIfDue(102.0);
-        self::assertNotNull($this->takeReport()->rules[1]->lastRunAt);
+        $fired = $this->takeReport();
+        self::assertSame(1_767_225_600_000, $fired->rules[1]->lastRunAt);
+        self::assertSame($fired->toArray(), DaemonAgentCronSignalData::fromArray($fired->toArray())->toArray());
 
         $agent->reportCronRulesIfDue(161.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
@@ -121,4 +127,13 @@ abstract class CronReportEnabledHilos extends Hilos
 abstract class CronReportDisabledHilos extends Hilos
 {
     protected const array FEATURES = [];
+}
+
+final class CronReportFixedClockRule extends CronRule
+{
+    /** @return int A known epoch second at which this test fires the rule */
+    protected function currentTimestamp(): int
+    {
+        return 1_767_225_600;
+    }
 }

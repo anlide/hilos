@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   daemonNodeDiagramPath,
@@ -10,8 +10,12 @@ import {
   type HilosDaemonNodeHeading,
 } from '../../../src/admin/daemon/hilosDaemonNode.js'
 import { formatDaemonCronMoment } from '../../../src/admin/daemon/hilosDaemonCron.js'
+import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
+import { applyServerTime } from '../../../src/session/serverClock.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { bindTimeZoneState } from '../../../src/timeZone/timeZoneState.js'
 
 describe('daemon node heading', () => {
   it('requires role, preserves unknown role and reads only the reported role', () => {
@@ -76,13 +80,13 @@ describe('daemon node heading', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
     expect(heading.get()).toEqual({
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     })
   })
 })
@@ -110,7 +114,7 @@ describe('daemon processes empty state', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 42,
+      silentSince: 42000,
     }
     const standby = {
       clustered: true,
@@ -142,11 +146,11 @@ describe('daemon node labels and diagram path', () => {
       clustered: true,
       role: null,
       state: 'silent',
-      silentSince: 1_700_000_000,
+      silentSince: 1_700_000_000_000,
     }
 
     expect(formatDaemonNodeSilentSince(heading, nowMs)).toBe(
-      formatDaemonCronMoment(1_700_000_000, nowMs),
+      formatDaemonCronMoment(1_700_000_000_000, nowMs),
     )
     expect(
       formatDaemonNodeSilentSince({ ...heading, state: 'leader' }, nowMs),
@@ -155,6 +159,60 @@ describe('daemon node labels and diagram path', () => {
       formatDaemonNodeSilentSince({ ...heading, silentSince: null }, nowMs),
     ).toBeNull()
     expect(formatDaemonNodeSilentSince(null, nowMs)).toBeNull()
+  })
+
+  it('reads silentSince as ms in the own zone with only the reference corrected', () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/Los_Angeles',
+    })
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const connection = {
+      projectTimeZone: 'Asia/Tokyo',
+      on(event: string, listener: (payload: never) => void): () => void {
+        const receive = listener as (signal: ProjectSignal) => void
+        if (event === 'projectSignal') listeners.add(receive)
+        return () => listeners.delete(receive)
+      },
+    }
+    const release = bindTimeZoneState(connection as unknown as HilosConnection)
+    try {
+      for (const listener of listeners) {
+        listener({
+          type: 'handshake_response',
+          data: {
+            entities: { currentUser: { id: 1, timeZone: 'Europe/Kyiv' } },
+          },
+        } as ProjectSignal)
+      }
+      const heading: HilosDaemonNodeHeading = {
+        clustered: true,
+        state: 'silent',
+        silentSince: Date.parse('2025-12-31T21:59:00Z'),
+        role: 'master',
+      }
+      const serverNow = Date.parse('2025-12-31T22:02:00Z')
+      const browserNow = serverNow - 300_000
+      vi.spyOn(Date, 'now').mockReturnValue(browserNow)
+      applyServerTime(serverNow)
+      expect(formatDaemonNodeSilentSince(heading, browserNow)).toBe(
+        'yesterday, 11:59 PM',
+      )
+      expect(
+        formatDaemonNodeSilentSince(
+          { ...heading, silentSince: NaN },
+          browserNow,
+        ),
+      ).toBe('—')
+      vi.stubGlobal('Intl', undefined)
+      expect(formatDaemonNodeSilentSince(heading, browserNow)).toBe('—')
+    } finally {
+      release()
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+      applyServerTime(Date.now())
+    }
   })
 
   it('uses the router address, including an absent address', () => {
