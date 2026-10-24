@@ -28,7 +28,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/PasskeyCredent
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorBackupCodes.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactorResets.php 4 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/SecondFactors.php 2 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/Users.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/View/Collection/VerifierCircleMembers.php 1 # HIL-1531
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/AccessLogEntries.php 4 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/AccountDeletions.php 3 # HIL-1533

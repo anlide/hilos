@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Hilos;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -34,19 +35,35 @@ final class ChatMentionNotificationTest extends IntegrationTestCase
 
     private const string AUTHOR_NAME = 'MentionAuthor557';
 
+    private ?SignalRouter $previousSignalRouter = null;
+
+    /** Gives each case the router a worker supplies, preserving the previous instance. */
     protected function setUp(): void
     {
+        $this->previousSignalRouter = Hilos::$sr;
         parent::setUp();
+        Hilos::$sr = new SignalRouter();
         TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
         Hilos::$db->events->actions->deleteAll();
     }
 
+    /** Attempts every cleanup phase and restores the previous router even when cleanup fails. */
     protected function tearDown(): void
     {
-        $this->deleteChatNotifications();
-        Hilos::$db->events->actions->deleteAll();
-        parent::tearDown();
+        try {
+            try {
+                $this->deleteChatNotifications();
+            } finally {
+                Hilos::$db->events->actions->deleteAll();
+            }
+        } finally {
+            try {
+                parent::tearDown();
+            } finally {
+                Hilos::$sr = $this->previousSignalRouter;
+            }
+        }
     }
 
     public function testMentionNotifiesTheNamedUser(): void

@@ -32,6 +32,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\PhpType;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournaledTables;
+use Hilos\Database\View\Collection\ChangeLogEntries;
 use Hilos\Hilos;
 
 /** The section reader sees real chat triggers and the two configured databases. */
@@ -276,7 +277,6 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
 
     public function testFeedWindowsKeepReceiptAndBareEntryDistinct(): void
     {
-        $reader = new ChangeLogSectionReader();
         $since = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $receiptId = JournalReceiptScope::run(
             JournalReceiptData::web(11, null, 31, 'setting.create', 'section-test'),
@@ -291,53 +291,53 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             [self::KEY_PREFIX . 'bare', 'string', 'second']);
 
         $filter = new ChangeLogFeedFilter(table: 'hilos_setting', since: $since);
-        $feed = $reader->feedWindow($filter, null, TableAnchorDirection::After, 50);
+        $feed = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 50);
         $this->assertCount(2, $feed);
-        $this->assertSame(ChangeLogFeedItemKind::ENTRY, $feed[0]->kind);
-        $this->assertSame(ChangeLogFeedItemKind::RECEIPT, $feed[1]->kind);
-        $this->assertSame(2, $reader->feedCount($filter));
-        $this->assertSame($feed[0]->entry->id, $reader->feedWindow(
+        $this->assertSame(ChangeLogFeedItemKind::ENTRY, $feed->get(0)->kind);
+        $this->assertSame(ChangeLogFeedItemKind::RECEIPT, $feed->get(1)->kind);
+        $this->assertSame(2, Hilos::$db->changeLogReceipts->feedCount($filter));
+        $this->assertSame($feed->get(0)->entry->id, Hilos::$db->changeLogReceipts->feedWindow(
             $filter, null, TableAnchorDirection::After, 1, -1,
-        )[0]->entry->id);
-        $this->assertSame([], $reader->feedWindow(
+        )->get(0)->entry->id);
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(
             $filter, null, TableAnchorDirection::After, 1, TableConstants::COUNT_CEILING + 1,
-        ));
+        )->toArray());
         $this->assertSame([$receiptId], array_map(
             static fn($item): int => $item->receipt->id,
-            $reader->feedWindow($filter, null, TableAnchorDirection::After, 1, 1),
+            Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 1, 1)->toArray(),
         ));
-        $this->assertSame([$feed[0]->entry->id], array_map(
+        $this->assertSame([$feed->get(0)->entry->id], array_map(
             static fn($item): int => $item->entry->id,
-            $reader->feedWindow($filter, null, TableAnchorDirection::Before, 1, 1),
+            Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::Before, 1, 1)->toArray(),
         ));
-        $this->assertSame(2, $reader->feedCount($filter, 1));
-        $this->assertSame(1, $reader->feedCountBefore($filter,
-            new ChangeLogFeedAnchor($feed[1]->createdAt, $feed[1]->kind, $receiptId)));
-        $firstAnchor = new ChangeLogFeedAnchor($feed[0]->createdAt, $feed[0]->kind, $feed[0]->entry->id);
-        $older = $reader->feedWindow($filter, $firstAnchor, TableAnchorDirection::After, 1);
-        $this->assertSame($receiptId, $older[0]->receipt->id);
-        $newer = $reader->feedWindow($filter,
-            new ChangeLogFeedAnchor($feed[1]->createdAt, $feed[1]->kind, $receiptId),
+        $this->assertSame(2, Hilos::$db->changeLogReceipts->feedCount($filter, 1));
+        $this->assertSame(1, Hilos::$db->changeLogReceipts->feedCountBefore($filter,
+            new ChangeLogFeedAnchor($feed->get(1)->createdAt, $feed->get(1)->kind, $receiptId)));
+        $firstAnchor = new ChangeLogFeedAnchor($feed->get(0)->createdAt, $feed->get(0)->kind, $feed->get(0)->entry->id);
+        $older = Hilos::$db->changeLogReceipts->feedWindow($filter, $firstAnchor, TableAnchorDirection::After, 1);
+        $this->assertSame($receiptId, $older->get(0)->receipt->id);
+        $newer = Hilos::$db->changeLogReceipts->feedWindow($filter,
+            new ChangeLogFeedAnchor($feed->get(1)->createdAt, $feed->get(1)->kind, $receiptId),
             TableAnchorDirection::Before, 1);
-        $this->assertSame($feed[0]->entry->id, $newer[0]->entry->id);
+        $this->assertSame($feed->get(0)->entry->id, $newer->get(0)->entry->id);
 
-        $receipt = $reader->receipt($receiptId);
+        $receipt = Hilos::$db->changeLogReceipts->sectionReceipt($receiptId);
         $this->assertNotNull($receipt);
         $this->assertSame(1, $receipt->entryCount);
         $this->assertSame('hilos_setting', $receipt->touched[0]->table);
         $this->assertSame('create', $receipt->touched[0]->single->mutation);
         $this->assertSame(0, $receipt->touched[0]->single->changedFields);
-        $this->assertCount(1, $reader->receiptEntries($receiptId, null, 50));
-        $this->assertSame('create', $reader->entry($feed[0]->entry->id)->mutation);
+        $this->assertCount(1, Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 50));
+        $this->assertSame('create', Hilos::$db->changeLogEntries->sectionEntry($feed->get(0)->entry->id)->mutation);
 
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::sql("INSERT INTO {$database}.`hilos_change_log_receipt` (`created_at`, `channel`, `action`)"
             . " VALUES (UTC_TIMESTAMP(6), 'web', 'empty')");
         $emptyId = Database::lastInsertId();
-        $this->assertNull($reader->receipt($emptyId));
-        $this->assertSame(2, $reader->feedCount($filter));
-        $this->assertSame([], $reader->feedWindow(new ChangeLogFeedFilter(
-            table: 'hilos_setting', until: $since), null, TableAnchorDirection::After, 50));
+        $this->assertNull(Hilos::$db->changeLogReceipts->sectionReceipt($emptyId));
+        $this->assertSame(2, Hilos::$db->changeLogReceipts->feedCount($filter));
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
+            table: 'hilos_setting', until: $since), null, TableAnchorDirection::After, 50)->toArray());
     }
 
     public function testWhoAndChannelFiltersUseFreshPeopleAndExcludeBareEntries(): void
@@ -357,45 +357,44 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             [self::KEY_PREFIX . 'outside', 'string', 'second']);
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$subjectId]);
 
-        $reader = new ChangeLogSectionReader();
-        $receipt = $reader->receipt($receiptId);
+        $receipt = Hilos::$db->changeLogReceipts->sectionReceipt($receiptId);
         $this->assertNotNull($receipt);
         $this->assertSame($actorId, $receipt->actor->userId);
         $this->assertSame('Section Actor 1452', $receipt->actor->label);
         $this->assertFalse($receipt->actor->deleted);
-        $this->assertCount(1, $reader->feedWindow(new ChangeLogFeedFilter(
+        $this->assertCount(1, Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: '#' . $actorId, table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50));
-        $byName = $reader->feedWindow(new ChangeLogFeedFilter(
+        $byName = Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: ' Actor 1452 ', table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50);
         $this->assertCount(1, $byName);
-        $this->assertSame($receiptId, $byName[0]->receipt->id);
-        $this->assertSame('Section Actor 1452', $byName[0]->receipt->actor->label);
-        $this->assertSame('Deleted user #' . $subjectId, $byName[0]->receipt->subject->label);
-        $this->assertTrue($byName[0]->receipt->subject->deleted);
-        $this->assertSame([], $reader->feedWindow(new ChangeLogFeedFilter(
+        $this->assertSame($receiptId, $byName->get(0)->receipt->id);
+        $this->assertSame('Section Actor 1452', $byName->get(0)->receipt->actor->label);
+        $this->assertSame('Deleted user #' . $subjectId, $byName->get(0)->receipt->subject->label);
+        $this->assertTrue($byName->get(0)->receipt->subject->deleted);
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: 'Actor%1452', table: 'hilos_setting', since: $since,
-        ), null, TableAnchorDirection::After, 50));
-        $this->assertSame([], $reader->feedWindow(new ChangeLogFeedFilter(
+        ), null, TableAnchorDirection::After, 50)->toArray());
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: 'Actor_1452', table: 'hilos_setting', since: $since,
-        ), null, TableAnchorDirection::After, 50));
-        $byId = $reader->feedWindow(new ChangeLogFeedFilter(
+        ), null, TableAnchorDirection::After, 50)->toArray());
+        $byId = Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: '#' . $subjectId, table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50);
         $this->assertCount(1, $byId);
-        $this->assertSame($receiptId, $byId[0]->receipt->id);
-        $this->assertCount(1, $reader->feedWindow(new ChangeLogFeedFilter(
+        $this->assertSame($receiptId, $byId->get(0)->receipt->id);
+        $this->assertCount(1, Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             who: '#000' . $actorId, table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50));
-        $byChannel = $reader->feedWindow(new ChangeLogFeedFilter(
+        $byChannel = Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             channel: 'web', table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50);
         $this->assertCount(1, $byChannel);
-        $this->assertSame($receiptId, $byChannel[0]->receipt->id);
-        $this->assertSame([], $reader->feedWindow(new ChangeLogFeedFilter(
+        $this->assertSame($receiptId, $byChannel->get(0)->receipt->id);
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(new ChangeLogFeedFilter(
             channel: 'migration', table: 'hilos_setting', since: $since,
-        ), null, TableAnchorDirection::After, 50));
+        ), null, TableAnchorDirection::After, 50)->toArray());
 
         $this->expectException(InvalidArgumentException::class);
         new ChangeLogFeedFilter(channel: 'unknown');
@@ -416,16 +415,15 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             },
         );
         $this->assertNotNull($receiptId);
-        $reader = new ChangeLogSectionReader();
-        $entries = $reader->receiptEntries($receiptId, null, 50);
+        $entries = Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 50);
         $this->assertCount(2, $entries);
-        $this->assertSame(['update', 'delete'], array_map(static fn($entry): string => $entry->mutation, $entries));
-        $this->assertSame($entries[0]->id, $reader->receiptEntries($receiptId, null, 1)[0]->id);
-        $this->assertSame($entries[1]->id, $reader->receiptEntries($receiptId, $entries[0]->id, 1)[0]->id);
-        $this->assertSame([], $reader->receiptEntries($receiptId, $entries[1]->id, 1));
+        $this->assertSame(['update', 'delete'], array_map(static fn($entry): string => $entry->mutation, $entries->toArray()));
+        $this->assertSame($entries->get(0)->id, Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 1)->get(0)->id);
+        $this->assertSame($entries->get(1)->id, Hilos::$db->changeLogEntries->receiptEntries($receiptId, $entries->get(0)->id, 1)->get(0)->id);
+        $this->assertSame([], Hilos::$db->changeLogEntries->receiptEntries($receiptId, $entries->get(1)->id, 1)->toArray());
 
         $changes = [];
-        foreach ($entries[0]->changes as $change) {
+        foreach ($entries->get(0)->changes as $change) {
             $changes[$change->field] = $change;
         }
         $this->assertSame('inline', $changes['type']->kind);
@@ -439,11 +437,11 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertTrue($changes['value']->oldPresent);
         $this->assertTrue($changes['value']->newPresent);
 
-        $deleteFields = array_column($entries[1]->changes, 'field');
+        $deleteFields = array_column($entries->get(1)->changes, 'field');
         $this->assertContains('key', $deleteFields);
         $this->assertContains('value', $deleteFields);
-        $this->assertNull($reader->receipt(999999999));
-        $receipt = $reader->receipt($receiptId);
+        $this->assertNull(Hilos::$db->changeLogReceipts->sectionReceipt(999999999));
+        $receipt = Hilos::$db->changeLogReceipts->sectionReceipt($receiptId);
         $this->assertSame(2, $receipt->entryCount);
         $this->assertSame(2, $receipt->touched[0]->records);
         $this->assertNull($receipt->touched[0]->single);
@@ -459,7 +457,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_field`"
             . " WHERE `table_id` = ? AND `name` = 'synthetic_long'", [$tableId]);
         $fieldId = (int)Database::field('id');
-        $createdAt = $entries[0]->createdAt->format('Y-m-d H:i:s.u');
+        $createdAt = $entries->get(0)->createdAt->format('Y-m-d H:i:s.u');
         Database::sql("INSERT INTO {$database}.`hilos_change_log_field` (`table_id`, `name`)"
             . " VALUES (?, 'synthetic_nullable')", [$tableId]);
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_field`"
@@ -467,17 +465,17 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $nullableFieldId = (int)Database::field('id');
         Database::sql("INSERT INTO {$database}.`hilos_change_log_change`"
             . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
-            . " VALUES (?, ?, ?, 'inline', 1, 0, NULL, NULL)", [$createdAt, $entries[0]->id, $nullableFieldId]);
+            . " VALUES (?, ?, ?, 'inline', 1, 0, NULL, NULL)", [$createdAt, $entries->get(0)->id, $nullableFieldId]);
         Database::sql("INSERT INTO {$database}.`hilos_change_log_change`"
             . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`)'
-            . " VALUES (?, ?, ?, 'long', 1, 1)", [$createdAt, $entries[0]->id, $fieldId]);
+            . " VALUES (?, ?, ?, 'long', 1, 1)", [$createdAt, $entries->get(0)->id, $fieldId]);
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_change`"
-            . ' WHERE `log_id` = ? AND `field_id` = ?', [$entries[0]->id, $fieldId]);
+            . ' WHERE `log_id` = ? AND `field_id` = ?', [$entries->get(0)->id, $fieldId]);
         $changeId = (int)Database::field('id');
         Database::sql("INSERT INTO {$database}.`hilos_change_log_value`"
             . ' (`created_at`, `change_id`, `old_value`, `new_value`) VALUES (?, ?, ?, ?)',
             [$createdAt, $changeId, str_repeat('old', 100), str_repeat('new', 100)]);
-        $full = $reader->entry($entries[0]->id);
+        $full = Hilos::$db->changeLogEntries->sectionEntry($entries->get(0)->id);
         $fullChanges = [];
         foreach ($full->changes as $change) {
             $fullChanges[$change->field] = $change;
@@ -519,23 +517,23 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
 
         $reader = new ChangeLogSectionReader();
         $filter = new ChangeLogFeedFilter(table: 'hilos_setting', since: $at->modify('-1 second'));
-        $first = $reader->feedWindow($filter, null, TableAnchorDirection::After, 100);
-        $this->assertCount(ChangeLogSectionReader::MAX_WINDOW_ROWS, $first);
-        $this->assertSame(53, $reader->feedCount($filter));
-        $this->assertSame(3, $reader->feedCount($filter, 2));
-        $last = $first[array_key_last($first)];
-        $next = $reader->feedWindow($filter,
+        $first = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 100);
+        $this->assertCount(ChangeLogEntries::MAX_WINDOW_ROWS, $first);
+        $this->assertSame(53, Hilos::$db->changeLogReceipts->feedCount($filter));
+        $this->assertSame(3, Hilos::$db->changeLogReceipts->feedCount($filter, 2));
+        $last = $first->last();
+        $next = Hilos::$db->changeLogReceipts->feedWindow($filter,
             new ChangeLogFeedAnchor($last->createdAt, $last->kind, $last->entry->id),
             TableAnchorDirection::After, 50);
         $this->assertCount(3, $next);
         $this->assertSame([ChangeLogFeedItemKind::ENTRY, ChangeLogFeedItemKind::ENTRY,
-            ChangeLogFeedItemKind::RECEIPT], array_map(static fn($item) => $item->kind, $next));
-        $this->assertSame($receiptId, $next[2]->receipt->id);
-        $this->assertSame(52, $reader->feedCountBefore($filter,
-            new ChangeLogFeedAnchor($next[2]->createdAt, $next[2]->kind, $receiptId)));
-        $fromEnd = $reader->feedWindow($filter, null, TableAnchorDirection::Before, 2);
-        $this->assertSame($next[1]->entry->id, $fromEnd[0]->entry->id);
-        $this->assertSame($receiptId, $fromEnd[1]->receipt->id);
+            ChangeLogFeedItemKind::RECEIPT], array_map(static fn($item) => $item->kind, $next->toArray()));
+        $this->assertSame($receiptId, $next->get(2)->receipt->id);
+        $this->assertSame(52, Hilos::$db->changeLogReceipts->feedCountBefore($filter,
+            new ChangeLogFeedAnchor($next->get(2)->createdAt, $next->get(2)->kind, $receiptId)));
+        $fromEnd = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::Before, 2);
+        $this->assertSame($next->get(1)->entry->id, $fromEnd->get(0)->entry->id);
+        $this->assertSame($receiptId, $fromEnd->get(1)->receipt->id);
 
         Database::sql("INSERT INTO {$database}.`hilos_change_log_field` (`table_id`, `name`)"
             . " VALUES (?, 'tie_long')", [$tableId]);
@@ -544,18 +542,18 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $fieldId = (int)Database::field('id');
         Database::sql("INSERT INTO {$database}.`hilos_change_log_change`"
             . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`)'
-            . " VALUES (?, ?, ?, 'long', 1, 1)", [$moment, $next[1]->entry->id, $fieldId]);
+            . " VALUES (?, ?, ?, 'long', 1, 1)", [$moment, $next->get(1)->entry->id, $fieldId]);
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_change`"
-            . ' WHERE `log_id` = ? AND `field_id` = ?', [$next[1]->entry->id, $fieldId]);
+            . ' WHERE `log_id` = ? AND `field_id` = ?', [$next->get(1)->entry->id, $fieldId]);
         $changeId = (int)Database::field('id');
         Database::sql("INSERT INTO {$database}.`hilos_change_log_value`"
             . ' (`created_at`, `change_id`, `old_value`, `new_value`) VALUES (?, ?, ?, ?)',
             [$moment, $changeId, 'long before', 'long after']);
-        $bare = $reader->feedWindow($filter, null, TableAnchorDirection::Before, 2)[0]->entry;
+        $bare = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::Before, 2)->get(0)->entry;
         $this->assertSame([1], $bare->recordKey);
         $this->assertTrue($bare->changes[0]->bodyOmitted);
         $this->assertNull($bare->changes[0]->oldValue);
-        $this->assertSame('long before', $reader->entry($bare->id)->changes[0]->oldValue);
+        $this->assertSame('long before', Hilos::$db->changeLogEntries->sectionEntry($bare->id)->changes[0]->oldValue);
 
         $historyFilter = new ChangeLogHistoryFilter(since: $at->modify('-1 second'));
         $historyFirst = $reader->historyWindow('hilos_setting', $historyFilter,
@@ -683,7 +681,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
     public function testFeedSkipWithAnAnchorIsRefused(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new ChangeLogSectionReader()->feedWindow(
+        Hilos::$db->changeLogReceipts->feedWindow(
             new ChangeLogFeedFilter(),
             new ChangeLogFeedAnchor(new DateTimeImmutable('now', new DateTimeZone('UTC')), ChangeLogFeedItemKind::ENTRY, 1),
             TableAnchorDirection::After,

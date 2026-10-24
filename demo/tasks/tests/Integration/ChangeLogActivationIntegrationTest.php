@@ -23,6 +23,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\MigrationClaimHolder;
 use Hilos\Database\Schema\JournalCoverageGuard;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
 /**
@@ -163,22 +164,22 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
             },
         );
         self::assertNotNull($receiptId);
-        $entries = $reader->receiptEntries($receiptId, null, 50);
+        $entries = Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 50);
         self::assertCount(1, $entries);
-        self::assertSame('hilos_setting', $entries[0]->table);
-        self::assertSame('create', $entries[0]->mutation);
+        self::assertSame('hilos_setting', $entries->get(0)->table);
+        self::assertSame('create', $entries->get(0)->mutation);
         self::assertNull(JournalReceiptScope::currentId());
         self::insertSetting(self::KEY_PREFIX . 'unattributed');
         $filter = new ChangeLogFeedFilter(table: 'hilos_setting', since: $since);
-        $feed = $reader->feedWindow($filter, null, TableAnchorDirection::After, 50);
+        $feed = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 50);
         self::assertCount(2, $feed);
-        self::assertSame(ChangeLogFeedItemKind::ENTRY, $feed[0]->kind);
-        self::assertNull($feed[0]->receipt);
-        self::assertNull($feed[0]->entry->receiptId);
-        self::assertSame(ChangeLogFeedItemKind::RECEIPT, $feed[1]->kind);
-        self::assertSame($receiptId, $feed[1]->receipt->id);
-        self::assertSame('web', $feed[1]->receipt->channel);
-        self::assertSame('setting.create', $feed[1]->receipt->action);
+        self::assertSame(ChangeLogFeedItemKind::ENTRY, $feed->get(0)->kind);
+        self::assertNull($feed->get(0)->receipt);
+        self::assertNull($feed->get(0)->entry->receiptId);
+        self::assertSame(ChangeLogFeedItemKind::RECEIPT, $feed->get(1)->kind);
+        self::assertSame($receiptId, $feed->get(1)->receipt->id);
+        self::assertSame('web', $feed->get(1)->receipt->channel);
+        self::assertSame('setting.create', $feed->get(1)->receipt->action);
 
         $beforeRollback = $reader->overview()->journalEntries;
         $rollbackReceipt = JournalReceiptScope::run(
@@ -188,7 +189,7 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
                 try {
                     self::insertSetting(self::KEY_PREFIX . 'rollback');
                     self::assertSame($beforeRollback + 1, $reader->overview()->journalEntries);
-                    self::assertCount(1, $reader->receiptEntries(JournalReceiptScope::currentId(), null, 50));
+                    self::assertCount(1, Hilos::$db->changeLogEntries->receiptEntries(JournalReceiptScope::currentId(), null, 50));
                     return JournalReceiptScope::currentId();
                 } finally {
                     Database::transactionRollback();
@@ -197,10 +198,10 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
         );
         self::assertNotNull($rollbackReceipt);
         self::assertSame($beforeRollback, $reader->overview()->journalEntries);
-        self::assertSame([], $reader->receiptEntries($rollbackReceipt, null, 50));
+        self::assertSame([], Hilos::$db->changeLogEntries->receiptEntries($rollbackReceipt, null, 50)->toArray());
         Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_setting` WHERE `key` = ?', [self::KEY_PREFIX . 'rollback']);
         self::assertSame(0, (int)Database::field('count'));
-        self::assertSame(2, $reader->feedCount($filter));
+        self::assertSame(2, Hilos::$db->changeLogReceipts->feedCount($filter));
         self::assertNull(JournalReceiptScope::currentId());
     }
 

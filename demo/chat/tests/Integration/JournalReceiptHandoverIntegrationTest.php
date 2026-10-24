@@ -40,7 +40,6 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -314,11 +313,10 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         $this->assertNotNull($receiptId);
         $this->assertSame(1, (int) $this->receipt($receiptId)['open_handovers']);
         $this->assertSame(0, $this->logCount($receiptId));
-        $reader = new ChangeLogSectionReader();
-        $this->assertNull($reader->receipt($receiptId));
-        $this->assertSame([], $reader->feedWindow(
+        $this->assertNull(Hilos::$db->changeLogReceipts->sectionReceipt($receiptId));
+        $this->assertSame([], Hilos::$db->changeLogReceipts->feedWindow(
             new ChangeLogFeedFilter(who: (string) $userId), null, TableAnchorDirection::After, 50,
-        ));
+        )->toArray());
 
         $plain = new SignalDTO(
             new SignalSource(SignalSource::AGENT, 'outside-receipt'),

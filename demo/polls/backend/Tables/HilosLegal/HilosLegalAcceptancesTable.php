@@ -8,6 +8,7 @@ use Demo\Polls\Hilos;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 
 /** Supplies the demo's person names to the framework acceptance window. */
@@ -40,6 +41,7 @@ final class HilosLegalAcceptancesTable extends AbstractHilosLegalAcceptancesTabl
      * @throws DatabaseException When the user collection cannot be loaded
      * @throws LogicException When the user collection is not configured
      * @throws InvalidArgumentException When a loaded user object has an invalid type
+     * @throws HilosException When the complete user selection cannot be built
      */
     protected function userIdsNamed(string $term): array
     {

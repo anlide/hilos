@@ -456,9 +456,9 @@ the Entity/DbCollection row API. Named-database collections do not replace them
 or change the data-plus-journal backup pair and its restore gates.
 
 The `hilos_change_log` agent remains one cluster agent in a monopolistic worker.
-It currently serves the section through `ChangeLogSectionReader`, whose SQL
-predates named-database Entities. The collection-based replacement is described
-below; the separate database is not a permanent reason to bypass the ORM.
+`ChangeLogSectionReader` still serves the overview, table catalog/detail and
+history queries; feed and receipt/entry reads now use the typed collection APIs
+below. The separate database is not a permanent reason to bypass the ORM.
 
 **The April placeholder is not the model.** The applied
 `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`
@@ -473,27 +473,45 @@ the receipt scope replaces the old attribution shape.
 
 ## Reading The Journal
 
-Any agent with declared reading may read the journal through typed collections
-on `Hilos::$db`; no agent reads it by default.
-The change-log agent declares interest in the five trigger-written collections;
-its receipt `Update` ownership claim carries its reader interest for receipts.
+Journal reads still require declared reading; no agent reads the journal by
+default. The serving agent's existing claim covers the five trigger-written
+collections; its receipt `Update` ownership claim carries its reader interest
+for receipts.
 Do not repeat journal SQL in a page, table or agent; missing reads belong on the
-owning ORM layer. Feed windows and modal receipt/entry reads move to those
-collections. (not in the code yet — HIL-1619)
+owning ORM layer. Feed windows and counts use
+`Hilos::$db->changeLogReceipts->feedWindow()`, `feedCount()` and
+`feedCountBefore()`. Receipt summaries and headers use `sectionReceipt()`,
+`sectionReceiptsByIds()` and `sectionHeadersByIds()` on that collection.
+Receipt portions and complete entry reads use
+`Hilos::$db->changeLogEntries->receiptEntries()`, `sectionEntry()` and
+`sectionEntriesByIds()`.
+Feed windows and receipt portions are dense ordered lists; selected receipt,
+header and entry maps keep their integer ids as keys. These methods return
+`ChangeLogReadCollection<T>` snapshots with iteration, `first()`, `last()` and
+`get()` access. The local snapshot type adds no mounted collection and does not
+change scalar Entity offsets or the page/action contract. View methods delegate
+to their typed Object collections; Object SQL uses its Entity binding's
+explicit connection index, leaves the active connection unchanged, and does
+not retain trigger-written rows in the ORM cache or RT.
 The tables, history and overview reads follow, after which
 `ChangeLogSectionReader` is removed. (not in the code yet — HIL-1620)
+`historyWindow()` already hydrates its selected entries and receipt headers
+through `sectionEntriesByIds()` and `sectionHeadersByIds()`; its selection and
+filters remain in the reader.
 Journal collections use bounded database queries without loading the journal
 whole or treating their ORM cache as the source of trigger inserts; their
 freshness and bounded-read contract is in
 [DbCollection](../orm/db-collection.md#collections-in-a-named-database). The ORM
 emits no sync frames for trigger inserts.
 
-Until those reading leaves land, the section still uses
-`ChangeLogSectionReader`: it runs SQL on primary with qualified journal table
-names and restores the caller's active connection afterward. Keep using it for
-the paths not yet migrated; it is the current implementation, not the pattern
-for new journal reads. The replacement keeps the section's public actions and
-payloads and the following guarantees.
+`ChangeLogSectionReader` remains responsible for overview, table catalog,
+noisy-column and table-detail queries, and history selection/counts until
+HIL-1620. Those reads use qualified journal table names on primary and restore
+the caller's active connection afterward. Keep this reader for those paths
+while they migrate; its SQL is not the pattern for new collection reads. The
+typed collection APIs use their Entity binding's explicit connection index
+and do not switch the active connection. The section's public actions and
+payloads remain unchanged.
 
 Reads return typed values, not browser frames. The feed is nonempty receipts
 plus one row for each journal entry without a receipt; table history includes
@@ -508,17 +526,17 @@ and the total number of live tables. It is not sent again. The table names
 become the feed's Table filter choices. If the overview cannot be read, the
 subscription is refused with `internal_error`.
 
-The reader fetches current person names for the selected window and keeps the
-number with each label. It exposes live table names and column policies without
-exposing journal dictionary row numbers. A service trigger's valid-from
-migration comes from the header of its project SQL file, never from the SQL
-body sent to a browser.
+For its remaining history reads, `ChangeLogSectionReader` fetches current
+person names for the selected window and keeps the number with each label. It
+exposes live table names and column policies without exposing journal
+dictionary row numbers. A service trigger's valid-from migration comes from
+the header of its project SQL file, never from the SQL body sent to a browser.
 
-Person search and current names for feed and receipt reads come through
-`Hilos::$db->users`, without SQL joining the primary and journal databases.
-(not in the code yet — HIL-1619)
-History and the remaining section reads use the same user collection path.
-(not in the code yet — HIL-1620)
+Feed and receipt person search and current names use
+`Hilos::$db->users->idsMatchingName()` and `namesByIds()` without SQL joining
+the primary and journal databases. These fresh scalar projections do not
+depend on warmed User wrappers. History and the remaining reader-backed reads
+keep their current user path until HIL-1620.
 The soft person number, `Deleted user #N` fallback, filters and personal-data
 masking in admin view mode remain unchanged.
 
@@ -820,10 +838,9 @@ those guarantees need their future carriers as well as journal scenarios.
   out of its owner; put it on the Entity.
 - Adding a new journal query directly in a page, table, or agent duplicates the
   ORM's reads and their bounds; use typed `Hilos::$db` collections with declared
-  reading. The existing section keeps `ChangeLogSectionReader` until feed and
-  receipt/entry reads migrate (not in the code yet — HIL-1619), then tables,
-  history and overview migrate and the reader is removed (not in the code yet —
-  HIL-1620).
+  reading. Feed and receipt/entry reads now use those collections. The overview,
+  table and history queries migrate next, after which `ChangeLogSectionReader`
+  is removed (not in the code yet — HIL-1620).
 - Using the April stub as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and

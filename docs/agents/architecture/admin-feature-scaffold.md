@@ -647,13 +647,14 @@ For its data and privacy boundaries, read
    tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
    The journal's six typed collection chains mount under `CHANGE_LOG`; the serving
    agent declares reads of the five trigger-written collections and receipt update
-   ownership. The current section read path still uses `ChangeLogSectionReader`.
-   Feed and receipt/entry reads use those collections.
-   (not in the code yet — HIL-1619)
+   ownership. `ChangeLogSectionReader` still handles overview, tracked-table and
+   history queries. Feed windows/counts and receipt/entry reads use the typed
+   collections through `Hilos::$db->changeLogReceipts` and
+   `Hilos::$db->changeLogEntries`.
    Tables, history and overview follow, removing `ChangeLogSectionReader`.
    (not in the code yet — HIL-1620)
-   Until each path migrates, it still requires the current reader; do not copy
-   its SQL into a page or table. The bounds and reading rights are in
+   Until those remaining paths migrate, they still require the current reader;
+   do not copy its SQL into a page or table. The bounds and reading rights are in
    [Reading The Journal](change-log.md#reading-the-journal).
 7. In a Vue, React or Angular project, mount the section's three pages —
    `HilosChangeLogPage`, `HilosChangeLogTablesPage` and

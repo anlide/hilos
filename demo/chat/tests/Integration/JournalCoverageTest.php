@@ -133,13 +133,13 @@ final class JournalCoverageTest extends IntegrationTestCase
                     $this->assertSame([$id], $row->entry->recordKey);
                 }
                 $this->assertSame([], $history[0]->entry->changes);
-                $update = $reader->entry($history[1]->entry->id);
+                $update = Hilos::$db->changeLogEntries->sectionEntry($history[1]->entry->id);
                 $this->assertNotNull($update);
                 $this->assertCount(1, $update->changes);
                 $changed = $update->changes[0];
                 $this->assertTrue($changed->oldPresent);
                 $this->assertTrue($changed->newPresent);
-                $delete = $reader->entry($history[2]->entry->id);
+                $delete = Hilos::$db->changeLogEntries->sectionEntry($history[2]->entry->id);
                 $this->assertNotNull($delete);
                 $snapshot = [];
                 foreach ($delete->changes as $change) {
@@ -217,7 +217,7 @@ final class JournalCoverageTest extends IntegrationTestCase
             $this->assertSame(['create', 'update', 'update'], array_map(static fn($row): string => $row->entry->mutation, $history));
             $this->assertSame([], $history[0]->entry->changes);
             foreach ([1, 2] as $index) {
-                $entry = $reader->entry($history[$index]->entry->id);
+                $entry = Hilos::$db->changeLogEntries->sectionEntry($history[$index]->entry->id);
                 $this->assertNotNull($entry);
                 $this->assertCount(1, $entry->changes);
                 $change = $entry->changes[0];

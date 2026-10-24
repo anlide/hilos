@@ -12,26 +12,15 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\ChangeLog\Section\ChangeLogColumn;
-use Hilos\Database\ChangeLog\Section\ChangeLogEntry;
-use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
-use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
-use Hilos\Database\ChangeLog\Section\ChangeLogFeedItem;
-use Hilos\Database\ChangeLog\Section\ChangeLogFeedItemKind;
-use Hilos\Database\ChangeLog\Section\ChangeLogFieldChange;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryRow;
 use Hilos\Database\ChangeLog\Section\ChangeLogNoisyColumn;
 use Hilos\Database\ChangeLog\Section\ChangeLogOverview;
-use Hilos\Database\ChangeLog\Section\ChangeLogPerson;
-use Hilos\Database\ChangeLog\Section\ChangeLogReceipt;
-use Hilos\Database\ChangeLog\Section\ChangeLogReceiptHeader;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableDetail;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableOwner;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableSummary;
 use Hilos\Database\ChangeLog\Section\ChangeLogTrigger;
-use Hilos\Database\ChangeLog\Section\ChangeLogTouchedRecord;
-use Hilos\Database\ChangeLog\Section\ChangeLogTouchedTable;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
@@ -40,12 +29,14 @@ use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournalColumnPolicy;
 use Hilos\Database\Schema\JournaledTables;
+use Hilos\Database\View\Collection\ChangeLogEntries;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
-/** The single typed SQL reader of the separate journal database for admin pages. */
+/** Reads the journal overview, live tables, and table history for admin pages. */
 final class ChangeLogSectionReader
 {
-    public const int MAX_WINDOW_ROWS = 50;
+    public const int MAX_WINDOW_ROWS = ChangeLogEntries::MAX_WINDOW_ROWS;
 
     private const array JOURNAL_TABLES = [
         'hilos_change_log_table', 'hilos_change_log_field', 'hilos_change_log_receipt',
@@ -245,165 +236,6 @@ final class ChangeLogSectionReader
     }
 
     /**
-     * @param ChangeLogFeedFilter $filter Receipt and bare-entry filters
-     * @param ?ChangeLogFeedAnchor $anchor Complete row key, or an edge of the set
-     * @param TableAnchorDirection $direction Side of the anchor in newest-first order
-     * @param int $limit Requested rows, capped at MAX_WINDOW_ROWS
-     * @param int $skip Rows to skip from the chosen edge when there is no anchor
-     * @return list<ChangeLogFeedItem> Rows in canonical newest-first order
-     * @throws InvalidArgumentException When a skip is used with an anchor
-     * @throws HilosException When journal or person SQL fails
-     */
-    public function feedWindow(
-        ChangeLogFeedFilter $filter,
-        ?ChangeLogFeedAnchor $anchor,
-        TableAnchorDirection $direction,
-        int $limit,
-        int $skip = 0,
-    ): array {
-        if ($anchor !== null && $skip !== 0) {
-            throw new InvalidArgumentException('Change log skip requires an edge');
-        }
-        $skip = max(0, $skip);
-        if ($skip > TableConstants::COUNT_CEILING) {
-            return [];
-        }
-        return $this->onPrimary(function () use ($filter, $anchor, $direction, $limit, $skip): array {
-            $limit = $this->boundedLimit($limit);
-            if ($limit === 0) {
-                return [];
-            }
-            $params = [];
-            $sources = $this->feedSources($filter, $params);
-            $anchorClause = $this->feedAnchorClause($anchor, $direction, $params);
-            $order = $direction === TableAnchorDirection::After
-                ? 'created_at DESC, kind ASC, id DESC' : 'created_at ASC, kind DESC, id ASC';
-            Database::sql(
-                "SELECT feed.`created_at`, feed.`kind`, feed.`id` FROM ({$sources}) feed"
-                . " WHERE 1 = 1{$anchorClause} ORDER BY {$order} LIMIT {$limit} OFFSET {$skip}",
-                $params,
-            );
-            $rows = Database::rows();
-            if ($direction === TableAnchorDirection::Before) {
-                $rows = array_reverse($rows);
-            }
-            $receiptIds = [];
-            $entryIds = [];
-            foreach ($rows as $row) {
-                if ($row['kind'] === ChangeLogFeedItemKind::RECEIPT->value) {
-                    $receiptIds[] = (int)$row['id'];
-                } else {
-                    $entryIds[] = (int)$row['id'];
-                }
-            }
-            $receipts = $this->receiptsByIds($receiptIds);
-            $entries = $this->entriesByIds($entryIds, false);
-            $items = [];
-            foreach ($rows as $row) {
-                $kind = ChangeLogFeedItemKind::from((string)$row['kind']);
-                $id = (int)$row['id'];
-                $items[] = new ChangeLogFeedItem(
-                    $kind,
-                    self::moment($row['created_at']),
-                    $kind === ChangeLogFeedItemKind::RECEIPT ? $receipts[$id] : null,
-                    $kind === ChangeLogFeedItemKind::ENTRY ? $entries[$id] : null,
-                );
-            }
-            return $items;
-        });
-    }
-
-    /**
-     * @param ChangeLogFeedFilter $filter Receipt and bare-entry filters
-     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
-     * @return int Number of matching rows, at most ceiling plus one
-     * @throws HilosException When journal SQL fails
-     */
-    public function feedCount(ChangeLogFeedFilter $filter, int $ceiling = TableConstants::COUNT_CEILING): int
-    {
-        return $this->onPrimary(fn(): int => $this->boundedFeedCount($filter, null, $ceiling));
-    }
-
-    /**
-     * @param ChangeLogFeedFilter $filter Receipt and bare-entry filters
-     * @param ChangeLogFeedAnchor $anchor Complete row key
-     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
-     * @return int Number of rows before the anchor in newest-first order
-     * @throws HilosException When journal SQL fails
-     */
-    public function feedCountBefore(
-        ChangeLogFeedFilter $filter,
-        ChangeLogFeedAnchor $anchor,
-        int $ceiling = TableConstants::COUNT_CEILING,
-    ): int {
-        return $this->onPrimary(fn(): int => $this->boundedFeedCount($filter, $anchor, $ceiling));
-    }
-
-    /**
-     * @param int $id Receipt row number
-     * @return ?ChangeLogReceipt Null for a missing or empty receipt
-     * @throws HilosException When journal or person SQL fails
-     */
-    public function receipt(int $id): ?ChangeLogReceipt
-    {
-        return $this->onPrimary(function () use ($id): ?ChangeLogReceipt {
-            $receipt = $this->receiptsByIds([$id])[$id] ?? null;
-            return $receipt?->entryCount > 0 ? $receipt : null;
-        });
-    }
-
-    /**
-     * @param int $receiptId Receipt whose journal rows are read
-     * @param ?int $afterEntryId Last row number of the preceding window
-     * @param int $limit Requested rows, capped at MAX_WINDOW_ROWS
-     * @return list<ChangeLogEntry> Full entries in write-time order
-     * @throws HilosException When journal SQL fails
-     */
-    public function receiptEntries(int $receiptId, ?int $afterEntryId, int $limit): array
-    {
-        return $this->onPrimary(function () use ($receiptId, $afterEntryId, $limit): array {
-            $limit = $this->boundedLimit($limit);
-            if ($limit === 0) {
-                return [];
-            }
-            $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-            $cursor = '';
-            $params = [$receiptId];
-            if ($afterEntryId !== null) {
-                Database::sql(
-                    "SELECT `created_at` FROM {$database}.`hilos_change_log`"
-                    . ' WHERE `id` = ? AND `receipt_id` = ? LIMIT 1',
-                    [$afterEntryId, $receiptId],
-                );
-                $row = Database::row();
-                if ($row === null) {
-                    return [];
-                }
-                $cursor = ' AND (l.`created_at` > ? OR (l.`created_at` = ? AND l.`id` > ?))';
-                array_push($params, $row['created_at'], $row['created_at'], $afterEntryId);
-            }
-            Database::sql(
-                "SELECT l.`id` FROM {$database}.`hilos_change_log` l"
-                . " WHERE l.`receipt_id` = ?{$cursor} ORDER BY l.`created_at` ASC, l.`id` ASC LIMIT {$limit}",
-                $params,
-            );
-            $ids = array_map(static fn(array $row): int => (int)$row['id'], Database::rows());
-            $entries = $this->entriesByIds($ids, true);
-            return array_values(array_filter(array_map(static fn(int $id): ?ChangeLogEntry => $entries[$id] ?? null, $ids)));
-        });
-    }
-
-    /**
-     * @param int $entryId Journal row number
-     * @return ?ChangeLogEntry Full entry, including long values, or null when absent
-     * @throws HilosException When journal SQL fails
-     */
-    public function entry(int $entryId): ?ChangeLogEntry
-    {
-        return $this->onPrimary(fn(): ?ChangeLogEntry => $this->entriesByIds([$entryId], true)[$entryId] ?? null);
-    }
-
-    /**
      * @param string $table Live or formerly journaled table name
      * @param ChangeLogHistoryFilter $filter Record, field, person, and period filters
      * @param bool $newestFirst True for descending source time
@@ -452,20 +284,20 @@ final class ChangeLogSectionReader
             if ($direction === TableAnchorDirection::Before) {
                 $ids = array_reverse($ids);
             }
-            $entries = $this->entriesByIds($ids, false);
+            $entries = Hilos::$db->changeLogEntries->sectionEntriesByIds($ids, false);
             $receiptIds = [];
             foreach ($entries as $entry) {
                 if ($entry->receiptId !== null) {
                     $receiptIds[$entry->receiptId] = true;
                 }
             }
-            $headers = $this->receiptHeadersByIds(array_keys($receiptIds));
+            $headers = Hilos::$db->changeLogReceipts->sectionHeadersByIds(array_keys($receiptIds));
             $rows = [];
             foreach ($ids as $id) {
-                $entry = $entries[$id];
+                $entry = $entries->get($id);
                 $rows[] = new ChangeLogHistoryRow(
                     $entry,
-                    $entry->receiptId === null ? null : ($headers[$entry->receiptId] ?? null),
+                    $entry->receiptId === null ? null : $headers->get($entry->receiptId),
                 );
             }
             return $rows;
@@ -638,148 +470,6 @@ final class ChangeLogSectionReader
     }
 
     /**
-     * @param list<int> $ids Receipt numbers attached to one history window
-     * @return array<int, ChangeLogReceiptHeader> Current person labels and receipt attribution
-     * @throws DatabaseException When journal or person SQL fails
-     */
-    private function receiptHeadersByIds(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql(
-            "SELECT r.`id`, r.`created_at`, r.`actor_user_id`, r.`subject_user_id`, r.`session_id`,"
-            . " r.`channel`, r.`action`, r.`agent`, r.`source` FROM {$database}.`hilos_change_log_receipt` r"
-            . " WHERE r.`id` IN ({$placeholders})",
-            $ids,
-        );
-        $rows = Database::rows();
-        $personIds = [];
-        foreach ($rows as $row) {
-            foreach (['actor_user_id', 'subject_user_id'] as $field) {
-                if ($row[$field] !== null) {
-                    $personIds[(int)$row[$field]] = true;
-                }
-            }
-        }
-        $people = $this->peopleByIds(array_keys($personIds));
-        $headers = [];
-        foreach ($rows as $row) {
-            $id = (int)$row['id'];
-            $actorId = $row['actor_user_id'] === null ? null : (int)$row['actor_user_id'];
-            $subjectId = $row['subject_user_id'] === null ? null : (int)$row['subject_user_id'];
-            $headers[$id] = new ChangeLogReceiptHeader(
-                $id,
-                self::moment($row['created_at']),
-                $actorId === null ? null : $people[$actorId],
-                $subjectId === null ? null : $people[$subjectId],
-                $row['session_id'] === null ? null : (int)$row['session_id'],
-                (string)$row['channel'],
-                (string)$row['action'],
-                $row['agent'] === null ? null : (string)$row['agent'],
-                $row['source'] === null ? null : (string)$row['source'],
-            );
-        }
-        return $headers;
-    }
-
-    /**
-     * @param ChangeLogFeedFilter $filter Source filters
-     * @param list<mixed> $params SQL parameters in UNION source order
-     * @return string Bounded feed's receipt and bare-entry sources
-     */
-    private function feedSources(ChangeLogFeedFilter $filter, array &$params): string
-    {
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $receiptParams = [];
-        $receiptEntries = "SELECT 1 FROM {$database}.`hilos_change_log` l";
-        if ($filter->table !== null) {
-            $receiptEntries .= " JOIN {$database}.`hilos_change_log_table` t ON t.`id` = l.`table_id`";
-        }
-        $receiptEntries .= ' WHERE l.`receipt_id` = r.`id`';
-        if ($filter->table !== null) {
-            $receiptEntries .= ' AND t.`name` = ?';
-            $receiptParams[] = $filter->table;
-        }
-        $receiptWhere = ["EXISTS ({$receiptEntries})"];
-        if ($filter->who !== null) {
-            $receiptWhere[] = self::personCondition($filter->who, $receiptParams);
-        }
-        if ($filter->channel !== null) {
-            $receiptWhere[] = 'r.`channel` = ?';
-            $receiptParams[] = $filter->channel;
-        }
-        self::appendPeriod('r', $filter->since, $filter->until, $receiptWhere, $receiptParams);
-        $receiptSource = "SELECT r.`created_at`, 'receipt' AS `kind`, r.`id`"
-            . " FROM {$database}.`hilos_change_log_receipt` r WHERE " . implode(' AND ', $receiptWhere);
-        $params = $receiptParams;
-
-        if ($filter->who !== null || $filter->channel !== null) {
-            return $receiptSource;
-        }
-        $entryParams = [];
-        $entrySource = "SELECT l.`created_at`, 'entry' AS `kind`, l.`id`"
-            . " FROM {$database}.`hilos_change_log` l";
-        if ($filter->table !== null) {
-            $entrySource .= " JOIN {$database}.`hilos_change_log_table` t ON t.`id` = l.`table_id`";
-        }
-        $entryWhere = ['l.`receipt_id` IS NULL'];
-        if ($filter->table !== null) {
-            $entryWhere[] = 't.`name` = ?';
-            $entryParams[] = $filter->table;
-        }
-        self::appendPeriod('l', $filter->since, $filter->until, $entryWhere, $entryParams);
-        $params = array_merge($receiptParams, $entryParams);
-        return $receiptSource . ' UNION ALL ' . $entrySource . ' WHERE ' . implode(' AND ', $entryWhere);
-    }
-
-    /**
-     * @param ?ChangeLogFeedAnchor $anchor Complete feed key
-     * @param TableAnchorDirection $direction Side of the key in newest-first order
-     * @param list<mixed> $params Appended SQL parameters
-     * @return string SQL predicate including its leading AND, or empty at an edge
-     */
-    private function feedAnchorClause(
-        ?ChangeLogFeedAnchor $anchor,
-        TableAnchorDirection $direction,
-        array &$params,
-    ): string {
-        if ($anchor === null) {
-            return '';
-        }
-        $moment = self::sqlMoment($anchor->createdAt);
-        array_push($params, $moment, $moment, $anchor->kind->value, $anchor->kind->value, $anchor->id);
-        $timeOp = $direction === TableAnchorDirection::After ? '<' : '>';
-        $kindOp = $direction === TableAnchorDirection::After ? '>' : '<';
-        $idOp = $direction === TableAnchorDirection::After ? '<' : '>';
-        return " AND (feed.`created_at` {$timeOp} ? OR (feed.`created_at` = ?"
-            . " AND (feed.`kind` {$kindOp} ? OR (feed.`kind` = ? AND feed.`id` {$idOp} ?))))";
-    }
-
-    /**
-     * @param ChangeLogFeedFilter $filter Source filters
-     * @param ?ChangeLogFeedAnchor $anchor Count preceding rows when supplied
-     * @param int $ceiling Exact-count ceiling
-     * @return int Count capped at ceiling plus one
-     * @throws DatabaseException When SQL fails
-     */
-    private function boundedFeedCount(ChangeLogFeedFilter $filter, ?ChangeLogFeedAnchor $anchor, int $ceiling): int
-    {
-        $params = [];
-        $sources = $this->feedSources($filter, $params);
-        $anchorClause = $this->feedAnchorClause($anchor, TableAnchorDirection::Before, $params);
-        $limit = max(0, min($ceiling, TableConstants::COUNT_CEILING)) + 1;
-        Database::sql(
-            "SELECT COUNT(*) AS total_count FROM (SELECT 1 FROM ({$sources}) feed"
-            . " WHERE 1 = 1{$anchorClause} LIMIT {$limit}) capped",
-            $params,
-        );
-        return (int)Database::field('total_count');
-    }
-
-    /**
      * @param string $who Trimmed numeric id or name substring
      * @param list<mixed> $params Appended SQL parameters
      * @return string Predicate over receipt alias r
@@ -860,248 +550,6 @@ final class ChangeLogSectionReader
     private function boundedLimit(int $requestedRows): int
     {
         return max(0, min($requestedRows, self::MAX_WINDOW_ROWS));
-    }
-
-    /**
-     * @param list<int> $ids Receipt identifiers in the selected window
-     * @return array<int, ChangeLogReceipt> Receipts keyed by row number
-     * @throws DatabaseException When journal or person SQL fails
-     */
-    private function receiptsByIds(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql(
-            "SELECT r.`id`, r.`created_at`, r.`actor_user_id`, r.`subject_user_id`, r.`session_id`,"
-            . " r.`channel`, r.`action`, r.`agent`, r.`source` FROM {$database}.`hilos_change_log_receipt` r"
-            . " WHERE r.`id` IN ({$placeholders})",
-            $ids,
-        );
-        $headers = Database::rows();
-        $personIds = [];
-        foreach ($headers as $row) {
-            foreach (['actor_user_id', 'subject_user_id'] as $field) {
-                if ($row[$field] !== null) {
-                    $personIds[(int)$row[$field]] = true;
-                }
-            }
-        }
-        $people = $this->peopleByIds(array_keys($personIds));
-
-        Database::sql(
-            "SELECT l.`receipt_id`, l.`table_id`, t.`name`, COUNT(*) AS records, MIN(l.`id`) AS first_id"
-            . " FROM {$database}.`hilos_change_log` l"
-            . " JOIN {$database}.`hilos_change_log_table` t ON t.`id` = l.`table_id`"
-            . " WHERE l.`receipt_id` IN ({$placeholders})"
-            . ' GROUP BY l.`receipt_id`, l.`table_id`, t.`name` ORDER BY l.`receipt_id`, first_id',
-            $ids,
-        );
-        $groups = [];
-        $singleIds = [];
-        foreach (Database::rows() as $row) {
-            $receiptId = (int)$row['receipt_id'];
-            $groups[$receiptId][] = $row;
-            if ((int)$row['records'] === 1) {
-                $singleIds[] = (int)$row['first_id'];
-            }
-        }
-        $singles = $this->singleRecordsByIds($singleIds);
-
-        $receipts = [];
-        foreach ($headers as $row) {
-            $id = (int)$row['id'];
-            $entryCount = 0;
-            $touched = [];
-            foreach ($groups[$id] ?? [] as $group) {
-                $records = (int)$group['records'];
-                $entryCount += $records;
-                $touched[] = new ChangeLogTouchedTable(
-                    (string)$group['name'],
-                    $records,
-                    $records === 1 ? ($singles[(int)$group['first_id']] ?? null) : null,
-                );
-            }
-            $actorId = $row['actor_user_id'] === null ? null : (int)$row['actor_user_id'];
-            $subjectId = $row['subject_user_id'] === null ? null : (int)$row['subject_user_id'];
-            $receipts[$id] = new ChangeLogReceipt(
-                $id,
-                self::moment($row['created_at']),
-                $actorId === null ? null : $people[$actorId],
-                $subjectId === null ? null : $people[$subjectId],
-                $row['session_id'] === null ? null : (int)$row['session_id'],
-                (string)$row['channel'],
-                (string)$row['action'],
-                $row['agent'] === null ? null : (string)$row['agent'],
-                $row['source'] === null ? null : (string)$row['source'],
-                $entryCount,
-                $touched,
-            );
-        }
-        return $receipts;
-    }
-
-    /**
-     * @param list<int> $ids Person numbers appearing in the selected window
-     * @return array<int, ChangeLogPerson> Current name or deleted-person label by id
-     * @throws DatabaseException When the current person lookup fails
-     */
-    private function peopleByIds(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql("SELECT `id`, `name` FROM `hilos_user` WHERE `id` IN ({$placeholders})", $ids);
-        $names = [];
-        foreach (Database::rows() as $row) {
-            $names[(int)$row['id']] = (string)$row['name'];
-        }
-        $people = [];
-        foreach ($ids as $id) {
-            $people[$id] = new ChangeLogPerson($id, $names[$id] ?? 'Deleted user #' . $id, !isset($names[$id]));
-        }
-        return $people;
-    }
-
-    /**
-     * @param list<int> $ids Single-record group entry numbers
-     * @return array<int, ChangeLogTouchedRecord> Summary by entry number
-     * @throws DatabaseException When journal SQL fails
-     */
-    private function singleRecordsByIds(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql(
-            "SELECT l.`id`, l.`record_key`, l.`mutation_type`,"
-            . " (SELECT COUNT(*) FROM {$database}.`hilos_change_log_change` ch"
-            . ' WHERE ch.`log_id` = l.`id` AND ch.`created_at` = l.`created_at`) AS changed_fields'
-            . " FROM {$database}.`hilos_change_log` l WHERE l.`id` IN ({$placeholders})",
-            $ids,
-        );
-        $singles = [];
-        foreach (Database::rows() as $row) {
-            $singles[(int)$row['id']] = new ChangeLogTouchedRecord(
-                self::recordKey($row['record_key']),
-                (string)$row['mutation_type'],
-                (int)$row['changed_fields'],
-            );
-        }
-        return $singles;
-    }
-
-    /**
-     * @param list<int> $ids Entry numbers in one bounded window
-     * @param bool $includeLong Whether to read full long-value bodies
-     * @return array<int, ChangeLogEntry> Entries keyed by row number
-     * @throws DatabaseException When journal SQL fails
-     */
-    private function entriesByIds(array $ids, bool $includeLong): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql(
-            "SELECT l.`id`, l.`created_at`, l.`receipt_id`, t.`name`, l.`record_key`, l.`mutation_type`"
-            . " FROM {$database}.`hilos_change_log` l"
-            . " JOIN {$database}.`hilos_change_log_table` t ON t.`id` = l.`table_id`"
-            . " WHERE l.`id` IN ({$placeholders})",
-            $ids,
-        );
-        $rows = Database::rows();
-        $changes = $this->changesByEntryIds($ids, $includeLong);
-        $entries = [];
-        foreach ($rows as $row) {
-            $id = (int)$row['id'];
-            $entries[$id] = new ChangeLogEntry(
-                $id,
-                self::moment($row['created_at']),
-                $row['receipt_id'] === null ? null : (int)$row['receipt_id'],
-                (string)$row['name'],
-                self::recordKey($row['record_key']),
-                (string)$row['mutation_type'],
-                $changes[$id] ?? [],
-            );
-        }
-        return $entries;
-    }
-
-    /**
-     * @param list<int> $ids Entry numbers in one bounded window
-     * @param bool $includeLong Whether to join the long-value table
-     * @return array<int, list<ChangeLogFieldChange>> Changes keyed by entry number
-     * @throws DatabaseException When journal SQL fails
-     */
-    private function changesByEntryIds(array $ids, bool $includeLong): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        $valueJoins = [];
-        if ($includeLong) {
-            $valueJoins[] = " LEFT JOIN {$database}.`hilos_change_log_value` v"
-                . ' ON v.`change_id` = ch.`id` AND v.`created_at` = ch.`created_at`';
-        }
-        $oldValue = $includeLong ? "CASE WHEN ch.`kind` = 'long' THEN v.`old_value` ELSE ch.`old_value` END" : 'ch.`old_value`';
-        $newValue = $includeLong ? "CASE WHEN ch.`kind` = 'long' THEN v.`new_value` ELSE ch.`new_value` END" : 'ch.`new_value`';
-        Database::sql(
-            "SELECT ch.`log_id`, f.`name`, ch.`kind`, ch.`old_present`, ch.`new_present`,"
-            . " {$oldValue} AS old_value, {$newValue} AS new_value"
-            . " FROM {$database}.`hilos_change_log` l"
-            . " JOIN {$database}.`hilos_change_log_change` ch"
-            . ' ON ch.`log_id` = l.`id` AND ch.`created_at` = l.`created_at`'
-            . " JOIN {$database}.`hilos_change_log_field` f ON f.`id` = ch.`field_id`"
-            . implode('', $valueJoins)
-            . " WHERE l.`id` IN ({$placeholders}) ORDER BY ch.`log_id`, ch.`id`",
-            $ids,
-        );
-        $changes = [];
-        foreach (Database::rows() as $row) {
-            $longOmitted = !$includeLong && $row['kind'] === 'long';
-            $changes[(int)$row['log_id']][] = new ChangeLogFieldChange(
-                (string)$row['name'],
-                (string)$row['kind'],
-                (bool)$row['old_present'],
-                (bool)$row['new_present'],
-                $longOmitted || $row['old_value'] === null ? null : (string)$row['old_value'],
-                $longOmitted || $row['new_value'] === null ? null : (string)$row['new_value'],
-                $longOmitted,
-            );
-        }
-        return $changes;
-    }
-
-    /**
-     * @param mixed $value JSON_ARRAY text or masked text from anonymized restore
-     * @return ?list<int|string|null> Decoded key, or null when it is masked or malformed
-     */
-    private static function recordKey(mixed $value): ?array
-    {
-        $decoded = json_decode((string)$value, true, flags: JSON_BIGINT_AS_STRING);
-        if (!is_array($decoded) || !array_is_list($decoded)) {
-            return null;
-        }
-        foreach ($decoded as &$part) {
-            if (is_float($part)) {
-                $part = (string)$part;
-            } elseif (is_bool($part)) {
-                $part = (int)$part;
-            } elseif (!is_int($part) && !is_string($part) && $part !== null) {
-                return null;
-            }
-        }
-        unset($part);
-        return $decoded;
     }
 
     /**

@@ -47,6 +47,7 @@ class AdminAudience
      * @throws DatabaseException When the users cannot be loaded
      * @throws LogicException When the user collection is not configured
      * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws HilosException When the complete user selection cannot be built
      */
     protected static function userIds(): array
     {

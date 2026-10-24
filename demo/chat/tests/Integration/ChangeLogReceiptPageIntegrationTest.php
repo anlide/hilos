@@ -23,7 +23,6 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -344,8 +343,8 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
     {
         $first = $this->settingReceipt(JournalReceiptData::agent('setting.create', 'hilos_index'), 'first');
         $other = $this->settingReceipt(JournalReceiptData::agent('setting.create', 'hilos_index'), 'other');
-        $ownedEntryId = new ChangeLogSectionReader()->receiptEntries($first, null, 1)[0]->id;
-        $foreignEntryId = new ChangeLogSectionReader()->receiptEntries($other, null, 1)[0]->id;
+        $ownedEntryId = Hilos::$db->changeLogEntries->receiptEntries($first, null, 1)->get(0)->id;
+        $foreignEntryId = Hilos::$db->changeLogEntries->receiptEntries($other, null, 1)->get(0)->id;
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::sql("INSERT INTO {$database}.`hilos_change_log_receipt` (`created_at`, `channel`, `action`)"
             . " VALUES (UTC_TIMESTAMP(6), 'web', 'empty-detail-test')");

@@ -19,7 +19,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\ChangeLog\ChangeLogSectionReader;
-use Hilos\Database\ChangeLog\Section\ChangeLogEntry;
+use Hilos\Database\View\Collection\ChangeLogEntries;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
@@ -125,27 +125,28 @@ abstract class AbstractHilosChangeLogDashboardPage extends AbstractHilosPage
         if (Hilos::$browser === null) {
             throw new LogicException('Change log reading requires a browser context');
         }
-        $reader = new ChangeLogSectionReader();
-        $receipt = $reader->receipt($dto->receiptId);
+        $receipt = Hilos::$db->changeLogReceipts->sectionReceipt($dto->receiptId);
         if ($receipt === null) {
             throw new ValidationException('Receipt not found');
         }
-        if ($dto->afterEntryId !== null && $reader->entry($dto->afterEntryId)?->receiptId !== $dto->receiptId) {
+        if ($dto->afterEntryId !== null
+            && Hilos::$db->changeLogEntries->sectionEntry($dto->afterEntryId)?->receiptId !== $dto->receiptId) {
             throw new ValidationException('Invalid receipt cursor');
         }
-        $entries = $reader->receiptEntries($dto->receiptId, $dto->afterEntryId, ChangeLogSectionReader::MAX_WINDOW_ROWS);
-        $lastId = $entries === [] ? null : $entries[array_key_last($entries)]->id;
-        $next = $lastId !== null && $reader->receiptEntries($dto->receiptId, $lastId, self::CONTINUATION_PROBE_ROWS) !== []
+        $entries = Hilos::$db->changeLogEntries->receiptEntries($dto->receiptId, $dto->afterEntryId, ChangeLogEntries::MAX_WINDOW_ROWS);
+        $lastId = $entries->last()?->id;
+        $next = $lastId !== null
+            && !Hilos::$db->changeLogEntries->receiptEntries($dto->receiptId, $lastId, self::CONTINUATION_PROBE_ROWS)->isEmpty()
             ? $lastId : null;
         $header = HilosChangeLogDetailWire::receipt($receipt);
         if (Hilos::$browser->isAdminViewModeViewer(static::class, $acceptKey)) {
             $header = Hilos::$browser->hideForViewer($header, HilosChangeLogDetailWire::receiptFields());
         }
-        return new HilosChangeLogReceiptReadReplyDTO(
-            $header,
-            array_map(static fn(ChangeLogEntry $entry): array => HilosChangeLogDetailWire::entry($entry), $entries),
-            $next,
-        );
+        $wireEntries = [];
+        foreach ($entries as $entry) {
+            $wireEntries[] = HilosChangeLogDetailWire::entry($entry);
+        }
+        return new HilosChangeLogReceiptReadReplyDTO($header, $wireEntries, $next);
     }
 
     /**
@@ -161,7 +162,7 @@ abstract class AbstractHilosChangeLogDashboardPage extends AbstractHilosPage
         if (Hilos::$browser === null) {
             throw new LogicException('Change log reading requires a browser context');
         }
-        $entry = new ChangeLogSectionReader()->entry($dto->entryId);
+        $entry = Hilos::$db->changeLogEntries->sectionEntry($dto->entryId);
         if ($entry === null) {
             throw new ValidationException('Change not found');
         }

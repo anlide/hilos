@@ -178,7 +178,7 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         }
         $this->assertSame([], $history[0]->entry->changes);
 
-        $update = $reader->entry($history[1]->entry->id);
+        $update = Hilos::$db->changeLogEntries->sectionEntry($history[1]->entry->id);
         $this->assertNotNull($update);
         $this->assertCount(1, $update->changes);
         $changed = $update->changes[0];
@@ -188,7 +188,7 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         $this->assertSame(self::FIRST_TEXT, $changed->oldValue);
         $this->assertSame(self::SECOND_TEXT, $changed->newValue);
 
-        $delete = $reader->entry($history[2]->entry->id);
+        $delete = Hilos::$db->changeLogEntries->sectionEntry($history[2]->entry->id);
         $this->assertNotNull($delete);
         $snapshot = [];
         foreach ($delete->changes as $change) {

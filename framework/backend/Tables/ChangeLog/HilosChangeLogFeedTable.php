@@ -18,14 +18,16 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItem;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItemKind;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\View\Collection\ChangeLogEntries;
 use Hilos\Core\Table\TableWindowPlan;
+use Hilos\Hilos;
 
 /** Frozen, server-windowed feed of nonempty receipts and bare journal writes. */
 class HilosChangeLogFeedTable extends TableDefinition implements ViewportTable
@@ -105,11 +107,12 @@ class HilosChangeLogFeedTable extends TableDefinition implements ViewportTable
      * @param TableQueryDTO $query Scoped viewport request
      * @return TableSnapshotDTO Frozen journal window
      * @throws InvalidArgumentException When a filter or anchor is invalid
+     * @throws DatabaseException When journal or current person reads fail
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $limit = $query->limit === TableConstants::NO_LIMIT
-            ? ChangeLogSectionReader::MAX_WINDOW_ROWS : min($query->limit, ChangeLogSectionReader::MAX_WINDOW_ROWS);
+            ? ChangeLogEntries::MAX_WINDOW_ROWS : min($query->limit, ChangeLogEntries::MAX_WINDOW_ROWS);
         $served = $query->withLimit($limit);
         $who = HilosChangeLogTableParts::who($query);
         $filter = new ChangeLogFeedFilter(
@@ -122,8 +125,7 @@ class HilosChangeLogFeedTable extends TableDefinition implements ViewportTable
         if ($who === false) {
             return new TableSnapshotDTO(limit: $limit, rowsBefore: 0);
         }
-        $reader = new ChangeLogSectionReader();
-        $count = $reader->feedCount($filter);
+        $count = Hilos::$db->changeLogReceipts->feedCount($filter);
         $exact = $count <= TableConstants::COUNT_CEILING;
         $total = min($count, TableConstants::COUNT_CEILING);
 
@@ -142,18 +144,22 @@ class HilosChangeLogFeedTable extends TableDefinition implements ViewportTable
             $skip = $plan['skip'];
             $take = $plan['take'];
         }
-        $items = $reader->feedWindow($filter, $anchor, $direction, $take, $skip);
-        $first = $items === [] ? null : self::anchorFor($items[0]);
-        $last = $items === [] ? null : self::anchorFor($items[count($items) - 1]);
+        $items = Hilos::$db->changeLogReceipts->feedWindow($filter, $anchor, $direction, $take, $skip);
+        $first = $items->isEmpty() ? null : self::anchorFor($items->first());
+        $last = $items->isEmpty() ? null : self::anchorFor($items->last());
         $rowsBefore = null;
         if ($exact) {
             $rowsBefore = TableWindowPlan::knownRowsBefore($served, $first, $total);
             if ($rowsBefore === null && $first !== null) {
-                $rowsBefore = $reader->feedCountBefore($filter, self::readAnchor($first));
+                $rowsBefore = Hilos::$db->changeLogReceipts->feedCountBefore($filter, self::readAnchor($first));
             }
         }
+        $rows = [];
+        foreach ($items as $item) {
+            $rows[] = HilosChangeLogFeedTableRow::fromItem($item);
+        }
         return new TableSnapshotDTO(
-            rows: array_map(HilosChangeLogFeedTableRow::fromItem(...), $items),
+            rows: $rows,
             totalCount: $total,
             totalExact: $exact,
             limit: $limit,
