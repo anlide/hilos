@@ -23,6 +23,10 @@ use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\ModerationKindKey;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Tables\Moderation\HilosModerationKindTableRow;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
+use Hilos\Tables\Moderation\HilosModerationRuleTableRow;
 
 /**
  * The chat's own moderation rules in the framework table `hilos_moderation_rule` (HIL-1624): the
@@ -100,6 +104,29 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
             self::OLD_MESSAGE_SECTION => self::MESSAGE_RULES,
             self::OLD_NAME_SECTION => self::NAME_RULES,
         ], $oldPieces);
+
+        $expectedRules = [
+            ModerationKindKey::PROFILE_NAME => self::NAME_RULES,
+            ModerationKindKey::PROFILE_PHOTO => [],
+            ChatModerationKindKey::MESSAGE => self::MESSAGE_RULES,
+            ChatModerationKindKey::MESSAGE_PICTURE => [],
+        ];
+        $kindRows = Hilos::$table->hilosModerationKinds->getFullSnapshot()->rows;
+        $this->assertSame(
+            array_keys($expectedRules),
+            array_map(static fn (HilosModerationKindTableRow $row): string => $row->kind, $kindRows),
+        );
+        foreach ($kindRows as $kindRow) {
+            $rules = $expectedRules[$kindRow->kind];
+            $this->assertSame(count($rules), $kindRow->ownRuleCount);
+            $ruleRows = Hilos::$table->hilosModerationRules->getPage(new TableQueryDTO(
+                filter: [HilosModerationRulesTable::FILTER_KIND => $kindRow->kind],
+            ))->rows;
+            $this->assertSame(
+                $rules,
+                array_map(static fn (HilosModerationRuleTableRow $row): string => $row->rule, $ruleRows),
+            );
+        }
     }
 
     public function testRepeatedSeedNeitherDuplicatesNorErasesAThirdKind(): void

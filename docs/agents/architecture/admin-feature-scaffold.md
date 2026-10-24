@@ -681,8 +681,9 @@ thin project bindings and database/DDL setup above remain required.
 Framework-owned: the project activates the mechanism and supplies its own
 kinds, never a copy of the moderator or admin engine. Read
 [moderation.md](moderation.md) for the rules and current implementation status.
-The activation order is below; steps 1 to 4 are in the code, and what steps 5 and
-6 mark with a leaf is not:
+The activation order is below; steps 1 to 4 and the table registrations in step
+5 are in the code. Page registrations in step 5 and the mounts in step 6 remain
+with their marked leaves:
 
 1. Declare `HilosFeature::MODERATION` in `FEATURES`. This does not enable
    `PROFILE_PHOTO`.
@@ -706,11 +707,23 @@ The activation order is below; steps 1 to 4 are in the code, and what steps 5 an
    framework profiles `hilos.moderation.text` and `hilos.moderation.image` need
    no project declaration; a stand points them at its model with
    `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL`.
-5. Register the two framework browser tables, kinds and rules.
-   (not in the code yet — HIL-1628)
-   Register the section root page. (not in the code yet — HIL-1629)
+5. Register the framework browser tables in the project topology:
+   `Hilos\Tables\Moderation\HilosModerationKindsTable::TABLE`
+   (`hilosModerationKinds`) maps to
+   `Hilos\Tables\Moderation\HilosModerationKindsTable::class`, and
+   `Hilos\Tables\Moderation\HilosModerationRulesTable::TABLE`
+   (`hilosModerationRules`) maps to
+   `Hilos\Tables\Moderation\HilosModerationRulesTable::class` in `Hilos::TABLES`,
+   under the matching `TableContext` keys. `ChatTableContext` declares matching
+   key constants, imports the framework classes and lists their typed
+   `@property-read` entries; its `configure()` mounts the registered tables.
+   Register the section root page and bind `hilosModerationKinds` in
+   `PAGE_TABLES`.
+   (not in the code yet — HIL-1629)
    Register the kind Overview page. (not in the code yet — HIL-1630)
-   Register the kind Rules page. (not in the code yet — HIL-1631)
+   Register the kind Rules page and bind `hilosModerationRules` in `PAGE_TABLES`
+   with the required `kind` preset supplied by its route.
+   (not in the code yet — HIL-1631)
 6. Mount the chosen frontend's SDK views through thin project bindings:
    Vue/chat mounts the root. (not in the code yet — HIL-1629)
    It mounts Overview. (not in the code yet — HIL-1630)

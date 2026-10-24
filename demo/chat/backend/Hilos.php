@@ -252,6 +252,8 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
@@ -705,6 +707,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        ChatTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+        ChatTableContext::hilosModerationRules => HilosModerationRulesTable::class,
     ];
 
     public const array BROWSER_LISTS = [

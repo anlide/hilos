@@ -309,6 +309,8 @@ use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
@@ -949,6 +951,10 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
     {
         $this->assertContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
+        $this->assertSame(HilosModerationKindsTable::TABLE, ChatTableContext::hilosModerationKinds);
+        $this->assertSame(HilosModerationKindsTable::class, Hilos::TABLES[ChatTableContext::hilosModerationKinds]);
+        $this->assertSame(HilosModerationRulesTable::TABLE, ChatTableContext::hilosModerationRules);
+        $this->assertSame(HilosModerationRulesTable::class, Hilos::TABLES[ChatTableContext::hilosModerationRules]);
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
         $this->assertSame([

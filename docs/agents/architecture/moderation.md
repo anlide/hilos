@@ -328,8 +328,29 @@ for a new project's moderation mechanism.
 
 Activate the framework mechanism by the
 [admin feature recipe](admin-feature-scaffold.md#moderation--the-moderation-section).
-The framework supplies the kinds table and the rules table.
-(not in the code yet — HIL-1628)
+The framework supplies two browser tables, registered by Chat in `Hilos::TABLES`
+and mounted through `ChatTableContext`:
+
+- `HilosModerationKindsTable` (`hilosModerationKinds`) exposes each published
+  kind by string row key `kind` in slot `kind`, with `kind`, `title`, `owner`
+  (`framework` or `project`), `input` (`text`, `image` or `text_with_files`),
+  `model` and nonnegative `ownRuleCount`. Rows follow directory order by
+  default. The count covers persisted rules of that kind; zero means its
+  built-in rules apply, and built-in rules are not database rows. `model` uses
+  `ModerationSettingsCatalog::IMAGE_MODEL` for `image` input and
+  `ModerationSettingsCatalog::TEXT_MODEL` otherwise.
+- `HilosModerationRulesTable` (`hilosModerationRules`) uses the `kind` window
+  filter and exposes persisted rules for a published string kind by positive
+  integer row key `id` in slot `rule`, with `id`, `kind` and `rule`. Its default
+  order is `id` ascending.
+
+The kinds table observes the `moderationRules` and `settings` sources; the rules
+table observes `moderationRules`. Rows use the existing `page_response.windows`
+and `table_window` shapes. Source-change fan-out keeps open windows current
+through `table_viewport_delta`, `table_viewport_append`,
+`table_viewport_announce` and `table_viewport_count`, including kind counts and
+model changes across every kind using that profile. No signal names or DTOs are
+added.
 
 The section has these pages, with Vue/chat as their first consumer:
 
@@ -370,14 +391,14 @@ Profile photos in polls are separate work. (not in the code yet — HIL-1645)
 There is no verdict journal and no per-kind on/off switch in this design.
 
 **Built so far:** the kinds directory, the rules table and its library, the check
-queue and its signals, the moderator, its profiles and settings, and the profile
-photo flow (HIL-1623–HIL-1625).
+queue and its signals, the moderator, its profiles and settings, the profile
+photo flow (HIL-1623–HIL-1625), and the kinds/rules browser tables registered by
+Chat (HIL-1628).
 
 **Not built yet:** the display-name check (HIL-1626); chat as a consumer
-(HIL-1627); the section's tables and its activation (HIL-1628); pages, actions,
-SDK mounts and demo stands (HIL-1629–HIL-1637); e2e and cluster coverage
-(HIL-1638/HIL-1639); enabling profile photos in tasks/polls
-(HIL-1644/HIL-1645).
+(HIL-1627); section pages, actions, SDK mounts and demo stands (HIL-1629–HIL-1637);
+e2e and cluster coverage (HIL-1638/HIL-1639); enabling profile photos in
+tasks/polls (HIL-1644/HIL-1645).
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

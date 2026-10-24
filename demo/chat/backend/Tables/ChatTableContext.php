@@ -50,6 +50,8 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
 /**
@@ -102,6 +104,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosModerationKindsTable $hilosModerationKinds
+ * @property-read HilosModerationRulesTable $hilosModerationRules
  */
 final class ChatTableContext extends TableContext
 {
@@ -149,6 +153,8 @@ final class ChatTableContext extends TableContext
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
+    public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.
