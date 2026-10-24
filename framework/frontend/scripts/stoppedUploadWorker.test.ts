@@ -106,6 +106,19 @@ describe('the stopped upload worker readiness boundary', () => {
       start: START,
       elapsedMs: expect.any(Number),
     })
+    // Every readiness read is evidence, not only the one that found T.
+    const stopping = s.events.filter(
+      (event) => event.kind === 'worker-stopping',
+    )
+    expect(new Set(stopping.map((event) => event.state))).toEqual(
+      new Set(['R', 'S', 'T']),
+    )
+    expect(stopping).toContainEqual({
+      kind: 'worker-stopping',
+      state: 'R',
+      start: START,
+      elapsedMs: expect.any(Number),
+    })
     // The initial, callback and final observations remain strict and distinct.
     expect(s.events.filter((event) => event.kind === 'worker-held')).toEqual(
       Array.from({ length: 3 }, () => ({
@@ -210,7 +223,7 @@ describe('the stopped upload worker readiness boundary', () => {
       s.proc.state = 'T'
       await expect(
         withStoppedUploadWorker(WORKER, s.record, run),
-      ).rejects.toThrow('exact stopped incarnation or watchdog window')
+      ).rejects.toThrow(`The upload worker is not stopped: state ${state}`)
       expect(run).toHaveBeenCalledOnce()
       s.expectCleanup()
     },
@@ -223,9 +236,44 @@ describe('the stopped upload worker readiness boundary', () => {
       withStoppedUploadWorker(WORKER, s.record, async () => {
         s.proc.state = 'R'
       }),
-    ).rejects.toThrow('exact stopped incarnation or watchdog window')
+    ).rejects.toThrow('The upload worker is not stopped: state R')
     s.expectCleanup()
   })
+
+  it.each([
+    [
+      'identity',
+      `The upload worker changed incarnation: start ${START} became 279749999`,
+    ],
+    ['state', 'The upload worker is not stopped: state S'],
+    [
+      'deadline',
+      `The uploads observation exceeded the watchdog window: ${WINDOW_MS} of ${WINDOW_MS} ms`,
+    ],
+  ])(
+    'names the broken %s guarantee in a held observation',
+    async (change, message) => {
+      const s = stand()
+      s.proc.state = 'T'
+      const record = (event: Record<string, unknown>) => {
+        s.record(event)
+        // The original incarnation is back for the CONT that follows.
+        if (event.kind === 'worker-held' && change === 'identity')
+          s.proc.start = START
+      }
+      const run = vi.fn(async ({ assertStopped }: Held) => {
+        if (change === 'identity') s.proc.start = '279749999'
+        if (change === 'state') s.proc.state = 'S'
+        if (change === 'deadline') vi.setSystemTime(NOW + WINDOW_MS)
+        await assertStopped()
+      })
+
+      await expect(
+        withStoppedUploadWorker(WORKER, record, run),
+      ).rejects.toThrow(message)
+      s.expectCleanup()
+    },
+  )
 
   it('refuses a zombie during readiness and cleans up', async () => {
     const s = stand()

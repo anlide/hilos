@@ -102,20 +102,22 @@ export async function withStoppedUploadWorker(worker, record, run) {
   })
   watchdog.unref()
   const stoppedAt = Date.now()
+  // Each refusal says which of the three guarantees broke, with its value.
   const assertStopped = async () => {
     const current = await identity(worker.pid)
-    record({
-      kind: 'worker-held',
-      ...current,
-      elapsedMs: Date.now() - stoppedAt,
-    })
-    if (
-      current.start !== birth.start ||
-      current.state !== 'T' ||
-      Date.now() - stoppedAt >= WATCHDOG_MS
-    )
+    const elapsedMs = Date.now() - stoppedAt
+    record({ kind: 'worker-held', ...current, elapsedMs })
+    if (current.start !== birth.start)
       throw new Error(
-        'The uploads observation escaped its exact stopped incarnation or watchdog window',
+        `The upload worker changed incarnation: start ${birth.start} became ${current.start}`,
+      )
+    if (current.state !== 'T')
+      throw new Error(
+        `The upload worker is not stopped: state ${current.state}`,
+      )
+    if (elapsedMs >= WATCHDOG_MS)
+      throw new Error(
+        `The uploads observation exceeded the watchdog window: ${elapsedMs} of ${WATCHDOG_MS} ms`,
       )
   }
   const resume = async () => {
@@ -149,9 +151,11 @@ export async function withStoppedUploadWorker(worker, record, run) {
     })
     // STOP delivery is asynchronous. Readiness spends the original watchdog
     // budget; only a real T on this incarnation admits the strict observations.
+    // Every read is recorded, so a failure shows how the stop went.
     for (;;) {
       const current = await identity(worker.pid)
       const elapsedMs = Date.now() - stoppedAt
+      record({ kind: 'worker-stopping', ...current, elapsedMs })
       if (
         current.start !== birth.start ||
         !['R', 'S', 'T'].includes(current.state) ||
