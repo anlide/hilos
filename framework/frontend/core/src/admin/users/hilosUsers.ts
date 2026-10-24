@@ -1438,6 +1438,26 @@ export function createHilosUserLifecycle(
   }
 }
 
+/** Presentation copy for the user Overview, without changing lifecycle verdicts. */
+export const HILOS_USER_OVERVIEW_COPY = {
+  openConnections: 'Open connections',
+  profile: 'Profile',
+  displayName: 'Display name',
+  changeName: 'Change name',
+  accountState: 'Account state',
+  actingAs: 'Acting as another person',
+  dangerZone: 'Danger zone',
+  states: {
+    admin: { active: 'Administrator', inactive: 'Not an administrator' },
+    block: { active: 'Blocked', inactive: 'Not blocked' },
+    frozen: { active: 'Frozen', inactive: 'Not frozen' },
+    deletion: {
+      active: 'Deletion scheduled',
+      inactive: 'No deletion is scheduled',
+    },
+  },
+} as const
+
 /** English copy shared by the three account-card views. */
 export const HILOS_USER_LIFECYCLE_COPY = {
   rights: 'Rights',

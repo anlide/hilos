@@ -95,14 +95,19 @@ test('an administrator renaming somebody reaches the renamed person and the room
   // Straight to the detail page: the users list pages, and this account is not
   // guaranteed to be on the first page of a database every test writes to.
   await gotoPage(adminPage, `/hilos/user/${userId}`)
-  await expect(adminPage.getByTestId('hilos-user-name')).toHaveText(oldName)
+  await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
+    oldName,
+  )
 
   const newName = `Renamed person ${userId}`
   await adminPage.getByTestId('hilos-user-edit').click()
   await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
   await clickSubmit(adminPage.getByTestId('hilos-user-save'))
+  await expect(adminPage.getByTestId('hilos-user-name-input')).toHaveCount(0)
   // The rename settles when the committed name returns over the live table.
-  await expect(adminPage.getByTestId('hilos-user-name')).toHaveText(newName)
+  await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
+    newName,
+  )
 
   // The rename is the framework's, so the renamed person is told - new for chat.
   await expect(unreadBadge(page)).toHaveText(/^1\b/)

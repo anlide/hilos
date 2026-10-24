@@ -314,6 +314,10 @@ export {
 } from './appearance.js'
 
 export { expectHilosUserBlockSettled } from './hilosUserLifecycle.js'
+export {
+  expectHilosUserOverview,
+  expectHilosUserOverviewAccessibility,
+} from './hilosUserOverview.js'
 export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
 

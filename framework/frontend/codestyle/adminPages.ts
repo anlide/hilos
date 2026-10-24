@@ -392,7 +392,7 @@ function templateBindings(
     const bindings: Binding[] = []
     const tag =
       layer === 'vue'
-        ? /<(?:HilosAdminPage|HilosSettingPresetsPage)\b[^>]*>/g
+        ? /<(?:HilosAdminPage|HilosSettingPresetsPage|HilosUserPageShell)\b[^>]*>/g
         : /<hilos-(?:admin|setting-presets)-page\b[^>]*>/g
     for (const match of clean.matchAll(tag)) {
       const attribute =
@@ -406,7 +406,9 @@ function templateBindings(
         name,
         line: file.getLineAndCharacterOfPosition(offset + match.index).line + 1,
         bare:
-          /^<(HilosAdminPage|hilos-admin-page)\b/.test(match[0]) &&
+          /^<(HilosAdminPage|HilosUserPageShell|hilos-admin-page)\b/.test(
+            match[0],
+          ) &&
           match[0].endsWith('/>') &&
           clean.trim() === match[0],
       })

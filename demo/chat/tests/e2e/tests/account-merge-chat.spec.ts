@@ -99,6 +99,9 @@ test('merges another account into the user on the admin card', async ({
     // Two surfaces of the loser stay open through the merge: the administrator's
     // card of it, with every control, and a guest's public page of it.
     await gotoPage(loserCardPage, `/hilos/user/${loser.userId}`)
+    await expect(loserCardPage.getByTestId('hilos-page-head-title')).toHaveText(
+      loser.name,
+    )
     await expect(loserCardPage.getByTestId('hilos-user-edit')).toBeVisible()
     await expect(
       loserCardPage.getByTestId('hilos-user-merge-zone'),
@@ -172,8 +175,16 @@ test('merges another account into the user on the admin card', async ({
     // The open card of the merged account turns without a reload (HIL-1292): the
     // badge says Merged, the notice leads to the survivor's card, and nothing is
     // left to press.
-    await expect(loserCardPage.getByTestId('user-standing-badge')).toHaveText(
+    const mergedHead = loserCardPage.getByTestId('hilos-page-head-block')
+    await expect(mergedHead.getByTestId('user-standing-badge')).toHaveText(
       'Merged',
+    )
+    await expect(loserCardPage.getByRole('heading', { level: 1 })).toHaveText(
+      loser.name,
+    )
+    await expect(loserCardPage.getByTestId('hilos-user-merged')).toHaveCount(1)
+    await expect(loserCardPage.getByTestId('hilos-user-merged')).toContainText(
+      survivor.name,
     )
     await expect(
       loserCardPage.getByTestId('hilos-user-merged-link'),
@@ -182,6 +193,15 @@ test('merges another account into the user on the admin card', async ({
     await expect(
       loserCardPage.getByTestId('hilos-user-merge-zone'),
     ).toHaveCount(0)
+    for (const control of ['admin', 'block', 'deletion', 'impersonate']) {
+      await expect(
+        loserCardPage.getByTestId(`hilos-user-${control}-open`),
+      ).toHaveCount(0)
+    }
+    // The project slot remains navigation on the merged card, with its own id.
+    await expect(
+      loserCardPage.getByTestId('chat-participant-open'),
+    ).toHaveAttribute('href', `/user/${loser.userId}`)
     // So does the guest's public page: the survivor by name and by the way to
     // their page, the merge sign in place of a face (HIL-1300), and no sessions
     // of its own any more.

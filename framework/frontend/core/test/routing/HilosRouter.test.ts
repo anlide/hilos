@@ -132,6 +132,40 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
+  it('refuses direct entry to the unbuilt user tabs in every view layer', () => {
+    const userRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const userTabs = [
+      [HilosPages.USER_ROLES, '/hilos/user/7/roles', { userId: '7' }],
+      [HilosPages.USER_ACCESS, '/hilos/user/7/access', { userId: '7' }],
+      [HilosPages.USER_SESSIONS, '/hilos/user/7/sessions', { userId: '7' }],
+    ] as const
+
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      for (const [page, path, params] of userTabs) {
+        const { env } = fakeEnvironment(path)
+        const { pages, calls, refused } = fakePages()
+        const navigator = createHilosRouter(
+          userRouter,
+          pages,
+          env,
+          undefined,
+          hilosUnbuiltPages(layer),
+        )
+        navigator.start()
+
+        expect(navigator.currentRoute.get()).toEqual({
+          page,
+          params,
+          admin: true,
+        })
+        expect(refused).toEqual([page])
+        expect(calls).toEqual([])
+        expect(navigator.resolvePath(page, params)).toBeUndefined()
+        navigator.stop()
+      }
+    }
+  })
+
   it('serves Circle in Vue and keeps its direct address and links closed in React and Angular', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const { env } = fakeEnvironment('/hilos/maintenance/circle')

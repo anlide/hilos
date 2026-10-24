@@ -197,6 +197,67 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
+  it('routes a user to their roles, access, and sessions tabs', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+    const userTabs = [
+      [
+        HilosPages.USER_ROLES,
+        'hilos_user_roles',
+        'HILOS_USER_ROLES',
+        '/hilos/user/{userId}/roles',
+        '/hilos/user/7/roles',
+      ],
+      [
+        HilosPages.USER_ACCESS,
+        'hilos_user_access',
+        'HILOS_USER_ACCESS',
+        '/hilos/user/{userId}/access',
+        '/hilos/user/7/access',
+      ],
+      [
+        HilosPages.USER_SESSIONS,
+        'hilos_user_sessions',
+        'HILOS_USER_SESSIONS',
+        '/hilos/user/{userId}/sessions',
+        '/hilos/user/7/sessions',
+      ],
+    ] as const
+
+    for (const [page, key, phpKey, template, path] of userTabs) {
+      const params = { userId: '7' }
+      expect(page).toBe(key)
+      expect(php).toContain(`${phpKey} = '${page}';`)
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+        path: template,
+        admin: true,
+      })
+      expect(resolveHilosPath(page, params)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params, admin: true })
+    }
+
+    expect(router.match('/hilos/user/7')).toEqual({
+      page: HilosPages.USER,
+      params: { userId: '7' },
+      admin: true,
+    })
+
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      const unbuilt = hilosUnbuiltPages(layer)
+      const projectViews = userTabs.map(([page]) => page)
+      for (const [page] of userTabs) {
+        expect(unbuilt.has(page)).toBe(true)
+        expect(hilosUnbuiltPages(layer, projectViews).has(page)).toBe(false)
+      }
+    }
+  })
+
   it('declares a route for every Hilos page key', () => {
     for (const key of Object.values(HilosPages)) {
       expect(HILOS_ROUTE_DECLARATIONS[key].path).toBeTypeOf('string')

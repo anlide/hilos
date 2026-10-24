@@ -12,6 +12,8 @@ import {
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
   expectDesktopShell,
+  expectHilosUserOverview,
+  expectHilosUserOverviewAccessibility,
   expectPasswordVisibility,
   expectTableTextControl,
   expectTableTextGeometry,
@@ -156,6 +158,24 @@ test('the home page exposes a heading and presence as text', async ({
   await expect(
     page.getByTestId('participant').filter({ hasText: user.name }),
   ).toContainText('online')
+})
+
+test('the user Overview exposes a shared heading, named navigation and keyboard rename', async ({
+  page,
+}) => {
+  const userId = await signUpAdmin(page)
+  const name = await page.getByTestId('self-user').innerText()
+  await gotoPage(page, `/hilos/user/${userId}`)
+  await expectHilosUserOverview(expect, page, userId, name, 'Hilos Chat')
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'Profile',
+    'Rights',
+    'Access to the product',
+    'Acting as another person',
+    'Chat participant',
+    'Danger zone',
+  ])
+  await expectHilosUserOverviewAccessibility(expect, page)
 })
 
 test('profile dialogs carry their refusal voice before any refusal', async ({

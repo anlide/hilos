@@ -230,6 +230,42 @@ sub-components, or passing config — and **never** by re-implementing a templat
 **No mixins.** Re-implementing an SDK component's template to change it is the
 duplication this model exists to prevent.
 
+The Vue `HilosUserPage` is a built example of a typed page extension. It accepts
+an optional `project-overview` scoped slot with `{ detail: HilosUserDetailRow }`;
+the detail row is readonly and comes from the permitted user page data. The slot
+is rendered inside the shared user shell's `HilosAdminPage`, so its content is
+inside the existing admin/view-mode providers. With no slot, no project section
+is rendered. `@hilos/vue/admin/users` also exports
+`HilosUserPageShell(context: HilosUsersContext, page: string)`, whose optional
+`default` and `modals` slots hold the page body and dialogs; it has no header
+mutation slot, and `HilosUserPage` uses this shell.
+
+Chat fills the Overview slot with its existing participant link:
+
+```vue
+<HilosUserPage :context="hilosUsersContext">
+  <template #project-overview="{ detail }">
+    <section class="mb-4">
+      <h2 class="h5">Chat participant</h2>
+      <div class="card">
+        <div class="card-body">
+          <HilosLink
+            :to="router.path(PAGE_USER, { id: String(detail.id) })!"
+          >
+            Open participant card
+          </HilosLink>
+        </div>
+      </div>
+    </section>
+  </template>
+</HilosUserPage>
+```
+
+`router` and `PAGE_USER` are Chat's existing route binding; this link uses the
+detail id already on the page and adds no data, scopes, or fetch. Binance mounts
+`HilosUserPage` without the slot. This user-page adoption is Vue-only: React and
+Angular still use their legacy user cards.
+
 ## Two tiers of components
 
 The SDK component library is two tiers, differing in how much extension surface

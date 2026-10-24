@@ -31,7 +31,6 @@ Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computed,
-  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -56,14 +55,8 @@ import {
   createHilosUserLifecycle,
   createHilosUserStanding,
   HILOS_USER_IMPERSONATION_COPY,
-  HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
-  HILOS_USER_ANALYTICS_LINK_LABEL,
-  HILOS_PRESENCE_WIDEST_LABEL,
-  hilosPresenceBadge,
-  hilosStandingBadge,
-  hilosUserAnalyticsEnabled,
-  hilosUserAnalyticsPath,
+  HILOS_USER_OVERVIEW_COPY,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
@@ -75,7 +68,6 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   createHilosUserDetail,
-  createHilosUserPhoto,
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserRename,
@@ -91,56 +83,41 @@ import {
   type HilosMergeCandidateRow,
   type HilosPasswordFate,
   type HilosUsersContext,
+  type HilosUserDetailRow,
 } from '@hilos/core/admin/users'
 
 import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosActionError from '../../HilosActionError.vue'
-import HilosAvatar from '../../HilosAvatar.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
-import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
-import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import HilosUserPageShell from './HilosUserPageShell.vue'
 
 const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */
   context: HilosUsersContext
 }>()
 
+defineSlots<{
+  /** Project content receives the current permitted, readonly user-detail row. */
+  'project-overview'?({ detail }: { detail: HilosUserDetailRow }): unknown
+}>()
+
 const userDetail = createHilosUserDetail(props.context)
-const userPhoto = createHilosUserPhoto(props.context)
 const rename = createHilosUserRename(props.context)
 
 const detail = useSignal(userDetail)
-const photo = useSignal(userPhoto)
 const error = useSignal(rename.renameError)
+const overviewCopy = HILOS_USER_OVERVIEW_COPY
 
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error('HilosUserPage requires a provided Hilos router.')
-}
-// The way to the person's browser sessions in Analytics (HIL-1420): navigation,
-// not an action, so a merged card keeps it.
-const analyticsEnabled = useSignal(
-  hilosUserAnalyticsEnabled(props.context.scopes),
-)
-const analyticsPath = computed(() =>
-  hilosUserAnalyticsPath(
-    analyticsEnabled.value,
-    detail.value?.id,
-    router.resolvePath,
-  ),
-)
-const analyticsLinkLabel = HILOS_USER_ANALYTICS_LINK_LABEL
 /** Move the focus into a window whose step changed under it. */
 function focusWindow(body: Ref<HTMLElement | null>): void {
   void nextTick(() => {
@@ -170,18 +147,10 @@ const graceDays = useSignal(lifecycle.graceDays)
 const lifecycleUserId = useSignal(lifecycle.currentUserId)
 const userStanding = createHilosUserStanding(props.context)
 const standing = useSignal(userStanding.standing)
-const standingBadge = computed(() =>
-  standing.value === null ? null : hilosStandingBadge(standing.value.shown),
-)
-// The header draws it only under a row, so the absent row's word is never seen.
-const presenceBadge = computed(() =>
-  hilosPresenceBadge(detail.value?.presence ?? 'offline'),
-)
 const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
 // A merged account (HIL-1292): the notice under the header stands in for every
 // action section, which the core leaves empty for it.
 const mergedNotice = computed(() => hilosUserMergedNotice(standing.value))
-const mergedCopy = HILOS_USER_MERGED_COPY
 const lifecycleNow = ref(Date.now())
 watch(
   [
@@ -637,47 +606,30 @@ function submit(): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.USER">
-    <template v-if="detail">
-      <div class="card" data-id="hilos-user-detail">
-        <div class="card-header d-flex flex-wrap align-items-center gap-2">
-          <HilosAvatar
-            :name="isHiddenValue(detail.name) ? '' : detail.name"
-            :photo="photo"
-            size="md"
-          />
-          <span class="h5 mb-0" data-id="hilos-user-name"
-            ><HilosHideable :value="detail.name"
-          /></span>
-          <span class="hilos-stack d-inline-grid">
-            <span class="badge invisible" aria-hidden="true">{{
-              HILOS_PRESENCE_WIDEST_LABEL
-            }}</span>
-            <span class="badge" :class="`text-bg-${presenceBadge.tone}`">{{
-              presenceBadge.label
-            }}</span>
-          </span>
-          <span
-            v-if="standingBadge !== null"
-            class="badge"
-            :class="`text-bg-${standingBadge.tone}`"
-            data-id="user-standing-badge"
-          >
-            <i
-              class="bi me-1"
-              :class="standingBadge.icon"
-              aria-hidden="true"
-            ></i
-            >{{ standingBadge.label }}
-          </span>
-          <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
-            <HilosLink
-              v-if="analyticsPath !== null"
-              :to="analyticsPath"
-              class="btn btn-outline-secondary btn-sm"
-              data-id="hilos-user-analytics-link"
-              >{{ analyticsLinkLabel }}</HilosLink
-            >
+  <HilosUserPageShell :context="context" :page="HilosPages.USER">
+    <div v-if="detail" data-id="hilos-user-detail">
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <p class="small text-body-secondary mb-1">
+                {{ overviewCopy.openConnections }}
+              </p>
+              <div class="h3 mb-0" data-id="hilos-user-sessions">
+                {{ detail.onlineSessionCount }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <section class="mb-4">
+        <h2 class="h5">{{ overviewCopy.profile }}</h2>
+        <div class="card">
+          <div class="card-body d-flex flex-wrap align-items-start gap-3">
+            <div class="flex-grow-1">
+              <p class="fw-medium mb-1">{{ overviewCopy.displayName }}</p>
+              <HilosHideable :value="detail.name" />
+            </div>
             <button
               v-if="mergedNotice === null"
               type="button"
@@ -685,703 +637,707 @@ function submit(): void {
               data-id="hilos-user-edit"
               @click="openEdit"
             >
-              Edit
+              {{ overviewCopy.changeName }}
             </button>
           </div>
         </div>
-        <div class="card-body">
-          <dl class="row mb-0">
-            <dt class="col-sm-3">User ID</dt>
-            <dd class="col-sm-9" data-id="hilos-user-id">{{ detail.id }}</dd>
-            <dt class="col-sm-3">Online sessions</dt>
-            <dd class="col-sm-9" data-id="hilos-user-sessions">
-              {{ detail.onlineSessionCount }}
-            </dd>
-            <template v-if="detail.lastActivity">
-              <dt class="col-sm-3">Last activity</dt>
-              <dd class="col-sm-9" data-id="hilos-user-last-activity">
-                {{ detail.lastActivity }}
-              </dd>
-            </template>
-          </dl>
-        </div>
-      </div>
-      <!-- A merged account says where it went and offers nothing to press: every
-      action over it is refused by the server (HIL-1292). -->
-      <div
-        v-if="mergedNotice !== null"
-        class="alert alert-secondary mt-4"
-        role="status"
-        data-id="hilos-user-merged"
-      >
-        <template v-if="mergedNotice.userId !== null">
-          {{ mergedCopy.into }}
-          <HilosHideable :value="mergedNotice.name" /> (#{{
-            mergedNotice.userId
-          }}).
-          <HilosLink
-            v-if="mergedNotice.path !== null"
-            class="alert-link"
-            data-id="hilos-user-merged-link"
-            :to="mergedNotice.path"
-            >{{ mergedCopy.open }}</HilosLink
-          >
-        </template>
-        <template v-else>{{ mergedCopy.gone }}</template>
-      </div>
+      </section>
       <section
         v-for="section in lifecycleSections"
         :key="section.key"
-        class="card mt-4"
+        class="mb-4"
         :data-id="`hilos-user-${section.key}`"
       >
-        <div class="card-body">
-          <h2 class="h5">{{ section.title }}</h2>
-          <template v-for="row in section.rows" :key="row.key">
+        <h2 class="h5">{{ section.title }}</h2>
+        <div class="card">
+          <div class="card-body">
+            <h3 v-if="section.key === 'access'" class="h6">
+              {{ overviewCopy.accountState }}
+            </h3>
+            <template v-for="row in section.rows" :key="row.key">
+              <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+                <div
+                  class="flex-grow-1"
+                  :data-id="`hilos-user-${row.key}-state`"
+                >
+                  <p class="fw-medium mb-1">
+                    {{
+                      overviewCopy.states[row.key][
+                        row.state ? 'active' : 'inactive'
+                      ]
+                    }}
+                  </p>
+                  <p
+                    v-if="
+                      row.hint !==
+                      overviewCopy.states[row.key][
+                        row.state ? 'active' : 'inactive'
+                      ]
+                    "
+                    class="small text-body-secondary mb-0"
+                  >
+                    {{ row.hint }}
+                  </p>
+                </div>
+                <div>
+                  <LoadingButton
+                    class="btn-sm"
+                    :class="
+                      lifecycleCopy.confirmations[row.choice].danger
+                        ? 'btn-outline-danger'
+                        : 'btn-primary'
+                    "
+                    opens-window
+                    :loading="lifecycleOpening === row.choice"
+                    :disabled="row.disabled"
+                    :aria-describedby="`hilos-user-${row.key}-reason`"
+                    :data-id="`hilos-user-${row.key}-open`"
+                    @click="openLifecycle(row.choice)"
+                  >
+                    {{ lifecycleCopy[row.choice] }}
+                  </LoadingButton>
+                  <div class="hilos-stack small text-body-secondary mt-1">
+                    <span class="invisible" aria-hidden="true">{{
+                      row.reasonSpace
+                    }}</span>
+                    <span
+                      :id="`hilos-user-${row.key}-reason`"
+                      :data-id="`hilos-user-${row.key}-reason`"
+                      >{{ row.reason }}</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <!-- The freeze stands between the block and the deletion, and offers
+          nothing to press: only the person's own acceptance lifts it. -->
+              <div
+                v-if="row.key === 'block' && frozenRow !== null"
+                class="d-flex flex-wrap align-items-start gap-3 py-2"
+              >
+                <div class="flex-grow-1" data-id="hilos-user-frozen-state">
+                  <p class="fw-medium mb-1">
+                    {{
+                      overviewCopy.states.frozen[
+                        frozenRow.state ? 'active' : 'inactive'
+                      ]
+                    }}
+                  </p>
+                  <p
+                    v-if="
+                      frozenRow.hint !== null &&
+                      frozenRow.hint !== overviewCopy.states.frozen.inactive
+                    "
+                    class="small text-body-secondary mb-0"
+                  >
+                    {{ frozenRow.hint }}
+                  </p>
+                  <ul
+                    v-if="frozenRow.lapsed.length > 0"
+                    class="list-unstyled small text-body-secondary mb-0"
+                    data-id="hilos-user-frozen-lapsed"
+                  >
+                    <li v-for="line in frozenRow.lapsed" :key="line">
+                      {{ line }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+      <section v-if="impersonation !== null" class="mb-4">
+        <h2 class="h5">{{ overviewCopy.actingAs }}</h2>
+        <div class="card">
+          <div class="card-body">
+            <h3 class="h6">{{ impersonation.title }}</h3>
             <div class="d-flex flex-wrap align-items-start gap-3 py-2">
-              <div class="flex-grow-1" :data-id="`hilos-user-${row.key}-state`">
-                <h3 class="h6 mb-1">
-                  {{ row.title }}
-                  <span class="badge text-bg-secondary">{{
-                    row.state ? lifecycleCopy.yes : lifecycleCopy.no
-                  }}</span>
-                </h3>
-                <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
+              <div class="flex-grow-1">
+                <p class="fw-medium mb-1">{{ impersonation.rowTitle }}</p>
+                <p class="small text-body-secondary mb-0">
+                  {{ impersonation.hint }}
+                </p>
               </div>
               <div>
                 <LoadingButton
-                  class="btn-sm"
-                  :class="
-                    lifecycleCopy.confirmations[row.choice].danger
-                      ? 'btn-outline-danger'
-                      : 'btn-primary'
-                  "
+                  class="btn-sm btn-primary"
                   opens-window
-                  :loading="lifecycleOpening === row.choice"
-                  :disabled="row.disabled"
-                  :aria-describedby="`hilos-user-${row.key}-reason`"
-                  :data-id="`hilos-user-${row.key}-open`"
-                  @click="openLifecycle(row.choice)"
+                  :loading="impersonateOpening"
+                  :disabled="impersonation.disabled"
+                  aria-describedby="hilos-user-impersonate-reason"
+                  data-id="hilos-user-impersonate-open"
+                  @click="openImpersonate"
                 >
-                  {{ lifecycleCopy[row.choice] }}
+                  {{ HILOS_USER_IMPERSONATION_COPY.open }}
                 </LoadingButton>
                 <div class="hilos-stack small text-body-secondary mt-1">
                   <span class="invisible" aria-hidden="true">{{
-                    row.reasonSpace
+                    impersonation.reasonSpace
                   }}</span>
                   <span
-                    :id="`hilos-user-${row.key}-reason`"
-                    :data-id="`hilos-user-${row.key}-reason`"
-                    >{{ row.reason }}</span
+                    id="hilos-user-impersonate-reason"
+                    data-id="hilos-user-impersonate-reason"
+                    >{{ impersonation.reason }}</span
                   >
                 </div>
               </div>
             </div>
-            <!-- The freeze stands between the block and the deletion, and offers
-          nothing to press: only the person's own acceptance lifts it. -->
-            <div
-              v-if="row.key === 'block' && frozenRow !== null"
-              class="d-flex flex-wrap align-items-start gap-3 py-2"
-            >
-              <div class="flex-grow-1" data-id="hilos-user-frozen-state">
-                <h3 class="h6 mb-1">
-                  {{ frozenRow.title }}
-                  <span class="badge text-bg-secondary">{{
-                    frozenRow.state ? lifecycleCopy.yes : lifecycleCopy.no
-                  }}</span>
-                </h3>
-                <p
-                  v-if="frozenRow.hint !== null"
-                  class="small text-body-secondary mb-0"
-                >
-                  {{ frozenRow.hint }}
-                </p>
-                <ul
-                  v-if="frozenRow.lapsed.length > 0"
-                  class="list-unstyled small text-body-secondary mb-0"
-                  data-id="hilos-user-frozen-lapsed"
-                >
-                  <li v-for="line in frozenRow.lapsed" :key="line">
-                    {{ line }}
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </template>
-        </div>
-      </section>
-      <section
-        v-if="context.accountMerge && mergedNotice === null"
-        class="card border-danger mt-4"
-        data-id="hilos-user-merge-zone"
-      >
-        <div class="card-body">
-          <h2 class="h5">Merge another account into this one</h2>
-          <p class="mb-3">
-            Its sign-in methods and messages move here; the other account is
-            closed for good.
-          </p>
-          <LoadingButton
-            class="btn-outline-danger"
-            opens-window
-            :loading="mergeOpening"
-            data-id="hilos-user-merge-open"
-            @click="openMerge"
-          >
-            Merge an account into this…
-          </LoadingButton>
-        </div>
-      </section>
-      <section v-if="impersonation !== null" class="card mt-4">
-        <div class="card-body">
-          <h2 class="h5">{{ impersonation.title }}</h2>
-          <div class="d-flex flex-wrap align-items-start gap-3 py-2">
-            <div class="flex-grow-1">
-              <h3 class="h6 mb-1">{{ impersonation.rowTitle }}</h3>
-              <p class="small text-body-secondary mb-0">
-                {{ impersonation.hint }}
-              </p>
-            </div>
-            <div>
-              <LoadingButton
-                class="btn-sm btn-primary"
-                opens-window
-                :loading="impersonateOpening"
-                :disabled="impersonation.disabled"
-                aria-describedby="hilos-user-impersonate-reason"
-                data-id="hilos-user-impersonate-open"
-                @click="openImpersonate"
-              >
-                {{ HILOS_USER_IMPERSONATION_COPY.open }}
-              </LoadingButton>
-              <div class="hilos-stack small text-body-secondary mt-1">
-                <span class="invisible" aria-hidden="true">{{
-                  impersonation.reasonSpace
-                }}</span>
-                <span
-                  id="hilos-user-impersonate-reason"
-                  data-id="hilos-user-impersonate-reason"
-                  >{{ impersonation.reason }}</span
-                >
-              </div>
-            </div>
           </div>
         </div>
       </section>
-    </template>
+      <slot
+        v-if="$slots['project-overview']"
+        name="project-overview"
+        :detail="detail"
+      />
+      <section
+        v-if="context.accountMerge && mergedNotice === null"
+        class="mb-4"
+        data-id="hilos-user-merge-zone"
+      >
+        <h2 class="h5">{{ overviewCopy.dangerZone }}</h2>
+        <div class="card border-danger">
+          <div class="card-body">
+            <h3 class="h6">Merge another account into this one</h3>
+            <p class="mb-3">
+              Its sign-in methods and messages move here; the other account is
+              closed for good.
+            </p>
+            <LoadingButton
+              class="btn-outline-danger"
+              opens-window
+              :loading="mergeOpening"
+              data-id="hilos-user-merge-open"
+              @click="openMerge"
+            >
+              Merge an account into this…
+            </LoadingButton>
+          </div>
+        </div>
+      </section>
+    </div>
     <p v-else class="text-body-secondary" data-id="hilos-user-empty">
       Loading user…
     </p>
 
-    <HilosModal
-      v-model="lifecycleOpen"
-      :title="
-        lifecycleProof === 'skip'
-          ? lifecyclePrompt?.title
-          : HILOS_STEP_UP_COPY.title
-      "
-      initial-focus="inner"
-      :busy="lifecycleAction.busy.value"
-      @cancel="closeLifecycle"
-    >
-      <div ref="lifecycleBody">
-        <div class="visually-hidden" role="alert" aria-live="assertive">
-          {{
-            lifecycleProof === 'skip'
-              ? lifecycleAction.error.value
-              : lifecycleStepUpRefusal
-          }}
-        </div>
-        <form
-          v-if="lifecycleProof !== 'skip'"
-          id="hilos-user-lifecycle-proof"
-          data-id="hilos-user-lifecycle-step-up"
-          @submit.prevent="confirmLifecycleStep()"
-        >
-          <HilosStepUpStep :controller="lifecycleStepUp.step" />
-        </form>
-        <template v-else>
-          <p v-for="paragraph in lifecyclePrompt?.paragraphs" :key="paragraph">
-            {{ paragraph }}
-          </p>
-          <div data-id="hilos-user-lifecycle-error">
-            <HilosActionError
-              :action="lifecycleAction"
-              details-title="Account change refused"
-            />
+    <template #modals>
+      <HilosModal
+        v-model="lifecycleOpen"
+        :title="
+          lifecycleProof === 'skip'
+            ? lifecyclePrompt?.title
+            : HILOS_STEP_UP_COPY.title
+        "
+        initial-focus="inner"
+        :busy="lifecycleAction.busy.value"
+        @cancel="closeLifecycle"
+      >
+        <div ref="lifecycleBody">
+          <div class="visually-hidden" role="alert" aria-live="assertive">
+            {{
+              lifecycleProof === 'skip'
+                ? lifecycleAction.error.value
+                : lifecycleStepUpRefusal
+            }}
           </div>
-        </template>
-      </div>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="lifecycleAction.busy.value"
-          data-id="hilos-user-lifecycle-cancel"
-          @click="requestClose"
-        >
-          {{ lifecycleCopy.cancel }}
-        </button>
-        <LoadingButton
-          v-if="lifecycleProof === 'ask'"
-          class="btn-primary"
-          type="submit"
-          form="hilos-user-lifecycle-proof"
-          :loading="lifecycleStepUpBusy"
-          data-id="hilos-user-lifecycle-step-up-confirm"
-          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
-        >
-        <LoadingButton
-          v-else-if="lifecycleProof === 'skip'"
-          :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
-          :loading="lifecycleAction.busy.value"
-          :disabled="!lifecyclePrompt || !lifecycleOffered"
-          data-id="hilos-user-lifecycle-confirm"
-          @click="submitLifecycle"
-          >{{ lifecyclePrompt?.confirm }}</LoadingButton
-        >
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="impersonateOpen"
-      :title="
-        impersonateProof === 'skip'
-          ? impersonateTarget?.section.windowTitle
-          : HILOS_STEP_UP_COPY.title
-      "
-      initial-focus="inner"
-      :busy="impersonateAction.busy.value"
-      @cancel="closeImpersonate"
-    >
-      <div ref="impersonateBody">
-        <div class="visually-hidden" role="alert" aria-live="assertive">
-          {{
-            impersonateProof === 'skip'
-              ? impersonateAction.error.value
-              : impersonateStepUpRefusal
-          }}
-        </div>
-        <form
-          v-if="impersonateProof !== 'skip'"
-          id="hilos-user-impersonate-proof"
-          data-id="hilos-user-impersonate-step-up"
-          @submit.prevent="confirmImpersonateStep()"
-        >
-          <HilosStepUpStep :controller="impersonateStepUp.step" />
-        </form>
-        <template v-else-if="impersonateTarget !== null">
-          <p
-            v-for="paragraph in impersonateTarget.section.paragraphs"
-            :key="paragraph"
+          <form
+            v-if="lifecycleProof !== 'skip'"
+            id="hilos-user-lifecycle-proof"
+            data-id="hilos-user-lifecycle-step-up"
+            @submit.prevent="confirmLifecycleStep()"
           >
-            {{ paragraph }}
-          </p>
-          <div class="alert alert-secondary small py-2">
-            {{ impersonateTarget.section.note }}
-          </div>
-          <div data-id="hilos-user-impersonate-error">
-            <HilosActionError
-              :action="impersonateAction"
-              details-title="Couldn't impersonate this person"
-            />
-          </div>
+            <HilosStepUpStep :controller="lifecycleStepUp.step" />
+          </form>
+          <template v-else>
+            <p
+              v-for="paragraph in lifecyclePrompt?.paragraphs"
+              :key="paragraph"
+            >
+              {{ paragraph }}
+            </p>
+            <div data-id="hilos-user-lifecycle-error">
+              <HilosActionError
+                :action="lifecycleAction"
+                details-title="Account change refused"
+              />
+            </div>
+          </template>
+        </div>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="lifecycleAction.busy.value"
+            data-id="hilos-user-lifecycle-cancel"
+            @click="requestClose"
+          >
+            {{ lifecycleCopy.cancel }}
+          </button>
+          <LoadingButton
+            v-if="lifecycleProof === 'ask'"
+            class="btn-primary"
+            type="submit"
+            form="hilos-user-lifecycle-proof"
+            :loading="lifecycleStepUpBusy"
+            data-id="hilos-user-lifecycle-step-up-confirm"
+            >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+          >
+          <LoadingButton
+            v-else-if="lifecycleProof === 'skip'"
+            :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
+            :loading="lifecycleAction.busy.value"
+            :disabled="!lifecyclePrompt || !lifecycleOffered"
+            data-id="hilos-user-lifecycle-confirm"
+            @click="submitLifecycle"
+            >{{ lifecyclePrompt?.confirm }}</LoadingButton
+          >
         </template>
-      </div>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="impersonateAction.busy.value"
-          data-id="hilos-user-impersonate-cancel"
-          @click="requestClose"
-        >
-          {{ HILOS_USER_IMPERSONATION_COPY.cancel }}
-        </button>
-        <LoadingButton
-          v-if="impersonateProof === 'ask'"
-          class="btn-primary"
-          type="submit"
-          form="hilos-user-impersonate-proof"
-          :loading="impersonateStepUpBusy"
-          data-id="hilos-user-impersonate-step-up-confirm"
-          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
-        >
-        <LoadingButton
-          v-else-if="impersonateProof === 'skip'"
-          class="btn-primary"
-          :loading="impersonateAction.busy.value"
-          :disabled="
-            impersonation === null ||
-            impersonation.disabled ||
-            detail?.id !== impersonateTarget?.userId
-          "
-          data-id="hilos-user-impersonate-confirm"
-          @click="submitImpersonate"
-          >{{ HILOS_USER_IMPERSONATION_COPY.confirm }}</LoadingButton
-        >
-      </template>
-    </HilosModal>
+      </HilosModal>
 
-    <HilosModal
-      v-model="editing"
-      :confirm-on-close="dirty"
-      :busy="loading"
-      @cancel="closeEdit"
-    >
-      <template #header>
-        <ConflictHeader :title="editTitle" :conflict="live.conflict" />
-      </template>
-      <!-- The refusal is announced from here and not from the row that shows
+      <HilosModal
+        v-model="impersonateOpen"
+        :title="
+          impersonateProof === 'skip'
+            ? impersonateTarget?.section.windowTitle
+            : HILOS_STEP_UP_COPY.title
+        "
+        initial-focus="inner"
+        :busy="impersonateAction.busy.value"
+        @cancel="closeImpersonate"
+      >
+        <div ref="impersonateBody">
+          <div class="visually-hidden" role="alert" aria-live="assertive">
+            {{
+              impersonateProof === 'skip'
+                ? impersonateAction.error.value
+                : impersonateStepUpRefusal
+            }}
+          </div>
+          <form
+            v-if="impersonateProof !== 'skip'"
+            id="hilos-user-impersonate-proof"
+            data-id="hilos-user-impersonate-step-up"
+            @submit.prevent="confirmImpersonateStep()"
+          >
+            <HilosStepUpStep :controller="impersonateStepUp.step" />
+          </form>
+          <template v-else-if="impersonateTarget !== null">
+            <p
+              v-for="paragraph in impersonateTarget.section.paragraphs"
+              :key="paragraph"
+            >
+              {{ paragraph }}
+            </p>
+            <div class="alert alert-secondary small py-2">
+              {{ impersonateTarget.section.note }}
+            </div>
+            <div data-id="hilos-user-impersonate-error">
+              <HilosActionError
+                :action="impersonateAction"
+                details-title="Couldn't impersonate this person"
+              />
+            </div>
+          </template>
+        </div>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="impersonateAction.busy.value"
+            data-id="hilos-user-impersonate-cancel"
+            @click="requestClose"
+          >
+            {{ HILOS_USER_IMPERSONATION_COPY.cancel }}
+          </button>
+          <LoadingButton
+            v-if="impersonateProof === 'ask'"
+            class="btn-primary"
+            type="submit"
+            form="hilos-user-impersonate-proof"
+            :loading="impersonateStepUpBusy"
+            data-id="hilos-user-impersonate-step-up-confirm"
+            >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+          >
+          <LoadingButton
+            v-else-if="impersonateProof === 'skip'"
+            class="btn-primary"
+            :loading="impersonateAction.busy.value"
+            :disabled="
+              impersonation === null ||
+              impersonation.disabled ||
+              detail?.id !== impersonateTarget?.userId
+            "
+            data-id="hilos-user-impersonate-confirm"
+            @click="submitImpersonate"
+            >{{ HILOS_USER_IMPERSONATION_COPY.confirm }}</LoadingButton
+          >
+        </template>
+      </HilosModal>
+
+      <HilosModal
+        v-model="editing"
+        :confirm-on-close="dirty"
+        :busy="loading"
+        @cancel="closeEdit"
+      >
+        <template #header>
+          <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+        </template>
+        <!-- The refusal is announced from here and not from the row that shows
       it: a role arriving together with its text is not announced at all
       (accessibility.md). The region lives inside the dialog because the dialog
       is aria-modal, which hides the page under it from a screen reader. -->
-      <div
-        class="visually-hidden"
-        role="alert"
-        aria-live="assertive"
-        data-id="hilos-user-live-assertive"
-      >
-        {{ error }}
-      </div>
-      <HilosFormError :message="error" data-id="hilos-user-rename-error" />
-      <form @submit.prevent="submit">
-        <template v-if="isHiddenValue(draft)">
-          <div class="form-label">Display name</div>
-          <HilosHiddenMark />
-        </template>
-        <template v-else>
-          <label class="form-label" for="hilos-user-name-field">
-            Display name
-          </label>
-          <input
-            id="hilos-user-name-field"
-            v-model="draftText"
-            type="text"
-            class="form-control"
-            :minlength="HILOS_USER_NAME_MIN"
-            :maxlength="HILOS_USER_NAME_MAX"
-            data-id="hilos-user-name-input"
-            data-autofocus
-          />
-          <div class="form-text">
-            Between {{ HILOS_USER_NAME_MIN }} and
-            {{ HILOS_USER_NAME_MAX }} characters.
-          </div>
-        </template>
-        <HilosEditNotice
-          :kind="editNotice"
-          :text="editNoticeText"
-          data-id="hilos-user-edit-notice"
-        />
-      </form>
-      <template #actions="{ requestClose }">
-        <ConflictActions
-          :conflict="live.conflict"
-          :disable-save="!saveAvailable"
-          :save-label="saveLabel"
-          @save="submit"
-          @accept-mine="acceptMine"
-          @accept-theirs="acceptTheirs"
+        <div
+          class="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+          data-id="hilos-user-live-assertive"
         >
-          <template #cancel-button>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :disabled="loading"
-              data-id="hilos-user-cancel"
-              @click="requestClose"
-            >
-              Cancel
-            </button>
-          </template>
-          <template #save-button="{ disabled, onSave }">
-            <LoadingButton
-              class="btn-primary"
-              :loading="loading"
-              :disabled="disabled"
-              data-id="hilos-user-save"
-              @click="onSave"
-            >
-              {{ saveLabel }}
-            </LoadingButton>
-          </template>
-        </ConflictActions>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="mergeOpen"
-      :title="
-        mergeProof !== 'skip'
-          ? HILOS_STEP_UP_COPY.title
-          : detail
-            ? `Merge an account into ${hiddenAsWord(detail.name)}`
-            : 'Merge an account'
-      "
-      :confirm-on-close="selectedCandidateId !== null"
-      :busy="mergeAction.busy.value"
-      initial-focus="inner"
-      size="wide"
-      @cancel="closeMerge"
-    >
-      <div
-        ref="mergeBody"
-        class="visually-hidden"
-        role="alert"
-        aria-live="assertive"
-      >
-        {{
-          mergeProof === 'skip' ? mergeAction.error.value : mergeStepUpRefusal
-        }}
-      </div>
-      <HilosActionError
-        :action="mergeAction"
-        details-title="Couldn't merge the accounts"
-      />
-      <form
-        v-if="mergeProof !== 'skip'"
-        id="hilos-user-merge-proof"
-        data-id="hilos-user-merge-step-up"
-        @submit.prevent="confirmMergeStep()"
-      >
-        <HilosStepUpStep :controller="mergeStepUp.step" />
-      </form>
-      <template v-else-if="mergeStep === 1">
-        <div role="radiogroup" aria-label="Account to merge">
-          <HilosViewportTable
-            :controller="mergeCandidates.controller"
-            :autofocus-search="true"
-          >
-            <template #cell-actions="{ row }">
-              <input
-                type="radio"
-                class="form-check-input"
-                :aria-label="
-                  isHiddenValue(row.name)
-                    ? `Merge #${row.id}`
-                    : `Merge ${row.name}`
-                "
-                :data-id="`hilos-user-merge-row-${row.id}`"
-                :checked="selectedCandidateId === row.id"
-                :disabled="row.id === currentUserId"
-                @change="chooseCandidate(row)"
-              />
-            </template>
-            <template #cell-name="{ row }">
-              <!-- The space before the id lives in its span: a
-                   whitespace-only node between two elements is dropped. -->
-              <HilosHideable :value="row.name" />
-              <span class="text-body-secondary"> #{{ row.id }}</span>
-              <span
-                v-if="row.id === currentUserId"
-                class="badge text-bg-secondary ms-2"
-                >you</span
-              >
-            </template>
-            <template #cell-identities="{ row }">
-              <HilosHideable :value="row.identities">
-                <template #default="{ value: identities }">
-                  <ul class="list-unstyled mb-0">
-                    <li
-                      v-for="identity in identities"
-                      :key="`${identity.type}:${identity.identifier}`"
-                    >
-                      <span class="fw-medium">{{
-                        identityTitle(identity)
-                      }}</span>
-                      <template v-if="identity.type !== 'passkey'">
-                        · {{ identity.identifier }}
-                      </template>
-                      <template v-if="identity.verified">
-                        <span aria-hidden="true"> ✓</span
-                        ><span class="visually-hidden"> Verified</span>
-                      </template>
-                    </li>
-                  </ul>
-                </template>
-              </HilosHideable>
-            </template>
-            <template #cell-lastActivity="{ row }">{{
-              row.lastActivity ?? '—'
-            }}</template>
-          </HilosViewportTable>
+          {{ error }}
         </div>
-      </template>
-      <template v-else-if="mergeSummaryCandidate">
-        <p data-id="hilos-user-merge-summary">
-          <strong
-            ><HilosHideable :value="mergeSummaryCandidate.name" /> (#{{
-              mergeSummaryCandidate.id
-            }})</strong
+        <HilosFormError :message="error" data-id="hilos-user-rename-error" />
+        <form @submit.prevent="submit">
+          <template v-if="isHiddenValue(draft)">
+            <div class="form-label">Display name</div>
+            <HilosHiddenMark />
+          </template>
+          <template v-else>
+            <label class="form-label" for="hilos-user-name-field">
+              Display name
+            </label>
+            <input
+              id="hilos-user-name-field"
+              v-model="draftText"
+              type="text"
+              class="form-control"
+              :minlength="HILOS_USER_NAME_MIN"
+              :maxlength="HILOS_USER_NAME_MAX"
+              data-id="hilos-user-name-input"
+              data-autofocus
+            />
+            <div class="form-text">
+              Between {{ HILOS_USER_NAME_MIN }} and
+              {{ HILOS_USER_NAME_MAX }} characters.
+            </div>
+          </template>
+          <HilosEditNotice
+            :kind="editNotice"
+            :text="editNoticeText"
+            data-id="hilos-user-edit-notice"
+          />
+        </form>
+        <template #actions="{ requestClose }">
+          <ConflictActions
+            :conflict="live.conflict"
+            :disable-save="!saveAvailable"
+            :save-label="saveLabel"
+            @save="submit"
+            @accept-mine="acceptMine"
+            @accept-theirs="acceptTheirs"
           >
-          will be merged into
-          <strong
-            ><HilosHideable v-if="detail" :value="detail.name" /> (#{{
-              detail?.id
-            }})</strong
-          >.
-        </p>
-        <ul>
-          <li>
-            Its sign-in methods and everything it wrote move to the survivor.
-          </li>
-          <li>
-            The other account is closed for good; it cannot sign in and its open
-            tabs sign out.
-          </li>
-          <li>This cannot be undone.</li>
-        </ul>
-        <p v-if="mergeGone" class="text-danger" data-id="hilos-user-merge-gone">
-          No longer available
-        </p>
-        <p
-          data-id="hilos-user-merge-second-factor-summary"
-          role="status"
-          aria-live="polite"
+            <template #cancel-button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="loading"
+                data-id="hilos-user-cancel"
+                @click="requestClose"
+              >
+                Cancel
+              </button>
+            </template>
+            <template #save-button="{ disabled, onSave }">
+              <LoadingButton
+                class="btn-primary"
+                :loading="loading"
+                :disabled="disabled"
+                data-id="hilos-user-save"
+                @click="onSave"
+              >
+                {{ saveLabel }}
+              </LoadingButton>
+            </template>
+          </ConflictActions>
+        </template>
+      </HilosModal>
+
+      <HilosModal
+        v-model="mergeOpen"
+        :title="
+          mergeProof !== 'skip'
+            ? HILOS_STEP_UP_COPY.title
+            : detail
+              ? `Merge an account into ${hiddenAsWord(detail.name)}`
+              : 'Merge an account'
+        "
+        :confirm-on-close="selectedCandidateId !== null"
+        :busy="mergeAction.busy.value"
+        initial-focus="inner"
+        size="wide"
+        @cancel="closeMerge"
+      >
+        <div
+          ref="mergeBody"
+          class="visually-hidden"
+          role="alert"
+          aria-live="assertive"
         >
-          {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
           {{
-            detail?.hasSecondFactor === true
-              ? 'Yes'
-              : detail?.hasSecondFactor === false
-                ? 'No'
-                : 'Hidden'
-          }}. {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
-          {{
-            mergeSummaryCandidate?.hasSecondFactor === true
-              ? 'Yes'
-              : mergeSummaryCandidate?.hasSecondFactor === false
-                ? 'No'
-                : 'Hidden'
-          }}.
-        </p>
-        <fieldset v-if="secondFactorChoices.length > 0" class="mb-3">
-          <legend class="h6">
-            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
-          </legend>
-          <p class="form-text">
-            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts }}
-          </p>
-          <div
-            v-for="choice in secondFactorChoices"
-            :key="choice.value"
-            class="form-check"
-          >
-            <input
-              :id="`hilos-user-merge-second-factor-${choice.value}-field`"
-              v-model="secondFactorFate"
-              class="form-check-input"
-              type="radio"
-              name="hilos-user-merge-second-factor"
-              :value="choice.value"
-              :data-id="`hilos-user-merge-second-factor-${choice.value}`"
-              :aria-describedby="`hilos-user-merge-second-factor-${choice.value}-consequence`"
-            />
-            <label
-              class="form-check-label"
-              :for="`hilos-user-merge-second-factor-${choice.value}-field`"
-              >{{ choice.label }}</label
+            mergeProof === 'skip' ? mergeAction.error.value : mergeStepUpRefusal
+          }}
+        </div>
+        <HilosActionError
+          :action="mergeAction"
+          details-title="Couldn't merge the accounts"
+        />
+        <form
+          v-if="mergeProof !== 'skip'"
+          id="hilos-user-merge-proof"
+          data-id="hilos-user-merge-step-up"
+          @submit.prevent="confirmMergeStep()"
+        >
+          <HilosStepUpStep :controller="mergeStepUp.step" />
+        </form>
+        <template v-else-if="mergeStep === 1">
+          <div role="radiogroup" aria-label="Account to merge">
+            <HilosViewportTable
+              :controller="mergeCandidates.controller"
+              :autofocus-search="true"
             >
-            <p
-              :id="`hilos-user-merge-second-factor-${choice.value}-consequence`"
-              class="form-text"
-            >
-              {{ choice.consequence }}
-            </p>
+              <template #cell-actions="{ row }">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  :aria-label="
+                    isHiddenValue(row.name)
+                      ? `Merge #${row.id}`
+                      : `Merge ${row.name}`
+                  "
+                  :data-id="`hilos-user-merge-row-${row.id}`"
+                  :checked="selectedCandidateId === row.id"
+                  :disabled="row.id === currentUserId"
+                  @change="chooseCandidate(row)"
+                />
+              </template>
+              <template #cell-name="{ row }">
+                <!-- The space before the id lives in its span: a
+                   whitespace-only node between two elements is dropped. -->
+                <HilosHideable :value="row.name" />
+                <span class="text-body-secondary"> #{{ row.id }}</span>
+                <span
+                  v-if="row.id === currentUserId"
+                  class="badge text-bg-secondary ms-2"
+                  >you</span
+                >
+              </template>
+              <template #cell-identities="{ row }">
+                <HilosHideable :value="row.identities">
+                  <template #default="{ value: identities }">
+                    <ul class="list-unstyled mb-0">
+                      <li
+                        v-for="identity in identities"
+                        :key="`${identity.type}:${identity.identifier}`"
+                      >
+                        <span class="fw-medium">{{
+                          identityTitle(identity)
+                        }}</span>
+                        <template v-if="identity.type !== 'passkey'">
+                          · {{ identity.identifier }}
+                        </template>
+                        <template v-if="identity.verified">
+                          <span aria-hidden="true"> ✓</span
+                          ><span class="visually-hidden"> Verified</span>
+                        </template>
+                      </li>
+                    </ul>
+                  </template>
+                </HilosHideable>
+              </template>
+              <template #cell-lastActivity="{ row }">{{
+                row.lastActivity ?? '—'
+              }}</template>
+            </HilosViewportTable>
           </div>
-        </fieldset>
-        <fieldset v-if="passwordChoiceRequired" class="mb-3">
-          <legend class="h6">
-            {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}
-          </legend>
-          <div
-            v-for="choice in passwordChoices"
-            :key="choice.value"
-            class="form-check"
+        </template>
+        <template v-else-if="mergeSummaryCandidate">
+          <p data-id="hilos-user-merge-summary">
+            <strong
+              ><HilosHideable :value="mergeSummaryCandidate.name" /> (#{{
+                mergeSummaryCandidate.id
+              }})</strong
+            >
+            will be merged into
+            <strong
+              ><HilosHideable v-if="detail" :value="detail.name" /> (#{{
+                detail?.id
+              }})</strong
+            >.
+          </p>
+          <ul>
+            <li>
+              Its sign-in methods and everything it wrote move to the survivor.
+            </li>
+            <li>
+              The other account is closed for good; it cannot sign in and its
+              open tabs sign out.
+            </li>
+            <li>This cannot be undone.</li>
+          </ul>
+          <p
+            v-if="mergeGone"
+            class="text-danger"
+            data-id="hilos-user-merge-gone"
           >
-            <input
-              :id="`hilos-user-merge-fate-${choice.value}-field`"
-              v-model="passwordFate"
-              class="form-check-input"
-              type="radio"
-              name="hilos-user-merge-password-fate"
-              :value="choice.value"
-              :data-id="`hilos-user-merge-fate-${choice.value}`"
-              :aria-describedby="
-                choice.removes.length > 0
-                  ? `hilos-user-merge-fate-${choice.value}-removes`
-                  : undefined
-              "
-            />
-            <label
-              class="form-check-label"
-              :for="`hilos-user-merge-fate-${choice.value}-field`"
-              >{{ choice.label }}</label
-            >
+            No longer available
+          </p>
+          <p
+            data-id="hilos-user-merge-second-factor-summary"
+            role="status"
+            aria-live="polite"
+          >
+            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
+            {{
+              detail?.hasSecondFactor === true
+                ? 'Yes'
+                : detail?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'
+            }}. {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
+            {{
+              mergeSummaryCandidate?.hasSecondFactor === true
+                ? 'Yes'
+                : mergeSummaryCandidate?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'
+            }}.
+          </p>
+          <fieldset v-if="secondFactorChoices.length > 0" class="mb-3">
+            <legend class="h6">
+              {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
+            </legend>
+            <p class="form-text">
+              {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts }}
+            </p>
             <div
-              v-if="choice.removes.length > 0"
-              :id="`hilos-user-merge-fate-${choice.value}-removes`"
-              :data-id="`hilos-user-merge-fate-${choice.value}-removes`"
-              class="form-text text-danger"
+              v-for="choice in secondFactorChoices"
+              :key="choice.value"
+              class="form-check"
             >
-              <div v-for="removal in choice.removes" :key="removal">
-                {{ removal }}
+              <input
+                :id="`hilos-user-merge-second-factor-${choice.value}-field`"
+                v-model="secondFactorFate"
+                class="form-check-input"
+                type="radio"
+                name="hilos-user-merge-second-factor"
+                :value="choice.value"
+                :data-id="`hilos-user-merge-second-factor-${choice.value}`"
+                :aria-describedby="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+              />
+              <label
+                class="form-check-label"
+                :for="`hilos-user-merge-second-factor-${choice.value}-field`"
+                >{{ choice.label }}</label
+              >
+              <p
+                :id="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+                class="form-text"
+              >
+                {{ choice.consequence }}
+              </p>
+            </div>
+          </fieldset>
+          <fieldset v-if="passwordChoiceRequired" class="mb-3">
+            <legend class="h6">
+              {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}
+            </legend>
+            <div
+              v-for="choice in passwordChoices"
+              :key="choice.value"
+              class="form-check"
+            >
+              <input
+                :id="`hilos-user-merge-fate-${choice.value}-field`"
+                v-model="passwordFate"
+                class="form-check-input"
+                type="radio"
+                name="hilos-user-merge-password-fate"
+                :value="choice.value"
+                :data-id="`hilos-user-merge-fate-${choice.value}`"
+                :aria-describedby="
+                  choice.removes.length > 0
+                    ? `hilos-user-merge-fate-${choice.value}-removes`
+                    : undefined
+                "
+              />
+              <label
+                class="form-check-label"
+                :for="`hilos-user-merge-fate-${choice.value}-field`"
+                >{{ choice.label }}</label
+              >
+              <div
+                v-if="choice.removes.length > 0"
+                :id="`hilos-user-merge-fate-${choice.value}-removes`"
+                :data-id="`hilos-user-merge-fate-${choice.value}-removes`"
+                class="form-text text-danger"
+              >
+                <div v-for="removal in choice.removes" :key="removal">
+                  {{ removal }}
+                </div>
               </div>
             </div>
-          </div>
-        </fieldset>
-      </template>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="mergeAction.busy.value"
-          data-id="hilos-user-merge-cancel"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          v-if="mergeProof === 'ask'"
-          class="btn-primary"
-          type="submit"
-          form="hilos-user-merge-proof"
-          :loading="mergeStepUpBusy"
-          data-id="hilos-user-merge-step-up-confirm"
-          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
-        >
-        <button
-          v-else-if="mergeProof === 'skip' && mergeStep === 1"
-          type="button"
-          class="btn btn-primary"
-          :disabled="selectedCandidate === null"
-          data-id="hilos-user-merge-next"
-          @click="nextMergeStep"
-        >
-          Next
-        </button>
-        <template v-else-if="mergeProof === 'skip'">
+          </fieldset>
+        </template>
+        <template #actions="{ requestClose }">
           <button
             type="button"
             class="btn btn-secondary"
             :disabled="mergeAction.busy.value"
-            data-id="hilos-user-merge-back"
-            @click="previousMergeStep"
+            data-id="hilos-user-merge-cancel"
+            @click="requestClose"
           >
-            Back
+            Cancel
           </button>
           <LoadingButton
-            class="btn-danger"
-            :loading="mergeAction.busy.value"
-            :disabled="mergeDisabled"
-            data-id="hilos-user-merge-confirm"
-            @click="submitMerge"
+            v-if="mergeProof === 'ask'"
+            class="btn-primary"
+            type="submit"
+            form="hilos-user-merge-proof"
+            :loading="mergeStepUpBusy"
+            data-id="hilos-user-merge-step-up-confirm"
+            >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
           >
-            Merge
-          </LoadingButton>
+          <button
+            v-else-if="mergeProof === 'skip' && mergeStep === 1"
+            type="button"
+            class="btn btn-primary"
+            :disabled="selectedCandidate === null"
+            data-id="hilos-user-merge-next"
+            @click="nextMergeStep"
+          >
+            Next
+          </button>
+          <template v-else-if="mergeProof === 'skip'">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="mergeAction.busy.value"
+              data-id="hilos-user-merge-back"
+              @click="previousMergeStep"
+            >
+              Back
+            </button>
+            <LoadingButton
+              class="btn-danger"
+              :loading="mergeAction.busy.value"
+              :disabled="mergeDisabled"
+              data-id="hilos-user-merge-confirm"
+              @click="submitMerge"
+            >
+              Merge
+            </LoadingButton>
+          </template>
         </template>
-      </template>
-    </HilosModal>
-  </HilosAdminPage>
+      </HilosModal>
+    </template>
+  </HilosUserPageShell>
 </template>

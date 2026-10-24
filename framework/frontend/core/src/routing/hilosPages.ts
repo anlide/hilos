@@ -89,6 +89,9 @@ export const HilosPages = {
   LOGS_VIEW: 'hilos_logs_view',
   USERS: 'hilos_users',
   USER: 'hilos_user',
+  USER_ROLES: 'hilos_user_roles',
+  USER_ACCESS: 'hilos_user_access',
+  USER_SESSIONS: 'hilos_user_sessions',
   MCP_SKILLS: 'hilos_mcp_skills',
   MCP_SKILLS_MCP: 'hilos_mcp_skills_mcp',
   MCP_SKILLS_MCP_LOGS: 'hilos_mcp_skills_mcp_logs',
@@ -303,6 +306,18 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   // deadline (HIL-945): the legal section's root links its count here.
   [HilosPages.USERS]: { path: '/hilos/users/{lapsed?}', admin: true },
   [HilosPages.USER]: { path: '/hilos/user/{userId}', admin: true },
+  [HilosPages.USER_ROLES]: {
+    path: '/hilos/user/{userId}/roles',
+    admin: true,
+  },
+  [HilosPages.USER_ACCESS]: {
+    path: '/hilos/user/{userId}/access',
+    admin: true,
+  },
+  [HilosPages.USER_SESSIONS]: {
+    path: '/hilos/user/{userId}/sessions',
+    admin: true,
+  },
   [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },
   [HilosPages.MCP_SKILLS_MCP]: {
     path: '/hilos/mcp-skills/{mcpId}',

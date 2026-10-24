@@ -29,6 +29,7 @@ use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
+use Demo\BinanceBtcTracker\Database\Pages\PageCatalog;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
 use Demo\BinanceBtcTracker\Environment\BinanceBtcTrackerEnvCatalog;
 use Demo\BinanceBtcTracker\Fs\BinanceBtcTrackerFsContext;
@@ -218,6 +219,8 @@ class Hilos extends HilosFacade
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
     protected const string SETTINGS_CATALOG = BinanceBtcTrackerSettingsCatalog::class;
+
+    protected const string PAGE_CATALOG = PageCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = BinanceBtcTrackerDeliveryChannelRegistry::class;
 

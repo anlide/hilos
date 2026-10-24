@@ -195,6 +195,15 @@ final class HilosPageConstants
     /** @var string Hilos — single user (view/edit) */
     public const string HILOS_USER = 'hilos_user';
 
+    /** @var string Hilos — single user's roles */
+    public const string HILOS_USER_ROLES = 'hilos_user_roles';
+
+    /** @var string Hilos — single user's access */
+    public const string HILOS_USER_ACCESS = 'hilos_user_access';
+
+    /** @var string Hilos — single user's sessions */
+    public const string HILOS_USER_SESSIONS = 'hilos_user_sessions';
+
     /** @var string Hilos — roles list */
     public const string HILOS_ROLES = 'hilos_roles';
 

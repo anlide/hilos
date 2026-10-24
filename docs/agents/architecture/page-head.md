@@ -8,10 +8,13 @@ This is the approved rule for adoption. Markers name the parts that later leaves
 still implement; the binding points below describe today's code separately. An
 owner that has not been adopted keeps its existing head and child cards. Country
 was the first carrier in HIL-1559; that leaf did not adopt the whole
-Internationalization section. Country, Maintenance, Internationalization and
-Status are the current owners opted in. The Language entity remains an entity
-without its own adopted head. Other owners move in their own redraws after
-HIL-1606 has merged.
+Internationalization section. Country and Internationalization use the shared
+head across Vue, React and Angular; Maintenance uses the shared head there, with
+Circle served only in Vue. Chat and Binance opt the User Overview into the
+shared head in Vue; React and Angular retain their legacy user card until their
+own redraws. Status is also opted in, with Overview and Components served
+only by the Vue Chat and Binance applications. The Language entity remains an
+entity without its own adopted head. Other owners move in their own redraws after HIL-1606 has merged.
 
 ## Core Rule And Ownership
 
@@ -295,6 +298,20 @@ gate or enable Internationalization as a whole.
    `PageCatalogProviderInterface::pages()` accepts these optional fields, named
    by `PageCatalogConstants::CATALOG_ENTRY_ENTITY`,
    `CATALOG_ENTRY_BREADCRUMB`, and `CATALOG_ENTRY_PAGE_HEAD`.
+   User is the current project-scoped adoption: the shared `hilos_user` entry
+   has parent `hilos_users`, `entity: true`, and breadcrumb `User`, but no
+   `pageHead: true`. Chat and Binance add `pageHead: true` in their complete
+   provider entries for their Vue applications. React and Angular keep the
+   legacy user card until their own redraws; this does not adopt neighboring
+   owners.
+   The declared user page order is Overview, Roles, Access, Sessions. Only
+   Overview has a served backend page and an SDK view. Roles, Access and
+   Sessions have catalog and route metadata, but no served backend pages or
+   views; all three remain unbuilt in Vue, React and Angular. They have no links,
+   and the shared tab row is hidden while Overview is the only built page.
+   `HilosUserPageShell` accepts the current page key for a later served tab to
+   use the same shell; this describes the existing extension point, not a
+   production tab switch.
 3. Mount the shared head on every tab of this owner and supply its page-owned
    entity block content. In Vue, name the head's kind and labels on
    `HilosAdminPage` and fill its `head-*` slots; the name is not a slot. The
@@ -452,18 +469,21 @@ adds no product tests or selectors.
 
 These are navigation scenarios, not declarations of page keys, routes or
 activation. The backend owner, breadcrumb and tab calculations are implemented;
-Country, Maintenance, Internationalization and Status are the current owners
-opted in. Their server replies carry the catalog head skeleton; `<name>` in the
-country examples is data from the page, not a literal caption. The
-Internationalization section has Overview, Languages, and Countries tabs in all
-three SDKs. The core binding, title path and shared heads for these owners are
-implemented in Vue, React and Angular. Status currently has Overview and
-Components tabs; the Vue pages are mounted by Chat and Binance BTC Tracker, and
-React and Angular mark both pages unbuilt. The Language entity remains without
-its own head. Maintenance's Circle view is built only in Vue; React and Angular
-still mark that page unbuilt, hide its tab and return `not_served` for its direct
-address. Bold marks the current tab. Roles, Users and the other examples wait
-for their own redraws; naming them here does not enable them.
+Country, Maintenance, and Internationalization are the current owners opted in.
+Their server replies carry the catalog head skeleton; `<name>` in the country
+examples is data from the page, not a literal caption. The section has Overview,
+Languages, and Countries tabs in all three SDKs. The core binding, title path and
+shared heads for these owners are implemented in Vue, React and Angular. The
+Language entity remains without its own head. Status is also opted in with
+Overview and Components served by Vue Chat and Binance; React and Angular
+keep both Status pages unbuilt. Maintenance's Circle view is
+built only in Vue; React and Angular still mark that page unbuilt, hide its tab
+and return `not_served` for its direct address. The User Overview has a shared
+head only in the Vue Chat and Binance applications; React and Angular retain the
+legacy user card. Roles, Access and Sessions are declared user page metadata,
+but their pages remain unbuilt in all three SDKs. Bold marks the current tab.
+The Role example and the future user tabs describe catalog shapes, not served
+pages or project adoption.
 
 | Open page | Owner | Breadcrumb | Row |
 |---|---|---|---|
@@ -478,16 +498,18 @@ for their own redraws; naming them here does not enable them.
 | Status Components | Same Status section | Hilos › Status | Overview / **Components** in Vue |
 | Role Overview, from a separate Roles list tab | Role instance | Hilos › Roles › Roles › `<name>` | **Overview** / Rights / Grants / History |
 | Users, where the section itself is the list | Users section | Hilos › Users | No row: only the owner page |
-| Person Overview, from that Users list | Person instance | Hilos › Users › `<name>` | **Overview** / Roles / Access / Sessions |
+| Person Overview in Vue Chat and Binance | Person instance | Hilos › Users › `<name>` | No row: Overview is the only built user page |
 | Machine, a non-entity child of Gaps | Internationalization section | Hilos › Internationalization | Overview / Languages / Countries / Entities / Pages / Groups / Actions / Messages / Gaps / **Machine** / Other findings |
 
 The two country tabs share the chain ending at the country, not at Names. The
 Maintenance pages share their section owner and row; only Vue currently serves
-Circle. Vue serves the Status row today. Roles repeats because the section and
-its separate list are different entries. Users does not repeat because its
-section is its list. Machine follows Gaps in the same row and is itself current;
-it does not create another row. The other rows illustrate the calculation
-without opting those owners in.
+Circle. Vue serves the Status row today. The User Overview resolves to the
+person instance. Its declared child order remains Roles, Access, Sessions, but those pages have no backend page or
+SDK view, so none adds a link or keeps the single-tab row visible. Roles repeats
+because the section and its separate list are different entries. Users does not
+repeat because its section is its list. Machine follows Gaps in the same row and
+is itself current; it does not create another row. The other rows illustrate the
+calculation without opting those owners in.
 
 ## Implementation Status And Binding Points
 
@@ -496,21 +518,23 @@ sequence without studying these files. They do not specify a future API.
 
 | Area | Current binding point | Current state and remaining behavior |
 |---|---|---|
-| Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country instance, the Maintenance section, the Internationalization section and Status are opted in. `hilos_i18n` has `pageHead=true` and breadcrumb `Internationalization`; `hilos_i18n_language` remains `entity=true` without `pageHead=true`, and Country's entity/head metadata is unchanged. `hilos_maintenance_circle` is a child of the Maintenance owner. |
+| Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country instance, the Maintenance section, the Internationalization section and Status are opted in. `hilos_i18n` has `pageHead=true` and breadcrumb `Internationalization`; `hilos_i18n_language` remains `entity=true` without `pageHead=true`, and Country's entity/head metadata is unchanged. `hilos_maintenance_circle` is a child of the Maintenance owner. The shared `hilos_user` entry has parent `hilos_users`, `entity=true` and breadcrumb `User`, with no `pageHead=true`; only the Chat and Binance provider entries opt that owner in. |
 | Status catalog | `HilosPageCatalog::CATALOG`, `HilosPageConstants::HILOS_STATUS` and `HILOS_STATUS_COMPONENTS` | Status is a section under Dashboard, in the Platform card, with `pageHead=true`, breadcrumb `Status`, icon `bi-activity` and its current lead. Components is its child with breadcrumb `Components`. The server row is Overview / Components. |
 | Backend owner and row calculation | `PageCatalogResolver::identity()`, `rowOwner()`, `rowOwnerOf()`, `breadcrumb()`, `head()`, `children()` and private `pageTabs()` | Resolves the nearest entity or top-level admin section, uses legacy page-label breadcrumbs for unadopted owners, and builds the adopted breadcrumb and depth-first row. The row filters pages the project serves and pages applicable to the owner's route params. |
+| User child pages | `HilosPageConstants::HILOS_USER_ROLES`, `HILOS_USER_ACCESS`, `HILOS_USER_SESSIONS`; `HILOS_UNBUILT_PAGES`; the user page registrations in each app | The catalog and frontend routes declare Roles, Access and Sessions after Overview. None has a served backend page or a view in Vue, React or Angular; all three are marked unbuilt, so no child link is rendered. With Overview as the sole built page, the shared tabs row is hidden. A later served user tab can mount the existing shell. |
 | Backend assembly | `AbstractPage::onSubscribe()`, `withPageIdentity()`, `servedPageCards()` and `PageHead::toArray()` | Adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and empty `pageChildren` to the same `page_response`. The Internationalization root carries Overview, Languages and Countries in its raw `pageTabs`; frontends resolve those against their built routes. The readonly `PageHead` is built for the subscription; `pageLabel` and `pageLead` remain the subscribing page's identity, with the existing admin/viewer payload precedence. |
 | Status backend pages | `framework/backend/Pages/Status/AbstractHilosStatusPage.php`, `AbstractHilosStatusComponentsPage.php`, `StatusFeature.php`; `framework/backend/Status/DTO/StatusOverviewData.php` | Overview carries its temporary `data.status` projection in `page_response`; Components carries its first `hilosStatusComponents` viewport in `windows`. Overview's committed sources use the existing whole-page resend path. Components uses its normal multi-row table deltas and pending/Apply behavior. |
 | Internationalization overview payload | `framework/backend/Pages/AbstractHilosI18nPage.php`, `framework/backend/I18n/DTO/I18nOverviewData.php`, `framework/backend/Core/Browser/Context/BrowserContext.php` | The section root reads languages and countries through `Hilos::$db` View collections and carries the complete `i18nOverview` in its `page_response` with the nonpersonal verdict. `BrowserContext` observes committed changes to those two sources for this page and resends through the existing `PageResender`, deduplicated within the flush by `publishedWholeThisFlush`. |
 | Name and title | `framework/frontend/core/src/admin/identity/hilosPageInstanceName.ts`, `framework/frontend/core/src/admin/identity/hilosPageIdentity.ts`, `framework/frontend/core/src/routing/pageTitle.ts`, `framework/frontend/core/src/bootstrap/bootHilos.ts`; `framework/frontend/react/src/usePageInstanceName.ts`, `framework/frontend/react/src/HilosLayout.tsx`; `framework/frontend/angular/src/HilosLayout.ts` | `bindPageInstanceName()` keeps a live source per scope manager and owner page key; `pageIdentity()` applies it to matching crumbs and the optional `pageHeadOwner`; `bootHilos` reads identity inside the reactive title closure. `resolvePageTitle()` chooses project title, framework footer label, owner label, then catalog label. The country Vue pages bind their page-scoped card name during setup, and the shared Vue head draws it. The country React pages bind the same name through `usePageInstanceName()` in a layout effect, the React head draws it, and `HilosLayout` mirrors `router.currentTitle` into `document.title`; React has no title writer of its own. The country Angular pages bind the same name through `bindPageInstanceName()` in an effect whose `onCleanup` releases it, the Angular head draws it, and Angular's `HilosLayout` mirrors `router.currentTitle` into `document.title` the same way. |
 | Vue overview selector | `framework/frontend/core/src/admin/i18n/hilosI18nOverview.ts`, `framework/frontend/core/src/admin/i18n/index.ts`, `framework/frontend/core/src/index.ts`, `framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue` | `I18N_OVERVIEW_DATA`, `i18nOverviewSchema`, `createHilosI18nOverview`, `HilosI18nOverview` and `HilosI18nOverviewContext` are exported from `@hilos/core/admin/i18n` and the compatibility root. `HilosI18nPage` requires the context, reads the live page data, and shows route-eligible Languages and Countries tiles or a skeleton. |
 | Vue section and entity heads | `framework/frontend/vue/src/HilosPageHead.vue`, `HilosBreadcrumb.vue`, `HilosAdminPage.vue`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue`, `lists/HilosI18nLanguagesPage.vue`, `lists/HilosI18nCountriesPage.vue`, `details/HilosI18nCountryPage.vue`, `details/HilosI18nCountryNamesPage.vue`; `framework/frontend/vue/src/admin/maintenance/HilosMaintenanceCirclePage.vue` | In the code: Internationalization Overview and both lists use the section head and `Internationalization pages` row; the overview requires `HilosI18nOverviewContext` with the current page scopes and draws the two live read-only tiles. The Binance BTC Tracker and Chat mount project wrappers for the overview and lists; `hilosAdminViews()` has no defaults for these three context-bound pages. Both country tabs use Overview · Names, and Maintenance Overview/Circle use the Overview · Circle row. |
+| Vue user shell and Overview | `framework/frontend/vue/src/admin/users/HilosUserPageShell.vue`, `HilosUserPage.vue`, `index.ts`; `framework/frontend/core/src/admin/users/hilosUsers.ts`; `demo/chat/frontend/src/views/Hilos/Users/User.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Users/User.vue` | `@hilos/vue/admin/users` exports `HilosUserPageShell(context: HilosUsersContext, page: string)` with optional default and `modals` slots; `HilosUserPage` uses it. `HilosAdminPage` provides admin view mode around the body and dialogs. The shell draws the one shared head and merged notice, binds the live name from the permitted current user page scope, and keeps hidden names hidden. The head shows `#id`, the current absolute `Last seen` value when present, three-state presence and standing, and an Analytics navigation link when enabled and served. Mutation controls remain in Overview; the shell exposes no header mutation slot. Overview shows `Open connections` from `onlineSessionCount` as the temporary D-264 measure; actual session counts, roles and delegations are not implemented. The existing flag reads `Administrator` / `Not an administrator`, not `Superadmin`. Chat fills the optional `project-overview` slot with its existing participant route; Binance supplies no slot. |
 | Status Vue pages | `framework/frontend/vue/src/admin/status/HilosStatusPage.vue`, `HilosStatusComponentsPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/` | Both framework views use the shared `HilosAdminPage` head and one Status context. Chat and Binance BTC Tracker mount thin wrappers; React and Angular keep both Status pages in `HILOS_UNBUILT_PAGES` until HIL-1695 and HIL-1696. |
 | React head, Internationalization lists, country and Maintenance Overview | `framework/frontend/react/src/HilosPageHead.tsx`, `HilosBreadcrumb.tsx`, `HilosAdminPage.tsx`, `usePageInstanceName.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/react/src/admin/i18n/HilosI18nPage.tsx`, `lists/HilosI18nLanguagesPage.tsx`, `lists/HilosI18nCountriesPage.tsx`, `details/HilosI18nCountryPage.tsx`, `details/HilosI18nCountryNamesPage.tsx`; `framework/frontend/react/src/admin/maintenance/HilosMaintenancePage.tsx` | In the code: the shared head and section row draw from server metadata on the Internationalization root and both lists; Maintenance Overview uses the Maintenance head, and both country tabs use Overview · Names. The root remains its context-free default shell; overview tiles and their context are HIL-1726. The Circle view remains unbuilt in React. |
 | Angular head, Internationalization lists, country and Maintenance Overview | `framework/frontend/angular/src/HilosPageHead.ts`, `HilosBreadcrumb.ts`, `HilosLink.ts`, `HilosAdminPage.ts`; `framework/frontend/core/src/routing/hilosAdmin.ts`; `framework/frontend/angular/src/admin/i18n/HilosI18nPage.ts`, `lists/HilosI18nLanguagesPage.ts`, `lists/HilosI18nCountriesPage.ts`, `details/HilosI18nCountryPage.ts`, `details/HilosI18nCountryNamesPage.ts`; `framework/frontend/angular/src/admin/maintenance/HilosMaintenancePage.ts` | In the code: the shared head and section row draw from server metadata on the Internationalization root and both lists; Maintenance Overview uses the Maintenance head, and both country tabs use Overview · Names. The root remains its context-free default shell; overview tiles and their context are HIL-1727. The Circle view remains unbuilt in Angular. |
 | Live 404, server | `AbstractPage::resolvePageResource`, `PageResource::db`, `BrowserContext::refuseDeletedPageResources`, `PageSignalRouter::refuseDeletedResource` | In the code: other open windows get `not_found` and `transitionMessage`; the initiator keeps its acknowledgement and goes to the country list |
 | Live 404, clients | `framework/frontend/core/src/routing/pageViewState.ts`, `framework/frontend/core/src/dom/focusTrap.ts`; per kit under `framework/frontend/{vue,react,angular}/src/`: `ErrorPage`, `HilosView`, `HilosAdminPage` and the internal bridge `hilosPageErrorBoundaryKey.ts` (Vue), `hilosPageErrorBoundaryContext.ts` (React), `hilosPageErrorBoundaryToken.ts` (Angular); both country tabs in `admin/i18n/details/` (`HilosI18nCountryPage`, `HilosI18nCountryNamesPage`) | In the code: `ErrorPage` draws `error.transitionMessage` as a line; the outlet keeps a registered page through a live 404 `not_found`; `HilosAdminPage` with `preserveModalDraftsOnDelete` replaces head, row, cards and body with one `ErrorPage` and keeps its dialogs mounted, returning their focus to Back to home; both country tabs opt in with their edit window |
-| Adoption coverage | `I18nOverviewTest.php`, `I18nOverviewFanoutTest.php`, `demo/chat/tests/Integration/I18nCountryCardTest.php`; `expectI18nPageHead` and `expectCountryPageHead` in `framework/frontend/e2e/i18n.ts`, `expectMaintenancePageHead` in `framework/frontend/e2e/maintenance.ts`; `i18n-overview.spec.ts` and country e2e specs in `demo/binance-btc-tracker`, `demo/tasks` and `demo/polls`; `protected-mode.spec.ts` and `backup.spec.ts` in `demo/binance-btc-tracker` | In the code: the framework unit tests cover the overview payload and source fan-out; the Chat integration covers the subscribed overview. `expectI18nPageHead` checks the section head, three links and current tab. Binance's Vue overview spec covers the first whole response, live updates, tile navigation with Back/page row/direct URLs and F5, and the viewer. HIL-1606 checks the country head and Overview · Names row across all three kits. The Binance maintenance spec checks direct address, F5, Back/Forward, one h1 and current tab, and no table/controller traffic on Overview; the backup spec keeps its pointer on Overview before selecting Circle. Each SDK's manual-window checks remain on Overview. |
+| Adoption coverage | `I18nOverviewTest.php`, `I18nOverviewFanoutTest.php`, `demo/chat/tests/Integration/I18nCountryCardTest.php`; `expectI18nPageHead` and `expectCountryPageHead` in `framework/frontend/e2e/i18n.ts`, `expectMaintenancePageHead` in `framework/frontend/e2e/maintenance.ts`; `framework/frontend/vue/src/admin/users/HilosUserPageShell.test.ts`, `HilosUserPage.test.ts`, `framework/frontend/e2e/hilosUserOverview.ts`, `demo/chat/tests/e2e/tests/hilos-user-overview.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/users.spec.ts`; `i18n-overview.spec.ts` and country e2e specs in `demo/binance-btc-tracker`, `demo/tasks` and `demo/polls`; `protected-mode.spec.ts` and `backup.spec.ts` in `demo/binance-btc-tracker` | In the code: the framework unit tests cover the overview payload and source fan-out; the Chat integration covers the subscribed overview. `expectI18nPageHead` checks the section head, three links and current tab. Binance's Vue overview spec covers the first whole response, live updates, tile navigation with Back/page row/direct URLs and F5, and the viewer. HIL-1606 checks the country head and Overview · Names row across all three kits. The Vue user unit tests cover the shared shell and Overview. Chat's spec covers cold navigation, F5 and the participant slot; the shared user overview helper checks the head and absence of child links in Chat and Binance. Binance's users spec also covers presence, rename, conflict, keyboard rename and accessibility in its slotless Overview. The Binance maintenance spec checks direct address, F5, Back/Forward, one h1 and current tab, and no table/controller traffic on Overview; the backup spec keeps its pointer on Overview before selecting Circle. Each SDK's manual-window checks remain on Overview. |
 | Status head coverage | `framework/tests/Integration/StatusAdminPageIntegrationTest.php`; `framework/frontend/e2e/status.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `a11y.spec.ts` | In the code: the integration covers ADMIN gatekeeper forwarding, writer commit/refusal and initial/live viewer wire. The shared e2e checks the Status head, two addresses and current tab. Binance's real-socket specs cover the Vue pages and Overview action lifecycle; React and Angular remain unbuilt. |
 
 `PageCatalogConstants` names the optional catalog fields `breadcrumb`, `entity`
@@ -679,6 +703,7 @@ contract still follows [agents.md](../../../agents.md).
 HIL-1598 changes documentation only. HIL-1599 through HIL-1605 own the product
 implementation; HIL-1606 owns the epic's e2e work. Other owners' redraws, country
 Overview tiles and their contents, and catalog translations are separate work.
+React and Angular's User redraws are also separate work.
 Profile, project pages and public documents are Phase 2; their mockup examples
 do not activate them here, and HIL-1607 decides its own boundary. Own deletion
 and redirect behavior are not decided by this document.

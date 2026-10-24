@@ -82,7 +82,7 @@ test('shows real session actions in source order without bodies or another sessi
 
     // The way in: the person's admin card, then their sessions in Analytics.
     await gotoPage(admin, `/hilos/user/${user.userId}`)
-    await admin.getByTestId('hilos-user-analytics-link').click()
+    await admin.getByTestId('hilos-page-head-action').click()
     await expect(admin).toHaveURL(
       new RegExp(`/hilos/analytics/people/${user.userId}$`),
     )

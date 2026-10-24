@@ -107,6 +107,26 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single user: profile, presence, and account actions.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_USERS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'User',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+        ],
+        HilosPageConstants::HILOS_USER_ROLES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User roles',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Roles granted to this user and the scope of each grant.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_USER,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Roles',
+        ],
+        HilosPageConstants::HILOS_USER_ACCESS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User access',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What this user may do and which roles grant that access.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_USER,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Access',
+        ],
+        HilosPageConstants::HILOS_USER_SESSIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User sessions',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'This user\'s sessions and their activity.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_USER,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Sessions',
         ],
 
         HilosPageConstants::HILOS_LEGAL => [

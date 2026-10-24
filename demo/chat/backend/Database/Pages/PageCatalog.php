@@ -6,6 +6,7 @@ namespace Demo\Chat\Database\Pages;
 
 use Demo\Chat\Constants\PageConstants;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
@@ -32,6 +33,10 @@ final class PageCatalog implements PageCatalogProviderInterface
     public static function pages(): array
     {
         return [
+            HilosPageConstants::HILOS_USER => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
             PageConstants::ADMIN_BOTS => [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',

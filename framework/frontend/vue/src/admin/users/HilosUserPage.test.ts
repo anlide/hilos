@@ -8,7 +8,7 @@
 // lives on the card since HIL-1170: its section follows the installation's
 // settings the page's first answer carries (`impersonation`).
 import { flushPromises, mount } from '@vue/test-utils'
-import { markRaw, nextTick } from 'vue'
+import { h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
@@ -16,6 +16,7 @@ import {
   type ActionResult,
   bindAdminAccess,
   bindSessionScope,
+  createAppPageRouter,
   formatCalendarDate,
   HIDDEN_VALUE,
   hilosToasts,
@@ -26,6 +27,9 @@ import {
   resolveHilosPath,
   ScopeManager,
   createSignal,
+  computedSignal,
+  pageIdentity,
+  resolvePageTitle,
   entityCollection,
   USER_ENTITY_TYPE,
   userFromFields,
@@ -35,17 +39,31 @@ import type {
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core/base'
-import type { HilosUsersContext } from '@hilos/core/admin/users'
+import {
+  createHilosUserDetail,
+  type HilosUserDetailRow,
+  type HilosUsersContext,
+} from '@hilos/core/admin/users'
 
 import HilosUserPage from './HilosUserPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
+import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 /**
- * A router stub with no addresses unless a test gives it some.
+ * Navigation uses the production page identity and live instance-name binding.
+ * The future user tabs have no built views and therefore resolve no address.
  *
+ * @param scopes The same permitted page scopes the production shell reads.
  * @param overrides The members a test needs live.
  */
-function router(overrides: Partial<HilosRouter> = {}): HilosRouter {
+function router(
+  scopes: ScopeManager,
+  overrides: Partial<HilosRouter> = {},
+): HilosRouter {
+  const identity = pageIdentity(scopes)
+  const routes = createAppPageRouter({})
+
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.USER,
@@ -53,12 +71,26 @@ function router(overrides: Partial<HilosRouter> = {}): HilosRouter {
       admin: true,
     }),
     currentPath: createSignal(''),
-    currentTitle: createSignal(''),
+    currentTitle: computedSignal(() =>
+      resolvePageTitle(
+        HilosPages.USER,
+        {},
+        'Test app',
+        identity.get()?.label,
+        true,
+        identity.get()?.pageHeadOwner?.label,
+      ),
+    ),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: identity,
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) =>
+      page === HilosPages.USER_ROLES ||
+      page === HilosPages.USER_ACCESS ||
+      page === HilosPages.USER_SESSIONS
+        ? undefined
+        : routes.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -106,6 +138,25 @@ function userContext(
 } {
   const scopes = options.scopes ?? new ScopeManager()
   const page = scopes.page() ?? scopes.openPage(HilosPages.USER)
+  page.data.set('pageLabel', 'User')
+  page.data.set('pageLead', 'The user Overview.')
+  page.data.set('pageHeadOwner', {
+    page: HilosPages.USER,
+    label: 'User',
+    lead: 'A single user: profile, presence, and account actions.',
+    icon: null,
+  })
+  page.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.USERS, label: 'Users' },
+    { page: HilosPages.USER, label: 'User' },
+  ])
+  page.data.set('pageTabs', [
+    { page: HilosPages.USER, label: 'Overview' },
+    { page: HilosPages.USER_ROLES, label: 'Roles' },
+    { page: HilosPages.USER_ACCESS, label: 'Access' },
+    { page: HilosPages.USER_SESSIONS, label: 'Sessions' },
+  ])
   page.entities.upsert(
     { type: 'user', id: 1 },
     { id: 1, name: 'Alice', lastActivity: null },
@@ -425,7 +476,7 @@ async function openModal(context: HilosUsersContext): Promise<void> {
   const wrapper = mount(HilosUserPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -433,12 +484,310 @@ async function openModal(context: HilosUsersContext): Promise<void> {
   await nextTick()
 }
 
+describe('HilosUserPage Overview', () => {
+  it('adopts the real shared head and live identity, with one h1 and three crumbs', async () => {
+    const { context, renameElsewhere, removeRow } = userContext()
+    const navigation = router(context.scopes)
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      global: { provide: { [hilosRouterKey as symbol]: navigation } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('h1').text()).toBe('Alice')
+    expect(
+      wrapper
+        .findAll('[data-id="hilos-breadcrumb"] li')
+        .map((crumb) => crumb.text()),
+    ).toEqual(['Hilos', 'Users', 'Alice'])
+    expect(
+      wrapper.get('[data-id="hilos-breadcrumb"] a').attributes('href'),
+    ).toBe('/hilos')
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-page-head-block"] button').exists(),
+    ).toBe(false)
+    expect(navigation.currentTitle.get()).toBe('Alice · Test app')
+
+    renameElsewhere('Alicia')
+    await nextTick()
+    expect(wrapper.get('h1').text()).toBe('Alicia')
+    expect(
+      wrapper.get('[data-id="hilos-user-detail"] section:first-of-type').text(),
+    ).toContain('Alicia')
+    expect(navigation.currentTitle.get()).toBe('Alicia · Test app')
+
+    context.scopes
+      .page()!
+      .entities.upsert({ type: 'user', id: 1 }, { name: HIDDEN_VALUE })
+    await nextTick()
+    expect(wrapper.get('h1').text()).toBe('Hidden')
+    expect(navigation.currentTitle.get()).toBe('Hidden · Test app')
+    expect(wrapper.text()).not.toContain('Alicia')
+    expect(wrapper.find('[data-id="hilos-user-name"]').exists()).toBe(false)
+
+    removeRow()
+    await nextTick()
+    expect(wrapper.get('h1').text()).toBe('User')
+    expect(navigation.currentTitle.get()).toBe('User · Test app')
+    expect(wrapper.find('[data-id="hilos-user-detail"]').exists()).toBe(false)
+  })
+
+  it('orders the Overview sections around the optional project content and opens rename from Profile', async () => {
+    const { context, sent } = userContext(true, {
+      impersonation: impersonationSettings(),
+    })
+    context.scopes.page()!.data.set('accountStanding', standing())
+    const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
+      h('section', { 'data-id': 'project-user-overview' }, [
+        h('h2', 'Chat participant'),
+        h('a', { href: `/user/${detail.id}` }, 'Open participant card'),
+      ]),
+    )
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      slots: { 'project-overview': slot },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    const overview = wrapper.get('[data-id="hilos-user-detail"]')
+    expect(overview.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Profile',
+      'Rights',
+      'Access to the product',
+      'Acting as another person',
+      'Chat participant',
+      'Danger zone',
+    ])
+    expect(overview.findAll('h3').map((heading) => heading.text())).toEqual([
+      'Account state',
+      'Impersonation',
+      'Merge another account into this one',
+    ])
+    expect(
+      overview
+        .findAll('section')
+        .map((section) => section.attributes('data-id')),
+    ).toEqual([
+      undefined,
+      'hilos-user-rights',
+      'hilos-user-access',
+      undefined,
+      'project-user-overview',
+      'hilos-user-merge-zone',
+    ])
+    expect(overview.get('[data-id="hilos-user-sessions"]').text()).toBe('1')
+    expect(overview.find('[data-id="hilos-user-sessions"] a').exists()).toBe(
+      false,
+    )
+    expect(overview.find('dl').exists()).toBe(false)
+    expect(overview.text()).not.toMatch(
+      /User ID|Online sessions|Last activity|Superadmin|Time zone|Delegations/,
+    )
+    expect(overview.findAll('.badge').map((badge) => badge.text())).toEqual([])
+    expect(
+      overview
+        .findAll('[data-id$="-state"] > p:first-child')
+        .map((row) => row.text()),
+    ).toEqual([
+      'Not an administrator',
+      'Not blocked',
+      'Not frozen',
+      'No deletion is scheduled',
+    ])
+    expect(slot.mock.lastCall?.[0].detail).toEqual(
+      createHilosUserDetail(context).get(),
+    )
+    expect(sent).toEqual([])
+    const opener = overview.get(
+      'section:first-of-type [data-id="hilos-user-edit"]',
+    )
+    expect(opener.text()).toBe('Change name')
+    await opener.trigger('click')
+    expect(nameInput().value).toBe('Alice')
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('uses affirmative state sentences without Yes/No badges and keeps deletion details', async () => {
+    const { context } = userContext()
+    const effectiveAt = Date.now() + 5 * 86_400_000
+    context.scopes
+      .page()!
+      .entities.upsert({ type: 'user', id: 1 }, { admin: true })
+    context.scopes.page()!.data.set(
+      'accountStanding',
+      standing({
+        shown: 'blocked',
+        blocked: true,
+        frozen: true,
+        deletionEffectiveAt: effectiveAt,
+        lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+      }),
+    )
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    const overview = wrapper.get('[data-id="hilos-user-detail"]')
+    expect(
+      overview
+        .findAll('[data-id$="-state"] > p:first-child')
+        .map((row) => row.text()),
+    ).toEqual(['Administrator', 'Blocked', 'Frozen', 'Deletion scheduled'])
+    expect(
+      overview.get('[data-id="hilos-user-deletion-state"]').text(),
+    ).toContain('5 days left')
+    expect(overview.get('[data-id="hilos-user-frozen-lapsed"]').text()).toBe(
+      'Terms of use — deadline passed 1 September 2026',
+    )
+    expect(overview.findAll('.badge')).toHaveLength(0)
+  })
+
+  it('omits the project section when no slot is supplied and never invokes it without detail', async () => {
+    const { context, removeRow } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    expect(
+      wrapper.findAll('[data-id="hilos-user-detail"] section'),
+    ).toHaveLength(3)
+    expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Profile',
+      'Rights',
+      'Access to the product',
+    ])
+    removeRow()
+    await nextTick()
+    wrapper.unmount()
+    const slot = vi.fn(() => h('section', 'Chat participant'))
+    const pending = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      slots: { 'project-overview': slot },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(pending)
+    expect(slot).not.toHaveBeenCalled()
+    expect(pending.get('[data-id="hilos-user-empty"]').text()).toBe(
+      'Loading user…',
+    )
+    expect(pending.text()).not.toContain('Chat participant')
+  })
+
+  it('passes the permitted readonly detail to project content inside the view-mode providers', async () => {
+    const { context, renameElsewhere, removeRow } = userContext()
+    context.scopes.session.data.set('adminViewMode', true)
+    context.scopes
+      .page()!
+      .entities.upsert({ type: 'user', id: 1 }, { name: HIDDEN_VALUE })
+    const release = bindAdminAccess(context.scopes)
+    const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
+      h('section', [
+        h(HilosHideable, { value: detail.name }),
+        h(LoadingButton, { 'data-id': 'project-confirm' }, () => 'Confirm'),
+      ]),
+    )
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      slots: { 'project-overview': slot },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    try {
+      await nextTick()
+      expect(slot.mock.lastCall?.[0].detail.name).toEqual(HIDDEN_VALUE)
+      expect(slot.mock.lastCall?.[0].detail.id).toBe(1)
+      expect(wrapper.text()).not.toContain('Alice')
+      expect(
+        wrapper.get('[data-id="project-confirm"]').attributes('disabled'),
+      ).toBeDefined()
+      expect(
+        wrapper
+          .get('[data-id="project-confirm"]')
+          .attributes('aria-describedby'),
+      ).toBe(HILOS_VIEW_MODE_STRIP_TEXT_ID)
+      renameElsewhere('Allowed by the next answer')
+      await nextTick()
+      expect(slot.mock.lastCall?.[0].detail.name).toBe(
+        'Allowed by the next answer',
+      )
+      removeRow()
+      await nextTick()
+      expect(wrapper.find('[data-id="project-confirm"]').exists()).toBe(false)
+    } finally {
+      release()
+    }
+  })
+
+  it('keeps one merged notice and project navigation while removing every body mutation', async () => {
+    const { context, standingFrame, sent } = userContext(true, {
+      impersonation: impersonationSettings(),
+    })
+    const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
+      h('section', [
+        h('h2', 'Chat participant'),
+        h('a', { href: `/user/${detail.id}` }, 'Open participant card'),
+      ]),
+    )
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      slots: { 'project-overview': slot },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        shown: 'merged',
+        blocked: true,
+        mergedInto: 9,
+        mergedIntoName: 'Bob',
+      }),
+    })
+    await nextTick()
+    const overview = wrapper.get('[data-id="hilos-user-detail"]')
+    expect(wrapper.findAll('[data-id="hilos-user-merged"]')).toHaveLength(1)
+    expect(overview.findAll('button')).toHaveLength(0)
+    expect(overview.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Profile',
+      'Chat participant',
+    ])
+    expect(overview.get('a').attributes('href')).toBe('/user/1')
+    expect(slot.mock.lastCall?.[0].detail.id).toBe(1)
+    expect(sent).toEqual([])
+  })
+})
+
 describe('HilosUserPage rename modal', () => {
   it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
     const disabled = userContext()
     const disabledWrapper = mount(HilosUserPage, {
       props: { context: markRaw(disabled.context) },
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(disabled.context.scopes),
+        },
+      },
     })
     mounted.push(disabledWrapper)
     await nextTick()
@@ -450,7 +799,9 @@ describe('HilosUserPage rename modal', () => {
     const enabledWrapper = mount(HilosUserPage, {
       props: { context: markRaw(enabled.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(enabled.context.scopes) },
+      },
     })
     mounted.push(enabledWrapper)
     await nextTick()
@@ -486,7 +837,9 @@ describe('HilosUserPage rename modal', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(world.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(world.context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -539,7 +892,11 @@ describe('HilosUserPage rename modal', () => {
     const passwordWrapper = mount(HilosUserPage, {
       props: { context: markRaw(passwordWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(passwordWorld.context.scopes),
+        },
+      },
     })
     mounted.push(passwordWrapper)
     await nextTick()
@@ -603,7 +960,11 @@ describe('HilosUserPage rename modal', () => {
     const plainWrapper = mount(HilosUserPage, {
       props: { context: markRaw(plainWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(plainWorld.context.scopes),
+        },
+      },
     })
     mounted.push(plainWrapper)
     await nextTick()
@@ -641,7 +1002,13 @@ describe('HilosUserPage rename modal', () => {
     const w1 = mount(HilosUserPage, {
       props: { context: markRaw(loserUnverifiedWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(
+            loserUnverifiedWorld.context.scopes,
+          ),
+        },
+      },
     })
     mounted.push(w1)
     await nextTick()
@@ -680,7 +1047,13 @@ describe('HilosUserPage rename modal', () => {
     const w2 = mount(HilosUserPage, {
       props: { context: markRaw(survivorUnverifiedWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(
+            survivorUnverifiedWorld.context.scopes,
+          ),
+        },
+      },
     })
     mounted.push(w2)
     await nextTick()
@@ -708,7 +1081,11 @@ describe('HilosUserPage rename modal', () => {
     const w3 = mount(HilosUserPage, {
       props: { context: markRaw(confirmedWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(confirmedWorld.context.scopes),
+        },
+      },
     })
     mounted.push(w3)
     await nextTick()
@@ -734,7 +1111,13 @@ describe('HilosUserPage rename modal', () => {
     const w4 = mount(HilosUserPage, {
       props: { context: markRaw(singlePasswordWorld.context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(
+            singlePasswordWorld.context.scopes,
+          ),
+        },
+      },
     })
     mounted.push(w4)
     await nextTick()
@@ -980,11 +1363,7 @@ describe('HilosUserPage name hidden from a viewer of the admin view mode (HIL-12
       .entities.upsert({ type: 'user', id: 1 }, { name: { _hidden: true } })
     await openModal(context)
 
-    expect(
-      modalEl('hilos-user-name')
-        ?.querySelector('[data-id="hilos-hidden"]')
-        ?.textContent?.trim(),
-    ).toBe('Hidden')
+    expect(modalEl('hilos-page-head-title')?.textContent?.trim()).toBe('Hidden')
     expect(modalEl('hilos-avatar')?.querySelector('.bi-person')).not.toBeNull()
     expect(modalEl('modal')?.querySelector('.modal-title')?.textContent).toBe(
       'Rename · Hidden',
@@ -1008,7 +1387,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1072,7 +1453,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1130,7 +1513,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1204,7 +1589,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1346,7 +1733,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1382,7 +1771,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1414,7 +1805,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1446,7 +1839,9 @@ describe('HilosUserPage lifecycle', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const find = modalEl
@@ -1535,7 +1930,9 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
       mount(HilosUserPage, {
         props: { context: markRaw(world.context) },
         attachTo: document.body,
-        global: { provide: { [hilosRouterKey as symbol]: router() } },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(world.context.scopes) },
+        },
       }),
     )
 
@@ -1676,7 +2073,9 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
       mount(HilosUserPage, {
         props: { context: markRaw(world.context) },
         attachTo: document.body,
-        global: { provide: { [hilosRouterKey as symbol]: router() } },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(world.context.scopes) },
+        },
       }),
     )
 
@@ -1714,7 +2113,10 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
     const open = modalEl('hilos-user-impersonate-open') as HTMLButtonElement
     const section = open.closest('section')
 
-    expect(section?.querySelector('h2')?.textContent).toBe('Impersonation')
+    expect(section?.querySelector('h2')?.textContent).toBe(
+      'Acting as another person',
+    )
+    expect(section?.querySelector('h3')?.textContent).toBe('Impersonation')
     expect(section?.textContent).toContain('Act as Alice')
     expect(section?.textContent).toContain(
       'You will see the product through their eyes, without your admin rights',
@@ -1919,7 +2321,9 @@ describe('HilosUserPage standing (HIL-945)', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const settle = async () => {
@@ -1945,7 +2349,11 @@ describe('HilosUserPage standing (HIL-945)', () => {
     expect(badge()?.textContent?.trim()).toBe('Frozen')
     expect(badge()?.classList.contains('text-bg-info')).toBe(true)
     expect(badge()?.querySelector('.bi-snow')).not.toBeNull()
-    expect(modalEl('hilos-user-frozen-state')?.textContent).toContain('Yes')
+    expect(
+      modalEl('hilos-user-frozen-state')
+        ?.querySelector('p')
+        ?.textContent?.trim(),
+    ).toBe('Frozen')
     expect(modalEl('hilos-user-frozen-lapsed')?.textContent).toContain(
       'Terms of use — deadline passed 1 September 2026',
     )
@@ -1969,7 +2377,11 @@ describe('HilosUserPage standing (HIL-945)', () => {
     await settle()
     expect(badge()?.textContent?.trim()).toBe('Blocked')
     expect(badge()?.classList.contains('text-bg-danger')).toBe(true)
-    expect(modalEl('hilos-user-block-state')?.textContent).toContain('Yes')
+    expect(
+      modalEl('hilos-user-block-state')
+        ?.querySelector('p')
+        ?.textContent?.trim(),
+    ).toBe('Blocked')
     expect(modalEl('hilos-user-block-open')?.textContent).toContain(
       'Lift the block',
     )
@@ -2010,7 +2422,9 @@ describe('HilosUserPage standing (HIL-945)', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     const effectiveAt = Date.now() + 5 * 86_400_000
@@ -2092,7 +2506,9 @@ describe('HilosUserPage in the admin view mode', () => {
     const wrapper = mount(HilosUserPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -2288,7 +2704,9 @@ describe('HilosUserPage merged account (HIL-1292)', () => {
       mount(HilosUserPage, {
         props: { context: markRaw(context) },
         attachTo: document.body,
-        global: { provide: { [hilosRouterKey as symbol]: router() } },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
       }),
     )
     await settle()
@@ -2378,7 +2796,7 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
         attachTo: document.body,
         global: {
           provide: {
-            [hilosRouterKey as symbol]: router({
+            [hilosRouterKey as symbol]: router(context.scopes, {
               resolvePath: resolveHilosPath,
               ...overrides,
             }),
@@ -2393,32 +2811,32 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     mountCard(context)
     await settle()
     expect(modalEl('hilos-user-detail')).not.toBeNull()
-    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+    expect(modalEl('hilos-page-head-action')).toBeNull()
 
     context.scopes.page()?.data.set('analyticsEnabled', false)
     await settle()
-    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+    expect(modalEl('hilos-page-head-action')).toBeNull()
   })
 
-  it('opens the person in Analytics from beside the card header', async () => {
+  it('opens the person in Analytics from the shared head', async () => {
     const { context } = userContext()
     context.scopes.page()?.data.set('analyticsEnabled', true)
     const navigate = vi.fn()
     mountCard(context, { navigate })
     await settle()
 
-    const link = modalEl('hilos-user-analytics-link')
+    const link = modalEl('hilos-page-head-action')
     expect(link?.tagName).toBe('A')
     expect(link?.textContent?.trim()).toBe('Actions in Analytics')
     expect(link?.getAttribute('href')).toBe('/hilos/analytics/people/1')
-    expect(link?.closest('.card-header')).not.toBeNull()
+    expect(link?.closest('[data-id="hilos-page-head-block"]')).not.toBeNull()
     link?.click()
     expect(navigate).toHaveBeenCalledWith('/hilos/analytics/people/1')
     expect(modalEl('modal')).toBeNull()
 
     context.scopes.page()?.data.set('analyticsEnabled', false)
     await settle()
-    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+    expect(modalEl('hilos-page-head-action')).toBeNull()
   })
 
   it('draws no link when the application has no address for the page', async () => {
@@ -2427,7 +2845,7 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     mountCard(context, { resolvePath: () => undefined })
     await settle()
     expect(modalEl('hilos-user-detail')).not.toBeNull()
-    expect(modalEl('hilos-user-analytics-link')).toBeNull()
+    expect(modalEl('hilos-page-head-action')).toBeNull()
   })
 
   it('keeps the link on a merged card that offers nothing to press', async () => {
@@ -2457,7 +2875,7 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     expect(modalEl('hilos-user-access')).toBeNull()
     expect(modalEl('hilos-user-merge-zone')).toBeNull()
     expect(modalEl('hilos-user-impersonate-open')).toBeNull()
-    expect(modalEl('hilos-user-analytics-link')?.getAttribute('href')).toBe(
+    expect(modalEl('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/analytics/people/1',
     )
   })
@@ -2473,7 +2891,7 @@ describe('HilosUserPage presence (HIL-1566)', () => {
     badge: HTMLElement | null
   } {
     const room = document.querySelector<HTMLElement>(
-      '[data-id="hilos-user-detail"] .card-header .hilos-stack.d-inline-grid',
+      '[data-id="hilos-page-head-block"] .hilos-stack.d-inline-grid',
     )
 
     return {
@@ -2489,7 +2907,9 @@ describe('HilosUserPage presence (HIL-1566)', () => {
       mount(HilosUserPage, {
         props: { context: markRaw(context) },
         attachTo: document.body,
-        global: { provide: { [hilosRouterKey as symbol]: router() } },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
       }),
     )
     const settle = async (): Promise<void> => {
@@ -2512,18 +2932,18 @@ describe('HilosUserPage presence (HIL-1566)', () => {
     // The twin is the only other badge in the card, and it is not seen.
     expect(
       Array.from(
-        document.querySelectorAll('[data-id="hilos-user-detail"] .badge'),
+        document.querySelectorAll('[data-id="hilos-page-head-block"] .badge'),
       ).filter((badge) => !badge.classList.contains('invisible')),
     ).toEqual([presence().badge])
 
-    connections('probably_offline', 1)
+    connections('probably_offline', 17)
     await settle()
     expect(presence().badge?.textContent?.trim()).toBe('probably offline')
     expect(presence().badge?.classList.contains('text-bg-warning')).toBe(true)
     expect(presence().badge?.classList.contains('text-bg-secondary')).toBe(
       false,
     )
-    expect(sessions()).toBe('1')
+    expect(sessions()).toBe('17')
     expect(document.body.textContent).not.toContain('probably_offline')
 
     // The standing badge stands beside it and does not change it.

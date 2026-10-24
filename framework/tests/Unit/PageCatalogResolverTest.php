@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Demo\BinanceBtcTracker\Database\Pages\PageCatalog as BinancePageCatalog;
+use Demo\Chat\Database\Pages\PageCatalog as ChatPageCatalog;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -18,6 +21,10 @@ use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+
+require_once __DIR__ . '/../../../demo/chat/backend/Constants/PageConstants.php';
+require_once __DIR__ . '/../../../demo/chat/backend/Database/Pages/PageCatalog.php';
+require_once __DIR__ . '/../../../demo/binance-btc-tracker/backend/Database/Pages/PageCatalog.php';
 
 /**
  * Unit tests for the page catalog reader: the merge, a page's identity, its breadcrumb, its children.
@@ -266,6 +273,101 @@ final class PageCatalogResolverTest extends TestCase
                 PageCatalogConstants::WIRE_CHILD_PAGE,
             ),
         );
+    }
+
+    /** Providers that have not adopted the user keep the legacy breadcrumb through each child. */
+    public function testUserEntityAndItsChildrenStayLegacyWithoutAProjectOptIn(): void
+    {
+        UserPageHeadTestHilos::initBrowser();
+        foreach ([
+            HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_USER_ROLES,
+            HilosPageConstants::HILOS_USER_ACCESS,
+            HilosPageConstants::HILOS_USER_SESSIONS,
+        ] as $page) {
+            self::assertSame(HilosPageConstants::HILOS_USER, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams(['userId' => '42'])));
+        }
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+            ['page' => HilosPageConstants::HILOS_USER, 'label' => 'User'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_USER));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+            ['page' => HilosPageConstants::HILOS_USER, 'label' => 'User'],
+            ['page' => HilosPageConstants::HILOS_USER_ROLES, 'label' => 'User roles'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_USER_ROLES));
+    }
+
+    /** Both real Vue providers preserve the framework row and omit unserved future tabs. */
+    public function testVueProvidersAdoptTheUserHeadWithOnlyOverviewServed(): void
+    {
+        foreach ([ChatUserPageHeadTestHilos::class, BinanceUserPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_USER]);
+            self::assertSame(HilosPageConstants::HILOS_USER, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_USER));
+            $head = PageCatalogResolver::head(HilosPageConstants::HILOS_USER, new PageRouteParams(['userId' => '42']));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_USER,
+                    'label' => 'User',
+                    'lead' => 'A single user: profile, presence, and account actions.',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+                    ['page' => HilosPageConstants::HILOS_USER, 'label' => 'User'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_USER, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_USER));
+            self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_USERS, new PageRouteParams([])));
+        }
+    }
+
+    /** Future children share the user owner and follow catalog order regardless of registration order. */
+    public function testServedUserTabsShareTheSameHeadInBothVueProviders(): void
+    {
+        foreach ([ChatUserTabsPageHeadTestHilos::class, BinanceUserTabsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            foreach ([
+                HilosPageConstants::HILOS_USER,
+                HilosPageConstants::HILOS_USER_ROLES,
+                HilosPageConstants::HILOS_USER_ACCESS,
+                HilosPageConstants::HILOS_USER_SESSIONS,
+            ] as $page) {
+                self::assertSame(HilosPageConstants::HILOS_USER, PageCatalogResolver::rowOwner($page));
+                $head = PageCatalogResolver::head($page, new PageRouteParams(['userId' => '42']));
+                self::assertNotNull($head);
+                self::assertSame([
+                    'pageHeadOwner' => [
+                        'page' => HilosPageConstants::HILOS_USER,
+                        'label' => 'User',
+                        'lead' => 'A single user: profile, presence, and account actions.',
+                    ],
+                    'pageBreadcrumb' => [
+                        ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                        ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+                        ['page' => HilosPageConstants::HILOS_USER, 'label' => 'User'],
+                    ],
+                    'pageTabs' => [
+                        ['page' => HilosPageConstants::HILOS_USER, 'label' => 'Overview'],
+                        ['page' => HilosPageConstants::HILOS_USER_ROLES, 'label' => 'Roles'],
+                        ['page' => HilosPageConstants::HILOS_USER_ACCESS, 'label' => 'Access'],
+                        ['page' => HilosPageConstants::HILOS_USER_SESSIONS, 'label' => 'Sessions'],
+                    ],
+                    'pageChildren' => [],
+                ], $head->toArray());
+                self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
+            }
+        }
     }
 
     public function testOverviewAndCircleShareTheExactMaintenanceHead(): void
@@ -738,6 +840,48 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** A legacy project serves the user overview without adopting its head. */
+abstract class UserPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_USER => PageHeadTestPage::class,
+    ];
+}
+
+/** The chat provider supplies the full user row with the shared head enabled. */
+abstract class ChatUserPageHeadTestHilos extends UserPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** The Binance provider opts in independently of the chat provider. */
+abstract class BinanceUserPageHeadTestHilos extends UserPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Test-only children are deliberately registered in reverse catalog order. */
+abstract class ChatUserTabsPageHeadTestHilos extends ChatUserPageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_USER_SESSIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USER_ACCESS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USER_ROLES => PageHeadTestPage::class,
+    ];
+}
+
+/** The same future tabs use the Binance provider without adding production pages. */
+abstract class BinanceUserTabsPageHeadTestHilos extends BinanceUserPageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_USER_SESSIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USER_ACCESS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_USER_ROLES => PageHeadTestPage::class,
+    ];
 }
 
 /** All three Analytics pages are served; its entities must never join the overview's row. */

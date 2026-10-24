@@ -1476,6 +1476,7 @@ export {
   type HilosUserImpersonationSection,
   type HilosUserImpersonationSettings,
   HILOS_USER_LIFECYCLE_COPY,
+  HILOS_USER_OVERVIEW_COPY,
   HILOS_USER_STANDING_SECTION,
   HILOS_USERS_LAPSED_FILTER,
   hilosStandingBadge,

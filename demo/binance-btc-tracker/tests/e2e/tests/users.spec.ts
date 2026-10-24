@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
   expectHilosUserBlockSettled,
+  expectHilosUserOverview,
+  expectHilosUserOverviewAccessibility,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -68,8 +70,40 @@ test('lists users in the framework table and opens a detail page', async ({
   await firstOpen.click()
   await expect(page).toHaveURL(/\/hilos\/user\/\d+$/)
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-  await expect(page.getByTestId('hilos-user-name')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-title')).toBeVisible()
   expect(fullLoads).toBe(loadsAfterColdLoad)
+})
+
+test('user Overview has no empty project section and supports keyboard rename', async ({
+  page,
+}) => {
+  const userId = await signUpAdmin(page)
+  const name = await page.getByTestId('nav-profile-name').getAttribute('title')
+  expect(name).toBeTruthy()
+  await gotoPage(page, `/hilos/user/${userId}`)
+  await expectHilosUserOverview(expect, page, userId, name!, 'BTC Tracker')
+  // With no project slot, only the framework sections exist; no empty panel or
+  // project heading is rendered beside them.
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'Profile',
+    'Rights',
+    'Access to the product',
+    'Acting as another person',
+  ])
+  for (const [key, state] of [
+    ['admin', 'Administrator'],
+    ['block', 'Not blocked'],
+    ['frozen', 'Not frozen'],
+    ['deletion', 'No deletion is scheduled'],
+  ]) {
+    await expect(
+      page.getByTestId(`hilos-user-${key}-state`).locator('p.fw-medium'),
+    ).toHaveText(state!)
+  }
+  const connections = page.getByTestId('hilos-user-sessions')
+  await expect(connections).toHaveText(/^[1-9]\d*$/)
+  await expect(connections.locator('..')).toContainText('Open connections')
+  await expectHilosUserOverviewAccessibility(expect, page)
 })
 
 test('filters the users table from the search box', async ({ page }) => {
@@ -102,11 +136,11 @@ test('renames a user from the detail page and re-renders live', async ({
   const newName = 'E2E Renamed User'
   await page.getByTestId('hilos-user-edit').click()
   await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-  await page.getByTestId('hilos-user-save').click()
+  await clickSubmit(page.getByTestId('hilos-user-save'))
 
   // The committed name returns over the live table and the edit form closes.
-  await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
   await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(newName)
 })
 
 // HIL-1050: the rename modal merges against the live row. Two tabs of one
@@ -163,7 +197,7 @@ test('an open rename follows the other tab, then conflicts and takes theirs', as
   await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
   await page.getByTestId('modal-close').click()
   await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-user-name')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'E2E Elsewhere Two',
   )
   await tabB.close()
@@ -181,7 +215,7 @@ async function renameUser(tab: Page, name: string): Promise<void> {
   await typeInto(tab.getByTestId('hilos-user-name-input'), name)
   await clickSubmit(tab.getByTestId('hilos-user-save'))
   await expect(tab.getByTestId('hilos-user-name-input')).toHaveCount(0)
-  await expect(tab.getByTestId('hilos-user-name')).toHaveText(name)
+  await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(name)
 }
 
 test('shows the connected user as online with a live session', async ({
@@ -204,7 +238,8 @@ test('shows the connected user as online with a live session', async ({
   await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
   await expect(
     page
-      .locator('[data-id="hilos-user-detail"] .badge')
+      .getByTestId('hilos-page-head-block')
+      .locator('.badge')
       .filter({ visible: true }),
   ).toHaveText('online')
 })

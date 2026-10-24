@@ -75,6 +75,29 @@ function dashboard(root: string, layer: Layer, expression: string): void {
   )
 }
 
+it('recognizes user-shell content and keeps an empty user shell bare', () => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/vue/src/admin/Built.vue'
+    writeFileSync(
+      join(root, path),
+      '<template><HilosUserPageShell :page="HilosPages.BUILT"><section>Overview</section></HilosUserPageShell></template>',
+    )
+    const views = () =>
+      readViews(root, 'vue', readPages(source(root, KEYS_PATH)))
+    expect(views().get('hilos_built')).toEqual({ path, line: 1, bare: false })
+    expect(checkTree(root)).toEqual([])
+
+    writeFileSync(
+      join(root, path),
+      '<template><HilosUserPageShell :page="HilosPages.BUILT" /></template>',
+    )
+    expect(views().get('hilos_built')).toEqual({ path, line: 1, bare: true })
+    expect(checkTree(root)).toEqual([
+      `UNBUILT-PAGE ${path}:1 — 'hilos_built' is unbuilt in vue; list it in HILOS_UNBUILT_PAGES ${DOC}`,
+    ])
+  })
+})
+
 it.each(LAYERS)(
   'resolves %s static and lazy entries to implementations, retaining bare shells',
   (layer) => {

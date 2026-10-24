@@ -194,6 +194,8 @@ const profileRenameValues = [
   'PROFILE_NAME_SET_ACTION',
   'createHilosProfileRename',
 ]
+/** Presentation copy shared by the user section and compatibility root. */
+const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY']
 const expectedValues = [
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
@@ -207,6 +209,7 @@ const expectedValues = [
   ...moderationValues,
   ...statusValues,
   ...profileRenameValues,
+  ...userOverviewValues,
 ].sort()
 
 /**

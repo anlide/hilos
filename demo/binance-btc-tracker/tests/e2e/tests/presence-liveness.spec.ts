@@ -1,9 +1,9 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import { openRawWebSocket } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
-import { signUpPerson, typeInto } from '../helpers/session'
+import { signUpAdmin } from '../helpers/adminGrant.js'
+import { gotoPage } from '../helpers/page.js'
+import { signUpPerson, typeInto } from '../helpers/session.js'
 
 // Presence over silent sockets (HIL-1566). The master pings a browser socket that
 // has said nothing for the idle span, holds it probably offline from a longer span
@@ -42,7 +42,8 @@ const PING_PAST_DOUBT = 3
  */
 function cardPresence(card: Page): Locator {
   return card
-    .locator('[data-id="hilos-user-detail"] .badge')
+    .getByTestId('hilos-page-head-block')
+    .locator('.hilos-stack .badge')
     .filter({ visible: true })
 }
 
