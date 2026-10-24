@@ -422,6 +422,7 @@ async function submitDelete(): Promise<void> {
       <HilosModal
         v-model="formOpen"
         :confirm-on-close="formDirty"
+        :busy="formBusy"
         @cancel="closeForm"
       >
         <template #header>
