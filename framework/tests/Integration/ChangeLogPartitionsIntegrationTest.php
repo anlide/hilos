@@ -22,6 +22,9 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
     /** The row staged beyond the initial monthly window. */
     private const string FUTURE_ROW_AT = '2030-01-15 12:00:00';
 
+    /** A table only this case creates, so no neighbor piece ever carries it legitimately. */
+    private const string ISOLATION_PROBE_TABLE = 'probe_change_log_piece_isolation';
+
     /**
      * @throws DatabaseException When the paired schema cannot be prepared
      */
@@ -64,7 +67,7 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
     {
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
-            foreach (ChangeLogPartitions::TABLES as $table) {
+            foreach ([...ChangeLogPartitions::TABLES, self::ISOLATION_PROBE_TABLE] as $table) {
                 Database::sql('DROP TABLE IF EXISTS `' . $table . '`');
             }
             Database::close(ChangeLogDatabase::CONNECTION_INDEX);
@@ -156,6 +159,10 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
     /**
      * A paired schema follows its own primary name, not another integration piece's.
      *
+     * The neighbor is asked about a probe table, not about the standard journal tables: its
+     * own cases build those at any moment (EntitySchemaConsistencyTest applies the real
+     * journal schema), so their presence there says nothing about where this piece writes.
+     *
      * @throws DatabaseException When configuring or reading either schema fails
      */
     public function testTwoFrameworkPiecesDoNotShareJournalTables(): void
@@ -172,10 +179,16 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
             : substr($primary->database, 0, -1) . '1';
         $otherJournal = ChangeLogDatabase::name($otherPrimary);
         $this->assertNotSame(ChangeLogDatabase::configuredName(), $otherJournal);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            Database::sql('CREATE TABLE `' . self::ISOLATION_PROBE_TABLE . '` (`id` INT NOT NULL PRIMARY KEY)');
+        } finally {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
         $other = new mysqli($primary->host, $primary->user, $primary->password, $otherJournal, $primary->port);
         try {
-            $result = $other->query("SHOW TABLES LIKE 'hilos_change_log_receipt'");
-            $this->assertSame(0, $result->num_rows, 'The other piece must not see this fixture table');
+            $result = $other->query("SHOW TABLES LIKE '" . self::ISOLATION_PROBE_TABLE . "'");
+            $this->assertSame(0, $result->num_rows, 'The other piece must not see the probe table this piece created');
         } finally {
             $other->close();
         }
