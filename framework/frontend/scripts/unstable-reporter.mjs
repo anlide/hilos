@@ -17,6 +17,7 @@
 import { writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
+import { stripVTControlCharacters } from 'node:util'
 
 import { normalizeResults, plannedTest } from './quarantine.mjs'
 
@@ -96,7 +97,7 @@ export default class UnstableReporter {
           {
             ...plan,
             status: result.status,
-            reason: result.error?.message ?? '',
+            reason: stripVTControlCharacters(result.error?.message ?? ''),
           },
         ],
       ),

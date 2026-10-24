@@ -115,6 +115,39 @@ it('collects actual quarantine attempts silently, preserving partial results', (
   }
 })
 
+it('writes a quarantine reason without the color codes Playwright adds', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hilos-results-unit-'))
+  const file = join(directory, 'results.json')
+  vi.stubEnv('HILOS_E2E_PHASE', 'quarantine')
+  vi.stubEnv('HILOS_E2E_RESULT_FILE', file)
+  const reporter = new UnstableReporter()
+  const tagged = {
+    ...FLAKY,
+    title: 'tagged',
+    tags: ['@quarantine:F-023'],
+    parent: {
+      type: 'file',
+      title: 'file',
+      parent: null,
+      project: () => ({ name: 'desktop' }),
+    },
+  }
+  try {
+    reporter.onBegin({ rootDir: ROOT_DIR }, { allTests: () => [tagged] })
+    reporter.onTestEnd(tagged, {
+      status: 'timedOut',
+      error: {
+        message: '\u001b[31mTest timeout of 90000ms exceeded.\u001b[39m',
+      },
+    })
+    const [written] = JSON.parse(readFileSync(file, 'utf8')).tests
+    expect(written.reason).toBe('Test timeout of 90000ms exceeded.')
+  } finally {
+    vi.unstubAllEnvs()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 it('retains ordinary unstable reporting for tagged diagnostic repetitions', () => {
   vi.stubEnv('HILOS_E2E_PHASE', 'diagnostic')
   try {
