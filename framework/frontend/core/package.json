@@ -121,6 +121,6 @@
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json && node bin/core-provenance.mjs"
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json && node bin/core-provenance.mjs"
   }
 }
