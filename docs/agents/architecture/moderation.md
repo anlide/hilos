@@ -5,10 +5,10 @@ moderator or its rules, or activating the Moderation section.
 
 This is the target architecture of HIL-1569, written ahead of its code and now
 partly in it: the kinds, the rules table and its writer, the check queue, the
-moderator with its models and settings, and the profile photo flow (HIL-1623 to
-HIL-1625), and the own-name flow (HIL-1626) are in the code. Each pending rule
-names the leaf that implements it;
-that leaf clears its markers in the same commit, following
+moderator with its models and settings, the profile photo flow (HIL-1623 to
+HIL-1625) and the own-name flow (HIL-1626) are in the code. Each pending rule
+names the leaf that implements it; that leaf clears its markers in the same
+commit, following
 [../rule-authoring.md](../rule-authoring.md), *A Rule Written Ahead Of Its
 Code*. *Check Kinds* names the PHP classes that declare kinds, *Rules Per Kind*
 the ones that store and write rules, and *One Door And One Moderator*, *Models

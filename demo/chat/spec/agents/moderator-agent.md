@@ -10,7 +10,6 @@ via agent-to-agent signals.
 
 - Discover user outbound messages from runtime connection state and send `MODERATION_RESULT`.
 - After that text is allowed, draw a 512-pixel JPEG copy of each attached picture and send it to the vision client. A refusal names that picture. The worker raises `memory_limit` to the images budget for the draw and restores it on stop.
-- Discover user-initiated display-name changes from runtime connection state and send `RENAME_MODERATION_RESULT`.
 
 Attachments on a chat message are described to the text model by name, type and size only.
 Once that text is allowed, each picture — an upload whose type starts with `image/` — is
@@ -18,12 +17,13 @@ drawn as a 512-pixel JPEG and sent to the vision client, one at a time, in attac
 The first refusal names the picture and the rest are not checked. `READS_RT`
 declares the upload collection. A profile photo is not this agent's: the
 framework moderator checks it
-([moderation](../../../../docs/agents/architecture/moderation.md)).
+([moderation](../../../../docs/agents/architecture/moderation.md)). The same goes
+for a person's own name.
 
 ## LLM Client
 
 Uses async `AsyncChatLLMInterface`, initially built in the constructor from the
-`chat.moderation` profile (`Hilos::$llm`). Before each message or rename request,
+`chat.moderation` profile (`Hilos::$llm`). Before each message request,
 the agent resolves that profile again. It replaces the client only when the
 effective profile changes; the in-flight request keeps its original client.
 The provider is selected from the current settings:
@@ -58,8 +58,7 @@ blocking. The test stand sends both roles to its model channel.
 ## In-flight state
 
 Requests are not queued inside the agent. Each tick finds a pending outbound
-message first or a pending rename second. Only one model request is in flight
-at a time.
+message. Only one model request is in flight at a time.
 
 A message that carries pictures is one job until the verdict. The text is asked
 first. When it is allowed and a picture remains, the verdict waits: the agent
@@ -80,13 +79,12 @@ MainPage runtime state -> ModeratorAgent
                          | LLM call
                          v
 MainPage <--MODERATION_RESULT---- ModeratorAgent
-ProfilePage <--RENAME_MODERATION_RESULT---- ModeratorAgent
 ```
 
 ## Settings
 
 Model, URL, provider, and timeout are read from DB settings through `Hilos::$setting`
-before each new message or rename request. The typed accessor reads persisted
+before each new message request. The typed accessor reads persisted
 values from DB even while this worker holds an older setting object.
 A URL setting that resolves empty — `chat_moderation_url` and its default `default_bot_url` both — is not an address: the role keeps the one env gave it, in the order under LLM Client above.
 Moderator prompt pieces are read from `ChatDbContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
