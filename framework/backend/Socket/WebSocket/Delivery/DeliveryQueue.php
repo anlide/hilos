@@ -9,7 +9,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Client\WebSocketClient;
 
-/** Socket-local coalescing and cadence; subscription token lifecycle is wired in HIL-1565 slice 8. */
+/**
+ * Outgoing queue of one TCP connection: application text waits out the delivery window, coalescing through
+ * {@see DeliveryCoalescer}, and all of it is held while a page subscription is incomplete.
+ */
 final class DeliveryQueue
 {
     /** Opening of the batch drain() wraps two or more envelopes in, written once for packing and counting. */
