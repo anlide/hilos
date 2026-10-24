@@ -17,7 +17,7 @@ attempts and verdicts of the planned product have not been built yet:
 - **Home page** that says who is looking: "Browsing anonymously" for a visitor,
   "Signed in as …" with an account.
 - **Admin dashboard** at `/hilos`, with Settings, Users (list and card), Logs and
-  Maintenance. A signed-in user has the notification bell, without delivery channels.
+  Maintenance. A signed-in user has the notification bell, with delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
 The backend has one app agent owning the connections and home page, the Hilos

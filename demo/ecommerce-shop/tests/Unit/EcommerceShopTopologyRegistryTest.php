@@ -198,7 +198,7 @@ use Hilos\Status\StatusSettingsCatalog;
  *
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
  * dashboard, Maintenance, Backup, Settings, Appearance, Users and the four footer pages, sign-in on the
- * framework libraries, and notifications without delivery. The snapshots below say so. The
+ * framework libraries, and notifications delivered by email. The snapshots below say so. The
  * agent registry closes on the framework's fleet, claimer and ballast probes, which only its
  * cluster stand runs (HIL-1216).
  */

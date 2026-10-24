@@ -159,7 +159,8 @@ use Hilos\Status\StatusAgent;
  * Settings, the three example keys, and Users, the people and a person's card (renaming,
  * takeover, rights; no account merge) - and the others arrive with the leaves that bring them.
  *
- * Notifications are switched on with them: the bell in the header, without delivery.
+ * Notifications are switched on with them: the bell in the header and delivery by email (the
+ * email channel, set up under Communications).
  *
  * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet, claimer and
  * ballast probes.

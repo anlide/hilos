@@ -163,7 +163,8 @@ use Hilos\Status\StatusAgent;
  *
  * Sign-in by password, the home and four public footer pages. The admin dashboard now opens
  * settings, the people list and detail, logs, and Maintenance. The shell notification center
- * has no delivery channels. Each section arrived with its polls e2e coverage (HIL-1226).
+ * delivers by email (the email channel, set up under Communications). Each section arrived
+ * with its polls e2e coverage (HIL-1226).
  *
  * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet and
  * database probes.

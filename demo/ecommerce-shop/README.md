@@ -21,8 +21,8 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   account merge), **Backup** (database archives) and **Maintenance** (the
   verifier circle). The other admin sections arrive with the leaves that
   bring them.
-- **Notifications**: the bell in the header for a signed-in person, without
-  delivery.
+- **Notifications**: the bell in the header for a signed-in person, with
+  delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
 The backend is the base set: one app agent owning the connections and the
