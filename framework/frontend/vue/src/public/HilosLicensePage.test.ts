@@ -1,5 +1,8 @@
 import { mount } from '@vue/test-utils'
-import type { HilosLicenseEntry } from '@hilos/core/base'
+import type {
+  HilosLicenseEntry,
+  HilosStaticPageNavigation,
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosLicensePage from './HilosLicensePage.vue'
@@ -45,7 +48,65 @@ function mountPage(): ReturnType<typeof mount> {
   return mount(HilosLicensePage, { props: { inventory } })
 }
 
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label: 'Public pages',
+  }
+}
+
 describe('HilosLicensePage', () => {
+  it('renders its exact public head and forwards optional navigation reactively', async () => {
+    const wrapper = mountPage()
+
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('[data-id="hilos-page-head-title"]').text()).toBe(
+      'License',
+    )
+    const icon = wrapper.get(
+      '[data-id="hilos-page-head-block"] i.bi-journal-code',
+    )
+    expect(icon.element.parentElement?.getAttribute('aria-hidden')).toBe('true')
+    expect(wrapper.get('[data-id="hilos-page-head-block"] p').text()).toBe(
+      'The license of this project, and of everything it is built on.',
+    )
+    expect(wrapper.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+
+    await wrapper.setProps({ navigation: publicNavigation() })
+    const tabs = wrapper.get('[data-id="hilos-page-tabs"]')
+    expect(tabs.attributes('aria-label')).toBe('Public pages')
+    expect(
+      tabs.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+    ).toEqual([
+      ['Public page', '/projects/first/fixture_public_page'],
+      ['Revision history', '/projects/first/fixture_history'],
+    ])
+    expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+      'hilos-page-tab-fixture_public_page',
+    )
+
+    await wrapper.setProps({
+      navigation: publicNavigation('fixture_history', 'next'),
+    })
+    expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+      'hilos-page-tab-fixture_history',
+    )
+    expect(
+      tabs.get('[data-id="hilos-page-tab-fixture_history"]').attributes('href'),
+    ).toBe('/projects/next/fixture_history')
+  })
+
   it('draws one row per package the build stands on', () => {
     const wrapper = mountPage()
     const rows = wrapper.findAll('[data-id="license-row"]')

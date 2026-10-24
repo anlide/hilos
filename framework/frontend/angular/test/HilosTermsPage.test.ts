@@ -12,6 +12,7 @@ import {
   type ActionResult,
   type HilosLegalContext,
 } from '@hilos/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   clause,
@@ -66,6 +67,52 @@ function standing(facts: Record<string, unknown> = {}) {
  */
 function one(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
+}
+
+/**
+ * Navigation that resolves sibling pages against one project route parameter.
+ *
+ * @param page The page key marked current.
+ * @param project The project route parameter.
+ * @param label The accessible name of the tabs row.
+ * @returns A static-page navigation fixture.
+ */
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+  label = 'Public pages',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label,
+  }
+}
+
+/**
+ * Mount a Terms page without a host so its navigation input can be updated directly.
+ *
+ * @returns The mounted Terms page fixture.
+ */
+function mountBareTerms(): ComponentFixture<HilosTermsPage> {
+  const world = legalContext(
+    {
+      dispatch: vi.fn(() => ({ done: new Promise<ActionResult>(() => {}) })),
+    } as unknown as ActionLifecycle,
+    { page: 'hilos_terms', data: {} },
+  )
+  const fixture = TestBed.createComponent(HilosTermsPage)
+  fixture.componentRef.setInput('context', world.context)
+  document.body.appendChild(fixture.nativeElement as HTMLElement)
+  fixture.detectChanges()
+
+  return fixture
 }
 
 /**
@@ -129,12 +176,64 @@ const IN_WINDOW = standing({
 it('renders the heading, the introduction and the loading line without asking anything', async () => {
   const { world, fixture, dispatch } = mountTerms({}, null)
   await settle(fixture)
-  expect(one('static-page-title')!.textContent?.trim()).toBe('Terms')
+  expect(
+    (fixture.nativeElement as HTMLElement).querySelectorAll('h1'),
+  ).toHaveLength(1)
+  expect(one('hilos-page-head-title')!.textContent?.trim()).toBe('Terms')
+  const icon = one('hilos-page-head-block')?.querySelector(
+    'i.bi-file-earmark-text',
+  )
+  expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  expect(
+    one('hilos-page-head-block')?.querySelector('p')?.textContent?.trim(),
+  ).toBe(
+    'The terms of using this project: the revision in force and every one before it.',
+  )
+  expect(one('hilos-breadcrumb')).toBeNull()
+  expect(one('hilos-page-tabs')).toBeNull()
   expect(one('terms-intro')!.textContent).toBe('A demonstration.')
   expect(one('terms-loading')!.textContent?.trim()).toBe('Loading the terms…')
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('loading')
   expect(dispatch).not.toHaveBeenCalled()
   expect(world.frames).toEqual([])
+})
+
+it('forwards optional navigation to the shared head and updates it without remounting', () => {
+  const fixture = mountBareTerms()
+  const heading = one('hilos-page-head-title')
+
+  fixture.componentRef.setInput('navigation', publicNavigation())
+  fixture.detectChanges()
+  const tabs = one('hilos-page-tabs')
+  expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
+  expect(
+    [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+      link.textContent?.trim(),
+      link.getAttribute('href'),
+    ]),
+  ).toEqual([
+    ['Public page', '/projects/first/fixture_public_page'],
+    ['Revision history', '/projects/first/fixture_history'],
+  ])
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_public_page')
+
+  fixture.componentRef.setInput(
+    'navigation',
+    publicNavigation('fixture_history', 'next', 'More public pages'),
+  )
+  fixture.detectChanges()
+  expect(one('hilos-page-head-title')).toBe(heading)
+  expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_history')
+  expect(
+    tabs
+      ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
+      ?.getAttribute('href'),
+  ).toBe('/projects/next/fixture_history')
 })
 
 it('shows a guest the text and the history, newest first, with nothing to accept', async () => {

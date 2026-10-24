@@ -29,6 +29,7 @@ import {
 import {
   type HilosLicenseEntry,
   type HilosLicenseInventory,
+  type HilosStaticPageNavigation,
   copyToClipboard,
   downloadTextFile,
   filterLicenseEntries,
@@ -54,7 +55,12 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosLongText, HilosModal, HilosStaticPage],
   template: `
-    <hilos-static-page title="License">
+    <hilos-static-page
+      title="License"
+      icon="bi-journal-code"
+      subtitle="The license of this project, and of everything it is built on."
+      [navigation]="navigation()"
+    >
       <pre
         class="small text-body mb-3 text-break hilos-pre-wrap"
         data-id="license-project-text"
@@ -225,6 +231,8 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 export class HilosLicensePage {
   /** The build-time snapshot of everything this build stands on. */
   readonly inventory = input.required<HilosLicenseInventory>()
+  /** Optional navigation across sibling public pages. */
+  readonly navigation = input<HilosStaticPageNavigation>()
 
   protected readonly search = signal('')
   protected readonly license = signal('')

@@ -9,13 +9,57 @@ region (HilosLayout). Styling is Bootstrap classes only, no CSS of its own
 static pages a demo shows belong to the framework; the frame stays exported for
 a project that has one. -->
 <script setup lang="ts">
-defineProps<{ title: string }>()
+import type {
+  HilosPageIdentity,
+  HilosStaticPageNavigation,
+} from '@hilos/core/base'
+import { computed, provide, useId } from 'vue'
+
+import HilosPageHead from './HilosPageHead.vue'
+import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
+
+const props = defineProps<{
+  /** The page heading. */
+  title: string
+  /** A decorative Bootstrap icon beside the heading. */
+  icon?: string
+  /** The line under the heading. */
+  subtitle?: string
+  /** The page's optional section navigation. */
+  navigation?: HilosStaticPageNavigation
+}>()
+
+const headingId = useId()
+provide(hilosPageHeadingIdKey, headingId)
+
+const page = computed(() => props.navigation?.page ?? '')
+const identity = computed<HilosPageIdentity>(() => ({
+  label: props.title,
+  lead: props.subtitle ?? '',
+  breadcrumb: [],
+  children: [],
+  pageHeadOwner: {
+    page: props.navigation?.tabs[0]?.page ?? page.value,
+    label: props.title,
+    lead: props.subtitle ?? '',
+    icon: props.icon ?? null,
+  },
+  pageTabs: [...(props.navigation?.tabs ?? [])],
+}))
 </script>
 
 <template>
   <article class="row justify-content-center" data-id="static-page">
     <div class="col-12 col-lg-8">
-      <h1 class="h3 mb-4" data-id="static-page-title">{{ title }}</h1>
+      <HilosPageHead
+        :identity="identity"
+        :page="page"
+        :params="navigation?.params ?? {}"
+        :resolve-path="navigation?.resolvePath ?? (() => undefined)"
+        :heading-id="headingId"
+        kind="section"
+        :tabs-label="navigation?.label ?? 'Page sections'"
+      />
       <slot />
     </div>
   </article>

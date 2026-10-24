@@ -41,6 +41,7 @@ import {
   type HilosLegalRevisionDialog,
   type HilosLegalTerms,
   type HilosLegalTermsStore,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -65,7 +66,12 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
     HilosLegalRevisionText,
   ],
   template: `
-    <hilos-static-page title="Terms">
+    <hilos-static-page
+      title="Terms"
+      icon="bi-file-earmark-text"
+      subtitle="The terms of using this project: the revision in force and every one before it."
+      [navigation]="navigation()"
+    >
       @if (line().state !== 'unpublished') {
         <div
           class="mb-4"
@@ -243,6 +249,8 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 })
 export class HilosTermsPage {
   private readonly platformId = inject(PLATFORM_ID)
+  /** Optional navigation across sibling public pages. */
+  readonly navigation = input<HilosStaticPageNavigation>()
   /** The connection, scopes and action lifecycle the page reads and accepts through. */
   readonly context = input.required<HilosLegalContext>()
   protected readonly copy = LEGAL_TERMS_COPY

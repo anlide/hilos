@@ -29,6 +29,7 @@ import {
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 
 import { HilosLongText } from '../HilosLongText.js'
@@ -42,15 +43,20 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 export interface HilosLicensePageProps {
   /** The build-time snapshot of everything this build stands on. */
   inventory: HilosLicenseInventory
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }
 
 /**
  * The /license page: the project's own license text, and under it the build's inventory
  * with a search, two filters, a package's own license text, and both exports.
  *
- * @param props The build-time snapshot of the project and its dependencies.
+ * @param props The build-time snapshot and optional public-page navigation.
  */
-export function HilosLicensePage({ inventory }: HilosLicensePageProps) {
+export function HilosLicensePage({
+  inventory,
+  navigation,
+}: HilosLicensePageProps) {
   const [search, setSearch] = useState('')
   const [license, setLicense] = useState('')
   const [language, setLanguage] = useState('')
@@ -94,7 +100,12 @@ export function HilosLicensePage({ inventory }: HilosLicensePageProps) {
   }
 
   return (
-    <HilosStaticPage title="License">
+    <HilosStaticPage
+      title="License"
+      icon="bi-journal-code"
+      subtitle="The license of this project, and of everything it is built on."
+      navigation={navigation}
+    >
       <pre
         className="small text-body mb-3 text-break hilos-pre-wrap"
         data-id="license-project-text"

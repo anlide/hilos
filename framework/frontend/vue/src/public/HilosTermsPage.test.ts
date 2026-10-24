@@ -4,6 +4,7 @@ import {
   bindSessionScope,
   type ActionLifecycle,
   type ActionResult,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -105,10 +106,37 @@ function mountTerms(
   return { world, view, dispatch }
 }
 
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label: 'Public pages',
+  }
+}
+
 it('renders the heading, the introduction and the loading line without asking anything', async () => {
   const { world, view, dispatch } = mountTerms({}, null)
   await flushPromises()
-  expect(view.get('[data-id="static-page-title"]').text()).toBe('Terms')
+  expect(view.findAll('h1')).toHaveLength(1)
+  expect(view.get('[data-id="hilos-page-head-title"]').text()).toBe('Terms')
+  const icon = view.get(
+    '[data-id="hilos-page-head-block"] i.bi-file-earmark-text',
+  )
+  expect(icon.element.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
+    'The terms of using this project: the revision in force and every one before it.',
+  )
+  expect(view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+  expect(view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
   expect(view.get('[data-id="terms-intro"]').text()).toBe('A demonstration.')
   expect(view.get('[data-id="terms-loading"]').text()).toBe(
     'Loading the terms…',
@@ -118,6 +146,34 @@ it('renders the heading, the introduction and the loading line without asking an
   )
   expect(dispatch).not.toHaveBeenCalled()
   expect(world.frames).toEqual([])
+})
+
+it('forwards optional navigation to the shared head and keeps its projection reactive', async () => {
+  const { view } = mountTerms({}, null)
+  await flushPromises()
+  await view.setProps({ navigation: publicNavigation() })
+
+  const tabs = view.get('[data-id="hilos-page-tabs"]')
+  expect(tabs.attributes('aria-label')).toBe('Public pages')
+  expect(
+    tabs.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+  ).toEqual([
+    ['Public page', '/projects/first/fixture_public_page'],
+    ['Revision history', '/projects/first/fixture_history'],
+  ])
+  expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+    'hilos-page-tab-fixture_public_page',
+  )
+
+  await view.setProps({
+    navigation: publicNavigation('fixture_history', 'next'),
+  })
+  expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+    'hilos-page-tab-fixture_history',
+  )
+  expect(
+    tabs.get('[data-id="hilos-page-tab-fixture_history"]').attributes('href'),
+  ).toBe('/projects/next/fixture_history')
 })
 
 it('shows a guest the text and the history, newest first, with nothing to accept', async () => {

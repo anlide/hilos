@@ -24,6 +24,7 @@ import {
   type HilosLegalPrivacyStore,
   type HilosAccountStanding,
   type HilosBrowserValue,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 
 import HilosStaticPage from '../HilosStaticPage.vue'
@@ -43,8 +44,10 @@ const props = withDefaults(
     context: HilosLegalContext
     /** The project's own declarations, swept beside the framework's. */
     values?: readonly HilosBrowserValue[]
+    /** Optional navigation across sibling public pages. */
+    navigation?: HilosStaticPageNavigation
   }>(),
-  { values: () => [] },
+  { values: () => [], navigation: undefined },
 )
 
 /** Everything this browser is declared to hold: the framework's list plus the project's. */
@@ -175,7 +178,12 @@ async function onConfirm(): Promise<void> {
 </script>
 
 <template>
-  <HilosStaticPage title="Privacy">
+  <HilosStaticPage
+    title="Privacy"
+    icon="bi-shield-lock"
+    subtitle="What this project keeps about you: the revision in force, every one before it, and wiping this browser."
+    :navigation="props.navigation"
+  >
     <div
       v-if="line.state !== 'unpublished'"
       class="mb-4"

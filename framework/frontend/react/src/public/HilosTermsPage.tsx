@@ -27,6 +27,7 @@ import {
   sessionAccountStanding,
   TERMS_REVISION_TEXT_ACTION,
   type HilosLegalContext,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -44,10 +45,16 @@ export interface HilosTermsPageProps {
   context: HilosLegalContext
   /** The project's introduction, drawn above the text. */
   children?: ReactNode
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }
 
 /** The public Terms page: the reader's standing, the text in force and the history. */
-export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
+export function HilosTermsPage({
+  context,
+  children,
+  navigation,
+}: HilosTermsPageProps) {
   const store = useMemo(() => createHilosLegalTermsStore(context), [context])
   const reader = useMemo(
     () =>
@@ -109,7 +116,12 @@ export function HilosTermsPage({ context, children }: HilosTermsPageProps) {
   }
 
   return (
-    <HilosStaticPage title="Terms">
+    <HilosStaticPage
+      title="Terms"
+      icon="bi-file-earmark-text"
+      subtitle="The terms of using this project: the revision in force and every one before it."
+      navigation={navigation}
+    >
       {line.state !== 'unpublished' && (
         <div className="mb-4" data-id="terms-reader" data-state={line.state}>
           <HilosLegalDocumentReader

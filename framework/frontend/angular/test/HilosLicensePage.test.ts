@@ -8,6 +8,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { By } from '@angular/platform-browser'
 import type { HilosLicenseEntry } from '@hilos/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
@@ -56,6 +57,32 @@ function mountPage(): ComponentFixture<HilosLicensePage> {
   fixture.detectChanges()
 
   return fixture
+}
+
+/**
+ * Navigation that resolves sibling pages against one project route parameter.
+ *
+ * @param page The page key marked current.
+ * @param project The project route parameter.
+ * @param label The accessible name of the tabs row.
+ * @returns A static-page navigation fixture.
+ */
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+  label = 'Public pages',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label,
+  }
 }
 
 /**
@@ -136,6 +163,59 @@ function setValue(
 }
 
 describe('HilosLicensePage', () => {
+  it('renders its exact head and forwards optional navigation reactively', () => {
+    const fixture = mountPage()
+    const container = fixture.nativeElement as HTMLElement
+
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    const heading = byId(fixture, 'hilos-page-head-title')
+    expect(heading?.textContent?.trim()).toBe('License')
+    const icon = byId(fixture, 'hilos-page-head-block')?.querySelector(
+      'i.bi-journal-code',
+    )
+    expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      byId(fixture, 'hilos-page-head-block')
+        ?.querySelector('p')
+        ?.textContent?.trim(),
+    ).toBe('The license of this project, and of everything it is built on.')
+    expect(byId(fixture, 'hilos-breadcrumb')).toBeNull()
+    expect(byId(fixture, 'hilos-page-tabs')).toBeNull()
+
+    fixture.componentRef.setInput('navigation', publicNavigation())
+    fixture.detectChanges()
+    const tabs = byId(fixture, 'hilos-page-tabs')
+    expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
+    expect(
+      [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+        link.textContent?.trim(),
+        link.getAttribute('href'),
+      ]),
+    ).toEqual([
+      ['Public page', '/projects/first/fixture_public_page'],
+      ['Revision history', '/projects/first/fixture_history'],
+    ])
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+    ).toBe('hilos-page-tab-fixture_public_page')
+
+    fixture.componentRef.setInput(
+      'navigation',
+      publicNavigation('fixture_history', 'next', 'More public pages'),
+    )
+    fixture.detectChanges()
+    expect(byId(fixture, 'hilos-page-head-title')).toBe(heading)
+    expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+    ).toBe('hilos-page-tab-fixture_history')
+    expect(
+      tabs
+        ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
+        ?.getAttribute('href'),
+    ).toBe('/projects/next/fixture_history')
+  })
+
   it('renders both filters from state, keeps late options selected and resets to the empty choices', async () => {
     const fixture = mountPage()
     const select = (id: string) => byId(fixture, id) as HTMLSelectElement

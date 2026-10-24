@@ -21,16 +21,27 @@ in the static HTML, and everything browser-touching happens on the click.
 The page carries no `title` prop: the heading moves with the frame, and the
 project's file holds prose alone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { ref } from 'vue'
 
 import HilosStaticPage from '../HilosStaticPage.vue'
 import HilosSupportModal from './HilosSupportModal.vue'
 
+const props = defineProps<{
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
+}>()
+
 const open = ref(false)
 </script>
 
 <template>
-  <HilosStaticPage title="About">
+  <HilosStaticPage
+    title="About"
+    icon="bi-info-circle"
+    subtitle="What this project is, who makes it, and how it keeps going."
+    :navigation="props.navigation"
+  >
     <slot />
 
     <div

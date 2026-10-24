@@ -21,7 +21,13 @@
 //
 // The page carries no `title` input: the heading moves with the frame, and the
 // project's file holds prose alone. Bootstrap classes only (styling-rules.md).
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
+import {
+  ChangeDetectionStrategy,
+  Component,
+  input,
+  signal,
+} from '@angular/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 
 import { HilosStaticPage } from '../HilosStaticPage.js'
 import { HilosSupportModal } from './HilosSupportModal.js'
@@ -35,7 +41,12 @@ import { HilosSupportModal } from './HilosSupportModal.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosStaticPage, HilosSupportModal],
   template: `
-    <hilos-static-page title="About">
+    <hilos-static-page
+      title="About"
+      icon="bi-info-circle"
+      subtitle="What this project is, who makes it, and how it keeps going."
+      [navigation]="navigation()"
+    >
       <ng-content />
 
       <div
@@ -68,6 +79,9 @@ import { HilosSupportModal } from './HilosSupportModal.js'
   `,
 })
 export class HilosAboutPage {
+  /** Optional navigation across sibling public pages. */
+  readonly navigation = input<HilosStaticPageNavigation>()
+
   /** Whether the support dialog is open. */
   protected readonly open = signal(false)
 }

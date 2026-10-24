@@ -1056,6 +1056,7 @@ export {
   type HilosPageHeadAction,
   type HilosPathResolver,
 } from '../routing/hilosAdmin.js'
+export type { HilosStaticPageNavigation } from '../public/staticPageHead.js'
 export {
   pageIdentity,
   dashboardSections,

@@ -36,6 +36,15 @@ describe('React server rendering', () => {
     expect(html).toContain('Project license')
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html.match(/<h1\b/g) ?? []).toHaveLength(1)
+    expect(html).toContain('data-id="hilos-page-head-title">License</h1>')
+    expect(html).toContain('class="bi bi-journal-code"')
+    expect(html).toContain(
+      'The license of this project, and of everything it is built on.',
+    )
+    expect(html).not.toContain('hilos-page-head-skeleton')
+    expect(html).not.toContain('data-id="hilos-breadcrumb"')
+    expect(html).not.toContain('data-id="hilos-page-tabs"')
     expect(html).toContain('react')
     expect(html).toContain('19.2.7')
   })

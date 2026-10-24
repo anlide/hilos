@@ -33,6 +33,7 @@ import {
   type HilosLegalAgreement,
   type HilosAccountStanding,
   type HilosBrowserValue,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 
 import { HilosStaticPage } from '../HilosStaticPage.js'
@@ -63,7 +64,12 @@ import { HilosPrivacyEraseModal } from './HilosPrivacyEraseModal.js'
     HilosLegalRevisionText,
   ],
   template: `
-    <hilos-static-page title="Privacy">
+    <hilos-static-page
+      title="Privacy"
+      icon="bi-shield-lock"
+      subtitle="What this project keeps about you: the revision in force, every one before it, and wiping this browser."
+      [navigation]="navigation()"
+    >
       @if (line().state !== 'unpublished') {
         <div
           class="mb-4"
@@ -217,6 +223,9 @@ import { HilosPrivacyEraseModal } from './HilosPrivacyEraseModal.js'
   `,
 })
 export class HilosPrivacyPage {
+  /** Optional navigation across sibling public pages. */
+  readonly navigation = input<HilosStaticPageNavigation>()
+
   /** The connection, scopes and action lifecycle for public reading and browser erase. */
   readonly context = input.required<HilosLegalContext>()
 

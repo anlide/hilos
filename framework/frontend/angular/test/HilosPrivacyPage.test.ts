@@ -19,6 +19,7 @@ import {
   type HilosBrowserValue,
   type HilosConnection,
 } from '@hilos/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -304,6 +305,32 @@ function policyNode(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+/**
+ * Navigation that resolves sibling pages against one project route parameter.
+ *
+ * @param page The page key marked current.
+ * @param project The project route parameter.
+ * @param label The accessible name of the tabs row.
+ * @returns A static-page navigation fixture.
+ */
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+  label = 'Public pages',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label,
+  }
+}
+
 let policyFixture: ComponentFixture<HilosPrivacyPage> | null = null
 async function policyUpdate(run: () => void = () => {}): Promise<void> {
   run()
@@ -383,6 +410,25 @@ const POLICY_COVERED = {
 
 it('holds an invisible reader before the policy arrives and leaves erase available', async () => {
   const { world, dispatch } = await drawPolicy({})
+  expect(
+    (policyFixture!.nativeElement as HTMLElement).querySelectorAll('h1'),
+  ).toHaveLength(1)
+  expect(policyNode('hilos-page-head-title')!.textContent?.trim()).toBe(
+    'Privacy',
+  )
+  const icon = policyNode('hilos-page-head-block')?.querySelector(
+    'i.bi-shield-lock',
+  )
+  expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  expect(
+    policyNode('hilos-page-head-block')
+      ?.querySelector('p')
+      ?.textContent?.trim(),
+  ).toBe(
+    'What this project keeps about you: the revision in force, every one before it, and wiping this browser.',
+  )
+  expect(policyNode('hilos-breadcrumb')).toBeNull()
+  expect(policyNode('hilos-page-tabs')).toBeNull()
   expect(policyNode('privacy-loading')!.textContent?.trim()).toBe(
     'Loading the privacy policy…',
   )
@@ -397,9 +443,49 @@ it('holds an invisible reader before the policy arrives and leaves erase availab
   expect(world.frames).toEqual([])
 })
 
+it('forwards optional navigation to the shared head and updates it without remounting', async () => {
+  await drawPolicy({})
+  const heading = policyNode('hilos-page-head-title')
+
+  policyFixture!.componentRef.setInput('navigation', publicNavigation())
+  await policyUpdate()
+  const tabs = policyNode('hilos-page-tabs')
+  expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
+  expect(
+    [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+      link.textContent?.trim(),
+      link.getAttribute('href'),
+    ]),
+  ).toEqual([
+    ['Public page', '/projects/first/fixture_public_page'],
+    ['Revision history', '/projects/first/fixture_history'],
+  ])
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_public_page')
+
+  policyFixture!.componentRef.setInput(
+    'navigation',
+    publicNavigation('fixture_history', 'next', 'More public pages'),
+  )
+  await policyUpdate()
+  expect(policyNode('hilos-page-head-title')).toBe(heading)
+  expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_history')
+  expect(
+    tabs
+      ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
+      ?.getAttribute('href'),
+  ).toBe('/projects/next/fixture_history')
+})
+
 it('reads the public policy without acceptance or a history interface', async () => {
   await drawPolicy({ legalPrivacy: privacySection })
-  expect(policyNode('static-page-title')!.textContent?.trim()).toBe('Privacy')
+  expect(policyNode('hilos-page-head-title')!.textContent?.trim()).toBe(
+    'Privacy',
+  )
   expect(policyNode('privacy-reader')!.getAttribute('data-state')).toBe('guest')
   expect(policyNode('privacy-reader')!.textContent).toContain(
     'in force since 14 November 2026',

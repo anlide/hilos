@@ -51,6 +51,24 @@ lists. A section whose page is itself the list, such as Users in the examples,
 does not acquire a synthetic extra list page. Apply this content rule in that
 owner's redraw; HIL-1598 specifies no country Overview tiles or their contents.
 
+## Public Static Page Presentation
+
+`HilosStaticPage` is also a consumer of the shared `HilosPageHead` in Vue,
+React and Angular. It builds a local section presentation from its title, icon,
+subtitle and optional `HilosStaticPageNavigation`: the breadcrumb and child
+lists are empty, while the local owner and tabs come from those inputs. The
+frame provides its heading id through each kit's heading-id context, and the
+shared head renders the page's single `h1` with that id. The public components
+and their body behavior remain their own; the frame supplies their shared
+presentation.
+
+This presentation needs no server catalog adoption or `page_response` identity.
+Catalog adoption and the one-reply rule below continue to describe admin
+owners. A project can use the frame for its own static pages,
+but this does not activate those pages in a project's catalog or routes. The
+frame API, its defaults, and the four public pages' fixed presentation values
+are described in [sdk-packaging.md](../frontend/sdk-packaging.md#tier-1-cross-cutting-components).
+
 ## Catalog And Breadcrumb
 
 Follow the catalog's parent tree from the root of the branch through the owner
@@ -100,9 +118,10 @@ Angular's rows do the same.
 
 ## One Reply And Live Name
 
-The server sends the owner, breadcrumb skeleton and tab row in the **same
-`page_response`** as the page data. No second catalog request, action on mount,
-or companion signal supplies the first screen. This extends the existing
+For a catalog-adopted admin page, the server sends the owner, breadcrumb
+skeleton and tab row in the **same `page_response`** as the page data. No second
+catalog request, action on mount, or companion signal supplies the first
+screen. This extends the existing
 [one-reply rule](../signals/subscriptions.md#one-subscription-answers-everything-the-page-renders);
 the owner-based identity in that reply is assembled by the backend catalog
 resolver.
@@ -704,6 +723,10 @@ HIL-1598 changes documentation only. HIL-1599 through HIL-1605 own the product
 implementation; HIL-1606 owns the epic's e2e work. Other owners' redraws, country
 Overview tiles and their contents, and catalog translations are separate work.
 React and Angular's User redraws are also separate work.
-Profile, project pages and public documents are Phase 2; their mockup examples
-do not activate them here, and HIL-1607 decides its own boundary. Own deletion
-and redirect behavior are not decided by this document.
+The local public-page presentation through `HilosStaticPage` is implemented
+across the three kits; it does not add server catalog adoption or route changes.
+Profile and other project-page redraws, including their server adoption, remain
+Phase 2. Public route and page-key additions and revision history remain
+HIL-1609; LICENSE content remains HIL-1610; dependencies remain HIL-1611.
+Mockup examples do not activate those changes. Own deletion and redirect
+behavior are not decided by this document.

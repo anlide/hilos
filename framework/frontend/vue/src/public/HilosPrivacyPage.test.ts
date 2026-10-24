@@ -10,6 +10,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -74,6 +75,23 @@ function mountPage(
   })
 }
 
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label: 'Public pages',
+  }
+}
+
 /**
  * Open the confirmation and take its dangerous answer, settling the reply.
  *
@@ -104,6 +122,36 @@ describe('HilosPrivacyPage', () => {
     expect(
       wrapper.find('[data-id="privacy-erase"]').attributes('disabled'),
     ).toBeUndefined()
+  })
+
+  it('forwards optional navigation to the shared head and keeps its projection reactive', async () => {
+    const wrapper = mountPage(
+      fakeConnection(),
+      fakeActions(Promise.resolve({})),
+    )
+    await wrapper.setProps({ navigation: publicNavigation() })
+
+    const tabs = wrapper.get('[data-id="hilos-page-tabs"]')
+    expect(tabs.attributes('aria-label')).toBe('Public pages')
+    expect(
+      tabs.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+    ).toEqual([
+      ['Public page', '/projects/first/fixture_public_page'],
+      ['Revision history', '/projects/first/fixture_history'],
+    ])
+    expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+      'hilos-page-tab-fixture_public_page',
+    )
+
+    await wrapper.setProps({
+      navigation: publicNavigation('fixture_history', 'next'),
+    })
+    expect(tabs.get('[aria-current="page"]').attributes('data-id')).toBe(
+      'hilos-page-tab-fixture_history',
+    )
+    expect(
+      tabs.get('[data-id="hilos-page-tab-fixture_history"]').attributes('href'),
+    ).toBe('/projects/next/fixture_history')
   })
 
   it('names every registry entry in the confirmation, the project’s beside the framework’s', async () => {
@@ -351,6 +399,23 @@ const POLICY_COVERED = {
 
 it('holds an invisible reader before the policy arrives and leaves erase available', async () => {
   const { world, dispatch } = await drawPolicy({})
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(policyNode('hilos-page-head-title')!.textContent?.trim()).toBe(
+    'Privacy',
+  )
+  const icon = document.querySelector(
+    '[data-id="hilos-page-head-block"] i.bi-shield-lock',
+  )
+  expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  expect(
+    document
+      .querySelector('[data-id="hilos-page-head-block"] p')
+      ?.textContent?.trim(),
+  ).toBe(
+    'What this project keeps about you: the revision in force, every one before it, and wiping this browser.',
+  )
+  expect(policyNode('hilos-breadcrumb')).toBeNull()
+  expect(policyNode('hilos-page-tabs')).toBeNull()
   expect(policyNode('privacy-loading')!.textContent?.trim()).toBe(
     'Loading the privacy policy…',
   )
@@ -367,7 +432,9 @@ it('holds an invisible reader before the policy arrives and leaves erase availab
 
 it('reads the public policy without acceptance or a history interface', async () => {
   await drawPolicy({ legalPrivacy: privacySection })
-  expect(policyNode('static-page-title')!.textContent?.trim()).toBe('Privacy')
+  expect(policyNode('hilos-page-head-title')!.textContent?.trim()).toBe(
+    'Privacy',
+  )
   expect(policyNode('privacy-reader')!.getAttribute('data-state')).toBe('guest')
   expect(policyNode('privacy-reader')!.textContent).toContain(
     'in force since 14 November 2026',

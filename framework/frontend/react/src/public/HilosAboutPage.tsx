@@ -22,6 +22,7 @@
 // project's file holds prose alone. Bootstrap classes only (styling-rules.md).
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 
 import { HilosStaticPage } from '../HilosStaticPage.js'
 import { HilosSupportModal } from './HilosSupportModal.js'
@@ -30,19 +31,26 @@ import { HilosSupportModal } from './HilosSupportModal.js'
 export interface HilosAboutPageProps {
   /** The project's own About prose, above the support block. */
   children?: ReactNode
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }
 
 /**
  * The /about page: the project's prose, and under it the support block with its
  * dialog and the honest refusal.
  *
- * @param props The project's prose.
+ * @param props The project's prose and optional public-page navigation.
  */
-export function HilosAboutPage({ children }: HilosAboutPageProps) {
+export function HilosAboutPage({ children, navigation }: HilosAboutPageProps) {
   const [open, setOpen] = useState(false)
 
   return (
-    <HilosStaticPage title="About">
+    <HilosStaticPage
+      title="About"
+      icon="bi-info-circle"
+      subtitle="What this project is, who makes it, and how it keeps going."
+      navigation={navigation}
+    >
       {children}
 
       <div

@@ -31,6 +31,7 @@ import {
   sessionAccountStanding,
   TERMS_REVISION_TEXT_ACTION,
   type HilosLegalContext,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 
 import HilosFormError from '../HilosFormError.vue'
@@ -45,6 +46,8 @@ import { useSignal } from '../useSignal.js'
 const props = defineProps<{
   /** The connection, scopes and action lifecycle the page reads and accepts through. */
   context: HilosLegalContext
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }>()
 
 const copy = LEGAL_TERMS_COPY
@@ -138,7 +141,12 @@ async function onAccept(): Promise<void> {
 </script>
 
 <template>
-  <HilosStaticPage title="Terms">
+  <HilosStaticPage
+    title="Terms"
+    icon="bi-file-earmark-text"
+    subtitle="The terms of using this project: the revision in force and every one before it."
+    :navigation="props.navigation"
+  >
     <div
       v-if="line.state !== 'unpublished'"
       class="mb-4"

@@ -74,8 +74,12 @@ const i18nOverviewValues = [
 const i18nOverviewTypes = ['HilosI18nOverview', 'HilosI18nOverviewContext']
 /** The page head's tab links resolver, shared by the compatibility root and base. */
 const pageHeadValues = ['hilosTabLinks']
-/** The page head's types past the snapshot, resolved through root and base. */
-const pageHeadTypes = ['HilosPageHeadAction', 'HilosPageTabLink']
+/** Public navigation types past the snapshot, shared by root and base. */
+const pageHeadTypes = [
+  'HilosPageHeadAction',
+  'HilosPageTabLink',
+  'HilosStaticPageNavigation',
+]
 /** Public legal document APIs added for the Privacy page and shared SDK reader. */
 const publicLegalValues = [
   'LEGAL_PRIVACY_SECTION',

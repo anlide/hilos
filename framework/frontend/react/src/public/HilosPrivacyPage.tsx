@@ -19,6 +19,7 @@ import {
   sessionAccountStanding,
   type HilosLegalContext,
   type HilosBrowserValue,
+  type HilosStaticPageNavigation,
 } from '@hilos/core/base'
 
 import { HilosStaticPage } from '../HilosStaticPage.js'
@@ -42,18 +43,21 @@ export interface HilosPrivacyPageProps {
   values?: readonly HilosBrowserValue[]
   /** The project's own privacy prose, above the policy text. */
   children?: ReactNode
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }
 
 /**
  * The public Privacy reader, policy text and browser erase with its outcome.
  *
- * @param props The legal context, the project's own declared
- *   browser values, and its prose.
+ * @param props The legal context, the project's own declared browser values
+ *   and prose, and optional public-page navigation.
  */
 export function HilosPrivacyPage({
   context,
   values = [],
   children,
+  navigation,
 }: HilosPrivacyPageProps) {
   const store = useMemo(() => createHilosLegalPrivacyStore(context), [context])
   const standingSignal = useMemo(
@@ -140,7 +144,12 @@ export function HilosPrivacyPage({
   }
 
   return (
-    <HilosStaticPage title="Privacy">
+    <HilosStaticPage
+      title="Privacy"
+      icon="bi-shield-lock"
+      subtitle="What this project keeps about you: the revision in force, every one before it, and wiping this browser."
+      navigation={navigation}
+    >
       {line.state !== 'unpublished' && (
         <div className="mb-4" data-id="privacy-reader" data-state={line.state}>
           <HilosLegalDocumentReader

@@ -7,6 +7,7 @@ import {
   type ActionLifecycle,
   type ActionResult,
 } from '@hilos/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import {
   clause,
   first,
@@ -52,6 +53,24 @@ function one(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+  label = 'Public pages',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label,
+  }
+}
+
 /** Let the replies and the effects they cause land. */
 async function settle(): Promise<void> {
   await act(async () => {})
@@ -86,13 +105,13 @@ function drawTerms(
       },
     })
   }
-  render(
+  const view = render(
     <HilosTermsPage context={world.context}>
       <p data-id="terms-intro">A demonstration.</p>
     </HilosTermsPage>,
   )
 
-  return { world, dispatch }
+  return { world, dispatch, view }
 }
 
 /** A window inside which Bob holds the first revision. */
@@ -109,12 +128,71 @@ const IN_WINDOW = standing({
 it('renders the heading, the introduction and the loading line without asking anything', async () => {
   const { world, dispatch } = drawTerms({}, null)
   await settle()
-  expect(one('static-page-title')!.textContent).toBe('Terms')
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(one('hilos-page-head-title')!.textContent).toBe('Terms')
+  const icon = one('hilos-page-head-block')?.querySelector(
+    'i.bi-file-earmark-text',
+  )
+  expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  expect(one('hilos-page-head-block')?.querySelector('p')?.textContent).toBe(
+    'The terms of using this project: the revision in force and every one before it.',
+  )
+  expect(one('hilos-breadcrumb')).toBeNull()
+  expect(one('hilos-page-tabs')).toBeNull()
   expect(one('terms-intro')!.textContent).toBe('A demonstration.')
   expect(one('terms-loading')!.textContent).toBe('Loading the terms…')
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('loading')
   expect(dispatch).not.toHaveBeenCalled()
   expect(world.frames).toEqual([])
+})
+
+it('forwards optional navigation to the shared head and updates it without remounting', async () => {
+  const { world, view } = drawTerms({}, null)
+  await settle()
+  const heading = one('hilos-page-head-title')
+
+  view.rerender(
+    <HilosTermsPage context={world.context} navigation={publicNavigation()}>
+      <p data-id="terms-intro">A demonstration.</p>
+    </HilosTermsPage>,
+  )
+  const tabs = one('hilos-page-tabs')
+  expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
+  expect(
+    [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+      link.textContent,
+      link.getAttribute('href'),
+    ]),
+  ).toEqual([
+    ['Public page', '/projects/first/fixture_public_page'],
+    ['Revision history', '/projects/first/fixture_history'],
+  ])
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_public_page')
+
+  view.rerender(
+    <HilosTermsPage
+      context={world.context}
+      navigation={publicNavigation(
+        'fixture_history',
+        'next',
+        'More public pages',
+      )}
+    >
+      <p data-id="terms-intro">A demonstration.</p>
+    </HilosTermsPage>,
+  )
+  expect(one('hilos-page-head-title')).toBe(heading)
+  expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
+  expect(
+    tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+  ).toBe('hilos-page-tab-fixture_history')
+  expect(
+    tabs
+      ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
+      ?.getAttribute('href'),
+  ).toBe('/projects/next/fixture_history')
 })
 
 it('shows a guest the text and the history, newest first, with nothing to accept', async () => {

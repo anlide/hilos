@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { HilosLicenseEntry } from '@hilos/core'
+import type { HilosStaticPageNavigation } from '@hilos/core/base'
 
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
 
@@ -52,6 +53,24 @@ function allById(id: string): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(`[data-id="${id}"]`)]
 }
 
+function publicNavigation(
+  page = 'fixture_public_page',
+  project = 'first',
+  label = 'Public pages',
+): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: [
+      { page: 'fixture_public_page', label: 'Public page' },
+      { page: 'fixture_history', label: 'Revision history' },
+    ],
+    params: { project },
+    resolvePath: (target, params = {}) =>
+      `/projects/${params.project}/${target}`,
+    label,
+  }
+}
+
 /** Mount the page and hand back nothing: every assertion reads the document. */
 function mountPage(): void {
   render(<HilosLicensePage inventory={inventory} />)
@@ -87,6 +106,65 @@ function setValue(id: string, value: string): void {
 }
 
 describe('HilosLicensePage', () => {
+  it('renders its exact head and forwards optional navigation reactively', () => {
+    const { rerender } = render(<HilosLicensePage inventory={inventory} />)
+
+    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    const heading = byId('hilos-page-head-title')
+    expect(heading?.textContent).toBe('License')
+    const icon = byId('hilos-page-head-block')?.querySelector(
+      'i.bi-journal-code',
+    )
+    expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
+    expect(byId('hilos-page-head-block')?.querySelector('p')?.textContent).toBe(
+      'The license of this project, and of everything it is built on.',
+    )
+    expect(byId('hilos-breadcrumb')).toBeNull()
+    expect(byId('hilos-page-tabs')).toBeNull()
+
+    rerender(
+      <HilosLicensePage
+        inventory={inventory}
+        navigation={publicNavigation()}
+      />,
+    )
+    const tabs = byId('hilos-page-tabs')
+    expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
+    expect(
+      [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+        link.textContent,
+        link.getAttribute('href'),
+      ]),
+    ).toEqual([
+      ['Public page', '/projects/first/fixture_public_page'],
+      ['Revision history', '/projects/first/fixture_history'],
+    ])
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+    ).toBe('hilos-page-tab-fixture_public_page')
+
+    rerender(
+      <HilosLicensePage
+        inventory={inventory}
+        navigation={publicNavigation(
+          'fixture_history',
+          'next',
+          'More public pages',
+        )}
+      />,
+    )
+    expect(byId('hilos-page-head-title')).toBe(heading)
+    expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
+    ).toBe('hilos-page-tab-fixture_history')
+    expect(
+      tabs
+        ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
+        ?.getAttribute('href'),
+    ).toBe('/projects/next/fixture_history')
+  })
+
   it('draws one row per package the build stands on', () => {
     mountPage()
     const rows = allById('license-row')

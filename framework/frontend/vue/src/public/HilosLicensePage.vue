@@ -23,6 +23,7 @@ import { computed, ref, watch } from 'vue'
 import {
   type HilosLicenseEntry,
   type HilosLicenseInventory,
+  type HilosStaticPageNavigation,
   copyToClipboard,
   downloadTextFile,
   filterLicenseEntries,
@@ -39,6 +40,8 @@ import HilosStaticPage from '../HilosStaticPage.vue'
 const props = defineProps<{
   /** The build-time snapshot of everything this build stands on. */
   inventory: HilosLicenseInventory
+  /** Optional navigation across sibling public pages. */
+  navigation?: HilosStaticPageNavigation
 }>()
 
 /** The type the export is offered under. */
@@ -101,7 +104,12 @@ function onDownload(): void {
 </script>
 
 <template>
-  <HilosStaticPage title="License">
+  <HilosStaticPage
+    title="License"
+    icon="bi-journal-code"
+    subtitle="The license of this project, and of everything it is built on."
+    :navigation="props.navigation"
+  >
     <pre
       class="small text-body mb-3 text-break hilos-pre-wrap"
       data-id="license-project-text"
