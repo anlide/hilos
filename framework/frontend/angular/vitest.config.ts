@@ -201,5 +201,8 @@ export default defineConfig({
     // platform up, and resets the test module between cases. Drop it and every
     // component test fails on something that names none of the three.
     setupFiles: ['./vitest.setup.ts'],
+    // The first case of a file compiles its components in JIT; on a loaded host
+    // (a full run on seven lanes beside e2e) that alone can pass the default 5 s.
+    testTimeout: 10_000,
   },
 })
