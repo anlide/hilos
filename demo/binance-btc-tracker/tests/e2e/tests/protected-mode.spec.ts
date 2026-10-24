@@ -15,6 +15,7 @@ import {
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
   expectMaintenancePageHead,
+  expectMaintenanceMoment,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   maintenanceCircleOnline,
@@ -24,9 +25,10 @@ import {
   turnOffMaintenance,
   turnOnMaintenance,
   watchClientDocument,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
-import { setAdminViewMode } from '../helpers/adminViewMode'
+import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant.js'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import {
   PAGE_READY,
   expectPageReady,
@@ -35,8 +37,8 @@ import {
   gotoMaintenance,
   gotoPage,
   markDocument,
-} from '../helpers/page'
-import { signUp } from '../helpers/session'
+} from '../helpers/page.js'
+import { signUp } from '../helpers/session.js'
 import {
   closeProtectedMode,
   enableManualMaintenance,
@@ -47,7 +49,7 @@ import {
   mintManualMaintenancePass,
   openProtectedMode,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode'
+} from '../helpers/protectedMode.js'
 
 // Protected-mode e2e (HIL-344): the debt HIL-268 and HIL-522 were closed with —
 // the freeze and its browser stub had never been driven from a browser at all,
@@ -92,6 +94,94 @@ test.afterEach(async () => {
   // still land afterwards, a failed assertion can strand the node in any phase,
   // and only the open lifts from all of them.
   await openProtectedModeIfAny()
+})
+
+test.describe('maintenance moments in the reader zone', () => {
+  test.use({ timezoneId: 'Europe/Warsaw', locale: 'en-GB' })
+
+  for (const manual of [true, false]) {
+    test(`shows the same real start in Warsaw and Los Angeles (manual=${manual})`, async ({
+      page,
+      browser,
+    }) => {
+      test.slow() // Two real administrators pass the gate and await both self-reloads.
+      const warsaw = watchDeliveryFrames(page)
+      const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+      const otherContext = await browser.newContext({
+        baseURL,
+        ignoreHTTPSErrors,
+        timezoneId: 'America/Los_Angeles',
+        locale: 'en-GB',
+      })
+      const other = await otherContext.newPage()
+      const losAngeles = watchDeliveryFrames(other)
+      try {
+        await grantAdminToSelf(page)
+        await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+        await clearMaintenanceCircle(page)
+        await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+        await grantAdminToSelf(other)
+        await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+        if (manual) {
+          await turnOnMaintenance(page)
+          await expectManualMaintenanceOn(expect, page)
+          await expectHeldByManualMaintenance(expect, other)
+          await dismissToasts(page)
+          await presentMaintenanceCode(other, await issueMaintenanceCode(page))
+          await expectAdmittedToManualMaintenance(expect, other)
+        } else {
+          expect(
+            await enterProtectedMode(OPERATION, '', await sessionToken(page)),
+          ).toBe('active')
+          expect(await leaveProtectedMode()).toBe('verifying')
+          await presentMaintenanceCode(other, await mintProtectedModePass())
+          await expectPageReady(other)
+        }
+        const start = await expectMaintenanceMoment(
+          expect,
+          page,
+          warsaw,
+          'Europe/Warsaw',
+          manual,
+        )
+        expect(
+          await expectMaintenanceMoment(
+            expect,
+            other,
+            losAngeles,
+            'America/Los_Angeles',
+            manual,
+          ),
+        ).toBe(start)
+        expect(
+          await page.getByTestId('hilos-maintenance-started-at').innerText(),
+        ).not.toBe(
+          await other.getByTestId('hilos-maintenance-started-at').innerText(),
+        )
+
+        for (const reader of [page, other]) await markDocument(reader)
+        if (manual) await turnOffMaintenance(other)
+        else expect(await openProtectedMode()).toBe('inactive')
+        for (const reader of [page, other]) {
+          await expectSelfReload(reader)
+          await expectPageReady(reader)
+          await expectMaintenanceOpen(expect, reader)
+        }
+      } finally {
+        try {
+          await openProtectedModeIfAny()
+          await test.info().attach(`maintenance-reader-zone-${manual}`, {
+            body: JSON.stringify({ warsaw, losAngeles }, null, 2),
+            contentType: 'application/json',
+          })
+        } finally {
+          warsaw.stop()
+          losAngeles.stop()
+          await otherContext.close()
+        }
+      }
+    })
+  }
 })
 
 test('Maintenance Overview and Circle share one head through links, history, direct entry and reload', async ({

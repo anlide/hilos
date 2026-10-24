@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Auth\Session\SessionIdentityRef;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Core\CLI\Commands\BackupRestoreCommand;
 use Hilos\Backup\BackupNotificationType;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreNotifier;
@@ -32,8 +35,8 @@ final class BackupRestoreNotifierTest extends TestCase
     /** Backup id every case replays. */
     private const string BACKUP_ID = '2026-08-15_10-30-00';
 
-    /** SQL datetime the runs in these cases started at. */
-    private const string STARTED_AT = '2026-08-15 10:30:00';
+    /** ISO-8601 UTC instant the runs in these cases started at. */
+    private const string STARTED_AT = '2026-08-15T10:30:00.000000Z';
 
     /** @var string Directory this case's queue file lives in */
     private string $queueDirectory = '';
@@ -68,6 +71,47 @@ final class BackupRestoreNotifierTest extends TestCase
         Hilos::resetBrowser();
 
         parent::tearDown();
+    }
+
+    public function testBothRestoreEntrancesQueueTheSameUtcStartInstantUnderANonUtcProcessZone(): void
+    {
+        $this->arrange();
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $startedAt = 1_787_049_000.987654;
+            $hot = Closure::bind(
+                static function (BackupAgent $agent, float $startedAt): void {
+                    $agent->currentScope = BackupScope::FULL;
+                    $agent->pendingRestoreSince = $startedAt;
+                    $agent->rehydrateChildSucceeded = true;
+                    $agent->announceRestoreOutcome('2026-08-15_10-30-00', true, []);
+                },
+                null,
+                BackupAgent::class,
+            );
+            $hot(new BackupAgent(), $startedAt);
+            $hotDrafts = $this->queued();
+            $this->assertCount(2, $hotDrafts);
+
+            $cold = Closure::bind(
+                static function (BackupRestoreCommand $command, float $startedAt): void {
+                    $command->announceColdOutcome('2026-08-15_10-30-00', BackupScope::FULL, true, null, $startedAt);
+                },
+                null,
+                BackupRestoreCommand::class,
+            );
+            $cold(new BackupRestoreCommand(), $startedAt);
+            $coldDrafts = $this->queued();
+            $this->assertCount(2, $coldDrafts);
+            foreach ([...$hotDrafts, ...$coldDrafts] as $draft) {
+                $this->assertSame('2026-08-18T10:30:00.000000Z', $draft->data['startedAt']);
+                $this->assertSame('Restore completed', $draft->title);
+                $this->assertStringNotContainsString($draft->data['startedAt'], $draft->body);
+            }
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     public function testTheOutcomeReachesEveryAdministratorAndTheInitiator(): void

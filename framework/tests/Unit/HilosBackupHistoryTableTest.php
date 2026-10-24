@@ -6,7 +6,9 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -21,6 +23,7 @@ use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
+use Hilos\Pages\Backup\DTO\BackupBulkDeleteActionDTO;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -30,6 +33,7 @@ use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Backup\HilosBackupTableRow;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -485,7 +489,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
         );
 
-        $this->assertSame('2026-08-16T06:00:00+00:00', $mutation->row?->shippedAt);
+        $this->assertSame('2026-08-16T06:00:00.000000Z', $mutation->row?->shippedAt);
         $this->assertSame('ssh: connect timed out', $mutation->row?->shipError);
     }
 
@@ -526,7 +530,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
         );
 
-        $this->assertSame('2026-08-02T06:00:00+00:00', $mutation->row?->verifiedAt);
+        $this->assertSame('2026-08-02T06:00:00.000000Z', $mutation->row?->verifiedAt);
         // The digest itself is not part of the row payload: the browser never needs it.
         $this->assertArrayNotHasKey(BackupHistory::sha256, $mutation->row?->toArray() ?? []);
     }
@@ -641,7 +645,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         }
 
         $this->assertSame('error', $rows['b2']->restoreOutcome);
-        $this->assertSame('2026-08-15T10:34:00+00:00', $rows['b2']->restoreFinishedAt);
+        $this->assertSame('2026-08-15T10:34:00.000000Z', $rows['b2']->restoreFinishedAt);
         $this->assertSame('import failed', $rows['b2']->restoreFailureReason);
         $this->assertTrue($rows['b2']->restoreDatabaseTouched);
 
@@ -788,6 +792,259 @@ final class HilosBackupHistoryTableTest extends TestCase
         ]));
 
         $this->assertSame(['b2', 'b3'], $keys, 'A copy taken late on the last day of the period is inside it');
+    }
+
+    /**
+     * @param array<string, mixed> $filter Period condition carried by both the window and the bulk target
+     * @param list<string> $moments UTC archive moments in chronological order
+     * @param list<string> $expectedKeys Archives whose local day is in the period
+     */
+    #[DataProvider('periodCases')]
+    public function testTheLocalPeriodDescribesTheSameSetOnEveryRead(array $filter, array $moments, array $expectedKeys): void
+    {
+        $previousZone = date_default_timezone_get();
+        date_default_timezone_set('Pacific/Honolulu');
+        try {
+            $this->assertSame('timeZone', HilosBackupHistoryTable::FILTER_TIME_ZONE);
+            $histories = [];
+            foreach ($moments as $index => $moment) {
+                $histories[] = BackupHistory::fromRow($this->historyRow([
+                    BackupHistory::id => 'b' . ($index + 1),
+                    BackupHistory::createdAt => $moment,
+                    BackupHistory::scope => 'full',
+                ]));
+            }
+            $table = $this->table(histories: $this->historiesWith(...$histories));
+            $query = new TableQueryDTO(filter: $filter);
+            $snapshot = $table->getPage($query);
+
+            $this->assertSame($expectedKeys, array_map(
+                static fn(HilosBackupTableRow $row): int|string => $row->requireRowKey(),
+                $snapshot->rows,
+            ));
+            $this->assertSame(count($expectedKeys), $snapshot->totalCount);
+            foreach ($moments as $index => $moment) {
+                $id = 'b' . ($index + 1);
+                $expectedMembership = in_array($id, $expectedKeys, true);
+                $this->assertSame($expectedMembership, $table->containsRow($id, $query), $id);
+
+                $mutation = $table->buildMutationForSourceEvent(
+                    SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, $id, []),
+                );
+                $this->assertNotNull($mutation);
+                $this->assertSame($moment, $mutation->row?->createdAt, 'The row keeps its UTC moment');
+                $this->assertSame($expectedMembership, $table->containsRow($mutation->rowKey, $query));
+            }
+
+            $facets = $table->facetCounts($query, [HilosBackupHistoryTable::FILTER_SCOPE => ['full', 'schema-only']]);
+            $this->assertNotNull($facets);
+            $scope = $facets[HilosBackupHistoryTable::FILTER_SCOPE];
+            $this->assertSame(count($expectedKeys), $scope[TableConstants::FACET_KEY_ANY]->count);
+            $this->assertTrue($scope[TableConstants::FACET_KEY_ANY]->exact);
+            $this->assertSame(count($expectedKeys), $scope[TableConstants::FACET_KEY_OPTIONS]['full']->count);
+            $this->assertSame(0, $scope[TableConstants::FACET_KEY_OPTIONS]['schema-only']->count);
+
+            $target = BackupBulkDeleteActionDTO::fromArray([
+                TableConstants::PAYLOAD_KEY_TABLE_KEY => HilosBackupHistoryTable::TABLE,
+                SignalPayloadConstants::FIELD_FILTER => $filter,
+            ]);
+            $target = BackupBulkDeleteActionDTO::fromArray($target->toArray());
+            $this->assertNull($target->rowKeys);
+            $this->assertSame($filter, $target->filter);
+            $this->assertSame($expectedKeys, $this->windowKeys($table, new TableQueryDTO(filter: $target->filter)));
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>, list<string>, list<string>}> Periods and their exact archive sets
+     */
+    public static function periodCases(): iterable
+    {
+        $utc = [
+            '2026-07-19T23:59:59.999999Z',
+            '2026-07-20T00:00:00.000000Z',
+            '2026-07-20T23:59:59.999999Z',
+            '2026-07-21T00:00:00.000000Z',
+        ];
+        $warsaw = [
+            '2026-07-19T21:59:59.999999Z',
+            '2026-07-19T22:00:00.000000Z',
+            '2026-07-20T21:59:59.999999Z',
+            '2026-07-20T22:00:00.000000Z',
+        ];
+        $losAngeles = [
+            '2026-07-20T06:59:59.999999Z',
+            '2026-07-20T07:00:00.000000Z',
+            '2026-07-21T06:59:59.999999Z',
+            '2026-07-21T07:00:00.000000Z',
+        ];
+        foreach (['UTC' => $utc, 'Europe/Warsaw' => $warsaw, 'America/Los_Angeles' => $losAngeles] as $zone => $moments) {
+            yield $zone . ' inclusive day' => [[
+                'timeZone' => $zone,
+                HilosBackupHistoryTable::FILTER_FROM => '2026-07-20',
+                HilosBackupHistoryTable::FILTER_TO => '2026-07-20',
+            ], $moments, ['b2', 'b3']];
+            yield $zone . ' lower bound alone' => [[
+                'timeZone' => $zone,
+                HilosBackupHistoryTable::FILTER_FROM => '2026-07-20',
+            ], $moments, ['b2', 'b3', 'b4']];
+            yield $zone . ' upper bound alone' => [[
+                'timeZone' => $zone,
+                HilosBackupHistoryTable::FILTER_TO => '2026-07-20',
+            ], $moments, ['b1', 'b2', 'b3']];
+            yield $zone . ' reversed period' => [[
+                'timeZone' => $zone,
+                HilosBackupHistoryTable::FILTER_FROM => '2026-07-21',
+                HilosBackupHistoryTable::FILTER_TO => '2026-07-20',
+            ], $moments, []];
+        }
+        yield 'absent zone keeps UTC' => [[
+            HilosBackupHistoryTable::FILTER_FROM => '2026-07-20',
+            HilosBackupHistoryTable::FILTER_TO => '2026-07-20',
+        ], $utc, ['b2', 'b3']];
+        yield 'default window' => [[], $utc, ['b1', 'b2', 'b3', 'b4']];
+        yield 'cleared bounds' => [[
+            'timeZone' => 'Europe/Warsaw',
+            HilosBackupHistoryTable::FILTER_FROM => '',
+            HilosBackupHistoryTable::FILTER_TO => null,
+        ], $warsaw, ['b1', 'b2', 'b3', 'b4']];
+        yield 'leap day' => [[
+            'timeZone' => 'UTC',
+            HilosBackupHistoryTable::FILTER_FROM => '2024-02-29',
+            HilosBackupHistoryTable::FILTER_TO => '2024-02-29',
+        ], ['2024-02-29T12:00:00.000000Z'], ['b1']];
+        yield 'Warsaw spring day has 23 hours' => [[
+            'timeZone' => 'Europe/Warsaw',
+            HilosBackupHistoryTable::FILTER_FROM => '2026-03-29',
+            HilosBackupHistoryTable::FILTER_TO => '2026-03-29',
+        ], [
+            '2026-03-28T22:59:59.999999Z',
+            '2026-03-28T23:00:00.000000Z',
+            '2026-03-29T00:59:59.999999Z',
+            '2026-03-29T01:00:00.000000Z',
+            '2026-03-29T21:59:59.999999Z',
+            '2026-03-29T22:00:00.000000Z',
+        ], ['b2', 'b3', 'b4', 'b5']];
+        yield 'Warsaw autumn day has 25 hours and two 02:30s' => [[
+            'timeZone' => 'Europe/Warsaw',
+            HilosBackupHistoryTable::FILTER_FROM => '2026-10-25',
+            HilosBackupHistoryTable::FILTER_TO => '2026-10-25',
+        ], [
+            '2026-10-24T21:59:59.999999Z',
+            '2026-10-24T22:00:00.000000Z',
+            '2026-10-25T00:30:00.000000Z',
+            '2026-10-25T01:30:00.000000Z',
+            '2026-10-25T22:59:59.999999Z',
+            '2026-10-25T23:00:00.000000Z',
+        ], ['b2', 'b3', 'b4', 'b5']];
+        yield 'Los Angeles spring day has 23 hours' => [[
+            'timeZone' => 'America/Los_Angeles',
+            HilosBackupHistoryTable::FILTER_FROM => '2026-03-08',
+            HilosBackupHistoryTable::FILTER_TO => '2026-03-08',
+        ], [
+            '2026-03-08T07:59:59.999999Z',
+            '2026-03-08T08:00:00.000000Z',
+            '2026-03-08T09:59:59.999999Z',
+            '2026-03-08T10:00:00.000000Z',
+            '2026-03-09T06:59:59.999999Z',
+            '2026-03-09T07:00:00.000000Z',
+        ], ['b2', 'b3', 'b4', 'b5']];
+        yield 'Los Angeles autumn day has 25 hours and two 01:30s' => [[
+            'timeZone' => 'America/Los_Angeles',
+            HilosBackupHistoryTable::FILTER_FROM => '2026-11-01',
+            HilosBackupHistoryTable::FILTER_TO => '2026-11-01',
+        ], [
+            '2026-11-01T06:59:59.999999Z',
+            '2026-11-01T07:00:00.000000Z',
+            '2026-11-01T08:30:00.000000Z',
+            '2026-11-01T09:30:00.000000Z',
+            '2026-11-02T07:59:59.999999Z',
+            '2026-11-02T08:00:00.000000Z',
+        ], ['b2', 'b3', 'b4', 'b5']];
+    }
+
+    /**
+     * @param array<string, mixed> $filter Invalid zone or bound, even with no rows to filter
+     * @param string $reason Exact domain refusal
+     */
+    #[DataProvider('invalidPeriodCases')]
+    public function testEveryPeriodReadRefusesMalformedInput(array $filter, string $reason): void
+    {
+        $table = $this->table();
+        $query = new TableQueryDTO(filter: $filter);
+        $target = BackupBulkDeleteActionDTO::fromArray([
+            TableConstants::PAYLOAD_KEY_TABLE_KEY => HilosBackupHistoryTable::TABLE,
+            SignalPayloadConstants::FIELD_FILTER => $filter,
+        ]);
+        foreach ([
+            fn() => $table->getPage($query),
+            fn() => $table->containsRow('missing', $query),
+            fn() => $table->facetCounts($query, [HilosBackupHistoryTable::FILTER_SCOPE => ['full']]),
+            fn() => $table->getPage(new TableQueryDTO(filter: $target->filter)),
+        ] as $read) {
+            try {
+                $read();
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame($reason, $exception->getMessage());
+                continue;
+            }
+            $this->fail('The period read must refuse malformed input even when the set is empty');
+        }
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>, string}> Malformed periods and their exact refusal words
+     */
+    public static function invalidPeriodCases(): iterable
+    {
+        foreach ([null, '', ' UTC', 'UTC ', '+02:00', '-0500', 'Europe/Unknown', 'europe/warsaw', 0, 1.5, false, []] as $index => $zone) {
+            yield 'invalid zone ' . $index => [
+                ['timeZone' => $zone],
+                'Choose a valid time zone for the backup period.',
+            ];
+        }
+        foreach ([HilosBackupHistoryTable::FILTER_FROM, HilosBackupHistoryTable::FILTER_TO] as $bound) {
+            foreach ([
+                '2026-02-29', '2026-02-30', '2026-13-01', '2026-00-01', '2026-01-00', '2026-04-31', '0000-01-01',
+                '2026-7-20', '2026-07-2', '2026-07-20T00:00:00Z', '2026-07-20extra', ' 2026-07-20', '2026-07-20 ',
+                ' ', "2026-07-20\n", 20260720, 1.5, false, [],
+            ] as $index => $day) {
+                yield $bound . ' invalid date ' . $index => [
+                    [$bound => $day],
+                    'Choose a valid date for the backup period.',
+                ];
+            }
+        }
+    }
+
+    public function testTheRepeatedLocalHourStillSortsByTheUtcMoment(): void
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'earlier',
+                BackupHistory::createdAt => '2026-10-25T00:50:00Z',
+            ])),
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'later',
+                BackupHistory::createdAt => '2026-10-25T01:10:00Z',
+            ])),
+        ));
+        $filter = [
+            HilosBackupHistoryTable::FILTER_TIME_ZONE => 'Europe/Warsaw',
+            HilosBackupHistoryTable::FILTER_FROM => '2026-10-25',
+            HilosBackupHistoryTable::FILTER_TO => '2026-10-25',
+        ];
+
+        $this->assertSame(['later', 'earlier'], $this->windowKeys($table, new TableQueryDTO(
+            sort: $table->defaultSort(),
+            filter: $filter,
+        )));
+        $this->assertSame(['earlier', 'later'], $this->windowKeys($table, new TableQueryDTO(
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_ASC)),
+            filter: $filter,
+        )));
     }
 
     public function testTheScopeCountsAreTheTotalsTheirWindowsWouldShow(): void

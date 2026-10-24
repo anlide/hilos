@@ -7,7 +7,9 @@ namespace Hilos\Backup;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Ship\BackupShipPlanner;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupMetadata - the JSON sidecar written next to a backup archive.
@@ -42,7 +44,7 @@ final class BackupMetadata extends BaseDTO
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
-     * @param string $createdAt ISO-8601 creation timestamp
+     * @param string $createdAt ISO-8601 UTC creation timestamp with Z
      * @param string $env Application environment the backup was taken in
      * @param BackupScope $scope What the backup captures
      * @param list<BackupConnectionMeta> $connections Connections captured
@@ -56,13 +58,13 @@ final class BackupMetadata extends BaseDTO
      *     from); 0 means "no data" for error records and legacy sidecars written before the field existed
      * @param ?string $sha256 Lowercase hex digest of the archive; null on error records and on sidecars
      *     written before the digest existed - "nothing to check", not "corrupt"
-     * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+     * @param ?string $verifiedAt ISO-8601 UTC instant with Z of the last verification; null means never verified
      * @param ?BackupVerifyOutcome $verifyOutcome Outcome of that verification; only ok/mismatch are ever
      *     stored, and an unknown stored value reads back as null
-     * @param ?string $restoredAt ISO-8601 instant this archive was last restored from; null means never
+     * @param ?string $restoredAt ISO-8601 UTC instant with Z this archive was last restored from; null means never
      * @param int $restoreDurationSeconds How long that restore took; 0 means "no data", the same way
      *     dumpBytes does - the archive was never restored, or it was before the field existed
-     * @param ?string $shippedAt ISO-8601 instant of the last successful copy off this machine; null
+     * @param ?string $shippedAt ISO-8601 UTC instant with Z of the last successful copy off this machine; null
      *     means never shipped. Only the LOCAL sidecar carries it - it is stamped after the copy has
      *     left, so the sidecar sitting on the receiver never says it was shipped, on purpose: the
      *     remote copy is a snapshot of the moment it was taken
@@ -172,7 +174,7 @@ final class BackupMetadata extends BaseDTO
     /**
      * Returns a copy carrying the result of a verification run.
      *
-     * @param ?string $verifiedAt ISO-8601 instant the archive was verified
+     * @param ?string $verifiedAt ISO-8601 UTC instant with Z the archive was verified
      * @param ?BackupVerifyOutcome $verifyOutcome What that verification concluded
      * @return self Copy with the verification recorded
      */
@@ -209,7 +211,7 @@ final class BackupMetadata extends BaseDTO
      * Written after the fact, the same way {@see self::withVerification()} is: the sidecar is the
      * only history a restore has, and the estimate of the next one is read back out of it.
      *
-     * @param string $restoredAt ISO-8601 instant the restore finished
+     * @param string $restoredAt ISO-8601 UTC instant with Z the restore finished
      * @param int $durationSeconds How long that restore took, in seconds
      * @return self Copy with the restore recorded
      */
@@ -247,7 +249,7 @@ final class BackupMetadata extends BaseDTO
      * the copy leaves after the backup is already published, so the sidecar it started from
      * cannot know about it.
      *
-     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
+     * @param ?string $shippedAt ISO-8601 UTC instant with Z of the last successful copy; null means never
      * @param ?BackupShipOutcome $outcome What that attempt concluded
      * @param ?string $error Why it failed; null on success
      * @param ?string $encryption Fingerprint of the recipient set that copy was encrypted to; null
@@ -289,7 +291,7 @@ final class BackupMetadata extends BaseDTO
      * @param array<string, mixed> $data Sidecar payload
      * @return static Restored backup metadata (unknown scope/status fall back to full/success)
      * @throws BackupMetadataIncompleteException When the sidecar carries no id, creation
-     *                                          timestamp, or environment
+     *                                          timestamp, or environment, or a moment cannot be read
      */
     public static function fromArray(array $data): static
     {
@@ -305,9 +307,21 @@ final class BackupMetadata extends BaseDTO
             $warnings[] = (string)$warning;
         }
 
+        try {
+            $createdAt = UtcMoment::normalize(self::identityField($data, self::createdAt));
+            $verifiedAt = self::optionalString($data, self::verifiedAt);
+            $verifiedAt = $verifiedAt === null ? null : UtcMoment::normalize($verifiedAt);
+            $restoredAt = self::optionalString($data, self::restoredAt);
+            $restoredAt = $restoredAt === null ? null : UtcMoment::normalize($restoredAt);
+            $shippedAt = self::optionalString($data, self::shippedAt);
+            $shippedAt = $shippedAt === null ? null : UtcMoment::normalize($shippedAt);
+        } catch (InvalidFormatException $e) {
+            throw new BackupMetadataIncompleteException('Backup sidecar carries an invalid moment', previous: $e);
+        }
+
         return new self(
             self::identityField($data, self::id),
-            self::identityField($data, self::createdAt),
+            $createdAt,
             self::identityField($data, self::env),
             // external-boundary: the sidecar is read from disk and an unnamed scope collapses into the default
             BackupScope::fromString((string)($data[self::scope] ?? '')) ?? BackupScope::FULL,
@@ -324,14 +338,14 @@ final class BackupMetadata extends BaseDTO
             // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::dumpBytes] ?? 0),
             isset($data[self::sha256]) ? (string)$data[self::sha256] : null,
-            isset($data[self::verifiedAt]) ? (string)$data[self::verifiedAt] : null,
+            $verifiedAt,
             BackupVerifyOutcome::fromString(
                 isset($data[self::verifyOutcome]) ? (string)$data[self::verifyOutcome] : null,
             ),
-            isset($data[self::restoredAt]) ? (string)$data[self::restoredAt] : null,
+            $restoredAt,
             // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::restoreDurationSeconds] ?? 0),
-            isset($data[self::shippedAt]) ? (string)$data[self::shippedAt] : null,
+            $shippedAt,
             BackupShipOutcome::fromString(
                 isset($data[self::shipOutcome]) ? (string)$data[self::shipOutcome] : null,
             ),

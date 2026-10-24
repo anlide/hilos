@@ -6,12 +6,13 @@ namespace Hilos\Backup;
 
 use Closure;
 use DateTimeImmutable;
-use DateTimeInterface;
+use DateTimeZone;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\BackupDumpFailedException;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Process;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
@@ -25,6 +26,7 @@ use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Item\BackupHistory;
+use Hilos\Utils\Helpers\UtcMoment;
 use Throwable;
 
 /**
@@ -959,13 +961,18 @@ final class BackupCreator
      * always dated by something.
      *
      * @param string $id Backup id in the `Y-m-d_H-i-s` stem form
-     * @return string ISO-8601 start instant
+     * @return string ISO-8601 UTC start instant with Z
      */
     public static function startedAtFromId(string $id): string
     {
-        $started = DateTimeImmutable::createFromFormat(self::ID_TIME_FORMAT, $id);
+        $utc = new DateTimeZone(TimeConstants::UTC_TIME_ZONE);
+        $started = DateTimeImmutable::createFromFormat('!' . self::ID_TIME_FORMAT, $id, $utc);
+        $errors = DateTimeImmutable::getLastErrors();
+        if ($started === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            $started = new DateTimeImmutable('now', $utc);
+        }
 
-        return ($started === false ? new DateTimeImmutable() : $started)->format(DateTimeInterface::ATOM);
+        return UtcMoment::format($started);
     }
 
     /**

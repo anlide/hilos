@@ -1,18 +1,23 @@
 import { test, expect, type Page } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
+import { createLegacyBackupFixture } from '../../../../../framework/frontend/scripts/backupFixture.mjs'
 import {
   dismissToasts,
+  enterCalendarDate,
+  expectBackupMoments,
   expectDataFreeDeparture,
   expectMaintenancePageHead,
   leaveSecondAdmin,
   shownByTestId,
+  watchDeliveryFrames,
   watchFirstRowTop,
   watchTableFirstLive,
   watchTableSearch,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
-import { clickSubmit, signUp } from '../helpers/session'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page'
+import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant.js'
+import { clickSubmit, signUp } from '../helpers/session.js'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page.js'
 
 test.use({ viewport: { width: 1440, height: 1000 } })
 
@@ -143,6 +148,146 @@ async function createNamedBackup(page: Page): Promise<string> {
 
   return backupId
 }
+
+test.describe('backup moments and Period in the reader zone', () => {
+  test.use({ timezoneId: 'Europe/Warsaw', locale: 'en-GB' })
+
+  test('keeps real UTC moments and reads a legacy offset sidecar into each visible calendar day', async ({
+    page,
+    browser,
+  }) => {
+    test.slow() // A real dump, two readers and four complete Period round trips.
+    const warsaw = watchDeliveryFrames(page)
+    const warsawWindow = await watchTableSearch(page, {
+      page: 'hilos_backup',
+      tableKey: 'hilosBackups',
+    })
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const otherContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      timezoneId: 'America/Los_Angeles',
+      locale: 'en-GB',
+    })
+    const other = await otherContext.newPage()
+    const losAngeles = watchDeliveryFrames(other)
+    const otherWindow = await watchTableSearch(other, {
+      page: 'hilos_backup',
+      tableKey: 'hilosBackups',
+    })
+    let sourceId: string | undefined
+    let fixture:
+      Awaited<ReturnType<typeof createLegacyBackupFixture>> | undefined
+    try {
+      await openBackups(page)
+      sourceId = await createNamedBackup(page)
+      await gotoPage(page, '/hilos/backup', PAGE_READY)
+      const actual = await expectBackupMoments(
+        expect,
+        page,
+        warsaw,
+        sourceId,
+        'Europe/Warsaw',
+      )
+      await openBackups(other)
+      expect(
+        await expectBackupMoments(
+          expect,
+          other,
+          losAngeles,
+          sourceId,
+          'America/Los_Angeles',
+        ),
+      ).toBe(actual)
+      expect(
+        await page
+          .getByTestId(`hilos-table-row-${sourceId}`)
+          .getByTestId('hilos-backup-created-at')
+          .innerText(),
+      ).not.toBe(
+        await other
+          .getByTestId(`hilos-table-row-${sourceId}`)
+          .getByTestId('hilos-backup-created-at')
+          .innerText(),
+      )
+
+      const legacy = '2026-01-01T03:30:05.123456+03:00'
+      fixture = await createLegacyBackupFixture(
+        fileURLToPath(new URL('../../../data/backup/', import.meta.url)),
+        sourceId,
+        legacy,
+      )
+      expect(JSON.parse(fixture.beforePublish).createdAt).toBe(legacy)
+      // Discovery is the real filesystem-watch/scan path. A new opening takes
+      // the current index; it never writes a timestamp or injects a frame.
+      await expect
+        .poll(async () => {
+          await gotoPage(page, '/hilos/backup', PAGE_READY)
+          return page.getByTestId(`hilos-table-row-${fixture!.id}`).count()
+        })
+        .toBe(1)
+      await gotoPage(other, '/hilos/backup', PAGE_READY)
+      for (const [reader, log, zone] of [
+        [page, warsaw, 'Europe/Warsaw'],
+        [other, losAngeles, 'America/Los_Angeles'],
+      ] as const) {
+        expect(
+          await expectBackupMoments(expect, reader, log, fixture.id, zone),
+        ).toBe('2026-01-01T00:30:05.123456Z')
+      }
+      // The legacy file remains unchanged: normalization belongs to the read.
+      expect(await fixture.read()).toBe(fixture.beforePublish)
+
+      for (const [reader, windows, timeZone, visibleDay] of [
+        [page, warsawWindow, 'Europe/Warsaw', '2026-01-01'],
+        [other, otherWindow, 'America/Los_Angeles', '2025-12-31'],
+      ] as const) {
+        await reader.getByTestId('hilos-table-filter-from').click()
+        for (const day of ['2026-01-01', '2025-12-31']) {
+          const mark = await windows.mark()
+          await enterCalendarDate(
+            expect,
+            reader.getByTestId('hilos-table-filter-from-from'),
+            day,
+          )
+          await enterCalendarDate(
+            expect,
+            reader.getByTestId('hilos-table-filter-from-to'),
+            day,
+          )
+          // Same bounds in both browsers: only timeZone changes membership.
+          // Both inclusive boundaries equal the day printed in this reader.
+          await windows.renderedSettled(
+            expect,
+            mark,
+            { timeZone, from: day, to: day },
+            day === visibleDay ? [fixture.id] : [],
+          )
+        }
+      }
+      expect(await fixture.read()).toBe(fixture.beforePublish)
+    } finally {
+      try {
+        if (fixture) await fixture.dispose()
+      } finally {
+        try {
+          if (sourceId) {
+            await gotoPage(page, '/hilos/backup', PAGE_READY)
+            await deleteBackup(page, `hilos-table-row-${sourceId}`)
+          }
+        } finally {
+          warsaw.stop()
+          losAngeles.stop()
+          await otherContext.close()
+          await test.info().attach('backup-reader-zone-transport', {
+            body: JSON.stringify({ warsaw, losAngeles }, null, 2),
+            contentType: 'application/json',
+          })
+        }
+      }
+    }
+  })
+})
 
 /** The property on `window` the bar watcher raises once it has seen the bar drawn. */
 const BULK_BAR_SEEN = '__hilosE2eBulkBarSeen'

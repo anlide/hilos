@@ -32,6 +32,45 @@ final class BackupHistoryScannerTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testZonedSidecarIsIndexedInUtcWithoutRewritingFiles(): void
+    {
+        $payload = $this->metadataArray('offset', BackupScope::FULL, BackupStatus::SUCCESS);
+        $payload[BackupMetadata::createdAt] = '2026-01-01T01:00:00+01:00';
+        $payload[BackupMetadata::verifiedAt] = '2025-12-31T19:00:00.123456-05:00';
+        $payload[BackupMetadata::restoredAt] = null;
+        $this->writeSidecar(BackupScope::FULL, 'offset', $payload);
+        $this->writeArchive(BackupScope::FULL, 'offset');
+        $path = $this->scopePath(BackupScope::FULL, 'offset.json');
+        $original = file_get_contents($path);
+
+        $result = new BackupHistoryScanner()->scan($this->root);
+
+        $this->assertCount(1, $result->metadatas);
+        $this->assertSame('2026-01-01T00:00:00.000000Z', $result->metadatas[0]->createdAt);
+        $this->assertSame('2026-01-01T00:00:00.123456Z', $result->metadatas[0]->verifiedAt);
+        $this->assertNull($result->metadatas[0]->restoredAt);
+        $this->assertNull($result->metadatas[0]->shippedAt);
+        $this->assertSame($original, file_get_contents($path));
+        $this->assertSame([], $result->anomalies);
+    }
+
+    public function testAmbiguousSidecarIsBrokenAndItsFilesStayOnDisk(): void
+    {
+        $payload = $this->metadataArray('ambiguous', BackupScope::FULL, BackupStatus::SUCCESS);
+        $payload[BackupMetadata::createdAt] = '2026-01-01 00:00:00';
+        $this->writeSidecar(BackupScope::FULL, 'ambiguous', $payload);
+        $this->writeArchive(BackupScope::FULL, 'ambiguous');
+        $path = $this->scopePath(BackupScope::FULL, 'ambiguous.json');
+        $original = file_get_contents($path);
+
+        $result = new BackupHistoryScanner()->scan($this->root);
+
+        $this->assertSame([], $result->metadatas);
+        $this->assertSame(BackupScanAnomalyType::BROKEN_SIDECAR, $result->anomalies[0]->type);
+        $this->assertSame($original, file_get_contents($path));
+        $this->assertSame(self::ARCHIVE_BODY, file_get_contents($this->scopePath(BackupScope::FULL, 'ambiguous.tar.gz')));
+    }
+
     public function testMissingRootYieldsEmptyResult(): void
     {
         $result = new BackupHistoryScanner()->scan($this->root . '/does-not-exist');
@@ -142,7 +181,7 @@ final class BackupHistoryScannerTest extends TestCase
     {
         return [
             BackupMetadata::id => $id,
-            BackupMetadata::createdAt => '2026-07-18T00:00:00+00:00',
+            BackupMetadata::createdAt => '2026-07-18T00:00:00.000000Z',
             BackupMetadata::env => 'test',
             BackupMetadata::scope => $scope->value,
             BackupMetadata::connections => [],

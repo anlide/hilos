@@ -15,6 +15,46 @@ use PHPUnit\Framework\TestCase;
  */
 final class RestoreRuntimeStateTest extends TestCase
 {
+    public function testMomentRowsAndDiffsNormalizeLegacyOffsetsAndPreserveNulls(): void
+    {
+        $row = RestoreRuntime::create()->toArray();
+        $fields = [RestoreRuntime::startedAt, RestoreRuntime::phaseStartedAt, RestoreRuntime::finishedAt];
+        foreach ($fields as $field) {
+            $row[$field] = '2026-01-01T01:00:00.123456+01:00';
+        }
+        $runtime = RestoreRuntime::fromRow($row);
+        $runtime->applyDiff([RestoreRuntime::running => true]);
+        foreach ($fields as $field) {
+            $this->assertSame('2026-01-01T00:00:00.123456Z', $runtime->toArray()[$field]);
+            $runtime->applyDiff([$field => '2025-12-31T19:00:00-05:00']);
+            $this->assertSame('2026-01-01T00:00:00.000000Z', $runtime->toArray()[$field]);
+        }
+        $this->assertSame($runtime->toArray(), RestoreRuntime::fromRow($runtime->toArray())->toArray());
+        foreach ($fields as $field) {
+            $runtime->applyDiff([$field => null]);
+            $this->assertNull($runtime->toArray()[$field]);
+        }
+        $this->assertSame($runtime->toArray(), RestoreRuntime::fromRow($runtime->toArray())->toArray());
+    }
+
+    public function testMomentRowsAndDiffsRefuseAmbiguousStrings(): void
+    {
+        foreach ([RestoreRuntime::startedAt, RestoreRuntime::phaseStartedAt, RestoreRuntime::finishedAt] as $field) {
+            try {
+                RestoreRuntime::fromRow([...RestoreRuntime::create()->toArray(), $field => '2026-01-01 00:00:00']);
+                $this->fail('Row moment without a zone was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+            try {
+                RestoreRuntime::create()->applyDiff([$field => '2026-01-01T00:00:00']);
+                $this->fail('Diff moment without a zone was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
     public function testCreateIsIdle(): void
     {
         $runtime = RestoreRuntime::create();
@@ -41,7 +81,7 @@ final class RestoreRuntimeStateTest extends TestCase
         $runtime->backupId = 'backup-7';
         $runtime->scope = 'full';
         $runtime->phase = RestorePhase::IMPORTING->value;
-        $runtime->startedAt = '2026-08-08T12:00:00+00:00';
+        $runtime->startedAt = '2026-08-08T12:00:00.000000Z';
 
         $restored = RestoreRuntime::fromRow($runtime->toArray());
 
@@ -49,7 +89,7 @@ final class RestoreRuntimeStateTest extends TestCase
         $this->assertSame('backup-7', $restored->backupId);
         $this->assertSame('full', $restored->scope);
         $this->assertSame(RestorePhase::IMPORTING->value, $restored->phase);
-        $this->assertSame('2026-08-08T12:00:00+00:00', $restored->startedAt);
+        $this->assertSame('2026-08-08T12:00:00.000000Z', $restored->startedAt);
         $this->assertNull($restored->finishedAt);
         $this->assertNull($restored->outcome);
         $this->assertNull($restored->failureReason);
@@ -74,7 +114,7 @@ final class RestoreRuntimeStateTest extends TestCase
         $runtime->applyDiff([
             RestoreRuntime::running => false,
             RestoreRuntime::phase => RestorePhase::FAILED->value,
-            RestoreRuntime::finishedAt => '2026-08-08T12:05:00+00:00',
+            RestoreRuntime::finishedAt => '2026-08-08T12:05:00.000000Z',
             RestoreRuntime::outcome => BackupStatus::ERROR->value,
             RestoreRuntime::failureReason => 'import failed on connection 0',
         ]);
@@ -82,7 +122,7 @@ final class RestoreRuntimeStateTest extends TestCase
         $this->assertFalse($runtime->running);
         $this->assertSame('backup-9', $runtime->backupId);
         $this->assertSame(RestorePhase::FAILED->value, $runtime->phase);
-        $this->assertSame('2026-08-08T12:05:00+00:00', $runtime->finishedAt);
+        $this->assertSame('2026-08-08T12:05:00.000000Z', $runtime->finishedAt);
         $this->assertSame(BackupStatus::ERROR->value, $runtime->outcome);
         $this->assertSame('import failed on connection 0', $runtime->failureReason);
     }

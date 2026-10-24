@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   MAINTENANCE_STATE_SIGNAL,
@@ -9,7 +9,9 @@ import {
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
+  bindTimeZoneState,
   createSignal,
+  hilosTimeZone,
   hilosToasts,
 } from '@hilos/core/base'
 import {
@@ -174,11 +176,15 @@ function seededContext(actions: ActionLifecycle = makeActions().actions): {
 }
 
 const mounted: ReturnType<typeof mount>[] = []
+const cleanups: (() => void)[] = []
 
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
   }
+  for (const cleanup of cleanups.splice(0)) cleanup()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
   hilosToasts.clear()
 })
 
@@ -215,6 +221,118 @@ function maintenanceState(
     ...overrides,
   }
 }
+
+/** Drive the production zone binding while keeping real Intl output in a fixed locale. */
+function readerTimeZone() {
+  const DateTimeFormat = Intl.DateTimeFormat
+  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+    function (_locales, options) {
+      return new DateTimeFormat('en-US', options)
+    },
+  )
+  const previousZone = hilosTimeZone.get()
+  const listeners = new Map<string, (signal: ProjectSignal) => void>()
+  const connection = {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: ProjectSignal) => void) {
+      listeners.set(event, listener)
+      return () => listeners.delete(event)
+    },
+  } as unknown as HilosConnection
+  const release = bindTimeZoneState(connection)
+  const setZone = (timeZone: string): void => {
+    listeners.get('projectSignal')!({
+      type: 'handshake_response',
+      data: { entities: { currentUser: { id: 1, timeZone } } },
+    } as ProjectSignal)
+  }
+  cleanups.push(() => {
+    setZone(previousZone)
+    release()
+  })
+  setZone('UTC')
+  return setZone
+}
+
+describe('HilosMaintenancePage reader-zone moments', () => {
+  it.each([true, false])(
+    'redraws the held startedAt without a maintenance frame (manual=%s)',
+    async (manual) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-01-01T00:32:35.123Z'))
+      const setZone = readerTimeZone()
+      setZone('America/Los_Angeles')
+      const { context, pushState } = seededContext()
+      const wrapper = await mountPage(context)
+      const state = maintenanceState({
+        phase: 'verifying',
+        operation: manual ? 'manual_maintenance' : 'restore',
+        manual,
+        startedAt: '2026-01-01T00:30:05.123456Z',
+        passCount: 2,
+      })
+      pushState(state)
+      await nextTick()
+      const card = wrapper.get(
+        `[data-id="hilos-maintenance-state-${manual ? 'manual' : 'operation'}"]`,
+      )
+      const timestamp = card.get('[data-id="hilos-maintenance-started-at"]')
+      expect(timestamp.text()).toBe('Dec 31, 2025, 4:30:05 PM')
+      expect(card.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
+        '2',
+      )
+      expect(card.text()).toContain('verifying')
+      if (manual) expect(card.text()).toContain('2 minutes ago')
+
+      setZone('Europe/Kyiv')
+      await nextTick()
+      expect(timestamp.text()).toBe('Jan 1, 2026, 2:30:05 AM')
+      expect(card.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
+        '2',
+      )
+      expect(card.text()).toContain('verifying')
+      expect(state.startedAt).toBe('2026-01-01T00:30:05.123456Z')
+      if (manual) {
+        expect(card.text()).toContain('2 minutes ago')
+        await vi.advanceTimersByTimeAsync(29_999)
+        expect(card.text()).toContain('2 minutes ago')
+        await vi.advanceTimersByTimeAsync(1)
+        expect(card.text()).toContain('3 minutes ago')
+        expect(timestamp.text()).toBe('Jan 1, 2026, 2:30:05 AM')
+      } else {
+        expect(card.text()).not.toContain('minutes ago')
+        expect(card.find('button').exists()).toBe(false)
+      }
+    },
+  )
+
+  it.each([true, false])(
+    'keeps the absent marker for missing or malformed startedAt (manual=%s)',
+    async (manual) => {
+      readerTimeZone()
+      const { context, pushState } = seededContext()
+      const wrapper = await mountPage(context)
+      for (const startedAt of [
+        null,
+        'malformed',
+        '2026-02-30T00:00:00.000000Z',
+      ]) {
+        pushState(
+          maintenanceState({
+            phase: 'verifying',
+            operation: manual ? 'manual_maintenance' : 'restore',
+            manual,
+            startedAt,
+          }),
+        )
+        await nextTick()
+        expect(
+          wrapper.get('[data-id="hilos-maintenance-started-at"]').text(),
+        ).toBe('—')
+      }
+    },
+  )
+})
 
 describe('HilosMaintenancePage', () => {
   it('offers enable only after the open frame arrives', async () => {
@@ -324,13 +442,14 @@ describe('HilosMaintenancePage', () => {
   })
 
   it('renders only the planned operation lines in the frozen card', async () => {
+    readerTimeZone()
     const { context, pushState } = seededContext()
     const wrapper = await mountPage(context)
     pushState(
       maintenanceState({
         phase: 'verifying',
         operation: 'restore',
-        startedAt: '2026-10-10T10:00:00+00:00',
+        startedAt: '2026-10-10T10:00:00.000000Z',
         passCount: 2,
       }),
     )
@@ -341,7 +460,7 @@ describe('HilosMaintenancePage', () => {
       HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
     )
     expect(card.text()).toContain('restore')
-    expect(card.text()).toContain('2026-10-10T10:00:00+00:00')
+    expect(card.text()).toContain('Oct 10, 2026, 10:00:00 AM')
     expect(card.text()).not.toContain('Initiator')
     expect(card.find('button').exists()).toBe(false)
   })

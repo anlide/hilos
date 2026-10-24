@@ -58,7 +58,13 @@ import {
   type HilosBackupRow,
   type HilosBackupsContext,
 } from '@hilos/core/admin/backup'
-import { HilosPages, isHiddenValue, type Hideable } from '@hilos/core/base'
+import {
+  formatMoment,
+  HilosPages,
+  hilosTimeZone,
+  isHiddenValue,
+  type Hideable,
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
@@ -78,6 +84,23 @@ const props = defineProps<{
   /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosBackupsContext
 }>()
+
+const timeZone = useSignal(hilosTimeZone)
+
+function time(moment: string | null | undefined): string {
+  void timeZone.value
+  return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
+}
+
+function checksum(row: HilosBackupRow): string {
+  void timeZone.value
+  return formatBackupChecksum(row)
+}
+
+function shipping(row: HilosBackupRow): string {
+  void timeZone.value
+  return formatBackupShipping(row)
+}
 
 // The create dialog's open state stands above the factory: what the table's main
 // action presses is the opener below, and the factory takes it as an argument.
@@ -487,8 +510,8 @@ function openOutcome(row: HilosBackupRow): void {
         formatBackupRunCaption(progress)
       }}</template>
       <template #cell-createdAt="{ row }">
-        <span :class="outOfReachClass(row)">
-          {{ row.createdAt || '—' }}
+        <span :class="outOfReachClass(row)" data-id="hilos-backup-created-at">
+          {{ time(row.createdAt) }}
           <template v-if="isBackupOutOfReach(row)">
             <span
               class="badge text-bg-secondary"
@@ -515,22 +538,24 @@ function openOutcome(row: HilosBackupRow): void {
       <template #cell-checksumState="{ row }">
         <span :class="outOfReachClass(row)">
           <span
+            data-id="hilos-backup-checksum"
             :class="
               isBackupChecksumMismatch(row)
                 ? 'text-danger fw-semibold'
                 : undefined
             "
-            >{{ formatBackupChecksum(row) }}</span
+            >{{ checksum(row) }}</span
           >
         </span>
       </template>
       <template #cell-shipState="{ row }">
         <span :class="outOfReachClass(row)">
           <span
+            data-id="hilos-backup-shipping"
             :class="
               isBackupShipFailed(row) ? 'text-danger fw-semibold' : undefined
             "
-            >{{ formatBackupShipping(row) }}</span
+            >{{ shipping(row) }}</span
           >
           <button
             v-if="isBackupShipFailed(row) && row.shipError !== null"
@@ -945,8 +970,8 @@ function openOutcome(row: HilosBackupRow): void {
       "
       initial-focus="dialog"
     >
-      <p class="mb-2">
-        Finished {{ outcomeRow?.restoreFinishedAt || '—' }} ·
+      <p class="mb-2" data-id="hilos-backup-restore-outcome-finished">
+        Finished {{ time(outcomeRow?.restoreFinishedAt) }} ·
         <span class="fw-semibold">{{ outcomeRow?.restoreOutcome }}</span>
       </p>
       <p v-if="outcomeRow?.restoreDatabaseTouched" class="mb-2">

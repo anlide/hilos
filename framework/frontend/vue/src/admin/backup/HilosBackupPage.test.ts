@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -8,7 +8,9 @@ import {
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
+  bindTimeZoneState,
   createSignal,
+  hilosTimeZone,
 } from '@hilos/core/base'
 import type {
   ActionHandle,
@@ -18,10 +20,15 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportController,
 } from '@hilos/core/base'
-import type { HilosBackupsContext } from '@hilos/core/admin/backup'
+import type {
+  HilosBackupRow,
+  HilosBackupsContext,
+} from '@hilos/core/admin/backup'
 
 import HilosBackupPage from './HilosBackupPage.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const BACKUPS_TABLE = 'hilosBackups'
@@ -53,7 +60,7 @@ function router(): HilosRouter {
 }
 
 interface BackupSlot {
-  createdAt: string
+  createdAt: string | null
   env: string
   scope: string
   sizeBytes: number
@@ -74,7 +81,7 @@ interface BackupFixture {
 const ARCHIVE_FIXTURE: BackupFixture = {
   id: ARCHIVE_ID,
   backup: {
-    createdAt: '2026-09-10T03:00:00+00:00',
+    createdAt: '2026-09-10T03:00:00.000000Z',
     env: 'dev',
     scope: 'full',
     sizeBytes: 1048576,
@@ -225,11 +232,15 @@ function seededContext(
 }
 
 const mounted: ReturnType<typeof mount>[] = []
+const cleanups: (() => void)[] = []
 
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
   }
+  for (const cleanup of cleanups.splice(0)) cleanup()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 async function mountPage(context: HilosBackupsContext) {
@@ -249,6 +260,185 @@ async function settled(): Promise<void> {
   await nextTick()
   await nextTick()
 }
+
+/** Drive the production zone binding while keeping real Intl output in a fixed locale. */
+function readerTimeZone() {
+  const DateTimeFormat = Intl.DateTimeFormat
+  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+    function (_locales, options) {
+      return new DateTimeFormat('en-US', options)
+    },
+  )
+  const previousZone = hilosTimeZone.get()
+  const listeners = new Map<string, (signal: ProjectSignal) => void>()
+  const connection = {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: ProjectSignal) => void) {
+      listeners.set(event, listener)
+      return () => listeners.delete(event)
+    },
+  } as unknown as HilosConnection
+  const release = bindTimeZoneState(connection)
+  const setZone = (timeZone: string): void => {
+    listeners.get('projectSignal')!({
+      type: 'handshake_response',
+      data: { entities: { currentUser: { id: 1, timeZone } } },
+    } as ProjectSignal)
+  }
+  cleanups.push(() => {
+    setZone(previousZone)
+    release()
+  })
+  setZone('UTC')
+  return setZone
+}
+
+describe('HilosBackupPage reader-zone moments', () => {
+  it('redraws both row projections and an open outcome without another backup frame', async () => {
+    vi.useFakeTimers()
+    const setZone = readerTimeZone()
+    setZone('America/Los_Angeles')
+    const fixture: BackupFixture = {
+      id: ARCHIVE_ID,
+      backup: {
+        ...ARCHIVE_FIXTURE.backup,
+        createdAt: '2026-01-01T00:30:05.123456Z',
+        verifiedAt: '2026-01-02T00:20:06.123456Z',
+        shipState: 'shipped',
+        shippedAt: '2026-01-03T00:10:07.123456Z',
+        restoreOutcome: 'success',
+        restoreFinishedAt: '2026-01-04T00:05:08.123456Z',
+      },
+    }
+    const { context } = seededContext([fixture])
+    const wrapper = await mountPage(context)
+    // The initial rows are applied table_window data. Hold later viewport answers:
+    // a zone change must redraw the moments already held, without a server frame.
+    const viewport = vi
+      .spyOn(context.connection, 'sendTableViewport')
+      .mockReturnValue(true)
+    // Test Utils loses the generic SFC's prop type at findComponent.
+    const { controller } = wrapper
+      .findComponent(HilosViewportTable)
+      .props() as { controller: TableViewportController<HilosBackupRow> }
+    const original = controller.rows.get()[0]?.row
+    const projections = [
+      wrapper.get(`table [data-id="hilos-table-row-${ARCHIVE_ID}"]`),
+      wrapper.get(`[data-id="hilos-table-card-${ARCHIVE_ID}"]`),
+    ]
+    for (const row of projections) {
+      expect(row.get('[data-id="hilos-backup-created-at"]').text()).toBe(
+        'Dec 31, 2025, 4:30:05 PM',
+      )
+      expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe(
+        '✓ Jan 1, 2026',
+      )
+      expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe(
+        '✓ Jan 2, 2026',
+      )
+      expect(row.text()).toContain('5s')
+      expect(row.text()).toContain('success')
+    }
+    await projections[0]!
+      .get(`[data-id="hilos-backup-restore-outcome-${ARCHIVE_ID}"]`)
+      .trigger('click')
+    await settled()
+    const outcome = document.querySelector(
+      '[data-id="hilos-backup-restore-outcome-finished"]',
+    )!
+    const modal = outcome.closest('[role="dialog"]')
+    expect(outcome.textContent?.trim()).toBe(
+      'Finished Jan 3, 2026, 4:05:08 PM · success',
+    )
+
+    setZone('Europe/Kyiv')
+    await settled()
+    for (const row of projections) {
+      expect(row.get('[data-id="hilos-backup-created-at"]').text()).toBe(
+        'Jan 1, 2026, 2:30:05 AM',
+      )
+      expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe(
+        '✓ Jan 2, 2026',
+      )
+      expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe(
+        '✓ Jan 3, 2026',
+      )
+      expect(row.text()).toContain('5s')
+      expect(row.text()).toContain('success')
+    }
+    expect(outcome.textContent?.trim()).toBe(
+      'Finished Jan 4, 2026, 2:05:08 AM · success',
+    )
+    expect(outcome.closest('[role="dialog"]')).toBe(modal)
+    expect(viewport).toHaveBeenCalledTimes(1)
+    expect(controller.rows.get()[0]?.row).toStrictEqual(original)
+    expect(original).toMatchObject({
+      createdAt: '2026-01-01T00:30:05.123456Z',
+      verifiedAt: '2026-01-02T00:20:06.123456Z',
+      shippedAt: '2026-01-03T00:10:07.123456Z',
+      restoreFinishedAt: '2026-01-04T00:05:08.123456Z',
+    })
+  })
+
+  it.each([null, 'malformed', '2026-02-30T00:00:00.000000Z'])(
+    'keeps the missing markers for an unrepresentable moment: %s',
+    async (moment) => {
+      readerTimeZone()
+      const { context } = seededContext([
+        {
+          id: ARCHIVE_ID,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            createdAt: moment,
+            verifiedAt: moment,
+            shipState: 'shipped',
+            shippedAt: moment,
+            restoreOutcome: 'success',
+            restoreFinishedAt: moment,
+          },
+        },
+      ])
+      const wrapper = await mountPage(context)
+      const row = wrapper.get(`table [data-id="hilos-table-row-${ARCHIVE_ID}"]`)
+      expect(row.get('[data-id="hilos-backup-created-at"]').text()).toBe('—')
+      expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe('✓')
+      expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe('✓')
+      await row
+        .get(`[data-id="hilos-backup-restore-outcome-${ARCHIVE_ID}"]`)
+        .trigger('click')
+      await settled()
+      expect(
+        document
+          .querySelector('[data-id="hilos-backup-restore-outcome-finished"]')
+          ?.textContent?.trim(),
+      ).toBe('Finished — · success')
+    },
+  )
+
+  it.each([
+    ['present', 'none', 'present', '—'],
+    ['mismatch', 'failed', 'MISMATCH', 'FAILED'],
+    ['none', 'pending', '—', 'pending'],
+  ])(
+    'preserves checksum %s and shipping %s markers',
+    async (checksumState, shipState, checksum, shipping) => {
+      const setZone = readerTimeZone()
+      const { context } = seededContext([
+        {
+          id: ARCHIVE_ID,
+          backup: { ...ARCHIVE_FIXTURE.backup, checksumState, shipState },
+        },
+      ])
+      const wrapper = await mountPage(context)
+      vi.spyOn(context.connection, 'sendTableViewport').mockReturnValue(true)
+      setZone('America/Los_Angeles')
+      await settled()
+      const row = wrapper.get(`table [data-id="hilos-table-row-${ARCHIVE_ID}"]`)
+      expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe(checksum)
+      expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe(shipping)
+    },
+  )
+})
 
 describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
   const HIDDEN = { _hidden: true }

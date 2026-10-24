@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Backup;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\AdminViewMode\WireField;
+use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupProgress;
@@ -15,6 +18,7 @@ use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -76,6 +80,9 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /** Filter-map key: the last day of the period, as `YYYY-MM-DD`; a backup taken that day is inside it. */
     public const string FILTER_TO = 'to';
 
+    /** Filter-map key: exact IANA zone whose calendar days the period names; absent means UTC. */
+    public const string FILTER_TIME_ZONE = 'timeZone';
+
     /** Order key: scope first, the newest copy of each scope on top. */
     public const string ORDER_SCOPE_THEN_CREATED = 'scope_created';
 
@@ -106,9 +113,6 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
 
     /** Filters whose options this table counts: the scope alone, a period having no options to count. */
     private const array FACETED_FILTERS = [self::FILTER_SCOPE];
-
-    /** Characters of an ISO-8601 instant that name its calendar day, `2026-09-17` out of `2026-09-17T03:00:00+00:00`. */
-    private const int DAY_LENGTH = 10;
 
     /** Migration level this code expects; meaningless until {@see $codeMigrationIndexResolved}. */
     private ?int $codeMigrationIndex = null;
@@ -303,6 +307,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
      * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts of the
      *     scope options that were asked about
+     * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
@@ -330,6 +335,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @param string|int $rowKey Row key to look for
      * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
      * @return ?bool Whether the row is in the set; this table always knows
+     * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
@@ -343,6 +349,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Backup table snapshot
+     * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
@@ -442,15 +449,19 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /**
      * Applies the scope filter and the period this list answers to.
      *
-     * The period is compared by calendar day, both ends inclusive, the way the delivery journal
-     * reads the same two keys: a backup taken on the last day of the period is inside it.
+     * Both bounds are inclusive calendar days in the query's zone. Only the comparison is local;
+     * row payloads and their sort order keep the original UTC moments.
      *
      * @param list<array<string, mixed>> $rows Rows of the whole index
      * @param TableQueryDTO $query Window query
      * @return list<array<string, mixed>> Rows the window asked for
+     * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      */
     private function narrow(array $rows, TableQueryDTO $query): array
     {
+        $timeZone = self::filterTimeZone($query);
+        $from = self::filterDay($query, self::FILTER_FROM);
+        $to = self::filterDay($query, self::FILTER_TO);
         $scope = self::filterString($query, self::FILTER_SCOPE);
         if ($scope !== null) {
             $rows = array_values(array_filter(
@@ -459,19 +470,16 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             ));
         }
 
-        $from = self::filterDay($query, self::FILTER_FROM);
-        if ($from !== null) {
+        if ($from !== null || $to !== null) {
             $rows = array_values(array_filter(
                 $rows,
-                static fn(array $row): bool => self::day((string) $row[HilosBackupTableRow::createdAt]) >= $from,
-            ));
-        }
+                static function (array $row) use ($timeZone, $from, $to): bool {
+                    $day = (new DateTimeImmutable((string) $row[HilosBackupTableRow::createdAt]))
+                        ->setTimezone($timeZone)
+                        ->format('Y-m-d');
 
-        $to = self::filterDay($query, self::FILTER_TO);
-        if ($to !== null) {
-            $rows = array_values(array_filter(
-                $rows,
-                static fn(array $row): bool => self::day((string) $row[HilosBackupTableRow::createdAt]) <= $to,
+                    return ($from === null || $day >= $from) && ($to === null || $day <= $to);
+                },
             ));
         }
 
@@ -503,26 +511,44 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @param TableQueryDTO $query Window query
      * @param string $key Filter key of the bound
      * @return ?string The day as `YYYY-MM-DD`, or null when the window sets no such bound
+     * @throws InvalidArgumentException When the bound is not a real calendar date in the exact format
      */
     private static function filterDay(TableQueryDTO $query, string $key): ?string
     {
-        $value = self::filterString($query, $key);
+        $value = $query->filter[$key] ?? null;
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (
+            !is_string($value)
+            || preg_match('/\A([0-9]{4})-([0-9]{2})-([0-9]{2})\z/', $value, $parts) !== 1
+            || !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])
+        ) {
+            throw new InvalidArgumentException('Choose a valid date for the backup period.');
+        }
 
-        return $value === null ? null : self::day($value);
+        return $value;
     }
 
     /**
-     * Cuts an instant down to the calendar day it falls on.
+     * An omitted zone preserves the UTC period of older clients; an invalid supplied value is refused.
      *
-     * A string cut rather than a parse: the index writes ISO-8601 and the filter writes a bare
-     * day, so the first ten characters of both are the same `YYYY-MM-DD` and compare as text.
-     *
-     * @param string $instant ISO-8601 instant or bare day
-     * @return string The day as `YYYY-MM-DD`
+     * @param TableQueryDTO $query Window query
+     * @return DateTimeZone Zone whose calendar days the period names
+     * @throws InvalidArgumentException When the supplied zone is not an exact IANA identifier
      */
-    private static function day(string $instant): string
+    private static function filterTimeZone(TableQueryDTO $query): DateTimeZone
     {
-        return substr($instant, 0, self::DAY_LENGTH);
+        if (!array_key_exists(self::FILTER_TIME_ZONE, $query->filter)) {
+            return new DateTimeZone(TimeConstants::UTC_TIME_ZONE);
+        }
+
+        $value = $query->filter[self::FILTER_TIME_ZONE];
+        if (!is_string($value) || !BrowserTimeZone::isValid($value)) {
+            throw new InvalidArgumentException('Choose a valid time zone for the backup period.');
+        }
+
+        return new DateTimeZone($value);
     }
 
     /**

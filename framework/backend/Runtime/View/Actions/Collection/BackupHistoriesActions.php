@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Backup\BackupMetadata;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -63,6 +64,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      * @throws LogicException When an internal invariant is violated
+     * @throws InvalidFormatException When backup metadata carries an ambiguous or invalid moment
      */
     public function syncToScan(array $metadatas, ?string $nodeId): int
     {
@@ -111,6 +113,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidFormatException When backup metadata carries an ambiguous or invalid moment
      */
     private function applyScanned(string $id, BackupMetadata $metadata, ?string $nodeId): bool
     {

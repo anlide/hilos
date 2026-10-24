@@ -22,6 +22,7 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatDurationShort } from '../../format/duration.js'
+import { formatMoment } from '../../format/moment.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -38,7 +39,11 @@ import {
   isHiddenValue,
 } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
+import {
+  computedSignal,
+  type ReadonlySignal,
+  subscribeSignal,
+} from '../../state/signal.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -54,6 +59,7 @@ import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { type HilosTableSortOrder } from '../../table/tableSortOrder.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosTableProgress } from '../../table/tableProgress.js'
+import { hilosTimeZone } from '../../timeZone/timeZoneState.js'
 
 export {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
@@ -595,8 +601,14 @@ export function formatBackupChecksum(row: HilosBackupRow): string {
   switch (row.checksumState) {
     case 'mismatch':
       return 'MISMATCH'
-    case 'verified':
-      return row.verifiedAt === null ? '✓' : `✓ ${row.verifiedAt.slice(0, 10)}`
+    case 'verified': {
+      const date =
+        row.verifiedAt === null
+          ? null
+          : formatMoment(row.verifiedAt, { kind: 'date' })
+
+      return date === null ? '✓' : `✓ ${date}`
+    }
     case 'present':
       return 'present'
     default:
@@ -620,8 +632,14 @@ export function formatBackupShipping(row: HilosBackupRow): string {
   switch (row.shipState) {
     case 'failed':
       return 'FAILED'
-    case 'shipped':
-      return row.shippedAt === null ? '✓' : `✓ ${row.shippedAt.slice(0, 10)}`
+    case 'shipped': {
+      const date =
+        row.shippedAt === null
+          ? null
+          : formatMoment(row.shippedAt, { kind: 'date' })
+
+      return date === null ? '✓' : `✓ ${date}`
+    }
     case 'pending':
       return 'pending'
     default:
@@ -992,6 +1010,9 @@ const BACKUP_FILTER_FROM = 'from'
 /** Filter-map key of the last day of the period (backend `HilosBackupHistoryTable::FILTER_TO`). */
 const BACKUP_FILTER_TO = 'to'
 
+/** Hidden filter-map key of the period's reader zone (backend `HilosBackupHistoryTable::FILTER_TIME_ZONE`). */
+export const BACKUP_FILTER_TIME_ZONE = 'timeZone'
+
 /** The columns of the backup table, in display order. */
 const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
   {
@@ -1185,7 +1206,12 @@ export function createHilosBackupsTable(
   context: HilosBackupsContext,
   view: HilosBackupsTableView,
 ): HilosBackupsTable {
+  // One handle's reset preset, kept current rather than caching the reader zone.
+  // No other process reads it, so Hilos::$rt has no part in this browser lifecycle
+  // (framework-first.md; runtime/rt-context.md; architecture/truth-source.md).
+  const initialFilter = { [BACKUP_FILTER_TIME_ZONE]: hilosTimeZone.get() }
   const controller = new TableViewportController<HilosBackupRow>({
+    initialFilter,
     resolve: resolveHilosBackupRow,
     refused: (row) => row.finished === null,
     sendViewport: (descriptor) =>
@@ -1211,10 +1237,23 @@ export function createHilosBackupsTable(
   })
   const teardown: Array<() => void> = []
 
+  const syncTimeZone = (timeZone: string): void => {
+    initialFilter[BACKUP_FILTER_TIME_ZONE] = timeZone
+    if (controller.filter.get()[BACKUP_FILTER_TIME_ZONE] !== timeZone) {
+      controller.setFilters({ [BACKUP_FILTER_TIME_ZONE]: timeZone })
+    }
+  }
+
   return {
     controller,
     start() {
+      if (teardown.length > 0) {
+        return
+      }
+      // The effective zone may have changed since creation or the last mount.
+      syncTimeZone(hilosTimeZone.get())
       teardown.push(
+        subscribeSignal(hilosTimeZone, syncTimeZone),
         // A backup action_error without a requestId answers no pending request: it is the
         // agent reporting how a run this connection started ended, long after the create was
         // acked. Nothing on this page is waiting for it, so it surfaces as a toast rather than

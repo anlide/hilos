@@ -365,6 +365,14 @@ export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'
 export { watchDaemonSource } from './daemonSource.js'
 export {
+  backupMomentRow,
+  enterCalendarDate,
+  expectBackupMoments,
+  expectMaintenanceMoment,
+  expectReaderMoment,
+  readerMoment,
+} from './moments.js'
+export {
   bundleFiles,
   expectBundleRequests,
   expectLazyPageFailure,

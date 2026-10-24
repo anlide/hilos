@@ -66,7 +66,7 @@ final class RestoreNotifier
      * @param BackupScope $scope Scope the archive was captured under
      * @param bool $success Whether the run came back whole (child succeeded and barrier closed)
      * @param ?string $failureDetail Raw failure detail when it did not, or null
-     * @param string $startedAt SQL datetime the run started
+     * @param string $startedAt ISO-8601 UTC instant with Z the run started
      * @param int $durationSeconds How long the run took, in seconds
      * @param bool $rehydrateComplete Whether every process confirmed re-reading the replaced database
      * @param list<SessionIdentityRef> $initiatorIdentities Initiator identities photographed before the swap
@@ -130,7 +130,7 @@ final class RestoreNotifier
      * @param BackupScope $scope Scope the archive was captured under
      * @param bool $success Whether the run came back whole
      * @param ?string $failureDetail Raw failure detail when it did not, or null
-     * @param string $startedAt SQL datetime the run started
+     * @param string $startedAt ISO-8601 UTC instant with Z the run started
      * @param int $durationSeconds How long the run took, in seconds
      * @param bool $rehydrateComplete Whether every process confirmed re-reading the replaced database
      * @param list<SessionIdentityRef> $initiatorIdentities Initiator identities photographed before the swap

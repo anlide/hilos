@@ -12,6 +12,7 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\BackupHistories;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupHistory - one runtime index row for a stored backup.
@@ -53,7 +54,7 @@ final class BackupHistory extends RtState
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
 
-    /** ISO-8601 creation timestamp. */
+    /** ISO-8601 UTC (Z) creation timestamp. */
     public string $createdAt = '';
 
     /** Application environment the backup was taken in. */
@@ -90,13 +91,13 @@ final class BackupHistory extends RtState
     /** Archive digest from the sidecar; null for error rows and backups written before digests. */
     public ?string $sha256 = null;
 
-    /** ISO-8601 instant of the last verification; null means never verified. */
+    /** ISO-8601 UTC (Z) instant of the last verification; null means never verified. */
     public ?string $verifiedAt = null;
 
     /** Outcome value of that verification ({@see BackupVerifyOutcome}); null if never verified. */
     public ?string $verifyOutcome = null;
 
-    /** ISO-8601 instant this archive was last restored from; null means never restored. */
+    /** ISO-8601 UTC (Z) instant this archive was last restored from; null means never restored. */
     public ?string $restoredAt = null;
 
     /**
@@ -106,7 +107,7 @@ final class BackupHistory extends RtState
      */
     public int $restoreDurationSeconds = 0;
 
-    /** ISO-8601 instant this backup was last copied off the machine; null means never. */
+    /** ISO-8601 UTC (Z) instant this backup was last copied off the machine; null means never. */
     public ?string $shippedAt = null;
 
     /** Outcome value of that copy ({@see BackupShipOutcome}); null if never attempted. */
@@ -142,12 +143,13 @@ final class BackupHistory extends RtState
      * @param BackupMetadata $metadata Sidecar metadata
      * @param ?string $nodeId Node that ran the scan, or null on an installation without clustering
      * @return static Fresh history row
+     * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
      */
     public static function fromMetadata(BackupMetadata $metadata, ?string $nodeId): static
     {
         $instance = new static();
         $instance->id = $metadata->id;
-        $instance->createdAt = $metadata->createdAt;
+        $instance->createdAt = UtcMoment::normalize($metadata->createdAt);
         $instance->env = $metadata->env;
         $instance->scope = $metadata->scope->value;
         $instance->connections = $metadata->connections;
@@ -158,11 +160,11 @@ final class BackupHistory extends RtState
         $instance->failureReason = $metadata->failureReason;
         $instance->dumpBytes = $metadata->dumpBytes;
         $instance->sha256 = $metadata->sha256;
-        $instance->verifiedAt = $metadata->verifiedAt;
+        $instance->verifiedAt = $metadata->verifiedAt === null ? null : UtcMoment::normalize($metadata->verifiedAt);
         $instance->verifyOutcome = $metadata->verifyOutcome?->value;
-        $instance->restoredAt = $metadata->restoredAt;
+        $instance->restoredAt = $metadata->restoredAt === null ? null : UtcMoment::normalize($metadata->restoredAt);
         $instance->restoreDurationSeconds = $metadata->restoreDurationSeconds;
-        $instance->shippedAt = $metadata->shippedAt;
+        $instance->shippedAt = $metadata->shippedAt === null ? null : UtcMoment::normalize($metadata->shippedAt);
         $instance->shipOutcome = $metadata->shipOutcome?->value;
         $instance->shipError = $metadata->shipError;
         $instance->shipEncryption = $metadata->shipEncryption;
@@ -181,7 +183,7 @@ final class BackupHistory extends RtState
     {
         $instance = new static();
         $instance->id = self::requireString($row, self::id);
-        $instance->createdAt = self::requireString($row, self::createdAt);
+        $instance->createdAt = UtcMoment::normalize(self::requireString($row, self::createdAt));
         $instance->env = self::requireString($row, self::env);
         $instance->scope = self::optionalString($row, self::scope);
         $instance->connections = self::readConnections($row);
@@ -193,10 +195,13 @@ final class BackupHistory extends RtState
         $instance->dumpBytes = self::requireInt($row, self::dumpBytes);
         $instance->sha256 = self::optionalString($row, self::sha256);
         $instance->verifiedAt = self::optionalString($row, self::verifiedAt);
+        $instance->verifiedAt = $instance->verifiedAt === null ? null : UtcMoment::normalize($instance->verifiedAt);
         $instance->verifyOutcome = self::optionalString($row, self::verifyOutcome);
         $instance->restoredAt = self::optionalString($row, self::restoredAt);
+        $instance->restoredAt = $instance->restoredAt === null ? null : UtcMoment::normalize($instance->restoredAt);
         $instance->restoreDurationSeconds = self::requireInt($row, self::restoreDurationSeconds);
         $instance->shippedAt = self::optionalString($row, self::shippedAt);
+        $instance->shippedAt = $instance->shippedAt === null ? null : UtcMoment::normalize($instance->shippedAt);
         $instance->shipOutcome = self::optionalString($row, self::shipOutcome);
         $instance->shipError = self::optionalString($row, self::shipError);
         $instance->shipEncryption = self::optionalString($row, self::shipEncryption);
@@ -218,7 +223,9 @@ final class BackupHistory extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        $this->createdAt = self::patchString($diff, self::createdAt, $this->createdAt);
+        if (array_key_exists(self::createdAt, $diff)) {
+            $this->createdAt = UtcMoment::normalize(self::patchString($diff, self::createdAt, $this->createdAt));
+        }
         $this->env = self::patchString($diff, self::env, $this->env);
         $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
         if (array_key_exists(self::connections, $diff)) {
@@ -231,11 +238,20 @@ final class BackupHistory extends RtState
         $this->failureReason = self::patchOptionalString($diff, self::failureReason, $this->failureReason);
         $this->dumpBytes = self::patchInt($diff, self::dumpBytes, $this->dumpBytes);
         $this->sha256 = self::patchOptionalString($diff, self::sha256, $this->sha256);
-        $this->verifiedAt = self::patchOptionalString($diff, self::verifiedAt, $this->verifiedAt);
+        if (array_key_exists(self::verifiedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::verifiedAt, $this->verifiedAt);
+            $this->verifiedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->verifyOutcome = self::patchOptionalString($diff, self::verifyOutcome, $this->verifyOutcome);
-        $this->restoredAt = self::patchOptionalString($diff, self::restoredAt, $this->restoredAt);
+        if (array_key_exists(self::restoredAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::restoredAt, $this->restoredAt);
+            $this->restoredAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->restoreDurationSeconds = self::patchInt($diff, self::restoreDurationSeconds, $this->restoreDurationSeconds);
-        $this->shippedAt = self::patchOptionalString($diff, self::shippedAt, $this->shippedAt);
+        if (array_key_exists(self::shippedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::shippedAt, $this->shippedAt);
+            $this->shippedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->shipOutcome = self::patchOptionalString($diff, self::shipOutcome, $this->shipOutcome);
         $this->shipError = self::patchOptionalString($diff, self::shipError, $this->shipError);
         $this->shipEncryption = self::patchOptionalString($diff, self::shipEncryption, $this->shipEncryption);

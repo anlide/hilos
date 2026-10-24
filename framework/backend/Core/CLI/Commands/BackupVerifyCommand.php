@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use DateTimeImmutable;
-use DateTimeInterface;
-use DateTimeZone;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupHistoryScanner;
@@ -27,6 +25,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupVerifyCommand - check stored archives against the digests recorded when they were written.
@@ -384,7 +383,7 @@ HELP;
      */
     private function stamp(string $root, BackupMetadata $metadata, BackupVerifyOutcome $outcome): void
     {
-        $verifiedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
+        $verifiedAt = UtcMoment::format(new DateTimeImmutable());
 
         new BackupCreator()->recordVerification($metadata, $root, $outcome, $verifiedAt);
     }

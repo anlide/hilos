@@ -2,7 +2,12 @@
 disable and code dialogs, under the shared Maintenance section head. Each action
 waits for its tracked answer independently of live state pushes. -->
 <script setup lang="ts">
-import { ActionError, HilosPages } from '@hilos/core/base'
+import {
+  ActionError,
+  formatMoment,
+  HilosPages,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceState,
@@ -30,6 +35,7 @@ const props = defineProps<{
 
 const stateHandle = createHilosMaintenanceState(props.context)
 const maintenanceState = useSignal(stateHandle.state)
+const timeZone = useSignal(hilosTimeZone)
 const nowMs = ref(Date.now())
 const position = computed(() =>
   hilosMaintenancePosition(maintenanceState.value),
@@ -37,6 +43,12 @@ const position = computed(() =>
 const stateCard = computed(() =>
   hilosMaintenanceCard(maintenanceState.value, nowMs.value),
 )
+const startedAt = computed(() => {
+  void timeZone.value
+  return (
+    formatMoment(stateCard.value?.startedAt ?? '', { kind: 'dateTime' }) ?? '—'
+  )
+})
 let clockTick: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
@@ -226,7 +238,9 @@ onUnmounted(() => {
                 {{ HILOS_MAINTENANCE_STATE_COPY.closedSince }}
               </dt>
               <dd class="col-sm-9">
-                <code>{{ stateCard.startedAt ?? '—' }}</code>
+                <code data-id="hilos-maintenance-started-at">{{
+                  startedAt
+                }}</code>
                 <span class="text-body-secondary ms-2">{{
                   stateCard.elapsed
                 }}</span>
@@ -247,7 +261,9 @@ onUnmounted(() => {
                 {{ HILOS_MAINTENANCE_STATE_COPY.started }}
               </dt>
               <dd class="col-sm-9">
-                <code>{{ stateCard.startedAt ?? '—' }}</code>
+                <code data-id="hilos-maintenance-started-at">{{
+                  startedAt
+                }}</code>
               </dd>
             </template>
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
@@ -58,16 +57,30 @@ final class BackupCreatorTest extends TestCase
     {
         // The id is minted when the run starts, so the record must read the same instant back:
         // dating by "now" would put a long dump's finish time on a row whose id says otherwise.
-        // Built through the same default timezone the supervisor mints ids in, so the case does
-        // not depend on where the suite runs.
-        $expected = new DateTimeImmutable('2026-07-19 10:30:00')->format(DateTimeInterface::ATOM);
-
-        $this->assertSame($expected, BackupCreator::startedAtFromId('2026-07-19_10-30-00'));
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $this->assertSame('2026-07-19T10:30:00.000000Z', BackupCreator::startedAtFromId('2026-07-19_10-30-00'));
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     public function testAMalformedIdStillYieldsADate(): void
     {
-        $this->assertNotSame('', BackupCreator::startedAtFromId('not-a-timestamp'));
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $before = time();
+            foreach (['not-a-timestamp', '2026-02-30_10-30-00'] as $id) {
+                $stamp = BackupCreator::startedAtFromId($id);
+                $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/', $stamp);
+                $this->assertGreaterThanOrEqual($before, new DateTimeImmutable($stamp)->getTimestamp());
+                $this->assertLessThanOrEqual(time(), new DateTimeImmutable($stamp)->getTimestamp());
+            }
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     public function testFullScopeIsOneUnrestrictedPass(): void
@@ -253,7 +266,7 @@ final class BackupCreatorTest extends TestCase
         $root = $this->makeRoot();
         $original = new BackupMetadata(
             id: 'bk1',
-            createdAt: '2026-07-20T03:00:00+00:00',
+            createdAt: '2026-07-20T03:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -316,7 +329,7 @@ final class BackupCreatorTest extends TestCase
         $root = $this->makeRoot();
         $original = new BackupMetadata(
             id: 'bk1',
-            createdAt: '2026-08-02T03:00:00+00:00',
+            createdAt: '2026-08-02T03:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -332,11 +345,11 @@ final class BackupCreatorTest extends TestCase
             $original,
             $root,
             BackupVerifyOutcome::MISMATCH,
-            '2026-08-02T06:00:00+00:00',
+            '2026-08-02T06:00:00.000000Z',
         );
 
         $reloaded = $this->readSidecar($root, $original);
-        $this->assertSame('2026-08-02T06:00:00+00:00', $reloaded->verifiedAt);
+        $this->assertSame('2026-08-02T06:00:00.000000Z', $reloaded->verifiedAt);
         $this->assertSame(BackupVerifyOutcome::MISMATCH, $reloaded->verifyOutcome);
         // The verification stamp is the only change: the digest it judged and the keep pin stay put.
         $this->assertSame($original->sha256, $reloaded->sha256);
@@ -352,7 +365,7 @@ final class BackupCreatorTest extends TestCase
             $this->metadata(),
             $this->makeRoot(),
             BackupVerifyOutcome::OK,
-            '2026-08-02T06:00:00+00:00',
+            '2026-08-02T06:00:00.000000Z',
         );
     }
 
@@ -361,7 +374,7 @@ final class BackupCreatorTest extends TestCase
         $root = $this->makeRoot();
         $original = new BackupMetadata(
             id: 'bk-ship',
-            createdAt: '2026-08-16T03:00:00+00:00',
+            createdAt: '2026-08-16T03:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -376,7 +389,7 @@ final class BackupCreatorTest extends TestCase
         $stored = new BackupCreator()->recordShipping(
             $this->rowFor($original),
             $root,
-            '2026-08-16T06:00:00+00:00',
+            '2026-08-16T06:00:00.000000Z',
             BackupShipOutcome::OK,
             null,
             'f0e1d2c3b4a5',
@@ -384,7 +397,7 @@ final class BackupCreatorTest extends TestCase
 
         $this->assertNull($stored);
         $reloaded = $this->readSidecar($root, $original);
-        $this->assertSame('2026-08-16T06:00:00+00:00', $reloaded->shippedAt);
+        $this->assertSame('2026-08-16T06:00:00.000000Z', $reloaded->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $reloaded->shipOutcome);
         $this->assertNull($reloaded->shipError);
         // The shape the copy left in is stamped beside the outcome: it is what tells a later pass
@@ -444,7 +457,7 @@ final class BackupCreatorTest extends TestCase
     {
         return new BackupMetadata(
             id: 'bk1',
-            createdAt: '2026-07-20T03:00:00+00:00',
+            createdAt: '2026-07-20T03:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],

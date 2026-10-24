@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Backup\Agent;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use DateTimeZone;
 use Exception;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -108,6 +107,7 @@ use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -898,7 +898,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             BackupConstants::FIELD_BACKUP_ID => $id,
-            BackupConstants::FIELD_AGE_AT => $createdAt->format(DateTimeInterface::ATOM),
+            BackupConstants::FIELD_AGE_AT => UtcMoment::format($createdAt),
         ]));
     }
 
@@ -2677,7 +2677,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         // A failed attempt keeps whatever instant an earlier success left: the column reads the
         // failure, and the record still says when this backup was last actually copied.
         $shippedAt = $succeeded
-            ? new DateTimeImmutable()->format(DateTimeInterface::ATOM)
+            ? UtcMoment::format(new DateTimeImmutable())
             : $row->shippedAt;
         // The shape is kept the same way and for a sharper reason: it describes a copy that is
         // over there, and a failed attempt did not replace it. Overwriting it on failure would
@@ -3380,7 +3380,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             $scope,
             $this->rehydrateChildSucceeded && $complete,
             $this->restoreFailureDetail($complete, $problems),
-            date('Y-m-d H:i:s', (int)$this->pendingRestoreSince),
+            UtcMoment::format(new DateTimeImmutable('@' . (int)$this->pendingRestoreSince)),
             $this->restoreElapsedSeconds(),
             $complete,
             $this->pendingRestoreInitiatorIdentities ?? [],
@@ -3433,7 +3433,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             return;
         }
 
-        $restoredAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $restoredAt = UtcMoment::format(new DateTimeImmutable());
 
         try {
             new BackupCreator()->recordRestore(

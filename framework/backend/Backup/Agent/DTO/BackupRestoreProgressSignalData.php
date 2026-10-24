@@ -38,13 +38,13 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
     /** Payload key: the current {@see RestorePhase} value. */
     public const string phase = 'phase';
 
-    /** Payload key: ISO-8601 instant the current phase began. */
+    /** Payload key: ISO-8601 UTC (Z) instant the current phase began. */
     public const string phaseStartedAt = 'phaseStartedAt';
 
-    /** Payload key: ISO-8601 start time of the run. */
+    /** Payload key: ISO-8601 UTC (Z) start time of the run. */
     public const string startedAt = 'startedAt';
 
-    /** Payload key: ISO-8601 finish time of the run. */
+    /** Payload key: ISO-8601 UTC (Z) finish time of the run. */
     public const string finishedAt = 'finishedAt';
 
     /** Payload key: the terminal {@see BackupStatus} value. */
@@ -70,9 +70,9 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
      * @param ?string $backupId Id of the archive being replayed; null when idle
      * @param ?string $scope Scope value of that archive; null when idle
      * @param ?string $phase Current {@see RestorePhase} value; null when idle
-     * @param ?string $phaseStartedAt ISO-8601 instant the current phase began; null when there is no phase
-     * @param ?string $startedAt ISO-8601 start time of the run; null when idle
-     * @param ?string $finishedAt ISO-8601 finish time of the last run; null while it runs
+     * @param ?string $phaseStartedAt ISO-8601 UTC (Z) instant the current phase began; null when there is no phase
+     * @param ?string $startedAt ISO-8601 UTC (Z) start time of the run; null when idle
+     * @param ?string $finishedAt ISO-8601 UTC (Z) finish time of the last run; null while it runs
      * @param ?string $outcome Terminal {@see BackupStatus} value; null until one finishes
      * @param ?string $failureReason Why the last run failed; null when it succeeded or never ran
      * @param ?int $estimatedSeconds How long the run is expected to take; null when there is no history for it

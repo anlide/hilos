@@ -29,7 +29,7 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
      * @param string $phase Protected-mode phase from the runtime row
      * @param ?string $operation Operation name, or null when inactive
      * @param bool $manual Whether this is a manual maintenance window
-     * @param ?string $startedAt ISO-8601 time the freeze began, or null when inactive
+     * @param ?string $startedAt ISO-8601 UTC (Z) time the freeze began, or null when inactive
      * @param bool $enteredFromBrowser Whether a browser session requested the freeze
      * @param int $passCount Passes issued in the current verification window
      * @param int $circleNamed People named in the captured verifier circle

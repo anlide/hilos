@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Item;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestorePhase;
@@ -13,6 +12,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime as ViewRestoreRuntime;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * Write operations for the restore runtime singleton.
@@ -51,7 +51,7 @@ final class RestoreRuntimeActions extends RtActions
         $this->state->running = true;
         $this->state->backupId = $backupId;
         $this->state->scope = $scope->value;
-        $startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $startedAt = UtcMoment::format(new DateTimeImmutable());
 
         $this->state->phase = RestorePhase::PENDING->value;
         $this->state->phaseStartedAt = $startedAt;
@@ -85,7 +85,7 @@ final class RestoreRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = $phase->value;
-        $this->state->phaseStartedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
         $this->sync();
     }
 
@@ -105,7 +105,7 @@ final class RestoreRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = RestorePhase::REHYDRATING->value;
-        $this->state->phaseStartedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
         $this->state->rehydrateComplete = false;
         $this->state->rehydrateProblems = [];
         $this->sync();
@@ -176,7 +176,7 @@ final class RestoreRuntimeActions extends RtActions
             : RestorePhase::FAILED->value;
         $this->state->phaseStartedAt = null;
         $this->state->estimatedSeconds = null;
-        $this->state->finishedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->finishedAt = UtcMoment::format(new DateTimeImmutable());
         $this->state->outcome = $outcome->value;
         $this->state->failureReason = $failureReason;
         $this->sync();

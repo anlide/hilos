@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
@@ -40,16 +39,33 @@ final class BackupSidecarRetimerTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testRetimeWritesUtcWhilePreservingTheSuppliedOffsetInstant(): void
+    {
+        $id = '2026-07-19_10-30-00';
+        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00Z');
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $moment = new DateTimeImmutable('2026-01-01T05:45:00.123456+05:45');
+            $path = new BackupSidecarRetimer()->retime($this->root, $id, null, $moment);
+            $stored = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame('2026-01-01T00:00:00.123456Z', $stored[BackupMetadata::createdAt]);
+            $this->assertSame('2026-01-01T05:45:00.123456+05:45', $moment->format('Y-m-d\TH:i:s.uP'));
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
     public function testRetimeRewritesOnlyCreatedAt(): void
     {
         $id = '2026-07-19_10-30-00';
-        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00+00:00', keep: true);
+        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00.000000Z', keep: true);
 
-        $newInstant = new DateTimeImmutable('2026-01-01T00:00:00+00:00');
+        $newInstant = new DateTimeImmutable('2026-01-01T00:00:00.000000Z');
         $path = new BackupSidecarRetimer()->retime($this->root, $id, null, $newInstant);
 
         $rewritten = $this->readSidecar($path);
-        $this->assertSame($newInstant->format(DateTimeInterface::ATOM), $rewritten->createdAt);
+        $this->assertSame('2026-01-01T00:00:00.000000Z', $rewritten->createdAt);
         $this->assertSame($id, $rewritten->id);
         $this->assertSame(self::ENV, $rewritten->env);
         $this->assertSame(BackupScope::FULL, $rewritten->scope);
@@ -60,7 +76,7 @@ final class BackupSidecarRetimerTest extends TestCase
     public function testAPastInstantMovesTheSidecarBack(): void
     {
         $id = '2026-07-19_10-30-00';
-        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00+00:00');
+        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00.000000Z');
 
         // The caller computes createdAt from now minus N days; assert the sidecar moved back.
         $before = new DateTimeImmutable('-40 days');
@@ -82,8 +98,8 @@ final class BackupSidecarRetimerTest extends TestCase
     public function testRetimeThrowsWhenIdIsAmbiguousAcrossScopes(): void
     {
         $id = '2026-07-19_10-30-00';
-        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00+00:00');
-        $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00+00:00');
+        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00.000000Z');
+        $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00.000000Z');
 
         $this->expectException(BackupException::class);
         new BackupSidecarRetimer()->retime($this->root, $id, null, new DateTimeImmutable());
@@ -92,17 +108,17 @@ final class BackupSidecarRetimerTest extends TestCase
     public function testScopeNarrowsAnAmbiguousIdToOneMatch(): void
     {
         $id = '2026-07-19_10-30-00';
-        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00+00:00');
-        $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00+00:00');
+        $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00.000000Z');
+        $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00.000000Z');
 
-        $newInstant = new DateTimeImmutable('2025-01-01T00:00:00+00:00');
+        $newInstant = new DateTimeImmutable('2025-01-01T00:00:00.000000Z');
         $path = new BackupSidecarRetimer()->retime($this->root, $id, BackupScope::SCHEMA_ONLY, $newInstant);
 
         // Only the schema-only sidecar moved; the full sidecar is untouched.
         $this->assertSame($this->sidecarPath($id, BackupScope::SCHEMA_ONLY), $path);
-        $this->assertSame($newInstant->format(DateTimeInterface::ATOM), $this->readSidecar($path)->createdAt);
+        $this->assertSame('2025-01-01T00:00:00.000000Z', $this->readSidecar($path)->createdAt);
         $this->assertSame(
-            '2026-07-19T10:30:00+00:00',
+            '2026-07-19T10:30:00.000000Z',
             $this->readSidecar($this->sidecarPath($id, BackupScope::FULL))->createdAt,
         );
     }

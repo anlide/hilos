@@ -8,6 +8,8 @@ export const BACKUP_RESTORE_PROGRESS_SIGNAL = 'backup_restore_progress'
  * Payload of one restore progress frame — the restore runtime row as the agent
  * photographs it, key for key with what the CLI monitor is answered
  * (PHP `BackupRestoreProgressSignalData`).
+ * `phaseStartedAt`, `startedAt` and `finishedAt` are ISO-8601 UTC moments ending
+ * in Z, or null when absent. `estimatedSeconds` is a duration in seconds.
  */
 export const restoreProgressSchema = z.looseObject({
   running: z.boolean(),

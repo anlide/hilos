@@ -99,7 +99,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $manual = $this->payload(Hilos::$sr?->getNextQueuedSignal());
         $this->assertTrue($manual[HilosMaintenanceStateSignalData::manual]);
         $this->assertSame('manual_maintenance', $manual[HilosMaintenanceStateSignalData::operation]);
-        $this->assertSame(gmdate(DATE_ATOM, self::STARTED_AT), $manual[HilosMaintenanceStateSignalData::startedAt]);
+        $this->assertSame('2023-11-14T22:13:20.000000Z', $manual[HilosMaintenanceStateSignalData::startedAt]);
         $this->assertTrue($manual[HilosMaintenanceStateSignalData::enteredFromBrowser]);
         $this->assertSame(2, $manual[HilosMaintenanceStateSignalData::passCount]);
         $this->assertSame(3, $manual[HilosMaintenanceStateSignalData::circleNamed]);

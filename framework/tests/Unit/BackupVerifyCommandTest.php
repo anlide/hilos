@@ -68,6 +68,23 @@ final class BackupVerifyCommandTest extends TestCase
         parent::tearDown();
     }
 
+    public function testVerificationWritesCanonicalUtcOnDiskUnderANonUtcProcessZone(): void
+    {
+        $this->storeBackup('utc', BackupScope::FULL, 'archive payload', digest: true);
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $result = $this->runCommand([], ['utc']);
+            $this->assertSame(ExitCode::SUCCESS, $result['code']);
+            $path = $this->root . '/full/' . BackupCreator::archiveBaseName('utc', 'test', BackupScope::FULL) . '.json';
+            $stored = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/', $stored[BackupMetadata::verifiedAt]);
+            $this->assertSame(BackupVerifyOutcome::OK, $this->storedSidecar('utc', BackupScope::FULL)->verifyOutcome);
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
     public function testAnIntactArchiveVerifiesAndTheVerdictLandsInTheSidecar(): void
     {
         $this->storeBackup('b1', BackupScope::FULL, 'archive payload');
@@ -264,7 +281,7 @@ final class BackupVerifyCommandTest extends TestCase
 
         $metadata = new BackupMetadata(
             id: $id,
-            createdAt: '2026-08-02T03:00:00+00:00',
+            createdAt: '2026-08-02T03:00:00.000000Z',
             env: 'test',
             scope: $scope,
             connections: [],

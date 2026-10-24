@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use DateTimeImmutable;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupRunKind;
 use Hilos\Backup\BackupPhase;
 use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestorePhase;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -64,6 +66,32 @@ final class BackupAgentProgressTest extends TestCase
         Hilos::$sr = null;
 
         parent::tearDown();
+    }
+
+    public function testTransitionsStampUtcInEveryRuntimeMomentUnderANonUtcProcessZone(): void
+    {
+        $previousZone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Honolulu');
+            $before = time();
+            $this->backupRow()->actions->markRunning('b1', BackupScope::FULL);
+            $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::DUMPING->value));
+            $this->restoreRow()->actions->markRunning('b1', BackupScope::FULL);
+            $this->feed(BackupRunKind::RESTORE, BackupProgressMarker::statement(RestorePhase::IMPORTING->value));
+            foreach ([$this->backupRow()->startedAt, $this->backupRow()->phaseStartedAt,
+                $this->restoreRow()->startedAt, $this->restoreRow()->phaseStartedAt] as $stamp) {
+                $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/', $stamp);
+                $this->assertGreaterThanOrEqual($before, new DateTimeImmutable($stamp)->getTimestamp());
+                $this->assertLessThanOrEqual(time(), new DateTimeImmutable($stamp)->getTimestamp());
+            }
+            $this->restoreRow()->actions->markRehydrating();
+            $this->assertMatchesRegularExpression('/\.\d{6}Z$/', $this->restoreRow()->phaseStartedAt);
+            $this->restoreRow()->actions->finish(BackupStatus::SUCCESS);
+            $this->assertMatchesRegularExpression('/\.\d{6}Z$/', $this->restoreRow()->finishedAt);
+            $this->assertNull($this->restoreRow()->phaseStartedAt);
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     public function testAnAnnouncedPhaseReachesTheRunningRow(): void

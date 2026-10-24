@@ -26,6 +26,8 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Tests\Unit\WebSocketClientTestProbe;
@@ -110,6 +112,9 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
             $this->assertSame(HilosSignalConstants::BACKUP_RESTORE_PROGRESS, $frame['type'] ?? null);
             $this->assertSame(self::BACKUP_ID, $frame['data']['backupId'] ?? null);
             $this->assertSame('importing', $frame['data']['phase'] ?? null);
+            $this->assertSame('2026-08-24T11:00:00.000000Z', $frame['data']['startedAt']);
+            $this->assertSame('2026-08-24T11:01:00.123456Z', $frame['data']['phaseStartedAt']);
+            $this->assertNull($frame['data']['finishedAt']);
         }
     }
 
@@ -152,11 +157,15 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
         $frame = $this->deliveredFrame($watching);
         $this->assertSame('error', $frame['data']['outcome'] ?? null);
         $this->assertSame('the archive checksum did not match', $frame['data']['failureReason'] ?? null);
+        $this->assertSame('2026-08-24T11:00:00.000000Z', $frame['data']['startedAt']);
+        $this->assertSame('2026-08-24T11:01:00.123456Z', $frame['data']['phaseStartedAt']);
+        $this->assertSame('2026-08-24T11:02:00.654321Z', $frame['data']['finishedAt']);
     }
 
     /**
      * Queues one progress frame the way {@see BackupAgent::reportRestoreProgress()} does: the
-     * payload it builds, addressed by the hash of the initiator's session token.
+     * payload it builds, addressed by the hash of the initiator's session token. The worker JSON
+     * crosses a real socket into WorkerClient before the master dispatches it to the session.
      *
      * @param string $phase Restore phase the frame reports
      * @param ?string $failureReason Why the run failed, or null while it is still going
@@ -169,9 +178,9 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
             backupId: self::BACKUP_ID,
             scope: 'full',
             phase: $phase,
-            phaseStartedAt: null,
-            startedAt: null,
-            finishedAt: null,
+            phaseStartedAt: '2026-08-24T11:01:00.123456Z',
+            startedAt: '2026-08-24T11:00:00.000000Z',
+            finishedAt: $failureReason === null ? null : '2026-08-24T11:02:00.654321Z',
             outcome: $failureReason === null ? null : 'error',
             failureReason: $failureReason,
             estimatedSeconds: null,
@@ -180,15 +189,34 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
             databaseTouched: $failureReason !== null,
         );
 
-        Hilos::$sr->queueSignal(
+        $signal = new SignalDTO(
             signalSource: new SignalSource(SignalSource::AGENT),
             signalType: new SignalType(SignalTypeConstants::WS_SESSION),
             signalName: new SignalName(HilosSignalConstants::BACKUP_RESTORE_PROGRESS),
-            signalData: new WebSocketSignalData(
+            data: new WebSocketSignalData(
                 data: $progress,
                 targetSessionTokenHash: StateProtectedModeRuntime::hashSessionToken(self::INITIATOR_SESSION_TOKEN),
             ),
         );
+        $pair = [];
+        $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+        try {
+            foreach ($pair as $socket) {
+                $this->assertTrue(socket_set_nonblock($socket));
+            }
+            $receiver = new WorkerClient(
+                $pair[1],
+                new RestoreProgressDeliveryTestAgentManagerDaemon(),
+                new RestoreProgressDeliveryTestWorkerServer(),
+            );
+            $bytes = new WorkerAgentMessageDTO(null, $signal)->toJson() . "\n";
+            $this->assertSame(strlen($bytes), socket_write($pair[0], $bytes));
+            $receiver->read();
+        } finally {
+            foreach ($pair as $socket) {
+                socket_close($socket);
+            }
+        }
     }
 
     /**

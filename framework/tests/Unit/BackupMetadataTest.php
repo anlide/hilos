@@ -11,6 +11,7 @@ use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -19,11 +20,41 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackupMetadataTest extends TestCase
 {
+    public function testLegacyZonedMomentsNormalizeWithoutInventingOptionalValues(): void
+    {
+        $metadata = BackupMetadata::fromArray($this->minimalSidecar([
+            BackupMetadata::createdAt => '2026-01-01T01:00:00.123456+01:00',
+            BackupMetadata::verifiedAt => '2025-12-31T19:00:00.12-05:00',
+            BackupMetadata::restoredAt => null,
+            BackupMetadata::shippedAt => '2026-01-01T05:45:00+05:45',
+        ]));
+
+        $this->assertSame('2026-01-01T00:00:00.123456Z', $metadata->createdAt);
+        $this->assertSame('2026-01-01T00:00:00.120000Z', $metadata->verifiedAt);
+        $this->assertNull($metadata->restoredAt);
+        $this->assertSame('2026-01-01T00:00:00.000000Z', $metadata->shippedAt);
+        $this->assertSame($metadata->toArray(), BackupMetadata::fromJson($metadata->toJson())->toArray());
+    }
+
+    public function testInvalidMomentsAreRefusedAtTheSidecarBoundaryWithTheirCause(): void
+    {
+        foreach ([BackupMetadata::createdAt, BackupMetadata::verifiedAt, BackupMetadata::restoredAt, BackupMetadata::shippedAt] as $field) {
+            foreach (['2026-01-01 00:00:00', '2026-02-30T00:00:00Z', '1767225600'] as $value) {
+                try {
+                    BackupMetadata::fromArray($this->minimalSidecar([$field => $value]));
+                    $this->fail('Invalid sidecar moment was accepted: ' . $field);
+                } catch (BackupMetadataIncompleteException $e) {
+                    $this->assertInstanceOf(InvalidFormatException::class, $e->getPrevious());
+                }
+            }
+        }
+    }
+
     public function testArrayRoundTripPreservesAllFields(): void
     {
         $metadata = new BackupMetadata(
             id: '20260718-full-01',
-            createdAt: '2026-07-18T10:20:30+00:00',
+            createdAt: '2026-07-18T10:20:30.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [
@@ -39,7 +70,7 @@ final class BackupMetadataTest extends TestCase
         $restored = BackupMetadata::fromArray($metadata->toArray());
 
         $this->assertSame('20260718-full-01', $restored->id);
-        $this->assertSame('2026-07-18T10:20:30+00:00', $restored->createdAt);
+        $this->assertSame('2026-07-18T10:20:30.000000Z', $restored->createdAt);
         $this->assertSame('prod', $restored->env);
         $this->assertSame(BackupScope::FULL, $restored->scope);
         $this->assertSame(BackupStatus::SUCCESS, $restored->status);
@@ -56,7 +87,7 @@ final class BackupMetadataTest extends TestCase
     {
         $metadata = new BackupMetadata(
             id: 'b1',
-            createdAt: '2026-07-18T00:00:00+00:00',
+            createdAt: '2026-07-18T00:00:00.000000Z',
             env: 'test',
             scope: BackupScope::SCHEMA_SEED,
             connections: [new BackupConnectionMeta(0, 'db', 1)],
@@ -78,7 +109,7 @@ final class BackupMetadataTest extends TestCase
     {
         $withWarning = new BackupMetadata(
             id: 'w1',
-            createdAt: '2026-07-19T00:00:00+00:00',
+            createdAt: '2026-07-19T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::SCHEMA_SEED,
             connections: [],
@@ -99,7 +130,7 @@ final class BackupMetadataTest extends TestCase
     {
         $errorMeta = new BackupMetadata(
             id: 'e1',
-            createdAt: '2026-07-20T00:00:00+00:00',
+            createdAt: '2026-07-20T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -128,7 +159,7 @@ final class BackupMetadataTest extends TestCase
     {
         $metadata = new BackupMetadata(
             id: 'd1',
-            createdAt: '2026-08-01T00:00:00+00:00',
+            createdAt: '2026-08-01T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -151,7 +182,7 @@ final class BackupMetadataTest extends TestCase
     {
         $metadata = new BackupMetadata(
             id: 'v1',
-            createdAt: '2026-08-02T00:00:00+00:00',
+            createdAt: '2026-08-02T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -160,13 +191,13 @@ final class BackupMetadataTest extends TestCase
             keep: false,
             status: BackupStatus::SUCCESS,
             sha256: str_repeat('ab', 32),
-            verifiedAt: '2026-08-02T04:05:06+00:00',
+            verifiedAt: '2026-08-02T04:05:06.000000Z',
             verifyOutcome: BackupVerifyOutcome::OK,
         );
 
         $restored = BackupMetadata::fromArray($metadata->toArray());
         $this->assertSame(str_repeat('ab', 32), $restored->sha256);
-        $this->assertSame('2026-08-02T04:05:06+00:00', $restored->verifiedAt);
+        $this->assertSame('2026-08-02T04:05:06.000000Z', $restored->verifiedAt);
         $this->assertSame(BackupVerifyOutcome::OK, $restored->verifyOutcome);
 
         // All three keys are always written, so an absent digest is explicit rather than ambiguous.
@@ -197,7 +228,7 @@ final class BackupMetadataTest extends TestCase
     {
         $metadata = new BackupMetadata(
             id: 's1',
-            createdAt: '2026-08-16T00:00:00+00:00',
+            createdAt: '2026-08-16T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -205,14 +236,14 @@ final class BackupMetadataTest extends TestCase
             durationSeconds: 3,
             keep: false,
             status: BackupStatus::SUCCESS,
-            shippedAt: '2026-08-16T04:05:06+00:00',
+            shippedAt: '2026-08-16T04:05:06.000000Z',
             shipOutcome: BackupShipOutcome::OK,
             shipError: null,
             shipEncryption: 'a1b2c3d4e5f6',
         );
 
         $restored = BackupMetadata::fromArray($metadata->toArray());
-        $this->assertSame('2026-08-16T04:05:06+00:00', $restored->shippedAt);
+        $this->assertSame('2026-08-16T04:05:06.000000Z', $restored->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $restored->shipOutcome);
         $this->assertNull($restored->shipError);
         $this->assertSame('a1b2c3d4e5f6', $restored->shipEncryption);
@@ -247,7 +278,7 @@ final class BackupMetadataTest extends TestCase
     {
         $original = new BackupMetadata(
             id: 's2',
-            createdAt: '2026-08-16T00:00:00+00:00',
+            createdAt: '2026-08-16T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::SCHEMA_ONLY,
             connections: [new BackupConnectionMeta(0, 'db', 4)],
@@ -258,7 +289,7 @@ final class BackupMetadataTest extends TestCase
             warnings: ['note'],
             dumpBytes: 262144,
             sha256: str_repeat('ef', 32),
-            verifiedAt: '2026-08-16T01:00:00+00:00',
+            verifiedAt: '2026-08-16T01:00:00.000000Z',
             verifyOutcome: BackupVerifyOutcome::OK,
         );
 
@@ -274,8 +305,8 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame($original->connections, $failed->connections);
 
         // The retry clears the error the same way it sets the instant: one call writes all four.
-        $shipped = $failed->withShipping('2026-08-16T06:00:00+00:00', BackupShipOutcome::OK, null, 'a1b2c3d4e5f6');
-        $this->assertSame('2026-08-16T06:00:00+00:00', $shipped->shippedAt);
+        $shipped = $failed->withShipping('2026-08-16T06:00:00.000000Z', BackupShipOutcome::OK, null, 'a1b2c3d4e5f6');
+        $this->assertSame('2026-08-16T06:00:00.000000Z', $shipped->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $shipped->shipOutcome);
         $this->assertNull($shipped->shipError);
         $this->assertSame('a1b2c3d4e5f6', $shipped->shipEncryption);
@@ -287,7 +318,7 @@ final class BackupMetadataTest extends TestCase
         // Pinning or verifying a backup must not quietly forget that a copy of it exists.
         $shipped = new BackupMetadata(
             id: 's3',
-            createdAt: '2026-08-16T00:00:00+00:00',
+            createdAt: '2026-08-16T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -295,17 +326,17 @@ final class BackupMetadataTest extends TestCase
             durationSeconds: 1,
             keep: false,
             status: BackupStatus::SUCCESS,
-            shippedAt: '2026-08-16T02:00:00+00:00',
+            shippedAt: '2026-08-16T02:00:00.000000Z',
             shipOutcome: BackupShipOutcome::OK,
             shipEncryption: 'a1b2c3d4e5f6',
         );
 
         foreach ([
             $shipped->withKeep(true),
-            $shipped->withVerification('2026-08-16T03:00:00+00:00', BackupVerifyOutcome::OK),
-            $shipped->withRestore('2026-08-16T04:00:00+00:00', 12),
+            $shipped->withVerification('2026-08-16T03:00:00.000000Z', BackupVerifyOutcome::OK),
+            $shipped->withRestore('2026-08-16T04:00:00.000000Z', 12),
         ] as $clone) {
-            $this->assertSame('2026-08-16T02:00:00+00:00', $clone->shippedAt);
+            $this->assertSame('2026-08-16T02:00:00.000000Z', $clone->shippedAt);
             $this->assertSame(BackupShipOutcome::OK, $clone->shipOutcome);
             // Dropping the shape would make the next pass re-send a copy that is already there.
             $this->assertSame('a1b2c3d4e5f6', $clone->shipEncryption);
@@ -316,7 +347,7 @@ final class BackupMetadataTest extends TestCase
     {
         $original = new BackupMetadata(
             id: 'v2',
-            createdAt: '2026-08-02T00:00:00+00:00',
+            createdAt: '2026-08-02T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::SCHEMA_SEED,
             connections: [new BackupConnectionMeta(0, 'db', 4)],
@@ -337,8 +368,8 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame($original->warnings, $pinned->warnings);
         $this->assertSame($original->connections, $pinned->connections);
 
-        $verified = $pinned->withVerification('2026-08-02T05:00:00+00:00', BackupVerifyOutcome::MISMATCH);
-        $this->assertSame('2026-08-02T05:00:00+00:00', $verified->verifiedAt);
+        $verified = $pinned->withVerification('2026-08-02T05:00:00.000000Z', BackupVerifyOutcome::MISMATCH);
+        $this->assertSame('2026-08-02T05:00:00.000000Z', $verified->verifiedAt);
         $this->assertSame(BackupVerifyOutcome::MISMATCH, $verified->verifyOutcome);
         // The pin taken a moment earlier survives the second clone.
         $this->assertTrue($verified->keep);
@@ -350,7 +381,7 @@ final class BackupMetadataTest extends TestCase
     {
         $original = new BackupMetadata(
             id: 'z1',
-            createdAt: '2026-08-20T00:00:00+00:00',
+            createdAt: '2026-08-20T00:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [new BackupConnectionMeta(0, 'db', 4)],
@@ -362,7 +393,7 @@ final class BackupMetadataTest extends TestCase
             failureReason: null,
             dumpBytes: 262144,
             sha256: str_repeat('ef', 32),
-            verifiedAt: '2026-08-20T05:00:00+00:00',
+            verifiedAt: '2026-08-20T05:00:00.000000Z',
             verifyOutcome: BackupVerifyOutcome::OK,
         );
 
@@ -456,7 +487,7 @@ final class BackupMetadataTest extends TestCase
     {
         return [
             BackupMetadata::id => 'x',
-            BackupMetadata::createdAt => '2026-08-09T00:00:00+00:00',
+            BackupMetadata::createdAt => '2026-08-09T00:00:00.000000Z',
             BackupMetadata::env => 'prod',
             ...$extra,
         ];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Maintenance;
 
+use DateTimeImmutable;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -43,6 +44,7 @@ use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -223,7 +225,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             phase: $row->phase,
             operation: $row->operation,
             manual: $row->isManualMaintenanceWindow(),
-            startedAt: $row->startedAt === null ? null : gmdate(DATE_ATOM, $row->startedAt),
+            startedAt: $row->startedAt === null ? null : UtcMoment::format(new DateTimeImmutable('@' . $row->startedAt)),
             enteredFromBrowser: $row->enteredFromBrowser,
             passCount: count($row->passHashes),
             circleNamed: $row->circleNamedCount,

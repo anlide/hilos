@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  BACKUP_FILTER_TIME_ZONE,
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
@@ -36,10 +37,171 @@ import {
   type HilosRestoreStatus,
 } from '../../src/admin/backup/hilosBackups.js'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import {
+  HilosConnection,
+  type TableViewportDescriptor,
+  type WebSocketLike,
+} from '../../src/connection/HilosConnection.js'
+import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
+import { applyServerTime } from '../../src/session/serverClock.js'
 import { HIDDEN_VALUE, isHiddenValue } from '../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import {
+  bindPageScope,
+  PAGE_SIGNAL_SCHEMAS,
+} from '../../src/subscription/bindPageScope.js'
 import { type HilosTableProgress } from '../../src/table/tableProgress.js'
+import { bindTimeZoneState } from '../../src/timeZone/timeZoneState.js'
+
+/** Deliver the existing session response to the real reader-zone binding. */
+function zoneSource() {
+  const listeners = new Set<(signal: ProjectSignal) => void>()
+
+  return {
+    on(event: string, listener: (payload: never) => void): () => void {
+      const typed = listener as (signal: ProjectSignal) => void
+      if (event === 'projectSignal') listeners.add(typed)
+
+      return () => listeners.delete(typed)
+    },
+    choose(timeZone: string): void {
+      for (const listener of listeners) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as ProjectSignal)
+      }
+    },
+  }
+}
+
+let zones: ReturnType<typeof zoneSource>
+let releaseZone: () => void
+
+beforeEach(() => {
+  zones = zoneSource()
+  releaseZone = bindTimeZoneState(zones as unknown as HilosConnection)
+  zones.choose('UTC')
+})
+
+afterEach(() => {
+  releaseZone()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+  applyServerTime(Date.now())
+})
+
+/** Only the browser socket is a double; the table and subscription are real. */
+class BackupSocket implements WebSocketLike {
+  readonly sent: string[] = []
+  private readonly listeners = new Map<
+    string,
+    Array<(event: { data?: unknown }) => void>
+  >()
+
+  send(data: string | ArrayBuffer | Blob): void {
+    this.sent.push(String(data))
+  }
+
+  close(): void {}
+
+  addEventListener(
+    type: string,
+    listener: (event: { data?: unknown }) => void,
+  ): void {
+    const list = this.listeners.get(type) ?? []
+    list.push(listener)
+    this.listeners.set(type, list)
+  }
+
+  emit(type: string, event: { data?: unknown } = {}): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
+  }
+
+  message(type: string, data: unknown): void {
+    this.emit('message', { data: JSON.stringify({ type, data }) })
+  }
+}
+
+/** The outgoing frames these tests inspect at the socket boundary. */
+interface BackupRequest extends TableViewportDescriptor {
+  readonly type: string
+  readonly tableWindows?: Record<string, TableViewportDescriptor>
+}
+
+/** A mounted page and a table handle whose start is left to the case. */
+function liveBackupTable() {
+  const sockets: BackupSocket[] = []
+  const connection = new HilosConnection({
+    url: 'ws://test/ws',
+    projectSchemas: PAGE_SIGNAL_SCHEMAS,
+    webSocketFactory: () => {
+      const socket = new BackupSocket()
+      sockets.push(socket)
+
+      return socket
+    },
+  })
+  const scopes = new ScopeManager()
+  const pages = bindPageScope(connection, scopes)
+  const sent: Array<{ action: string; payload: unknown }> = []
+  const table = createHilosBackupsTable(
+    { connection, scopes, actions: dispatchContext(sent).actions },
+    { openCreate: () => undefined },
+  )
+  connection.connect()
+  sockets[0]?.emit('open')
+  pages.subscribe('hilos_backup')
+  pages.releaseOnSession()
+
+  const socket = (): BackupSocket => sockets.at(-1) as BackupSocket
+  const requests = (): BackupRequest[] =>
+    socket().sent.map((text) => JSON.parse(text) as BackupRequest)
+  const viewports = (): BackupRequest[] =>
+    requests().filter((frame) => frame.type === 'table_viewport')
+  const window = (keys: string[], totalCount: number) => ({
+    rows: keys.map((rowKey) => ({
+      rowKey,
+      slots: { backup: { finished: true } },
+    })),
+    totalCount,
+    totalExact: true,
+    limit: 10,
+    sort: [{ field: 'createdAt', direction: 'desc' }],
+    firstAnchor: { id: keys[0] },
+    lastAnchor: { id: keys.at(-1) },
+  })
+
+  return {
+    table,
+    connection,
+    pages,
+    sent,
+    socket,
+    requests,
+    viewports,
+    subscription(keys = ['cold'], totalCount = 40): void {
+      socket().message('page_response', {
+        page: 'hilos_backup',
+        payload: { windows: { hilosBackups: window(keys, totalCount) } },
+      })
+    },
+    answer(keys = ['b1'], totalCount = 40): void {
+      socket().message('table_window', {
+        page: 'hilos_backup',
+        tableKey: 'hilosBackups',
+        ...window(keys, totalCount),
+        requestId: viewports().at(-1)?.requestId,
+      })
+    },
+    dispose(): void {
+      table.dispose()
+      table.controller.dispose()
+      connection.close()
+    },
+  }
+}
 
 /** What a percentage is counted out of, the server having already made the share one. */
 const PERCENT_TOTAL = 100
@@ -803,7 +965,7 @@ describe('createHilosBackupsTable', () => {
     const table = createHilosBackupsTable(tableContext(), {
       openCreate: () => undefined,
     })
-    table.controller.ingestSubscriptionWindow(
+    table.controller.ingestWindow(
       [
         {
           rowKey: 'failed-run',
@@ -823,14 +985,227 @@ describe('createHilosBackupsTable', () => {
       null,
       null,
       10,
-      undefined,
-      [],
     )
 
     const rows = table.controller.rows.get()
     expect(rows[0]?.refused).toBe(true)
     expect(rows[1]?.refused).toBe(false)
     expect(rows[2]?.refused).toBe(false)
+  })
+
+  it('uses the current zone at start and waits for the preset window on cold entry', () => {
+    const live = liveBackupTable()
+    const { table } = live
+    try {
+      expect(BACKUP_FILTER_TIME_ZONE).toBe('timeZone')
+      expect(table.controller.filter.get()).toEqual({ timeZone: 'UTC' })
+      zones.choose('Asia/Tokyo')
+      table.start()
+      table.start()
+      expect(live.viewports()).toHaveLength(1)
+      expect(live.viewports()[0]?.filter).toEqual({ timeZone: 'Asia/Tokyo' })
+      live.subscription()
+
+      expect(live.viewports()).toHaveLength(2)
+      expect(live.viewports().at(-1)?.filter).toEqual({
+        timeZone: 'Asia/Tokyo',
+      })
+      expect(table.controller.loaded.get()).toBe(false)
+      expect(table.controller.rows.get()).toEqual([])
+      expect(table.controller.frame.body.get()).toBe('loading')
+      expect(table.controller.descriptor()).toBeNull()
+
+      live.answer([], 0)
+      expect(table.controller.descriptor()?.filter).toEqual({
+        timeZone: 'Asia/Tokyo',
+      })
+      expect(table.controller.frame.activeFilterCount.get()).toBe(0)
+      expect(table.controller.frame.filters.get()).toHaveLength(2)
+      expect(table.controller.frame.body.get()).toBe('empty')
+    } finally {
+      live.dispose()
+    }
+  })
+
+  it('preserves the period, scope and search across two zone changes, then resets to the latest zone', () => {
+    const live = liveBackupTable()
+    const { controller } = live.table
+    try {
+      live.table.start()
+      live.subscription()
+      live.answer()
+      controller.setFilters({
+        from: '2026-08-01',
+        to: '2026-08-31',
+        scope: 'full',
+      })
+      controller.setSearch('archive')
+      live.answer()
+      controller.setPage(2)
+      live.answer()
+      expect(controller.frame.footer.get().page).toBe(2)
+      controller.selectWindow(true)
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b1',
+        row: { rowKey: 'b1', slots: { backup: { finished: true } } },
+      })
+      expect(controller.pendingCount.get()).toBe(1)
+      expect(controller.selection.target.get()).toEqual({
+        kind: 'rows',
+        rowKeys: ['b1'],
+      })
+
+      zones.choose('America/New_York')
+      const first = {
+        timeZone: 'America/New_York',
+        from: '2026-08-01',
+        to: '2026-08-31',
+        scope: 'full',
+        search: 'archive',
+      }
+      expect(controller.filter.get()).toEqual(first)
+      expect(controller.search.get()).toBe('archive')
+      expect(controller.selection.target.get()).toBeNull()
+      expect(controller.pendingCount.get()).toBe(0)
+      expect(controller.frame.footer.get().page).toBe(0)
+      expect(live.viewports().at(-1)).toMatchObject({
+        filter: first,
+        anchor: null,
+        anchorDirection: 'after',
+      })
+      expect(live.viewports().at(-1)).not.toHaveProperty('pageIndex')
+      expect(controller.descriptor()?.pageIndex).toBeNull()
+      live.answer()
+      controller.selectAllByFilter()
+      expect(controller.selection.target.get()).toEqual({
+        kind: 'filter',
+        filter: first,
+      })
+      const bulk = controller.frame.declaration?.bulkActions?.[0]
+      const target = controller.selection.target.get()
+      if (bulk === undefined || target === null)
+        throw new Error('No bulk target')
+      bulk.run(target)
+      expect(live.sent).toEqual([
+        {
+          action: 'backup_bulk_delete',
+          payload: { tableKey: 'hilosBackups', filter: first },
+        },
+      ])
+      bulk.run({ kind: 'rows', rowKeys: ['b1'] })
+      expect(live.sent[1]).toEqual({
+        action: 'backup_bulk_delete',
+        payload: { tableKey: 'hilosBackups', rowKeys: ['b1'] },
+      })
+
+      zones.choose('Europe/Warsaw')
+      expect(controller.filter.get()).toEqual({
+        ...first,
+        timeZone: 'Europe/Warsaw',
+      })
+      expect(controller.selection.target.get()).toBeNull()
+      controller.resetFilters()
+      expect(controller.filter.get()).toEqual({ timeZone: 'Europe/Warsaw' })
+      expect(controller.search.get()).toBe('')
+      expect(controller.descriptor()?.filter).toEqual({
+        timeZone: 'Europe/Warsaw',
+      })
+      expect(live.viewports().at(-1)?.filter).toEqual({
+        timeZone: 'Europe/Warsaw',
+      })
+      live.answer([], 0)
+      expect(controller.frame.activeFilterCount.get()).toBe(0)
+      expect(controller.frame.body.get()).toBe('empty')
+    } finally {
+      live.dispose()
+    }
+  })
+
+  it('reports an unsent offline condition on reconnect and waits for its rows', () => {
+    vi.useFakeTimers()
+    const live = liveBackupTable()
+    const { controller } = live.table
+    try {
+      live.table.start()
+      live.subscription()
+      live.answer(['old-zone'])
+      controller.setFilters({ from: '2026-08-01', to: '2026-08-31' })
+      live.answer(['old-period'])
+      live.socket().emit('close')
+      const before = live.socket().sent.length
+      zones.choose('Asia/Tokyo')
+      expect(live.socket().sent).toHaveLength(before)
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'old-period',
+      ])
+      vi.advanceTimersByTime(400)
+      expect(controller.frame.body.get()).toBe('loading')
+
+      vi.advanceTimersByTime(600)
+      live.socket().emit('open')
+      live.pages.releaseOnSession()
+      expect(live.requests()).toHaveLength(1)
+      expect(live.requests()[0]).toMatchObject({
+        type: 'page_subscribe',
+        tableWindows: {
+          hilosBackups: {
+            filter: {
+              timeZone: 'Asia/Tokyo',
+              from: '2026-08-01',
+              to: '2026-08-31',
+            },
+          },
+        },
+      })
+      expect(
+        live.requests()[0]?.tableWindows?.['hilosBackups']?.filter,
+      ).toEqual(controller.descriptor()?.filter)
+      live.subscription(['new-zone'])
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'new-zone',
+      ])
+      expect(controller.frame.body.get()).toBe('rows')
+    } finally {
+      live.dispose()
+    }
+  })
+
+  it('owns one subscription per start and releases it across dispose and restart', () => {
+    const live = liveBackupTable()
+    const on = vi.spyOn(live.connection, 'on')
+    const { table } = live
+    try {
+      table.start()
+      const count = on.mock.calls.length
+      table.start()
+      expect(on).toHaveBeenCalledTimes(count)
+      live.subscription()
+      live.answer()
+      const before = live.viewports().length
+      zones.choose('Asia/Tokyo')
+      expect(live.viewports()).toHaveLength(before + 1)
+      table.dispose()
+      table.dispose()
+      expect(live.connection.tableWindowDescriptors()).toEqual({})
+      zones.choose('Europe/Warsaw')
+      expect(live.viewports()).toHaveLength(before + 1)
+      expect(table.controller.filter.get()).toEqual({ timeZone: 'Asia/Tokyo' })
+
+      table.start()
+      table.start()
+      expect(table.controller.filter.get()).toEqual({
+        timeZone: 'Europe/Warsaw',
+      })
+      expect(live.viewports()).toHaveLength(before + 2)
+      zones.choose('America/New_York')
+      expect(live.viewports()).toHaveLength(before + 3)
+      table.dispose()
+      zones.choose('UTC')
+      expect(live.viewports()).toHaveLength(before + 3)
+    } finally {
+      live.dispose()
+    }
   })
 })
 
@@ -852,10 +1227,10 @@ describe('formatBackupChecksum', () => {
       formatBackupChecksum(
         row({
           checksumState: 'verified',
-          verifiedAt: '2026-08-02T06:07:08+00:00',
+          verifiedAt: '2026-08-02T06:07:08.000000Z',
         }),
       ),
-    ).toBe('✓ 2026-08-02')
+    ).toBe('✓ Aug 2, 2026')
   })
 
   it('still marks a verified archive whose instant went missing', () => {
@@ -871,6 +1246,26 @@ describe('formatBackupChecksum', () => {
       'MISMATCH',
     )
   })
+
+  it.each([
+    ['America/New_York', '2026-08-02T00:30:00.000000Z', '✓ Aug 1, 2026'],
+    ['Asia/Tokyo', '2026-08-02T23:30:00.000000Z', '✓ Aug 3, 2026'],
+  ])('shows the local day in %s at %s', (zone, verifiedAt, expected) => {
+    zones.choose(zone)
+    applyServerTime(Date.now() + 86400000)
+    expect(
+      formatBackupChecksum(row({ checksumState: 'verified', verifiedAt })),
+    ).toBe(expected)
+  })
+
+  it.each(['not an instant', '2026-02-30T00:00:00Z', '2026-08-02 06:07:08'])(
+    'keeps a bare tick for an unrepresentable check instant %s',
+    (verifiedAt) => {
+      expect(
+        formatBackupChecksum(row({ checksumState: 'verified', verifiedAt })),
+      ).toBe('✓')
+    },
+  )
 })
 
 describe('isBackupChecksumMismatch', () => {
@@ -897,9 +1292,9 @@ describe('formatBackupShipping', () => {
   it('shows the date a copy landed', () => {
     expect(
       formatBackupShipping(
-        row({ shipState: 'shipped', shippedAt: '2026-08-16T06:07:08+00:00' }),
+        row({ shipState: 'shipped', shippedAt: '2026-08-16T06:07:08.000000Z' }),
       ),
-    ).toBe('✓ 2026-08-16')
+    ).toBe('✓ Aug 16, 2026')
   })
 
   it('shows a bare tick for a copy that landed without an instant', () => {
@@ -911,6 +1306,25 @@ describe('formatBackupShipping', () => {
   it('shouts when the last attempt did not make it', () => {
     expect(formatBackupShipping(row({ shipState: 'failed' }))).toBe('FAILED')
   })
+
+  it.each([
+    ['America/New_York', '2026-08-16T00:30:00.000000Z', '✓ Aug 15, 2026'],
+    ['Asia/Tokyo', '2026-08-16T23:30:00.000000Z', '✓ Aug 17, 2026'],
+  ])('shows the local day in %s at %s', (zone, shippedAt, expected) => {
+    zones.choose(zone)
+    expect(formatBackupShipping(row({ shipState: 'shipped', shippedAt }))).toBe(
+      expected,
+    )
+  })
+
+  it.each(['not an instant', '2026-02-30T00:00:00Z', '2026-08-16 06:07:08'])(
+    'keeps a bare tick for an unrepresentable copy instant %s',
+    (shippedAt) => {
+      expect(
+        formatBackupShipping(row({ shipState: 'shipped', shippedAt })),
+      ).toBe('✓')
+    },
+  )
 })
 
 describe('isBackupShipFailed', () => {

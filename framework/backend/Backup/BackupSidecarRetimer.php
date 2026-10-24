@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupSidecarRetimer - rewrites a stored backup's sidecar createdAt into the past (test-only).
@@ -73,7 +73,7 @@ final class BackupSidecarRetimer
         // have lost the checksum fields next), while the docblock kept promising the opposite.
         $rewritten = new BackupMetadata(
             id: $metadata->id,
-            createdAt: $createdAt->format(DateTimeInterface::ATOM),
+            createdAt: UtcMoment::format($createdAt),
             env: $metadata->env,
             scope: $metadata->scope,
             connections: $metadata->connections,

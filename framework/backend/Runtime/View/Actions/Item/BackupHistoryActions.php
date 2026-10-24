@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -13,6 +14,7 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * Write operations for one stored-backup index row.
@@ -39,6 +41,7 @@ final class BackupHistoryActions extends RtActions
      * @param ?string $nodeId Node that ran the scan, or null on an installation without clustering
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
      */
     public function project(BackupMetadata $metadata, ?string $nodeId): void
     {
@@ -89,17 +92,18 @@ final class BackupHistoryActions extends RtActions
      * restore happened. A restore is the only history restores have, which is why the archive
      * carries it - the estimate for the next one is read back out of these rows.
      *
-     * @param string $restoredAt ISO-8601 instant the restore finished
+     * @param string $restoredAt ISO-8601 UTC (Z) instant the restore finished
      * @param int $durationSeconds How long that restore took, in seconds
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
      */
     public function recordRestore(string $restoredAt, int $durationSeconds): void
     {
         $this->ensureCanWrite();
 
         $this->applyDiffWithSync([
-            StateBackupHistory::restoredAt => $restoredAt,
+            StateBackupHistory::restoredAt => UtcMoment::normalize($restoredAt),
             StateBackupHistory::restoreDurationSeconds => $durationSeconds,
         ]);
     }
@@ -111,13 +115,14 @@ final class BackupHistoryActions extends RtActions
      * are the truth, and this keeps the Copy column of every other worker's table from waiting for
      * the next scan to learn that a transfer finished or failed.
      *
-     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
+     * @param ?string $shippedAt ISO-8601 UTC (Z) instant of the last successful copy; null means never
      * @param ?string $shipOutcome Outcome value of the attempt; null when never attempted
      * @param ?string $shipError Why the attempt failed; null on success
      * @param ?string $shipEncryption Fingerprint of the recipient set the copy was encrypted to;
      *     null when it left in the clear
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
      */
     public function recordShipping(
         ?string $shippedAt,
@@ -128,7 +133,7 @@ final class BackupHistoryActions extends RtActions
         $this->ensureCanWrite();
 
         $this->applyDiffWithSync([
-            StateBackupHistory::shippedAt => $shippedAt,
+            StateBackupHistory::shippedAt => $shippedAt === null ? null : UtcMoment::normalize($shippedAt),
             StateBackupHistory::shipOutcome => $shipOutcome,
             StateBackupHistory::shipError => $shipError,
             StateBackupHistory::shipEncryption => $shipEncryption,

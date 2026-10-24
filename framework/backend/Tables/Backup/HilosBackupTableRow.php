@@ -58,7 +58,7 @@ final class HilosBackupTableRow extends AbstractTableRow
 
     /**
      * @param string $rowKey Stable table row key: the stored backup's id
-     * @param string $createdAt ISO-8601 creation timestamp
+     * @param string $createdAt ISO-8601 UTC (Z) creation timestamp
      * @param ?string $env Application environment the backup was taken in; null when the record names none
      * @param ?string $scope Backup scope value; null when the record names none
      * @param int $sizeBytes Archive size in bytes
@@ -69,14 +69,14 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param ?string $failureReason Why the run failed (error rows only); null otherwise
      * @param BackupChecksumState $checksumState Whether the backup carries a digest and how it last verified;
      *     the digest itself never reaches the browser
-     * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+     * @param ?string $verifiedAt ISO-8601 UTC (Z) instant of the last verification; null means never verified
      * @param BackupShipState $shipState Whether a copy of this backup exists off the machine, and how the
      *     last attempt at one went; `none` when this installation ships nowhere
-     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never copied
+     * @param ?string $shippedAt ISO-8601 UTC (Z) instant of the last successful copy; null means never copied
      * @param ?string $shipError Why the last copy attempt failed; null when none has
      * @param ?string $restorePhase Phase value of the restore of THIS archive; null when it was never restored
      * @param ?string $restoreOutcome Terminal status value of that restore; null while it runs or was never run
-     * @param ?string $restoreFinishedAt ISO-8601 instant that restore ended; null while it runs or was never run
+     * @param ?string $restoreFinishedAt ISO-8601 UTC (Z) instant that restore ended; null while it runs or was never run
      * @param ?string $restoreFailureReason Why that restore failed; null when it succeeded or was never run
      * @param bool $restoreDatabaseTouched Whether the failed restore of this archive had begun replacing the
      *     database; false for a run that never started one

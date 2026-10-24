@@ -967,7 +967,7 @@ final class BackupPrunerTest extends TestCase
     ): BackupHistory {
         $metadata = new BackupMetadata(
             $id,
-            $createdAt,
+            $createdAt === '' ? '2026-01-01T00:00:00.000000Z' : $createdAt,
             'test',
             $scope,
             [],
@@ -982,6 +982,11 @@ final class BackupPrunerTest extends TestCase
             $metadata = $metadata->withShipping($shippedAt, $shipOutcome, null, null);
         }
         $state = StateBackupHistory::fromMetadata($metadata, null);
+        if ($createdAt === '') {
+            // Deliberately damage an already hydrated row to exercise the pruner's defensive guard.
+            // The metadata boundary itself now refuses an ambiguous timestamp.
+            $state->createdAt = $createdAt;
+        }
 
         return new BackupHistory($state);
     }

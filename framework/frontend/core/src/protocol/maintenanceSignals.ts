@@ -4,7 +4,10 @@ import { z } from 'zod'
 /** Server→client state frame sent before the Maintenance page response and on change. */
 export const MAINTENANCE_STATE_SIGNAL = 'subscription_page_hilos_maintenance'
 
-/** The whole non-personal state frame (PHP `HilosMaintenanceStateSignalData`). */
+/**
+ * The whole non-personal state frame (PHP `HilosMaintenanceStateSignalData`).
+ * `startedAt` is an ISO-8601 UTC moment ending in Z, or null when inactive.
+ */
 export const maintenanceStateSchema = z.looseObject({
   phase: z.enum([
     'inactive',

@@ -7,6 +7,7 @@ namespace Hilos\Runtime\State\Item;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestorePhase;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * RestoreRuntime - the singleton runtime state of a restore run.
@@ -51,13 +52,13 @@ final class RestoreRuntime extends RtState
     /** Current {@see RestorePhase} value, or null when idle. */
     public ?string $phase = null;
 
-    /** ISO-8601 instant the current phase began, or null when there is no phase. */
+    /** ISO-8601 UTC (Z) instant the current phase began, or null when there is no phase. */
     public ?string $phaseStartedAt = null;
 
-    /** ISO-8601 start time of the restore in progress, or null when idle. */
+    /** ISO-8601 UTC (Z) start time of the restore in progress, or null when idle. */
     public ?string $startedAt = null;
 
-    /** ISO-8601 finish time of the last restore, or null while running or idle. */
+    /** ISO-8601 UTC (Z) finish time of the last restore, or null while running or idle. */
     public ?string $finishedAt = null;
 
     /** Terminal {@see BackupStatus} value of the last restore, or null. */
@@ -120,8 +121,11 @@ final class RestoreRuntime extends RtState
         $instance->scope = self::optionalString($row, self::scope);
         $instance->phase = self::optionalString($row, self::phase);
         $instance->phaseStartedAt = self::optionalString($row, self::phaseStartedAt);
+        $instance->phaseStartedAt = $instance->phaseStartedAt === null ? null : UtcMoment::normalize($instance->phaseStartedAt);
         $instance->startedAt = self::optionalString($row, self::startedAt);
+        $instance->startedAt = $instance->startedAt === null ? null : UtcMoment::normalize($instance->startedAt);
         $instance->finishedAt = self::optionalString($row, self::finishedAt);
+        $instance->finishedAt = $instance->finishedAt === null ? null : UtcMoment::normalize($instance->finishedAt);
         $instance->outcome = self::optionalString($row, self::outcome);
         $instance->failureReason = self::optionalString($row, self::failureReason);
         $instance->estimatedSeconds = self::optionalInt($row, self::estimatedSeconds);
@@ -148,9 +152,18 @@ final class RestoreRuntime extends RtState
         $this->backupId = self::patchOptionalString($diff, self::backupId, $this->backupId);
         $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
         $this->phase = self::patchOptionalString($diff, self::phase, $this->phase);
-        $this->phaseStartedAt = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
-        $this->startedAt = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
-        $this->finishedAt = self::patchOptionalString($diff, self::finishedAt, $this->finishedAt);
+        if (array_key_exists(self::phaseStartedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
+            $this->phaseStartedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
+        if (array_key_exists(self::startedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
+            $this->startedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
+        if (array_key_exists(self::finishedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::finishedAt, $this->finishedAt);
+            $this->finishedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->outcome = self::patchOptionalString($diff, self::outcome, $this->outcome);
         $this->failureReason = self::patchOptionalString($diff, self::failureReason, $this->failureReason);
         $this->estimatedSeconds = self::patchOptionalInt($diff, self::estimatedSeconds, $this->estimatedSeconds);

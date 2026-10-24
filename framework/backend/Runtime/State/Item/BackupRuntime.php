@@ -7,6 +7,7 @@ namespace Hilos\Runtime\State\Item;
 use Hilos\Backup\BackupPhase;
 use Hilos\Backup\BackupProgress;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupRuntime - the singleton runtime state of the backup subsystem.
@@ -43,13 +44,13 @@ final class BackupRuntime extends RtState
     /** Scope value of the backup in progress, or null when idle. */
     public ?string $scope = null;
 
-    /** ISO-8601 start time of the backup in progress, or null when idle. */
+    /** ISO-8601 UTC (Z) start time of the backup in progress, or null when idle. */
     public ?string $startedAt = null;
 
     /** Phase value ({@see BackupPhase}) the run is in, or null when idle or not yet reported. */
     public ?string $phase = null;
 
-    /** ISO-8601 instant the current phase began, or null when there is no phase. */
+    /** ISO-8601 UTC (Z) instant the current phase began, or null when there is no phase. */
     public ?string $phaseStartedAt = null;
 
     /**
@@ -101,8 +102,10 @@ final class BackupRuntime extends RtState
         $instance->currentBackupId = self::optionalString($row, self::currentBackupId);
         $instance->scope = self::optionalString($row, self::scope);
         $instance->startedAt = self::optionalString($row, self::startedAt);
+        $instance->startedAt = $instance->startedAt === null ? null : UtcMoment::normalize($instance->startedAt);
         $instance->phase = self::optionalString($row, self::phase);
         $instance->phaseStartedAt = self::optionalString($row, self::phaseStartedAt);
+        $instance->phaseStartedAt = $instance->phaseStartedAt === null ? null : UtcMoment::normalize($instance->phaseStartedAt);
         $instance->estimatedSeconds = self::optionalInt($row, self::estimatedSeconds);
         $instance->percent = self::optionalInt($row, self::percent);
         $instance->remainingSeconds = self::optionalInt($row, self::remainingSeconds);
@@ -125,9 +128,15 @@ final class BackupRuntime extends RtState
         $this->running = self::patchBool($diff, self::running, $this->running);
         $this->currentBackupId = self::patchOptionalString($diff, self::currentBackupId, $this->currentBackupId);
         $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
-        $this->startedAt = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
+        if (array_key_exists(self::startedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
+            $this->startedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->phase = self::patchOptionalString($diff, self::phase, $this->phase);
-        $this->phaseStartedAt = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
+        if (array_key_exists(self::phaseStartedAt, $diff)) {
+            $moment = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
+            $this->phaseStartedAt = $moment === null ? null : UtcMoment::normalize($moment);
+        }
         $this->estimatedSeconds = self::patchOptionalInt($diff, self::estimatedSeconds, $this->estimatedSeconds);
         $this->percent = self::patchOptionalInt($diff, self::percent, $this->percent);
         $this->remainingSeconds = self::patchOptionalInt($diff, self::remainingSeconds, $this->remainingSeconds);

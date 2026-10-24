@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Runtime;
 
 use Hilos\Backup\BackupScope;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -29,6 +30,46 @@ final class BackupRuntimeViewTest extends TestCase
         parent::tearDown();
     }
 
+    public function testMomentRowsAndDiffsNormalizeLegacyOffsetsAndPreserveNulls(): void
+    {
+        $row = StateBackupRuntime::create()->toArray();
+        $fields = [StateBackupRuntime::startedAt, StateBackupRuntime::phaseStartedAt];
+        foreach ($fields as $field) {
+            $row[$field] = '2026-01-01T01:00:00.123456+01:00';
+        }
+        $runtime = StateBackupRuntime::fromRow($row);
+        $runtime->applyDiff([StateBackupRuntime::running => true]);
+        foreach ($fields as $field) {
+            $this->assertSame('2026-01-01T00:00:00.123456Z', $runtime->toArray()[$field]);
+            $runtime->applyDiff([$field => '2025-12-31T19:00:00-05:00']);
+            $this->assertSame('2026-01-01T00:00:00.000000Z', $runtime->toArray()[$field]);
+        }
+        $this->assertSame($runtime->toArray(), StateBackupRuntime::fromRow($runtime->toArray())->toArray());
+        foreach ($fields as $field) {
+            $runtime->applyDiff([$field => null]);
+            $this->assertNull($runtime->toArray()[$field]);
+        }
+        $this->assertSame($runtime->toArray(), StateBackupRuntime::fromRow($runtime->toArray())->toArray());
+    }
+
+    public function testMomentRowsAndDiffsRefuseAmbiguousStrings(): void
+    {
+        foreach ([StateBackupRuntime::startedAt, StateBackupRuntime::phaseStartedAt] as $field) {
+            try {
+                StateBackupRuntime::fromRow([...StateBackupRuntime::create()->toArray(), $field => '2026-01-01 00:00:00']);
+                $this->fail('Row moment without a zone was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+            try {
+                StateBackupRuntime::create()->applyDiff([$field => '2026-01-01T00:00:00']);
+                $this->fail('Diff moment without a zone was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
     public function testFieldsAreReadThroughTheView(): void
     {
         $view = $this->runningView();
@@ -36,7 +77,7 @@ final class BackupRuntimeViewTest extends TestCase
         $this->assertTrue($view->running);
         $this->assertSame('b9', $view->currentBackupId);
         $this->assertSame(BackupScope::FULL->value, $view->scope);
-        $this->assertSame('2026-07-20T11:00:00+00:00', $view->startedAt);
+        $this->assertSame('2026-07-20T11:00:00.000000Z', $view->startedAt);
     }
 
     public function testUndeclaredPropertyIsRefused(): void
@@ -121,7 +162,7 @@ final class BackupRuntimeViewTest extends TestCase
             StateBackupRuntime::running => true,
             StateBackupRuntime::currentBackupId => 'b9',
             StateBackupRuntime::scope => BackupScope::FULL->value,
-            StateBackupRuntime::startedAt => '2026-07-20T11:00:00+00:00',
+            StateBackupRuntime::startedAt => '2026-07-20T11:00:00.000000Z',
         ]);
     }
 

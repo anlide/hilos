@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
@@ -33,6 +32,7 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Environment\Exception\EnvException;
@@ -40,6 +40,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * BackupRestoreCommand - restore a stored backup into this installation's databases.
@@ -193,6 +194,7 @@ HELP;
      * @throws EnvException When the hot path needs daemon host/port env values and they are missing or invalid
      * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
+     * @throws InvalidFormatException When backup metadata carries an ambiguous or invalid moment
      */
     public function execute(array $options, array $args): int
     {
@@ -500,7 +502,7 @@ HELP;
             $scope,
             $success,
             $failureDetail,
-            date('Y-m-d H:i:s', (int)$startedAt),
+            UtcMoment::format(new DateTimeImmutable('@' . (int)$startedAt)),
             (int)round(microtime(true) - $startedAt),
             rehydrateComplete: true,
             initiatorIdentities: [],
@@ -535,7 +537,7 @@ HELP;
                 $metadata->env,
                 $metadata->scope->value,
                 $root,
-                new DateTimeImmutable()->format(DateTimeInterface::ATOM),
+                UtcMoment::format(new DateTimeImmutable()),
                 $durationSeconds,
             );
         } catch (BackupException $e) {

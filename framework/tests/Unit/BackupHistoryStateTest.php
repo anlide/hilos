@@ -21,11 +21,73 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackupHistoryStateTest extends TestCase
 {
+    public function testAllHistoryMomentsNormalizeAtMetadataRowAndDiffBoundaries(): void
+    {
+        $legacy = '2026-01-01T05:45:00.123456+05:45';
+        $history = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'zoned', createdAt: $legacy, env: 'test', scope: BackupScope::FULL,
+            connections: [], sizeBytes: 1, durationSeconds: 1, keep: false, status: BackupStatus::SUCCESS,
+            verifiedAt: $legacy, restoredAt: $legacy, shippedAt: $legacy,
+        ), null);
+        $fields = [BackupHistory::createdAt, BackupHistory::verifiedAt, BackupHistory::restoredAt, BackupHistory::shippedAt];
+        $row = $history->toArray();
+        foreach ($fields as $field) {
+            $this->assertSame('2026-01-01T00:00:00.123456Z', $row[$field]);
+            $row[$field] = '2025-12-31T19:00:00.123456-05:00';
+        }
+        $restored = BackupHistory::fromRow($row);
+        $this->assertSame($history->toArray(), $restored->toArray());
+
+        $restored->applyDiff([BackupHistory::keep => true]);
+        foreach ($fields as $field) {
+            $this->assertSame('2026-01-01T00:00:00.123456Z', $restored->toArray()[$field]);
+            $restored->applyDiff([$field => '2026-01-02T01:00:00+01:00']);
+            $this->assertSame('2026-01-02T00:00:00.000000Z', $restored->toArray()[$field]);
+        }
+        foreach ([BackupHistory::verifiedAt, BackupHistory::restoredAt, BackupHistory::shippedAt] as $field) {
+            $restored->applyDiff([$field => null]);
+            $this->assertNull($restored->toArray()[$field]);
+        }
+        $this->assertSame($restored->toArray(), BackupHistory::fromRow($restored->toArray())->toArray());
+    }
+
+    public function testHistoryRefusesAmbiguousMomentsFromMetadataRowAndDiff(): void
+    {
+        $metadata = new BackupMetadata(
+            id: 'bad', createdAt: '2026-01-01 00:00:00', env: 'test', scope: BackupScope::FULL,
+            connections: [], sizeBytes: 1, durationSeconds: 1, keep: false, status: BackupStatus::SUCCESS,
+        );
+        try {
+            BackupHistory::fromMetadata($metadata, null);
+            $this->fail('Metadata without a zone was accepted');
+        } catch (InvalidFormatException) {
+            $this->assertTrue(true);
+        }
+        $valid = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'good', createdAt: '2026-01-01T00:00:00Z', env: 'test', scope: BackupScope::FULL,
+            connections: [], sizeBytes: 1, durationSeconds: 1, keep: false, status: BackupStatus::SUCCESS,
+        ), null);
+        foreach ([BackupHistory::createdAt, BackupHistory::verifiedAt, BackupHistory::restoredAt, BackupHistory::shippedAt] as $field) {
+            try {
+                BackupHistory::fromRow([...$valid->toArray(), $field => '2026-01-01 00:00:00']);
+                $this->fail('Row moment without a zone was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+            try {
+                BackupHistory::fromRow($valid->toArray())->applyDiff([$field => '2026-02-30T00:00:00Z']);
+                $this->fail('Impossible diff moment was accepted');
+            } catch (InvalidFormatException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
     public function testFromMetadataMapsFields(): void
     {
         $metadata = new BackupMetadata(
             id: 'hist-1',
-            createdAt: '2026-07-18T09:00:00+00:00',
+            createdAt: '2026-07-18T09:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::SCHEMA_ONLY,
             connections: [new BackupConnectionMeta(0, 'hilos_demo', 9)],
@@ -53,7 +115,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         $history = BackupHistory::fromMetadata(new BackupMetadata(
             id: 'hist-2',
-            createdAt: '2026-07-18T09:30:00+00:00',
+            createdAt: '2026-07-18T09:30:00.000000Z',
             env: 'test',
             scope: BackupScope::FULL,
             connections: [new BackupConnectionMeta(1, 'db1', 2)],
@@ -82,7 +144,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         $history = BackupHistory::fromMetadata(new BackupMetadata(
             id: 'err-1',
-            createdAt: '2026-07-20T09:00:00+00:00',
+            createdAt: '2026-07-20T09:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -106,7 +168,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         $history = BackupHistory::fromMetadata(new BackupMetadata(
             id: 'dump-1',
-            createdAt: '2026-08-01T09:00:00+00:00',
+            createdAt: '2026-08-01T09:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -142,7 +204,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         $history = BackupHistory::fromMetadata(new BackupMetadata(
             id: 'ver-1',
-            createdAt: '2026-08-02T09:00:00+00:00',
+            createdAt: '2026-08-02T09:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -151,11 +213,11 @@ final class BackupHistoryStateTest extends TestCase
             keep: false,
             status: BackupStatus::SUCCESS,
             sha256: str_repeat('ab', 32),
-            verifiedAt: '2026-08-02T10:00:00+00:00',
+            verifiedAt: '2026-08-02T10:00:00.000000Z',
             verifyOutcome: BackupVerifyOutcome::OK,
         ), null);
         $this->assertSame(str_repeat('ab', 32), $history->sha256);
-        $this->assertSame('2026-08-02T10:00:00+00:00', $history->verifiedAt);
+        $this->assertSame('2026-08-02T10:00:00.000000Z', $history->verifiedAt);
         // The runtime row keeps the outcome as its stored value, like scope and status do.
         $this->assertSame('ok', $history->verifyOutcome);
 
@@ -167,10 +229,10 @@ final class BackupHistoryStateTest extends TestCase
         // A verification runs in one worker; without the diff the others would keep showing
         // "never checked" for a backup that was just found corrupt.
         $history->applyDiff([
-            BackupHistory::verifiedAt => '2026-08-02T12:00:00+00:00',
+            BackupHistory::verifiedAt => '2026-08-02T12:00:00.000000Z',
             BackupHistory::verifyOutcome => 'mismatch',
         ]);
-        $this->assertSame('2026-08-02T12:00:00+00:00', $history->verifiedAt);
+        $this->assertSame('2026-08-02T12:00:00.000000Z', $history->verifiedAt);
         $this->assertSame('mismatch', $history->verifyOutcome);
 
         // An explicit null in a diff clears the field rather than being ignored.
@@ -188,7 +250,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         $history = BackupHistory::fromMetadata(new BackupMetadata(
             id: 'ship-1',
-            createdAt: '2026-08-16T09:00:00+00:00',
+            createdAt: '2026-08-16T09:00:00.000000Z',
             env: 'prod',
             scope: BackupScope::FULL,
             connections: [],
@@ -196,10 +258,10 @@ final class BackupHistoryStateTest extends TestCase
             durationSeconds: 2,
             keep: false,
             status: BackupStatus::SUCCESS,
-            shippedAt: '2026-08-16T10:00:00+00:00',
+            shippedAt: '2026-08-16T10:00:00.000000Z',
             shipOutcome: BackupShipOutcome::OK,
         ), null);
-        $this->assertSame('2026-08-16T10:00:00+00:00', $history->shippedAt);
+        $this->assertSame('2026-08-16T10:00:00.000000Z', $history->shippedAt);
         // The runtime row keeps the outcome as its stored value, like scope and status do.
         $this->assertSame('ok', $history->shipOutcome);
         $this->assertNull($history->shipError);
@@ -275,13 +337,13 @@ final class BackupHistoryStateTest extends TestCase
             BackupRuntime::running => true,
             BackupRuntime::currentBackupId => 'hist-9',
             BackupRuntime::scope => 'full',
-            BackupRuntime::startedAt => '2026-07-18T10:00:00+00:00',
+            BackupRuntime::startedAt => '2026-07-18T10:00:00.000000Z',
         ]);
 
         $this->assertTrue($restored->running);
         $this->assertSame('hist-9', $restored->currentBackupId);
         $this->assertSame('full', $restored->scope);
-        $this->assertSame('2026-07-18T10:00:00+00:00', $restored->startedAt);
+        $this->assertSame('2026-07-18T10:00:00.000000Z', $restored->startedAt);
     }
 
     public function testHistoryAppliesAnInboundSyncDiff(): void
@@ -311,7 +373,7 @@ final class BackupHistoryStateTest extends TestCase
             BackupRuntime::running => true,
             BackupRuntime::currentBackupId => 'hist-live',
             BackupRuntime::scope => 'full',
-            BackupRuntime::startedAt => '2026-07-18T10:00:00+00:00',
+            BackupRuntime::startedAt => '2026-07-18T10:00:00.000000Z',
         ]);
 
         $this->assertTrue($runtime->running);
@@ -341,7 +403,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         return [
             BackupHistory::id => $id,
-            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::createdAt => '2026-08-01T00:00:00.000000Z',
             BackupHistory::env => 'prod',
             BackupHistory::status => 'success',
             BackupHistory::connections => [],
@@ -362,7 +424,7 @@ final class BackupHistoryStateTest extends TestCase
     {
         return new BackupMetadata(
             id: $id,
-            createdAt: '2026-07-18T00:00:00+00:00',
+            createdAt: '2026-07-18T00:00:00.000000Z',
             env: 'test',
             scope: BackupScope::FULL,
             connections: [],

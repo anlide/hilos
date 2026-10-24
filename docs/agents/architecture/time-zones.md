@@ -28,6 +28,18 @@ An SQL string inside storage does not become a valid payload just because its
 writer runs in UTC. Interpret the storage value in its declared zone and
 serialize the moment into one of the two wire forms.
 
+### Backup, Restore And Maintenance Moments
+
+Backup sidecars and backup/restore runtime moments are normalized to canonical
+UTC-Z strings by [UtcMoment](../../../framework/backend/Utils/Helpers/UtcMoment.php)
+when read and written. New stamps use six fractional digits; explicitly zoned
+legacy sidecar values keep the same instant when normalized. An invalid or
+zone-less sidecar moment makes the
+[scanner](../../../framework/backend/Backup/BackupHistoryScanner.php) report
+`BROKEN_SIDECAR` and skip the record; reading does not rewrite the file. The
+maintenance page projects its `startedAt` as UTC-Z while protected-mode runtime
+state remains epoch seconds. Durations, progress and ETA remain separate values.
+
 The existing [TimeHelper](../../../framework/backend/Utils/Helpers/TimeHelper.php)
 already supplies `nowMs()` and `sqlToMs()` for the millisecond wire rule of
 HIL-486. Their presence does not mean every payload has been migrated. In
@@ -157,6 +169,17 @@ as null. This value is on `currentUser`, not `impersonatedBy` or `data`. The
 core applies it as the person's own zone, as described above; the window where a
 person chooses a zone is not part of that mechanism.
 (not in the code yet — HIL-1593)
+
+### Backup History Period
+
+The [backup table](../../../framework/backend/Tables/Backup/HilosBackupHistoryTable.php)
+accepts an optional `timeZone` filter-map key for the reader zone of its
+`Period` bounds. Without the key, older and cold clients keep UTC calendar days.
+`from` and `to` are inclusive, real `YYYY-MM-DD` dates in that exact IANA zone;
+an invalid zone or date is refused. The table converts each UTC `createdAt`
+before comparing its local day, while row payloads and sort order remain UTC.
+The shared browser table handle keeps this filter aligned with
+`hilosTimeZone` as the reader zone changes.
 
 The [User Entity](../../../framework/backend/Database/Entity/Item/User.php)
 classifies `time_zone` as personal and assigns `NULLIFY` for restore
@@ -466,7 +489,6 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Notifications and deliveries | (not in the code yet — HIL-1587) |
 | People | (not in the code yet — HIL-1588) |
 | Logs | (not in the code yet — HIL-1589) |
-| Backups, restore and maintenance | (not in the code yet — HIL-1590) |
 | Acceptances | (not in the code yet — HIL-1591) |
 | Cron | (not in the code yet — HIL-1592) |
 | React | (not in the code yet — HIL-1594) |

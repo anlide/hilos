@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Item;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use Hilos\Backup\BackupPhase;
 use Hilos\Backup\BackupProgress;
 use Hilos\Backup\BackupScope;
@@ -13,6 +12,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\View\Item\BackupRuntime as ViewBackupRuntime;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /**
  * Write operations for the backup runtime singleton.
@@ -48,7 +48,7 @@ final class BackupRuntimeActions extends RtActions
         $this->state->running = true;
         $this->state->currentBackupId = $backupId;
         $this->state->scope = $scope->value;
-        $this->state->startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->startedAt = UtcMoment::format(new DateTimeImmutable());
         $this->state->phase = null;
         $this->state->phaseStartedAt = null;
         $this->state->estimatedSeconds = $estimatedSeconds;
@@ -73,7 +73,7 @@ final class BackupRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = $phase->value;
-        $this->state->phaseStartedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
         $this->sync();
     }
 
