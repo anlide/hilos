@@ -159,8 +159,9 @@ exact versions.** The `peerDependencies` of `@hilos/angular` —
 range is what a consuming project resolves against, and the SDK declares the
 major it is compatible with, not the version a project must install.
 `"ng-packagr": "^22.0.0"` in the same manifest stays a caret: its own peer on
-`@angular/compiler-cli` is a range (`^22.0.0 || ^22.1.0-next.0`), so it does not
-drag Angular by itself — but it belongs to the same set when Angular is lifted.
+`@angular/compiler-cli` is a range (`^22.0.0 || ^22.2.0-next || ^22.3.0-next`),
+so it does not drag Angular by itself — but it belongs to the same set when
+Angular is lifted.
 The `typescript` entry stays a tilde (`"~6.0.3"` today) in every root that
 carries Angular — today `demo/polls/frontend/package.json`,
 `demo/online-testing/frontend/package.json` and the workspace root
