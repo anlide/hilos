@@ -220,8 +220,8 @@
     "outputSha256": "ecabb5eee1a1424c4bf4318416eb2f24b2c7569f1bdaea025fe3030394405e88"
   },
   "src/format/moment.ts": {
-    "sourceSha256": "5d6776d6262e4ddc81d48244267efa63bd46c2712e23199f41fde712a48fabe6",
-    "outputSha256": "32d67f8a35dfe993efa3ee1aae5b35a0a5b95cb87b10d314f469a84596dccae0"
+    "sourceSha256": "2d9910a344ad6c94e12d10c3f1541a2dea0afd5d0c73ee7c71726024e56daf1a",
+    "outputSha256": "ef4fd88e9c4ecc2a39db552d72f5b9d8e011400bf668c6fe92adb524e66bd307"
   },
   "src/layout.ts": {
     "sourceSha256": "c0e5ad3f50e35047f5b0e6dba747796b4068cebbe9d33c23e3f39f2e42651d5a",
@@ -576,20 +576,24 @@
     "outputSha256": "a541e8bb871d43e3417d2d9e88bc55dca8a0f53d9e7ca4ddf4782ff298d36455"
   },
   "src/subscription/PageSubscription.ts": {
-    "sourceSha256": "bf772549aaace6cca014024dd7f7e2287cbb673f7fe6121d0a6abfdbf09c8c2f",
-    "outputSha256": "268d54d93c0425e362d23ded8c1991993bff413a66b556e400d33d6d7baa5786"
+    "sourceSha256": "ad289ef7fde529690c4f2192a72a29edc1800db73196ab0dd5a1a367fe6cf607",
+    "outputSha256": "ecc2da0d91d413411dbda7a222f6d2ad32dc35139ee6e88bf81b63e8780dee9f"
   },
   "src/subscription/bindAccessReaction.ts": {
     "sourceSha256": "deeb1e33b9f6468fd37ead4762b3c80eabf04ab7a12af0da8da65c3e210fbf8d",
     "outputSha256": "8a7ba439705886de5ca04baa9aadf22bce2ad25189229a2cea7f39d40ca10e95"
   },
   "src/subscription/bindPageScope.ts": {
-    "sourceSha256": "7957aeace13ea54df86c19f21e74aac9ffd5071e8260384b03ea031e70eaefbe",
-    "outputSha256": "c663a93a17e21ea10cf230f0c7fe23cf00d8bb0d0865064d7ac8891c11cf6384"
+    "sourceSha256": "b9a87e980f74a3d97152884d71430ba2fca901044dc945e025ba79e144f2f09c",
+    "outputSha256": "178ed37692438465f910ce10b221953fd8e51710eab37afb59e0c11c3f6460b9"
   },
   "src/subscription/bindTableViewport.ts": {
     "sourceSha256": "5b0e9fcd27a050ecb81fbd9030d130e3c3741db520a447cf2bc08279d6593282",
     "outputSha256": "c3aadbbad24ca9c530b2d43e5af69c0ac64af7284026012dda09397e4998d5b4"
+  },
+  "src/subscription/hilosPageSubscribeParams.ts": {
+    "sourceSha256": "0859845e2c3b1f1a372342e6f36666cb74351d803de439149a936994f7d0bba9",
+    "outputSha256": "42b0a206d87dee2f049a9d6390ede8ca61e90d7aa1163d9f18b102de1f5b77fe"
   },
   "src/subscription/pageReadyGate.ts": {
     "sourceSha256": "80a40450568fa9ef15da018a27a0e0c2bf39fe6299c205d6850429fc86dd21dd",
@@ -674,6 +678,10 @@
   "src/theme/themeStored.ts": {
     "sourceSha256": "ce78ffc34167694a3c15e9b175060f811a80136f295958b4c55416e1360ee744",
     "outputSha256": "23d1306774e68b40f9b6057ac05332a2e429e508af0b27dc77eb6b2bed24932c"
+  },
+  "src/timeZone/calendarPeriods.ts": {
+    "sourceSha256": "1229307fe50f53548f0db13d2507b46681eaeb39afc12cb94e1dc169f156ae03",
+    "outputSha256": "ca057df242dee60f25daed7562f2cf1a4f77d3837ef3702812c34864eaa5382e"
   },
   "src/timeZone/timeZoneBrowser.ts": {
     "sourceSha256": "5feeafae2b95441fa0ffc29d38b94bfdcbf0c1f05ef027ea0725d84a33f2961a",

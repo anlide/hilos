@@ -162,7 +162,13 @@ export function harness(
   const calls: { action: string; payload: unknown; requestId: string }[] = []
   const focuses: (string | null)[] = []
   const unregister = vi.fn(),
-    sendViewport = vi.fn(() => true)
+    sendViewport = vi.fn<HilosConnection['sendTableViewport']>(
+      (_page, _table, descriptor) => {
+        // Answer subject-filter changes as well as the initial registration.
+        pushWindow(rows, descriptor.requestId)
+        return true
+      },
+    )
   const scopes = new ScopeManager(),
     scope = scopes.openPage(page)
   scopes.session.data.set('adminViewMode', viewer)
@@ -194,11 +200,12 @@ export function harness(
   function rowKey(row: (typeof rows)[number]): string {
     return row.rowKey
   }
-  function pushWindow(next = rows): void {
+  function pushWindow(next = rows, requestId?: string): void {
     emit('tableWindow', {
       data: {
         page,
         tableKey,
+        requestId,
         rows: next.map((row) => ({
           rowKey: rowKey(row),
           slots: { [slot]: row },

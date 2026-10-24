@@ -3,6 +3,7 @@ import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import {
   formatMoment,
+  formatSnapshotMoment,
   type MomentFormatOptions,
 } from '../../src/format/moment.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
@@ -127,12 +128,16 @@ describe('absolute moments', () => {
     expect(formatMoment(iso, explicit)).toBe(
       formatMoment(Date.parse(iso), explicit),
     )
+    expect(formatSnapshotMoment(iso, 'UTC', explicit)).toBe(
+      formatMoment(iso, explicit),
+    )
   })
 
   it.each([-8640000000000000, 8640000000000000, 1.5])(
     'accepts valid epoch-ms %s',
     (moment) => {
       expect(formatMoment(moment)).toBeTypeOf('string')
+      expect(formatSnapshotMoment(moment, 'UTC')).toBe(formatMoment(moment))
     },
   )
 })
@@ -204,6 +209,80 @@ describe('presentation options', () => {
 
   it('ignores a calendar reference for other kinds', () => {
     expect(formatMoment(moment, { kind: 'date', now: NaN })).not.toBeNull()
+  })
+})
+
+describe('historical snapshot labels', () => {
+  it('keeps the captured zone while the ordinary formatter follows the live zone', () => {
+    connection.choose('Asia/Kathmandu')
+    const zone = hilosTimeZone.get()
+    const moment = '2025-12-31T23:30:00Z'
+    expect(formatSnapshotMoment(moment, zone, explicit)).toBe(
+      '01/01/2026, 05:15:00',
+    )
+    connection.choose('America/New_York')
+    expect(formatSnapshotMoment(moment, zone, explicit)).toBe(
+      '01/01/2026, 05:15:00',
+    )
+    expect(formatSnapshotMoment(Date.parse(moment), zone, explicit)).toBe(
+      '01/01/2026, 05:15:00',
+    )
+    expect(formatMoment(moment, explicit)).toBe('31/12/2025, 18:30:00')
+  })
+
+  it('compares calendar days in the snapshot zone with its fixed asOf reference', () => {
+    const now = Date.parse('2026-01-01T00:01:00Z')
+    const options: MomentFormatOptions = {
+      kind: 'calendar',
+      locale: 'en-GB',
+      now,
+    }
+    const moment = '2025-12-31T23:59:00Z'
+    expect(formatSnapshotMoment(moment, 'Europe/Warsaw', options)).toBe('today')
+    connection.choose('America/New_York')
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-06-01T00:00:00Z'))
+    applyServerTime(Date.now() + 300000)
+    expect(formatSnapshotMoment(moment, 'Europe/Warsaw', options)).toBe('today')
+    expect(formatSnapshotMoment(moment, 'UTC', options)).toBe('yesterday')
+  })
+
+  it('requires a captured reference for calendar labels instead of reading the clock', () => {
+    expect(formatSnapshotMoment(0, 'UTC', { kind: 'calendar' })).toBeNull()
+  })
+
+  it.each([
+    '',
+    ' Europe/Warsaw',
+    'Europe/Warsaw ',
+    'No/Such_Zone',
+    '+02:00',
+    '-0500',
+  ])('returns null for an unusable snapshot zone %s', (zone) => {
+    expect(formatSnapshotMoment(0, zone)).toBeNull()
+  })
+
+  it('keeps locale and format errors visible after validating the snapshot zone', () => {
+    expect(() =>
+      formatSnapshotMoment(0, 'UTC', { locale: 'invalid_locale' }),
+    ).toThrow(RangeError)
+    for (const kind of ['dateTime', 'calendar'] as const) {
+      expect(() =>
+        formatSnapshotMoment(0, 'UTC', {
+          kind,
+          now: 0,
+          format: { dateStyle: 'long', year: 'numeric' },
+        }),
+      ).toThrow(TypeError)
+    }
+  })
+
+  it('supplies the snapshot zone after unsafe JavaScript format overrides', () => {
+    expect(
+      formatSnapshotMoment('2026-01-01T00:00:00Z', 'Asia/Kathmandu', {
+        ...explicit,
+        format: { ...explicit.format, timeZone: 'UTC' },
+      } as MomentFormatOptions),
+    ).toBe('01/01/2026, 05:45:00')
   })
 })
 
@@ -389,16 +468,23 @@ describe('unusable input and host capabilities', () => {
     '-000000-01-01T00:00:00Z',
   ])('returns null for %s', (moment) => {
     expect(formatMoment(moment)).toBeNull()
+    expect(formatSnapshotMoment(moment, 'UTC')).toBeNull()
   })
 
   it('rejects a Date object passed by an unsafe JavaScript caller', () => {
     expect(formatMoment(new Date() as unknown as number)).toBeNull()
+    expect(
+      formatSnapshotMoment(new Date() as unknown as number, 'UTC'),
+    ).toBeNull()
   })
 
   it.each([NaN, Infinity, -Infinity, 8640000000000001, -8640000000000001])(
     'rejects an impossible calendar reference %s',
     (now) => {
       expect(formatMoment(0, { kind: 'calendar', now })).toBeNull()
+      expect(
+        formatSnapshotMoment(0, 'UTC', { kind: 'calendar', now }),
+      ).toBeNull()
     },
   )
 
@@ -413,6 +499,10 @@ describe('unusable input and host capabilities', () => {
       vi.stubGlobal('Intl', host)
       expect(formatMoment(0)).toBeNull()
       expect(formatMoment(0, { kind: 'calendar', now: 0 })).toBeNull()
+      expect(formatSnapshotMoment(0, 'UTC')).toBeNull()
+      expect(
+        formatSnapshotMoment(0, 'UTC', { kind: 'calendar', now: 0 }),
+      ).toBeNull()
     },
   )
 })

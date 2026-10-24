@@ -71,10 +71,18 @@ export interface PageSubscriptionConnection {
   withTablePresentationUpdate?: HilosConnection['withTablePresentationUpdate']
 }
 
+/** Prepare params once per successful opening, after the session has answered. */
+export type PageSubscribeParamsPreparer = (
+  pageKey: string,
+  params: Readonly<Record<string, unknown>>,
+) => Record<string, unknown>
+
 export class PageSubscription {
   private current: {
     pageKey: string
     params: Record<string, unknown>
+    /** Survives reconnects; only a new opening or departure discards this context. */
+    prepared: boolean
   } | null = null
 
   /** The current page's subscription error; null while the page loads cleanly. */
@@ -135,6 +143,10 @@ export class PageSubscription {
   constructor(
     private readonly connection: PageSubscriptionConnection,
     private readonly scopes: ScopeManager,
+    private readonly prepareParams: PageSubscribeParamsPreparer = (
+      _pageKey,
+      params,
+    ) => params,
   ) {
     // Both selectors are derived once and held, not rebuilt per read: they are
     // computed over the page-scope signal, so one instance already answers for
@@ -228,7 +240,7 @@ export class PageSubscription {
    */
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
     this.subscribeDelivered = false
-    this.current = { pageKey, params }
+    this.current = { pageKey, params, prepared: false }
     this.notifySubscriptionWaiters()
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
@@ -545,11 +557,15 @@ export class PageSubscription {
     if (!this.current || !this.sessionAnswered) {
       return
     }
+    const current = this.current
+    const params = current.prepared
+      ? current.params
+      : this.prepareParams(current.pageKey, current.params)
     this.connection.resetTableWindowRequests?.()
     const frame: Record<string, unknown> = {
       [FIELD_TYPE]: SIGNAL_TYPE_PAGE_SUBSCRIBE,
-      [FIELD_PAGE]: this.current.pageKey,
-      [FIELD_PARAMS]: this.current.params,
+      [FIELD_PAGE]: current.pageKey,
+      [FIELD_PARAMS]: params,
     }
     // The windows this tab is holding, asked of their controllers right now. On a reconnect
     // those are the windows of the page on the screen, and reporting them is what brings the
@@ -563,6 +579,10 @@ export class PageSubscription {
       frame[FIELD_TABLE_WINDOWS] = windows
     }
     this.subscribeDelivered = this.connection.send(JSON.stringify(frame))
+    if (this.subscribeDelivered) {
+      current.params = params
+      current.prepared = true
+    }
     this.notifySubscriptionWaiters()
   }
 

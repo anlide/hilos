@@ -10,7 +10,10 @@ import {
 import { watchThemeFrames } from '../themeFrames.js'
 import { watchHandshakeFrames } from '../handshakeFrames.js'
 import { watchPageErrorFrames } from '../pageErrorFrames.js'
-import { watchAnalyticsFrames } from '../analytics.js'
+import {
+  readAnalyticsOverviewSnapshot,
+  watchAnalyticsFrames,
+} from '../analytics.js'
 import { watchDaemonCronFrames } from '../daemon.js'
 import { readMonopolisticWorker } from '../daemonWorker.js'
 import { holdPageReply, watchPageReplies } from '../lazyBundles.js'
@@ -218,6 +221,75 @@ describe('shared incoming socket observations', () => {
     const raw = batch(welcome, wire)
     connect()(raw)
     expect(frames).toEqual([{ wire, raw }])
+  })
+
+  it('reads the opening overview reply inside a batch, not another page or a later snapshot', () => {
+    const read = createSocketFrameReader(1)
+    const snapshot = {
+      timeZone: 'Asia/Kathmandu',
+      weekStartTs: Date.parse('2026-10-18T18:15:00Z'),
+      dayStartTs: Date.parse('2026-10-22T18:15:00Z'),
+      hourStartTs: Date.parse('2026-10-23T05:15:00Z'),
+      asOfTs: Date.parse('2026-10-23T05:50:00Z'),
+      visitorsThisWeek: 5,
+      visitorsToday: 2,
+      visitorsThisHour: 0,
+    }
+    const reply = (page: string, analyticsOverview: unknown) => ({
+      type: 'page_response',
+      data: { page, payload: { data: { analyticsOverview } } },
+    })
+    const later = { ...snapshot, visitorsThisHour: 1 }
+    const frames = read(JSON.stringify(reply('hilos_analytics', later)))
+    const opening = frames.length
+    frames.push(
+      ...read(
+        batch(
+          reply('another_page', later),
+          reply('hilos_analytics', snapshot),
+          reply('hilos_analytics', later),
+        ),
+      ),
+    )
+    expect(readAnalyticsOverviewSnapshot(frames.slice(opening))).toEqual(
+      snapshot,
+    )
+  })
+
+  it('never completes an overview from partial replies or substitutes an unrelated reply', () => {
+    const read = createSocketFrameReader(1)
+    const context = {
+      timeZone: 'UTC',
+      weekStartTs: 100,
+      dayStartTs: 200,
+      hourStartTs: 300,
+      asOfTs: 400,
+    }
+    const counts = {
+      visitorsThisWeek: 0,
+      visitorsToday: 0,
+      visitorsThisHour: 0,
+    }
+    const reply = (page: string, analyticsOverview: unknown) => ({
+      type: 'page_response',
+      data: { page, payload: { data: { analyticsOverview } } },
+    })
+    expect(() =>
+      readAnalyticsOverviewSnapshot(
+        read(
+          batch(
+            reply('hilos_analytics', context),
+            reply('hilos_analytics', counts),
+            reply('hilos_analytics', { ...context, ...counts }),
+          ),
+        ),
+      ),
+    ).toThrow('Invalid or incomplete Analytics overview snapshot')
+    expect(() =>
+      readAnalyticsOverviewSnapshot(
+        read(JSON.stringify(reply('another_page', { ...context, ...counts }))),
+      ),
+    ).toThrow('No Analytics overview page_response was observed')
   })
 
   it('retains cron inner envelopes for late snapshots', () => {

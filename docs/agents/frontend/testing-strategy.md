@@ -741,16 +741,23 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 (called before the page signs in), the row reader `readAnalyticsActionRows` (the
 no-value sign reads as a null page name, as the frames carry it) and the cell
 locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` and
-`expectAnalyticsOverview` check the way in; the `expectAnalytics…`,
+`expectAnalyticsOverview` check the way in, with an explicit `tiles` body for
+Vue and the default legacy `empty` body for React/Angular. Chat arms
+`watchSocketFrames` before registration and bookmarks its log before opening
+Analytics from the dashboard. `readAnalyticsOverviewSnapshot` reads one complete
+overview reply from that opening's frames; `expectAnalyticsOverviewTiles` matches
+its exact counts and captured period/zone labels independently of the production
+formatter. Missing or malformed snapshots fail instead of becoming zero counts.
+The `expectAnalytics…`,
 `expectNoAnalytics…` and `expectOtherAnalyticsSession` checks cover the person
 page and the session page. `expectAnalyticsActionsOnPage` checks that every
 action row shown for the session stands on the same named page; registration
 expects `main` for every row. Every check takes the spec's `expect` first, then
 its `Page`. A spec waits for the journal writer by polling the
 `test:analytics:browser-session` probe until the last registration action of
-both tabs — the person's and the administrator's — has landed, then opens the
-section. The three kits' specs are the same text; the one difference is the
-stand address of the command channel.
+both tabs — the person's and the administrator's — has landed, then follows the
+person's admin card into Analytics. The three kits' browser-session specs are
+the same text; the one difference is the stand address of the command channel.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

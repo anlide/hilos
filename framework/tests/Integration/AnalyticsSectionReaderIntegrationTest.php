@@ -12,6 +12,9 @@ use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Core\Analytics\AnalyticsWindowAnchor;
 use Hilos\Core\Analytics\AnalyticsWindowOrder;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\DbContext;
@@ -21,6 +24,8 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\AbstractHilosAnalyticsPage;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /** Integration coverage for bounded, private section reads over the shipped analytics schema. */
 final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegrationTestCase
@@ -50,6 +55,91 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
         Database::sqlRun('DROP TABLE IF EXISTS `hilos_user`');
         Schema::reset();
         parent::tearDown();
+    }
+
+    public function testOverviewCountsClosedIntervalIntersectionsIncludingGuestsExactlyOnce(): void
+    {
+        $shared = $this->session('all-periods', null, 50, 450);
+        $first = $this->connection('one', $shared);
+        $second = $this->connection('two', $shared);
+        $this->action($first, 350, 'first-action', null);
+        $this->action($second, 350, 'second-action', null);
+        $this->session('ends-at-week', 7, 50, 100);
+        $this->session('ends-at-day', null, 150, 200);
+        $this->session('ends-at-hour', 8, 250, 300);
+        $this->session('starts-at-asof', null, 400, 500);
+        $this->session('ends-at-asof', null, 350, 400);
+        $this->session('before-week', 7, 50, 99);
+        $this->session('after-asof', null, 401, 500);
+        $this->session('starts-at-week', null, 100, 199);
+        $this->session('starts-at-day', 8, 200, 299);
+        $this->session('starts-at-hour', null, 300, 399);
+
+        $snapshot = new AnalyticsSectionReader()->overviewSnapshot('US/Eastern', 100, 200, 300, 400);
+        self::assertSame('US/Eastern', $snapshot->timeZone);
+        self::assertSame(100, $snapshot->weekStartTs);
+        self::assertSame(200, $snapshot->dayStartTs);
+        self::assertSame(300, $snapshot->hourStartTs);
+        self::assertSame(400, $snapshot->asOfTs);
+        self::assertSame(9, $snapshot->visitorsThisWeek);
+        self::assertSame(7, $snapshot->visitorsToday);
+        self::assertSame(5, $snapshot->visitorsThisHour);
+        self::assertSame([
+            'timeZone' => 'US/Eastern', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300, 'asOfTs' => 400,
+            'visitorsThisWeek' => 9, 'visitorsToday' => 7, 'visitorsThisHour' => 5,
+        ], $snapshot->toArray());
+    }
+
+    public function testOverviewPageBuildsTheCompleteSnapshotWithTheServerUpperBound(): void
+    {
+        $this->session('page-session', null, 100, 300);
+        $page = new class ($this->createStub(PageAgentInterface::class)) extends AbstractHilosAnalyticsPage {
+            /**
+             * @param PageRouteParams $params Captured reader context
+             * @return PagePayload Actual production payload built against the integration database
+             */
+            public function payload(PageRouteParams $params): PagePayload
+            {
+                return parent::buildPagePayload('test', $params);
+            }
+        };
+        $before = TimeHelper::nowMs();
+        $snapshot = $page->payload(new PageRouteParams([
+            'timeZone' => 'UTC', 'weekStartTs' => '100', 'dayStartTs' => '200', 'hourStartTs' => '300',
+        ]))->data['analyticsOverview'];
+        $after = TimeHelper::nowMs();
+        self::assertGreaterThanOrEqual($before, $snapshot['asOfTs']);
+        self::assertLessThanOrEqual($after, $snapshot['asOfTs']);
+        self::assertSame([
+            'timeZone' => 'UTC', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300,
+            'asOfTs' => $snapshot['asOfTs'], 'visitorsThisWeek' => 1, 'visitorsToday' => 1, 'visitorsThisHour' => 1,
+        ], $snapshot);
+    }
+
+    public function testOverviewReturnsZeroForEmptyAndIndividuallyEmptyPeriods(): void
+    {
+        $reader = new AnalyticsSectionReader();
+        self::assertSame([
+            'timeZone' => 'UTC', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300, 'asOfTs' => 400,
+            'visitorsThisWeek' => 0, 'visitorsToday' => 0, 'visitorsThisHour' => 0,
+        ], $reader->overviewSnapshot('UTC', 100, 200, 300, 400)->toArray());
+        $this->session('week-only', null, 100, 199);
+        self::assertSame(1, $reader->overviewSnapshot('UTC', 100, 200, 300, 400)->visitorsThisWeek);
+        self::assertSame(0, $reader->overviewSnapshot('UTC', 100, 200, 300, 400)->visitorsToday);
+        $this->session('day-only', null, 200, 299);
+        $snapshot = $reader->overviewSnapshot('UTC', 100, 200, 300, 400);
+        self::assertSame(2, $snapshot->visitorsThisWeek);
+        self::assertSame(1, $snapshot->visitorsToday);
+        self::assertSame(0, $snapshot->visitorsThisHour);
+    }
+
+    public function testOverviewSqlFailureDoesNotBecomeZeroAttendance(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $this->expectException(DatabaseException::class);
+        new AnalyticsSectionReader()->overviewSnapshot('UTC', 100, 200, 300, 400);
     }
 
     /** @throws HilosException When a fixture or section query fails */
@@ -235,6 +325,10 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
             $reader->actionCountBefore($session, AnalyticsWindowOrder::TIME_ASC, $pastEnd));
         self::assertSame(TableConstants::COUNT_CEILING + 1,
             $reader->browserSessionCountBefore(8, AnalyticsWindowOrder::NUMBER, $pastEnd));
+        $overview = $reader->overviewSnapshot('UTC', 0, 0, 0, 1000);
+        self::assertSame(TableConstants::COUNT_CEILING + 3, $overview->visitorsThisWeek);
+        self::assertSame(TableConstants::COUNT_CEILING + 3, $overview->visitorsToday);
+        self::assertSame(TableConstants::COUNT_CEILING + 3, $overview->visitorsThisHour);
     }
 
     /** @throws HilosException When a valid empty window query fails */

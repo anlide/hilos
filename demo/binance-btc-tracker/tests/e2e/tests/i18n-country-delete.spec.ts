@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectCountryDeleteDescription,
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,
   i18nLocaleRow,
@@ -221,13 +222,16 @@ test('deletes a custom country under a second Names tab and keeps its name draft
 
 test('shows accessible blocked deletion for a custom country with a locale and a known country', async ({
   page,
-}) => {
+}, testInfo) => {
+  // A failed attempt leaves its country and locale in the shared stand.
+  const countryCode = ['qz', 'qo', 'qp'][testInfo.retry]!
+  const localeCode = `en-${countryCode.toUpperCase()}`
   await signUpAdmin(page)
-  await addCountry(page, 'qz')
+  await addCountry(page, countryCode)
   await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
   // The locales table shows every pair in one window and declares no search.
-  await expect(i18nLocaleRow(page, 'en-QZ')).toBeVisible()
-  const add = shownByTestId(page, 'i18n-locales-add-en-QZ')
+  await expect(i18nLocaleRow(page, localeCode)).toBeVisible()
+  const add = shownByTestId(page, `i18n-locales-add-${localeCode}`)
   await clickSubmit(add)
   for (const [field, value] of [
     ['date', 'YYYY-MM-DD'],
@@ -244,12 +248,12 @@ test('shows accessible blocked deletion for a custom country with a locale and a
   await clickSubmit(submit)
   await expect(submit).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Locale en-QZ added.',
+    `Locale ${localeCode} added.`,
   )
   await dismissToasts(page)
 
   for (const [code, reason] of [
-    ['qz', 'Cannot delete: locales refer to this country'],
+    [countryCode, 'Cannot delete: locales refer to this country'],
     [
       'us',
       'Cannot delete: the built-in catalog knows this country and the reflow would bring it back; switch it off instead',
@@ -266,18 +270,34 @@ test('shows accessible blocked deletion for a custom country with a locale and a
     )
     await expect(basket).toHaveAttribute('aria-disabled', 'true')
     await expect(description).toHaveText(reason!)
-    await expect(basket).toHaveAttribute(
-      'aria-describedby',
-      (await description.getAttribute('id'))!,
-    )
+    await expectCountryDeleteDescription(expect, page, code!)
     await basket.focus()
     await basket.press('Enter')
     await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
     await expect(description).toBeVisible()
-    await expect(basket).toHaveAttribute(
-      'aria-describedby',
-      (await description.getAttribute('id'))!,
+    await expectCountryDeleteDescription(expect, page, code!)
+    // A real empty search reply removes both projections, then restores a new
+    // occurrence. Its generated id must not be held as the relation's oracle.
+    const previousId = (await description.getAttribute('id'))!
+    await typeInto(countrySearch, 'no-such-country-redraw')
+    await expect(page.getByTestId(`i18n-countries-delete-${code}`)).toHaveCount(
+      0,
     )
+    await typeInto(countrySearch, code!)
+    await expect(description).toBeVisible()
+    const currentId = await description.getAttribute('id')
+    expect(currentId).not.toBe(previousId)
+    await testInfo.attach(`country-${code}-redraw`, {
+      body: JSON.stringify({
+        previousId,
+        currentId,
+        describedBy: await basket.getAttribute('aria-describedby'),
+      }),
+      contentType: 'application/json',
+    })
+    await expect(description).toHaveText(reason!)
+    await expect(basket).toHaveAttribute('aria-disabled', 'true')
+    await expectCountryDeleteDescription(expect, page, code!)
     await gotoPage(page, `/hilos/i18n/countries/${code}`, PAGE_READY)
     await expect(page.getByTestId('country-card-delete-verdict')).toContainText(
       reason!,

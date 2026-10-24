@@ -403,10 +403,15 @@ activation refuses either artifact without the feature. The dashboard's served
 page list controls card availability; the overview card is visible in a view
 layer that has built the section, which all three layers have.
 
-- The overview — the SDK view `HilosAnalyticsPage` in Vue, React and Angular — is
-  empty apart from one line explaining that a person's actions open from their
-  admin page, with an "Open users" link when the users-list path resolves. It
-  carries no values, so an admin-view-mode viewer sees the same line.
+- The overview has a stable server/core contract: an opening of
+  `hilos_analytics` returns one `data.analyticsOverview` snapshot with the
+  captured reader zone, week/day/hour starts, one common `asOfTs`, and exact
+  session counts for those periods. The core projection holds the first complete
+  valid answer for the current page scope; a later answer or reconnect does not
+  replace it, though reconnect may cause the backend subscription to run again.
+  Vue renders three aggregate tiles from that captured snapshot, under the
+  shared section head. React and Angular retain the legacy empty-state body;
+  their tiles rendering remains in HIL-1735/1736.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
   `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
@@ -427,9 +432,8 @@ layer that has built the section, which all three layers have.
   label `Person` and the session numbers, with Hidden in place of every other
   value.
 
-Everything beyond that — visits, lists of people and visits, reports, cubes,
-retention, live updates and content for the overview — belongs to Phase-2,
-HIL-1402.
+Visits, lists of people and visits, reports, cubes, retention and live updates
+remain Phase-2 work under HIL-1402.
 
 ### The reader and the facts it reads
 
@@ -443,7 +447,20 @@ A window without an order runs by row number ascending. Each read is capped at
 page. Counts stop at the framework ceiling of 500, probing one extra row to
 distinguish an exact count from `500+`; the count before an anchor is bounded
 the same way. Counts for session summaries cover only connections already
-attached to the selected sessions.
+attached to the selected sessions. These bounds apply to detail reads, not the
+three overview aggregates.
+
+`AnalyticsSectionReader::overviewSnapshot()` reads those aggregates with one
+parameterized `SELECT` from `hilos_analytics_browser_session`. Analytics
+collections are not mounted in `HilosDbContext` yet, so this raw query remains
+the narrow read path. TODO: replace it when the analytics reading model lands.
+Each count includes a session whose closed `[first_seen_ts, last_seen_ts]` interval
+intersects the corresponding closed `[periodStart, asOfTs]` interval; touching
+either boundary counts. A session contributes once per period, guests and signed
+in accounts are included together, and actions or connections do not multiply
+the count. There is no join. An empty selection returns zero; a query failure
+does not become zero. These three exact nonnegative safe-integer counts have no
+500-row ceiling.
 
 Two framework tables expose these reads with 25-row opening windows:
 `hilosAnalyticsActions`, filtered by `browserSession`, carries the inline
@@ -563,16 +580,17 @@ window of rows, never all the rows of a session or account at once.
 
 ### The admin view mode
 
-In Phase-1 a view-mode viewer receives **no analytics values**. The bridge knows
-the verdict only for a column of a mounted collection (`WireField::column()`),
-and no Entity maps these tables. `WireField::notPersonal()` is not an escape
-for a value copied from a column
-([admin-view-mode.md](admin-view-mode.md)). Let the viewer open the pages, but
-keep the values as hidden markers.
+The overview is the narrow Phase-1 exception: its eight scalar fields are the
+reader's captured zone and calendar/as-of context plus the three aggregate
+counts. Each is explicitly marked `WireField::notPersonal()` on that overview
+payload, so a view-mode viewer may receive them. This does not make
+`WireField::notPersonal()` a general exception for values copied from raw
+columns. Detail-page fields and table values keep their existing hidden markers
+and access outcomes ([admin-view-mode.md](admin-view-mode.md)).
 
-The owner accepted this boundary on 04.10.2026: «да, потом сделаем как-то» —
-"yes, we will do something about it later". How the viewer can see analytics
-belongs to Phase-2, HIL-1402.
+The 04.10.2026 decision to defer general viewer access still governs those raw
+details; the 19.10.2026 approval adds only the overview context and aggregates.
+Broader viewer access remains Phase-2 work under HIL-1402.
 
 ## Settled — Do Not Reopen
 

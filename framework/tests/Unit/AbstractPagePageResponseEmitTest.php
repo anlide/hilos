@@ -23,6 +23,7 @@ use Hilos\Core\Page\Exception\PageBadRequestException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Analytics\AnalyticsOverviewSnapshot;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -43,6 +44,7 @@ use Hilos\Core\Table\TableFacetTally;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Pages\AbstractHilosAnalyticsPage;
 use Hilos\Pages\AbstractHilosDashboardPage;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -103,6 +105,44 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             ],
             $signal->data->data->toArray(),
         );
+    }
+
+    /** The snapshot and catalog shell reach the reader in one response with no companion ack. */
+    public function testAnalyticsSnapshotAndAdoptedHeadShareTheOnlyResponse(): void
+    {
+        AbstractPagePageResponseEmitTestHilos::initBrowser();
+        $page = new AbstractPagePageResponseEmitTestAnalyticsPage(new AbstractPagePageResponseEmitTestAgent());
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        self::assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $wire = $signal->data->data->toArray();
+        self::assertSame(HilosPageConstants::HILOS_ANALYTICS, $wire['page']);
+        self::assertSame([
+            'timeZone' => 'UTC', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300, 'asOfTs' => 400,
+            'visitorsThisWeek' => 9, 'visitorsToday' => 7, 'visitorsThisHour' => 5,
+        ], $wire['payload']['data']['analyticsOverview']);
+        self::assertSame([
+            'page' => HilosPageConstants::HILOS_ANALYTICS,
+            'label' => 'Analytics',
+            'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
+            'icon' => 'bi-bar-chart',
+        ], $wire['payload']['data']['pageHeadOwner']);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+        ], $wire['payload']['data']['pageBreadcrumb']);
+        self::assertSame([['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview']], $wire['payload']['data']['pageTabs']);
+        self::assertSame([], $wire['payload']['data']['pageChildren']);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        $page->onUpdateSubscription('ak-1', new PageRouteParams([]));
+        $updated = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($updated);
+        self::assertInstanceOf(WebSocketSignalData::class, $updated->data);
+        self::assertSame($wire, $updated->data->data->toArray());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     /**
@@ -881,9 +921,22 @@ final class AbstractPagePageResponseEmitTestSettingsPage extends AbstractPagePag
     public const string PAGE = HilosPageConstants::HILOS_SETTINGS;
 }
 
-final class AbstractPagePageResponseEmitTestAnalyticsPage extends AbstractPagePageResponseEmitTestRegisteredPage
+final class AbstractPagePageResponseEmitTestAnalyticsPage extends AbstractHilosAnalyticsPage
 {
     public const string PAGE = HilosPageConstants::HILOS_ANALYTICS;
+    public const string SUBSCRIPTION_AGENT_TYPE = 'test';
+
+    /**
+     * @param string $acceptKey Test connection
+     * @param PageRouteParams $params Test route context
+     * @return PagePayload Known overview snapshot to check the shared response assembly
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        return new PagePayload(data: [
+            AnalyticsOverviewSnapshot::SECTION => new AnalyticsOverviewSnapshot('UTC', 100, 200, 300, 400, 9, 7, 5)->toArray(),
+        ]);
+    }
 }
 
 final class AbstractPagePageResponseEmitTestLogsWorkersPage extends AbstractPagePageResponseEmitTestRegisteredPage

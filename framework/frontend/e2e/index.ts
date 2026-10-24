@@ -187,6 +187,7 @@ export {
   expectAnalyticsActionsOnPage,
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
+  expectAnalyticsOverviewTiles,
   expectAnalyticsPersonSession,
   expectAnalyticsSessionFrames,
   expectAnalyticsSessionHeader,
@@ -195,11 +196,13 @@ export {
   expectOtherAnalyticsSession,
   readAnalyticsActionRows,
   readAnalyticsBrowserSession,
+  readAnalyticsOverviewSnapshot,
   watchAnalyticsFrames,
   type AnalyticsActionRow,
   type AnalyticsBrowserSession,
   type AnalyticsFrame,
   type AnalyticsFrameLog,
+  type AnalyticsOverviewSnapshot,
 } from './analytics.js'
 
 export {
@@ -263,6 +266,7 @@ export {
 } from './daemonRestart.js'
 
 export {
+  expectCountryDeleteDescription,
   expectCountryPageHead,
   expectDefaultLanguageHeader,
   expectDeletedCountryCard,

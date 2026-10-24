@@ -299,6 +299,38 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
+    public function testAnalyticsAdoptsOnlyTheOverviewAndKeepsBothEntityHeadsLegacy(): void
+    {
+        AnalyticsPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams([]);
+        self::assertSame([
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_ANALYTICS,
+                'label' => 'Analytics',
+                'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
+                'icon' => 'bi-bar-chart',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+            ],
+            'pageTabs' => [['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview']],
+            'pageChildren' => [],
+        ], PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, $params)?->toArray());
+        foreach ([
+            HilosPageConstants::HILOS_ANALYTICS_PERSON => 'Person',
+            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => 'Browser session',
+        ] as $page => $label) {
+            self::assertSame($page, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, $params));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => $page, 'label' => $label],
+            ], PageCatalogResolver::breadcrumb($page));
+        }
+    }
+
     public function testI18nRootAndListsShareTheHeadAndKeepServedFutureTabs(): void
     {
         I18nPageHeadTestHilos::initBrowser();
@@ -680,6 +712,16 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** All three Analytics pages are served; its entities must never join the overview's row. */
+abstract class AnalyticsPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
+    ];
 }
 
 /** The Maintenance owner is registered without its optional Circle view. */

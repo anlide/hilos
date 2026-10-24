@@ -33,6 +33,12 @@ final class HilosPageRouteParams
     /** Route param for one analytics browser session. */
     public const string HILOS_ANALYTICS_BROWSER_SESSION_ID = 'browserSessionId';
 
+    /** Reader context for the analytics overview, carried only in subscription params. */
+    public const string HILOS_ANALYTICS_TIME_ZONE = 'timeZone';
+    public const string HILOS_ANALYTICS_WEEK_START_TS = 'weekStartTs';
+    public const string HILOS_ANALYTICS_DAY_START_TS = 'dayStartTs';
+    public const string HILOS_ANALYTICS_HOUR_START_TS = 'hourStartTs';
+
     /**
      * Route param for {@see HilosPageConstants::HILOS_ANALYTICS_PERSON} (`/hilos/analytics/people/{userId}`).
      */

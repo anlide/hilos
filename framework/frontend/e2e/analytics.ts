@@ -1,6 +1,7 @@
 import type { Expect, Locator, Page } from '@playwright/test'
+import { deliveryObject } from './deliveryFrames.js'
 import { shownByTestId } from './table.js'
-import { watchSocketFrames } from './socket.js'
+import { watchSocketFrames, type SocketFrame } from './socket.js'
 
 /**
  * Analytics section checks all three kits must meet alike. Tests, their order
@@ -101,6 +102,18 @@ export interface AnalyticsFrameLog {
   raw: string
 }
 
+/** One complete overview reply, kept separate from the production projection. */
+export interface AnalyticsOverviewSnapshot {
+  readonly timeZone: string
+  readonly weekStartTs: number
+  readonly dayStartTs: number
+  readonly hourStartTs: number
+  readonly asOfTs: number
+  readonly visitorsThisWeek: number
+  readonly visitorsToday: number
+  readonly visitorsThisHour: number
+}
+
 const SESSION_PAGE = 'hilos_analytics_browser_session'
 const ACTIONS_TABLE = 'hilosAnalyticsActions'
 const SESSIONS_TABLE = 'hilos-analytics-browser-sessions-table'
@@ -141,6 +154,77 @@ export function watchAnalyticsFrames(page: Page): AnalyticsFrameLog[] {
     }
   })
   return frames
+}
+
+/**
+ * Read the first Analytics overview reply from this opening's observations.
+ * The caller bookmarks the log before navigation and passes only later frames.
+ * A missing or malformed full snapshot fails; separate replies never merge.
+ *
+ * @param frames Incoming observations since this opening, including batch inners.
+ */
+export function readAnalyticsOverviewSnapshot(
+  frames: readonly SocketFrame[],
+): AnalyticsOverviewSnapshot {
+  const frame = frames.find(({ wire }) => {
+    const response = deliveryObject(wire)
+    return (
+      response.type === 'page_response' &&
+      deliveryObject(response.data).page === 'hilos_analytics'
+    )
+  })
+  if (frame === undefined) {
+    throw new Error('No Analytics overview page_response was observed')
+  }
+  if (frame.failure !== undefined || frame.raw === undefined) {
+    throw new Error('Invalid Analytics overview socket evidence')
+  }
+  const data = deliveryObject(deliveryObject(frame.wire).data)
+  const pageData = deliveryObject(deliveryObject(data.payload).data)
+  const snapshot = deliveryObject(
+    pageData.analyticsOverview,
+  ) as Partial<AnalyticsOverviewSnapshot>
+  if (
+    typeof snapshot.timeZone !== 'string' ||
+    snapshot.timeZone.length === 0 ||
+    snapshot.timeZone.trim() !== snapshot.timeZone ||
+    /^[+\-\u2212]/.test(snapshot.timeZone) ||
+    ![
+      snapshot.weekStartTs,
+      snapshot.dayStartTs,
+      snapshot.hourStartTs,
+      snapshot.asOfTs,
+    ].every(
+      (moment) =>
+        typeof moment === 'number' &&
+        Number.isSafeInteger(moment) &&
+        moment >= 0 &&
+        new Date(moment).getTime() === moment,
+    ) ||
+    ![
+      snapshot.visitorsThisWeek,
+      snapshot.visitorsToday,
+      snapshot.visitorsThisHour,
+    ].every(
+      (count) =>
+        typeof count === 'number' && Number.isSafeInteger(count) && count >= 0,
+    )
+  ) {
+    throw new Error('Invalid or incomplete Analytics overview snapshot')
+  }
+  const complete = snapshot as AnalyticsOverviewSnapshot
+  if (
+    complete.weekStartTs > complete.dayStartTs ||
+    complete.dayStartTs > complete.hourStartTs ||
+    complete.hourStartTs > complete.asOfTs ||
+    complete.visitorsThisWeek < complete.visitorsToday ||
+    complete.visitorsToday < complete.visitorsThisHour
+  ) {
+    throw new Error('Inconsistent Analytics overview snapshot periods')
+  }
+  // Reject unusable IANA names independently of the core's snapshot schema.
+  new Intl.DateTimeFormat('en-GB', { timeZone: complete.timeZone })
+  return complete
 }
 
 /**
@@ -224,15 +308,49 @@ export async function expectAnalyticsDashboardCard(
   await expect(card).toContainText(ANALYTICS_LEAD)
 }
 
-/** The overview is open and empty, and offers the way to the users. */
+/** The overview shows its explicit kit body under the shared catalog identity. */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
+  kind: 'tiles' | 'empty' = 'empty',
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Analytics')
+  await expect(
+    page.getByRole('heading', { name: 'Analytics', exact: true }),
+  ).toBeVisible()
   await expect(page.getByTestId('hilos-admin-page')).toContainText(
     ANALYTICS_LEAD,
   )
+  if (kind === 'tiles') {
+    const tiles = page.getByTestId('hilos-analytics-overview-tiles')
+    await expect(tiles).toHaveCount(1)
+    await expect(tiles).toBeVisible()
+    await expect(page.locator('h1')).toHaveCount(1)
+    await expect(page.getByTestId('hilos-page-head')).toHaveCount(1)
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+      'Analytics',
+    )
+    for (const testId of [
+      'hilos-admin-title',
+      'hilos-admin-children',
+      'hilos-admin-empty',
+      'hilos-page-tabs',
+      'hilos-analytics-overview-empty',
+      'hilos-analytics-overview-open-users',
+      'hilos-analytics-overview-skeleton',
+    ]) {
+      await expect(page.getByTestId(testId)).toHaveCount(0)
+    }
+    await expect(
+      page.getByRole('heading', { name: 'Overview', exact: true }),
+    ).toHaveCount(0)
+    await expect(tiles.getByRole('link')).toHaveCount(0)
+    for (const period of ['week', 'day', 'hour']) {
+      await expect(
+        tiles.getByTestId(`hilos-analytics-visitors-${period}`),
+      ).toBeVisible()
+    }
+    return
+  }
   await expect(
     page.getByTestId('hilos-analytics-overview-empty'),
   ).toContainText(
@@ -241,6 +359,70 @@ export async function expectAnalyticsOverview(
   await expect(
     page.getByTestId('hilos-analytics-overview-open-users'),
   ).toBeVisible()
+}
+
+/**
+ * Match all three tiles to one real reply, including zeros and its captured
+ * calendar context. Native Intl expectations do not use the core's formatter.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the ready overview.
+ * @param snapshot The complete reply observed for this opening.
+ * @param browserTimeZone The browser's resolved IANA name before opening.
+ */
+export async function expectAnalyticsOverviewTiles(
+  expect: Expect,
+  page: Page,
+  snapshot: AnalyticsOverviewSnapshot,
+  browserTimeZone: string,
+): Promise<void> {
+  const canonicalZone = await page.evaluate(
+    (timeZone) =>
+      new Intl.DateTimeFormat('en-GB', { timeZone }).resolvedOptions().timeZone,
+    snapshot.timeZone,
+  )
+  expect(canonicalZone).toBe(browserTimeZone)
+
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: snapshot.timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+  const weekday = new Intl.DateTimeFormat('en-GB', {
+    timeZone: snapshot.timeZone,
+    weekday: 'long',
+  }).format(snapshot.weekStartTs)
+  const periods = [
+    {
+      key: 'week',
+      label: 'Visitors this week',
+      count: snapshot.visitorsThisWeek,
+      since: `${weekday}, ${time.format(snapshot.weekStartTs)}`,
+    },
+    {
+      key: 'day',
+      label: 'Visitors today',
+      count: snapshot.visitorsToday,
+      since: time.format(snapshot.dayStartTs),
+    },
+    {
+      key: 'hour',
+      label: 'Visitors this hour',
+      count: snapshot.visitorsThisHour,
+      since: time.format(snapshot.hourStartTs),
+    },
+  ]
+  for (const { key, label, count, since } of periods) {
+    const tile = page.getByTestId(`hilos-analytics-visitors-${key}`)
+    await expect(tile.locator('dt')).toHaveText(label)
+    await expect(
+      tile.getByTestId(`hilos-analytics-visitors-${key}-count`),
+    ).toHaveText(String(count))
+    await expect(
+      tile.getByTestId(`hilos-analytics-visitors-${key}-since`),
+    ).toHaveText(`browser sessions since ${since}`)
+  }
 }
 
 /**

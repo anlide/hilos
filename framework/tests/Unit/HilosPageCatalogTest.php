@@ -216,6 +216,7 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions where this person signed in last. '
                 . 'Other people may have performed actions in the same browser.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PERSON]);
         foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
             self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_PERSON, $section[PageCatalogConstants::SECTION_ITEMS]);
@@ -267,8 +268,14 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_ANALYTICS,
         ], $adopted);
-        self::assertSame([HilosPageConstants::HILOS_I18N_LANGUAGE, HilosPageConstants::HILOS_I18N_COUNTRY], $entities);
+        self::assertSame([
+            HilosPageConstants::HILOS_I18N_LANGUAGE,
+            HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
+            HilosPageConstants::HILOS_ANALYTICS_PERSON,
+        ], $entities);
         self::assertSame(
             'Internationalization',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import * as analytics from '../../src/admin/analytics/index.js'
+import * as analyticsOverview from '../../src/admin/analytics/hilosAnalyticsOverview.js'
 import * as appearance from '../../src/admin/appearance/index.js'
 import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
@@ -105,6 +106,19 @@ const publicLegalTypes = [
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
+/** The overview's new API belongs only to the lazy Analytics section. */
+const analyticsOverviewValues = [
+  'ANALYTICS_OVERVIEW_SECTION',
+  'ANALYTICS_OVERVIEW_COPY',
+  'hilosAnalyticsOverviewSnapshotSchema',
+  'createHilosAnalyticsOverview',
+  'analyticsOverviewTiles',
+]
+const analyticsOverviewTypes = [
+  'HilosAnalyticsOverviewSnapshot',
+  'HilosAnalyticsOverview',
+  'HilosAnalyticsOverviewTile',
+]
 /** Closed table text policy additions, shared by root and base. */
 const tableTextValues = ['hilosTableRowHeight', 'hilosTableTextClass']
 const tableTextTypes = [
@@ -229,13 +243,30 @@ describe('core public entries', () => {
     expect(Object.keys(core).sort()).toEqual(expectedValues)
     const names = new Set<string>()
     const root: Record<string, unknown> = core
-    for (const api of Object.values(publicEntries)) {
+    for (const [entry, api] of Object.entries(publicEntries)) {
       for (const [name, value] of Object.entries(api)) {
         names.add(name)
-        expect(Object.is(value, root[name]), name).toBe(true)
+        if (
+          entry === './admin/analytics' &&
+          analyticsOverviewValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              analyticsOverview[name as keyof typeof analyticsOverview],
+            ),
+            name,
+          ).toBe(true)
+        } else {
+          expect(Object.is(value, root[name]), name).toBe(true)
+        }
       }
     }
-    expect([...names].sort()).toEqual(expectedValues)
+    expect([...names].sort()).toEqual(
+      [...expectedValues, ...analyticsOverviewValues].sort(),
+    )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
     for (const name of timeZoneValues) {
@@ -411,14 +442,32 @@ describe('core public entries', () => {
     for (const name of [...tableFocusReturnValues, ...tableFocusReturnTypes]) {
       expect(root.get(name), name).toBe(focusReturnExports.get(name))
     }
+    const overviewExports = exportsOf(
+      'admin/analytics/hilosAnalyticsOverview.ts',
+    )
+    const overviewNames = [
+      ...analyticsOverviewValues,
+      ...analyticsOverviewTypes,
+    ]
     const names = new Set<string>()
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
-        expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(true)
+        if (
+          entry === 'admin/analytics/index.ts' &&
+          overviewNames.includes(name)
+        ) {
+          expect(root.get(name), name).toBeUndefined()
+          expect(baseExports.get(name), name).toBeUndefined()
+          expect(Object.is(symbol, overviewExports.get(name)), name).toBe(true)
+        } else {
+          expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
+            true,
+          )
+        }
         names.add(name)
       }
     }
-    expect([...names].sort()).toEqual([...root.keys()].sort())
+    expect([...names].sort()).toEqual([...root.keys(), ...overviewNames].sort())
   })
 
   it('keeps the entire base runtime closure free of admin implementations', () => {

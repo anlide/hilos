@@ -132,6 +132,103 @@ function expectNoSubscriptionWaiters(
   expect(pages).toHaveProperty('subscriptionWaiters.size', 0)
 }
 
+describe('PageSubscription param preparation', () => {
+  it('waits for the session, captures only a successful send, and reuses it across socket and page recovery', () => {
+    const connection = fakeConnection('connecting')
+    let serial = 0
+    const prepare = vi.fn(
+      (_page: string, params: Readonly<Record<string, unknown>>) => ({
+        ...params,
+        capture: String(++serial),
+      }),
+    )
+    const pages = new PageSubscription(connection, new ScopeManager(), prepare)
+    pages.subscribe('page', { id: '7' })
+    expect(prepare).not.toHaveBeenCalled()
+    connection.setState('connected')
+    expect(prepare).not.toHaveBeenCalled()
+    connection.setProtectedMode({ ...PROTECTED_MODE_INACTIVE, active: true })
+    pages.releaseOnSession()
+    expect(prepare).toHaveBeenCalledExactlyOnceWith('page', { id: '7' })
+    expect(connection.sent).toEqual([])
+    connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(connection.sent).toEqual([
+      {
+        type: 'page_subscribe',
+        page: 'page',
+        params: { id: '7', capture: '2' },
+      },
+    ])
+
+    connection.setState('reconnecting')
+    connection.setState('connected')
+    pages.releaseOnSession()
+    connection.requestRecovery('page', { capture: '2', id: '7' })
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(connection.sent).toHaveLength(3)
+    expect(connection.sent[1]).toEqual(connection.sent[0])
+    expect(connection.sent[2]).toEqual(connection.sent[0])
+    connection.requestRecovery('page', { capture: '1', id: '7' })
+    expect(connection.sent).toHaveLength(3)
+    pages.subscribe('page', { id: '7' })
+    expect(prepare).toHaveBeenCalledTimes(3)
+    expect(connection.sent[3]).toEqual({
+      type: 'page_subscribe',
+      page: 'page',
+      params: { id: '7', capture: '3' },
+    })
+  })
+
+  it('retries a refused send and leaves the prepared context intact through access waits and denials', () => {
+    const connection = fakeConnection()
+    const prepare = vi.fn(
+      (_page: string, params: Readonly<Record<string, unknown>>) => ({
+        ...params,
+        capture: 'fixed',
+      }),
+    )
+    const pages = new PageSubscription(connection, new ScopeManager(), prepare)
+    const send = vi.spyOn(connection, 'send').mockReturnValueOnce(false)
+    pages.releaseOnSession()
+    pages.subscribe('page')
+    expect(send).toHaveBeenCalledOnce()
+    connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+    expect(prepare).toHaveBeenCalledTimes(2)
+    pages.awaitPageAnswer()
+    expect(pages.pageLoading.get()).toBe(true)
+    pages.handleSubscriptionError({
+      page: 'page',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      title: 'Forbidden',
+      message: 'Denied',
+    })
+    expect(pages.pageError.get()?.httpCode).toBe(403)
+    connection.requestRecovery('page', { capture: 'fixed' })
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(pages.pageError.get()?.httpCode).toBe(403)
+    expect(pages.pageLoading.get()).toBe(false)
+    pages.ingestPageResponse('page', { data: { answered: true } })
+    expect(pages.pageError.get()).toBeNull()
+    expect(connection.sent).toHaveLength(2)
+  })
+
+  it('keeps direct construction generic even for a framework page', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_analytics', { any: 'value' })
+    expect(connection.sent).toEqual([
+      {
+        type: 'page_subscribe',
+        page: 'hilos_analytics',
+        params: { any: 'value' },
+      },
+    ])
+  })
+})
+
 describe('PageSubscription.runWhenSubscribed', () => {
   it('starts in the subscribe send stack, after the session answer and before returning', async () => {
     const connection = fakeConnection('connecting')

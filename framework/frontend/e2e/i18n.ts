@@ -76,6 +76,44 @@ export function i18nLocaleRow(page: Page, localeCode: string): Locator {
 }
 
 /**
+ * Read the button and its own visible reason in one DOM turn. A live table
+ * window can replace both nodes between separate locator attribute reads.
+ *
+ * @param expect The spec's expect.
+ * @param page The page carrying the countries table.
+ * @param countryCode The country whose deletion is blocked.
+ */
+export async function expectCountryDeleteDescription(
+  expect: Expect,
+  page: Page,
+  countryCode: string,
+): Promise<void> {
+  const button = shownByTestId(page, `i18n-countries-delete-${countryCode}`)
+  await expect
+    .poll(() =>
+      button.evaluate((control, code) => {
+        const reasons = control.parentElement?.querySelectorAll(
+          `[data-id="i18n-countries-delete-reason-${code}"]`,
+        )
+        const reason = reasons?.length === 1 ? reasons[0] : undefined
+        const id = reason?.id
+        const targets = [
+          ...control.ownerDocument.querySelectorAll('[id]'),
+        ].filter((node) => node.id === id)
+        return {
+          linked: !!id && control.getAttribute('aria-describedby') === id,
+          unique: targets.length === 1 && targets[0] === reason,
+          visible:
+            reason?.checkVisibility({ visibilityProperty: true }) ?? false,
+          accessible:
+            !!reason && !reason.closest('[aria-hidden="true"], [inert]'),
+        }
+      }, countryCode),
+    )
+    .toEqual({ linked: true, unique: true, visible: true, accessible: true })
+}
+
+/**
  * Read a committed base or correction in place, without Apply or navigation.
  *
  * @param expect The spec's expect.

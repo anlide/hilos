@@ -8,10 +8,11 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
+use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
 
-/** Bounded SQL reads of loaded analytics facts for the admin section. */
+/** Exact overview aggregates and bounded detail windows over loaded analytics facts. */
 final class AnalyticsSectionReader
 {
     public const int MAX_PAGE_ROWS = 50;
@@ -25,6 +26,8 @@ final class AnalyticsSectionReader
     private const string SESSION_MOMENT_SQL = 'b.`last_seen_ts`';
 
     private const string SESSION_ID_SQL = 'b.`id`';
+
+    private const int MAX_SAFE_COUNT = 9007199254740991;
 
     /**
      * @param int $browserSessionId Numeric analytics row key, never a browser token
@@ -206,6 +209,46 @@ final class AnalyticsSectionReader
     }
 
     /**
+     * Counts each session once per closed period, including guests and boundary touches.
+     *
+     * @param string $timeZone Captured reader zone
+     * @param int $weekStartTs Validated week start in UTC epoch milliseconds
+     * @param int $dayStartTs Validated day start in UTC epoch milliseconds
+     * @param int $hourStartTs Validated hour start in UTC epoch milliseconds
+     * @param int $asOfTs Common server upper bound in UTC epoch milliseconds
+     * @return AnalyticsOverviewSnapshot Exact aggregates from one SQL read, without a table ceiling
+     * @throws HilosException When the query fails or its counts cannot be represented exactly on the wire
+     */
+    public function overviewSnapshot(
+        string $timeZone,
+        int $weekStartTs,
+        int $dayStartTs,
+        int $hourStartTs,
+        int $asOfTs,
+    ): AnalyticsOverviewSnapshot {
+        // TODO(owner, 2026-10-19): replace this raw-data SQL when the analytics reading model lands.
+        Database::sql(
+            'SELECT COUNT(*) AS `week_count`,
+                    COALESCE(SUM(CASE WHEN `last_seen_ts` >= ? THEN 1 ELSE 0 END), 0) AS `day_count`,
+                    COALESCE(SUM(CASE WHEN `last_seen_ts` >= ? THEN 1 ELSE 0 END), 0) AS `hour_count`
+             FROM `hilos_analytics_browser_session`
+             WHERE `first_seen_ts` <= ? AND `last_seen_ts` >= ?',
+            [$dayStartTs, $hourStartTs, $asOfTs, $weekStartTs],
+        );
+        $row = Database::row();
+        if ($row === null) {
+            throw new DatabaseRuntimeException('Analytics overview query returned no aggregate row');
+        }
+
+        return new AnalyticsOverviewSnapshot(
+            $timeZone, $weekStartTs, $dayStartTs, $hourStartTs, $asOfTs,
+            $this->overviewCount($row['week_count']),
+            $this->overviewCount($row['day_count']),
+            $this->overviewCount($row['hour_count']),
+        );
+    }
+
+    /**
      * @param int $userId Last signed-in account number
      * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
      * @param AnalyticsWindowAnchor $anchor Complete row key
@@ -221,6 +264,21 @@ final class AnalyticsSectionReader
         int $ceiling = TableConstants::COUNT_CEILING,
     ): int {
         return $this->boundedBrowserSessionCount($userId, $order, $anchor, $ceiling);
+    }
+
+    /**
+     * @param mixed $value SQL aggregate at the storage boundary
+     * @return int Exact nonnegative JavaScript-safe count
+     * @throws DatabaseRuntimeException When the aggregate exceeds the wire's exact integer range
+     */
+    private function overviewCount(mixed $value): int
+    {
+        $count = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => self::MAX_SAFE_COUNT]]);
+        if ($count === false) {
+            throw new DatabaseRuntimeException('Analytics overview count is outside the exact integer range');
+        }
+
+        return $count;
     }
 
     /**

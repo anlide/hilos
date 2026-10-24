@@ -21,6 +21,7 @@ import {
 import { type NormalizerOptions } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { PageSubscription } from './PageSubscription.js'
+import { prepareHilosPageSubscribeParams } from './hilosPageSubscribeParams.js'
 
 /** Locate a connection's existing owner without copying its readiness state. */
 const pageSubscriptions = new WeakMap<HilosConnection, PageSubscription>()
@@ -51,7 +52,11 @@ export function bindPageScope(
   scopes: ScopeManager,
   options: NormalizerOptions = {},
 ): PageSubscription {
-  const pages = new PageSubscription(connection, scopes)
+  const pages = new PageSubscription(
+    connection,
+    scopes,
+    prepareHilosPageSubscribeParams,
+  )
   pageSubscriptions.set(connection, pages)
   connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {

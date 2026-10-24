@@ -75,6 +75,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.APPEARANCE]: lazyPage(() =>
     import('./views/Hilos/Appearance/Appearance.vue').then((m) => m.default),
   ),
+  [HilosPages.ANALYTICS]: lazyPage(() =>
+    import('./views/Hilos/Analytics/Analytics.vue').then((m) => m.default),
+  ),
   [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
     import('./views/Hilos/Analytics/BrowserSession.vue').then((m) => m.default),
   ),

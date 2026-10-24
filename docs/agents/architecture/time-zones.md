@@ -383,6 +383,54 @@ returns `null`. An unavailable `Intl.DateTimeFormat` also returns `null`; if
 instead. Errors in the caller's `locale` or `format` options remain visible.
 Callers keep their own fallback text when the formatter returns `null`.
 
+### Analytics Calendar Period Starts
+
+`calendarPeriodStarts(nowMs, timeZone)` returns UTC epoch-millisecond starts for
+the Gregorian week, day and hour containing `nowMs`, in the captured reader
+zone. Week and day starts use calendar fields, not fixed 168-hour or 24-hour
+durations. The week currently starts on Monday; using the reader's locale to
+choose the first weekday is a TODO. The helper computes these bounds in the
+browser today; moving their authority to a future owner is also a TODO. These
+reader-zone bounds do not change the project zone used for cron or retention.
+
+The helper accounts for real IANA offset intervals. An offset change takes
+effect at the transition boundary. If a local hour repeats, the hour start is
+the occurrence containing `nowMs`; for a repeated day or week start, it uses
+the earliest existing occurrence in that period. If a boundary falls in a local
+time gap, it uses the first existing instant after the gap, such as 02:30 on
+Lord Howe Island. The explicit UTC path also works when `Intl` is unavailable.
+
+### Formatting A Captured Analytics Snapshot
+
+`formatMoment()` remains the live reader formatter: it has no time-zone override
+and reads the current `hilosTimeZone` on every call. Analytics uses the narrow
+internal `formatSnapshotMoment(moment, timeZone, options)` entry for labels that
+belong to an accepted snapshot. It shares the same strict parser and `Intl`
+engine, but its explicit zone does not extend the public `MomentFormatOptions`
+contract. The named entry is not re-exported from the core root, base or package
+barrels. For a `calendar` label, pass the snapshot's `asOfTs` as `options.now`;
+without that reference the helper returns `null` instead of reading the live
+clock. Invalid moments or zones return `null`, while caller errors in `locale`
+or `format` remain visible.
+
+The Analytics overview subscription captures its time context through
+`prepareHilosPageSubscribeParams()`, bound by `bindPageScope` to the existing
+`PageSubscription`. After the session answer, it reads the current
+`hilosTimeZone` and calculates starts from `Date.now() + offsetMs()`. Only the
+`hilos_analytics` subscription receives `timeZone`, `weekStartTs`, `dayStartTs`
+and `hourStartTs`; the starts use the existing decimal-integer string form.
+They are subscription params, not URL query or path values, and page routing
+does not calculate them again.
+
+`PageSubscription` keeps the prepared context only after `send()` succeeds. A
+refused send, including one held by protected mode, can prepare it again on the
+next attempt. An opening that was sent successfully reuses its captured params
+on reconnect and `pageResubscribe`; a new opening prepares a fresh context. No
+zone-change observer refreshes the current snapshot. Today it remains until a
+new opening or reload, and leaving the page releases it. The full zone-change
+lifecycle, including retaining the old snapshot until replacement and its
+warning, remains P-703 work.
+
 ### A Calendar Date Or Duration Is Not A Moment
 
 A calendar date names a day, not a point in time. A legal document revision's

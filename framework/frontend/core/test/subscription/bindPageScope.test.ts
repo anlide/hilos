@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import { applyServerTime } from '../../src/session/serverClock.js'
+import {
+  bindTimeZoneState,
+  hilosTimeZone,
+} from '../../src/timeZone/timeZoneState.js'
 import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
@@ -42,6 +47,16 @@ function fakeConnection() {
     // buffers nothing, so there is nothing to drop.
     forgetPageFrames(): void {},
     tableWindowDescriptors: () => ({}),
+    emitSession(timeZone: string): void {
+      for (const listener of projectListeners) {
+        listener({
+          kind: 'project',
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 7, timeZone } } },
+          envelope: {},
+        } as ProjectSignal)
+      }
+    },
     on(event: string, listener: (payload: never) => void): () => void {
       // The manager subscribes `state` in its constructor; this fake never
       // replays transitions, so only `projectSignal` listeners are recorded.
@@ -82,6 +97,54 @@ function fakeConnection() {
 }
 
 describe('bindPageScope', () => {
+  it('binds the real framework preparer after the session answer and captures one opening', () => {
+    const connection = fakeConnection()
+    const fullConnection = connection as unknown as HilosConnection
+    const releaseZone = bindTimeZoneState(fullConnection)
+    const now = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-10-23T00:15:00Z'))
+    try {
+      const pages = bindPageScope(fullConnection, new ScopeManager())
+      pages.subscribe('hilos_analytics')
+      expect(connection.sent).toEqual([])
+      connection.emitSession('America/New_York')
+      applyServerTime(Date.parse('2026-10-24T01:15:00Z'))
+      pages.releaseOnSession()
+      const captured = {
+        timeZone: 'America/New_York',
+        weekStartTs: String(Date.parse('2026-10-19T04:00:00Z')),
+        dayStartTs: String(Date.parse('2026-10-23T04:00:00Z')),
+        hourStartTs: String(Date.parse('2026-10-24T01:00:00Z')),
+      }
+      expect(connection.sent).toEqual([
+        { type: 'page_subscribe', page: 'hilos_analytics', params: captured },
+      ])
+      connection.emitSession('Asia/Tokyo')
+      expect(hilosTimeZone.get()).toBe('Asia/Tokyo')
+      pages.releaseOnSession()
+      expect(connection.sent).toHaveLength(1)
+      expect(connection.sent[0]?.params).toEqual(captured)
+      pages.subscribe('hilos_analytics')
+      expect(connection.sent[1]?.params).toEqual({
+        timeZone: 'Asia/Tokyo',
+        weekStartTs: String(Date.parse('2026-10-18T15:00:00Z')),
+        dayStartTs: String(Date.parse('2026-10-23T15:00:00Z')),
+        hourStartTs: String(Date.parse('2026-10-24T01:00:00Z')),
+      })
+      pages.subscribe('hilos_analytics_person', { userId: '7' })
+      expect(connection.sent[2]).toEqual({
+        type: 'page_subscribe',
+        page: 'hilos_analytics_person',
+        params: { userId: '7' },
+      })
+    } finally {
+      releaseZone()
+      now.mockRestore()
+      applyServerTime(Date.now())
+    }
+  })
+
   it('looks up exactly the owner returned by the binding', () => {
     const connection = fakeConnection() as unknown as HilosConnection
     const pages = bindPageScope(connection, new ScopeManager())

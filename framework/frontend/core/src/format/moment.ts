@@ -1,4 +1,5 @@
 import { offsetMs } from '../session/serverClock.js'
+import { usableTimeZone } from '../timeZone/timeZoneRule.js'
 import { hilosTimeZone } from '../timeZone/timeZoneState.js'
 
 /** Options for presenting an absolute moment in the effective reader's zone. */
@@ -90,6 +91,40 @@ export function formatMoment(
   moment: number | string,
   options: MomentFormatOptions = {},
 ): string | null {
+  return formatInTimeZone(moment, hilosTimeZone.get(), options)
+}
+
+/**
+ * Internal entry for historical labels in an accepted snapshot's fixed zone.
+ * Calendar labels require the snapshot's asOfTs as options.now; without that
+ * reference they return null rather than reading the live clock.
+ * Deliberately absent from the base and root package barrels.
+ *
+ * @param moment Epoch milliseconds or a complete ISO UTC timestamp ending in Z.
+ * @param timeZone The zone captured with the snapshot, never the live reader zone.
+ * @param options Presentation kind, locale, replacement format and reference.
+ */
+export function formatSnapshotMoment(
+  moment: number | string,
+  timeZone: string,
+  options: MomentFormatOptions = {},
+): string | null {
+  if (
+    usableTimeZone(timeZone) === null ||
+    (options.kind === 'calendar' && options.now === undefined)
+  ) {
+    return null
+  }
+
+  return formatInTimeZone(moment, timeZone, options)
+}
+
+/** Shared strict parser and presentation engine for live and snapshot entries. */
+function formatInTimeZone(
+  moment: number | string,
+  timeZone: string,
+  options: MomentFormatOptions,
+): string | null {
   const value = readMoment(moment)
   if (
     value === null ||
@@ -104,7 +139,6 @@ export function formatMoment(
       ? readMoment(options.now ?? Date.now() + offsetMs())
       : null
   if (kind === 'calendar' && now === null) return null
-  const timeZone = hilosTimeZone.get()
   const format: Intl.DateTimeFormatOptions =
     options.format ??
     (kind === 'time'

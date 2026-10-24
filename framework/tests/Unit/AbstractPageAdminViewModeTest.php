@@ -39,6 +39,10 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Core\Analytics\AnalyticsOverviewSnapshot;
+use Hilos\Pages\AbstractHilosAnalyticsPage;
+use Hilos\Pages\Analytics\AbstractHilosAnalyticsPersonPage;
+use Hilos\Pages\Analytics\AbstractHilosAnalyticsBrowserSessionPage;
 use Hilos\Pages\AbstractHilosDashboardPage;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -106,6 +110,37 @@ final class AbstractPageAdminViewModeTest extends TestCase
             ],
             $payload,
         );
+    }
+
+    public function testAnalyticsViewerSeesAllEightSnapshotFieldsAndNoUndeclaredData(): void
+    {
+        Hilos::initBrowser(new PageViewerTestBrowser(viewer: true));
+        $payload = $this->answer(new PageViewerAnalyticsTestPage(new PageViewerTestAgent()));
+        self::assertSame([
+            ...new AnalyticsOverviewSnapshot('UTC', 100, 200, 300, 400, 9, 7, 5)->toArray(),
+            'extra' => HiddenValue::mark(),
+        ], $payload[PagePayload::data]['analyticsOverview']);
+        self::assertSame(HiddenValue::mark(), $payload[PagePayload::data]['undeclared']);
+        self::assertSame('Analytics', $payload[PagePayload::data]['pageHeadOwner']['label']);
+    }
+
+    public function testAnalyticsDetailDataStaysHiddenWithTheInheritedOverviewDeclaration(): void
+    {
+        Hilos::initBrowser(new PageViewerTestBrowser(viewer: true));
+        foreach ([
+            PageViewerAnalyticsPersonTestPage::class => 'Person',
+            PageViewerAnalyticsSessionTestPage::class => 'Browser session',
+        ] as $pageClass => $label) {
+            $payload = $this->answer(new $pageClass(new PageViewerTestAgent()), new PageRouteParams([
+                'userId' => '7', 'browserSessionId' => '8',
+            ]));
+            self::assertSame(HiddenValue::mark(), $payload[PagePayload::data]['personal']);
+            self::assertSame($label, $payload[PagePayload::data]['pageLabel']);
+            self::assertArrayNotHasKey('pageHeadOwner', $payload[PagePayload::data]);
+            if ($pageClass === PageViewerAnalyticsSessionTestPage::class) {
+                self::assertSame(HiddenValue::mark(), $payload[PagePayload::data]['browserSession']);
+            }
+        }
     }
 
     public function testAnAdminGetsThePageAsBeforeWithItsOwnKeyWinning(): void
@@ -410,6 +445,53 @@ class PageViewerTestPage extends AbstractPage
     public static function frameFor(string $acceptKey, SignalDataInterface $frame): ?SignalDataInterface
     {
         return static::frameForViewer($acceptKey, $frame, ['declared' => WireField::notPersonal()]);
+    }
+}
+
+/** Uses the real overview's field declaration with a known payload rather than a database read. */
+final class PageViewerAnalyticsTestPage extends AbstractHilosAnalyticsPage
+{
+    /**
+     * @param string $acceptKey Test connection
+     * @param PageRouteParams $params Test context
+     * @return PagePayload Snapshot and two undeclared fields to test the inherited projection
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        return new PagePayload(data: [
+            'analyticsOverview' => new AnalyticsOverviewSnapshot('UTC', 100, 200, 300, 400, 9, 7, 5)->toArray() + ['extra' => 'secret'],
+            'undeclared' => 'secret',
+        ]);
+    }
+}
+
+final class PageViewerAnalyticsPersonTestPage extends AbstractHilosAnalyticsPersonPage
+{
+    /**
+     * @param string $acceptKey Test connection
+     * @param PageRouteParams $params Test context
+     * @return PagePayload Personal child data with no child-specific visibility declaration
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        return new PagePayload(data: ['pageLabel' => 'Ada (#7)', 'personal' => ['name' => 'Ada']]);
+    }
+}
+
+final class PageViewerAnalyticsSessionTestPage extends AbstractHilosAnalyticsBrowserSessionPage
+{
+    /**
+     * @param string $acceptKey Test connection
+     * @param PageRouteParams $params Test context
+     * @return PagePayload Personal child data with no child-specific visibility declaration
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        return new PagePayload(data: [
+            'pageLabel' => 'Browser session #8',
+            'browserSession' => ['id' => 8, 'browser' => 'Private browser', 'lastSignedInUserLabel' => 'Ada'],
+            'personal' => ['browser' => 'Private browser'],
+        ]);
     }
 }
 

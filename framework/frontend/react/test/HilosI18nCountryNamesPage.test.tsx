@@ -1,5 +1,5 @@
 import { act, fireEvent } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { HilosPages, type PageSubscriptionError } from '@hilos/core'
 import { HilosI18nCountryNamesPage } from '../src/admin/i18n/details/HilosI18nCountryNamesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -221,24 +221,31 @@ describe('React country names page', () => {
     expect(el('i18n-country-name-window')).toBeNull()
   })
   it('opens a correction beneath an empty base and coordinates its shared focus with deletion', async () => {
-    const h = setup()
-    act(() => {
-      h.card()
-      h.delta({ ...nameRow, name: '' })
-    })
-    click('hilos-table-expand-11')
-    click('i18n-country-name-locale-edit-en-US')
-    expect(el('i18n-country-name-title').textContent).toContain(
-      'Edit locale correction',
-    )
-    expect(h.focuses).toContain('11')
-    await settle(() => click('i18n-names-delete-en'))
-    expect(el('i18n-country-name-window')).toBeNull()
-    expect(el('i18n-country-name-delete-window')).not.toBeNull()
-    click('i18n-country-name-edit-es')
-    expect(el('i18n-country-name-delete-window')).toBeNull()
-    expect(el('i18n-country-name-window')).not.toBeNull()
-    expect(h.focuses.at(-1)).toBe('15')
+    vi.useFakeTimers()
+    try {
+      const h = setup()
+      act(() => {
+        h.card()
+        h.delta({ ...nameRow, name: '' })
+      })
+      click('hilos-table-expand-11')
+      click('i18n-country-name-locale-edit-en-US')
+      expect(el('i18n-country-name-title').textContent).toContain(
+        'Edit locale correction',
+      )
+      expect(h.focuses).toContain('11')
+      await settle(() => click('i18n-names-delete-en'))
+      expect(el('i18n-country-name-window')).toBeNull()
+      expect(el('i18n-country-name-delete-window')).not.toBeNull()
+      // Cross the delayed window skeleton threshold before the next opening.
+      act(() => vi.advanceTimersByTime(1000))
+      click('i18n-country-name-edit-es')
+      expect(el('i18n-country-name-delete-window')).toBeNull()
+      expect(el('i18n-country-name-window')).not.toBeNull()
+      expect(h.focuses.at(-1)).toBe('15')
+    } finally {
+      vi.useRealTimers()
+    }
   })
   it('freezes the fresh focused text after await and keeps newer values for the server refusal', async () => {
     const h = setup()

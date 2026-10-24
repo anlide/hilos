@@ -159,6 +159,9 @@ const pages: Record<string, PageView<Component>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.ANALYTICS]: lazyPage(() =>
+    import('./views/Hilos/Analytics/Analytics.vue').then((m) => m.default),
+  ),
   [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
     import('./views/Hilos/Analytics/BrowserSession.vue').then((m) => m.default),
   ),

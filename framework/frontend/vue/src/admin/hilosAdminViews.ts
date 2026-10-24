@@ -16,9 +16,9 @@
 // HilosLogsViewPage / HilosDaemonPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
 // HilosDaemonCronPage / HilosDaemonHttpServerPage / HilosDaemonEnvPage / HilosDaemonEnvMismatchPage) that require a project-supplied context, so a project
 // mounts them directly rather than through this default map.
-// HilosAnalyticsBrowserSessionPage and HilosAnalyticsPersonPage likewise need the
+// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage and HilosAnalyticsPersonPage need the
 // project's Analytics context and are mounted explicitly under
-// HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON.
+// HilosPages.ANALYTICS, HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -159,9 +159,6 @@ export function hilosAdminViews(): Record<string, PageView<Component>> {
     // CHANGE_LOG, CHANGE_LOG_TABLES and CHANGE_LOG_TABLE read a live connection
     // and page scope, so a project mounts HilosChangeLogPage,
     // HilosChangeLogTablesPage and HilosChangeLogTablePage directly.
-    [HilosPages.ANALYTICS]: lazyPage(() =>
-      import('@hilos/vue/admin/analytics').then((m) => m.HilosAnalyticsPage),
-    ),
     [HilosPages.MCP_SKILLS]: lazyPage(() =>
       import('@hilos/vue/admin/mcp-skills').then((m) => m.HilosMcpSkillsPage),
     ),

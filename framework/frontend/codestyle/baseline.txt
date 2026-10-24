@@ -4,6 +4,7 @@
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
 SHELL-PARITY framework/frontend/vue/src/HilosTableText.vue 1 # HIL-1754
 SHELL-PARITY framework/frontend/vue/src/HilosTableValue.vue 1 # HIL-1754
+SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPage.vue 5 # HIL-1736
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue 5 # HIL-1727
 STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 3 # HIL-449

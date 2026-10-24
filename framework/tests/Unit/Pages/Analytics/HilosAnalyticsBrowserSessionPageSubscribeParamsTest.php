@@ -73,6 +73,7 @@ final class HilosAnalyticsBrowserSessionPageSubscribeParamsTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION]);
         foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
             self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, $section[PageCatalogConstants::SECTION_ITEMS]);

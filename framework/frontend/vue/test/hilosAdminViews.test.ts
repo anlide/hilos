@@ -20,6 +20,8 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.BACKUP,
     HilosPages.I18N,
     HilosPages.COMMUNICATIONS,
+    HilosPages.ANALYTICS,
+    HilosPages.ANALYTICS_BROWSER_SESSION,
     HilosPages.ANALYTICS_PERSON,
   ]) {
     expect(views).not.toHaveProperty(key)
