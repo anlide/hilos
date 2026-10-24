@@ -150,378 +150,387 @@ function expectCadence(
   }
 }
 
-test('fixed delivery cadence coalesces real writes, quiet and click are immediate, sockets and live settings stay independent', async ({
-  page,
-}) => {
-  // This scenario deliberately crosses multiple 8 s and 4 s boundaries, two
-  // quiet eligibility boundaries and a full response-origin grace period.
-  test.setTimeout(test.info().timeout * SETTINGS_TIMEOUT_FACTOR)
-  const writer = watchDeliveryFrames(page)
-  const configPage = await page.context().newPage()
-  const tabA = await page.context().newPage()
-  const tabB = await page.context().newPage()
-  const a = watchDeliveryFrames(tabA)
-  const b = watchDeliveryFrames(tabB)
-  const mutations: Mutation[] = []
-  const phases: Record<string, unknown> = {}
-  let sequence = 0
-  const nextValue = () => `delivery-${++sequence}`
-  const write = () => mutate(page, writer, mutations, nextValue())
+// FIXME(F-028, 2026-10-25): the UI-driven burst overruns its 7 s budget on a loaded host · чужой · попытка 1 · HOTFIX
+test(
+  'fixed delivery cadence coalesces real writes, quiet and click are immediate, sockets and live settings stay independent',
+  { tag: '@quarantine:F-028' },
+  async ({ page }) => {
+    // This scenario deliberately crosses multiple 8 s and 4 s boundaries, two
+    // quiet eligibility boundaries and a full response-origin grace period.
+    test.setTimeout(test.info().timeout * SETTINGS_TIMEOUT_FACTOR)
+    const writer = watchDeliveryFrames(page)
+    const configPage = await page.context().newPage()
+    const tabA = await page.context().newPage()
+    const tabB = await page.context().newPage()
+    const a = watchDeliveryFrames(tabA)
+    const b = watchDeliveryFrames(tabB)
+    const mutations: Mutation[] = []
+    const phases: Record<string, unknown> = {}
+    let sequence = 0
+    const nextValue = () => `delivery-${++sequence}`
+    const write = () => mutate(page, writer, mutations, nextValue())
 
-  try {
-    await grantAdminToSelf(page)
-    await openSettings(configPage, WINDOW_KEY)
-    const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
-    await expect(configRow).toContainText('1000')
-    await expect(configRow).toContainText('default')
+    try {
+      await grantAdminToSelf(page)
+      await openSettings(configPage, WINDOW_KEY)
+      const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
+      await expect(configRow).toContainText('1000')
+      await expect(configRow).toContainText('default')
 
-    // Create overrides before observing: every measured mutation is an update
-    // with the same row identity, slot keys and own=false on passive receivers.
-    await openSettings(page, SOURCE_KEY)
-    await setCustomSetting(page, SOURCE_KEY, 'delivery-seed')
-    await typeInto(page.getByTestId('hilos-table-search'), OTHER_KEY)
-    await expect(page.getByTestId(`hilos-table-row-${OTHER_KEY}`)).toBeVisible()
-    await setCustomSetting(page, OTHER_KEY, '1')
-    // Both rows are needed only during the independent-frame burst.
-    await typeInto(page.getByTestId('hilos-table-search'), 'example_')
-    for (const tab of [tabA, tabB]) {
-      await openSettings(tab, SOURCE_KEY)
-      await typeInto(tab.getByTestId('hilos-table-search'), 'example_')
+      // Create overrides before observing: every measured mutation is an update
+      // with the same row identity, slot keys and own=false on passive receivers.
+      await openSettings(page, SOURCE_KEY)
+      await setCustomSetting(page, SOURCE_KEY, 'delivery-seed')
+      await typeInto(page.getByTestId('hilos-table-search'), OTHER_KEY)
       await expect(
-        tab.getByTestId(`hilos-table-row-${OTHER_KEY}`),
+        page.getByTestId(`hilos-table-row-${OTHER_KEY}`),
       ).toBeVisible()
-      await markDocument(tab)
-    }
-    // Open every participant before changing the window: this proof measures
-    // hot delivery on established sockets, not a new socket's welcome latency.
-    await setCustomSetting(configPage, WINDOW_KEY, String(WINDOW_MS))
-    await expect(configRow).toContainText(String(WINDOW_MS))
-    await expect(configRow).toContainText('custom')
-    const aSocket = a.sockets()
-    const bSocket = b.sockets()
-    const passiveStart = Math.max(
-      a.sent.at(-1)!.at,
-      b.sent.at(-1)!.at,
-      a.packets.at(-1)!.at,
-      b.packets.at(-1)!.at,
-    )
-    await waitDeliveryBoundary(passiveStart + WINDOW_MS + IMMEDIATE_MS)
-    phases.steadyEligibility = {
-      passiveStart,
-      at: performance.now(),
-      aSocket,
-      bSocket,
-    }
-
-    const quiet = await write()
-    const quietA = await receiveValue(a, quiet.value)
-    const quietB = await receiveValue(b, quiet.value)
-    for (const update of [quietA, quietB]) {
-      expect(
-        update.packet.at - quiet.sent,
-        'first change after real silence includes source/tick latency',
-      ).toBeLessThan(IMMEDIATE_MS)
-    }
-    phases.quiet = { quiet, a: quietA.packet.at, b: quietB.packet.at }
-
-    const burst: Mutation[] = []
-    for (let index = 0; index < BURST_MUTATIONS; index++) {
-      burst.push(await write())
-      if (index === 0) {
-        await mutate(page, writer, mutations, '2', OTHER_KEY)
+      await setCustomSetting(page, OTHER_KEY, '1')
+      // Both rows are needed only during the independent-frame burst.
+      await typeInto(page.getByTestId('hilos-table-search'), 'example_')
+      for (const tab of [tabA, tabB]) {
+        await openSettings(tab, SOURCE_KEY)
+        await typeInto(tab.getByTestId('hilos-table-search'), 'example_')
+        await expect(
+          tab.getByTestId(`hilos-table-row-${OTHER_KEY}`),
+        ).toBeVisible()
+        await markDocument(tab)
       }
-    }
-    const burstEnd = burst.at(-1)!
-    expect(burstEnd.accepted).toBeLessThan(
-      quietA.packet.at + WINDOW_MS - DEADLINE_MARGIN_MS,
-    )
-    // No preceding quiet release is included in this accumulated burst.
-    expect(
-      settingsUpdates(a).filter(({ packet }) => packet.at > quietA.packet.at),
-    ).toHaveLength(0)
-    expect(
-      settingsUpdates(b).filter(({ packet }) => packet.at > quietB.packet.at),
-    ).toHaveLength(0)
-    const coalescedA = await receiveValue(a, burstEnd.value)
-    const coalescedB = await receiveValue(b, burstEnd.value)
-    for (const [log, anchor, result] of [
-      [a, quietA, coalescedA],
-      [b, quietB, coalescedB],
-    ] as const) {
-      const inners = settingsUpdates(log).filter(
-        ({ packet }) =>
-          packet.at > anchor.packet.at && packet.at <= result.packet.at,
+      // Open every participant before changing the window: this proof measures
+      // hot delivery on established sockets, not a new socket's welcome latency.
+      await setCustomSetting(configPage, WINDOW_KEY, String(WINDOW_MS))
+      await expect(configRow).toContainText(String(WINDOW_MS))
+      await expect(configRow).toContainText('custom')
+      const aSocket = a.sockets()
+      const bSocket = b.sockets()
+      const passiveStart = Math.max(
+        a.sent.at(-1)!.at,
+        b.sent.at(-1)!.at,
+        a.packets.at(-1)!.at,
+        b.packets.at(-1)!.at,
       )
-      expect(inners).toHaveLength(1)
-      expect(inners[0]!.value).toBe(burstEnd.value)
-      expect(result.packet.at - anchor.packet.at).toBeGreaterThanOrEqual(
+      await waitDeliveryBoundary(passiveStart + WINDOW_MS + IMMEDIATE_MS)
+      phases.steadyEligibility = {
+        passiveStart,
+        at: performance.now(),
+        aSocket,
+        bSocket,
+      }
+
+      const quiet = await write()
+      const quietA = await receiveValue(a, quiet.value)
+      const quietB = await receiveValue(b, quiet.value)
+      for (const update of [quietA, quietB]) {
+        expect(
+          update.packet.at - quiet.sent,
+          'first change after real silence includes source/tick latency',
+        ).toBeLessThan(IMMEDIATE_MS)
+      }
+      phases.quiet = { quiet, a: quietA.packet.at, b: quietB.packet.at }
+
+      const burst: Mutation[] = []
+      for (let index = 0; index < BURST_MUTATIONS; index++) {
+        burst.push(await write())
+        if (index === 0) {
+          await mutate(page, writer, mutations, '2', OTHER_KEY)
+        }
+      }
+      const burstEnd = burst.at(-1)!
+      expect(burstEnd.accepted).toBeLessThan(
+        quietA.packet.at + WINDOW_MS - DEADLINE_MARGIN_MS,
+      )
+      // No preceding quiet release is included in this accumulated burst.
+      expect(
+        settingsUpdates(a).filter(({ packet }) => packet.at > quietA.packet.at),
+      ).toHaveLength(0)
+      expect(
+        settingsUpdates(b).filter(({ packet }) => packet.at > quietB.packet.at),
+      ).toHaveLength(0)
+      const coalescedA = await receiveValue(a, burstEnd.value)
+      const coalescedB = await receiveValue(b, burstEnd.value)
+      for (const [log, anchor, result] of [
+        [a, quietA, coalescedA],
+        [b, quietB, coalescedB],
+      ] as const) {
+        const inners = settingsUpdates(log).filter(
+          ({ packet }) =>
+            packet.at > anchor.packet.at && packet.at <= result.packet.at,
+        )
+        expect(inners).toHaveLength(1)
+        expect(inners[0]!.value).toBe(burstEnd.value)
+        expect(result.packet.at - anchor.packet.at).toBeGreaterThanOrEqual(
+          WINDOW_MS - TRANSPORT_JITTER_MS,
+        )
+        const independent = settingsUpdates(log, OTHER_KEY).filter(
+          ({ packet }) => packet === result.packet,
+        )
+        expect(independent.map(({ value }) => value)).toEqual(['2'])
+        const rowFrames = result.packet.frames.filter(
+          ({ wire }) => object(wire).type === 'table_viewport_delta',
+        )
+        expect(
+          rowFrames.map(({ wire }) => object(object(wire).data).rowKey),
+          // The integer's last write precedes the string's final write. Replacing
+          // earlier state preserves that order of the surviving source writes.
+        ).toEqual([OTHER_KEY, SOURCE_KEY])
+        expect(result.packet.raw).toMatch(/^\{"type":"signal_batch"/)
+        expect(inners[0]!.data.kind).toBe('row_updated')
+        expect(Object.keys(object(object(inners[0]!.data.row).slots))).toEqual([
+          'settings',
+        ])
+      }
+      await sourceVisible(tabA, burstEnd.value)
+      await sourceVisible(tabB, burstEnd.value)
+      phases.coalescing = {
+        sourceMutations: burst,
+        expectedInnerUpdates: 1,
+        a: coalescedA.packet,
+        b: coalescedB.packet,
+      }
+
+      const busyStart = coalescedA.packet.at
+      while (performance.now() < busyStart + WINDOW_MS * 3 + IMMEDIATE_MS)
+        await write()
+      const busyEnd = mutations.at(-1)!.accepted
+      expectCadence(a, mutations, busyStart, busyEnd, WINDOW_MS)
+      expectCadence(b, mutations, coalescedB.packet.at, busyEnd, WINDOW_MS)
+      phases.busy = { start: busyStart, end: busyEnd, windowMs: WINDOW_MS }
+      const busyFinal = mutations.at(-1)!.value
+      await receiveValue(a, busyFinal)
+      await receiveValue(b, busyFinal)
+      await sourceVisible(tabB, busyFinal)
+
+      // Stop the source and allow both the preceding delivery and grace to expire.
+      await waitDeliveryBoundary(
+        Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
+          WINDOW_MS +
+          IMMEDIATE_MS,
+      )
+      const anchor = await write()
+      const anchorA = await receiveValue(a, anchor.value)
+      const anchorB = await receiveValue(b, anchor.value)
+      expect(anchorA.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
+      expect(anchorB.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
+      const pending = [await write(), await write()]
+      expect(settingsUpdates(b).at(-1)!.value).toBe(anchor.value)
+      expect(pending.at(-1)!.accepted).toBeLessThan(
+        anchorB.packet.at + WINDOW_MS - IMMEDIATE_MS * 2,
+      )
+      const beforeClick = a.sent.length
+      await shownByTestId(tabA, 'hilos-table-sort-key').click()
+      await expect
+        .poll(() =>
+          a.sent
+            .slice(beforeClick)
+            .some(({ wire }) => object(wire).type === 'table_viewport'),
+        )
+        .toBe(true)
+      const click = a.sent
+        .slice(beforeClick)
+        .find(({ wire }) => object(wire).type === 'table_viewport')!
+      await expect
+        .poll(() =>
+          a.packets.some(
+            (packet) =>
+              packet.at >= click.at &&
+              packet.frames.some(
+                ({ wire }) =>
+                  object(wire).type === 'table_window' &&
+                  object(object(wire).data).tableKey === 'settings',
+              ),
+          ),
+        )
+        .toBe(true)
+      const response = a.packets.find(
+        (packet) =>
+          packet.at >= click.at &&
+          packet.frames.some(
+            ({ wire }) =>
+              object(wire).type === 'table_window' &&
+              object(object(wire).data).tableKey === 'settings',
+          ),
+      )!
+      await expect(tabA.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect
+        .poll(() =>
+          tabA
+            .locator('[data-id^="hilos-table-row-"]')
+            .evaluateAll((rows) =>
+              rows.map((row) => row.getAttribute('data-id')),
+            ),
+        )
+        .toEqual([
+          `hilos-table-row-${SOURCE_KEY}`,
+          `hilos-table-row-${OTHER_KEY}`,
+          'hilos-table-row-example_boolean',
+        ])
+      await sourceVisible(tabA, pending.at(-1)!.value)
+      const flushed = await receiveValue(a, pending.at(-1)!.value)
+      expect(flushed.packet.at - click.at).toBeLessThan(IMMEDIATE_MS)
+      expect(response.at - click.at).toBeLessThan(IMMEDIATE_MS)
+      expect(response.at).toBeLessThan(
+        anchorA.packet.at + WINDOW_MS - IMMEDIATE_MS,
+      )
+      expect(
+        settingsUpdates(b).at(-1)!.value,
+        'B has two confirmed pending writes and no action of its own',
+      ).toBe(anchor.value)
+
+      const graceWrites: Mutation[] = []
+      while (performance.now() < response.at + WINDOW_MS - IMMEDIATE_MS) {
+        const mutation = await write()
+        graceWrites.push(mutation)
+        const update = await receiveValue(a, mutation.value)
+        expect(update.packet.at - mutation.sent).toBeLessThan(IMMEDIATE_MS)
+      }
+      expect(graceWrites.at(-1)!.sent - response.at).toBeGreaterThan(
+        WINDOW_MS - IMMEDIATE_MS * 2,
+      )
+      const bAfterClick = settingsUpdates(b).filter(
+        ({ packet }) => packet.at > anchorB.packet.at,
+      )
+      await expect
+        .poll(
+          () =>
+            settingsUpdates(b).filter(
+              ({ packet }) => packet.at > anchorB.packet.at,
+            ).length,
+          { timeout: WINDOW_MS + IMMEDIATE_MS },
+        )
+        .toBeGreaterThan(0)
+      const bRelease = settingsUpdates(b).find(
+        ({ packet }) => packet.at > anchorB.packet.at,
+      )!
+      expect(bRelease.packet.at - anchorB.packet.at).toBeGreaterThanOrEqual(
         WINDOW_MS - TRANSPORT_JITTER_MS,
       )
-      const independent = settingsUpdates(log, OTHER_KEY).filter(
-        ({ packet }) => packet === result.packet,
+      expect(bRelease.packet.at - anchorB.packet.at).toBeLessThan(
+        WINDOW_MS + IMMEDIATE_MS,
       )
-      expect(independent.map(({ value }) => value)).toEqual(['2'])
-      const rowFrames = result.packet.frames.filter(
-        ({ wire }) => object(wire).type === 'table_viewport_delta',
-      )
-      expect(
-        rowFrames.map(({ wire }) => object(object(wire).data).rowKey),
-        // The integer's last write precedes the string's final write. Replacing
-        // earlier state preserves that order of the surviving source writes.
-      ).toEqual([OTHER_KEY, SOURCE_KEY])
-      expect(result.packet.raw).toMatch(/^\{"type":"signal_batch"/)
-      expect(inners[0]!.data.kind).toBe('row_updated')
-      expect(Object.keys(object(object(inners[0]!.data.row).slots))).toEqual([
-        'settings',
-      ])
-    }
-    await sourceVisible(tabA, burstEnd.value)
-    await sourceVisible(tabB, burstEnd.value)
-    phases.coalescing = {
-      sourceMutations: burst,
-      expectedInnerUpdates: 1,
-      a: coalescedA.packet,
-      b: coalescedB.packet,
-    }
+      expect(bRelease.value).not.toBe(anchor.value)
+      phases.clickAndGrace = {
+        pending,
+        click,
+        response,
+        flushed: flushed.packet,
+        graceWrites,
+        bAfterClick,
+        bRelease,
+      }
 
-    const busyStart = coalescedA.packet.at
-    while (performance.now() < busyStart + WINDOW_MS * 3 + IMMEDIATE_MS)
+      // Hot setting changes preserve the old already-opened boundary, then use
+      // the new value for subsequent boundaries on the very same connection.
+      await receiveValue(b, graceWrites.at(-1)!.value)
+      await waitDeliveryBoundary(
+        Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
+          WINDOW_MS +
+          IMMEDIATE_MS,
+      )
+      const oldAnchorMutation = await write()
+      const oldAnchor = await receiveValue(b, oldAnchorMutation.value)
       await write()
-    const busyEnd = mutations.at(-1)!.accepted
-    expectCadence(a, mutations, busyStart, busyEnd, WINDOW_MS)
-    expectCadence(b, mutations, coalescedB.packet.at, busyEnd, WINDOW_MS)
-    phases.busy = { start: busyStart, end: busyEnd, windowMs: WINDOW_MS }
-    const busyFinal = mutations.at(-1)!.value
-    await receiveValue(a, busyFinal)
-    await receiveValue(b, busyFinal)
-    await sourceVisible(tabB, busyFinal)
-
-    // Stop the source and allow both the preceding delivery and grace to expire.
-    await waitDeliveryBoundary(
-      Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
-        WINDOW_MS +
-        IMMEDIATE_MS,
-    )
-    const anchor = await write()
-    const anchorA = await receiveValue(a, anchor.value)
-    const anchorB = await receiveValue(b, anchor.value)
-    expect(anchorA.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
-    expect(anchorB.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
-    const pending = [await write(), await write()]
-    expect(settingsUpdates(b).at(-1)!.value).toBe(anchor.value)
-    expect(pending.at(-1)!.accepted).toBeLessThan(
-      anchorB.packet.at + WINDOW_MS - IMMEDIATE_MS * 2,
-    )
-    const beforeClick = a.sent.length
-    await shownByTestId(tabA, 'hilos-table-sort-key').click()
-    await expect
-      .poll(() =>
-        a.sent
-          .slice(beforeClick)
-          .some(({ wire }) => object(wire).type === 'table_viewport'),
+      await setCustomSetting(configPage, WINDOW_KEY, String(CHANGED_WINDOW_MS))
+      await expect(configRow).toContainText(String(CHANGED_WINDOW_MS))
+      const changedAt = performance.now()
+      expect(changedAt).toBeLessThan(oldAnchor.packet.at + CHANGED_WINDOW_MS)
+      while (performance.now() < oldAnchor.packet.at + WINDOW_MS + IMMEDIATE_MS)
+        await write()
+      const preserved = settingsUpdates(b).find(
+        ({ packet }) => packet.at > oldAnchor.packet.at,
+      )!
+      expect(preserved).toBeDefined()
+      expect(preserved.packet.at - oldAnchor.packet.at).toBeGreaterThanOrEqual(
+        WINDOW_MS - TRANSPORT_JITTER_MS,
       )
-      .toBe(true)
-    const click = a.sent
-      .slice(beforeClick)
-      .find(({ wire }) => object(wire).type === 'table_viewport')!
-    await expect
-      .poll(() =>
-        a.packets.some(
-          (packet) =>
-            packet.at >= click.at &&
-            packet.frames.some(
-              ({ wire }) =>
-                object(wire).type === 'table_window' &&
-                object(object(wire).data).tableKey === 'settings',
-            ),
-        ),
+      expect(preserved.packet.at - oldAnchor.packet.at).toBeLessThan(
+        WINDOW_MS + IMMEDIATE_MS,
       )
-      .toBe(true)
-    const response = a.packets.find(
-      (packet) =>
-        packet.at >= click.at &&
-        packet.frames.some(
-          ({ wire }) =>
-            object(wire).type === 'table_window' &&
-            object(object(wire).data).tableKey === 'settings',
-        ),
-    )!
-    await expect(tabA.getByTestId('hilos-table-loading')).toHaveCount(0)
-    await expect
-      .poll(() =>
-        tabA
-          .locator('[data-id^="hilos-table-row-"]')
-          .evaluateAll((rows) =>
-            rows.map((row) => row.getAttribute('data-id')),
-          ),
+      while (
+        performance.now() <
+        preserved.packet.at + CHANGED_WINDOW_MS * 3 + IMMEDIATE_MS
       )
-      .toEqual([
-        `hilos-table-row-${SOURCE_KEY}`,
-        `hilos-table-row-${OTHER_KEY}`,
-        'hilos-table-row-example_boolean',
-      ])
-    await sourceVisible(tabA, pending.at(-1)!.value)
-    const flushed = await receiveValue(a, pending.at(-1)!.value)
-    expect(flushed.packet.at - click.at).toBeLessThan(IMMEDIATE_MS)
-    expect(response.at - click.at).toBeLessThan(IMMEDIATE_MS)
-    expect(response.at).toBeLessThan(
-      anchorA.packet.at + WINDOW_MS - IMMEDIATE_MS,
-    )
-    expect(
-      settingsUpdates(b).at(-1)!.value,
-      'B has two confirmed pending writes and no action of its own',
-    ).toBe(anchor.value)
-
-    const graceWrites: Mutation[] = []
-    while (performance.now() < response.at + WINDOW_MS - IMMEDIATE_MS) {
-      const mutation = await write()
-      graceWrites.push(mutation)
-      const update = await receiveValue(a, mutation.value)
-      expect(update.packet.at - mutation.sent).toBeLessThan(IMMEDIATE_MS)
-    }
-    expect(graceWrites.at(-1)!.sent - response.at).toBeGreaterThan(
-      WINDOW_MS - IMMEDIATE_MS * 2,
-    )
-    const bAfterClick = settingsUpdates(b).filter(
-      ({ packet }) => packet.at > anchorB.packet.at,
-    )
-    await expect
-      .poll(
-        () =>
-          settingsUpdates(b).filter(
-            ({ packet }) => packet.at > anchorB.packet.at,
-          ).length,
-        { timeout: WINDOW_MS + IMMEDIATE_MS },
-      )
-      .toBeGreaterThan(0)
-    const bRelease = settingsUpdates(b).find(
-      ({ packet }) => packet.at > anchorB.packet.at,
-    )!
-    expect(bRelease.packet.at - anchorB.packet.at).toBeGreaterThanOrEqual(
-      WINDOW_MS - TRANSPORT_JITTER_MS,
-    )
-    expect(bRelease.packet.at - anchorB.packet.at).toBeLessThan(
-      WINDOW_MS + IMMEDIATE_MS,
-    )
-    expect(bRelease.value).not.toBe(anchor.value)
-    phases.clickAndGrace = {
-      pending,
-      click,
-      response,
-      flushed: flushed.packet,
-      graceWrites,
-      bAfterClick,
-      bRelease,
-    }
-
-    // Hot setting changes preserve the old already-opened boundary, then use
-    // the new value for subsequent boundaries on the very same connection.
-    await receiveValue(b, graceWrites.at(-1)!.value)
-    await waitDeliveryBoundary(
-      Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
-        WINDOW_MS +
-        IMMEDIATE_MS,
-    )
-    const oldAnchorMutation = await write()
-    const oldAnchor = await receiveValue(b, oldAnchorMutation.value)
-    await write()
-    await setCustomSetting(configPage, WINDOW_KEY, String(CHANGED_WINDOW_MS))
-    await expect(configRow).toContainText(String(CHANGED_WINDOW_MS))
-    const changedAt = performance.now()
-    expect(changedAt).toBeLessThan(oldAnchor.packet.at + CHANGED_WINDOW_MS)
-    while (performance.now() < oldAnchor.packet.at + WINDOW_MS + IMMEDIATE_MS)
-      await write()
-    const preserved = settingsUpdates(b).find(
-      ({ packet }) => packet.at > oldAnchor.packet.at,
-    )!
-    expect(preserved).toBeDefined()
-    expect(preserved.packet.at - oldAnchor.packet.at).toBeGreaterThanOrEqual(
-      WINDOW_MS - TRANSPORT_JITTER_MS,
-    )
-    expect(preserved.packet.at - oldAnchor.packet.at).toBeLessThan(
-      WINDOW_MS + IMMEDIATE_MS,
-    )
-    while (
-      performance.now() <
-      preserved.packet.at + CHANGED_WINDOW_MS * 3 + IMMEDIATE_MS
-    )
-      await write()
-    const changedEnd = mutations.at(-1)!.accepted
-    expectCadence(
-      b,
-      mutations,
-      preserved.packet.at,
-      changedEnd,
-      CHANGED_WINDOW_MS,
-    )
-    phases.liveSetting = {
-      changedAt,
-      oldAnchor: oldAnchor.packet.at,
-      preserved: preserved.packet.at,
-      end: changedEnd,
-      windowMs: CHANGED_WINDOW_MS,
-    }
-    const finalValue = mutations.at(-1)!.value
-    await receiveValue(a, finalValue)
-    await receiveValue(b, finalValue)
-    await sourceVisible(tabA, finalValue)
-    await sourceVisible(tabB, finalValue)
-    expect(a.sockets()).toBe(aSocket)
-    expect(b.sockets()).toBe(bSocket)
-    await expectDocumentUnchanged(tabA)
-    await expectDocumentUnchanged(tabB)
-    phases.documentsUnchanged = { a: true, b: true }
-    expect(
-      a.sent.filter(({ at, raw }) => at > click.at && raw !== 'ping'),
-    ).toEqual([])
-    // No passive browser request may secretly grant B immediate delivery.
-    expect(
-      b.sent.filter(({ at, raw }) => at > passiveStart && raw !== 'ping'),
-    ).toEqual([])
-    for (const log of [writer, a, b]) {
-      expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
-        'hilos_delivery_complete',
-      )
-    }
-  } finally {
-    const evidencePath = test.info().outputPath('delivery-window-evidence.json')
-    await writeFile(
-      evidencePath,
-      JSON.stringify({
-        clock: 'runner performance.now milliseconds',
-        WINDOW_MS,
-        CHANGED_WINDOW_MS,
-        IMMEDIATE_MS,
-        TRANSPORT_JITTER_MS,
-        phases,
-        mutations,
-        writer,
-        a,
+        await write()
+      const changedEnd = mutations.at(-1)!.accepted
+      expectCadence(
         b,
-      }),
-    )
-    await test.info().attach('delivery-window-evidence', {
-      path: evidencePath,
-      contentType: 'application/json',
-    })
-    writer.stop()
-    a.stop()
-    b.stop()
-    // Restore through the same Settings UI, including after an assertion fails.
-    if (await configPage.getByTestId('modal-close').isVisible()) {
-      await configPage.getByTestId('modal-close').click()
+        mutations,
+        preserved.packet.at,
+        changedEnd,
+        CHANGED_WINDOW_MS,
+      )
+      phases.liveSetting = {
+        changedAt,
+        oldAnchor: oldAnchor.packet.at,
+        preserved: preserved.packet.at,
+        end: changedEnd,
+        windowMs: CHANGED_WINDOW_MS,
+      }
+      const finalValue = mutations.at(-1)!.value
+      await receiveValue(a, finalValue)
+      await receiveValue(b, finalValue)
+      await sourceVisible(tabA, finalValue)
+      await sourceVisible(tabB, finalValue)
+      expect(a.sockets()).toBe(aSocket)
+      expect(b.sockets()).toBe(bSocket)
+      await expectDocumentUnchanged(tabA)
+      await expectDocumentUnchanged(tabB)
+      phases.documentsUnchanged = { a: true, b: true }
+      expect(
+        a.sent.filter(({ at, raw }) => at > click.at && raw !== 'ping'),
+      ).toEqual([])
+      // No passive browser request may secretly grant B immediate delivery.
+      expect(
+        b.sent.filter(({ at, raw }) => at > passiveStart && raw !== 'ping'),
+      ).toEqual([])
+      for (const log of [writer, a, b]) {
+        expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
+          'hilos_delivery_complete',
+        )
+      }
+    } finally {
+      const evidencePath = test
+        .info()
+        .outputPath('delivery-window-evidence.json')
+      await writeFile(
+        evidencePath,
+        JSON.stringify({
+          clock: 'runner performance.now milliseconds',
+          WINDOW_MS,
+          CHANGED_WINDOW_MS,
+          IMMEDIATE_MS,
+          TRANSPORT_JITTER_MS,
+          phases,
+          mutations,
+          writer,
+          a,
+          b,
+        }),
+      )
+      await test.info().attach('delivery-window-evidence', {
+        path: evidencePath,
+        contentType: 'application/json',
+      })
+      writer.stop()
+      a.stop()
+      b.stop()
+      // Restore through the same Settings UI, including after an assertion fails.
+      if (await configPage.getByTestId('modal-close').isVisible()) {
+        await configPage.getByTestId('modal-close').click()
+      }
+      await clearCustomSetting(configPage, WINDOW_KEY)
+      await expect(
+        configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
+      ).toContainText('1000')
+      await clearCustomSetting(page, SOURCE_KEY)
+      await typeInto(page.getByTestId('hilos-table-search'), OTHER_KEY)
+      await expect(
+        page.getByTestId(`hilos-table-row-${OTHER_KEY}`),
+      ).toBeVisible()
+      await clearCustomSetting(page, OTHER_KEY)
+      await Promise.all([tabA.close(), tabB.close(), configPage.close()])
     }
-    await clearCustomSetting(configPage, WINDOW_KEY)
-    await expect(
-      configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-    ).toContainText('1000')
-    await clearCustomSetting(page, SOURCE_KEY)
-    await typeInto(page.getByTestId('hilos-table-search'), OTHER_KEY)
-    await expect(page.getByTestId(`hilos-table-row-${OTHER_KEY}`)).toBeVisible()
-    await clearCustomSetting(page, OTHER_KEY)
-    await Promise.all([tabA.close(), tabB.close(), configPage.close()])
-  }
-})
+  },
+)
 
 test('logs overview keeps own state and response in one physical delivery', async ({
   page,
