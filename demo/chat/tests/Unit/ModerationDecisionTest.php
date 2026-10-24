@@ -83,43 +83,6 @@ final class ModerationDecisionTest extends TestCase
      * @param ?string $phase Runtime phase
      * @param string $expected Expected public sentence
      */
-    #[DataProvider('publicNameReasonProvider')]
-    public function testPublicNameReason(string $rawReason, ?string $phase, string $expected): void
-    {
-        $this->assertSame($expected, ModerationDecision::publicNameReason($rawReason, $phase));
-    }
-
-    /**
-     * @return list<array{0: string, 1: ?string, 2: string}>
-     */
-    public static function publicNameReasonProvider(): array
-    {
-        return [
-            ['insult', null, 'This name was not accepted because it appears to contain an insult.'],
-            ['threat', null, 'This name was not accepted because it appears to contain a threat.'],
-            ['hate_speech', null, 'This name was not accepted because it appears to contain hate speech.'],
-            ['sexual', null, 'This name was not accepted because it appears to contain sexual content.'],
-            ['spam', null, 'This name was not accepted because it appears to be spam.'],
-            ['impersonation', null, 'This name was not accepted because it appears to impersonate someone else.'],
-            ['blocked', null, 'This name was not accepted.'],
-            ['', null, 'This name was not accepted.'],
-            ['   ', null, 'This name was not accepted.'],
-            ['policy', null, 'This name was not accepted.'],
-            ['unknown_label', null, 'This name was not accepted.'],
-            ['service_unavailable', null, 'Names cannot be checked right now.'],
-            ['unknown', null, 'Names cannot be checked right now.'],
-            ['', ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE, 'Names cannot be checked right now.'],
-            ['contains copyrighted brand', null, 'This name was not accepted: contains copyrighted brand'],
-            ['contains bad_words', null, 'This name was not accepted.'],
-            ["multiline\nreason text", null, 'This name was not accepted.'],
-        ];
-    }
-
-    /**
-     * @param string $rawReason Input raw reason
-     * @param ?string $phase Runtime phase
-     * @param string $expected Expected public sentence
-     */
     #[DataProvider('publicMessageReasonProvider')]
     public function testPublicMessageReason(string $rawReason, ?string $phase, string $expected): void
     {

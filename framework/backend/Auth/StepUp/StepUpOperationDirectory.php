@@ -38,6 +38,12 @@ abstract class StepUpOperationDirectory
                 true,
                 accountAccess: true,
             ),
+            StepUpOperationKey::CHANGE_NAME => new StepUpOperation(
+                StepUpOperationKey::CHANGE_NAME,
+                'Change name',
+                'change your name',
+                false,
+            ),
             StepUpOperationKey::DELETE_ACCOUNT => new StepUpOperation(
                 StepUpOperationKey::DELETE_ACCOUNT,
                 'Delete account',

@@ -1,24 +1,22 @@
 import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
-// Chat moderation on the stand (HIL-927). The moderator agent asks the stand's
-// local model with a real call, so every verdict a spec sees is one a spec
-// dictated. The shape of a verdict lives here and not in the gateway: the gateway
-// hands back raw text and belongs to no demo, while the JSON the moderator parses
-// is the chat's own knowledge.
+// Moderation on the chat stand. The framework moderator checks profile names;
+// chat's moderator still checks messages and pictures. Both ask the stand's
+// local model with a real call and read the same {allow, reason} JSON shape.
+// The gateway hands back raw text; the product's parser decides its meaning.
 
 /**
  * Dictate the verdict the model gives on the next moderated action that mentions a key.
  *
- * The text is what `ModerationDecision::fromModelOutput()` parses
- * (demo/chat/backend/Agents/DTO/ModerationDecision.php): a JSON object with the
- * keys `allow` and `reason`.
+ * Profile names use the framework's strict parser and PROFILE_NAME kind.
+ * Messages and pictures still use `ModerationDecision::fromModelOutput()`
+ * (demo/chat/backend/Agents/DTO/ModerationDecision.php).
  *
  * EVERY moderated action needs a verdict — sending a message, and
  * renaming oneself from the profile. A message with pictures calls the model
  * once more for each picture. With none dictated the model refuses the call
- * with a 503, the moderator reports `service_unavailable`, and the author
- * reads "Moderation is unavailable right now" instead of the outcome the spec
- * was written for.
+ * with a 503: names show "Names cannot be checked right now.", while chat
+ * reports `service_unavailable` as "Moderation is unavailable right now".
  *
  * The key is a `modelKey()` the spec puts into the text of the message, into
  * the new name, or into a picture's file name: the moderator's prompt carries

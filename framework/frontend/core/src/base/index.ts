@@ -629,8 +629,10 @@ export {
   type HilosProfileRootStore,
 } from '../profile/profileRoot.js'
 export {
+  createHilosProfileRename,
   createHilosProfileRenameFlow,
   HILOS_PROFILE_RENAME_COPY,
+  PROFILE_NAME_SET_ACTION,
   type HilosProfileRename,
   type HilosProfileRenameFields,
   type HilosProfileRenameFlow,

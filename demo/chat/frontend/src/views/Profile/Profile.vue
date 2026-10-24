@@ -1,22 +1,26 @@
 <!-- The profile root (HilosPages.PROFILE, /profile, HIL-1169): a thin project
-binding of the framework HilosProfilePage to this app's connection, scopes and
-action lifecycle. The page, its rows and its windows are the framework's; the
-chat hands it the live name, its moderated rename and the lists behind the
-summaries only it keeps. Bootstrap classes only (styling-rules.md). -->
+binding of the framework HilosProfilePage with its context. The profile page
+and rename protocol belong to the framework. Chat provides the live name,
+existing connection and action-error store, and the summary lists. Bootstrap
+classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosProfileRename,
   type HilosProfileBinding,
   type HilosProfilePageContext,
 } from '@hilos/core/base'
 import { HilosProfilePage } from '@hilos/vue/base'
 
-import { actions, connection } from '../../bootstrap/connection.js'
+import {
+  actionErrors,
+  actions,
+  connection,
+} from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 import {
   profileDeviceCount,
   profileSessionCount,
 } from '../../profile/profileLists.js'
-import { chatProfileRename } from './profileActions.js'
 import { committedName } from './profilePage.js'
 
 defineOptions({ name: 'ProfilePage' })
@@ -24,7 +28,7 @@ defineOptions({ name: 'ProfilePage' })
 const context: HilosProfilePageContext = { connection, scopes, actions }
 const binding: HilosProfileBinding = {
   name: committedName,
-  rename: chatProfileRename,
+  rename: createHilosProfileRename(connection, actionErrors),
   sessionCount: profileSessionCount,
   deviceCount: profileDeviceCount,
 }

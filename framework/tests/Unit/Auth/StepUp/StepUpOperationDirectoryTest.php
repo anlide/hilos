@@ -20,6 +20,7 @@ final class StepUpOperationDirectoryTest extends TestCase
         self::assertSame([
             StepUpOperationKey::CHANGE_PASSWORD,
             StepUpOperationKey::CHANGE_EMAIL,
+            StepUpOperationKey::CHANGE_NAME,
             StepUpOperationKey::DELETE_ACCOUNT,
             StepUpOperationKey::EXPORT_DATA,
             StepUpOperationKey::ADD_AUTHENTICATOR_APP,
@@ -34,6 +35,26 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::DISABLE_SECOND_FACTOR,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
+    }
+
+    /**
+     * Moving the operation into the framework preserves its stored key and policy.
+     */
+    public function testNameChangeIsAFrameworkOperationWithTheExistingDefaults(): void
+    {
+        $operation = StepUpTestDirectory::get(StepUpOperationKey::CHANGE_NAME);
+
+        self::assertSame('change_name', $operation->key);
+        self::assertSame('Change name', $operation->label);
+        self::assertSame('change your name', $operation->purpose);
+        self::assertFalse($operation->opensWithAddressCode);
+        self::assertFalse($operation->opensOnBlockedCard);
+        self::assertFalse($operation->passesWithNothingToConfirm);
+        self::assertFalse($operation->opensWithSecondFactorProof);
+        self::assertTrue($operation->enabledByDefault);
+        self::assertFalse($operation->accountAccess);
+        self::assertFalse($operation->opensWhileFrozen);
+        self::assertTrue(StepUpTestDirectory::isFramework(StepUpOperationKey::CHANGE_NAME));
     }
 
     /**

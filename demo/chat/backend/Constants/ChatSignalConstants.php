@@ -17,9 +17,6 @@ final class ChatSignalConstants
     /** @var string Message signal name */
     public const string MESSAGE = 'message';
 
-    /** @var string Rename signal name */
-    public const string RENAME = 'rename';
-
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 
@@ -50,9 +47,6 @@ final class ChatSignalConstants
      *     into the registry, or why not - the answer to Hilos::$files->publishUploads() (HIL-144)
      */
     public const string ATTACHMENTS_PUBLISHED = 'chat_attachments_published';
-
-    /** @var string ModeratorAgent → ChatAgent: user-initiated rename moderation result */
-    public const string RENAME_MODERATION_RESULT = 'rename_moderation_result';
 
     // ── Bot agent lifecycle ─────────────────────────────────────────────
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */

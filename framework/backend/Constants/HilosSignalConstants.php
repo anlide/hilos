@@ -1380,6 +1380,9 @@ final class HilosSignalConstants
     /** Client → server: prove the new address and move the account onto it. */
     public const string PROFILE_CHANGE_EMAIL_NEW_CONFIRM = 'profile_change_email_new_confirm';
 
+    /** Client → users library: set the acting person's profile name. */
+    public const string PROFILE_NAME_SET = 'hilos_profile_name_set';
+
     /** Client → users library: publish one completed profile photo upload. */
     public const string PROFILE_PHOTO_SET = 'hilos_profile_photo_set';
 

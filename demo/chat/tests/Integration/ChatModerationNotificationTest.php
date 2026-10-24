@@ -11,7 +11,11 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -31,6 +35,7 @@ use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Users\UserNotificationType;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -49,6 +54,11 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        RtTruthSourceRegistry::register(
+            HilosModerationCheck::RT_COLLECTION,
+            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
+            self::TEST_AGENT_ID,
+        );
         TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
@@ -59,6 +69,11 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
+        foreach (Hilos::$rt->hilosModerationChecks as $check) {
+            if ($check->kind === ModerationKindKey::PROFILE_NAME) {
+                $check->actions->forget();
+            }
+        }
         ExecutionContext::setCurrentAcceptKey(null);
         $this->deleteChatNotifications();
         RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -227,27 +242,29 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     {
         $user = Hilos::$db->users->actions->createWithName('RenameAsker557');
         Hilos::$rt->connections->actions->register('rename-notify-ak', $user->id);
-        Hilos::$rt->connections['rename-notify-ak']?->actions->startRenameModeration('BlockedName');
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            'rename-notify-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'BlockedName',
+        );
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->dispatchRenameModerationVerdict(
-            new RenameModerationResultSignalData(
+            new ModerationVerdictSignalData(
                 acceptKey: 'rename-notify-ak',
-                userId: (int)$user->id,
-                newName: 'BlockedName',
+                kind: ModerationKindKey::PROFILE_NAME,
+                requestId: Hilos::$rt->hilosModerationChecks->find('rename-notify-ak', ModerationKindKey::PROFILE_NAME)->requestId,
                 allow: false,
-                reason: 'policy',
+                reason: 'spam',
             ),
         );
 
         $notification = $this->onlyNotificationFor($user->id);
 
-        self::assertSame(ChatNotificationType::RENAME_REJECTED, $notification->type);
+        self::assertSame(UserNotificationType::NAME_REJECTED, $notification->type);
         self::assertSame(NotificationSeverity::WARNING, $notification->severity);
         self::assertSame('Your new name was not accepted', $notification->title);
-        self::assertSame('This name was not accepted.', $notification->body);
+        self::assertSame('This name was not accepted because it appears to be spam.', $notification->body);
         self::assertSame(
-            ['reason' => 'This name was not accepted.', 'newName' => 'BlockedName'],
+            ['reason' => 'This name was not accepted because it appears to be spam.', 'newName' => 'BlockedName'],
             $notification->decodedData(),
         );
     }
@@ -256,14 +273,16 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     {
         $user = Hilos::$db->users->actions->createWithName('ImpersonateAsker557');
         Hilos::$rt->connections->actions->register('rename-cat-ak', $user->id);
-        Hilos::$rt->connections['rename-cat-ak']?->actions->startRenameModeration('ImpersonateName');
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            'rename-cat-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'ImpersonateName',
+        );
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->dispatchRenameModerationVerdict(
-            new RenameModerationResultSignalData(
+            new ModerationVerdictSignalData(
                 acceptKey: 'rename-cat-ak',
-                userId: (int)$user->id,
-                newName: 'ImpersonateName',
+                kind: ModerationKindKey::PROFILE_NAME,
+                requestId: Hilos::$rt->hilosModerationChecks->find('rename-cat-ak', ModerationKindKey::PROFILE_NAME)->requestId,
                 allow: false,
                 reason: 'impersonation',
             ),
@@ -271,7 +290,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
 
         $notification = $this->onlyNotificationFor($user->id);
 
-        self::assertSame(ChatNotificationType::RENAME_REJECTED, $notification->type);
+        self::assertSame(UserNotificationType::NAME_REJECTED, $notification->type);
         self::assertSame(NotificationSeverity::WARNING, $notification->severity);
         self::assertSame('Your new name was not accepted', $notification->title);
         self::assertSame(
@@ -291,23 +310,22 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     {
         $user = Hilos::$db->users->actions->createWithName('RenameAsker557');
         Hilos::$rt->connections->actions->register('rename-unavailable-ak', $user->id);
-        Hilos::$rt->connections['rename-unavailable-ak']?->actions->startRenameModeration('PendingName');
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            'rename-unavailable-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'PendingName',
+        );
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->dispatchRenameModerationVerdict(
-            new RenameModerationResultSignalData(
+            new ModerationVerdictSignalData(
                 acceptKey: 'rename-unavailable-ak',
-                userId: (int)$user->id,
-                newName: 'PendingName',
+                kind: ModerationKindKey::PROFILE_NAME,
+                requestId: Hilos::$rt->hilosModerationChecks->find('rename-unavailable-ak', ModerationKindKey::PROFILE_NAME)->requestId,
                 allow: false,
                 reason: 'service_unavailable',
             ),
         );
 
-        self::assertSame(
-            ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE,
-            Hilos::$rt->connections['rename-unavailable-ak']?->renameModerationPhase,
-        );
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find('rename-unavailable-ak', ModerationKindKey::PROFILE_NAME));
         self::assertCount(0, $this->notificationsFor($user->id));
     }
 
@@ -360,15 +378,15 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
      * library that owns the account: applying it writes the row, and refusing it sends the
      * acting tab the same action error the page used to raise.
      *
-     * @param RenameModerationResultSignalData $result Verdict to deliver
+     * @param ModerationVerdictSignalData $result Verdict to deliver
      * @throws HilosException When the verdict cannot be applied
      */
-    private function dispatchRenameModerationVerdict(RenameModerationResultSignalData $result): void
+    private function dispatchRenameModerationVerdict(ModerationVerdictSignalData $result): void
     {
         $signal = new AgentSignalData($result);
         ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
         try {
-            $this->usersLibrary()->onSignalAgent($signal, '', ChatSignalConstants::RENAME_MODERATION_RESULT);
+            $this->usersLibrary()->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT);
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }
@@ -453,7 +471,8 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     {
         Database::sql(
             'DELETE FROM `' . EntityNotification::_table . '`'
-            . ' WHERE `' . EntityNotification::type . '` LIKE \'chat.%\'',
+            . ' WHERE `' . EntityNotification::type . '` LIKE \'chat.%\' OR `' . EntityNotification::type . '` = ?',
+            [UserNotificationType::NAME_REJECTED],
         );
     }
 }

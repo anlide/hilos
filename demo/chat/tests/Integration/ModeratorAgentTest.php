@@ -9,7 +9,6 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
@@ -75,42 +74,6 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertSame('moderate me from runtime', $result->message);
             $this->assertFalse($result->allow);
             $this->assertSame('service_unavailable', $result->reason);
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-            Hilos::$rt->userStates->actions->clear();
-        }
-    }
-
-    public function testOnTickDiscoversPendingRenameModerationFromRuntimeState(): void
-    {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-        Hilos::$rt->userStates->actions->clear();
-
-        try {
-            $user = Hilos::$db->users->actions->createWithName('User');
-            Hilos::$rt->connections->actions->register('moderator-rename-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->connections['moderator-rename-ak']?->actions->startRenameModeration(
-                'Blocked Name',
-            );
-
-            Hilos::initSignalRouter(new ChatSignalRouter());
-            $agent = new ModeratorAgent();
-            $chatClient = new CompletedModerationChatClient('{"allow": false, "reason": "insult"}');
-            self::replaceChatClient($agent, $chatClient);
-
-            $agent->onTick();
-            $agent->onTick();
-
-            $this->assertSame(1, $chatClient->startGenerateCalls);
-            $result = $this->takeQueuedRenameModerationResult();
-            $this->assertNotNull($result);
-            $this->assertSame('moderator-rename-ak', $result->acceptKey);
-            $this->assertSame($user->id, $result->userId);
-            $this->assertSame('Blocked Name', $result->newName);
-            $this->assertFalse($result->allow);
-            $this->assertSame('insult', $result->reason);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
@@ -763,22 +726,6 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
             $this->assertInstanceOf(AgentSignalData::class, $signal->data);
             $this->assertInstanceOf(ModerationResultSignalData::class, $signal->data->data);
-
-            return $signal->data->data;
-        }
-
-        return null;
-    }
-
-    private function takeQueuedRenameModerationResult(): ?RenameModerationResultSignalData
-    {
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() !== ChatSignalConstants::RENAME_MODERATION_RESULT) {
-                continue;
-            }
-
-            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
-            $this->assertInstanceOf(RenameModerationResultSignalData::class, $signal->data->data);
 
             return $signal->data->data;
         }

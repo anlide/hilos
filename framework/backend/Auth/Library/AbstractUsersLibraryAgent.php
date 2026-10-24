@@ -32,6 +32,7 @@ use Hilos\Auth\Library\Command\PasskeyCommands;
 use Hilos\Auth\Library\Command\PasswordChangeCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
+use Hilos\Auth\Library\Command\ProfileNameCommands;
 use Hilos\Auth\Library\Command\ProfilePhotoCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
@@ -100,6 +101,7 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoRemoveActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
@@ -496,6 +498,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_NAME_SET => ProfileNameSetActionDTO::class,
         HilosSignalConstants::PROFILE_PHOTO_SET => ProfilePhotoSetActionDTO::class,
         HilosSignalConstants::PROFILE_PHOTO_REMOVE => ProfilePhotoRemoveActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => ProfileChangePasswordOpenActionDTO::class,
@@ -622,6 +625,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::PROFILE_NAME_SET,
         HilosSignalConstants::PROFILE_PHOTO_SET,
         HilosSignalConstants::PROFILE_PHOTO_REMOVE,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN,
@@ -754,6 +758,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Profile photo commands, built on first use. */
     private ?ProfilePhotoCommands $profilePhotoCommands = null;
 
+    /** Profile name commands, built on first use. */
+    private ?ProfileNameCommands $profileNameCommands = null;
+
     /** @var ?CronRule Schedule of the expired-hold sweep, or null when this project has no registration */
     private ?CronRule $reservationSweepRule = null;
 
@@ -819,7 +826,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /**
      * Hands due second-factor removals and reminders to the people's agents, and runs a bounded
-     * verification-code sweep plus the expired registration holds (HIL-1411).
+     * verification-code sweep, expired registration holds and abandoned moderation checks.
      *
      * @throws HilosException When a lookup, a write, a frame or an announcement fails
      */
@@ -836,6 +843,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $this->sweepVerifications();
         if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
             $this->profilePhotoCommands()->sweepChecks();
+        }
+        if (Hilos::hasFeature(HilosFeature::MODERATION)) {
+            $this->profileNameCommands()->sweepChecks();
         }
     }
 
@@ -2657,6 +2667,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function runProfileAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
+            case HilosSignalConstants::PROFILE_NAME_SET:
+                if (!$dto instanceof ProfileNameSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileNameSetActionDTO::class, $dto);
+                }
+                $this->profileNameCommands()->set($acceptKey, $dto->name);
+
+                return null;
+
             case HilosSignalConstants::PROFILE_PHOTO_SET:
                 if (!$dto instanceof ProfilePhotoSetActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfilePhotoSetActionDTO::class, $dto);
@@ -3037,7 +3055,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Hands a moderation verdict to the command of its kind.
      *
      * The verdict comes here because its kind names this library as the recipient, and every
-     * kind applies its own: today that is the profile photo alone. A verdict of any other kind
+     * kind applies its own: the profile photo and name. A verdict of any other kind
      * is not applied as one, and is only logged.
      *
      * @param ModerationVerdictSignalData $verdict The moderator's verdict
@@ -3045,6 +3063,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     private function applyModerationVerdict(ModerationVerdictSignalData $verdict): void
     {
+        if ($verdict->kind === ModerationKindKey::PROFILE_NAME && Hilos::hasFeature(HilosFeature::MODERATION)) {
+            $this->profileNameCommands()->verdict($verdict);
+
+            return;
+        }
         if ($verdict->kind === ModerationKindKey::PROFILE_PHOTO && Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
             $this->profilePhotoCommands()->verdict($verdict);
 
@@ -3057,6 +3080,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function profilePhotoCommands(): ProfilePhotoCommands
     {
         return $this->profilePhotoCommands ??= new ProfilePhotoCommands($this);
+    }
+
+    /** @return ProfileNameCommands Profile name workflow, built once per process */
+    private function profileNameCommands(): ProfileNameCommands
+    {
+        return $this->profileNameCommands ??= new ProfileNameCommands($this, $this->stepUpCommands());
     }
 
     /**

@@ -6,7 +6,8 @@ moderator or its rules, or activating the Moderation section.
 This is the target architecture of HIL-1569, written ahead of its code and now
 partly in it: the kinds, the rules table and its writer, the check queue, the
 moderator with its models and settings, and the profile photo flow (HIL-1623 to
-HIL-1625) are in the code. Each pending rule names the leaf that implements it;
+HIL-1625), and the own-name flow (HIL-1626) are in the code. Each pending rule
+names the leaf that implements it;
 that leaf clears its markers in the same commit, following
 [../rule-authoring.md](../rule-authoring.md), *A Rule Written Ahead Of Its
 Code*. *Check Kinds* names the PHP classes that declare kinds, *Rules Per Kind*
@@ -48,10 +49,7 @@ The framework directory is
 [ModerationKindDirectory](../../../framework/backend/Moderation/ModerationKindDirectory.php).
 Extend it by retaining the parent's entries and appending the project's kinds
 in `kinds()`, then point the Hilos facade's `MODERATION_KIND_DIRECTORY` at the
-subclass, as
-[StepUpOperationDirectory](../../../framework/backend/Auth/StepUp/StepUpOperationDirectory.php)
-and [ChatStepUpOperationDirectory](../../../demo/chat/backend/Auth/ChatStepUpOperationDirectory.php)
-do for operations. Chat's
+subclass. Chat's
 [ChatModerationKindDirectory](../../../demo/chat/backend/Moderation/ChatModerationKindDirectory.php):
 
 ```php
@@ -300,15 +298,35 @@ The former project-specific `PROFILE_PHOTO_CHECKER` seam was removed in
 HIL-1625.
 
 A person's own name uses `hilos_profile_name`; the standard `CHANGE_NAME`
-step-up operation moves into the framework. Until approval, even the person
-requesting the change sees their previous name. A content refusal carries the
-server's words and a notification; unavailability produces no notification.
-Without `MODERATION`, the name applies immediately after the ordinary
-confirmation. An administrator's rename is not moderated.
-(not in the code yet — HIL-1626)
+step-up operation moves into the framework. The framework action
+`hilos_profile_name_set` is handled by
+[`ProfileNameCommands`](../../../framework/backend/Auth/Library/Command/ProfileNameCommands.php),
+which opens a `hilos_profile_name` text check in the existing shared
+`hilosModerationChecks` queue. Pending checks are keyed by connection and kind,
+so a name check and a photo check have separate slots. A repeated, late or
+mismatched verdict does not apply a name.
 
-The existing name dialog receives the framework wiring and the progress line
-`Checking your name…`; its demo integration belongs to HIL-1635.
+Without `MODERATION`, the validated name goes to the existing person owner
+after the ordinary confirmation. With moderation, the name stays unchanged
+until approval; the library then sends the existing `HILOS_USER_RENAME` request
+to that owner. [`AbstractUserAgent`](../../../framework/backend/Users/Agent/AbstractUserAgent.php)
+writes the name and its rename journal in one transaction, and the existing
+[users-library completion path](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
+calls `afterUserRenamed()`.
+An administrator's rename is not moderated.
+
+A content refusal returns an action error with one of the six server sentences
+from [`ProfileNameRefusal`](../../../framework/backend/Users/ProfileNameRefusal.php)
+and best-effort sends the warning notification `Your new name was not
+accepted`. A notification failure does not hide the action error. An unknown,
+incomplete or contradictory verdict, or a check timeout, returns `Names cannot
+be checked right now.` without a notification.
+
+The chat profile page already wires its existing form to the framework action
+through the
+[core rename binding](../../../framework/frontend/core/src/profile/profileRename.ts).
+The visible `Checking your name…` line, closing the dialog during a pending
+check, and bindings for tasks and polls remain HIL-1635.
 (not in the code yet — HIL-1635)
 
 ## Chat Is A Consumer
@@ -392,11 +410,11 @@ There is no verdict journal and no per-kind on/off switch in this design.
 
 **Built so far:** the kinds directory, the rules table and its library, the check
 queue and its signals, the moderator, its profiles and settings, the profile
-photo flow (HIL-1623–HIL-1625), and the kinds/rules browser tables registered by
-Chat (HIL-1628).
+photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), and the
+kinds/rules browser tables registered by Chat (HIL-1628).
 
-**Not built yet:** the display-name check (HIL-1626); chat as a consumer
-(HIL-1627); section pages, actions, SDK mounts and demo stands (HIL-1629–HIL-1637);
+**Not built yet:** chat as a consumer (HIL-1627); section pages, actions, SDK
+mounts and demo stands (HIL-1629–HIL-1637);
 e2e and cluster coverage (HIL-1638/HIL-1639); enabling profile photos in
 tasks/polls (HIL-1644/HIL-1645).
 

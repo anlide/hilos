@@ -31,23 +31,4 @@ final class ConnectionRuntimeConstants
      */
     public const string OUTBOUND_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 
-    /**
-     * No visible rename moderation state.
-     */
-    public const string RENAME_MODERATION_PHASE_NONE = '';
-
-    /**
-     * Moderation phase while a user-initiated rename is being checked.
-     */
-    public const string RENAME_MODERATION_PHASE_CHECKING = 'checking';
-
-    /**
-     * Moderation phase for a rejected display name.
-     */
-    public const string RENAME_MODERATION_PHASE_REJECTED = 'rejected';
-
-    /**
-     * Moderation phase for unavailable rename moderation.
-     */
-    public const string RENAME_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 }

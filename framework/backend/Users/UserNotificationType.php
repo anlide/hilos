@@ -24,4 +24,7 @@ final class UserNotificationType
 
     /** A submitted profile photo was rejected for its content. */
     public const string PHOTO_REJECTED = 'user.photo_rejected';
+
+    /** A submitted profile name was rejected for its content. */
+    public const string NAME_REJECTED = 'user.name_rejected';
 }

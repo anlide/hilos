@@ -89,12 +89,10 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
-use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Moderation\ChatModerationKindKey;
-use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -133,6 +131,7 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoRemoveActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoSetActionDTO;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
@@ -1415,7 +1414,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::RENAME_MODERATION_RESULT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1736,7 +1734,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => UserPhotoPutDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => UserPhotoRemoveDoneSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
-            ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN => AuthRegistrationProvenSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
@@ -1906,6 +1903,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_NAME_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_PHOTO_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_PHOTO_REMOVE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1916,7 +1914,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -2013,6 +2010,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_NAME_SET => ProfileNameSetActionDTO::class,
             HilosSignalConstants::PROFILE_PHOTO_SET => ProfilePhotoSetActionDTO::class,
             HilosSignalConstants::PROFILE_PHOTO_REMOVE => ProfilePhotoRemoveActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => ProfileChangePasswordOpenActionDTO::class,
@@ -2023,7 +2021,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => AccountDeletionCodeActionDTO::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => AccountDeletionStartActionDTO::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => AccountDeletionCancelActionDTO::class,
-            ChatSignalConstants::RENAME => RenameActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_SESSION_END => SessionEndActionDTO::class,
             HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => SessionsEndOthersActionDTO::class,

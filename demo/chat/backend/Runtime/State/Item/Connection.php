@@ -32,15 +32,6 @@ final class Connection extends HilosSessionConnection
     public const string outboundModerationAttachments = 'outboundModerationAttachments';
     public const string outboundModerationPicture = 'outboundModerationPicture';
 
-    public const string renameModerationPhase = 'renameModerationPhase';
-    public const string renameModerationName = 'renameModerationName';
-    public const string renameModerationReason = 'renameModerationReason';
-    public const string renameModerationUpdatedAt = 'renameModerationUpdatedAt';
-
-
-
-
-
     /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
     public string $outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
 
@@ -70,18 +61,6 @@ final class Connection extends HilosSessionConnection
      */
     public ?string $outboundModerationPicture = null;
 
-    /** Rename moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
-    public string $renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE;
-
-    /** Requested display name associated with rename moderation, or null while none is. */
-    public ?string $renameModerationName = null;
-
-    /** Rename moderation rejection or unavailable reason, or null while the verdict names none. */
-    public ?string $renameModerationReason = null;
-
-    /** Unix time of last rename moderation state update. */
-    public int $renameModerationUpdatedAt = 0;
-
     protected function initOwn(): void
     {
     }
@@ -108,10 +87,6 @@ final class Connection extends HilosSessionConnection
         $this->outboundModerationUpdatedAt = self::requireInt($row, self::outboundModerationUpdatedAt);
         $this->outboundModerationAttachments = self::requireStringList($row, self::outboundModerationAttachments);
         $this->outboundModerationPicture = self::optionalString($row, self::outboundModerationPicture);
-        $this->renameModerationPhase = self::requireString($row, self::renameModerationPhase);
-        $this->renameModerationName = self::optionalString($row, self::renameModerationName);
-        $this->renameModerationReason = self::optionalString($row, self::renameModerationReason);
-        $this->renameModerationUpdatedAt = self::requireInt($row, self::renameModerationUpdatedAt);
     }
 
     /**
@@ -147,10 +122,6 @@ final class Connection extends HilosSessionConnection
             self::outboundModerationPicture,
             $this->outboundModerationPicture,
         );
-        $this->renameModerationPhase = self::patchString($diff, self::renameModerationPhase, $this->renameModerationPhase);
-        $this->renameModerationName = self::patchOptionalString($diff, self::renameModerationName, $this->renameModerationName);
-        $this->renameModerationReason = self::patchOptionalString($diff, self::renameModerationReason, $this->renameModerationReason);
-        $this->renameModerationUpdatedAt = self::patchInt($diff, self::renameModerationUpdatedAt, $this->renameModerationUpdatedAt);
     }
 
     /**
@@ -165,10 +136,6 @@ final class Connection extends HilosSessionConnection
             self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
             self::outboundModerationAttachments => $this->outboundModerationAttachments,
             self::outboundModerationPicture => $this->outboundModerationPicture,
-            self::renameModerationPhase => $this->renameModerationPhase,
-            self::renameModerationName => $this->renameModerationName,
-            self::renameModerationReason => $this->renameModerationReason,
-            self::renameModerationUpdatedAt => $this->renameModerationUpdatedAt,
         ];
     }
 }

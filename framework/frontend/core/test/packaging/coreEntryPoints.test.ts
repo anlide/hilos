@@ -142,6 +142,11 @@ const moderationValues = [
   'SIGNAL_MODERATION_CHECK',
   'moderationCheckSchema',
 ]
+/** The standard self-rename binding, shared by the compatibility root and base. */
+const profileRenameValues = [
+  'PROFILE_NAME_SET_ACTION',
+  'createHilosProfileRename',
+]
 const expectedValues = [
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
@@ -153,6 +158,7 @@ const expectedValues = [
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
+  ...profileRenameValues,
 ].sort()
 
 /**
@@ -282,6 +288,7 @@ describe('core public entries', () => {
       ...tableTextValues,
       ...tableFocusReturnValues,
       ...moderationValues,
+      ...profileRenameValues,
     ]) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(

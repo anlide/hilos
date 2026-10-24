@@ -11,6 +11,7 @@ final class StepUpOperationKey
 {
     public const string CHANGE_PASSWORD = 'change_password';
     public const string CHANGE_EMAIL = 'change_email';
+    public const string CHANGE_NAME = 'change_name';
     public const string DELETE_ACCOUNT = 'delete_account';
     public const string EXPORT_DATA = 'export_data';
 

@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -23,8 +22,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\Image\ImageCopy;
 use Hilos\Files\Image\ImageEngineInterface;
 use Hilos\Files\Image\ImageFit;
@@ -52,7 +51,7 @@ use Hilos\WiringRefusal;
  * Monopolistic agent that discovers runtime user moderation requests and returns decisions.
  *
  * Uses async LLM moderation for outbound user messages, a JPEG copy of each picture
- * attached to an allowed message, and user-initiated display names.
+ * attached to an allowed message.
  */
 final class ModeratorAgent extends AbstractAgent
 {
@@ -75,7 +74,6 @@ final class ModeratorAgent extends AbstractAgent
     private const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
     private const string REASON_UNKNOWN = 'unknown';
     private const string REQUEST_TYPE_MESSAGE = 'message';
-    private const string REQUEST_TYPE_RENAME = 'rename';
     private const string REQUEST_TYPE_MESSAGE_PICTURE = 'message_picture';
     private const string PICTURE_COPY_NAME = 'chat_message_picture';
     private const int PICTURE_COPY_SIDE = 512;
@@ -285,25 +283,6 @@ final class ModeratorAgent extends AbstractAgent
             return;
         }
 
-        foreach (Hilos::$rt->connections as $connection) {
-            $newName = $connection->renameModerationName;
-            if (
-                $connection->renameModerationPhase
-                !== ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
-                || $newName === null
-            ) {
-                continue;
-            }
-
-            $this->startModerationRequest(
-                $connection,
-                self::REQUEST_TYPE_RENAME,
-                $newName,
-                $connection->renameModerationUpdatedAt,
-            );
-
-            return;
-        }
     }
 
     /**
@@ -311,7 +290,7 @@ final class ModeratorAgent extends AbstractAgent
      *
      * @param Connection $connection Runtime connection with a pending moderation item
      * @param string $requestType Active request kind
-     * @param string $value Submitted message text or requested display name
+     * @param string $value Submitted message text
      * @param int $updatedAt Runtime update timestamp observed at start
      * @throws HilosException When moderation rule lookup fails
      */
@@ -385,7 +364,6 @@ final class ModeratorAgent extends AbstractAgent
 
         return match ($this->currentRequestType) {
             self::REQUEST_TYPE_MESSAGE => $this->buildMessageModerationMessages($this->currentAcceptKey),
-            self::REQUEST_TYPE_RENAME => $this->buildRenameModerationMessages(),
             default => throw new AgentException('Cannot build moderation messages for unknown request type'),
         };
     }
@@ -451,42 +429,6 @@ final class ModeratorAgent extends AbstractAgent
         return [
             new Message(Message::ROLE_SYSTEM, $systemContent),
             new Message(Message::ROLE_USER, implode("\n\n", $userContentParts)),
-        ];
-    }
-
-    /**
-     * Builds user display-name moderation prompt messages.
-     *
-     * @return list<Message> System and user messages for LLM
-     */
-    private function buildRenameModerationMessages(): array
-    {
-        $rulesBlock = $this->buildRuleBlock(
-            ObjectModeratorPromptPiece::SECTION_NAME_RULE,
-            [
-                '- Default policy: allow benign display names.',
-                '- Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.',
-                '- If uncertain, return ' . ModerationDecision::KEY_ALLOW . '=true.',
-            ],
-        );
-
-        $systemContent = sprintf(implode("\n", [
-            'Display name moderation. JSON only. Output: '
-                . '{"%s":true|false,"%s":"ok|insult|threat|hate_speech|sexual|spam|impersonation"}',
-            'Rules:',
-            '%s',
-        ]),
-            ModerationDecision::KEY_ALLOW,
-            ModerationDecision::KEY_REASON,
-            $rulesBlock,
-        );
-
-        return [
-            new Message(Message::ROLE_SYSTEM, $systemContent),
-            new Message(Message::ROLE_USER, implode("\n\n", [
-                'User ID: ' . $this->currentUserId,
-                "Requested display name:\n" . $this->currentModerationValue,
-            ])),
         ];
     }
 
@@ -693,7 +635,6 @@ final class ModeratorAgent extends AbstractAgent
             !$allow
             && (
                 $this->currentRequestType === self::REQUEST_TYPE_MESSAGE
-                || $this->currentRequestType === self::REQUEST_TYPE_RENAME
                 || $this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE
             )
         ) {
@@ -722,18 +663,6 @@ final class ModeratorAgent extends AbstractAgent
                 );
                 return;
 
-            case self::REQUEST_TYPE_RENAME:
-                $this->sendToAgent(
-                    ChatSignalConstants::RENAME_MODERATION_RESULT,
-                    new RenameModerationResultSignalData(
-                        acceptKey: $this->currentAcceptKey,
-                        userId: $this->currentUserId,
-                        newName: $this->currentModerationValue,
-                        allow: $allow,
-                        reason: $reason,
-                    ),
-                );
-                return;
         }
     }
 
@@ -765,12 +694,6 @@ final class ModeratorAgent extends AbstractAgent
             self::REQUEST_TYPE_MESSAGE_PICTURE => $messageStillChecking
                 && $this->currentPicture !== null
                 && in_array($this->currentPicture, $connection->outboundModerationAttachments, true),
-            self::REQUEST_TYPE_RENAME =>
-                $connection->userId === $this->currentUserId
-                && $connection->renameModerationPhase
-                    === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
-                && $connection->renameModerationName === $this->currentModerationValue
-                && $connection->renameModerationUpdatedAt === $this->currentModerationUpdatedAt,
             default => false,
         };
     }

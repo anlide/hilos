@@ -1,8 +1,6 @@
-// The profile root's name window (HIL-1169): the rename the project hands the
-// page, and the window's steps over it. The wire is the project's — the
-// framework has no self-rename of its own — so the project gives the send, where
-// its refusal arrives, the operation its confirmation asks for, and the length
-// bounds; the window is the framework's.
+// The profile root's name window: the framework's standard self-rename binding
+// and the window's steps over it. A project can also supply its own binding:
+// the send, refusal, confirmation operation and length bounds.
 //
 // Server-confirmed, never optimistic: the window closes once the live name has
 // reached the name it SENT, and a refusal releases the button with the window
@@ -21,7 +19,9 @@ import {
   createHilosRowEdit,
   hilosSignalRowEditSource,
 } from '../conflict/rowEditSession.js'
+import { type ActionErrorStore } from '../connection/ActionErrorStore.js'
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
+import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
   computedSignal,
   createSignal,
@@ -30,7 +30,7 @@ import {
   type WritableSignal,
 } from '../state/signal.js'
 
-/** What a project hands the profile page when it lets a person change their own name. */
+/** The binding the profile page uses to let a person change their own name. */
 export interface HilosProfileRename {
   /**
    * Send the new name.
@@ -45,10 +45,34 @@ export interface HilosProfileRename {
   clearRefusal(): void
   /** The protected operation whose confirmation the window asks first. */
   readonly stepUpOperation: string
-  /** The shortest name the project accepts. */
+  /** The shortest name the binding accepts. */
   readonly minLength: number
-  /** The longest name the project accepts. */
+  /** The longest name the binding accepts. */
   readonly maxLength: number
+}
+
+/** The framework action that changes the person's own name. */
+export const PROFILE_NAME_SET_ACTION = 'hilos_profile_name_set'
+
+/**
+ * Bind the standard self-rename to an existing connection and error store.
+ * The caller owns the store's listener and lifetime.
+ *
+ * @param connection The connection that sends the rename.
+ * @param errors The existing store carrying server-authored refusal words.
+ */
+export function createHilosProfileRename(
+  connection: HilosConnection,
+  errors: ActionErrorStore,
+): HilosProfileRename {
+  return {
+    send: (name) => connection.sendAction(PROFILE_NAME_SET_ACTION, { name }),
+    refusal: errors.signal(PROFILE_NAME_SET_ACTION),
+    clearRefusal: () => errors.clear(PROFILE_NAME_SET_ACTION),
+    stepUpOperation: 'change_name',
+    minLength: 2,
+    maxLength: 64,
+  }
 }
 
 /** The window's steps: shut, the confirmation, the form. */
@@ -68,17 +92,17 @@ export interface HilosProfileRenameFlow {
   readonly edit: ReadonlySignal<RowEditState<HilosProfileRenameFields>>
   /** The one line the form says about the other side, or ''. */
   readonly notice: ReadonlySignal<string>
-  /** Whether the trimmed draft fits the project's bounds. */
+  /** Whether the trimmed draft fits the binding's bounds. */
   readonly valid: ReadonlySignal<boolean>
   /** True while a sent rename waits for the live name. */
   readonly busy: ReadonlySignal<boolean>
-  /** The project's refusal of the rename, or null. */
+  /** The server's refusal of the rename, or null. */
   readonly refusal: ReadonlySignal<string | null>
   /** Whether closing asks first: the form shows an edit not yet saved. */
   readonly asksBeforeClosing: ReadonlySignal<boolean>
-  /** The project's shortest name. */
+  /** The binding's shortest name. */
   readonly minLength: number
-  /** The project's longest name. */
+  /** The binding's longest name. */
   readonly maxLength: number
   /** Ask whether the operation needs a confirmation, then show it or the form. */
   open(): Promise<void>
@@ -108,11 +132,11 @@ export const HILOS_PROFILE_RENAME_COPY = {
 } as const
 
 /**
- * Create one name window over the project's rename; the page owns its lifetime.
+ * Create one name window over a rename binding; the page owns its lifetime.
  *
  * @param context The action lifecycle the confirmation dispatches over.
  * @param name The person's live name, '' while unknown.
- * @param rename The project's rename.
+ * @param rename The standard or project-specific rename binding.
  */
 export function createHilosProfileRenameFlow(
   context: { readonly actions: ActionLifecycle },

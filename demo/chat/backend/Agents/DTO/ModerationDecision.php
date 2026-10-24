@@ -27,16 +27,9 @@ final readonly class ModerationDecision
     /** Moderator reason when a picture copy cannot be drawn. The model is not offered this label. */
     public const string REASON_UNREADABLE = 'unreadable';
 
-    public const string SUBJECT_NAME = 'name';
-    public const string SUBJECT_MESSAGE = 'message';
-
-    public const string TEXT_NAME_UNAVAILABLE = 'Names cannot be checked right now.';
     public const string TEXT_MESSAGE_UNAVAILABLE = 'Moderation is unavailable right now. Your message is still here.';
-    public const string TEXT_NAME_GENERIC = 'This name was not accepted.';
     public const string TEXT_MESSAGE_GENERIC = 'Message rejected.';
 
-    public const string PREFIX_NAME_BECAUSE = 'This name was not accepted because ';
-    public const string PREFIX_NAME_COLON = 'This name was not accepted: ';
     public const string PREFIX_MESSAGE_COLON = 'Message rejected: ';
 
     public const string TAIL_INSULT = 'it appears to contain an insult.';
@@ -44,7 +37,6 @@ final readonly class ModerationDecision
     public const string TAIL_HATE_SPEECH = 'it appears to contain hate speech.';
     public const string TAIL_SEXUAL = 'it appears to contain sexual content.';
     public const string TAIL_SPAM = 'it appears to be spam.';
-    public const string TAIL_IMPERSONATION = 'it appears to impersonate someone else.';
 
     public const string TAIL_PICTURE_NUDITY = ' looks like nudity or sexual content.';
     public const string TAIL_PICTURE_VIOLENCE = ' looks violent.';
@@ -56,18 +48,6 @@ final readonly class ModerationDecision
     public const int PICTURE_NAME_MAX_LENGTH = 60;
 
     private const int MAX_NATURAL_PHRASE_LENGTH = 160;
-
-    /**
-     * @var array<string, string>
-     */
-    private const array NAME_CATEGORY_TAILS = [
-        'insult' => self::TAIL_INSULT,
-        'threat' => self::TAIL_THREAT,
-        'hate_speech' => self::TAIL_HATE_SPEECH,
-        'sexual' => self::TAIL_SEXUAL,
-        'spam' => self::TAIL_SPAM,
-        'impersonation' => self::TAIL_IMPERSONATION,
-    ];
 
     /**
      * @var array<string, string>
@@ -146,18 +126,6 @@ final readonly class ModerationDecision
     }
 
     /**
-     * Translates a raw moderation reason and phase into a public name refusal sentence.
-     *
-     * @param ?string $rawReason Raw model reason or error code
-     * @param ?string $phase Runtime moderation phase if known
-     * @return string Human-readable refusal sentence
-     */
-    public static function publicNameReason(?string $rawReason = null, ?string $phase = null): string
-    {
-        return self::publicReason(self::SUBJECT_NAME, $rawReason, $phase);
-    }
-
-    /**
      * Translates a raw moderation reason and phase into a public message refusal sentence.
      *
      * @param ?string $rawReason Raw model reason or error code
@@ -166,47 +134,17 @@ final readonly class ModerationDecision
      */
     public static function publicMessageReason(?string $rawReason = null, ?string $phase = null): string
     {
-        return self::publicReason(self::SUBJECT_MESSAGE, $rawReason, $phase);
-    }
-
-    /**
-     * Translates a raw moderation reason and phase into a human-readable sentence for the given subject.
-     *
-     * @param string $subject Moderation subject ('name' or 'message')
-     * @param ?string $rawReason Raw model reason or error code
-     * @param ?string $phase Runtime moderation phase if known
-     * @return string Human-readable sentence
-     */
-    public static function publicReason(string $subject, ?string $rawReason = null, ?string $phase = null): string
-    {
         $trimmed = $rawReason !== null ? trim($rawReason) : null;
 
         if (
-            $phase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE
-            || $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+            $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
             || ($trimmed !== null && in_array($trimmed, ['service_unavailable', 'unknown'], true))
         ) {
-            return $subject === self::SUBJECT_NAME
-                ? self::TEXT_NAME_UNAVAILABLE
-                : self::TEXT_MESSAGE_UNAVAILABLE;
+            return self::TEXT_MESSAGE_UNAVAILABLE;
         }
 
         if ($trimmed === null || $trimmed === '' || $trimmed === self::REASON_BLOCKED) {
-            return $subject === self::SUBJECT_NAME
-                ? self::TEXT_NAME_GENERIC
-                : self::TEXT_MESSAGE_GENERIC;
-        }
-
-        if ($subject === self::SUBJECT_NAME) {
-            if (isset(self::NAME_CATEGORY_TAILS[$trimmed])) {
-                return self::PREFIX_NAME_BECAUSE . self::NAME_CATEGORY_TAILS[$trimmed];
-            }
-
-            if (self::isNaturalLanguagePhrase($trimmed)) {
-                return self::PREFIX_NAME_COLON . $trimmed;
-            }
-
-            return self::TEXT_NAME_GENERIC;
+            return self::TEXT_MESSAGE_GENERIC;
         }
 
         if (isset(self::MESSAGE_CATEGORY_TAILS[$trimmed])) {
@@ -258,8 +196,7 @@ final readonly class ModerationDecision
         $trimmed = $rawReason !== null ? trim($rawReason) : null;
 
         if (
-            $phase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE
-            || $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+            $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
             || ($trimmed !== null && in_array($trimmed, ['service_unavailable', 'unknown'], true))
         ) {
             return self::TEXT_MESSAGE_UNAVAILABLE;

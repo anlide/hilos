@@ -13,7 +13,9 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Constants\HilosSignalConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Constants\HilosPageConstants;
@@ -267,16 +269,16 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
-    public function testRenameModerationResultRoutesToTheUsersLibraryThatAskedForIt(): void
+    public function testNameModerationVerdictRoutesByKindToTheUsersLibrary(): void
     {
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
-            new SignalName(ChatSignalConstants::RENAME_MODERATION_RESULT),
-            new AgentSignalData(new RenameModerationResultSignalData(
+            new SignalName(HilosSignalConstants::HILOS_MODERATION_VERDICT),
+            new AgentSignalData(new ModerationVerdictSignalData(
                 acceptKey: 'accept-key',
-                userId: 7,
-                newName: 'new-name',
+                kind: ModerationKindKey::PROFILE_NAME,
+                requestId: 'name-attempt',
                 allow: true,
                 reason: '',
             )),
@@ -285,6 +287,17 @@ final class ChatSignalRouterTest extends TestCase
         $this->assertEquals([
             new AgentDestination(HilosAgentType::HILOS_USERS_LIBRARY),
         ], $destinations);
+    }
+
+    public function testTheOldRenameModerationSignalHasNoRoute(): void
+    {
+        self::assertSame([], new ChatSignalRouter()->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName('rename_moderation_result'),
+            new AgentSignalData(new ModerationResultSignalData('accept-key', 7, 'name', true, 'ok')),
+        )));
+        self::assertArrayNotHasKey('rename', Hilos::getAgentActionRoutes());
     }
 
     /**

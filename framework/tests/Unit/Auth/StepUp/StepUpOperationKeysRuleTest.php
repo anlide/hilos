@@ -33,7 +33,7 @@ final class StepUpOperationKeysRuleTest extends TestCase
     {
         self::assertNull(StepUpOperationKeysRule::validate(''));
         self::assertNull(StepUpOperationKeysRule::validate(
-            StepUpOperationKey::CHANGE_EMAIL . ',' . StepUpTestDirectory::PROJECT_OPERATION,
+            StepUpOperationKey::CHANGE_EMAIL . ',' . StepUpOperationKey::CHANGE_NAME . ',' . StepUpTestDirectory::PROJECT_OPERATION,
         ));
     }
 

@@ -1,9 +1,10 @@
 # LLM testing runbook — moderation and bots, local and external
 
 A step-by-step walkthrough for driving the chat demo's LLM roles by hand: the
-chat's own moderator, the framework moderator that checks profile photos, and the
-bots, first against a local Ollama, then against an external OpenAI-compatible
-API. Every step is a command to run or a thing to click; the "why" is in
+chat's own moderator, the framework moderator that checks profile photos and
+people's own names, and the bots, first against a local Ollama, then against an
+external OpenAI-compatible API. Every step is a command to run or a thing to
+click; the "why" is in
 [llm-routing](agents/architecture/llm-routing.md) and
 [moderation](agents/architecture/moderation.md), not here.
 
@@ -20,16 +21,15 @@ Three facts decide everything below, so read them first:
 2. **Credentials never live in settings.** `LLM_EXTERNAL_URL` and
    `LLM_EXTERNAL_API_KEY` are read from env only. A settings row may switch
    *which* provider is used, never the key it uses.
-3. **The profile photo is checked by the framework moderator, not by the chat's.**
-   It asks the profile `hilos.moderation.image`; the same moderator has a second
-   profile, `hilos.moderation.text`, that no flow opens a check for yet. The
-   settings `moderation.image.*` and `moderation.text.*` (`provider`, `model`,
-   `url`, `timeout_sec`) win over env here too, but env is the *default of that
-   setting*: with no row written, the setting reads
-   `HILOS_MODERATION_IMAGE_*` / `HILOS_MODERATION_TEXT_*` from env, so editing
-   `.env` and recreating the container does move the role until a row is saved.
-   That differs from fact 1: the provider and model of `chat.moderation` never
-   come from `CHAT_*` env, only from settings.
+3. **Profile photos and people's own names use the framework moderator.** Photos
+   use `hilos.moderation.image`; an own-name change uses
+   `hilos.moderation.text`. The settings `moderation.image.*` and
+   `moderation.text.*` (`provider`, `model`, `url`, `timeout_sec`) win over env,
+   but env is the *default of that setting*: with no row written, each setting
+   reads its `HILOS_MODERATION_IMAGE_*` / `HILOS_MODERATION_TEXT_*` value from
+   env, so editing `.env` and recreating the container moves the role until a
+   row is saved. That differs from fact 1: the provider and model of
+   `chat.moderation` never come from `CHAT_*` env, only from settings.
 
 A setting with no persisted value (no row or a `NULL` value) inherits:
 `chat_moderation_model` → `default_bot_model`
@@ -153,11 +153,11 @@ docker exec chat-mysql-local sh -c 'mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" \
 
 The guard re-checks per delivery, so the admin menu appears without a re-login.
 
-## 1. Local moderation (Ollama)
+## 1. Local chat moderation (Ollama)
 
-This section drives the chat's own moderator: messages, the display name and the
-pictures attached to messages. The profile photo is checked by the framework
-moderator instead — section 5.
+This section drives the chat's own moderator for messages and pictures attached
+to messages. The framework moderator checks profile photos and own names in
+section 5.
 
 The default state after a fresh install: `default_bot_provider = local`,
 `default_bot_model = qwen2.5:3b`, both `chat_moderation_*` rows `NULL`.
@@ -184,11 +184,7 @@ The default state after a fresh install: `default_bot_provider = local`,
    the composer shows the rejection with its reason (`insult`), and the text stays
    in the input so it can be edited and re-sent.
 
-5. **Rename path.** Profile → change the display name to something abusive. The
-   same moderator handles it through a separate request type; expect a rejected
-   rename with a retryable state.
-
-6. **Unavailable path.** Stop Ollama (`composer run ollama:stop`) and send a
+5. **Unavailable path.** Stop Ollama (`composer run ollama:stop`) and send a
    message: moderation must fail *visibly* (`service_unavailable`), not silently
    swallow the message. Start Ollama again afterwards.
 
@@ -258,8 +254,10 @@ The external client is OpenAI-compatible: `POST {base}/v1/chat/completions` with
    the profile it started with. No daemon restart is needed for a settings edit.
 
 5. Re-run the profile print from step 0 — expect `provider=external`,
-   `url=https://api.openai.com`, `apiKey=(set)` — then repeat the allow / block /
-   rename checks from section 1. Latency is network-bound; there is no warm-up.
+   `url=https://api.openai.com`, `apiKey=(set)` — then repeat the message allow /
+   block checks from section 1. The framework photo and name profiles are
+   configured separately in section 5. Latency is network-bound; there is no
+   warm-up.
 
 6. **Missing-key path.** Clear `LLM_EXTERNAL_API_KEY` and recreate the container
    as in step 2. With the role's provider still set to `external`, its next
@@ -312,17 +310,56 @@ OpenAI-compatible gateway instead.
 > vendors means editing `.env` and recreating the container. HIL-332 covers the
 > named endpoint/credential catalog that would lift this.
 
-## 5. Profile photo — the framework moderator
+## 5. Profile photo and own name — the framework moderator
 
 The chat declares `HilosFeature::MODERATION`, so a submitted profile photo does
 not publish at once: the people library opens a `hilos_profile_photo` check, the
 cluster's one `hilos_moderator` agent asks the image profile
 `hilos.moderation.image`, and the library publishes or refuses on the verdict.
-The previous photo stays visible until approval. The display name (HIL-1626) and
-the messages (HIL-1627) still go through the chat's own moderator, and the kind
-rules have no administration screen yet, so the photo is the one flow this
-section can drive; the profile print also lists `hilos.moderation.text`, which
-nothing asks yet.
+The previous photo stays visible until approval. A person's own-name action
+`hilos_profile_name_set` opens a `hilos_profile_name` text check in the same
+queue, and the moderator asks `hilos.moderation.text`. The name stays unchanged
+until the person owner accepts the rename request. Messages and attached
+pictures still use the chat's own moderator pending HIL-1627. The kind rules
+have no administration screen yet.
+
+For a content refusal, the action returns the server's reason sentence and
+best-effort sends the warning notification *Your new name was not accepted*.
+The action error still reaches the dialog if notification delivery fails. An
+unknown, incomplete or contradictory verdict, or an expired check, returns
+`Names cannot be checked right now.` and sends no notification. The current
+dialog does not show `Checking your name…` while a check is pending; that
+progress line and close-during-check behavior remain HIL-1635.
+
+| | env (default of the setting) | setting | default |
+|---|---|---|---|
+| provider | `HILOS_MODERATION_TEXT_PROVIDER` | `moderation.text.provider` | `local` |
+| model | `HILOS_MODERATION_TEXT_MODEL` | `moderation.text.model` | `qwen2.5:0.5b` |
+| address | `HILOS_MODERATION_TEXT_URL` | `moderation.text.url` | empty → `LLM_LOCAL_URL` |
+| per request | `HILOS_MODERATION_TEXT_TIMEOUT_SEC` | `moderation.text.timeout_sec` | 20 s |
+
+`moderation.check_timeout_sec` (default 90) is the maximum whole-check wait.
+Both the text and image profile rows are on `/hilos/settings`; become an admin
+first (section 0).
+
+### Local own-name check
+
+1. Run the profile print from section 0 — expect `hilos.moderation.text` with
+   `provider=local`, `model=qwen2.5:0.5b` by default, and the resolved local URL.
+2. **Allow path.** In Profile → change your name, save a different benign name
+   after the ordinary confirmation. The name changes after approval and appears
+   in the live profile state.
+3. **Refusal path.** Save a different name that clearly matches a built-in
+   refusal category (insult, threat, hate speech, sexual content, spam or
+   impersonation). The old name remains, the dialog receives the reason sentence,
+   and a *Your new name was not accepted* warning notification is attempted.
+4. **Unavailable path.** Stop Ollama (`composer run ollama:stop`) and submit a
+   different name. The dialog receives `Names cannot be checked right now.`,
+   the old name remains and no notification is sent. A check that reaches
+   `moderation.check_timeout_sec` has the same outcome. Start Ollama again.
+
+The text profile uses the same four env/default and settings rules as the image
+profile below, with `HILOS_MODERATION_TEXT_*` and `moderation.text.*` keys.
 
 | | env (default of the setting) | setting | default |
 |---|---|---|---|
@@ -330,11 +367,6 @@ nothing asks yet.
 | model | `HILOS_MODERATION_IMAGE_MODEL` | `moderation.image.model` | `qwen2.5vl:3b` |
 | address | `HILOS_MODERATION_IMAGE_URL` | `moderation.image.url` | empty → `LLM_LOCAL_URL` |
 | per request | `HILOS_MODERATION_IMAGE_TIMEOUT_SEC` | `moderation.image.timeout_sec` | 20 s |
-
-`moderation.check_timeout_sec` (default 90) is how long the whole check may wait.
-The text profile has the same four rows under `HILOS_MODERATION_TEXT_*` and
-`moderation.text.*`. All of them are on `/hilos/settings`; become an admin first
-(section 0).
 
 ### Local photo check
 
@@ -399,6 +431,22 @@ Credentials work as in section 3, steps 1–2: `LLM_EXTERNAL_URL` and
    leave the provider on `external`: every photo check ends as
    `service_unavailable` (`Photos cannot be checked right now.`) until the key is
    back or the provider is set to `local`.
+
+### External own-name check
+
+Credentials work as in section 3, steps 1–2. On `/hilos/settings`, set both text
+profile rows:
+
+| setting | value |
+|---|---|
+| `moderation.text.provider` | `external` |
+| `moderation.text.model` | `gpt-4o-mini` |
+
+The global `LLM_EXTERNAL_URL` and `LLM_EXTERNAL_API_KEY` supply the endpoint and
+key. The profile resolves for each check, so the next name change uses the saved
+settings without a daemon restart. Repeat the allow and refusal paths above. If
+the key is missing, the name check returns `Names cannot be checked right now.`;
+the name stays unchanged and no notification is sent.
 
 ## Troubleshooting
 

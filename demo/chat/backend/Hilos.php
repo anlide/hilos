@@ -88,7 +88,6 @@ use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatAuthMethodDirectory;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Auth\ChatOAuthProviderDirectory;
-use Demo\Chat\Auth\ChatStepUpOperationDirectory;
 use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
@@ -329,8 +328,6 @@ final class Hilos extends HilosFacade
     protected const string CODE_CHANNEL_REGISTRY = ChatCodeChannelRegistry::class;
 
     protected const string AUTH_METHOD_DIRECTORY = ChatAuthMethodDirectory::class;
-
-    protected const string STEP_UP_OPERATION_DIRECTORY = ChatStepUpOperationDirectory::class;
 
     protected const string MODERATION_KIND_DIRECTORY = ChatModerationKindDirectory::class;
 
