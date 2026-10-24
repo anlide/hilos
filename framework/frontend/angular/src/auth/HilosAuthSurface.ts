@@ -2210,10 +2210,10 @@ export class HilosAuthSurface {
   protected readonly passwordVisibility = createPasswordVisibilityState()
   protected readonly newPasswordVisibility = createPasswordVisibilityState()
   protected readonly passwordVisible = hilosSignal(
-    this.passwordVisibility.isVisible,
+    this.passwordVisibility.visible,
   )
   protected readonly newPasswordVisible = hilosSignal(
-    this.newPasswordVisibility.isVisible,
+    this.newPasswordVisibility.visible,
   )
 
   /** The send line's row classes, shared to the character with its idle twin. */
@@ -2726,7 +2726,7 @@ export class HilosAuthSurface {
             this.state().intent,
           ])
         : null
-      this.passwordVisibility.updateContext(activeKey)
+      this.passwordVisibility.setContext(activeKey)
     })
     effect(() => {
       const activeKey =
@@ -2737,7 +2737,7 @@ export class HilosAuthSurface {
               this.state().intent,
             ])
           : null
-      this.newPasswordVisibility.updateContext(activeKey)
+      this.newPasswordVisibility.setContext(activeKey)
     })
     // The machine arrives through the context input (not at construction) and
     // carries core signals, so mirror them into the Angular signals above once
@@ -3279,7 +3279,7 @@ export class HilosAuthSurface {
           this.state().intent,
         ])
       : null
-    this.passwordVisibility.updateContext(activeKey)
+    this.passwordVisibility.setContext(activeKey)
     this.passwordVisibility.toggle()
   }
 
@@ -3292,7 +3292,7 @@ export class HilosAuthSurface {
             this.state().intent,
           ])
         : null
-    this.newPasswordVisibility.updateContext(activeKey)
+    this.newPasswordVisibility.setContext(activeKey)
     this.newPasswordVisibility.toggle()
   }
 

@@ -6,43 +6,40 @@ import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
 export interface PasswordVisibilityState {
   /** Whether the password should be shown as plain text. */
-  readonly isVisible: ReadonlySignal<boolean>
+  readonly visible: ReadonlySignal<boolean>
   /** Toggle visibility. No-op if current context is null (inactive). */
   toggle(): void
   /**
-   * Update the active context key (e.g. JSON.stringify([identifier, step, intent])).
-   * If key === currentContext, visibility is preserved.
-   * If key !== currentContext, currentContext becomes key and isVisible is reset to false.
+   * Set the active context (e.g. JSON.stringify([identifier, step, intent])).
+   * If context === currentContext, visibility is preserved.
+   * If context !== currentContext, currentContext becomes context and visible is reset to false.
    *
-   * @param key The new context key, or null if inactive/hidden.
+   * @param context The new context, or null if inactive/hidden.
    */
-  updateContext(key: string | null): void
+  setContext(context: string | null): void
 }
 
 /**
- * Create the headless state for password visibility.
- *
- * @param initialContext The initial context key; defaults to null.
+ * Create the headless state for password visibility. It starts inactive: the
+ * context is null until the first setContext().
  */
-export function createPasswordVisibilityState(
-  initialContext: string | null = null,
-): PasswordVisibilityState {
-  let currentContext = initialContext
+export function createPasswordVisibilityState(): PasswordVisibilityState {
+  let currentContext: string | null = null
   const visible = createSignal(false)
 
   return {
-    isVisible: visible,
+    visible,
     toggle(): void {
       if (currentContext === null) {
         return
       }
       visible.set(!visible.get())
     },
-    updateContext(key: string | null): void {
-      if (key === currentContext) {
+    setContext(context: string | null): void {
+      if (context === currentContext) {
         return
       }
-      currentContext = key
+      currentContext = context
       visible.set(false)
     },
   }

@@ -613,16 +613,16 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const passwordContextKey = showPassword
     ? JSON.stringify([form.identifier, state.step, state.intent])
     : null
-  passwordVisibility.updateContext(passwordContextKey)
+  passwordVisibility.setContext(passwordContextKey)
 
   const newPasswordContextKey =
     state.step === 'set_password'
       ? JSON.stringify([form.identifier, state.step, state.intent])
       : null
-  newPasswordVisibility.updateContext(newPasswordContextKey)
+  newPasswordVisibility.setContext(newPasswordContextKey)
 
-  const passwordVisible = useSignal(passwordVisibility.isVisible)
-  const newPasswordVisible = useSignal(newPasswordVisibility.isVisible)
+  const passwordVisible = useSignal(passwordVisibility.visible)
+  const newPasswordVisible = useSignal(newPasswordVisibility.visible)
 
   // A browser that refuses cookies cannot stay signed in by any method
   // (HIL-1074), so the surface draws the card that says so instead of a form.

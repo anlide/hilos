@@ -394,8 +394,8 @@ const consentInput = ref<InstanceType<typeof HilosLegalConsent> | null>(null)
 
 const passwordVisibility = createPasswordVisibilityState()
 const newPasswordVisibility = createPasswordVisibilityState()
-const passwordVisible = useSignal(passwordVisibility.isVisible)
-const newPasswordVisible = useSignal(newPasswordVisibility.isVisible)
+const passwordVisible = useSignal(passwordVisibility.visible)
+const newPasswordVisible = useSignal(newPasswordVisibility.visible)
 
 // A browser that refuses cookies cannot stay signed in by any method (HIL-1074),
 // so the surface draws the card that says so instead of a form. Read once: the
@@ -594,7 +594,7 @@ const newPasswordContextKey = computed(() =>
 watch(
   passwordContextKey,
   (key) => {
-    passwordVisibility.updateContext(key)
+    passwordVisibility.setContext(key)
   },
   { immediate: true, flush: 'sync' },
 )
@@ -602,7 +602,7 @@ watch(
 watch(
   newPasswordContextKey,
   (key) => {
-    newPasswordVisibility.updateContext(key)
+    newPasswordVisibility.setContext(key)
   },
   { immediate: true, flush: 'sync' },
 )
