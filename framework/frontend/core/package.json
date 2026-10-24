@@ -56,6 +56,12 @@
       "import": "./dist/admin/maintenance/index.js",
       "default": "./dist/admin/maintenance/index.js"
     },
+    "./admin/status": {
+      "development": "./src/admin/status/index.ts",
+      "types": "./dist/admin/status/index.d.ts",
+      "import": "./dist/admin/status/index.js",
+      "default": "./dist/admin/status/index.js"
+    },
     "./admin/communications": {
       "development": "./src/admin/communications/index.ts",
       "types": "./dist/admin/communications/index.d.ts",

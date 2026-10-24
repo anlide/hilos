@@ -88,9 +88,9 @@
         "test:e2e-up": [
             "@test:up",
             "@test:db-prepare",
-            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build binance-btc-tracker-daemon-test binance-btc-tracker-nginx-test"
+            "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-status.yml --profile e2e up -d --build binance-btc-tracker-daemon-test binance-btc-tracker-nginx-test"
         ],
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-restart.yml --profile e2e run --rm binance-btc-tracker-e2e-runner npx playwright test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-status.yml -f docker/docker-compose.e2e-restart.yml --profile e2e run --rm binance-btc-tracker-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
             "@test:down @no_additional_args",

@@ -17,6 +17,7 @@ import * as logs from '../../src/admin/logs/index.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
 import * as security from '../../src/admin/security/index.js'
 import * as settings from '../../src/admin/settings/index.js'
+import * as status from '../../src/admin/status/index.js'
 import * as users from '../../src/admin/users/index.js'
 import * as base from '../../src/base/index.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
@@ -38,6 +39,7 @@ const sections = {
   maintenance,
   security,
   settings,
+  status,
   users,
 }
 const publicEntries: Record<string, Record<string, unknown>> = {
@@ -142,6 +144,51 @@ const moderationValues = [
   'SIGNAL_MODERATION_CHECK',
   'moderationCheckSchema',
 ]
+/** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
+const statusValues = [
+  'HILOS_STATUS_ACTION_COPY',
+  'HILOS_STATUS_ADD_UPDATE_ACTION',
+  'HILOS_STATUS_CANCEL_PUBLICATION_ACTION',
+  'HILOS_STATUS_COMPONENTS_COPY',
+  'HILOS_STATUS_COMPONENTS_TABLE',
+  'HILOS_STATUS_COMPONENT_SLOT',
+  'HILOS_STATUS_COPY',
+  'HILOS_STATUS_DATA',
+  'HILOS_STATUS_PUBLISH_NOW_ACTION',
+  'STATUS_COMPONENT_AGENT_TYPE_FIELD',
+  'STATUS_COMPONENT_DESCRIPTION_FIELD',
+  'STATUS_COMPONENT_FILTER_STATE',
+  'STATUS_COMPONENT_NAME_FIELD',
+  'STATUS_COMPONENT_STATE_FIELD',
+  'createHilosStatusActions',
+  'createHilosStatusComponentsTable',
+  'createHilosStatusIncidentController',
+  'createHilosStatusState',
+  'hilosStatusIncidentCard',
+  'resolveHilosStatusComponentRow',
+  'statusComponentSchema',
+  'statusComponentStateSchema',
+  'statusIncidentSchema',
+  'statusIncidentUpdateSchema',
+  'statusOverviewSchema',
+]
+const statusTypes = [
+  'HilosStatusActions',
+  'HilosStatusComponentRow',
+  'HilosStatusComponentState',
+  'HilosStatusComponentsContext',
+  'HilosStatusComponentsTable',
+  'HilosStatusContext',
+  'HilosStatusIncident',
+  'HilosStatusIncidentCard',
+  'HilosStatusIncidentController',
+  'HilosStatusIncidentDialog',
+  'HilosStatusIncidentOperation',
+  'HilosStatusIncidentUpdate',
+  'HilosStatusOverviewData',
+  'HilosStatusState',
+  'HilosStatusSummary',
+]
 /** The standard self-rename binding, shared by the compatibility root and base. */
 const profileRenameValues = [
   'PROFILE_NAME_SET_ACTION',
@@ -158,6 +205,7 @@ const expectedValues = [
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
+  ...statusValues,
   ...profileRenameValues,
 ].sort()
 
@@ -211,7 +259,7 @@ function runtimeClosure(entry: string): string[] {
 }
 
 describe('core public entries', () => {
-  it('publishes base and exactly thirteen sections with one tsc output per source', () => {
+  it('publishes base and exactly fourteen sections with one tsc output per source', () => {
     const manifest = JSON.parse(
       readFileSync(join(packageRoot, 'package.json'), 'utf8'),
     ) as {
@@ -425,6 +473,7 @@ describe('core public entries', () => {
         ...momentTypes,
         ...tableTextTypes,
         ...tableFocusReturnTypes,
+        ...statusTypes,
       ].sort(),
     )
     const baseExports = exportsOf('base/index.ts')

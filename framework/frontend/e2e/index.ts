@@ -369,3 +369,13 @@ export {
   type PageReply,
   type PagePresentationSnapshot,
 } from './lazyBundles.js'
+
+export {
+  STATUS_PATH,
+  STATUS_COMPONENTS_PATH,
+  STATUS_LEAD,
+  watchStatusFrames,
+  expectStatusHead,
+  submitStatusIncident,
+  expectStatusIncidentDialog,
+} from './status.js'

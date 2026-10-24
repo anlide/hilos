@@ -1,0 +1,88 @@
+import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+import type { watchStatusFrames } from '../../../../../framework/frontend/e2e/index.js'
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import {
+  RESTART_AGENT,
+  readRestartWorker,
+  withStoppedRestartWorker,
+} from './daemonRestart.js'
+
+/** The e2e-only catalog binds this component to the existing isolated worker. */
+export const STATUS_FAULT_COMPONENT = 'settings'
+
+const sendCommand = createCommandChannel({
+  host: process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test',
+  port: Number(process.env.COMMAND_PORT ?? 8094),
+  // The existing pause watchdog bounds the loss to ten seconds. The normal
+  // restart answer follows SIGCONT, and must have time to travel back too.
+  timeoutMs: 15_000,
+})
+
+/**
+ * A real stop/start through the master's ordinary restart path. The helper
+ * never changes a roster, incident, clock or websocket frame. Its existing
+ * settings-only pause guard and independent watchdog remain unchanged.
+ */
+export async function withStatusAgentLoss(
+  workers: Page,
+  log: ReturnType<typeof watchStatusFrames>,
+  run: () => Promise<void>,
+): Promise<void> {
+  const worker = await readRestartWorker(workers)
+  // Operational is meaningful only with known, fresh Status observations. The
+  // Workers identity above comes from the same real collector pipeline; neither
+  // a mounted page nor an empty incident list alone proves source readiness.
+  await expect
+    .poll(() => log.latest())
+    .toMatchObject({
+      healthKnown: true,
+      components: { operationalCount: 1, totalCount: 1 },
+      maintenance: null,
+      incidents: [],
+    })
+  const evidence = {
+    worker,
+    ready: log.latest(),
+    stoppedAt: null as number | null,
+    checkedAt: null as number | null,
+    finalState: undefined as string | undefined,
+  }
+  let restart: Promise<Error | undefined> | undefined
+  let failure: unknown
+  try {
+    await withStoppedRestartWorker(worker, async () => {
+      // Do not mistake a delayed observation after watchdog recovery for loss.
+      await expect
+        .poll(
+          async () =>
+            (await readFile(`/proc/${worker.pid}/status`, 'utf8')).match(
+              /^State:\s+(\S)/m,
+            )?.[1],
+        )
+        .toBe('T')
+      evidence.stoppedAt = Date.now()
+      restart = sendCommand('agent:restart', { agentType: RESTART_AGENT }).then(
+        () => undefined,
+        (error: Error) => error,
+      )
+      await run()
+      evidence.finalState = (
+        await readFile(`/proc/${worker.pid}/status`, 'utf8')
+      ).match(/^State:\s+(\S)/m)?.[1]
+      evidence.checkedAt = Date.now()
+      expect(evidence.finalState).toBe('T')
+    })
+  } catch (error) {
+    failure = error
+  }
+  // The pause helper's finally has already resumed the exact worker. Always
+  // settle the command, including when an assertion failed during the loss.
+  const restartError = await restart
+  await test.info().attach('status-real-loss', {
+    body: JSON.stringify(evidence),
+    contentType: 'application/json',
+  })
+  if (failure !== undefined) throw failure
+  if (restartError) throw restartError
+}

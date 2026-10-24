@@ -18,8 +18,11 @@ use Hilos\Runtime\View\Actions\Item\HilosStatusComponentActions;
 use Hilos\Runtime\View\Collection\HilosStatusComponents;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\StatusSettingsCatalog;
+use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
 
-/** Framework Status foundation; browser pages activate separately in HIL-1689. */
+/** Framework Status machine and its project-bound admin pages. */
 final class StatusFeature extends FeatureDefinition
 {
     /** @return HilosFeature Status feature */
@@ -32,6 +35,9 @@ final class StatusFeature extends FeatureDefinition
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
+            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class],
+            requiredTables: [HilosStatusComponentsTable::class],
+            requiredPageTables: [AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
             requiredCatalogFragments: [StatusSettingsCatalog::class],
             requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY],

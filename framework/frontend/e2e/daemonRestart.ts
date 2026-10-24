@@ -113,5 +113,15 @@ export async function withStoppedRestartWorker(
     }
   } finally {
     process.kill(worker.pid, 'SIGCONT')
+    // A later pause may target the same process lifetime. Retire and join this
+    // backstop after CONT succeeds, so it cannot resume that later pause early.
+    // If CONT throws, leave the independent ten-second recovery armed.
+    if (watchdog.exitCode === null && watchdog.signalCode === null) {
+      const exited = new Promise<void>((resolve) =>
+        watchdog.once('exit', () => resolve()),
+      )
+      watchdog.kill('SIGTERM')
+      await exited
+    }
   }
 }

@@ -24,6 +24,7 @@ const entry = {
   'admin/security': './src/admin/security/index.ts',
   'admin/settings': './src/admin/settings/index.ts',
   'admin/sil': './src/admin/sil/index.ts',
+  'admin/status': './src/admin/status/index.ts',
   'admin/users': './src/admin/users/index.ts',
 }
 

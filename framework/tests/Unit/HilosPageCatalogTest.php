@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 87;
+    private const int CATALOG_ENTRIES = 89;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -154,6 +154,7 @@ final class HilosPageCatalogTest extends TestCase
                     HilosPageConstants::HILOS_APPEARANCE,
                     HilosPageConstants::HILOS_BACKUP,
                     HilosPageConstants::HILOS_MAINTENANCE,
+                    HilosPageConstants::HILOS_STATUS,
                 ],
             ],
             [
@@ -188,7 +189,7 @@ final class HilosPageCatalogTest extends TestCase
         $allItems = array_merge(
             ...array_column(HilosPageCatalog::DASHBOARD_SECTIONS, PageCatalogConstants::SECTION_ITEMS),
         );
-        self::assertCount(17, $allItems);
+        self::assertCount(18, $allItems);
         self::assertSame($allItems, array_values(array_unique($allItems)));
     }
 
@@ -268,6 +269,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_STATUS,
             HilosPageConstants::HILOS_ANALYTICS,
         ], $adopted);
         self::assertSame([

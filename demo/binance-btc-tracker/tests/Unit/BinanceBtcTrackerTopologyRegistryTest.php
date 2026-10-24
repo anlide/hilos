@@ -46,6 +46,15 @@ use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
 use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Hilos;
+use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
@@ -96,6 +105,7 @@ use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Auth\Library\DTO\ThemePickActionDTO;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
@@ -274,7 +284,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         ], BinanceBtcTrackerSettingsCatalog::getCatalog()[StatusSettingsCatalog::PUBLISH_DELAY_SECONDS]);
     }
 
-    /** Status selects its two primary tables without introducing browser requirements. */
+    /** Status requires its existing machine storage and both project-bound admin pages. */
     public function testStatusRequirementsAndSchemaSelectionAreComplete(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::STATUS);
@@ -283,9 +293,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
         self::assertSame(['hilos_status_incident', 'hilos_status_incident_update'], $requirements->requiredDbTables);
-        self::assertSame([], $requirements->requiredPages);
-        self::assertSame([], $requirements->requiredTables);
-        self::assertSame([], $requirements->requiredPageTables);
+        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class], $requirements->requiredPages);
+        self::assertSame([HilosStatusComponentsTable::class], $requirements->requiredTables);
+        self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -388,6 +398,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
             LicensePage::PAGE => LicensePage::class,
+            StatusPage::PAGE => StatusPage::class,
+            StatusComponentsPage::PAGE => StatusComponentsPage::class,
         ], Hilos::PAGES);
     }
 
@@ -410,6 +422,39 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
+    /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */
+    public function testStatusPagesTablesActionsAndReplyAreWired(): void
+    {
+        self::assertSame(StatusPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS]);
+        self::assertSame(StatusComponentsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_COMPONENTS]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusComponentsPage::PAGE]);
+        self::assertSame(HilosStatusComponentsTable::class, Hilos::TABLES[HilosStatusComponentsTable::TABLE]);
+        self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
+        self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_STATUS_CANCEL_PUBLICATION => HilosStatusIncidentActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_PUBLISH_NOW => HilosStatusIncidentActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_ADD_UPDATE => HilosStatusAddUpdateActionDTO::class,
+        ], StatusPage::ACTIONS);
+        foreach (StatusPage::ACTIONS as $action => $dto) {
+            self::assertSame(StatusPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+            self::assertNotContains($action, StatusPage::READING_ACTIONS);
+        }
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS, StatusPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS,
+            StatusComponentsPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(StatusPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void

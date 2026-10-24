@@ -109,11 +109,17 @@ For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 Status is another Mode-1 feature: the project declares activation and public
-components, while the framework owns the outage machine. Read
-[status-page.md](status-page.md) before binding it.
-(not in the code yet — HIL-1688)
-Its admin mutations retain the ADMIN gate and the view-mode restrictions.
-(not in the code yet — HIL-1689)
+components, while the framework owns the outage machine, two admin pages and
+the read-only Components table. `StatusFeature` validates both pages, the table
+and the Components page-table binding alongside the existing agent, catalog and
+database requirements. All six demo backends activate it with thin page
+bindings. Read [status-page.md](status-page.md) before binding it.
+
+The Overview keeps its three incident writes on the `ADMIN` page and forwards
+them to the Status owner through the existing gatekeeper handover; Components
+has no actions. The view-mode bridge leaves permitted fields visible to a viewer
+and refuses those writes. Chat and Binance BTC Tracker mount the Vue pages;
+React and Angular remain unbuilt until HIL-1695 and HIL-1696.
 The public `/status` surface reads nginx files even under freeze; it is separate
 from the admin table and does not read its mirror or wait for `page_response`.
 (not in the code yet — HIL-1690)

@@ -13,6 +13,9 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 
@@ -45,6 +48,29 @@ final class PageCatalogResolverTest extends TestCase
         Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
+    }
+
+    public function testStatusSharesItsCatalogHeadAndOmitsAnUnservedChild(): void
+    {
+        StatusPageCatalogHilos::initBrowser();
+        foreach ([HilosPageConstants::HILOS_STATUS, HilosPageConstants::HILOS_STATUS_COMPONENTS] as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Status',
+                'lead' => 'A public status page: service health, incidents, and planned work.', 'icon' => 'bi-activity',
+            ], $head->pageHeadOwner);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Status'],
+            ], $head->pageBreadcrumb);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_STATUS_COMPONENTS, 'label' => 'Components'],
+            ], $head->pageTabs);
+        }
+        StatusPageCatalogOverviewOnlyHilos::initBrowser();
+        self::assertSame([['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Overview']],
+            PageCatalogResolver::head(HilosPageConstants::HILOS_STATUS, new PageRouteParams([]))->pageTabs);
     }
 
     public function testProjectEntriesJoinTheFrameworkOnes(): void
@@ -926,4 +952,25 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
 
         return $entry;
     }
+}
+
+abstract class StatusPageCatalogHilos extends Hilos
+{
+    public const array PAGES = [StatusPageCatalogPage::PAGE => StatusPageCatalogPage::class,
+        StatusPageCatalogComponentsPage::PAGE => StatusPageCatalogComponentsPage::class];
+}
+
+abstract class StatusPageCatalogOverviewOnlyHilos extends Hilos
+{
+    public const array PAGES = [StatusPageCatalogPage::PAGE => StatusPageCatalogPage::class];
+}
+
+final class StatusPageCatalogPage extends AbstractHilosStatusPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+final class StatusPageCatalogComponentsPage extends AbstractHilosStatusComponentsPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 }

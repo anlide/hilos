@@ -467,6 +467,21 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
         ],
 
+        HilosPageConstants::HILOS_STATUS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Status',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A public status page: service health, incidents, and planned work.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-activity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Status',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_STATUS_COMPONENTS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Components',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Current health of the declared service components.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Components',
+        ],
+
         // — Automation & intelligence —
         HilosPageConstants::HILOS_ANALYTICS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Analytics',
@@ -564,6 +579,7 @@ final class HilosPageCatalog
                 HilosPageConstants::HILOS_APPEARANCE,
                 HilosPageConstants::HILOS_BACKUP,
                 HilosPageConstants::HILOS_MAINTENANCE,
+                HilosPageConstants::HILOS_STATUS,
             ],
         ],
         [

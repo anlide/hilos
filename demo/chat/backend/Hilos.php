@@ -143,6 +143,9 @@ use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
+use Demo\Chat\Pages\Hilos\Status\StatusPage;
+use Demo\Chat\Pages\Hilos\Status\StatusComponentsPage;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
@@ -460,6 +463,8 @@ final class Hilos extends HilosFacade
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+        StatusPage::PAGE => StatusPage::class,
+        StatusComponentsPage::PAGE => StatusComponentsPage::class,
     ];
 
     public const array GROUPS = [
@@ -706,6 +711,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         ChatTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
         ChatTableContext::hilosModerationRules => HilosModerationRulesTable::class,
+        HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -985,6 +991,7 @@ final class Hilos extends HilosFacade
         ChangeLogTablePage::PAGE => [
             ChatTableContext::hilosChangeLogHistory => [],
         ],
+        StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
     ];
 
     /**

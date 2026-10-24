@@ -2663,3 +2663,6 @@ export {
   type HilosRestoreProgress,
   type HilosBackupProgressClock,
 } from './connection/restoreProgress.js'
+
+// Status remains behind its section entry; base imports no Status implementation.
+export * from './admin/status/index.js'

@@ -69,6 +69,14 @@ use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Hilos;
+use Demo\Polls\Pages\Hilos\Status\StatusPage;
+use Demo\Polls\Pages\Hilos\Status\StatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
@@ -314,7 +322,7 @@ final class PollsTopologyRegistryTest extends TestCase
         ], PollsSettingsCatalog::getCatalog()[StatusSettingsCatalog::PUBLISH_DELAY_SECONDS]);
     }
 
-    /** Status selects its two primary tables without introducing browser requirements. */
+    /** Status requires its existing machine storage and both project-bound admin pages. */
     public function testStatusRequirementsAndSchemaSelectionAreComplete(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::STATUS);
@@ -323,9 +331,9 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
         self::assertSame(['hilos_status_incident', 'hilos_status_incident_update'], $requirements->requiredDbTables);
-        self::assertSame([], $requirements->requiredPages);
-        self::assertSame([], $requirements->requiredTables);
-        self::assertSame([], $requirements->requiredPageTables);
+        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class], $requirements->requiredPages);
+        self::assertSame([HilosStatusComponentsTable::class], $requirements->requiredTables);
+        self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -493,6 +501,39 @@ final class PollsTopologyRegistryTest extends TestCase
             [PollsTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],
         );
+    }
+
+    /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */
+    public function testStatusPagesTablesActionsAndReplyAreWired(): void
+    {
+        self::assertSame(StatusPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS]);
+        self::assertSame(StatusComponentsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_COMPONENTS]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusComponentsPage::PAGE]);
+        self::assertSame(HilosStatusComponentsTable::class, Hilos::TABLES[HilosStatusComponentsTable::TABLE]);
+        self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
+        self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_STATUS_CANCEL_PUBLICATION => HilosStatusIncidentActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_PUBLISH_NOW => HilosStatusIncidentActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_ADD_UPDATE => HilosStatusAddUpdateActionDTO::class,
+        ], StatusPage::ACTIONS);
+        foreach (StatusPage::ACTIONS as $action => $dto) {
+            self::assertSame(StatusPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+            self::assertNotContains($action, StatusPage::READING_ACTIONS);
+        }
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS, StatusPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS,
+            StatusComponentsPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(StatusPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WRITE_DONE]);
     }
 
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
@@ -1072,6 +1113,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
             PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
             PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+            HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -1124,6 +1166,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LanguageNamesPage::PAGE,
                 LanguageLocalesPage::PAGE,
                 CountryNamesPage::PAGE,
+                StatusComponentsPage::PAGE,
             ],
             array_keys(Hilos::PAGE_TABLES),
         );

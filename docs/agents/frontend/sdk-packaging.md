@@ -76,8 +76,9 @@ inside the page module loaded for that section.
 
 | Package | Runtime public subpaths beside the compatibility root |
 |---|---|
-| `@hilos/core` | `/base`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/security`, `/admin/settings`, `/admin/users` |
-| Each of `@hilos/vue`, `@hilos/react`, `@hilos/angular` | `/base`, `/admin-views`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/billing`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/dashboard`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/mcp-skills`, `/admin/roles`, `/admin/security`, `/admin/settings`, `/admin/sil`, `/admin/users` |
+| `@hilos/core` | `/base`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/security`, `/admin/settings`, `/admin/status`, `/admin/users` |
+| `@hilos/vue` | `/base`, `/admin-views`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/billing`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/dashboard`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/mcp-skills`, `/admin/roles`, `/admin/security`, `/admin/settings`, `/admin/sil`, `/admin/status`, `/admin/users` |
+| Each of `@hilos/react`, `@hilos/angular` | `/base`, `/admin-views`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/billing`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/dashboard`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/mcp-skills`, `/admin/roles`, `/admin/security`, `/admin/settings`, `/admin/sil`, `/admin/users` |
 
 Core has no `/admin-views` or view-only billing, dashboard, MCP skills, roles or
 SIL entrypoint. Public `change-log` maps to source `admin/changeLog`; view

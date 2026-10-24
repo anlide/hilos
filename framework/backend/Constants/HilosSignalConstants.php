@@ -3075,6 +3075,18 @@ final class HilosSignalConstants
     /** Full snapshot or changed whole node views for the Status owner (HIL-1688). */
     public const string STATUS_DAEMON_PICTURE_PORTION = 'status_daemon_picture_portion';
 
+    /** Browser metadata for the Status overview and component window. */
+    public const string SUBSCRIPTION_PAGE_HILOS_STATUS = 'subscription_page_hilos_status';
+    public const string SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS = 'subscription_page_hilos_status_components';
+
+    /** ADMIN page actions; the Status owner receives separate internal asks. */
+    public const string HILOS_STATUS_CANCEL_PUBLICATION = 'hilos_status_cancel_publication';
+    public const string HILOS_STATUS_PUBLISH_NOW = 'hilos_status_publish_now';
+    public const string HILOS_STATUS_ADD_UPDATE = 'hilos_status_add_update';
+
+    /** Status writer's answer to the Overview gatekeeper. */
+    public const string HILOS_STATUS_WRITE_DONE = 'hilos_status_write_done';
+
     /** Gatekeeper asks the Status owner to suppress a current candidate's publication. */
     public const string STATUS_CANCEL_PUBLICATION = 'status_cancel_publication';
 

@@ -4,9 +4,11 @@ Read this before declaring Status components, changing the candidate and outage
 machine, publishing its public files, building its admin section, or reading
 `/status` without a connection or under a freeze.
 
-This document records the Status backend already built by HIL-1688 and the
-surfaces still owned by later leaves. Public file shapes and browser surfaces
-remain future contracts where their leaf markers say so.
+This document records the Status backend built by HIL-1688 and the admin
+surface built by HIL-1689. Public files and their reader, subscribers and mail,
+scheduled work and completed history, separate cluster/failover proof, and the
+React and Angular views remain with HIL-1690 through HIL-1696 where their
+markers say so.
 
 ## Core Rule
 
@@ -22,12 +24,13 @@ the database half obeys the freeze's silence.
 
 HIL-1688 builds the framework feature, component catalog, collector consumer,
 durable incident machine, candidate notices, internal owner operations and a
-typed backend read projection. It does not build browser Status pages, tables,
-modals or production admin gatekeeper reply routes (HIL-1689); public files,
-the public reader or the publisher's freeze exception (HIL-1690); subscribers
-or their mail (HIL-1691); scheduled works or actual maintenance history
-(HIL-1692); the admin history UI (HIL-1693); separate cluster/failover proof
-(HIL-1694); or React and Angular views (HIL-1695 and HIL-1696).
+typed backend read projection. HIL-1689 adds the Overview and Components admin
+pages, the read-only component viewport, the Overview's incident actions and
+the Vue views mounted by Chat and Binance BTC Tracker. Later leaves own public
+files, the public reader and the publisher's freeze exception (HIL-1690);
+subscribers or their mail (HIL-1691); scheduled works or actual maintenance
+history (HIL-1692); the admin history UI (HIL-1693); separate cluster/failover
+proof (HIL-1694); and React and Angular views (HIL-1695 and HIL-1696).
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -40,9 +43,9 @@ Status does not introduce another collector, storage transport or time helper.
 the project activates it and declares its component content; it does not copy
 the outage machine. `StatusFeature` requires `DAEMON` and
 `NOTIFICATION_DELIVERY`, the `HILOS_STATUS` agent, the `StatusSettingsCatalog`
-fragment, and the `hilos_status_incident` and
-`hilos_status_incident_update` tables. It declares no required pages, tables,
-or page-table bindings. It mounts the feature-owned runtime collection.
+fragment, the `hilos_status_incident` and `hilos_status_incident_update`
+tables, both Status pages, `HilosStatusComponentsTable`, and the
+Components-to-table binding. It mounts the feature-owned runtime collection.
 
 ### Activation Recipe
 
@@ -68,13 +71,12 @@ schema migration pairs from the framework's `status_incident` and
 does not apply SQL. Commit the generated pairs with the project and apply them
 through the ordinary `db:migration:up` command. Do not hand-write or copy these
 migrations.
-All six demos in this repository already activate the feature, register the
-pair and merge the settings fragment; their schema pairs came from the same
-framework pull.
-
-This backend activation does not register a Status page or browser table. The
-admin pages, table, modals and production gatekeeper reply route remain
-HIL-1689.
+All six demos in this repository activate the feature, register the pair and
+merge the settings fragment; their schema pairs came from the same framework
+pull. Each also registers thin project subclasses for both Status pages,
+registers `HilosStatusComponentsTable`, and binds that table only to the
+Components page in `PAGE_TABLES`. Feature activation validates these
+requirements at startup.
 
 The project Hilos class declares `protected const array STATUS_COMPONENTS = []`
 (`Hilos::STATUS_COMPONENTS`). Its catalog boundary has this shape:
@@ -100,14 +102,124 @@ nonempty and registered. The catalog refuses duplicate keys, unknown types,
 indexed types and idle types. Scope and placement are resolved from the agent
 registry and remain separate axes.
 
-The admin section is `/hilos/status`, with Overview, Scheduled works,
-Components, Subscribers and History tabs. Overview shows what is open now,
-summary tiles and the publication delay; Components is read-only. The admin
-surface keeps the `ADMIN` gate, including mutations forwarded to the owner.
-Public reading does not turn those mutations into guest agent actions. Apply
-[admin view mode](admin-view-mode.md): a viewer reads only allowed fields and
-cannot mutate; subscriber addresses remain hidden through `_pii`.
-(not in the code yet — HIL-1689)
+### Admin Pages
+
+The built admin section has two routed pages: `hilos_status` at `/hilos/status`
+and `hilos_status_components` at `/hilos/status/components`. Both have empty
+route params, use `PageReach::ROUTE`, and inherit the `ADMIN` access level from
+`AbstractHilosPage`. `Status` is a child of Dashboard and is opted into the
+shared page head with label and breadcrumb `Status`, icon `bi-activity`, and
+lead `A public status page: service health, incidents, and planned work.`
+`Components` is its child and the only other current tab. Scheduled works,
+Subscribers and History are not admin pages in this build.
+
+Both first renders use the existing `page_response`. Overview data is
+`page_response.data.status`, assembled temporarily by
+`StatusOverviewData::read()` from the catalog, current component counts, open
+incidents and their updates, the publication-delay setting, and protected mode:
+
+```text
+status = {
+  healthKnown: bool,
+  components: {operationalCount: int, totalCount: int},
+  publishDelaySeconds: int | null | HiddenValue,
+  maintenance: null | {
+    phase: string, operation: string | null, startedAt: int | null
+  },
+  incidents: null | Incident[]
+}
+Incident = {
+  incidentId: int, componentKey: string, componentName: string,
+  agentType: string, severity: 'partial_outage' | 'major_outage',
+  detectedAt: int, publishAt: int, publishedAt: int | null,
+  suppressedAt: int | null, expectedInstances: int | null,
+  liveInstances: int | null, observedAt: int | null, updates: Update[]
+}
+Update = {
+  id: int, kind: 'published' | 'severity_changed' | 'resolved' | 'team',
+  severity: 'partial_outage' | 'major_outage',
+  text: string | HiddenValue, at: int
+}
+```
+
+Nullable keys are present. `incidents: []` means no open facts are known;
+`incidents: null` means their DB source is unavailable. All moments are epoch
+milliseconds UTC, including `maintenance.startedAt`, which converts the
+existing protected-mode seconds once when the DTO is built. Incidents follow
+component declaration order; each update timeline is newest first by `(at, id)`.
+`operationalCount` counts only components whose state is strictly
+`operational`. Unknown counts or facts never become healthy or zero, and
+maintenance takes display priority while available incident cards remain
+visible. Only open incidents and their own updates are read; there is no ended
+history, subscriber data, delivery count or public-file data in this payload.
+
+`StatusIncidentData` and `StatusIncidentUpdateData` build only the open incident
+and its own timeline projection. The DTO uses `WireField::column()` for
+persisted origins, `WireField::setting()` for the delay, and
+`WireField::notPersonal()` for computed/catalog/runtime fields. The table
+likewise marks only its catalog and computed fields nonpersonal. In admin view
+mode, personal incident-update text becomes `HiddenValue`; the row and timeline
+remain. Viewer permissions and hidden-field behavior follow
+[admin view mode](admin-view-mode.md).
+
+The two `BROWSER.SIGNAL` declarations use
+`subscription_page_hilos_status` and
+`subscription_page_hilos_status_components`. These are metadata names, not
+additional frames: page state still arrives in the existing `page_response`.
+
+The Components page's first viewport is
+`page_response.windows.hilosStatusComponents`. Its row key is `componentKey`;
+`slots.component` carries `componentKey`, `name`, nullable `description`,
+`agentType`, and one of `operational`, `checking`, `partial_outage`,
+`major_outage`, `maintenance`, or `unknown`. The read-only
+`MultiRowViewportTable` uses a server window of 25 rows in declaration order,
+searches `name`, `description` and `agentType`, and offers the `state` facet.
+It declares no sortable fields or sort orders. Because the common empty sort
+whitelist currently means no opinion, the table removes an unsupported sort
+locally in `getPage()` and logs a warning; it does not change the shared sort
+API. Its counts, incidents and freeze dependencies are declared through
+`ROWS`, so ordinary multi-row deltas, pending/Apply and source-staleness
+behavior apply.
+
+The three write actions — `hilos_status_cancel_publication`,
+`hilos_status_publish_now`, and `hilos_status_add_update` — belong to Overview
+and are not reading actions. The page keeps their browser action names and
+`ADMIN` gate, then forwards typed asks to the existing Status owner with
+`HandoverGatekeeperTrait`. All three use the page-owned
+`hilos_status_write_done` reply route and `HandoverAnswerSignalData`; the
+first two use `HilosStatusIncidentActionDTO {incidentId: int > 0}`, while Add
+update uses `HilosStatusAddUpdateActionDTO {incidentId: int > 0, text: string}`.
+The tracked action's `requestId` travels in the existing envelope, not these
+DTOs. The exact `incidentId` target is preserved, and the page acknowledges
+only after commit or refusal. Components declares no actions. The six thin
+project bindings use the existing `HILOS_INDEX`; there is no new agent type. No
+DB/RT fields or truth-source ownership changed; the new action and reply
+declarations reuse existing page and agent signal envelopes.
+
+Overview source changes use the existing guarded `PageResender` /
+`resendPageWhole()` path. The narrow `hilos_status` branches in
+`BrowserContext::addBrowserChange()` and `addBrowserStaleness()` reuse the
+subscription guards and `publishedWholeThisFlush`; they add no timer, cache or
+generic fan-out. Components remains a separate page subscription, so an
+Overview re-answer does not reset its viewport.
+
+The framework's core module binds `page_response.data.status` through strict
+schemas and the existing `pageDataSignal`; it performs no mount fetch. Its
+state and incident controllers retain the captured `incidentId`, draft, busy,
+refusal and timeout lifecycle. A live update cannot retarget the dialog to a
+new incident for the same component. A suppressed candidate remains `Checking`
+with “Publication canceled manually”; reaching countdown zero does not publish
+it or create a server fact. Moments use `formatMoment()` in the reader's zone;
+the countdown uses the server clock through `toLocal()` and
+`formatCountdown()`.
+
+The SDK exports the implementation lazily from `@hilos/core/admin/status` and
+`@hilos/vue/admin/status`, while keeping compatibility-root exports. Status is
+not imported by either package's eager `base` entry or Vue's default
+`hilosAdminViews()` map. Chat and Binance BTC Tracker mount thin Vue wrappers
+over the framework pages with their existing scope, connection and action
+singletons. React and Angular intentionally remain unbuilt until HIL-1695 and
+HIL-1696.
 
 The project also registers the shared Status directory, mounts the same volume
 for every node's nginx, and binds the public page to the framework reader.
@@ -298,8 +410,9 @@ answers with `HandoverAnswerSignalData::to(...)` only after the transaction
 commits or the owner has a refusal. In a freeze or without runtime state, the
 owner refuses before DB access. The target is the internal positive integer
 incident id, never a component key. These asks are not browser `ACTIONS`,
-`AGENT_ACTIONS`, `AUTH_ACTIONS` or client-signal routes; the production ADMIN
-gatekeeper and reply route belong to HIL-1689.
+`AGENT_ACTIONS`, `AUTH_ACTIONS` or client-signal routes. The Overview page
+remains the ADMIN gatekeeper and owns the browser action names and reply route
+described in [Admin Pages](#admin-pages).
 
 Cancel is idempotent for an open unpublished incident; a published or ended
 incident refuses. Publish-now is idempotent for an open already-published
@@ -319,8 +432,8 @@ the existing notification library. The warning type is
 `status.possible_outage`, the title is `Possible outage: <name>`, and the body is
 `Detected at <detected>. Publication scheduled for <deadline>. See /hilos/status.`
 It narrows channel delivery to email while retaining the normal bell
-notification and notification policy (`channels=[email]`). That link names the
-future HIL-1689 admin page; it does not mean the page exists yet.
+notification and notification policy (`channels=[email]`). That link resolves
+to the built Status Overview page.
 
 `StatusCandidateNotice::draftFor(userId)` formats both moments with
 `TimeHelper::serverTextTimeZone(userId)` and `Y-m-d H:i:s P (e)`; stored and
@@ -578,7 +691,8 @@ surfaces remain separately owned.
 | Work | Owner and status |
 |---|---|
 | Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed backend read | Landed by HIL-1688 |
-| Admin section and its gates | (not in the code yet — HIL-1689) |
+| Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head and Vue views | Landed by HIL-1689; React and Angular views remain with HIL-1695 and HIL-1696 |
+| SDK packaging | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs` | Core's 14-section entrypoint set includes Status; the current Core and Vue manifests export `/admin/status`, with compatibility-root identity. The built base closures stay free of Status, and Vue's default view map does not eagerly include it. React and Angular have no Status view entry yet. |
 | Public files, heartbeat, hint, nginx routes, reader and freeze publisher | (not in the code yet — HIL-1690) |
 | Subscribers and their mail | (not in the code yet — HIL-1691) |
 | Scheduled works, actual maintenance periods and Completed delivery | (not in the code yet — HIL-1692) |

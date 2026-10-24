@@ -11,6 +11,27 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('addresses both Status admin pages without parameters and keeps their unbuilt views honest', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    for (const [page, path] of [
+      [HilosPages.STATUS, '/hilos/status'],
+      [HilosPages.STATUS_COMPONENTS, '/hilos/status/components'],
+    ] as const) {
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+      expect(resolveHilosPath(page)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+      for (const layer of ['react', 'angular'] as const) {
+        expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+      }
+      expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+      expect(hilosUnbuiltPages('vue', [page]).has(page)).toBe(false)
+      expect(router.match(`${path}/7`).page).toBeNull()
+    }
+    expect(HilosPages.STATUS).toBe('hilos_status')
+    expect(HilosPages.STATUS_COMPONENTS).toBe('hilos_status_components')
+    expect(router.match('/status').page).toBeNull()
+  })
+
   it('addresses Circle without params under Maintenance with the PHP key', () => {
     const page = HilosPages.MAINTENANCE_CIRCLE
     const path = '/hilos/maintenance/circle'

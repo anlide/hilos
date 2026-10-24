@@ -64,6 +64,9 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusComponentsPage;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
@@ -196,7 +199,7 @@ use Hilos\Status\StatusAgent;
  * @property-read BinanceBtcTrackerTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read BinanceBtcTrackerBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  */
-final class Hilos extends HilosFacade
+class Hilos extends HilosFacade
 {
     /**
      * @var array<string, list<TruthSourceOperation>> The users collection, named here because
@@ -285,6 +288,8 @@ final class Hilos extends HilosFacade
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+        StatusPage::PAGE => StatusPage::class,
+        StatusComponentsPage::PAGE => StatusComponentsPage::class,
     ];
 
     public const array GROUPS = [
@@ -455,6 +460,7 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         BinanceBtcTrackerTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -574,6 +580,7 @@ final class Hilos extends HilosFacade
         CountryNamesPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosI18nCountryNames => [],
         ],
+        StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
     ];
 
     /**

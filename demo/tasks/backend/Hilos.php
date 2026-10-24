@@ -86,6 +86,9 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
+use Demo\Tasks\Pages\Hilos\Status\StatusPage;
+use Demo\Tasks\Pages\Hilos\Status\StatusComponentsPage;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\I18nPage;
@@ -325,6 +328,8 @@ final class Hilos extends HilosFacade
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
         SecurityImpersonationPage::PAGE => SecurityImpersonationPage::class,
+        StatusPage::PAGE => StatusPage::class,
+        StatusComponentsPage::PAGE => StatusComponentsPage::class,
     ];
 
     public const array GROUPS = [
@@ -529,6 +534,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -703,6 +709,7 @@ final class Hilos extends HilosFacade
         CountryNamesPage::PAGE => [
             TasksTableContext::hilosI18nCountryNames => [],
         ],
+        StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
     ];
 
     /**

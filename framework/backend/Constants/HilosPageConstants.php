@@ -135,6 +135,12 @@ final class HilosPageConstants
     /** @var string Hilos backups list */
     public const string HILOS_BACKUP = 'hilos_backup';
 
+    /** @var string Status overview */
+    public const string HILOS_STATUS = 'hilos_status';
+
+    /** @var string Read-only Status component window */
+    public const string HILOS_STATUS_COMPONENTS = 'hilos_status_components';
+
     /** @var string Hilos maintenance section - the freeze and the verifier circle (HIL-1119) */
     public const string HILOS_MAINTENANCE = 'hilos_maintenance';
 

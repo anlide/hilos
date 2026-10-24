@@ -133,6 +133,12 @@
       "types": "./dist/admin/users/index.d.ts",
       "import": "./dist/admin/users.js",
       "default": "./dist/admin/users.js"
+    },
+    "./admin/status": {
+      "development": "./src/admin/status/index.ts",
+      "types": "./dist/admin/status/index.d.ts",
+      "import": "./dist/admin/status.js",
+      "default": "./dist/admin/status.js"
     }
   },
   "files": [

@@ -31,6 +31,9 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
 use Hilos\Hilos;
+use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
@@ -64,12 +67,15 @@ final class StatusFeatureActivationTest extends TestCase
         (new ReflectionProperty(Hilos::class, 'appClass'))->setValue(null, $this->previousApp);
     }
 
-    public function testDefinitionNamesOnlyRealRequirementsAndHasNoPrematureScreens(): void
+    public function testDefinitionNamesMachineAndAdminRequirements(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::STATUS);
         self::assertInstanceOf(StatusFeature::class, $definition);
         self::assertTrue($definition->mountsRuntime());
         self::assertEquals(new FeatureRequirements(
+            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class],
+            requiredTables: [HilosStatusComponentsTable::class],
+            requiredPageTables: [AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
             requiredCatalogFragments: [StatusSettingsCatalog::class],
             requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY],
@@ -94,6 +100,9 @@ final class StatusFeatureActivationTest extends TestCase
     /** @return iterable<string, array{class-string<Hilos>, string}> Incomplete declarations */
     public static function refused(): iterable
     {
+        yield 'no pages' => [StatusNoPagesHilos::class, 'page'];
+        yield 'no table' => [StatusNoTableHilos::class, 'table'];
+        yield 'no binding' => [StatusNoBindingHilos::class, 'binds'];
         yield 'no dependencies' => [StatusNoDependenciesHilos::class, 'HilosFeature::DAEMON'];
         yield 'no owner pair' => [StatusNoOwnerHilos::class, 'is not registered in AGENTS'];
         yield 'no daemon' => [StatusNoDaemonHilos::class, 'does not declare both a worker and a daemon'];
@@ -196,8 +205,22 @@ final class StatusPrerequisiteFeature extends FeatureDefinition
     }
 }
 
+final class StatusActivationPage extends AbstractHilosStatusPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+final class StatusActivationComponentsPage extends AbstractHilosStatusComponentsPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
 abstract class StatusEnabledHilos extends Hilos
 {
+    public const array PAGES = [StatusActivationPage::PAGE => StatusActivationPage::class,
+        StatusActivationComponentsPage::PAGE => StatusActivationComponentsPage::class];
+    public const array TABLES = [HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class];
+    public const array PAGE_TABLES = [StatusActivationComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []]];
     public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [HilosAgentType::HILOS_INDEX => []];
     protected const array FEATURES = [HilosFeature::STATUS, HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY];
     protected const string SETTINGS_CATALOG = StatusSettingsCatalog::class;
@@ -285,4 +308,19 @@ final class StatusFoundationDbContext extends HilosDbContext
     {
         return $this->processWideReadCollections();
     }
+}
+
+abstract class StatusNoPagesHilos extends StatusEnabledHilos
+{
+    public const array PAGES = [];
+}
+
+abstract class StatusNoTableHilos extends StatusEnabledHilos
+{
+    public const array TABLES = [];
+}
+
+abstract class StatusNoBindingHilos extends StatusEnabledHilos
+{
+    public const array PAGE_TABLES = [];
 }
