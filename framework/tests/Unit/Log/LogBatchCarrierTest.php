@@ -21,15 +21,20 @@ use PHPUnit\Framework\TestCase;
 final class LogBatchCarrierTest extends TestCase
 {
     /** Name of a batch, in the shape rotation writes it. */
-    private const string BATCH = '2026-09-03-10-00-00';
+    private const string BATCH = '2026-09-03-10-00-00Z';
 
     /** A second, older batch, for the order the carrier takes them in. */
-    private const string OLDER_BATCH = '2026-09-03-09-00-00';
+    private const string OLDER_BATCH = '2026-09-03-09-00-00Z';
 
     private string $dir = '';
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logcarrier-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -38,6 +43,7 @@ final class LogBatchCarrierTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         $this->removeTree($this->dir);
     }
 
@@ -107,6 +113,18 @@ final class LogBatchCarrierTest extends TestCase
         // the cleanup, and out of the carrier's own queue: the name is not one anybody recognizes.
         $this->assertSame(0, preg_match(LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN, $incoming));
         $this->assertSame([], new LogBatchCarrier($this->dir)->pendingBatchNames());
+    }
+
+    public function testALegacyBatchWithoutZIsNeitherQueuedNorCarried(): void
+    {
+        $legacy = '2026-08-01-00-00-00';
+        $this->stagedBatch($legacy, ['daemon.log' => 'old']);
+
+        $carrier = new LogBatchCarrier($this->dir);
+        $this->assertSame([], $carrier->pendingBatchNames());
+        $this->assertSame(0, $carrier->stagingBytes());
+        $this->assertSame('the name is not a rotation batch', $carrier->carry($legacy)->failure);
+        $this->assertFileExists($this->stagingPath() . '/' . $legacy . '/daemon.log');
     }
 
     public function testABatchIsNeverMergedIntoOneOfTheSameNameInTheArchive(): void

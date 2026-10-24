@@ -43,7 +43,7 @@ function row(overrides: Partial<HilosLogWorkerRow> = {}): HilosLogWorkerRow {
     type: HILOS_LOG_WORKER_TYPE_REGULAR,
     live: true,
     batchCount: 12,
-    lastBatchAt: 1800000000,
+    lastBatchAt: 1800000000000,
     bytes: 1024,
     ...overrides,
   }
@@ -158,7 +158,7 @@ describe('resolveHilosLogWorkerRow', () => {
         type: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
         live: true,
         batchCount: 3,
-        lastBatchAt: 1799999000,
+        lastBatchAt: 1799999000000,
         bytes: 4096,
       }),
     )
@@ -170,7 +170,7 @@ describe('resolveHilosLogWorkerRow', () => {
       type: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
       live: true,
       batchCount: 3,
-      lastBatchAt: 1799999000,
+      lastBatchAt: 1799999000000,
       bytes: 4096,
     })
   })
@@ -516,8 +516,8 @@ describe('logWorkerViewerPath', () => {
 
   it('opens a stream that is only in the archive on its newest batch', () => {
     expect(
-      logWorkerViewerPath(row({ live: false, lastBatchAt: 1799999000 })),
-    ).toBe('/hilos/logs/view/node-1/1799999000/worker-0.log')
+      logWorkerViewerPath(row({ live: false, lastBatchAt: 1799999000000 })),
+    ).toBe('/hilos/logs/view/node-1/1799999000000/worker-0.log')
   })
 
   it('names the standalone node in the viewer address', () => {

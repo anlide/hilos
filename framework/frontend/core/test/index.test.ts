@@ -100,7 +100,7 @@ import {
 } from '../src/index.js'
 
 it('exports the @hilos/core public surface', () => {
-  expect(logLineClock('2026-09-06 10:00:02.250')).toBe('10:00:02.250')
+  expect(logLineClock('2026-09-06T10:00:02.250Z')).toBe('10:00:02.250')
   expect(HilosConnection).toBeTypeOf('function')
   expect(parseSignal).toBeTypeOf('function')
   expect(assertNever).toBeTypeOf('function')

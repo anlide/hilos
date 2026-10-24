@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tables\Logs;
 
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogKeySummary;
 
@@ -72,7 +72,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
      * @param string $class Stream class: {@see LogKeySummary::CLASS_AGENT} or {@see LogKeySummary::CLASS_WORKER}
      * @param bool $live Whether the stream is still being written, or only present in the archive
      * @param int $batchCount Number of archived batches the stream occurs in
-     * @param ?int $lastBatchAt Unix timestamp of the newest batch holding the stream, null when there is none
+     * @param ?int $lastBatchAt UTC epoch milliseconds of the newest batch holding the stream, null when there is none
      * @param int $bytes Weight of the live file and every archived occurrence together
      * @param ?int $growthPerDay Bytes written over the last day, null while the window has not filled
      * @param int $growthSort The same growth as the window orders by, -1 standing for the unknown
@@ -112,7 +112,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
     /**
      * Serializes the row to the log-keys table payload shape.
      *
-     * @return array<string, mixed> Row payload
+     * @return array<string, mixed> Row payload with epoch-millisecond moments copied literally
      */
     public function toArray(): array
     {
@@ -135,7 +135,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
     /**
      * Builds a log-key row from raw table payload.
      *
-     * @param array<string, mixed> $data Raw row payload
+     * @param array<string, mixed> $data Raw row payload with moments already in UTC epoch milliseconds
      * @return static Reconstructed log-keys table row
      * @throws InvalidFormatException When the payload is missing a field the row is built from
      */

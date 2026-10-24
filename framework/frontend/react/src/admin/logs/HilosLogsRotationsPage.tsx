@@ -87,7 +87,7 @@ const RETENTION_CLASS: Record<string, string> = {
  * @param row The batch the cell speaks for.
  */
 function batchTime(row: HilosLogRotationRow): string {
-  return new Date(row.batchAt * 1000).toLocaleString()
+  return new Date(row.batchAt).toLocaleString()
 }
 
 /**
@@ -228,7 +228,7 @@ export function HilosLogsRotationsPage({
   const undoDeadline =
     undoRow?.pruneNotBefore == null
       ? 'The cleaner may delete this batch as soon as it next runs.'
-      : `The cleaner may delete this batch after ${new Date(undoRow.pruneNotBefore * 1000).toLocaleString()}.`
+      : `The cleaner may delete this batch after ${new Date(undoRow.pruneNotBefore).toLocaleString()}.`
 
   const [legendOpen, setLegendOpen] = useState(false)
 

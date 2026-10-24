@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -44,7 +45,7 @@ final class LogsTakeoutConfirmSignalData extends BaseDTO implements SignalDataIn
 
     /**
      * @param string $nodeId Id of the node holding the batch, empty for this node
-     * @param int $batchTimestamp Unix timestamp of the rotation batch being confirmed
+     * @param int $batchTimestamp Internal epoch seconds of the rotation batch being confirmed
      * @param string $acceptKey Accept key of the connection waiting for the answer
      * @param string $action Action name the reply acknowledges
      * @param ?string $requestId Request id the browser minted, or null when the action was not tracked
@@ -88,13 +89,13 @@ final class LogsTakeoutConfirmSignalData extends BaseDTO implements SignalDataIn
     }
 
     /**
-     * @return array<string, mixed> DTO data as array
+     * @return array<string, mixed> Transport data with batchTimestamp in UTC epoch milliseconds
      */
     public function toArray(): array
     {
         return [
             LogsTakeoutConfirmActionDTO::nodeId => $this->nodeId,
-            LogsTakeoutConfirmActionDTO::batchTimestamp => $this->batchTimestamp,
+            LogsTakeoutConfirmActionDTO::batchTimestamp => $this->batchTimestamp * TimeConstants::MS_PER_SECOND,
             self::acceptKey => $this->acceptKey,
             self::action => $this->action,
             self::requestId => $this->requestId,
@@ -110,9 +111,14 @@ final class LogsTakeoutConfirmSignalData extends BaseDTO implements SignalDataIn
      */
     public static function fromArray(array $data): static
     {
+        $batchTimestamp = self::requireInt($data, LogsTakeoutConfirmActionDTO::batchTimestamp);
+        if ($batchTimestamp % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new InvalidFormatException('Batch timestamp must name a whole second in epoch milliseconds');
+        }
+
         return new static(
             nodeId: self::requireString($data, LogsTakeoutConfirmActionDTO::nodeId),
-            batchTimestamp: self::requireInt($data, LogsTakeoutConfirmActionDTO::batchTimestamp),
+            batchTimestamp: intdiv($batchTimestamp, TimeConstants::MS_PER_SECOND),
             acceptKey: self::requireString($data, self::acceptKey),
             action: self::requireString($data, self::action),
             requestId: self::optionalString($data, self::requestId),

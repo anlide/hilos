@@ -55,9 +55,29 @@ final class NodeLogIndexSignalDataTest extends TestCase
             ],
             growthBytesPerDay: ['agent-a.log' => 17, 'daemon.log' => null, 'worker-0.log' => 0],
             dueBatchTimestamps: [self::T0 - 7200],
+            takeoutUndoWindowSeconds: 86400,
+            recentErrors: [new LogRecentEntry(1_800_000_000_123, 'daemon-error.log', 'failure', null)],
+            recentWarnings: [new LogRecentEntry(1_800_000_000_456, 'worker-0.log', 'warning', 3)],
         );
 
-        $restored = $this->roundTrip($index);
+        $wire = NodeLogIndexSignalData::fromIndex($index)->toArray();
+        $this->assertSame(1_800_000_000_000, $wire['sampledAt']);
+        $this->assertSame([1_799_992_800_000, 1_799_996_400_000], array_column($wire['batches'], 'timestamp'));
+        $this->assertSame([1_799_999_940_000, null], array_column($wire['batches'], 'takenAt'));
+        $this->assertSame([[1_799_992_800_000], [1_799_996_400_000], []], array_column($wire['keys'], 'batchTimestamps'));
+        $this->assertSame([[], [1_799_996_400_000]], array_column($wire['workers'], 'batchTimestamps'));
+        $this->assertSame([1_799_992_800_000], $wire['dueBatchTimestamps']);
+        $this->assertSame(86400, $wire['takeoutUndoWindowSeconds']);
+        $this->assertSame(1_800_000_000_123, $wire['recentErrors'][0]['atMs']);
+        $this->assertSame(1_800_000_000_456, $wire['recentWarnings'][0]['atMs']);
+        $this->assertSame(100, $wire['keys'][0]['totalBytes']);
+        $this->assertSame(['agent-a.log' => 17, 'daemon.log' => null, 'worker-0.log' => 0], $wire['growthBytesPerDay']);
+        $this->assertSame(self::T0, $index->sampledAt);
+        $this->assertSame(self::T0 - 7200, $index->batches[0]->timestamp);
+
+        $restored = NodeLogIndexSignalData::fromArray($wire)->toIndex();
+        $this->assertEquals($index, $restored);
+        $this->assertSame($wire, NodeLogIndexSignalData::fromIndex($restored)->toArray());
 
         $this->assertSame('node-1', $restored->nodeId);
         $this->assertTrue($restored->available);

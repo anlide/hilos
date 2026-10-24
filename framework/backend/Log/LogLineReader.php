@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Generator;
+use Hilos\Constants\TimeConstants;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Socket\Server\WorkerServer;
@@ -48,19 +50,22 @@ use Hilos\Utils\Logger;
 final class LogLineReader
 {
     /**
-     * Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix a fresh log entry starts with.
+     * Matches the `[YYYY-MM-DDTHH:MM:SS.mmmZ] ` UTC prefix a fresh log entry starts with.
      *
      * Public because the same prefix is what tells a fresh entry from a continuation for anyone
      * reading these files, not just for this scan: {@see LogRecentTailReader} takes the entry's text
      * apart after it (HIL-867). A second copy of the pattern would be a second answer to "what is an entry".
      */
-    public const string TIMESTAMP_PREFIX_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /';
+    public const string TIMESTAMP_PREFIX_PATTERN = '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] /';
 
     /** Window growth step (bytes) for the backward tail scan and the anchor search. */
     private const int CHUNK_SIZE = 65536;
 
     /** Format of the timestamp {@see TIMESTAMP_PREFIX_PATTERN} matches, with milliseconds. */
-    private const string TIMESTAMP_FORMAT = 'Y-m-d H:i:s.v';
+    private const string TIMESTAMP_FORMAT = TimeConstants::ISO_UTC_MILLISECONDS_FORMAT;
+
+    /** Bytes framing the stamp: the opening bracket, closing bracket and following space. */
+    private const int TIMESTAMP_WRAPPER_BYTES = 3;
 
     /** Format printing a parsed timestamp back as unix milliseconds. */
     private const string UNIX_MILLISECONDS_FORMAT = 'Uv';
@@ -112,7 +117,7 @@ final class LogLineReader
      * Read one page of lines from a log file under the log root.
      *
      * @param string $relativePath Path of the target file relative to the log root (e.g.
-     *     `worker-1.log` or `archive/2026-03-23-19-01-20/worker-1.log`)
+     *     `worker-1.log` or `archive/2026-03-23-19-01-20Z/worker-1.log`)
      * @param LogReadQuery $query Anchor, cursor, limit and filters for this page
      *
      * @return LogLinePage Matched lines plus the adjacent-page cursor, or {@see LogLinePage::unavailable()}
@@ -168,13 +173,22 @@ final class LogLineReader
      * the anchor search use this same answer to decide whether a line starts an entry.
      *
      * @param string $text Line text as read from the file
-     * @return ?string Local file timestamp, or null when the line has none
+     * @return ?string UTC ISO timestamp with milliseconds, or null when no valid stamp opens the line
      */
     public static function stampText(string $text): ?string
     {
-        return preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) === 1
-            ? substr($match[0], 1, -2)
-            : null;
+        if (preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) !== 1) {
+            return null;
+        }
+
+        $stamp = substr($match[0], 1, -2);
+        $parsed = DateTimeImmutable::createFromFormat(
+            '!' . self::TIMESTAMP_FORMAT,
+            $stamp,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
+
+        return $parsed !== false && $parsed->format(self::TIMESTAMP_FORMAT) === $stamp ? $stamp : null;
     }
 
     /**
@@ -193,15 +207,13 @@ final class LogLineReader
             return $text;
         }
 
-        return self::textAfterLevel(substr($text, strlen($stamp) + 3));
+        return self::textAfterLevel(substr($text, strlen($stamp) + self::TIMESTAMP_WRAPPER_BYTES));
     }
 
     /**
      * Read the stamp a line opens with as unix milliseconds.
      *
-     * The stamp names no zone — the file carries the local time of the node that wrote it — so it is
-     * resolved in the timezone of this process, which is right exactly because the reader runs on that
-     * node: the one place the file can be opened at all. Public for the reason
+     * The stamp is explicit UTC, independent of the reading process's zone. Public for the reason
      * {@see TIMESTAMP_PREFIX_PATTERN} is: "when was this line written" has one answer, and both the
      * recent-failures reader ({@see LogRecentTailReader}) and the anchor search ({@see locate()}) ask it
      * (HIL-868).
@@ -217,7 +229,11 @@ final class LogLineReader
             return null;
         }
 
-        $parsed = DateTimeImmutable::createFromFormat(self::TIMESTAMP_FORMAT, $stamp);
+        $parsed = DateTimeImmutable::createFromFormat(
+            '!' . self::TIMESTAMP_FORMAT,
+            $stamp,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
 
         return $parsed === false ? null : (int)$parsed->format(self::UNIX_MILLISECONDS_FORMAT);
     }
@@ -727,9 +743,12 @@ final class LogLineReader
         if (str_starts_with($text, Logger::AGENT_LOG_MARKER)) {
             return [$errorStream ? Logger::LEVEL_ERROR : self::detectAgentLevel($text, $currentLevel), false];
         }
-        if (preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) === 1) {
+        $stamp = self::stampText($text);
+        if ($stamp !== null) {
             return [
-                $errorStream ? Logger::LEVEL_ERROR : self::detectEntryLevel(substr($text, strlen($match[0]))),
+                $errorStream
+                    ? Logger::LEVEL_ERROR
+                    : self::detectEntryLevel(substr($text, strlen($stamp) + self::TIMESTAMP_WRAPPER_BYTES)),
                 false,
             ];
         }
@@ -745,7 +764,7 @@ final class LogLineReader
     private static function isContinuation(string $text): bool
     {
         return !str_starts_with($text, Logger::AGENT_LOG_MARKER)
-            && preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text) !== 1;
+            && self::stampText($text) === null;
     }
 
     /**

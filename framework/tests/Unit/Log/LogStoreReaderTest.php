@@ -29,8 +29,13 @@ final class LogStoreReaderTest extends TestCase
 
     private string $dir;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logstore-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -39,7 +44,26 @@ final class LogStoreReaderTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         $this->removeTree($this->dir);
+    }
+
+    public function testOnlyValidUtcBatchNamesAreIndexedInAnyProcessZone(): void
+    {
+        $this->writeBatch('2026-01-01-00-30-05Z', [self::DAEMON_LOG => 10]);
+        $this->writeBatch('2026-01-01-00-30-05', [self::DAEMON_LOG => 100]);
+        $this->writeBatch('2026-02-31-00-30-05Z', [self::DAEMON_LOG => 1000]);
+        $this->writeStagingBatch('2026-01-01-24-30-05Z', [self::DAEMON_LOG => 10000]);
+        $previousZone = date_default_timezone_get();
+        date_default_timezone_set('Pacific/Kiritimati');
+        try {
+            $snapshot = $this->reader()->read();
+            $this->assertCount(1, $snapshot->batches());
+            $this->assertSame(1767227405, $snapshot->batches()[0]->timestamp);
+            $this->assertSame(10, $snapshot->keys()[0]->totalBytes);
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     public function testClassifiesLiveFilesByExactDaemonNameAndByPrefix(): void
@@ -93,8 +117,8 @@ final class LogStoreReaderTest extends TestCase
     public function testKeyTotalSumsLiveFileAndEveryBatchOccurrence(): void
     {
         $this->writeLive(self::DAEMON_LOG, 10);
-        $this->writeBatch('2026-08-01-00-00-00', [self::DAEMON_LOG => 100]);
-        $this->writeBatch('2026-08-02-00-00-00', [self::DAEMON_LOG => 1000]);
+        $this->writeBatch('2026-08-01-00-00-00Z', [self::DAEMON_LOG => 100]);
+        $this->writeBatch('2026-08-02-00-00-00Z', [self::DAEMON_LOG => 1000]);
 
         $keys = $this->reader()->read()->keys();
 
@@ -106,7 +130,7 @@ final class LogStoreReaderTest extends TestCase
 
     public function testBatchCountsTheDaemonFilesApartFromTheRest(): void
     {
-        $this->writeBatch('2026-08-01-00-00-00', [
+        $this->writeBatch('2026-08-01-00-00-00Z', [
             self::DAEMON_LOG => 100,
             self::DAEMON_ERROR_LOG => 200,
             'agent-hilos_logs.log' => 30,
@@ -127,7 +151,7 @@ final class LogStoreReaderTest extends TestCase
     public function testLiveWalkSeesTheLogRootOnly(): void
     {
         $this->writeLive(self::DAEMON_LOG, 10);
-        $this->writeBatch('2026-08-01-00-00-00', ['agent-hilos_logs.log' => 30]);
+        $this->writeBatch('2026-08-01-00-00-00Z', ['agent-hilos_logs.log' => 30]);
 
         $live = $this->reader()->readLiveFiles();
 
@@ -139,7 +163,7 @@ final class LogStoreReaderTest extends TestCase
     public function testLiveWalkResampledOverAnEarlierSnapshotKeepsItsBatches(): void
     {
         $this->writeLive(self::DAEMON_LOG, 10);
-        $this->writeBatch('2026-08-01-00-00-00', [self::DAEMON_LOG => 100]);
+        $this->writeBatch('2026-08-01-00-00-00Z', [self::DAEMON_LOG => 100]);
         $reader = $this->reader();
         $snapshot = $reader->read();
 
@@ -155,8 +179,8 @@ final class LogStoreReaderTest extends TestCase
 
     public function testAStagingBatchIsIndexedBesideTheArchivedOnesAndMarkedCarrying(): void
     {
-        $this->writeBatch('2026-08-01-00-00-00', ['agent-hilos_logs.log' => 30]);
-        $this->writeStagingBatch('2026-08-01-01-00-00', ['agent-hilos_logs.log' => 40]);
+        $this->writeBatch('2026-08-01-00-00-00Z', ['agent-hilos_logs.log' => 30]);
+        $this->writeStagingBatch('2026-08-01-01-00-00Z', ['agent-hilos_logs.log' => 40]);
 
         $batches = $this->reader()->read()->batches();
 
@@ -171,7 +195,7 @@ final class LogStoreReaderTest extends TestCase
     public function testAHalfCarriedCopyInTheArchiveIsNotIndexed(): void
     {
         $this->writeBatch(
-            LogRotationConstants::INCOMING_DIR_PREFIX . '2026-08-01-00-00-00',
+            LogRotationConstants::INCOMING_DIR_PREFIX . '2026-08-01-00-00-00Z',
             ['agent-hilos_logs.log' => 30],
         );
 
@@ -181,9 +205,9 @@ final class LogStoreReaderTest extends TestCase
 
     public function testAnArchivedBatchOutranksAnEmptyStagingLeftoverOfTheSameName(): void
     {
-        $this->writeBatch('2026-08-01-00-00-00', ['agent-hilos_logs.log' => 30]);
+        $this->writeBatch('2026-08-01-00-00-00Z', ['agent-hilos_logs.log' => 30]);
         // What one tick of a carry interrupted between the two last steps leaves behind.
-        $this->writeStagingBatch('2026-08-01-00-00-00', []);
+        $this->writeStagingBatch('2026-08-01-00-00-00Z', []);
 
         $batches = $this->reader()->read()->batches();
 

@@ -5,9 +5,21 @@ import {
   dismissToasts,
   setCustomSetting,
   shownByTestId,
+  deliveryObject,
+  expectLogBatchViewer,
+  expectLogEpochMoment,
+  expectLogUtcMoment,
+  logBatchDirectory,
+  logMomentLabel,
+  watchLogFrames,
+  type LogFrameLog,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { appendLogLines, logMarker } from '../helpers/logs.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+
+const READER_ZONE = 'America/Los_Angeles'
+test.use({ timezoneId: READER_ZONE })
 
 // Rotation, carrying a batch off and cleaning it up, end to end (HIL-763): the
 // second and last through-scenario of the logs epic. It forces a rotation, sees
@@ -92,6 +104,11 @@ const WALK_WAIT_MS = 20_000
 /** The control tab, so the cleanup can reach the settings screen after a failure. */
 let control: Page | null = null
 
+let rotationFrames: LogFrameLog
+test.beforeEach(async ({ page }) => {
+  rotationFrames = watchLogFrames(page)
+})
+
 /**
  * Narrow the server window to one settings key so assertions ignore pagination.
  *
@@ -170,13 +187,15 @@ async function rowKeys(page: Page): Promise<string[]> {
 }
 
 /**
- * The rotation instant a row key carries. The key is `<node>:<unix timestamp>`,
- * and the node of a single-node installation is written as a dash.
+ * Read the moment from the observed row; its identity stays opaque.
  *
  * @param key A rotations-table row key.
  */
 function batchInstant(key: string): number {
-  return Number(key.split(':')[1] ?? 0)
+  return expectLogEpochMoment(
+    expect,
+    rotationFrames.rotations().get(key)?.batchAt,
+  )
 }
 
 /**
@@ -237,11 +256,22 @@ test.afterEach(async () => {
   // rotates at all, and nothing else would ever lower it again.
   const tab = control
   control = null
-  if (tab === null) {
-    return
-  }
-  for (const key of MOVED_KEYS) {
-    await resetSetting(tab, key)
+  try {
+    if (tab !== null) {
+      for (const key of MOVED_KEYS) {
+        await resetSetting(tab, key)
+      }
+    }
+  } finally {
+    rotationFrames.stop()
+    await test.info().attach('rotation-time-frames', {
+      body: JSON.stringify({
+        packets: rotationFrames.packets,
+        sent: rotationFrames.sent,
+      }),
+      contentType: 'application/json',
+    })
+    await tab?.close()
   }
 })
 
@@ -394,173 +424,283 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   await gotoPage(tabB, '/hilos/settings', PAGE_READY)
   await expect(tabB.getByTestId('hilos-viewport-table')).toBeVisible()
 
-  // The three preparatory keys, none of which starts a clock. Both retention
-  // criteria are needed together: they are joined by "and", and the count one —
-  // the twenty newest batches are always protected — is not something ageing or
-  // waiting can take away.
-  await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
-  await setSetting(tabB, RETENTION_MAX_AGE, '1')
-  await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '0')
+  const overview = await page.context().newPage()
+  const overviewFrames = watchLogFrames(overview)
+  const viewer = await page.context().newPage()
+  const viewerFrames = watchLogFrames(viewer)
+  try {
+    await gotoPage(overview, '/hilos/logs', PAGE_READY)
 
-  // The archive as it stands, read here rather than at the top: every write above
-  // repaints the badges and so re-serves this window, which means the picture on
-  // screen now is one the page has answered for three times over. Nothing can
-  // have been added to it either — until the next line, only the nightly schedule
-  // and the size threshold are on, and the scenario reaches neither.
-  const before = await rowKeys(page)
+    // The three preparatory keys, none of which starts a clock. Both retention
+    // criteria are needed together: they are joined by "and", and the count one —
+    // the twenty newest batches are always protected — is not something ageing or
+    // waiting can take away.
+    await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
+    await setSetting(tabB, RETENTION_MAX_AGE, '1')
+    await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '120')
 
-  // And the trigger. Until this line a stand rotates only on the nightly schedule
-  // and at 512 MiB, neither of which the scenario reaches in its seconds; a run
-  // that crosses 03:00 gets one batch beyond its own, which lands after `before`
-  // and is counted as the scenario's — the checks below count "at least", so they
-  // hold. From here the owner of the log directory rotates on each of its live walks.
-  await setSetting(tabB, ROTATION_MAX_AGE, '1')
+    // The archive as it stands, read here rather than at the top: every write above
+    // repaints the badges and so re-serves this window, which means the picture on
+    // screen now is one the page has answered for three times over. Nothing can
+    // have been added to it either — until the next line, only the nightly schedule
+    // and the size threshold are on, and the scenario reaches neither.
+    const before = await rowKeys(page)
 
-  // The gate, before anything is waited for: the rule line on the observer says
-  // the new threshold. Without it a setting that never landed and a rotation that
-  // never ran are the same red — a timeout on a row that did not appear.
-  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-    '1 second after the last rotation',
-    { timeout: WALK_WAIT_MS },
-  )
+    // And the trigger. Until this line a stand rotates only on the nightly schedule
+    // and at 512 MiB, neither of which the scenario reaches in its seconds; a run
+    // that crosses 03:00 gets one batch beyond its own, which lands after `before`
+    // and is counted as the scenario's — the checks below count "at least", so they
+    // hold. From here the owner of the log directory rotates on each of its live walks.
+    await setSetting(tabB, ROTATION_MAX_AGE, '1')
 
-  // Batch A: the first rotation this scenario caused. It arrives on a page that
-  // has not navigated since it opened.
-  await expect
-    .poll(async () => (await newBatchKeys(page, before)).length, {
+    // The gate, before anything is waited for: the rule line on the observer says
+    // the new threshold. Without it a setting that never landed and a rotation that
+    // never ran are the same red — a timeout on a row that did not appear.
+    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+      '1 second after the last rotation',
+      { timeout: WALK_WAIT_MS },
+    )
+
+    // Batch A: the first rotation this scenario caused. It arrives on a page that
+    // has not navigated since it opened.
+    await expect
+      .poll(async () => (await newBatchKeys(page, before)).length, {
+        timeout: WALK_WAIT_MS,
+      })
+      .toBeGreaterThanOrEqual(1)
+    const batchA = (await newBatchKeys(page, before))[0] ?? ''
+    expect(batchA).not.toBe('')
+
+    // Batch B, the second one, and it is guaranteed to exist rather than hoped for:
+    // a rotation that moved anything writes a line saying so under the agent's own
+    // name, the master puts that line in the live file, and the next rotation
+    // carries that file off (HIL-480).
+    await expect
+      .poll(async () => (await newBatchKeys(page, before)).length, {
+        timeout: WALK_WAIT_MS,
+      })
+      .toBeGreaterThanOrEqual(2)
+    const batchB = (await newBatchKeys(page, before)).filter(
+      (key) => key !== batchA,
+    )[0]
+    expect(batchB).toBeTruthy()
+
+    // The trigger goes back down as soon as both batches are here: left up it makes
+    // a batch every five seconds, and the rest of the scenario wants a table that
+    // holds still.
+    await setSetting(tabB, ROTATION_MAX_AGE, '0')
+
+    const batch = rotationFrames.rotations().get(batchA)!
+    const batchAt = expectLogEpochMoment(expect, batch.batchAt)
+    const batchBAt = batchInstant(batchB!)
+    const directory = logBatchDirectory(batchAt)
+    await expect
+      .poll(
+        () =>
+          Date.parse(
+            String(
+              overviewFrames.data('subscription_page_hilos_logs').at(-1)
+                ?.lastRotationAt,
+            ),
+          ),
+        {
+          timeout: WALK_WAIT_MS,
+        },
+      )
+      .toBeGreaterThanOrEqual(batchBAt)
+    const lastRotationAt = expectLogUtcMoment(
+      expect,
+      overviewFrames.data('subscription_page_hilos_logs').at(-1)
+        ?.lastRotationAt,
+    )
+    expect(
+      [...rotationFrames.rotations().values()].map((row) => row.batchAt),
+    ).toContain(Date.parse(lastRotationAt))
+    await expect(overview.getByTestId('hilos-logs-tile-rotation')).toHaveText(
+      await logMomentLabel(overview, lastRotationAt, READER_ZONE, 'overview'),
+    )
+
+    await gotoPage(
+      viewer,
+      `/hilos/logs/view/${batch.node}/${batchAt}/daemon.log`,
+      PAGE_READY,
+    )
+    await expect(viewer.getByTestId('hilos-log-entry').first()).toBeVisible({
       timeout: WALK_WAIT_MS,
     })
-    .toBeGreaterThanOrEqual(1)
-  const batchA = (await newBatchKeys(page, before))[0] ?? ''
-  expect(batchA).not.toBe('')
+    await expectLogBatchViewer(expect, viewer, viewerFrames, batch, READER_ZONE)
 
-  // Batch B, the second one, and it is guaranteed to exist rather than hoped for:
-  // a rotation that moved anything writes a line saying so under the agent's own
-  // name, the master puts that line in the live file, and the next rotation
-  // carries that file off (HIL-480).
-  await expect
-    .poll(async () => (await newBatchKeys(page, before)).length, {
+    // The verdict of the rule, arrived at from the settings written above, through
+    // the agent, onto a screen: this batch is being asked for.
+    const rowA = page.getByTestId(`${ROW_ID_PREFIX}${batchA}`)
+    const rowB = page.getByTestId(`${ROW_ID_PREFIX}${batchB}`)
+    await expect(rowA).toContainText(
+      await logMomentLabel(page, batchAt, READER_ZONE),
+    )
+    await expect(rowA).toContainText(directory)
+    await expect(rowA).toContainText('Awaiting carry-off', {
       timeout: WALK_WAIT_MS,
     })
-    .toBeGreaterThanOrEqual(2)
-  const batchB = (await newBatchKeys(page, before)).filter(
-    (key) => key !== batchA,
-  )[0]
-  expect(batchB).toBeTruthy()
+    // The footer counts a window that holds rows. The archive can be empty when
+    // the screen opens — the scenario has not rotated yet — and an empty window
+    // draws no "0 of 0".
+    await expect(page.getByTestId('hilos-table-count')).toBeVisible()
 
-  // The trigger goes back down as soon as both batches are here: left up it makes
-  // a batch every five seconds, and the rest of the scenario wants a table that
-  // holds still.
-  await setSetting(tabB, ROTATION_MAX_AGE, '0')
+    // The instruction: where the batch lies and what to type to copy it off. The
+    // wording belongs to HIL-483, so what is asserted is that there is an address
+    // at all — a node that reported no log root shows an apology in its place.
+    await rowA.getByTestId('hilos-rotation-takeout').click()
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-rotation-takeout-path'),
+    ).not.toBeEmpty()
+    await expect(page.getByTestId('hilos-rotation-takeout-path')).toHaveText(
+      String(batch.absolutePath),
+    )
+    await expect(page.getByTestId('hilos-rotation-takeout-path')).toContainText(
+      directory,
+    )
+    await expect(
+      page.getByTestId('hilos-rotation-takeout-command'),
+    ).not.toBeEmpty()
 
-  // The verdict of the rule, arrived at from the settings written above, through
-  // the agent, onto a screen: this batch is being asked for.
-  const rowA = page.getByTestId(`${ROW_ID_PREFIX}${batchA}`)
-  const rowB = page.getByTestId(`${ROW_ID_PREFIX}${batchB}`)
-  await expect(rowA).toContainText('Awaiting carry-off', {
-    timeout: WALK_WAIT_MS,
-  })
-  // The footer counts a window that holds rows. The archive can be empty when
-  // the screen opens — the scenario has not rotated yet — and an empty window
-  // draws no "0 of 0".
-  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+    // Another tab of the same session visits rotations and leaves just before the
+    // confirmation. The reply must still reach this dialog and close it on success.
+    const tabC = await page.context().newPage()
+    await gotoPage(tabC, '/hilos/logs/rotations', PAGE_READY)
+    await expect(tabC.getByTestId('hilos-table-loading')).toHaveCount(0)
+    await tabC.close()
+    await page.bringToFront()
 
-  // The instruction: where the batch lies and what to type to copy it off. The
-  // wording belongs to HIL-483, so what is asserted is that there is an address
-  // at all — a node that reported no log root shows an apology in its place.
-  await rowA.getByTestId('hilos-rotation-takeout').click()
-  await expect(page.getByTestId('modal')).toBeVisible()
-  await expect(page.getByTestId('hilos-rotation-takeout-path')).not.toBeEmpty()
-  await expect(
-    page.getByTestId('hilos-rotation-takeout-command'),
-  ).not.toBeEmpty()
+    // The confirmation is answered by the node that owns the directory, and the
+    // modal closes on that answer rather than on the click.
+    const confirm = page.getByTestId('hilos-rotation-takeout-confirm')
+    await confirm.scrollIntoViewIfNeeded()
+    await expect(confirm).toBeVisible()
+    await expect(confirm).toBeEnabled()
+    await confirm.focus()
+    await confirm.click()
+    await expect(page.getByTestId('modal')).toHaveCount(0)
+    const request = rotationFrames.request('logs_takeout_confirm')!
+    expect(deliveryObject(request.data)).toEqual({
+      nodeId: batch.node,
+      batchTimestamp: batchAt,
+    })
+    const ack = rotationFrames.ack('logs_takeout_confirm')!
+    expect(ack.requestId).toBe(request.requestId)
+    const takenAt = expectLogEpochMoment(
+      expect,
+      deliveryObject(deliveryObject(ack.data).reply).takenAt,
+    )
+    expect(takenAt).toBeGreaterThanOrEqual(batchBAt)
+    // The node's own sentence, because the badge is repainted a moment later and
+    // elsewhere on the page; its wording belongs to HIL-483 and is not pinned here.
+    await expect(page.getByTestId('hilos-toast-success')).toBeVisible()
 
-  // Another tab of the same session visits rotations and leaves just before the
-  // confirmation. The reply must still reach this dialog and close it on success.
-  const tabC = await page.context().newPage()
-  await gotoPage(tabC, '/hilos/logs/rotations', PAGE_READY)
-  await expect(tabC.getByTestId('hilos-table-loading')).toHaveCount(0)
-  await tabC.close()
-  await page.bringToFront()
+    // The badge repaints because the node's next index says the marker is on disk,
+    // not because this tab drew what it had just asked for. Batch B is untouched.
+    await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
+    // Batch B's own verdict rides the same walk: made seconds ago, it may still read
+    // as kept or as on its way to the archive when the walk after the trigger went
+    // down has not come round yet.
+    await expect(rowB).toContainText('Awaiting carry-off', {
+      timeout: WALK_WAIT_MS,
+    })
 
-  // The confirmation is answered by the node that owns the directory, and the
-  // modal closes on that answer rather than on the click.
-  await page.getByTestId('hilos-rotation-takeout-confirm').click()
-  await expect(page.getByTestId('modal')).toHaveCount(0)
-  // The node's own sentence, because the badge is repainted a moment later and
-  // elsewhere on the page; its wording belongs to HIL-483 and is not pinned here.
-  await expect(page.getByTestId('hilos-toast-success')).toBeVisible()
+    // The takeout modal stands open on batch B while another tab puts it back
+    // under protection. The batch leaves the Awaiting window under the dialog;
+    // its focused row still reaches the dialog and locks the stale confirmation.
+    await shownByTestId(page, 'hilos-table-filter-state').click()
+    await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
+    await expect(rowB).toBeVisible()
+    await rowB.getByTestId('hilos-rotation-takeout').click()
+    const modal = page.getByTestId('modal')
+    await expect(modal).toBeVisible()
 
-  // The badge repaints because the node's next index says the marker is on disk,
-  // not because this tab drew what it had just asked for. Batch B is untouched.
-  await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
-  // Batch B's own verdict rides the same walk: made seconds ago, it may still read
-  // as kept or as on its way to the archive when the walk after the trigger went
-  // down has not come round yet.
-  await expect(rowB).toContainText('Awaiting carry-off', {
-    timeout: WALK_WAIT_MS,
-  })
+    // Batch B is the second newest, so the count criterion alone protects it.
+    await setSetting(tabB, RETENTION_KEEP_BATCHES, '100')
+    await expect(rowB).toHaveCount(0, { timeout: WALK_WAIT_MS })
 
-  // The takeout modal stands open on batch B while another tab puts it back
-  // under protection. The batch leaves the Awaiting window under the dialog;
-  // its focused row still reaches the dialog and locks the stale confirmation.
-  await shownByTestId(page, 'hilos-table-filter-state').click()
-  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
-  await expect(rowB).toBeVisible()
-  await rowB.getByTestId('hilos-rotation-takeout').click()
-  const modal = page.getByTestId('modal')
-  await expect(modal).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-rotation-takeout-notice'),
+    ).toContainText('This batch is protected again')
+    await expect(
+      page.getByTestId('hilos-rotation-takeout-confirm'),
+    ).toBeDisabled()
+    await expect(modal).toBeVisible()
 
-  // Batch B is the second newest, so the count criterion alone protects it.
-  await setSetting(tabB, RETENTION_KEEP_BATCHES, '100')
-  await expect(rowB).toHaveCount(0, { timeout: WALK_WAIT_MS })
+    // Back to the walk: the count criterion goes back to leaving batch B
+    // unprotected after the operator closes the dialog.
+    await page.getByTestId('modal-close').click()
+    await expect(modal).toHaveCount(0)
+    await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
+    await shownByTestId(page, 'hilos-table-filter-state').click()
+    await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+    await expect(rowB).toContainText('Awaiting carry-off', {
+      timeout: WALK_WAIT_MS,
+    })
 
-  await expect(page.getByTestId('hilos-rotation-takeout-notice')).toContainText(
-    'This batch is protected again',
-  )
-  await expect(
-    page.getByTestId('hilos-rotation-takeout-confirm'),
-  ).toBeDisabled()
-  await expect(modal).toBeVisible()
+    // The withdrawal dialog opens before the cleaner runs and stays open while
+    // batch A goes.
+    await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
+    await rowA.getByTestId('hilos-rotation-undo').click()
+    await expect(modal).toBeVisible()
+    const deadline = takenAt + 120_000
+    await expect
+      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore, {
+        timeout: WALK_WAIT_MS,
+      })
+      .toBe(deadline)
+    await expect(page.getByTestId('hilos-rotation-undo-deadline')).toHaveText(
+      `The cleaner may delete this batch after ${await logMomentLabel(page, deadline, READER_ZONE)}.`,
+    )
+    await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '0')
+    // A policy-only change rides the next changed index or keepalive. A real
+    // write calls for that index now, before the attempt that runs the cleaner.
+    expect(await appendLogLines(logMarker('e2e-cleaner-ready'), 1)).toBe(1)
+    await expect
+      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore, {
+        timeout: WALK_WAIT_MS,
+      })
+      .toBeNull()
+    await expect(page.getByTestId('hilos-rotation-undo-deadline')).toHaveText(
+      'The cleaner may delete this batch as soon as it next runs.',
+    )
 
-  // Back to the walk: the count criterion goes back to leaving batch B
-  // unprotected after the operator closes the dialog.
-  await page.getByTestId('modal-close').click()
-  await expect(modal).toHaveCount(0)
-  await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
-  await shownByTestId(page, 'hilos-table-filter-state').click()
-  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
-  await expect(rowB).toContainText('Awaiting carry-off', {
-    timeout: WALK_WAIT_MS,
-  })
+    // The cleaner has no trigger of its own: it rides the ATTEMPT to rotate, so one
+    // more attempt is what runs it (HIL-382).
+    await setSetting(tabB, ROTATION_MAX_AGE, '1')
 
-  // The withdrawal dialog opens before the cleaner runs and stays open while
-  // batch A goes.
-  await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
-  await rowA.getByTestId('hilos-rotation-undo').click()
-  await expect(modal).toBeVisible()
+    // What the whole scenario was built to see: the batch the operator answered for
+    // is gone from the table, it went without anybody reloading anything, and the
+    // batch nobody answered for is still there with the verdict it had.
+    await expect(rowA).toHaveCount(0, { timeout: WALK_WAIT_MS })
+    await expect(rowB).toContainText('Awaiting carry-off')
 
-  // The cleaner has no trigger of its own: it rides the ATTEMPT to rotate, so one
-  // more attempt is what runs it (HIL-382).
-  await setSetting(tabB, ROTATION_MAX_AGE, '1')
+    await expect(page.getByTestId('hilos-rotation-undo-notice')).toContainText(
+      'This batch is no longer on the node.',
+    )
+    await expect(page.getByTestId('hilos-rotation-undo-confirm')).toBeDisabled()
+    await expect(modal).toBeVisible()
+    await page.getByTestId('modal-close').click()
+    await expect(modal).toHaveCount(0)
 
-  // What the whole scenario was built to see: the batch the operator answered for
-  // is gone from the table, it went without anybody reloading anything, and the
-  // batch nobody answered for is still there with the verdict it had.
-  await expect(rowA).toHaveCount(0, { timeout: WALK_WAIT_MS })
-  await expect(rowB).toContainText('Awaiting carry-off')
-
-  await expect(page.getByTestId('hilos-rotation-undo-notice')).toContainText(
-    'This batch is no longer on the node.',
-  )
-  await expect(page.getByTestId('hilos-rotation-undo-confirm')).toBeDisabled()
-  await expect(modal).toBeVisible()
-  await page.getByTestId('modal-close').click()
-  await expect(modal).toHaveCount(0)
-
-  // The control tab is deliberately left open and left registered: the trigger has
-  // been up again since the attempt that ran the cleaner, and the cleanup is the
-  // one thing that lowers it.
+    // The control tab is deliberately left open and left registered: the trigger has
+    // been up again since the attempt that ran the cleaner, and the cleanup is the
+    // one thing that lowers it.
+  } finally {
+    overviewFrames.stop()
+    viewerFrames.stop()
+    await test.info().attach('rotation-consumer-frames', {
+      body: JSON.stringify({
+        overview: overviewFrames.packets,
+        viewer: { packets: viewerFrames.packets, sent: viewerFrames.sent },
+      }),
+      contentType: 'application/json',
+    })
+    await viewer.close()
+    await overview.close()
+  }
 })
 
 test('resets the rotations filter wherever the address put it, after a reload too', async ({

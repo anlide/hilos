@@ -697,7 +697,7 @@ export class HilosLogsViewPage {
   }
 
   protected batchLabel(batch: number): string {
-    return new Date(batch * 1000).toLocaleString()
+    return new Date(batch).toLocaleString()
   }
 
   protected onNode(event: Event): void {

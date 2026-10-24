@@ -48,8 +48,13 @@ final class LogArchivePrunerTest extends TestCase
 
     private string $dir = '';
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-log-pruner-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -58,6 +63,7 @@ final class LogArchivePrunerTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         $this->removeTree($this->dir);
     }
 
@@ -261,7 +267,7 @@ final class LogArchivePrunerTest extends TestCase
      */
     private function batchName(int $timestamp): string
     {
-        return date(LogRotationConstants::TIMESTAMP_FORMAT, $timestamp);
+        return gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $timestamp);
     }
 
     /**

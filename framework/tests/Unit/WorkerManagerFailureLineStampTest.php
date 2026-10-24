@@ -19,9 +19,9 @@ use RuntimeException;
  */
 final class WorkerManagerFailureLineStampTest extends TestCase
 {
-    private const string TIMESTAMP_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
+    private const string TIMESTAMP_PATTERN = '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/';
 
-    private const string TIMESTAMP_ANYWHERE_PATTERN = '/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
+    private const string TIMESTAMP_ANYWHERE_PATTERN = '/\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/';
 
     private string $errorLogFile;
 
@@ -70,7 +70,7 @@ final class WorkerManagerFailureLineStampTest extends TestCase
         $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $line);
         $this->assertSame(1, preg_match_all(self::TIMESTAMP_ANYWHERE_PATTERN, $line));
         $this->assertMatchesRegularExpression(
-            '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] WARNING in probe\.php:7 - probe warning$/',
+            '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] WARNING in probe\.php:7 - probe warning$/',
             $line,
         );
     }
@@ -91,7 +91,7 @@ final class WorkerManagerFailureLineStampTest extends TestCase
         $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $stdout);
         $this->assertSame(1, preg_match_all(self::TIMESTAMP_ANYWHERE_PATTERN, $stdout));
         $this->assertMatchesRegularExpression(
-            '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] ERROR: WARNING in probe\.php:7 - probe warning\n$/',
+            '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] ERROR: WARNING in probe\.php:7 - probe warning\n$/',
             $stdout,
         );
     }
@@ -106,7 +106,7 @@ final class WorkerManagerFailureLineStampTest extends TestCase
         $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $lines[0]);
         $this->assertSame(1, preg_match_all(self::TIMESTAMP_ANYWHERE_PATTERN, implode("\n", $lines)));
         $this->assertMatchesRegularExpression(
-            '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] UNCAUGHT EXCEPTION: RuntimeException in .+ - probe exception$/',
+            '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] UNCAUGHT EXCEPTION: RuntimeException in .+ - probe exception$/',
             $lines[0],
         );
         $this->assertSame('Stack trace:', $lines[1]);

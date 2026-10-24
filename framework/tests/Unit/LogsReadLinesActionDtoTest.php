@@ -6,8 +6,15 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,12 +30,85 @@ use PHPUnit\Framework\TestCase;
  */
 final class LogsReadLinesActionDtoTest extends TestCase
 {
+    /** @return iterable<string, array{string, string}> Action and corresponding owner frame */
+    public static function batchRequests(): iterable
+    {
+        yield 'read' => [LogsReadLinesActionDTO::class, LogsReadLinesSignalData::class];
+        yield 'confirm' => [LogsTakeoutConfirmActionDTO::class, LogsTakeoutConfirmSignalData::class];
+        yield 'undo' => [LogsTakeoutUndoActionDTO::class, LogsTakeoutUndoSignalData::class];
+    }
+
+    #[DataProvider('batchRequests')]
+    public function testMillisecondsCrossBothTransportsExactlyOnce(string $actionClass, string $signalClass): void
+    {
+        $browser = [
+            'nodeId' => 'node-2', 'batchTimestamp' => 1_800_000_000_000,
+            'source' => 'batch', 'stream' => 'worker-0.log', 'level' => 'ERROR',
+            'substring' => 'needle', 'anchorAtMs' => 1_800_000_000_123,
+        ];
+        $action = $actionClass::fromArray($browser);
+        $this->assertSame(1_800_000_000, $action->batchTimestamp);
+        $this->assertSame(1_800_000_000_000, $action->toArray()['batchTimestamp']);
+        $signal = match ($signalClass) {
+            LogsReadLinesSignalData::class => $signalClass::fromAction($action, 'accept', $action->getAction(), 'request', false),
+            LogsTakeoutConfirmSignalData::class => $signalClass::fromAction($action, 'accept', $action->getAction(), 'request', 42),
+            LogsTakeoutUndoSignalData::class => $signalClass::fromAction($action, 'accept', $action->getAction(), 'request'),
+        };
+        $this->assertSame(1_800_000_000, $signal->batchTimestamp);
+        $wire = $signal->toArray();
+        $this->assertSame(1_800_000_000_000, $wire['batchTimestamp']);
+        $owner = $signalClass::fromArray($wire);
+        $this->assertEquals($signal, $owner);
+        $this->assertSame(1_800_000_000, $owner->batchTimestamp);
+        $this->assertSame('node-2', $owner->nodeId);
+        $this->assertSame('accept', $owner->acceptKey);
+        $this->assertSame('request', $owner->requestId);
+        if ($owner instanceof LogsReadLinesSignalData) {
+            $this->assertSame(1_800_000_000_123, $owner->anchorAtMs);
+            $this->assertSame('needle', $owner->substring);
+            $this->assertNull($owner->cursor);
+            $this->assertFalse($owner->hideText);
+        }
+        if ($owner instanceof LogsTakeoutConfirmSignalData) {
+            $this->assertSame(42, $owner->userId);
+        }
+    }
+
+    #[DataProvider('batchRequests')]
+    public function testFractionalBatchSecondIsRefusedByTheAction(string $actionClass, string $signalClass): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('whole second in epoch milliseconds');
+        $actionClass::fromArray([
+            'nodeId' => 'node-2', 'source' => 'batch', 'stream' => 'worker-0.log', 'batchTimestamp' => 1_800_000_000_123,
+        ]);
+    }
+
+    #[DataProvider('batchRequests')]
+    public function testFractionalBatchSecondIsRefusedByTheOwnerFrame(string $actionClass, string $signalClass): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('whole second in epoch milliseconds');
+        $signalClass::fromArray([
+            'nodeId' => 'node-2', 'source' => 'batch', 'stream' => 'worker-0.log', 'batchTimestamp' => 1_800_000_000_123,
+            'acceptKey' => 'accept', 'action' => 'action', 'requestId' => null, 'userId' => null, 'hideText' => false,
+        ]);
+    }
+
+    public function testConfirmationAckConvertsItsStoredSecondsOnce(): void
+    {
+        $reply = new LogsTakeoutConfirmReplyDTO(1_800_000_123);
+        $this->assertSame(['takenAt' => 1_800_000_123_000], $reply->toArray());
+        $this->assertSame(1_800_000_123, LogsTakeoutConfirmReplyDTO::fromArray(['takenAt' => 1_800_000_123_000])->takenAt);
+        $this->assertSame(1_800_000_123, $reply->takenAt);
+    }
+
     public function testAWholeRequestIsReadIntoItsFields(): void
     {
         $dto = LogsReadLinesActionDTO::fromArray([SignalPayloadConstants::FIELD_DATA => [
             LogsReadLinesActionDTO::nodeId => 'node-B',
             LogsReadLinesActionDTO::source => LogsReadLinesActionDTO::SOURCE_BATCH,
-            LogsReadLinesActionDTO::batchTimestamp => 1774000000,
+            LogsReadLinesActionDTO::batchTimestamp => 1774000000000,
             LogsReadLinesActionDTO::stream => '  worker-0.log  ',
             LogsReadLinesActionDTO::level => Logger::LEVEL_ERROR,
             LogsReadLinesActionDTO::substring => 'timeout',
@@ -58,7 +138,7 @@ final class LogsReadLinesActionDtoTest extends TestCase
     public function testALiveReadDropsABatchStampSentBesideIt(): void
     {
         $dto = LogsReadLinesActionDTO::fromArray($this->live([
-            LogsReadLinesActionDTO::batchTimestamp => 1774000000,
+            LogsReadLinesActionDTO::batchTimestamp => 1774000000000,
         ]));
 
         $this->assertNull($dto->batchTimestamp);

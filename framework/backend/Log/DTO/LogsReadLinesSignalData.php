@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -41,7 +42,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $source Which half of the store to read
-     * @param ?int $batchTimestamp Unix timestamp of the rotated batch, or null for the live source
+     * @param ?int $batchTimestamp Internal epoch seconds of the rotated batch, or null for the live source
      * @param string $stream File name of the stream inside the source
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
@@ -102,14 +103,16 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
     }
 
     /**
-     * @return array<string, mixed> DTO data as array
+     * @return array<string, mixed> Transport data with batchTimestamp in UTC epoch milliseconds
      */
     public function toArray(): array
     {
         return [
             LogsReadLinesActionDTO::nodeId => $this->nodeId,
             LogsReadLinesActionDTO::source => $this->source,
-            LogsReadLinesActionDTO::batchTimestamp => $this->batchTimestamp,
+            LogsReadLinesActionDTO::batchTimestamp => $this->batchTimestamp === null
+                ? null
+                : $this->batchTimestamp * TimeConstants::MS_PER_SECOND,
             LogsReadLinesActionDTO::stream => $this->stream,
             LogsReadLinesActionDTO::level => $this->level,
             LogsReadLinesActionDTO::substring => $this->substring,
@@ -130,10 +133,15 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
      */
     public static function fromArray(array $data): static
     {
+        $batchTimestamp = self::optionalInt($data, LogsReadLinesActionDTO::batchTimestamp);
+        if ($batchTimestamp !== null && $batchTimestamp % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new InvalidFormatException('Batch timestamp must name a whole second in epoch milliseconds');
+        }
+
         return new static(
             nodeId: self::requireString($data, LogsReadLinesActionDTO::nodeId),
             source: self::requireString($data, LogsReadLinesActionDTO::source),
-            batchTimestamp: self::optionalInt($data, LogsReadLinesActionDTO::batchTimestamp),
+            batchTimestamp: $batchTimestamp === null ? null : intdiv($batchTimestamp, TimeConstants::MS_PER_SECOND),
             stream: self::requireString($data, LogsReadLinesActionDTO::stream),
             level: self::optionalString($data, LogsReadLinesActionDTO::level),
             substring: self::optionalString($data, LogsReadLinesActionDTO::substring),

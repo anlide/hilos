@@ -191,16 +191,19 @@ final class HilosLogsViewPageCatalogTest extends TestCase
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
-        $node = $this->catalog()->nodes[0];
+        $catalog = $this->catalog();
+        $this->assertSame($catalog->nodes, HilosLogsViewCatalogSignalData::fromArray($catalog->toArray())->nodes);
+        $this->assertSame($catalog->nodes, $catalog->toArray()['nodes']);
+        $node = $catalog->nodes[0];
         $this->assertSame('node-1', $node[HilosLogsViewCatalogSignalData::nodeId]);
-        $this->assertSame([self::T0 - 3_600], $node[HilosLogsViewCatalogSignalData::batches]);
+        $this->assertSame([1_799_996_400_000], $node[HilosLogsViewCatalogSignalData::batches]);
         $this->assertSame(
             [
                 [
                     HilosLogsViewCatalogSignalData::key => 'worker-0.log',
                     HilosLogsViewCatalogSignalData::streamClass => LogKeySummary::CLASS_WORKER,
                     HilosLogsViewCatalogSignalData::live => true,
-                    HilosLogsViewCatalogSignalData::batchTimestamps => [self::T0 - 3_600],
+                    HilosLogsViewCatalogSignalData::batchTimestamps => [1_799_996_400_000],
                 ],
             ],
             $node[HilosLogsViewCatalogSignalData::streams],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Log\LogAggregatorAgent;
@@ -19,6 +20,8 @@ use Hilos\Log\NodeLogIndex;
 /**
  * {@see LogStoreAgent} on one node → the cluster-wide {@see LogAggregatorAgent}: this is my whole
  * store (HIL-755).
+ *
+ * Sampling and rotation moments stay in epoch seconds internally; toArray/fromArray convert them to/from epoch milliseconds.
  *
  * The wire form of a {@see NodeLogIndex}, and the only thing that crosses between the node that
  * owns a log directory and the one agent that holds the cluster's picture of them all. It carries
@@ -59,7 +62,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Payload key: whether the log store could be read at all. */
     public const string available = 'available';
 
-    /** Payload key: Unix timestamp of the walk this index was built from. */
+    /** Payload key: UTC epoch milliseconds of the walk this index was built from. */
     public const string sampledAt = 'sampledAt';
 
     /** Payload key: rotation batches, ascending by timestamp. */
@@ -80,7 +83,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Payload key: seconds a confirmed batch is protected from the pruner on the reporting node. */
     public const string takeoutUndoWindowSeconds = 'takeoutUndoWindowSeconds';
 
-    /** Payload key: batches the reporting node's retention rule recommends carrying off, ascending. */
+    /** Payload key: recommended batches in ascending UTC epoch milliseconds. */
     public const string dueBatchTimestamps = 'dueBatchTimestamps';
 
     /** Payload key: last failures written to the reporting node's live error streams, newest first. */
@@ -98,7 +101,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Payload key: share of the volume the reporting node keeps free, in percent. */
     public const string freeSpaceThresholdPercent = 'freeSpaceThresholdPercent';
 
-    /** Batch row key: Unix timestamp of the rotation folder. */
+    /** Batch row key: UTC epoch milliseconds of the rotation folder. */
     public const string timestamp = 'timestamp';
 
     /** Batch row key: number of `agent-*.log` files in the batch. */
@@ -125,7 +128,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Batch row key: summed size in bytes of the daemon files. */
     public const string daemonBytes = 'daemonBytes';
 
-    /** Batch row key: instant an operator confirmed carrying the batch off, absent while none has. */
+    /** Batch row key: UTC epoch milliseconds of takeout confirmation, absent while none has. */
     public const string takenAt = 'takenAt';
 
     /** Batch row key: whether the batch is still on its way from staging into the archive, absent when it is not. */
@@ -148,13 +151,13 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Key and worker row key: whether the key is present among the live files. */
     public const string live = 'live';
 
-    /** Key and worker row key: ascending Unix timestamps of the batches the key occurs in. */
+    /** Key and worker row key: ascending UTC epoch milliseconds of the batches the key occurs in. */
     public const string batchTimestamps = 'batchTimestamps';
 
     /** Key and worker row key: summed size in bytes across the live file and every batch. */
     public const string totalBytes = 'totalBytes';
 
-    /** Recent entry row key: instant the line was written, unix milliseconds in the reporting node's own zone. */
+    /** Recent entry row key: instant the line was written, UTC epoch milliseconds. */
     public const string atMs = 'atMs';
 
     /** Recent entry row key: basename of the live stream the line was read from. */
@@ -169,14 +172,14 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * @param string $nodeId Node this index was measured on
      * @param bool $available Whether the log store could be read
-     * @param int $sampledAt Unix timestamp of the walk this index was built from
+     * @param int $sampledAt Epoch seconds of the walk this index was built from
      * @param list<LogBatchSummary> $batches Rotation batches, ascending by timestamp
      * @param list<LogKeySummary> $keys Log keys across live and archive, ascending by key
      * @param list<LogWorkerSummary> $workers Worker streams, ascending by key
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
      * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
-     * @param list<int> $dueBatchTimestamps Batches the reporting node's retention rule recommends carrying off, ascending
+     * @param list<int> $dueBatchTimestamps Epoch seconds of batches the reporting node's retention rule recommends carrying off, ascending
      * @param list<LogRecentEntry> $recentErrors Last failures written to the reporting node's live error streams, newest first
      * @param list<LogRecentEntry> $recentWarnings Last warnings the reporting node found in its live streams, newest first
      * @param ?int $filesystemFreeBytes Free bytes on the filesystem holding the log root, or null when not known
@@ -237,7 +240,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         return [
             self::nodeId => $this->nodeId,
             self::available => $this->available,
-            self::sampledAt => $this->sampledAt,
+            self::sampledAt => $this->sampledAt * TimeConstants::MS_PER_SECOND,
             self::batches => array_map(
                 static fn (LogBatchSummary $batch): array => self::batchToArray($batch),
                 $this->batches,
@@ -253,7 +256,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::growthBytesPerDay => $this->growthBytesPerDay,
             self::logDirectory => $this->logDirectory,
             self::takeoutUndoWindowSeconds => $this->takeoutUndoWindowSeconds,
-            self::dueBatchTimestamps => $this->dueBatchTimestamps,
+            self::dueBatchTimestamps => array_map(
+                static fn (int $timestamp): int => $timestamp * TimeConstants::MS_PER_SECOND,
+                $this->dueBatchTimestamps,
+            ),
             self::recentErrors => array_map(
                 static fn (LogRecentEntry $entry): array => self::recentToArray($entry),
                 $this->recentErrors,
@@ -308,7 +314,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         return new static(
             nodeId: $nodeId,
             available: self::requireBool($data, self::available),
-            sampledAt: self::requireInt($data, self::sampledAt),
+            sampledAt: intdiv(self::requireInt($data, self::sampledAt), TimeConstants::MS_PER_SECOND),
             batches: $batches,
             keys: $keys,
             workers: $workers,
@@ -382,7 +388,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     private static function batchToArray(LogBatchSummary $batch): array
     {
         return [
-            self::timestamp => $batch->timestamp,
+            self::timestamp => $batch->timestamp * TimeConstants::MS_PER_SECOND,
             self::agentFileCount => $batch->agentFileCount,
             self::agentBytes => $batch->agentBytes,
             self::workerFileCount => $batch->workerFileCount,
@@ -391,7 +397,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::workerMonopolisticBytes => $batch->workerMonopolisticBytes,
             self::daemonFileCount => $batch->daemonFileCount,
             self::daemonBytes => $batch->daemonBytes,
-            self::takenAt => $batch->takenAt,
+            self::takenAt => $batch->takenAt === null ? null : $batch->takenAt * TimeConstants::MS_PER_SECOND,
             self::carrying => $batch->carrying,
         ];
     }
@@ -403,8 +409,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      */
     private static function batchFromArray(array $row): LogBatchSummary
     {
+        $takenAt = self::optionalInt($row, self::takenAt);
+
         return new LogBatchSummary(
-            timestamp: self::requireInt($row, self::timestamp),
+            timestamp: intdiv(self::requireInt($row, self::timestamp), TimeConstants::MS_PER_SECOND),
             agentFileCount: self::requireInt($row, self::agentFileCount),
             agentBytes: self::requireInt($row, self::agentBytes),
             workerFileCount: self::requireInt($row, self::workerFileCount),
@@ -413,7 +421,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             workerMonopolisticBytes: self::requireInt($row, self::workerMonopolisticBytes),
             daemonFileCount: self::requireInt($row, self::daemonFileCount),
             daemonBytes: self::requireInt($row, self::daemonBytes),
-            takenAt: self::optionalInt($row, self::takenAt),
+            takenAt: $takenAt === null ? null : intdiv($takenAt, TimeConstants::MS_PER_SECOND),
             // Optional, and for the same reason as the due verdict beside it: a node still running
             // the previous build sends a batch row without this key, and a batch nobody said was
             // being carried is a batch sitting in the archive.
@@ -431,7 +439,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::key => $key->key,
             self::streamClass => $key->class,
             self::live => $key->live,
-            self::batchTimestamps => $key->batchTimestamps,
+            self::batchTimestamps => array_map(
+                static fn (int $timestamp): int => $timestamp * TimeConstants::MS_PER_SECOND,
+                $key->batchTimestamps,
+            ),
             self::totalBytes => $key->totalBytes,
         ];
     }
@@ -462,7 +473,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::key => $worker->key,
             self::monopolistic => $worker->monopolistic,
             self::live => $worker->live,
-            self::batchTimestamps => $worker->batchTimestamps,
+            self::batchTimestamps => array_map(
+                static fn (int $timestamp): int => $timestamp * TimeConstants::MS_PER_SECOND,
+                $worker->batchTimestamps,
+            ),
             self::totalBytes => $worker->totalBytes,
         ];
     }
@@ -487,7 +501,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * Reads the batch timestamps a key or a worker row carries.
      *
      * @param array<string, mixed> $row Key or worker row from the wire
-     * @return list<int> Batch timestamps, in the order the row lists them
+     * @return list<int> Batch epoch seconds, in the order the row lists them
      * @throws InvalidFormatException When the list is absent or carries something that is not a timestamp
      */
     private static function timestampsFromArray(array $row): array
@@ -498,7 +512,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
                 throw new InvalidFormatException('Node log index carries a batch timestamp that is not an integer');
             }
 
-            $timestamps[] = $timestamp;
+            $timestamps[] = intdiv($timestamp, TimeConstants::MS_PER_SECOND);
         }
 
         return $timestamps;
@@ -514,7 +528,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * honestly answers.
      *
      * @param array<string, mixed> $data Wire form of one node's index
-     * @return list<int> Batches the reporting node recommends carrying off, in the order it lists them
+     * @return list<int> Epoch seconds of batches the reporting node recommends carrying off, in the order it lists them
      * @throws InvalidFormatException When the key holds something that is not a list of timestamps
      */
     private static function dueFromArray(array $data): array
@@ -525,7 +539,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
                 throw new InvalidFormatException('Node log index carries a due batch timestamp that is not an integer');
             }
 
-            $timestamps[] = $timestamp;
+            $timestamps[] = intdiv($timestamp, TimeConstants::MS_PER_SECOND);
         }
 
         return $timestamps;

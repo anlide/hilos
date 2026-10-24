@@ -33,14 +33,14 @@ final class LogLineReaderTest extends TestCase
      * @var list<array{text: string, level: string, continuation: bool}>
      */
     private const array FIXTURE = [
-        ['text' => '[2026-07-28 12:00:00.001] server started', 'level' => Logger::LEVEL_INFO, 'continuation' => false],
-        ['text' => '[2026-07-28 12:00:00.002] ERROR: connection failed', 'level' => Logger::LEVEL_ERROR, 'continuation' => false],
+        ['text' => '[2026-07-28T12:00:00.001Z] server started', 'level' => Logger::LEVEL_INFO, 'continuation' => false],
+        ['text' => '[2026-07-28T12:00:00.002Z] ERROR: connection failed', 'level' => Logger::LEVEL_ERROR, 'continuation' => false],
         ['text' => '#0 /app/foo.php(10): bar()', 'level' => Logger::LEVEL_ERROR, 'continuation' => true],
         ['text' => '#1 {main}', 'level' => Logger::LEVEL_ERROR, 'continuation' => true],
-        ['text' => '[2026-07-28 12:00:00.003] WARNING: retrying', 'level' => Logger::LEVEL_WARNING, 'continuation' => false],
-        ['text' => '[2026-07-28 12:00:00.004] DEBUG: tick', 'level' => Logger::LEVEL_DEBUG, 'continuation' => false],
-        ['text' => '[AGENT_LOG]agent-7|ERROR|[2026-07-28 12:00:00.005] agent boom', 'level' => Logger::LEVEL_ERROR, 'continuation' => false],
-        ['text' => '[2026-07-28 12:00:00.006] all good', 'level' => Logger::LEVEL_INFO, 'continuation' => false],
+        ['text' => '[2026-07-28T12:00:00.003Z] WARNING: retrying', 'level' => Logger::LEVEL_WARNING, 'continuation' => false],
+        ['text' => '[2026-07-28T12:00:00.004Z] DEBUG: tick', 'level' => Logger::LEVEL_DEBUG, 'continuation' => false],
+        ['text' => '[AGENT_LOG]agent-7|ERROR|[2026-07-28T12:00:00.005Z] agent boom', 'level' => Logger::LEVEL_ERROR, 'continuation' => false],
+        ['text' => '[2026-07-28T12:00:00.006Z] all good', 'level' => Logger::LEVEL_INFO, 'continuation' => false],
     ];
 
     /**
@@ -72,15 +72,57 @@ final class LogLineReaderTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testUtcStampAndAnchorKeepExactMillisecondsInAnotherProcessZone(): void
+    {
+        $previousZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
+        try {
+            $lines = ['[2026-01-01T00:30:05.122Z] before', '[2026-01-01T00:30:05.123Z] WARNING: target'];
+            $this->writeLines('worker-1.log', $lines);
+            $this->assertSame(1767227405123, LogLineReader::stampMilliseconds($lines[1]));
+            $this->assertSame('2026-01-01T00:30:05.123Z', LogLineReader::stampText($lines[1]));
+            $this->assertSame(
+                strlen($lines[0]) + 1,
+                new LogLineReader($this->root)->locate('worker-1.log', 1767227405123, self::CEILING_BYTES),
+            );
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
+    public function testLegacyAndImpossibleStampsStayWholeAndAreContinuations(): void
+    {
+        $lines = [
+            '[2026-01-01 00:30:05.123] WARNING: no zone',
+            '[2026-01-01T00:30:05.123] WARNING: missing Z',
+            '[2026-01-01T00:30:05Z] WARNING: missing milliseconds',
+            '[2026-02-31T00:30:05.123Z] WARNING: impossible date',
+            '[2026-01-01T24:30:05.123Z] WARNING: impossible clock',
+            '[2026-01-01T00:30:05.123+00:00] WARNING: offset',
+        ];
+        $this->writeLines('worker-1.log', $lines);
+        foreach ($lines as $line) {
+            $this->assertNull(LogLineReader::stampText($line));
+            $this->assertNull(LogLineReader::stampMilliseconds($line));
+            $this->assertSame($line, LogLineReader::entryText($line));
+        }
+        $page = new LogLineReader($this->root)->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+        $this->assertCount(6, $page->lines);
+        foreach ($page->lines as $line) {
+            $this->assertTrue($line->isContinuation);
+            $this->assertSame(Logger::LEVEL_INFO, $line->detectedLevel);
+        }
+    }
+
     public function testEntryStampAndTextUseOneServerSideReadingOfBothLevelPrefixes(): void
     {
-        $this->assertSame('2026-07-28 12:00:00.003', LogLineReader::stampText('[2026-07-28 12:00:00.003] [WARNING] retrying'));
-        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28 12:00:00.003] [WARNING] retrying'));
-        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28 12:00:00.003] WARNING: retrying'));
-        $this->assertSame('failure', LogLineReader::entryText('[2026-07-28 12:00:00.003] failure'));
+        $this->assertSame('2026-07-28T12:00:00.003Z', LogLineReader::stampText('[2026-07-28T12:00:00.003Z] [WARNING] retrying'));
+        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28T12:00:00.003Z] [WARNING] retrying'));
+        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28T12:00:00.003Z] WARNING: retrying'));
+        $this->assertSame('failure', LogLineReader::entryText('[2026-07-28T12:00:00.003Z] failure'));
         $this->assertNull(LogLineReader::stampText('#0 /app/foo.php(10): bar()'));
         $this->assertSame('#0 /app/foo.php(10): bar()', LogLineReader::entryText('#0 /app/foo.php(10): bar()'));
-        $agentLine = '[AGENT_LOG]agent-7|ERROR|[2026-07-28 12:00:00.005] agent boom';
+        $agentLine = '[AGENT_LOG]agent-7|ERROR|[2026-07-28T12:00:00.005Z] agent boom';
         $this->assertNull(LogLineReader::stampText($agentLine));
         $this->assertSame($agentLine, LogLineReader::entryText($agentLine));
     }
@@ -186,8 +228,8 @@ final class LogLineReaderTest extends TestCase
     public function testEveryLineOfTheDaemonErrorStreamIsError(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] first failure',
-            '[2026-07-28 12:00:00.002] second failure',
+            '[2026-07-28T12:00:00.001Z] first failure',
+            '[2026-07-28T12:00:00.002Z] second failure',
             '#0 /app/foo.php(10): bar()',
         ];
         $this->writeLines('daemon-error.log', $lines);
@@ -210,11 +252,11 @@ final class LogLineReaderTest extends TestCase
 
     public function testAnErrorStreamIsKnownByItsSuffixInsideAnArchiveBatch(): void
     {
-        $relativePath = 'archive/2026-07-28-12-00-00/worker-regular-1.error.log';
+        $relativePath = 'archive/2026-07-28-12-00-00Z/worker-regular-1.error.log';
         mkdir(dirname($this->root . DIRECTORY_SEPARATOR . $relativePath), recursive: true);
         file_put_contents(
             $this->root . DIRECTORY_SEPARATOR . $relativePath,
-            "[2026-07-28 12:00:00.001] archived failure\n",
+            "[2026-07-28T12:00:00.001Z] archived failure\n",
         );
         $reader = new LogLineReader($this->root, new LogStoreReader($this->root));
 
@@ -225,7 +267,7 @@ final class LogLineReaderTest extends TestCase
 
     public function testALevelWordOpeningAnErrorStreamLineIsText(): void
     {
-        $text = '[2026-07-28 12:00:00.001] WARNING: disk almost full';
+        $text = '[2026-07-28T12:00:00.001Z] WARNING: disk almost full';
         $this->writeLines('agent-x.error.log', [$text]);
         $reader = new LogLineReader($this->root, new LogStoreReader($this->root));
 
@@ -238,8 +280,8 @@ final class LogLineReaderTest extends TestCase
     public function testTheErrorFilterReturnsTheWholeErrorStreamAndInfoNothing(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] first failure',
-            '[2026-07-28 12:00:00.002] second failure',
+            '[2026-07-28T12:00:00.001Z] first failure',
+            '[2026-07-28T12:00:00.002Z] second failure',
             '#0 /app/foo.php(10): bar()',
         ];
         $this->writeLines('daemon-error.log', $lines);
@@ -263,7 +305,7 @@ final class LogLineReaderTest extends TestCase
 
     public function testAReaderWithoutAStoreKnowsNoErrorStream(): void
     {
-        $this->writeLines('daemon-error.log', ['[2026-07-28 12:00:00.001] failure']);
+        $this->writeLines('daemon-error.log', ['[2026-07-28T12:00:00.001Z] failure']);
         $reader = new LogLineReader($this->root);
 
         $page = $reader->read('daemon-error.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
@@ -307,7 +349,7 @@ final class LogLineReaderTest extends TestCase
     public function testATailWindowOpeningInsideAnEntryTakesTheLevelOfItsHead(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            '[2026-07-28T12:00:00.001Z] ERROR: connection failed',
             'continuation 1 ' . str_repeat('a', 1000),
             'continuation 2 ' . str_repeat('b', 16000),
             'continuation 3 ' . str_repeat('c', 16000),
@@ -333,7 +375,7 @@ final class LogLineReaderTest extends TestCase
     public function testATailUnderACeilingDoesNotLookBack(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            '[2026-07-28T12:00:00.001Z] ERROR: connection failed',
             str_repeat('x', 5000),
             '#1 first frame',
             '#2 second frame',
@@ -356,7 +398,7 @@ final class LogLineReaderTest extends TestCase
     public function testAHeadReadStartingOnAContinuationLooksBackForItsEntry(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            '[2026-07-28T12:00:00.001Z] ERROR: connection failed',
             '#0 /app/foo.php(10): bar()',
         ];
         $this->writeLines('worker-1.log', $lines);
@@ -383,7 +425,7 @@ final class LogLineReaderTest extends TestCase
     public function testLookingBackStopsAfterOneReadStep(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            '[2026-07-28T12:00:00.001Z] ERROR: connection failed',
             str_repeat('x', self::PADDING_BYTES),
             '#1 {main}',
         ];
@@ -402,13 +444,13 @@ final class LogLineReaderTest extends TestCase
     public function testTailLastPageOfAFilteredSetPromisesNoMore(): void
     {
         $this->writeLines('worker-1.log', [
-            '[2026-07-28 12:00:00.001] unrelated',
-            '[2026-07-28 12:00:00.002] unrelated',
-            '[2026-07-28 12:00:00.003] unrelated',
-            '[2026-07-28 12:00:00.004] needle 1',
-            '[2026-07-28 12:00:00.005] needle 2',
-            '[2026-07-28 12:00:00.006] needle 3',
-            '[2026-07-28 12:00:00.007] needle 4',
+            '[2026-07-28T12:00:00.001Z] unrelated',
+            '[2026-07-28T12:00:00.002Z] unrelated',
+            '[2026-07-28T12:00:00.003Z] unrelated',
+            '[2026-07-28T12:00:00.004Z] needle 1',
+            '[2026-07-28T12:00:00.005Z] needle 2',
+            '[2026-07-28T12:00:00.006Z] needle 3',
+            '[2026-07-28T12:00:00.007Z] needle 4',
         ]);
         $reader = new LogLineReader($this->root);
 
@@ -418,7 +460,7 @@ final class LogLineReaderTest extends TestCase
         );
 
         $this->assertSame(
-            ['[2026-07-28 12:00:00.005] needle 2', '[2026-07-28 12:00:00.006] needle 3', '[2026-07-28 12:00:00.007] needle 4'],
+            ['[2026-07-28T12:00:00.005Z] needle 2', '[2026-07-28T12:00:00.006Z] needle 3', '[2026-07-28T12:00:00.007Z] needle 4'],
             array_map(static fn (LogLine $line): string => $line->text, $first->lines),
         );
         $this->assertTrue($first->hasMore);
@@ -430,7 +472,7 @@ final class LogLineReaderTest extends TestCase
         );
 
         $this->assertSame(
-            ['[2026-07-28 12:00:00.004] needle 1'],
+            ['[2026-07-28T12:00:00.004Z] needle 1'],
             array_map(static fn (LogLine $line): string => $line->text, $last->lines),
         );
         $this->assertFalse($last->hasMore);
@@ -440,11 +482,11 @@ final class LogLineReaderTest extends TestCase
     public function testTailSetSizedExactlyToThePagePromisesNoMore(): void
     {
         $this->writeLines('worker-1.log', [
-            '[2026-07-28 12:00:00.001] unrelated',
-            '[2026-07-28 12:00:00.002] unrelated',
-            '[2026-07-28 12:00:00.003] needle 1',
-            '[2026-07-28 12:00:00.004] needle 2',
-            '[2026-07-28 12:00:00.005] needle 3',
+            '[2026-07-28T12:00:00.001Z] unrelated',
+            '[2026-07-28T12:00:00.002Z] unrelated',
+            '[2026-07-28T12:00:00.003Z] needle 1',
+            '[2026-07-28T12:00:00.004Z] needle 2',
+            '[2026-07-28T12:00:00.005Z] needle 3',
         ]);
         $reader = new LogLineReader($this->root);
 
@@ -456,7 +498,7 @@ final class LogLineReaderTest extends TestCase
         );
 
         $this->assertSame(
-            ['[2026-07-28 12:00:00.003] needle 1', '[2026-07-28 12:00:00.004] needle 2', '[2026-07-28 12:00:00.005] needle 3'],
+            ['[2026-07-28T12:00:00.003Z] needle 1', '[2026-07-28T12:00:00.004Z] needle 2', '[2026-07-28T12:00:00.005Z] needle 3'],
             array_map(static fn (LogLine $line): string => $line->text, $page->lines),
         );
         $this->assertFalse($page->hasMore);
@@ -466,14 +508,14 @@ final class LogLineReaderTest extends TestCase
     public function testTailGrowsThroughChunksToAnswerHasMore(): void
     {
         $lines = [
-            '[2026-07-28 12:00:00.001] unrelated',
-            '[2026-07-28 12:00:00.002] needle 1',
-            '[2026-07-28 12:00:00.003] needle 2',
-            '[2026-07-28 12:00:00.004] needle 3',
+            '[2026-07-28T12:00:00.001Z] unrelated',
+            '[2026-07-28T12:00:00.002Z] needle 1',
+            '[2026-07-28T12:00:00.003Z] needle 2',
+            '[2026-07-28T12:00:00.004Z] needle 3',
         ];
         $written = 0;
         while ($written < self::PADDING_BYTES) {
-            $padding = '[2026-07-28 12:00:01.000] unrelated ' . count($lines);
+            $padding = '[2026-07-28T12:00:01.000Z] unrelated ' . count($lines);
             $lines[] = $padding;
             $written += strlen($padding) + 1;
         }
@@ -488,7 +530,7 @@ final class LogLineReaderTest extends TestCase
         );
 
         $this->assertSame(
-            ['[2026-07-28 12:00:00.002] needle 1', '[2026-07-28 12:00:00.003] needle 2', '[2026-07-28 12:00:00.004] needle 3'],
+            ['[2026-07-28T12:00:00.002Z] needle 1', '[2026-07-28T12:00:00.003Z] needle 2', '[2026-07-28T12:00:00.004Z] needle 3'],
             array_map(static fn (LogLine $line): string => $line->text, $page->lines),
         );
         $this->assertFalse($page->hasMore);
@@ -553,7 +595,7 @@ final class LogLineReaderTest extends TestCase
     {
         $this->assertSame(
             $this->milliseconds('2026-07-28 12:00:00', 250),
-            LogLineReader::stampMilliseconds('[2026-07-28 12:00:00.250] WARNING: retrying'),
+            LogLineReader::stampMilliseconds('[2026-07-28T12:00:00.250Z] WARNING: retrying'),
         );
         // A continuation and an agent-pipe line do not open with a stamp, so nothing orders them.
         $this->assertNull(LogLineReader::stampMilliseconds(self::FIXTURE[2]['text']));
@@ -584,7 +626,7 @@ final class LogLineReaderTest extends TestCase
 
     public function testLocateBetweenTwoLinesLandsOnTheLaterOne(): void
     {
-        $lines = ['[2026-07-28 12:00:00.001] before', '[2026-07-28 12:00:00.009] after'];
+        $lines = ['[2026-07-28T12:00:00.001Z] before', '[2026-07-28T12:00:00.009Z] after'];
         $this->writeLines('worker-1.log', $lines);
         $reader = new LogLineReader($this->root);
 
@@ -597,7 +639,7 @@ final class LogLineReaderTest extends TestCase
 
     public function testLocateFindsAPlaceSeveralWindowStepsBack(): void
     {
-        $lines = ['[2026-07-28 12:00:00.000] before', ...$this->needlesAroundPadding()];
+        $lines = ['[2026-07-28T12:00:00.000Z] before', ...$this->needlesAroundPadding()];
         $this->writeLines('worker-1.log', $lines);
         $reader = new LogLineReader($this->root);
         $offsets = $this->lineOffsets($lines);
@@ -616,9 +658,9 @@ final class LogLineReaderTest extends TestCase
         $cut = max(array_keys(array_filter($offsets, static fn (int $offset): bool => $offset < $fileSize - self::WINDOW_STEP_BYTES)));
         foreach ($lines as $index => $line) {
             if ($index === $cut) {
-                $lines[$index] = str_replace('12:00:01.000]', '12:00:01.500]', $line);
+                $lines[$index] = str_replace('12:00:01.000Z]', '12:00:01.500Z]', $line);
             } elseif ($index > $cut) {
-                $lines[$index] = str_replace('12:00:01.000]', '12:00:01.900]', $line);
+                $lines[$index] = str_replace('12:00:01.000Z]', '12:00:01.900Z]', $line);
             }
         }
         $this->writeLines('worker-1.log', $lines);
@@ -655,8 +697,8 @@ final class LogLineReaderTest extends TestCase
     public function testLocateAtTheStartOfTheFileClaimsOnlyTheExactMoment(): void
     {
         $this->writeLines('worker-1.log', [
-            '[2026-07-28 12:00:00.005] first line after rotation',
-            '[2026-07-28 12:00:00.006] next',
+            '[2026-07-28T12:00:00.005Z] first line after rotation',
+            '[2026-07-28T12:00:00.006Z] next',
         ]);
         $reader = new LogLineReader($this->root);
 
@@ -713,14 +755,14 @@ final class LogLineReaderTest extends TestCase
      */
     private function needlesAroundPadding(): array
     {
-        $lines = ['[2026-07-28 12:00:00.001] needle old'];
+        $lines = ['[2026-07-28T12:00:00.001Z] needle old'];
         $written = 0;
         while ($written < self::PADDING_BYTES) {
-            $padding = '[2026-07-28 12:00:01.000] unrelated ' . count($lines);
+            $padding = '[2026-07-28T12:00:01.000Z] unrelated ' . count($lines);
             $lines[] = $padding;
             $written += strlen($padding) + 1;
         }
-        $lines[] = '[2026-07-28 12:00:02.000] needle recent';
+        $lines[] = '[2026-07-28T12:00:02.000Z] needle recent';
 
         return $lines;
     }
@@ -745,16 +787,16 @@ final class LogLineReaderTest extends TestCase
     }
 
     /**
-     * The unix milliseconds a line stamped with this local time must be read as.
+     * The unix milliseconds a line stamped with this UTC time must be read as.
      *
-     * @param string $stamp Local time without milliseconds
+     * @param string $stamp UTC time without milliseconds
      * @param int $milliseconds Millisecond part of the stamp
      *
      * @return int Unix milliseconds
      */
     private function milliseconds(string $stamp, int $milliseconds): int
     {
-        return strtotime($stamp) * 1000 + $milliseconds;
+        return strtotime($stamp . ' UTC') * 1000 + $milliseconds;
     }
 
     /**

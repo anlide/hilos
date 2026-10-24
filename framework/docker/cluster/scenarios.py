@@ -127,7 +127,7 @@ import threading
 import time
 import uuid
 from collections import namedtuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 import control
 
@@ -4395,12 +4395,14 @@ RELEASE_FENCE_FIRED = re.compile(
 ISOLATION_FENCE_ARMED = re.compile(r"Self-fence armed: placing leader '([^']+)' went offline")
 LEADERSHIP_LOST_ON_QUORUM = re.compile(r"^\[([^\]]+)\].*Consensus: lost leadership held in term \d+: quorum lost", re.M)
 CONSENSUS_WON_TERM = re.compile(r"^\[([^\]]+)\].*Consensus: won term \d+ with ", re.M)
-LOG_LINE_TIME = "%Y-%m-%d %H:%M:%S.%f"
+LOG_LINE_TIME = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
 def log_time(stamp):
-    """The moment a daemon log line was written, read off its `[Y-m-d H:i:s.mmm]` prefix."""
-    return datetime.strptime(stamp, LOG_LINE_TIME)
+    """Read a daemon log's `[YYYY-MM-DDTHH:mm:ss.SSSZ]` prefix as a UTC-aware moment."""
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z", stamp):
+        raise ValueError(f"Invalid UTC log timestamp: {stamp!r}")
+    return datetime.strptime(stamp, LOG_LINE_TIME).replace(tzinfo=timezone.utc)
 
 
 def started_on_worker_at(text, agent_id):

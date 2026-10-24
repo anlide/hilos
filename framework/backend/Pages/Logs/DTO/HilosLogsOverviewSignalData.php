@@ -41,7 +41,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: rotation batch folders summed over the cluster. */
     public const string totalRotationsAllTime = 'totalRotationsAllTime';
 
-    /** Payload key: newest rotation anywhere in the cluster, ISO 8601. */
+    /** Payload key: newest rotation anywhere in the cluster, UTC ISO with .000Z. */
     public const string lastRotationAt = 'lastRotationAt';
 
     /** Payload key: distinct daemon stream names, the raw pair beside them included. */
@@ -115,7 +115,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Error row key: basename of the live stream the line was written to. */
     public const string stream = 'stream';
 
-    /** Error row key: instant the line was written, ISO 8601 with milliseconds. */
+    /** Error row key: instant the line was written, UTC ISO with milliseconds and Z. */
     public const string at = 'at';
 
     /** Error row key: line text, already cut by the node that read it. */
@@ -127,7 +127,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /**
      * @param ?bool $available Whether the cluster's log stores could be read, null while no merged picture has arrived
      * @param ?int $totalRotationsAllTime Number of rotation timestamp folders (null if unavailable)
-     * @param ?string $lastRotationAt ISO 8601 datetime of the latest rotation (null if none or unavailable)
+     * @param ?string $lastRotationAt UTC ISO datetime with .000Z of the latest rotation (null if none or unavailable)
      * @param ?int $logKeysPerDaemon Distinct daemon stream basenames, the raw pair included (null if unavailable)
      * @param ?int $totalWeightDaemonKeysBytes Sum of daemon log file sizes (null if unavailable)
      * @param ?int $logKeysPerAgent Distinct agent-*.log basenames across archive and live (null if unavailable)
@@ -140,12 +140,12 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> $nodes
-     *     Named nodes of the picture, one row each; empty in a single-node installation
+     *     Named nodes of the picture with UTC ISO lastRotationAt (.000Z); empty in a single-node installation
      * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
-     *     Last failures across the cluster inside the panel's window, newest first, with effective node IDs
+     *     Last failures with UTC ISO at (milliseconds and Z), newest first, with effective node IDs
      * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
      * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentWarnings
-     *     Last warnings across the cluster inside the panel's window, newest first, in the same row as the failures
+     *     Last warnings with UTC ISO at (milliseconds and Z), newest first, in the same row as failures
      * @param bool $recentWarningsCapped Whether the warnings list was cut at the limit, so its tab says "10+"
      * @param ?int $filesystemFreeBytes Free bytes on this installation's log filesystem, null in a cluster or when not known
      * @param ?int $filesystemTotalBytes Whole size of that filesystem, null in a cluster or when not known

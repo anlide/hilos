@@ -49,7 +49,8 @@ final class LogsLinesAppendedSignalData extends BaseDTO implements SignalDataInt
 
     /**
      * @param string $followId Request id of the start this frame belongs to
-     * @param list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> $lines Appended lines
+     * @param list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> $lines
+     *     Appended lines with UTC ISO time (milliseconds and Z), or null for an unstamped line
      * @param bool $rotated Whether the file was replaced and reading restarted at the start of the new one
      * @param ?int $skippedBytes Bytes jumped over to catch up, or null when nothing was skipped
      * @param bool $stopped Whether the follow has ended on the owner's side

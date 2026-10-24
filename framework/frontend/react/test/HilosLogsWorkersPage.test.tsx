@@ -147,7 +147,7 @@ function stream(
     type: 'regular',
     live: true,
     batchCount: 12,
-    lastBatchAt: 1800000000,
+    lastBatchAt: 1800000000000,
     bytes: 1536 * 1024 * 1024,
     ...overrides,
   }
@@ -331,7 +331,7 @@ describe('HilosLogsWorkersPage', () => {
         key: 'worker-1.log',
         node: 'node-1',
         live: false,
-        lastBatchAt: 1799999000,
+        lastBatchAt: 1799999000000,
       }),
     ])
 
@@ -346,7 +346,7 @@ describe('HilosLogsWorkersPage', () => {
         container,
         'hilos-log-worker-open-node-1:worker-1.log',
       )?.getAttribute('href'),
-    ).toBe('/hilos/logs/view/node-1/1799999000/worker-1.log')
+    ).toBe('/hilos/logs/view/node-1/1799999000000/worker-1.log')
   })
 
   /**

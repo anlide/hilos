@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Log;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
@@ -51,7 +53,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
     private const int USER_ID = 7;
 
     /** @var string Name of the rotated batch the archive fixture is written into */
-    private const string BATCH_DIR = '2026-08-01-00-00-00';
+    private const string BATCH_DIR = '2026-08-01-00-00-00Z';
 
     /** @var string Keep-count under which no batch is protected by being among the newest */
     private const string KEEP_NO_BATCHES = '0';
@@ -71,8 +73,13 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
     /** @var ?LogStoreAgent Owner under test, started on first use so its walk has the fixture in it */
     private ?LogStoreAgent $agent = null;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logstore-takeout-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -93,6 +100,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name);
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name);
@@ -112,14 +120,14 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
 
     public function testAConfirmedBatchGetsItsMarkerAndTheAskerGetsTheStamp(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
         $before = time();
 
         $this->confirm();
 
         $takenAt = $this->acked()[LogsTakeoutConfirmReplyDTO::takenAt];
-        $this->assertGreaterThanOrEqual($before, $takenAt);
-        $this->assertSame($takenAt, LogBatchTakeoutMarker::read($this->batchPath()));
+        $this->assertGreaterThanOrEqual($before * 1000, $takenAt);
+        $this->assertSame($takenAt, LogBatchTakeoutMarker::read($this->batchPath()) * 1000);
     }
 
     /**
@@ -129,7 +137,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testTheSuccessCarriesTheSentenceTheBrowserToasts(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
 
         $this->confirm();
 
@@ -143,7 +151,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testAsecondConfirmationAnswersWithTheStampAlreadyOnDisk(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
         $this->confirm();
         $first = $this->acked()[LogsTakeoutConfirmReplyDTO::takenAt];
 
@@ -158,7 +166,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testTheConfirmationIsReportedToTheClusterWithoutWaitingForTheSchedule(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
 
         $this->confirm();
 
@@ -176,7 +184,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testTheReportedIndexNamesTheDirectoryItMeasured(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
 
         $this->confirm();
 
@@ -201,7 +209,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testABatchBackUnderProtectionIsRefused(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_MORE_THAN_THERE_ARE);
 
         $this->confirm();
@@ -219,7 +227,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testTheGuardRejudgesInsteadOfReadingTheVerdictInTheIndex(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
         $agent = $this->startedAgent();
         $this->assertSame([$this->batchTimestamp()], $agent->index()->dueBatchTimestamps);
 
@@ -240,7 +248,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     public function testAConfirmedBatchStaysConfirmedWhenTheRuleMovesBackOverIt(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
         $this->confirm();
         $first = $this->acked()[LogsTakeoutConfirmReplyDTO::takenAt];
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_MORE_THAN_THERE_ARE);
@@ -252,7 +260,7 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
 
     public function testAnUntrackedConfirmationWritesNothingAndAnswersNobody(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
 
         $this->confirm(requestId: null);
 
@@ -290,14 +298,14 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
     private function confirm(?string $requestId = self::REQUEST_ID): void
     {
         $this->startedAgent()->onSignalAgent(
-            new AgentSignalData(new LogsTakeoutConfirmSignalData(
+            new AgentSignalData(LogsTakeoutConfirmSignalData::fromArray((new LogsTakeoutConfirmSignalData(
                 nodeId: '',
                 batchTimestamp: $this->batchTimestamp(),
                 acceptKey: self::ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
                 requestId: $requestId,
                 userId: self::USER_ID,
-            )),
+            ))->toArray())),
             'agent',
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM,
         );
@@ -396,7 +404,11 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
      */
     private function batchTimestamp(): int
     {
-        $parsed = DateTimeImmutable::createFromFormat(LogRotationConstants::TIMESTAMP_FORMAT, self::BATCH_DIR);
+        $parsed = DateTimeImmutable::createFromFormat(
+            '!' . LogRotationConstants::TIMESTAMP_FORMAT,
+            self::BATCH_DIR,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
         $this->assertNotFalse($parsed);
 
         return $parsed->getTimestamp();

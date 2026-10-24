@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\LogStreamConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -420,8 +422,12 @@ final class LogStoreReader
      */
     private static function timestampDirNameToUnix(string $name): ?int
     {
-        $dt = DateTimeImmutable::createFromFormat(LogRotationConstants::TIMESTAMP_FORMAT, $name);
-        if ($dt === false) {
+        $dt = DateTimeImmutable::createFromFormat(
+            '!' . LogRotationConstants::TIMESTAMP_FORMAT,
+            $name,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
+        if ($dt === false || $dt->format(LogRotationConstants::TIMESTAMP_FORMAT) !== $name) {
             return null;
         }
 

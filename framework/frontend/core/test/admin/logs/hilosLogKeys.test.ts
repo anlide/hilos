@@ -28,7 +28,7 @@ function row(overrides: Partial<HilosLogKeyRow> = {}): HilosLogKeyRow {
     class: HILOS_LOG_CLASS_WORKER,
     live: true,
     batchCount: 12,
-    lastBatchAt: 1800000000,
+    lastBatchAt: 1800000000000,
     bytes: 1024,
     growthPerDay: 512,
     ...overrides,
@@ -61,7 +61,7 @@ describe('resolveHilosLogKeyRow', () => {
         class: HILOS_LOG_CLASS_AGENT,
         live: true,
         batchCount: 3,
-        lastBatchAt: 1799999000,
+        lastBatchAt: 1799999000000,
         bytes: 4096,
         growthPerDay: 128,
       }),
@@ -74,7 +74,7 @@ describe('resolveHilosLogKeyRow', () => {
       class: HILOS_LOG_CLASS_AGENT,
       live: true,
       batchCount: 3,
-      lastBatchAt: 1799999000,
+      lastBatchAt: 1799999000000,
       bytes: 4096,
       growthPerDay: 128,
     })
@@ -219,8 +219,8 @@ describe('logKeyViewerPath', () => {
 
   it('opens a stream that is only in the archive on its newest batch', () => {
     expect(
-      logKeyViewerPath(row({ live: false, lastBatchAt: 1799999000 })),
-    ).toBe('/hilos/logs/view/node-1/1799999000/worker-0.log')
+      logKeyViewerPath(row({ live: false, lastBatchAt: 1799999000000 })),
+    ).toBe('/hilos/logs/view/node-1/1799999000000/worker-0.log')
   })
 
   it('names the standalone node in the viewer address', () => {

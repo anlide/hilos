@@ -36,7 +36,7 @@ final class WorkerServerAgentLogLevelTest extends TestCase
     private const string MAIN_STREAM_SUFFIX = '.log';
 
     /** Stamp prefix every agent line carries once {@see Logger::logAgent()} has built it. */
-    private const string STAMP = '[2026-09-12 12:00:00.001] ';
+    private const string STAMP = '[2026-09-12T12:00:00.001Z] ';
 
     /** Basename of the worker whose pipe is drained; only agent lines are sent, so the file is never written. */
     private const string WORKER_BASENAME = 'worker-regular-1';

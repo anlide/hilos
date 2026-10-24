@@ -165,7 +165,7 @@ final class LogRotator
             throw new LogRotationException("Cannot create staging directory: $stagingDir", $failure);
         }
 
-        $timestamp = date(LogRotationConstants::TIMESTAMP_FORMAT);
+        $timestamp = gmdate(LogRotationConstants::TIMESTAMP_FORMAT);
         $timestampDir = $stagingDir . DIRECTORY_SEPARATOR . $timestamp;
         try {
             FsPath::ensureDirectory($timestampDir, self::BATCH_DIR_PERMISSIONS);

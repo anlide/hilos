@@ -558,7 +558,7 @@ export class HilosLogsRotationsPage {
 
     return pruneNotBefore == null
       ? 'The cleaner may delete this batch as soon as it next runs.'
-      : `The cleaner may delete this batch after ${new Date(pruneNotBefore * 1000).toLocaleString()}.`
+      : `The cleaner may delete this batch after ${new Date(pruneNotBefore).toLocaleString()}.`
   })
 
   constructor() {
@@ -607,7 +607,7 @@ export class HilosLogsRotationsPage {
   // The batch's own name is its rotation time; the archive directory under it is
   // what an operator types into scp, so both are in the cell.
   protected batchTime(row: HilosLogRotationRow): string {
-    return new Date(row.batchAt * 1000).toLocaleString()
+    return new Date(row.batchAt).toLocaleString()
   }
 
   protected retentionClass(row: HilosLogRotationRow): string {

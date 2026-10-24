@@ -4,6 +4,11 @@ import {
   clearCustomSetting,
   setCustomSetting,
   shownByTestId,
+  watchLogFrames,
+  expectLogLineClock,
+  expectLogBatchViewer,
+  expectLogEpochMoment,
+  logBatchDirectory,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
@@ -50,6 +55,7 @@ test('a slave live file followed from a follower master receives a line appended
   browser,
 }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
+  const frames = watchLogFrames(page)
   try {
     // The command round trip and remote artifact delivery outlive the base cap.
     test.slow()
@@ -69,7 +75,23 @@ test('a slave live file followed from a follower master receives a line appended
     ).toBeVisible({
       timeout: TAIL_ARRIVAL_TIMEOUT_MS,
     })
+    const timeZone = await page.evaluate(
+      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    )
+    await expectLogLineClock(
+      expect,
+      page,
+      frames,
+      marker,
+      'logs_lines_appended',
+      timeZone,
+    )
   } finally {
+    frames.stop()
+    await test.info().attach('slave-follow-time-frames', {
+      body: JSON.stringify({ packets: frames.packets, sent: frames.sent }),
+      contentType: 'application/json',
+    })
     await page.context().close()
   }
 })
@@ -317,8 +339,12 @@ test('cluster logs rotations: shows node column, creates batches via max_age, an
   test.slow()
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   const control = await page.context().newPage()
+  const frames = watchLogFrames(page)
+  const viewer = await page.context().newPage()
+  const viewerFrames = watchLogFrames(viewer)
   rotationControl = control
   const members = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
+  let slaveBatch: Record<string, unknown> | undefined
   try {
     await grantAdminToSelf(page)
     await gotoPage(control, '/hilos/settings', PAGE_READY)
@@ -328,6 +354,14 @@ test('cluster logs rotations: shows node column, creates batches via max_age, an
       searchPlaceholder: 'Search by batch date or node…',
       members,
       prepare: async () => {
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        const before = frames.rotations()
+        const newestBefore = Math.max(
+          0,
+          ...[...before.values()].map((row) =>
+            expectLogEpochMoment(expect, row.batchAt),
+          ),
+        )
         await setSetting(control, ROTATION_MAX_AGE, '1')
 
         for (const member of members) {
@@ -338,13 +372,70 @@ test('cluster logs rotations: shows node column, creates batches via max_age, an
             ROTATION_ARRIVAL_TIMEOUT_MS,
             'rotation preparation',
           )
+          await expect
+            .poll(
+              () =>
+                [...frames.rotations()].some(
+                  ([key, row]) =>
+                    row.node === member &&
+                    !before.has(key) &&
+                    typeof row.batchAt === 'number' &&
+                    row.batchAt > newestBefore,
+                ),
+              { timeout: ROTATION_ARRIVAL_TIMEOUT_MS },
+            )
+            .toBe(true)
+          if (member === CLUSTER_SLAVES[0]) {
+            slaveBatch = [...frames.rotations()].find(
+              ([key, row]) =>
+                row.node === member &&
+                !before.has(key) &&
+                typeof row.batchAt === 'number' &&
+                row.batchAt > newestBefore,
+            )?.[1]
+          }
         }
 
         await setSetting(control, ROTATION_MAX_AGE, '0')
         await resetNodeFilter(page)
       },
     })
+    expect(slaveBatch).toBeDefined()
+    if (slaveBatch === undefined)
+      throw new Error('No new slave rotation was observed')
+    const batchAt = expectLogEpochMoment(expect, slaveBatch.batchAt)
+    expect(slaveBatch.path).toEqual(
+      expect.stringContaining(logBatchDirectory(batchAt)),
+    )
+    await gotoPage(
+      viewer,
+      `/hilos/logs/view/${slaveBatch.node}/${batchAt}/daemon.log`,
+      PAGE_READY,
+    )
+    await expect(viewer.getByTestId('hilos-log-entry').first()).toBeVisible({
+      timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+    })
+    const timeZone = await viewer.evaluate(
+      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    )
+    await expectLogBatchViewer(
+      expect,
+      viewer,
+      viewerFrames,
+      slaveBatch,
+      timeZone,
+    )
   } finally {
+    frames.stop()
+    viewerFrames.stop()
+    await test.info().attach('cluster-rotation-time-frames', {
+      body: JSON.stringify({
+        rotations: frames.packets,
+        viewer: viewerFrames.packets,
+        sent: viewerFrames.sent,
+      }),
+      contentType: 'application/json',
+    })
     try {
       if (!control.isClosed()) {
         await resetSetting(control, ROTATION_MAX_AGE)

@@ -35,7 +35,7 @@ function node(
   return {
     nodeId: 'node-1',
     available: true,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
     archiveBytes: 1024 * 1024 * 1024,
     growthBytesPerDay: 190 * 1024 * 1024,
@@ -54,7 +54,7 @@ function overview(
   return {
     available: true,
     totalRotationsAllTime: 384,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     logKeysPerDaemon: 4,
     totalWeightDaemonKeysBytes: 220 * 1024 * 1024,
     logKeysPerAgent: 14,
@@ -184,7 +184,7 @@ describe('HilosLogsPage', () => {
           {
             nodeId: '',
             stream: 'worker-0.log',
-            at: '2026-09-02T03:00:00+00:00',
+            at: '2026-09-02T03:00:00.000Z',
             message: HIDDEN_VALUE,
             traceFrames: 2,
           },

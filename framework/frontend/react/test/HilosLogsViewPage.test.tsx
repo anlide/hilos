@@ -27,9 +27,9 @@ import { HilosLogsViewPage } from '../src/admin/logs/HilosLogsViewPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
-const BATCH = 1800000000
+const BATCH = 1800000000000
 
-const LATEST_BATCH = BATCH + 200
+const LATEST_BATCH = BATCH + 200000
 
 const releases: (() => void)[] = []
 
@@ -133,7 +133,7 @@ function archivedStreamCatalog(): HilosLogViewerCatalog {
   const node = picture.nodes[0]
   node.nodeId = 'node-2'
   node.batches = [LATEST_BATCH, BATCH]
-  node.streams[1].batchTimestamps = [BATCH, LATEST_BATCH + 100, LATEST_BATCH]
+  node.streams[1].batchTimestamps = [BATCH, LATEST_BATCH + 100000, LATEST_BATCH]
   picture.nodes.push(clusterCatalog().nodes[0])
 
   return picture
@@ -391,7 +391,7 @@ describe('HilosLogsViewPage', () => {
       readable: true,
       lines: [
         {
-          time: '2026-09-06 10:00:02.250',
+          time: '2026-09-06T10:00:02.250Z',
           text: HIDDEN_VALUE,
           level: 'ERROR',
           isContinuation: false,
@@ -623,7 +623,7 @@ describe('HilosLogsViewPage', () => {
       const source = byId(container, 'hilos-log-source') as HTMLSelectElement
       expect(source.value).toBe(String(LATEST_BATCH))
       expect(source.selectedOptions[0].textContent).toBe(
-        `Batch — ${new Date(LATEST_BATCH * 1000).toLocaleString()}`,
+        `Batch — ${new Date(LATEST_BATCH).toLocaleString()}`,
       )
       expect(sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
       expect(sent.at(-1)?.data).toMatchObject({
@@ -906,7 +906,7 @@ describe('HilosLogsViewPage', () => {
     pushCatalog(archivedStreamCatalog())
 
     expect(navigator.currentPath.get()).toBe(
-      '/hilos/logs/view/node-2/1800000000',
+      '/hilos/logs/view/node-2/1800000000000',
     )
     expect(
       (byId(container, 'hilos-log-source') as HTMLSelectElement).value,
@@ -945,7 +945,7 @@ describe('HilosLogsViewPage', () => {
     expect(source.value).toBe(String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0].textContent).toBe(
-      `Batch — ${new Date(BATCH * 1000).toLocaleString()} (unavailable)`,
+      `Batch — ${new Date(BATCH).toLocaleString()} (unavailable)`,
     )
     expect(
       (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
@@ -958,7 +958,7 @@ describe('HilosLogsViewPage', () => {
     expect(source.value).toBe(String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0].textContent).toBe(
-      `Batch — ${new Date(BATCH * 1000).toLocaleString()}`,
+      `Batch — ${new Date(BATCH).toLocaleString()}`,
     )
   })
 
@@ -1165,10 +1165,10 @@ describe('HilosLogsViewPage', () => {
       readable: true,
       lines: [
         wireLine(
-          '[2026-09-06 10:00:02.250] ERROR: the entry the row named',
+          '[2026-09-06T10:00:02.250Z] ERROR: the entry the row named',
           'ERROR',
         ),
-        wireLine('[2026-09-06 10:00:03.000] INFO: what happened next'),
+        wireLine('[2026-09-06T10:00:03.000Z] INFO: what happened next'),
       ],
       nextCursor: 4096,
       hasMore: true,
@@ -1196,7 +1196,7 @@ describe('HilosLogsViewPage', () => {
 
     answer(sent.at(-1)?.requestId, {
       readable: true,
-      lines: [wireLine('[2026-09-06 11:00:00.000] INFO: the end of the file')],
+      lines: [wireLine('[2026-09-06T11:00:00.000Z] INFO: the end of the file')],
       nextCursor: null,
       hasMore: false,
       anchorFound: false,

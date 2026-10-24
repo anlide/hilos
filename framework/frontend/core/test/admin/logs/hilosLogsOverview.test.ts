@@ -41,7 +41,7 @@ function node(
   return {
     nodeId: 'node-1',
     available: true,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 1024,
     archiveBytes: 4096,
     growthBytesPerDay: 512,
@@ -59,7 +59,7 @@ function overview(
   return {
     available: true,
     totalRotationsAllTime: 384,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     logKeysPerDaemon: 4,
     totalWeightDaemonKeysBytes: 220,
     logKeysPerAgent: 14,
@@ -87,7 +87,7 @@ function failure(
   return {
     nodeId: 'standalone',
     stream: 'worker-monopolistic-5.error.log',
-    at: '2026-09-06T10:00:02.125+00:00',
+    at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
     traceFrames: 3,
     ...overrides,
@@ -317,7 +317,7 @@ describe('formatLogsOverviewRotationAt', () => {
   })
 
   it('prints a real instant in the reader own locale', () => {
-    expect(formatLogsOverviewRotationAt('2026-09-02T03:00:00+00:00')).not.toBe(
+    expect(formatLogsOverviewRotationAt('2026-09-02T03:00:00.000Z')).not.toBe(
       '—',
     )
   })
@@ -480,10 +480,10 @@ describe('the words of a tab', () => {
 
 describe('formatLogsOverviewRecentAt', () => {
   it('prints the time of day and leaves the date out, since every row shares it', () => {
-    const printed = formatLogsOverviewRecentAt('2026-09-06T10:00:02.125+00:00')
+    const printed = formatLogsOverviewRecentAt('2026-09-06T10:00:02.125Z')
 
     expect(printed).toBe(
-      new Date('2026-09-06T10:00:02.125+00:00').toLocaleTimeString(),
+      new Date('2026-09-06T10:00:02.125Z').toLocaleTimeString(),
     )
     expect(printed).not.toContain('2026')
   })
@@ -522,7 +522,7 @@ describe('logsOverviewRecentPath', () => {
         failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
       ),
     ).toBe(
-      `/hilos/logs/view/node-2/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+      `/hilos/logs/view/node-2/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
     )
   })
 
@@ -530,7 +530,7 @@ describe('logsOverviewRecentPath', () => {
     expect(
       logsOverviewRecentPath(failure({ stream: 'daemon-error.log' })),
     ).toBe(
-      `/hilos/logs/view/standalone/live/daemon-error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+      `/hilos/logs/view/standalone/live/daemon-error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
     )
   })
 
@@ -818,16 +818,14 @@ it.each([-300_000, 300_000])(
       .mockReturnValue('America/Los_Angeles')
     applyServerTime(Date.now() + drift)
     try {
-      for (const at of [
-        '2026-01-01T00:30:05Z',
-        '2026-01-01T02:30:05+02:00',
-        '2025-12-31T19:30:05-0500',
-      ]) {
+      for (const at of ['2026-01-01T00:30:05.123Z']) {
         expect(formatLogsOverviewRotationAt(at)).toBe('12/31/2025, 4:30:05 PM')
         expect(formatLogsOverviewRecentAt(at)).toBe('4:30:05 PM')
       }
       for (const at of [
         '2026-01-01T00:30:05',
+        '2026-01-01T02:30:05+02:00',
+        '2025-12-31T19:30:05-0500',
         '2026-01-01',
         'invalid',
         '2026-01-01T00:30:05+25:00',

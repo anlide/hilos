@@ -19,6 +19,7 @@ empty-state discrimination and the wording are the core headless's
 (hilosLogRotations); this view owns only the markup, so a project mounts it by passing
 its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { formatMoment } from '@hilos/core'
 import {
   createHilosLogRotationsActions,
   createHilosLogRotationsHeader,
@@ -42,7 +43,7 @@ import {
   type HilosLogRotationRow,
   type HilosLogRotationsContext,
 } from '@hilos/core/admin/logs'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import { HILOS_PAGE_ROUTES, HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
@@ -75,6 +76,7 @@ const rotations = createHilosLogRotationsTable(
 const rotationsTable = rotations.controller
 const rotationsActions = createHilosLogRotationsActions(props.context)
 const header = useSignal(headerHandle.header)
+const timeZone = useSignal(hilosTimeZone)
 
 // Bind the server-windowed table and start listening for the header on mount; the
 // header also arrives once as the answer to the subscription.
@@ -110,7 +112,8 @@ const emptyState = computed(() =>
 // The batch's own name is its rotation time; the archive directory under it is
 // what an operator types into scp, so both are in the cell.
 function batchTime(row: HilosLogRotationRow): string {
-  return new Date(row.batchAt * 1000).toLocaleString()
+  void timeZone.value
+  return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
 }
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
@@ -241,11 +244,20 @@ const undoNotice = computed(() =>
 // the operator has been reading "cleaner" since the takeout modal. Null is the
 // installation that told it not to wait, and that is said in words too: a blank
 // would read as "we do not know" rather than "at any moment".
-const undoDeadline = computed(() =>
-  undoRow.value?.pruneNotBefore == null
-    ? 'The cleaner may delete this batch as soon as it next runs.'
-    : `The cleaner may delete this batch after ${new Date(undoRow.value.pruneNotBefore * 1000).toLocaleString()}.`,
-)
+const undoDeadline = computed(() => {
+  void timeZone.value
+  // The node may change its promise while this dialog is open. Keep the opening
+  // details only when the focused batch has gone, as the disappearance notice does.
+  const pruneNotBefore = (focusedRow.value ?? undoRow.value)?.pruneNotBefore
+  if (pruneNotBefore == null) {
+    return 'The cleaner may delete this batch as soon as it next runs.'
+  }
+
+  const moment = formatMoment(pruneNotBefore, { kind: 'dateTime' })
+  return moment === null
+    ? 'The cleaner may delete this batch after —.'
+    : `The cleaner may delete this batch after ${moment}.`
+})
 
 async function submitUndo(): Promise<void> {
   const row = undoRow.value

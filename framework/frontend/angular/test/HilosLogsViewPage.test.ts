@@ -177,7 +177,7 @@ function makeConnection(): {
             followId,
             lines: [
               {
-                time: '2026-09-06 10:00:02.250',
+                time: '2026-09-06T10:00:02.250Z',
                 text,
                 level: 'INFO',
                 isContinuation: false,
@@ -204,7 +204,7 @@ function makeConnection(): {
             readable: true,
             lines: [
               {
-                time: '2026-09-06 10:00:02.250',
+                time: '2026-09-06T10:00:02.250Z',
                 text: HIDDEN_VALUE,
                 level: 'ERROR',
                 isContinuation: false,
@@ -227,19 +227,19 @@ function makeConnection(): {
 }
 
 /** Two nodes and two files: each nonfirst choice must survive a late catalog. */
-const BATCH = 1_786_000_000
+const BATCH = 1_786_000_000_000
 const CLUSTER_CATALOG: HilosLogViewerCatalog = {
   available: true,
   clusterEnabled: true,
   nodes: ['alpha', 'beta'].map((nodeId) => ({
     nodeId,
     available: true,
-    batches: [BATCH, BATCH + 60],
+    batches: [BATCH, BATCH + 60000],
     streams: ['daemon.log', 'worker-0.log'].map((key) => ({
       key,
       class: 'worker',
       live: true,
-      batchTimestamps: [BATCH, BATCH + 60],
+      batchTimestamps: [BATCH, BATCH + 60000],
     })),
   })),
 }
@@ -426,7 +426,7 @@ describe('HilosLogsViewPage native selections', () => {
       ...CLUSTER_CATALOG,
       nodes: CLUSTER_CATALOG.nodes.map((node) => ({
         ...node,
-        batches: [...node.batches, BATCH + 120],
+        batches: [...node.batches, BATCH + 120000],
         streams: [
           {
             key: 'new.log',
@@ -564,7 +564,7 @@ describe('HilosLogsViewPage missing selections', () => {
       const link = root.querySelector<HTMLAnchorElement>(
         '[data-id="hilos-log-latest-batch"]',
       )!
-      const latestBatch = BATCH + 60
+      const latestBatch = BATCH + 60000
       const batchPath = `/hilos/logs/view/beta/${latestBatch}/worker-0.log`
       expect(link.tagName).toBe('A')
       expect(link.textContent?.trim()).toBe('Open latest batch')
@@ -586,7 +586,7 @@ describe('HilosLogsViewPage missing selections', () => {
         String(latestBatch),
       )
       expect(source.selectedOptions[0].textContent?.trim()).toBe(
-        `Batch — ${new Date(latestBatch * 1000).toLocaleString()}`,
+        `Batch — ${new Date(latestBatch).toLocaleString()}`,
       )
       expect(h.sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
       expect(h.sent.at(-1)?.data).toMatchObject({
@@ -715,7 +715,7 @@ describe('HilosLogsViewPage missing selections', () => {
         root
           .querySelector('[data-id="hilos-log-latest-batch"]')
           ?.getAttribute('href'),
-      ).toBe(`/hilos/logs/view/beta/${BATCH + 60}/worker-0.log`)
+      ).toBe(`/hilos/logs/view/beta/${BATCH + 60000}/worker-0.log`)
       expect(h.address.currentPath.get()).toBe(
         '/hilos/logs/view/beta/live/worker-0.log',
       )
@@ -789,7 +789,7 @@ describe('HilosLogsViewPage missing selections', () => {
             root
               .querySelector('[data-id="hilos-log-latest-batch"]')
               ?.getAttribute('href'),
-          ).toBe(`/hilos/logs/view/beta/${BATCH + 60}/worker-0.log`)
+          ).toBe(`/hilos/logs/view/beta/${BATCH + 60000}/worker-0.log`)
 
           if (navigation === 'select') {
             const stream = selected(
@@ -865,7 +865,7 @@ describe('HilosLogsViewPage missing selections', () => {
               root
                 .querySelector('[data-id="hilos-log-latest-batch"]')
                 ?.getAttribute('href'),
-            ).toBe(`/hilos/logs/view/beta/${BATCH + 60}/daemon.log`)
+            ).toBe(`/hilos/logs/view/beta/${BATCH + 60000}/daemon.log`)
           } else if (outcome === 'refusal') {
             expect(
               root
@@ -925,8 +925,8 @@ describe('HilosLogsViewPage missing selections', () => {
     expect(source.selectedOptions[0]?.textContent).not.toContain('unavailable')
 
     const nextPicture = archivedStreamCatalog()
-    nextPicture.nodes[1].batches = [BATCH + 60]
-    nextPicture.nodes[1].streams[1].batchTimestamps = [BATCH + 60]
+    nextPicture.nodes[1].batches = [BATCH + 60000]
+    nextPicture.nodes[1].streams[1].batchTimestamps = [BATCH + 60000]
     h.pushCatalog(nextPicture)
     h.answer(h.sent.at(-1)?.requestId, {
       readable: false,
@@ -939,7 +939,7 @@ describe('HilosLogsViewPage missing selections', () => {
     selected(h.fixture, 'hilos-log-source', String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0]?.textContent?.trim()).toBe(
-      `Batch — ${new Date(BATCH * 1000).toLocaleString()} (unavailable)`,
+      `Batch — ${new Date(BATCH).toLocaleString()} (unavailable)`,
     )
     selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
     const root = h.fixture.nativeElement as HTMLElement
@@ -954,7 +954,7 @@ describe('HilosLogsViewPage missing selections', () => {
     selected(h.fixture, 'hilos-log-source', String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0]?.textContent?.trim()).toBe(
-      `Batch — ${new Date(BATCH * 1000).toLocaleString()}`,
+      `Batch — ${new Date(BATCH).toLocaleString()}`,
     )
   })
 

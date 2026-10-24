@@ -6,7 +6,7 @@ namespace Hilos\Pages\Logs;
 
 use Closure;
 use DateTimeImmutable;
-use DateTimeInterface;
+use DateTimeZone;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -79,12 +79,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
     /** @var int Rows each tab of the panel carries; past it that tab's counter reads "10+" */
     private const int RECENT_LIMIT = 10;
-
-    /**
-     * @var string Instant of a failure as the panel receives it: ISO 8601 like every other time on
-     *     this screen, with the milliseconds that {@see DateTimeInterface::ATOM} drops
-     */
-    private const string FAILURE_AT_FORMAT = 'Y-m-d\TH:i:s.vP';
 
     /** @var string Hour of a moment, 24-hour clock without a leading zero */
     private const string HOUR_FORMAT = 'G';
@@ -677,11 +671,12 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * second are ordered by them, and the panel prints seconds.
      *
      * @param int $atMs Unix milliseconds, as the node that wrote the line read them
-     * @return string ISO 8601 datetime with milliseconds
+     * @return string UTC ISO datetime with milliseconds and Z
      */
     private static function failureAt(int $atMs): string
     {
-        $moment = new DateTimeImmutable()->setTimestamp(intdiv($atMs, TimeConstants::MS_PER_SECOND));
+        $moment = new DateTimeImmutable('now', new DateTimeZone(TimeConstants::UTC_TIME_ZONE))
+            ->setTimestamp(intdiv($atMs, TimeConstants::MS_PER_SECOND));
 
         return $moment
             ->setTime(
@@ -690,22 +685,22 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
                 (int)$moment->format(self::SECOND_FORMAT),
                 ($atMs % TimeConstants::MS_PER_SECOND) * TimeConstants::US_PER_MILLISECOND,
             )
-            ->format(self::FAILURE_AT_FORMAT);
+            ->format(TimeConstants::ISO_UTC_MILLISECONDS_FORMAT);
     }
 
     /**
      * A rotation instant in the form the screen reads it in.
      *
      * @param ?int $timestamp Unix timestamp of the rotation, null when there was none
-     * @return ?string ISO 8601 datetime, null when there was no rotation
+     * @return ?string UTC ISO datetime with .000Z, null when there was no rotation
      */
     private static function rotationAt(?int $timestamp): ?string
     {
         return $timestamp === null
             ? null
-            : new DateTimeImmutable()
+            : new DateTimeImmutable('now', new DateTimeZone(TimeConstants::UTC_TIME_ZONE))
                 ->setTimestamp($timestamp)
-                ->format(DateTimeInterface::ATOM);
+                ->format(TimeConstants::ISO_UTC_MILLISECONDS_FORMAT);
     }
 
     /**

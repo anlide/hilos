@@ -421,11 +421,13 @@ describe('the log viewer route', () => {
       params: {},
       admin: true,
     })
-    expect(router.match('/hilos/logs/view/-/1756166400/worker-0.log')).toEqual({
+    expect(
+      router.match('/hilos/logs/view/-/1756166400000/worker-0.log'),
+    ).toEqual({
       page: HilosPages.LOGS_VIEW,
       params: {
         nodeId: '-',
-        source: '1756166400',
+        source: '1756166400000',
         stream: 'worker-0.log',
       },
       admin: true,

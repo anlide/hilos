@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
+use Hilos\Log\LogLineReader;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -14,10 +15,10 @@ use ReflectionClass;
  */
 final class LoggerTest extends TestCase
 {
-    private const string TIMESTAMP_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
+    private const string TIMESTAMP_PATTERN = '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/';
 
     /** Same stamp without the start anchor, to count how many a line carries */
-    private const string TIMESTAMP_ANYWHERE_PATTERN = '/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
+    private const string TIMESTAMP_ANYWHERE_PATTERN = '/\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/';
 
     protected function tearDown(): void
     {
@@ -34,6 +35,48 @@ final class LoggerTest extends TestCase
         Logger::setWriteLevel(LogLevel::Info);
 
         parent::tearDown();
+    }
+
+    public function testEveryWriterUsesUtcWithMillisecondsInADifferentProcessZone(): void
+    {
+        $previousZone = date_default_timezone_get();
+        $logFile = $this->createTempLogFile();
+        $errorLogFile = $this->createTempLogFile();
+        Logger::setLogFile($logFile);
+        Logger::setErrorLogFile($errorLogFile);
+        date_default_timezone_set('Pacific/Kiritimati');
+        try {
+            $beforeMs = (int)floor(microtime(true) * 1000);
+            Logger::info('ordinary');
+            Logger::error('failure');
+            Logger::errorLog('raw failure');
+            Logger::resetLogFile();
+            ob_start();
+            try {
+                Logger::logAgentInfo('agent-utc', 'agent line');
+            } finally {
+                $agentOutput = ob_get_clean();
+            }
+            $afterMs = (int)floor(microtime(true) * 1000);
+
+            $this->assertIsString($agentOutput);
+            $this->assertSame(1, preg_match('/\[AGENT_LOG\]agent-utc\|INFO\|(.*)/', $agentOutput, $agentMatch));
+            $lines = [
+                ...explode("\n", trim((string)file_get_contents($logFile))),
+                ...explode("\n", trim((string)file_get_contents($errorLogFile))),
+                $agentMatch[1],
+            ];
+            $this->assertCount(6, $lines);
+            foreach ($lines as $line) {
+                $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $line);
+                $stampMs = LogLineReader::stampMilliseconds($line);
+                $this->assertNotNull($stampMs);
+                $this->assertGreaterThanOrEqual($beforeMs, $stampMs);
+                $this->assertLessThanOrEqual($afterMs, $stampMs);
+            }
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     /**

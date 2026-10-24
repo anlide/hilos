@@ -54,4 +54,7 @@ final class TimeConstants
 
     /** @var string IANA name of the zone every Hilos process sets itself to */
     public const string UTC_TIME_ZONE = 'UTC';
+
+    /** @var string UTC moment with millisecond precision and an explicit Z suffix */
+    public const string ISO_UTC_MILLISECONDS_FORMAT = 'Y-m-d\TH:i:s.v\Z';
 }

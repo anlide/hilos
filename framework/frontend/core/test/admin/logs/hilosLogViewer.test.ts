@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
+import { applyServerTime } from '../../../src/session/serverClock.js'
 
 import {
   createHilosLogViewer,
@@ -44,13 +46,13 @@ import { type ConnectionState } from '../../../src/connection/HilosConnection.js
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
 import { createAppPageRouter } from '../../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
-import { createSignal } from '../../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../../src/state/signal.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 const pageRouter = createAppPageRouter({})
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
-const BATCH = 1800000000
+const BATCH = 1800000000000
 
 /** The feed cap, restated here because the module keeps it private. */
 const FEED_MAX_LINES = 2000
@@ -461,7 +463,7 @@ describe('logViewerPath', () => {
     ).toBe('/hilos/logs/view/node-1/live')
   })
 
-  it.each(['live', BATCH] as const)(
+  it.each(['live', 0, 1000, 1800000000, BATCH] as const)(
     'roundtrips a node and source %s without guessing a stream',
     (source) => {
       const chosen = selection({ source, stream: null })
@@ -479,9 +481,69 @@ describe('logViewerPath', () => {
 })
 
 describe('logLineClock', () => {
-  it('takes the clock from the server timestamp and leaves an unstamped line empty', () => {
-    expect(logLineClock('2027-01-15 03:12:19.907')).toBe('03:12:19.907')
+  it('formats a UTC timestamp and leaves an unstamped line empty', () => {
+    expect(logLineClock('2027-01-15T03:12:19.907Z')).toBe('03:12:19.907')
     expect(logLineClock(null)).toBe('')
+  })
+
+  it.each([
+    ['2026-01-01T00:30:05.123Z', '16:30:05.123'],
+    ['2026-03-08T09:59:59.123Z', '01:59:59.123'],
+    ['2026-03-08T10:00:00.123Z', '03:00:00.123'],
+    ['2026-11-01T08:59:59.123Z', '01:59:59.123'],
+    ['2026-11-01T09:00:00.123Z', '01:00:00.123'],
+  ])('keeps milliseconds across day and DST boundaries at %s', (at, clock) => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    try {
+      expect(logLineClock(at)).toBe(clock)
+    } finally {
+      zone.mockRestore()
+    }
+  })
+
+  it.each([-300_000, 300_000])(
+    'preserves the server moment with device drift %i',
+    (drift) => {
+      const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('UTC')
+      applyServerTime(Date.now() + drift)
+      try {
+        expect(logLineClock('2026-01-01T00:30:05.123Z')).toBe('00:30:05.123')
+      } finally {
+        zone.mockRestore()
+        applyServerTime(Date.now())
+      }
+    },
+  )
+
+  it.each([
+    '',
+    'invalid',
+    '2026-01-01 00:30:05.123',
+    '2026-01-01T00:30:05.123',
+    '2026-01-01T01:30:05.123+01:00',
+    '2026-02-31T00:30:05.123Z',
+  ])('leaves an invalid moment empty: %s', (at) => {
+    expect(logLineClock(at)).toBe('')
+  })
+
+  it('keeps the complete ISO moment in the feed while localizing presentation rows', () => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    const feed = [
+      feedLine('1:0', '[2026-01-01T00:30:05.123Z] ERROR: failure', 'ERROR'),
+    ]
+    try {
+      expect(asEntry(toLogViewerRows(feed)[0]).time).toBe('16:30:05.123')
+      expect(feed[0]).toMatchObject({
+        kind: 'line',
+        line: { id: '1:0', time: '2026-01-01T00:30:05.123Z' },
+      })
+    } finally {
+      zone.mockRestore()
+    }
   })
 })
 
@@ -556,7 +618,7 @@ describe('toLogViewerRows', () => {
         kind: 'line',
         line: {
           id: '1:0',
-          time: '2027-01-15 03:12:19.907',
+          time: '2027-01-15T03:12:19.907Z',
           text: HIDDEN_VALUE,
           level: 'ERROR',
           isContinuation: false,
@@ -607,7 +669,7 @@ describe('toLogViewerRows', () => {
 
   it('folds continuations under the line that started them', () => {
     const rows = toLogViewerRows([
-      feedLine('1:0', '[2027-01-15 03:12:19.907] ERROR: Deadlock', 'ERROR'),
+      feedLine('1:0', '[2027-01-15T03:12:19.907Z] ERROR: Deadlock', 'ERROR'),
       feedLine('1:1', '#0 Db.php(214)', 'ERROR', true),
       feedLine('1:2', '#1 Users.php(88)', 'ERROR', true),
     ])
@@ -627,7 +689,7 @@ describe('toLogViewerRows', () => {
     const rows = toLogViewerRows([
       feedLine(
         '1:0',
-        `[2027-01-15 03:12:19.907] ERROR: ${TRACED_LINE}`,
+        `[2027-01-15T03:12:19.907Z] ERROR: ${TRACED_LINE}`,
         'ERROR',
       ),
     ])
@@ -653,7 +715,7 @@ describe('toLogViewerRows', () => {
     const rows = toLogViewerRows([
       feedLine(
         '1:0',
-        `[2027-01-15 03:12:19.907] ERROR: ${TRACED_LINE}`,
+        `[2027-01-15T03:12:19.907Z] ERROR: ${TRACED_LINE}`,
         'ERROR',
       ),
       feedLine('1:1', '#2 Users.php(88)', 'ERROR', true),
@@ -685,7 +747,7 @@ describe('toLogViewerRows', () => {
     // read cannot know about.
     const rows = toLogViewerRows([
       feedLine('1:0', '#7 Page.php(160)', 'ERROR', true),
-      feedLine('1:1', '[2027-01-15 03:12:20.004] INFO: Retrying'),
+      feedLine('1:1', '[2027-01-15T03:12:20.004Z] INFO: Retrying'),
     ])
 
     expect(rows).toHaveLength(2)
@@ -698,7 +760,7 @@ describe('toLogViewerRows', () => {
     // The first line after a rotation belongs to the new file, not to the error
     // that was being written when the old one was carried off.
     const rows = toLogViewerRows([
-      feedLine('1:0', '[2027-01-15 03:12:19.907] ERROR: Deadlock', 'ERROR'),
+      feedLine('1:0', '[2027-01-15T03:12:19.907Z] ERROR: Deadlock', 'ERROR'),
       {
         kind: 'notice',
         key: 'notice:1',
@@ -714,10 +776,10 @@ describe('toLogViewerRows', () => {
   })
 
   it('keeps the key of an entry when older lines arrive above it', () => {
-    const newer = feedLine('1:0', '[2027-01-15 03:12:20.004] INFO: Retrying')
+    const newer = feedLine('1:0', '[2027-01-15T03:12:20.004Z] INFO: Retrying')
     const older = feedLine(
       '2:0',
-      '[2027-01-15 03:00:01.482] INFO: Rotation done',
+      '[2027-01-15T03:00:01.482Z] INFO: Rotation done',
     )
 
     expect(asEntry(toLogViewerRows([older, newer])[1]).key).toBe(
@@ -774,7 +836,7 @@ describe('the catalog', () => {
     expect(
       schema.safeParse({
         followId: '7',
-        lines: [wireLine('[2027-01-15 03:12:19.907] INFO: Ready')],
+        lines: [wireLine('[2027-01-15T03:12:19.907Z] INFO: Ready')],
         rotated: false,
         skippedBytes: null,
         stopped: false,
@@ -833,21 +895,21 @@ describe('logViewerLatestBatchPath', () => {
   it('finds the maximum shared stamp of this stream and node without carrying the anchor', () => {
     const picture = catalog()
     const node = picture.nodes[0]
-    node.batches = [BATCH + 20, BATCH, BATCH + 10, BATCH + 30]
-    node.streams[1].batchTimestamps = [BATCH + 10, BATCH + 40, BATCH]
-    node.streams[0].batchTimestamps = [BATCH + 30]
-    picture.nodes[1].batches = [BATCH + 50]
+    node.batches = [BATCH + 20000, BATCH, BATCH + 10000, BATCH + 30000]
+    node.streams[1].batchTimestamps = [BATCH + 10000, BATCH + 40000, BATCH]
+    node.streams[0].batchTimestamps = [BATCH + 30000]
+    picture.nodes[1].batches = [BATCH + 50000]
     picture.nodes[1].streams.push({
       key: 'agent-chat.log',
       class: 'agent',
       live: false,
-      batchTimestamps: [BATCH + 50],
+      batchTimestamps: [BATCH + 50000],
     })
     const chosen = selection({ stream: 'agent-chat.log', anchorAtMs: 1234 })
     const before = { ...chosen }
 
     expect(logViewerLatestBatchPath(picture, chosen)).toBe(
-      `/hilos/logs/view/node-1/${BATCH + 10}/agent-chat.log`,
+      `/hilos/logs/view/node-1/${BATCH + 10000}/agent-chat.log`,
     )
     expect(chosen).toEqual(before)
   })
@@ -1374,9 +1436,9 @@ describe('createHilosLogViewer', () => {
     view.start()
     connection.sendCatalog(catalog())
 
-    view.select({ source: BATCH + 1 })
+    view.select({ source: BATCH + 1000 })
     expect(view.selection.get()).toEqual(
-      selection({ source: BATCH + 1, stream: null }),
+      selection({ source: BATCH + 1000, stream: null }),
     )
     address.navigate(`/hilos/logs/view/node-1/${BATCH}/agent-chat.log`)
     view.select({ nodeId: 'node-2', source: 'live' })
@@ -1385,7 +1447,7 @@ describe('createHilosLogViewer', () => {
     )
     expect(actions.sent).toHaveLength(2)
     expect(address.written).toEqual([
-      `/hilos/logs/view/node-1/${BATCH + 1}`,
+      `/hilos/logs/view/node-1/${BATCH + 1000}`,
       '/hilos/logs/view/node-2/live',
     ])
   })
@@ -1427,7 +1489,7 @@ describe('createHilosLogViewer', () => {
     view.select({ nodeId: 'node-2' })
     actions.answer(inFlight, {
       readable: true,
-      lines: [wireLine('[2027-01-15 03:00:01.482] INFO: Rotation done')],
+      lines: [wireLine('[2027-01-15T03:00:01.482Z] INFO: Rotation done')],
       nextCursor: 512,
       hasMore: true,
     })
@@ -1697,7 +1759,7 @@ describe('the live tail', () => {
 
     connection.sendAppended({
       followId,
-      lines: [wireLine('[2027-01-15 03:12:19.907] [INFO] Ready')],
+      lines: [wireLine('[2027-01-15T03:12:19.907Z] [INFO] Ready')],
     })
 
     expect(view.rows.get()).toHaveLength(1)
@@ -1724,7 +1786,7 @@ describe('the live tail', () => {
     const { view, connection, followId } = following()
     connection.sendAppended({
       followId,
-      lines: [wireLine('[2027-01-15 03:12:19.907] ERROR: Deadlock', 'ERROR')],
+      lines: [wireLine('[2027-01-15T03:12:19.907Z] ERROR: Deadlock', 'ERROR')],
     })
     view.setPinned(false)
     connection.sendAppended({
@@ -1837,7 +1899,7 @@ describe('the live tail', () => {
 
     connection.sendAppended({
       followId: 'a-follow-that-is-not-this-one',
-      lines: [wireLine('[2027-01-15 03:12:19.907] INFO: Ready')],
+      lines: [wireLine('[2027-01-15T03:12:19.907Z] INFO: Ready')],
     })
 
     expect(view.rows.get()).toEqual([])
@@ -1867,6 +1929,191 @@ describe('the live tail', () => {
       notice: 'dropped',
       text: '3 lines were dropped while you were away.',
     })
+  })
+})
+
+describe('reactive log viewer clocks', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('repaints the visible stack without disturbing its follow or buffered lines', async () => {
+    const zone = createSignal('UTC')
+    const zoneGet = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockImplementation(() => zone.get())
+    const { context, connection, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    let rowUpdates = 0
+    const stopRows = subscribeSignal(view.rows, () => {
+      rowUpdates += 1
+    })
+
+    try {
+      view.start()
+      const followId = actions.sent[0]?.requestId ?? ''
+      const entry = wireLine(
+        '[2026-01-01T00:30:05.123Z] ERROR: Deadlock',
+        'ERROR',
+      )
+      actions.answer(followId, {
+        readable: true,
+        lines: [entry],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await Promise.resolve()
+      connection.sendAppended({
+        followId,
+        lines: [
+          wireLine(
+            '[2026-01-01T00:30:06.234Z] [INFO] #0 initial',
+            'INFO',
+            true,
+          ),
+        ],
+      })
+      view.setPinned(false)
+      connection.sendAppended({
+        followId,
+        lines: [
+          wireLine(
+            '[2026-01-01T00:30:07.345Z] [INFO] #1 buffered',
+            'INFO',
+            true,
+          ),
+        ],
+      })
+
+      const before = asEntry(view.rows.get()[0])
+      expect(before.time).toBe('00:30:05.123')
+      expect(before.key).toBe('1:0')
+      expect(before.frames).toEqual([
+        { time: '00:30:06.234', level: 'INFO', text: '#0 initial' },
+      ])
+      expect(view.pendingLines.get()).toBe(1)
+      expect(view.followRequested.get()).toBe(true)
+      expect(view.following.get()).toBe(true)
+      expect(view.pinned.get()).toBe(false)
+
+      const selectionBefore = view.selection.get()
+      const actionsBefore = actions.sent.length
+      const addressBefore = [...address.written]
+      const connectionActionsBefore = [...connection.sent]
+      rowUpdates = 0
+      zone.set('America/Los_Angeles')
+      await Promise.resolve()
+
+      const repainted = asEntry(view.rows.get()[0])
+      expect(rowUpdates).toBeGreaterThan(0)
+      expect(repainted).toMatchObject({
+        kind: 'entry',
+        key: '1:0',
+        time: '16:30:05.123',
+        text: 'Deadlock',
+      })
+      expect(repainted.frames).toEqual([
+        { time: '16:30:06.234', level: 'INFO', text: '#0 initial' },
+      ])
+      expect(view.selection.get()).toEqual(selectionBefore)
+      expect(view.pendingLines.get()).toBe(1)
+      expect(view.followRequested.get()).toBe(true)
+      expect(view.following.get()).toBe(true)
+      expect(view.pinned.get()).toBe(false)
+      expect(actions.sent).toHaveLength(actionsBefore)
+      expect(address.written).toEqual(addressBefore)
+      expect(connection.sent).toEqual(connectionActionsBefore)
+      expect(entry.time).toBe('2026-01-01T00:30:05.123Z')
+
+      view.returnToTail()
+      expect(view.pendingLines.get()).toBe(0)
+      expect(view.pinned.get()).toBe(true)
+      expect(asEntry(view.rows.get()[0])).toMatchObject({
+        key: '1:0',
+        time: '16:30:05.123',
+        frames: [
+          { time: '16:30:06.234', text: '#0 initial' },
+          { time: '16:30:07.345', text: '#1 buffered' },
+        ],
+      })
+      expect(actions.sent).toHaveLength(actionsBefore)
+
+      const updatesBeforeDispose = rowUpdates
+      view.dispose()
+      zone.set('UTC')
+      await Promise.resolve()
+
+      expect(rowUpdates).toBe(updatesBeforeDispose)
+      expect(asEntry(view.rows.get()[0]).time).toBe('16:30:05.123')
+    } finally {
+      view.dispose()
+      stopRows()
+      zoneGet.mockRestore()
+    }
+  })
+
+  it('keeps an anchored entry and its older-page cursor through a zone change', async () => {
+    const zone = createSignal('UTC')
+    const zoneGet = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockImplementation(() => zone.get())
+    const { context, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log/1788000000250',
+    )
+    const view = createHilosLogViewer(context, address)
+
+    try {
+      view.start()
+      actions.answer(actions.sent[0]?.requestId, {
+        readable: true,
+        lines: [
+          wireLine('[2026-09-06T10:00:02.250Z] ERROR: anchored entry', 'ERROR'),
+        ],
+        nextCursor: 4096,
+        hasMore: true,
+        anchorFound: true,
+      })
+      await Promise.resolve()
+
+      const original = asEntry(view.rows.get()[0])
+      expect(original).toMatchObject({
+        key: '1:0',
+        time: '10:00:02.250',
+        anchored: true,
+      })
+      const selectionBefore = view.selection.get()
+      const addressBefore = [...address.written]
+      const actionsBefore = actions.sent.length
+      zone.set('America/Los_Angeles')
+      await Promise.resolve()
+
+      expect(asEntry(view.rows.get()[0])).toMatchObject({
+        key: '1:0',
+        time: '03:00:02.250',
+        anchored: true,
+      })
+      expect(view.selection.get()).toEqual(selectionBefore)
+      expect(view.selection.get().anchorAtMs).toBe(1788000000250)
+      expect(view.followRequested.get()).toBe(false)
+      expect(view.following.get()).toBe(false)
+      expect(view.pinned.get()).toBe(false)
+      expect(address.written).toEqual(addressBefore)
+      expect(actions.sent).toHaveLength(actionsBefore)
+
+      view.readOlder()
+
+      expect(actions.sent).toHaveLength(actionsBefore + 1)
+      expect(actions.lastRead()).toMatchObject({ cursor: 4096 })
+      expect(actions.lastRead()).not.toHaveProperty('anchorAtMs')
+    } finally {
+      view.dispose()
+      zoneGet.mockRestore()
+    }
   })
 })
 
@@ -1902,8 +2149,8 @@ describe('createHilosLogViewer opened on an entry', () => {
     actions.answer(actions.sent.at(-1)?.requestId, {
       readable: true,
       lines: [
-        wireLine('[2026-09-06 10:00:02.250] ERROR: the entry the row named'),
-        wireLine('[2026-09-06 10:00:03.000] INFO: what happened next'),
+        wireLine('[2026-09-06T10:00:02.250Z] ERROR: the entry the row named'),
+        wireLine('[2026-09-06T10:00:03.000Z] INFO: what happened next'),
       ],
       nextCursor: 4096,
       hasMore: true,
@@ -1923,7 +2170,7 @@ describe('createHilosLogViewer opened on an entry', () => {
 
     actions.answer(actions.sent.at(-1)?.requestId, {
       readable: true,
-      lines: [wireLine('[2026-09-06 11:00:00.000] INFO: the end of the file')],
+      lines: [wireLine('[2026-09-06T11:00:00.000Z] INFO: the end of the file')],
       nextCursor: null,
       hasMore: false,
       anchorFound: false,

@@ -46,9 +46,11 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatMoment } from '../../format/moment.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
+import { hilosTimeZone } from '../../timeZone/timeZoneState.js'
 import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import {
   computedSignal,
@@ -177,7 +179,7 @@ export const HILOS_LOG_LEVEL_OPTIONS: readonly HilosLogLevelOption[] = [
 export interface HilosLogViewerSelection {
   /** Effective node id, legacy dash pending catalog resolution, or null when unchosen. */
   readonly nodeId: string | null
-  /** {@link LOG_SOURCE_LIVE}, an archived batch timestamp, or null when unchosen. */
+  /** {@link LOG_SOURCE_LIVE}, an archived batch in UTC epoch milliseconds, or null when unchosen. */
   readonly source: typeof LOG_SOURCE_LIVE | number | null
   /** The file name inside that source, or null when unchosen. */
   readonly stream: string | null
@@ -380,12 +382,24 @@ export function logViewerPath(selection: HilosLogViewerSelection): string {
 }
 
 /**
- * Takes the clock portion of the stamp the server read from the file.
+ * Displays a line's UTC moment in the reader's zone with millisecond precision.
  *
- * @param time Local file timestamp, or null for an unstamped line.
+ * @param time Complete ISO UTC timestamp, or null for an unstamped line.
  */
 export function logLineClock(time: string | null): string {
-  return time === null ? '' : time.slice(time.indexOf(' ') + 1)
+  if (time === null) return ''
+  return (
+    formatMoment(time, {
+      kind: 'time',
+      format: {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+        hourCycle: 'h23',
+      },
+    }) ?? ''
+  )
 }
 
 /**
@@ -1453,6 +1467,9 @@ export function createHilosLogViewer(
             }
             read(false)
           }
+        }),
+        subscribeSignal(hilosTimeZone, () => {
+          rows.set(toLogViewerRows(feed.get(), anchoredLineId))
         }),
       )
       read(false)

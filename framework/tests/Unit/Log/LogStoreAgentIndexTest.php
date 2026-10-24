@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Log;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -142,7 +144,7 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->write('agent-hilos_logs.log', 300);
         $agent = $this->startedAgent();
 
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + self::PAST_THE_DAY_WINDOW_SECONDS);
 
         $key = $this->key($agent, 'agent-hilos_logs.log');
@@ -160,11 +162,11 @@ final class LogStoreAgentIndexTest extends TestCase
     {
         $this->write('agent-hilos_logs.log', 300);
         $agent = $this->startedAgent();
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $this->write('agent-hilos_logs.log', 40);
         $agent->walkStore($this->t0 + 60);
 
-        $this->removeTree($this->batchPath('2026-08-01-00-00-00'));
+        $this->removeTree($this->batchPath('2026-08-01-00-00-00Z'));
         $agent->walkStore($this->t0 + self::PAST_THE_DAY_WINDOW_SECONDS);
 
         $this->assertSame(40, $this->keyBytes($agent, 'agent-hilos_logs.log'));
@@ -213,7 +215,7 @@ final class LogStoreAgentIndexTest extends TestCase
     {
         $this->write('agent-hilos_logs.log', 300);
         $agent = $this->startedAgent();
-        $this->rotate('2026-08-01-00-00-00');
+        $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
 
         $this->write('agent-hilos_logs.log', 20);
@@ -227,7 +229,7 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->write('agent-hilos_logs.log', 300);
         $agent = $this->startedAgent();
 
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkLiveFiles($this->t0 + 5);
 
         // The live walk alone cannot see a batch; finding the live file gone, it re-read the archive.
@@ -283,7 +285,7 @@ final class LogStoreAgentIndexTest extends TestCase
         $agent = $this->startedAgent();
         $this->assertSame([], $agent->index()->dueBatchTimestamps, 'An empty archive recommends nothing');
 
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
@@ -304,7 +306,7 @@ final class LogStoreAgentIndexTest extends TestCase
     {
         $this->write('agent-hilos_logs.log', 100);
         $agent = $this->startedAgent();
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
         $this->assertSame([], $agent->index()->dueBatchTimestamps);
 
@@ -328,7 +330,7 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->evictAnythingOlderThanASecond();
         $this->write('agent-hilos_logs.log', 100);
         $agent = $this->startedAgent();
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
         $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
 
@@ -348,11 +350,11 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->evictAnythingOlderThanASecond();
         $this->write('agent-hilos_logs.log', 100);
         $agent = $this->startedAgent();
-        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $timestamp = $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
         $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
 
-        $this->removeTree($this->batchPath('2026-08-01-00-00-00'));
+        $this->removeTree($this->batchPath('2026-08-01-00-00-00Z'));
         $agent->walkStore($this->t0 + 120);
 
         $this->assertSame([$timestamp], $agent->lastDelta()?->vanishedBatchTimestamps);
@@ -391,11 +393,11 @@ final class LogStoreAgentIndexTest extends TestCase
     public function testTheErrorTailIsMergedAcrossStreamsNewestFirst(): void
     {
         $this->writeErrorLines('worker-monopolistic-5.error.log', [
-            $this->errorLine('2026-09-06 10:00:00.100', 'login action failed'),
-            $this->errorLine('2026-09-06 10:00:02.100', 'the newest failure'),
+            $this->errorLine('2026-09-06T10:00:00.100Z', 'login action failed'),
+            $this->errorLine('2026-09-06T10:00:02.100Z', 'the newest failure'),
         ]);
         $this->writeErrorLines('daemon-error.log', [
-            $this->errorLine('2026-09-06 10:00:01.100', 'watchdog mail is not configured'),
+            $this->errorLine('2026-09-06T10:00:01.100Z', 'watchdog mail is not configured'),
         ]);
         $agent = $this->startedAgent();
 
@@ -416,11 +418,11 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAStreamWhoseWeightHasNotMovedIsNotReadAgain(): void
     {
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the first failure')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'the first failure')]);
         $agent = $this->startedAgent();
 
         // Same length, different text: only a re-read could show the new line.
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the OTHER failure')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'the OTHER failure')]);
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame('the first failure', $agent->index()->recentErrors[0]->message);
@@ -432,11 +434,11 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testARotationTakesTheErrorTailWithIt(): void
     {
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'login action failed')]);
         $agent = $this->startedAgent();
         $this->assertCount(1, $agent->index()->recentErrors);
 
-        $this->rotate('2026-08-01-00-00-00');
+        $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame([], $agent->index()->recentErrors);
@@ -448,7 +450,7 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAnUnreadableStoreReportsAnEmptyErrorTail(): void
     {
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'login action failed')]);
         $agent = $this->startedAgent();
         $this->assertCount(1, $agent->index()->recentErrors);
 
@@ -466,15 +468,15 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testANewFailureRaisesTheErrorTailAxis(): void
     {
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the first failure')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'the first failure')]);
         $agent = $this->startedAgent();
 
         $agent->walkStore($this->t0 + 60);
         $this->assertFalse($agent->lastDelta()?->recentErrorsChanged, 'A walk that found the same lines says nothing');
 
         $this->writeErrorLines('daemon-error.log', [
-            $this->errorLine('2026-09-06 10:00:00.100', 'the first failure'),
-            $this->errorLine('2026-09-06 10:00:05.100', 'and then another one'),
+            $this->errorLine('2026-09-06T10:00:00.100Z', 'the first failure'),
+            $this->errorLine('2026-09-06T10:00:05.100Z', 'and then another one'),
         ]);
         $agent->walkStore($this->t0 + 120);
 
@@ -488,13 +490,13 @@ final class LogStoreAgentIndexTest extends TestCase
     public function testTheWarningRingIsGatheredAcrossStreamsNewestFirst(): void
     {
         $this->writeErrorLines('worker-monopolistic-5.log', [
-            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: slow query'),
-            $this->errorLine('2026-09-06 10:00:01.000', 'request served'),
-            $this->errorLine('2026-09-06 10:00:02.100', 'WARNING: the newest warning'),
+            $this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: slow query'),
+            $this->errorLine('2026-09-06T10:00:01.000Z', 'request served'),
+            $this->errorLine('2026-09-06T10:00:02.100Z', 'WARNING: the newest warning'),
         ]);
         $this->writeErrorLines('daemon.log', [
-            $this->errorLine('2026-09-06 10:00:01.100', 'WARNING: watchdog mail is not configured'),
-            $this->errorLine('2026-09-06 10:00:03.100', 'ERROR: not a warning'),
+            $this->errorLine('2026-09-06T10:00:01.100Z', 'WARNING: watchdog mail is not configured'),
+            $this->errorLine('2026-09-06T10:00:03.100Z', 'ERROR: not a warning'),
         ]);
         $agent = $this->startedAgent();
 
@@ -515,7 +517,7 @@ final class LogStoreAgentIndexTest extends TestCase
     public function testTheRawPairIsLeftOutOfTheWarningScan(): void
     {
         $this->writeErrorLines('daemon-raw.log', [
-            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: printed past the Logger'),
+            $this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: printed past the Logger'),
         ]);
         $agent = $this->startedAgent();
 
@@ -528,11 +530,11 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAStreamWhoseWeightHasNotMovedIsNotScannedForWarningsAgain(): void
     {
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: the first warning')]);
         $agent = $this->startedAgent();
 
         // Same length, different text: only a second scan could show the new line.
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the OTHER warning')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: the OTHER warning')]);
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame('the first warning', $agent->index()->recentWarnings[0]->message);
@@ -544,10 +546,10 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAWarningTheStreamHasGrownPastStaysInTheRing(): void
     {
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: before the flood')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: before the flood')]);
         $agent = $this->startedAgent();
 
-        $this->appendLines('worker-1.log', $this->flood('2026-09-06 10:00:01.000'));
+        $this->appendLines('worker-1.log', $this->flood('2026-09-06T10:00:01.000Z'));
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame(
@@ -561,10 +563,10 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAWarningSeenByTwoScansIsOneEntry(): void
     {
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: seen twice')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: seen twice')]);
         $agent = $this->startedAgent();
 
-        $this->appendLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:01.000', 'request served')]);
+        $this->appendLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:01.000Z', 'request served')]);
         $agent->walkStore($this->t0 + 60);
 
         $this->assertCount(1, $agent->index()->recentWarnings);
@@ -576,11 +578,11 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testARotationTakesTheWarningRingWithIt(): void
     {
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: before the rotation')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: before the rotation')]);
         $agent = $this->startedAgent();
         $this->assertCount(1, $agent->index()->recentWarnings);
 
-        $this->rotate('2026-08-01-00-00-00');
+        $this->rotate('2026-08-01-00-00-00Z');
         $agent->walkStore($this->t0 + 60);
 
         $this->assertSame([], $agent->index()->recentWarnings);
@@ -591,8 +593,8 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testAnUnreadableStoreReportsBothFeedsEmpty(): void
     {
-        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.200', 'WARNING: slow query')]);
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'login action failed')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.200Z', 'WARNING: slow query')]);
         $agent = $this->startedAgent();
         $this->assertCount(1, $agent->index()->recentErrors);
         $this->assertCount(1, $agent->index()->recentWarnings);
@@ -611,15 +613,15 @@ final class LogStoreAgentIndexTest extends TestCase
      */
     public function testANewWarningRaisesItsOwnAxisAndLeavesTheErrorsOneDown(): void
     {
-        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: the first warning')]);
         $agent = $this->startedAgent();
 
         $agent->walkStore($this->t0 + 60);
         $this->assertFalse($agent->lastDelta()?->recentWarningsChanged, 'A walk that found the same lines says nothing');
 
         $this->writeErrorLines('worker-1.log', [
-            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning'),
-            $this->errorLine('2026-09-06 10:00:05.100', 'WARNING: and then another one'),
+            $this->errorLine('2026-09-06T10:00:00.100Z', 'WARNING: the first warning'),
+            $this->errorLine('2026-09-06T10:00:05.100Z', 'WARNING: and then another one'),
         ]);
         $agent->walkStore($this->t0 + 120);
 
@@ -770,7 +772,11 @@ final class LogStoreAgentIndexTest extends TestCase
             rename($file, $path . DIRECTORY_SEPARATOR . basename($file));
         }
 
-        $parsed = DateTimeImmutable::createFromFormat(LogRotationConstants::TIMESTAMP_FORMAT, $timestampDirName);
+        $parsed = DateTimeImmutable::createFromFormat(
+            '!' . LogRotationConstants::TIMESTAMP_FORMAT,
+            $timestampDirName,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
         if ($parsed === false) {
             $this->fail("Fixture batch name does not parse: {$timestampDirName}");
         }

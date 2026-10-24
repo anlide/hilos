@@ -6,9 +6,11 @@ import {
   HilosPages,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
+  bindTimeZoneState,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  hilosTimeZone,
   ROTATIONS_HEADER_SIGNAL,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '@hilos/core/base'
@@ -26,6 +28,52 @@ import type {
 
 import HilosLogsRotationsPage from './HilosLogsRotationsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+
+const DST_MOMENT = Date.parse('2026-03-29T01:30:00.123Z')
+
+function dateTimeLabel(moment: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+    timeZone,
+  }).format(new Date(moment))
+}
+
+function bindReaderZone(): {
+  setZone: (timeZone: string) => void
+  restore: () => void
+} {
+  type ZoneSignal = { type: string; data: unknown }
+  const previousZone = hilosTimeZone.get()
+  const listeners = new Set<(signal: ZoneSignal) => void>()
+  const connection = {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event !== 'projectSignal') return () => {}
+      const receive = listener as unknown as (signal: ZoneSignal) => void
+      listeners.add(receive)
+      return () => listeners.delete(receive)
+    },
+  } as unknown as HilosConnection
+  const release = bindTimeZoneState(connection)
+  const setZone = (timeZone: string): void => {
+    for (const listener of listeners) {
+      listener({
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 1, timeZone } } },
+      })
+    }
+  }
+  setZone('UTC')
+
+  return {
+    setZone,
+    restore(): void {
+      setZone(previousZone)
+      release()
+    },
+  }
+}
 
 /** A header as the page answers a subscription with it. */
 function header(
@@ -270,10 +318,10 @@ function batch(
 ): Record<string, unknown> {
   return {
     rowKey: 'node-1:1800000000',
-    batchAt: 1800000000,
+    batchAt: 1800000000000,
     node: null,
-    path: 'archive/2027-01-15-08-00-00/',
-    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    path: 'archive/2027-01-15-08-00-00Z/',
+    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
     agentFileCount: 12,
     workerFileCount: 8,
@@ -585,9 +633,9 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
-      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
-      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2000, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3000, retentionState: 'taken' }),
     ])
     await nextTick()
 
@@ -614,7 +662,7 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'carrying' }),
+      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'carrying' }),
     ])
     await nextTick()
 
@@ -641,12 +689,12 @@ describe('HilosLogsRotationsPage', () => {
     expect(
       document.querySelector('[data-id="hilos-rotation-takeout-path"]')
         ?.textContent,
-    ).toBe('node-1:/var/log/hilos/archive/2027-01-15-08-00-00/')
+    ).toBe('node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/')
     expect(
       document.querySelector('[data-id="hilos-rotation-takeout-command"]')
         ?.textContent,
     ).toBe(
-      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
     )
 
     pushHeader(header({ nodes: [] }))
@@ -655,7 +703,7 @@ describe('HilosLogsRotationsPage', () => {
       document.querySelector('[data-id="hilos-rotation-takeout-command"]')
         ?.textContent,
     ).toBe(
-      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
     )
   })
 
@@ -699,7 +747,7 @@ describe('HilosLogsRotationsPage', () => {
     expect(dispatched).toMatchObject([
       {
         action: 'logs_takeout_confirm',
-        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
       },
     ])
     expect(document.body.textContent).toContain('Where it lies')
@@ -736,9 +784,9 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
-      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
-      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2000, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3000, retentionState: 'taken' }),
     ])
     await nextTick()
 
@@ -763,7 +811,9 @@ describe('HilosLogsRotationsPage', () => {
     const wrapper = mountPage(connection)
 
     pushHeader(header())
-    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: 1800086400 })])
+    pushWindow([
+      batch({ retentionState: 'taken', pruneNotBefore: 1800086400000 }),
+    ])
     await nextTick()
     await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
 
@@ -771,8 +821,132 @@ describe('HilosLogsRotationsPage', () => {
       document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
         ?.textContent,
     ).toContain(
-      `The cleaner may delete this batch after ${new Date(1800086400 * 1000).toLocaleString()}.`,
+      `The cleaner may delete this batch after ${dateTimeLabel(1800086400000, hilosTimeZone.get())}.`,
     )
+  })
+
+  it('updates an open undo deadline from its focused batch, including a zero window', async () => {
+    const {
+      connection,
+      pushHeader,
+      pushWindow,
+      pushEmptyWindow,
+      pushFocusedChange,
+    } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: DST_MOMENT })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
+    const dialog = document.querySelector('[role="dialog"]')
+    const deadline = document.querySelector(
+      '[data-id="hilos-rotation-undo-deadline"]',
+    )
+    expect(deadline?.textContent?.trim()).toBe(
+      `The cleaner may delete this batch after ${dateTimeLabel(DST_MOMENT, hilosTimeZone.get())}.`,
+    )
+
+    // The focused batch remains live even after it leaves the visible window.
+    pushEmptyWindow()
+    pushFocusedChange(
+      batch({ retentionState: 'taken', pruneNotBefore: DST_MOMENT + 120_000 }),
+    )
+    await nextTick()
+    expect(deadline?.textContent?.trim()).toBe(
+      `The cleaner may delete this batch after ${dateTimeLabel(DST_MOMENT + 120_000, hilosTimeZone.get())}.`,
+    )
+    pushFocusedChange(batch({ retentionState: 'taken', pruneNotBefore: null }))
+    await nextTick()
+    expect(deadline?.textContent?.trim()).toBe(
+      'The cleaner may delete this batch as soon as it next runs.',
+    )
+    expect(document.querySelector('[role="dialog"]')).toBe(dialog)
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('reformats the batch and open undo deadline when the reader zone changes', async () => {
+    const zone = bindReaderZone()
+    releases.push(zone.restore)
+    const { connection, sent, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+    pushHeader(header())
+    pushWindow([
+      batch({
+        batchAt: DST_MOMENT,
+        pruneNotBefore: DST_MOMENT,
+        retentionState: 'taken',
+      }),
+    ])
+    await nextTick()
+
+    const row = wrapper.get('[data-id^="hilos-table-row-"]')
+    const rowElement = row.element
+    const rowId = row.attributes('data-id')
+    const path = row.find('code').text()
+    expect(row.text()).toContain(dateTimeLabel(DST_MOMENT, 'UTC'))
+    expect(path).toBe('archive/2027-01-15-08-00-00Z/')
+
+    await row.get('[data-id="hilos-rotation-undo"]').trigger('click')
+    const dialog = document.querySelector('[role="dialog"]')
+    const deadline = document.querySelector(
+      '[data-id="hilos-rotation-undo-deadline"]',
+    )
+    expect(deadline?.textContent?.trim()).toBe(
+      `The cleaner may delete this batch after ${dateTimeLabel(DST_MOMENT, 'UTC')}.`,
+    )
+    const descriptorCount = sent.length
+
+    zone.setZone('Europe/Warsaw')
+    await nextTick()
+
+    expect(wrapper.get('[data-id^="hilos-table-row-"]').element).toBe(
+      rowElement,
+    )
+    expect(
+      wrapper.get('[data-id^="hilos-table-row-"]').attributes('data-id'),
+    ).toBe(rowId)
+    expect(wrapper.get('[data-id^="hilos-table-row-"]').text()).toContain(
+      dateTimeLabel(DST_MOMENT, 'Europe/Warsaw'),
+    )
+    expect(
+      wrapper.get('[data-id^="hilos-table-row-"]').find('code').text(),
+    ).toBe(path)
+    expect(document.querySelector('[role="dialog"]')).toBe(dialog)
+    expect(
+      document
+        .querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent?.trim(),
+    ).toBe(
+      `The cleaner may delete this batch after ${dateTimeLabel(DST_MOMENT, 'Europe/Warsaw')}.`,
+    )
+    expect(dispatched).toHaveLength(0)
+    expect(sent).toHaveLength(descriptorCount)
+  })
+
+  it('uses a dash for an invalid batch or cleaner moment', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({
+        batchAt: Number.NaN,
+        pruneNotBefore: Number.NaN,
+        retentionState: 'taken',
+      }),
+    ])
+    await nextTick()
+
+    const row = wrapper.get('[data-id^="hilos-table-row-"]')
+    expect(row.text()).toContain('—')
+    await row.get('[data-id="hilos-rotation-undo"]').trigger('click')
+    expect(
+      document
+        .querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent?.trim(),
+    ).toBe('The cleaner may delete this batch after —.')
   })
 
   /**
@@ -789,9 +963,10 @@ describe('HilosLogsRotationsPage', () => {
     await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
 
     expect(
-      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
-        ?.textContent,
-    ).toContain('as soon as it next runs')
+      document
+        .querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent?.trim(),
+    ).toBe('The cleaner may delete this batch as soon as it next runs.')
   })
 
   it("withdraws under its own action name, and closes only on the server's word", async () => {
@@ -812,7 +987,7 @@ describe('HilosLogsRotationsPage', () => {
     expect(dispatched).toMatchObject([
       {
         action: 'logs_takeout_undo',
-        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
       },
     ])
     expect(document.body.textContent).toContain(
@@ -862,7 +1037,7 @@ describe('HilosLogsRotationsPage', () => {
     await nextTick()
 
     // The page's unfiltered window is not drawn; the table asks for the awaiting one.
-    expect(wrapper.text()).not.toContain('archive/2027-01-15-08-00-00/')
+    expect(wrapper.text()).not.toContain('archive/2027-01-15-08-00-00Z/')
     expect(
       (
         wrapper.find('[data-id="hilos-table-filter-state"]')
@@ -1063,7 +1238,7 @@ describe('HilosLogsRotationsPage', () => {
     expect(dispatched).toMatchObject([
       {
         action: 'logs_takeout_confirm',
-        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
       },
     ])
   })

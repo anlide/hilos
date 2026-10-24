@@ -94,7 +94,7 @@ function sourceValue(source: typeof LOG_SOURCE_LIVE | number | null): string {
  * @param batch The batch's rotation moment, in seconds.
  */
 function batchLabel(batch: number): string {
-  return new Date(batch * 1000).toLocaleString()
+  return new Date(batch).toLocaleString()
 }
 
 /**

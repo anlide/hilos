@@ -43,7 +43,16 @@ final class ClusterLogIndexPortionSignalDataTest extends TestCase
             new ClusterLogNodeSlot('node-2', $this->fullIndex('node-2'), self::T0 - 1),
         ];
 
-        $restored = $this->roundTrip(ClusterLogIndexPortionSignalData::ofSlots($slots, true));
+        $wire = ClusterLogIndexPortionSignalData::ofSlots($slots, true)->toArray();
+        $this->assertSame([1_799_999_995_000, 1_799_999_999_000], array_column($wire['nodes'], 'receivedAt'));
+        $this->assertSame(1_800_000_000_000, $wire['nodes'][0]['index']['sampledAt']);
+        $this->assertSame(1_799_996_400_000, $wire['nodes'][0]['index']['batches'][0]['timestamp']);
+        $this->assertSame([1_799_996_400_000], $wire['nodes'][0]['index']['keys'][0]['batchTimestamps']);
+        $this->assertNull($wire['nodes'][0]['index']['batches'][0]['takenAt']);
+        $this->assertSame([], $wire['nodes'][0]['index']['workers'][0]['batchTimestamps']);
+        $this->assertSame(self::T0 - 5, $slots[0]->receivedAt);
+        $restored = ClusterLogIndexPortionSignalData::fromArray($wire);
+        $this->assertSame($wire, $restored->toArray());
 
         $this->assertTrue($restored->snapshot);
         $this->assertCount(2, $restored->nodes);

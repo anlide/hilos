@@ -5,12 +5,14 @@ import {
   ActionLifecycle,
   HIDDEN_VALUE,
   ScopeManager,
+  bindTimeZoneState,
   bindAdminAccess,
   bindSessionScope,
   createPageRouter,
   createSignal,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
+  hilosTimeZone,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
 } from '@hilos/core/base'
@@ -29,10 +31,67 @@ import HilosLogsViewPage from './HilosLogsViewPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
-const BATCH = 1800000000
-const LATEST_BATCH = 1800000100
+const BATCH = 1800000000000
+const LATEST_BATCH = 1800000100000
+const DST_MOMENT = Date.parse('2026-03-29T01:30:00.123Z')
+const DST_MOMENT_ISO = '2026-03-29T01:30:00.123Z'
 
 const releases: (() => void)[] = []
+
+function dateTimeLabel(moment: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+    timeZone,
+  }).format(new Date(moment))
+}
+
+function logTimeLabel(timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+    hourCycle: 'h23',
+    timeZone,
+  }).format(new Date(DST_MOMENT))
+}
+
+function bindReaderZone(): {
+  setZone: (timeZone: string) => void
+  restore: () => void
+} {
+  type ZoneSignal = { type: string; data: unknown }
+  const previousZone = hilosTimeZone.get()
+  const listeners = new Set<(signal: ZoneSignal) => void>()
+  const connection = {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event !== 'projectSignal') return () => {}
+      const receive = listener as unknown as (signal: ZoneSignal) => void
+      listeners.add(receive)
+      return () => listeners.delete(receive)
+    },
+  } as unknown as HilosConnection
+  const release = bindTimeZoneState(connection)
+  const setZone = (timeZone: string): void => {
+    for (const listener of listeners) {
+      listener({
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 1, timeZone } } },
+      })
+    }
+  }
+  setZone('UTC')
+
+  return {
+    setZone,
+    restore(): void {
+      setZone(previousZone)
+      release()
+    },
+  }
+}
 
 afterEach(() => {
   for (const release of releases.splice(0)) release()
@@ -134,7 +193,7 @@ function archivedStreamCatalog(): HilosLogViewerCatalog {
   const node = picture.nodes[0]
   node.nodeId = 'node-2'
   node.batches = [LATEST_BATCH, BATCH]
-  node.streams[1].batchTimestamps = [BATCH, LATEST_BATCH + 100, LATEST_BATCH]
+  node.streams[1].batchTimestamps = [BATCH, LATEST_BATCH + 100000, LATEST_BATCH]
   picture.nodes.push(clusterCatalog().nodes[0])
 
   return picture
@@ -317,7 +376,7 @@ describe('HilosLogsViewPage', () => {
       readable: true,
       lines: [
         {
-          time: '2026-09-06 10:00:02.250',
+          time: '2026-09-06T10:00:02.250Z',
           text: HIDDEN_VALUE,
           level: 'ERROR',
           isContinuation: false,
@@ -336,6 +395,9 @@ describe('HilosLogsViewPage', () => {
 
     const entry = wrapper.get('[data-id="hilos-log-entry"]')
     expect(entry.text()).toContain('10:00:02.250')
+    expect(entry.find('[data-id="hilos-log-entry-time"]').text()).toContain(
+      '10:00:02.250',
+    )
     expect(entry.text()).toContain('ERROR')
     expect(entry.find('[data-id="hilos-hidden"]').exists()).toBe(true)
     expect(entry.find('[data-id="hilos-log-stack-toggle"]').exists()).toBe(
@@ -351,6 +413,114 @@ describe('HilosLogsViewPage', () => {
     expect(
       wrapper.get('[data-id="hilos-log-follow"]').attributes('disabled'),
     ).toBeUndefined()
+  })
+
+  it('reformats a hidden entry clock on a zone change without another frame', async () => {
+    bindViewerSession()
+    const zone = bindReaderZone()
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const navigator = router(LIVE_FILE)
+    const wrapper = mountPage(connection, {}, navigator)
+
+    try {
+      pushCatalog(catalog())
+      await nextTick()
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          {
+            time: DST_MOMENT_ISO,
+            text: HIDDEN_VALUE,
+            level: 'ERROR',
+            isContinuation: false,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await flushPromises()
+
+      const entry = wrapper.get('[data-id="hilos-log-entry"]')
+      const time = entry.get('[data-id="hilos-log-entry-time"]')
+      expect(time.text()).toBe(logTimeLabel('UTC'))
+      expect(entry.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+      expect(entry.text()).not.toContain('private log text')
+      const source = wrapper.get<HTMLSelectElement>(
+        '[data-id="hilos-log-source"]',
+      )
+      const sourceValue = source.element.value
+      const path = navigator.currentPath.get()
+      const sentCount = sent.length
+
+      zone.setZone('Europe/Warsaw')
+      await nextTick()
+
+      expect(wrapper.get('[data-id="hilos-log-entry"]').element).toBe(
+        entry.element,
+      )
+      expect(time.text()).toBe(logTimeLabel('Europe/Warsaw'))
+      expect(entry.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+      expect(entry.text()).not.toContain('private log text')
+      expect(source.element.value).toBe(sourceValue)
+      expect(navigator.currentPath.get()).toBe(path)
+      expect(sent).toHaveLength(sentCount)
+    } finally {
+      wrapper.unmount()
+      zone.restore()
+    }
+  })
+
+  it('keeps an opened stack through a reader-zone repaint', async () => {
+    const zone = bindReaderZone()
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+
+    try {
+      pushCatalog(catalog())
+      await nextTick()
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          wireLine(
+            `[${DST_MOMENT_ISO}] INFO: Action failed {"trace":"#0 /src/App.php(12): run()\\n#1 {main}"}`,
+          ),
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await flushPromises()
+
+      const entry = wrapper.get('[data-id="hilos-log-entry"]')
+      const toggle = entry.get('[data-id="hilos-log-stack-toggle"]')
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(entry.get('[data-id="hilos-log-stack"]').text()).toContain(
+        '#0 /src/App.php(12): run()',
+      )
+      const sentCount = sent.length
+
+      zone.setZone('Europe/Warsaw')
+      await nextTick()
+
+      expect(wrapper.get('[data-id="hilos-log-entry"]').element).toBe(
+        entry.element,
+      )
+      expect(
+        wrapper
+          .get('[data-id="hilos-log-stack-toggle"]')
+          .attributes('aria-expanded'),
+      ).toBe('true')
+      expect(wrapper.get('[data-id="hilos-log-stack"]').text()).toContain(
+        '#0 /src/App.php(12): run()',
+      )
+      expect(wrapper.get('[data-id="hilos-log-entry-time"]').text()).toBe(
+        logTimeLabel('Europe/Warsaw'),
+      )
+      expect(sent).toHaveLength(sentCount)
+    } finally {
+      wrapper.unmount()
+      zone.restore()
+    }
   })
 
   it('waits rather than reporting a fault before any catalog arrives', () => {
@@ -498,7 +668,7 @@ describe('HilosLogsViewPage', () => {
         wrapper.find('[data-id="hilos-log-empty-unchosen"]').exists(),
       ).toBe(false)
       const link = wrapper.get('[data-id="hilos-log-latest-batch"]')
-      const batchPath = '/hilos/logs/view/node-2/1800000100/agent-chat.log'
+      const batchPath = '/hilos/logs/view/node-2/1800000100000/agent-chat.log'
       expect(link.element.tagName).toBe('A')
       expect(link.text()).toBe('Open latest batch')
       expect(link.attributes('href')).toBe(batchPath)
@@ -520,7 +690,7 @@ describe('HilosLogsViewPage', () => {
         wrapper
           .get<HTMLSelectElement>('[data-id="hilos-log-source"]')
           .element.selectedOptions[0].textContent?.trim(),
-      ).toBe(`Batch — ${new Date(LATEST_BATCH * 1000).toLocaleString()}`)
+      ).toBe(`Batch — ${dateTimeLabel(LATEST_BATCH, hilosTimeZone.get())}`)
       expect(sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
       expect(sent.at(-1)?.data).toMatchObject({
         nodeId: 'node-2',
@@ -682,7 +852,7 @@ describe('HilosLogsViewPage', () => {
     )
     expect(
       wrapper.get('[data-id="hilos-log-latest-batch"]').attributes('href'),
-    ).toBe('/hilos/logs/view/node-2/1800000100/agent-chat.log')
+    ).toBe('/hilos/logs/view/node-2/1800000100000/agent-chat.log')
     expect(navigator.currentPath.get()).toBe(
       '/hilos/logs/view/node-2/live/agent-chat.log',
     )
@@ -862,7 +1032,7 @@ describe('HilosLogsViewPage', () => {
     await nextTick()
 
     expect(navigator.currentPath.get()).toBe(
-      '/hilos/logs/view/node-2/1800000000',
+      '/hilos/logs/view/node-2/1800000000000',
     )
     expect(
       wrapper.get<HTMLSelectElement>('[data-id="hilos-log-source"]').element
@@ -882,49 +1052,81 @@ describe('HilosLogsViewPage', () => {
   })
 
   it('keeps a selected batch as an unavailable display option after it disappears', async () => {
+    const zone = bindReaderZone()
     const { connection, pushCatalog, sent, answer } = makeConnection()
-    const wrapper = mountPage(connection, {
+    const navigator = router({
       ...ARCHIVED_LIVE_FILE,
-      source: String(BATCH),
+      source: String(DST_MOMENT),
     })
-    const picture = archivedStreamCatalog()
-    pushCatalog(picture)
-    await nextTick()
-    const source = wrapper.get<HTMLSelectElement>(
-      '[data-id="hilos-log-source"]',
-    )
-    expect(source.element.value).toBe(String(BATCH))
-    expect(source.get(`option[value="${BATCH}"]`).text()).not.toContain(
-      'unavailable',
-    )
+    const wrapper = mountPage(connection, {}, navigator)
 
-    const nextPicture = archivedStreamCatalog()
-    nextPicture.nodes[0].batches = [LATEST_BATCH]
-    nextPicture.nodes[0].streams[1].batchTimestamps = [LATEST_BATCH]
-    pushCatalog(nextPicture)
-    answer(sent.at(-1)?.requestId, {
-      readable: false,
-      lines: [],
-      nextCursor: null,
-      hasMore: false,
-    })
-    await flushPromises()
+    try {
+      const picture = archivedStreamCatalog()
+      picture.nodes[0].batches = [DST_MOMENT]
+      picture.nodes[0].streams[1].batchTimestamps = [DST_MOMENT]
+      pushCatalog(picture)
+      await nextTick()
+      const source = wrapper.get<HTMLSelectElement>(
+        '[data-id="hilos-log-source"]',
+      )
+      expect(source.element.value).toBe(String(DST_MOMENT))
+      expect(source.get(`option[value="${DST_MOMENT}"]`).text()).not.toContain(
+        'unavailable',
+      )
 
-    expect(source.element.value).toBe(String(BATCH))
-    expect(source.findAll(`option[value="${BATCH}"]`)).toHaveLength(1)
-    expect(source.get(`option[value="${BATCH}"]`).text()).toBe(
-      `Batch — ${new Date(BATCH * 1000).toLocaleString()} (unavailable)`,
-    )
-    expect(
-      wrapper.get<HTMLSelectElement>('[data-id="hilos-log-stream"]').element
-        .value,
-    ).toBe('agent-chat.log')
-    expect(wrapper.get('[data-id="hilos-log-empty-missing"]').isVisible()).toBe(
-      true,
-    )
-    expect(wrapper.find('[data-id="hilos-log-latest-batch"]').exists()).toBe(
-      false,
-    )
+      const nextPicture = archivedStreamCatalog()
+      nextPicture.nodes[0].batches = [LATEST_BATCH]
+      nextPicture.nodes[0].streams[1].batchTimestamps = [LATEST_BATCH]
+      pushCatalog(nextPicture)
+      answer(sent.at(-1)?.requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await flushPromises()
+
+      const unavailable = `Batch — ${dateTimeLabel(DST_MOMENT, 'UTC')} (unavailable)`
+      expect(source.element.value).toBe(String(DST_MOMENT))
+      expect(source.findAll(`option[value="${DST_MOMENT}"]`)).toHaveLength(1)
+      expect(source.get(`option[value="${DST_MOMENT}"]`).text()).toBe(
+        unavailable,
+      )
+      expect(sent.at(-1)?.data).toMatchObject({
+        nodeId: 'node-2',
+        source: 'batch',
+        batchTimestamp: DST_MOMENT,
+        stream: 'agent-chat.log',
+      })
+      expect(
+        wrapper.get<HTMLSelectElement>('[data-id="hilos-log-stream"]').element
+          .value,
+      ).toBe('agent-chat.log')
+      expect(
+        wrapper.get('[data-id="hilos-log-empty-missing"]').isVisible(),
+      ).toBe(true)
+      expect(wrapper.find('[data-id="hilos-log-latest-batch"]').exists()).toBe(
+        false,
+      )
+      const path = navigator.currentPath.get()
+      const sentCount = sent.length
+
+      zone.setZone('Europe/Warsaw')
+      await nextTick()
+
+      const updatedSource = wrapper.get<HTMLSelectElement>(
+        '[data-id="hilos-log-source"]',
+      )
+      expect(updatedSource.element.value).toBe(String(DST_MOMENT))
+      expect(updatedSource.get(`option[value="${DST_MOMENT}"]`).text()).toBe(
+        `Batch — ${dateTimeLabel(DST_MOMENT, 'Europe/Warsaw')} (unavailable)`,
+      )
+      expect(navigator.currentPath.get()).toBe(path)
+      expect(sent).toHaveLength(sentCount)
+    } finally {
+      wrapper.unmount()
+      zone.restore()
+    }
   })
 
   it('keeps the Earlier button dark until there is a page before this one', async () => {
@@ -1144,10 +1346,10 @@ describe('HilosLogsViewPage', () => {
       readable: true,
       lines: [
         wireLine(
-          '[2026-09-06 10:00:02.250] ERROR: the entry the row named',
+          '[2026-09-06T10:00:02.250Z] ERROR: the entry the row named',
           'ERROR',
         ),
-        wireLine('[2026-09-06 10:00:03.000] INFO: what happened next'),
+        wireLine('[2026-09-06T10:00:03.000Z] INFO: what happened next'),
       ],
       nextCursor: 4096,
       hasMore: true,
@@ -1172,7 +1374,7 @@ describe('HilosLogsViewPage', () => {
 
     answer(sent.at(-1)?.requestId, {
       readable: true,
-      lines: [wireLine('[2026-09-06 11:00:00.000] INFO: the end of the file')],
+      lines: [wireLine('[2026-09-06T11:00:00.000Z] INFO: the end of the file')],
       nextCursor: null,
       hasMore: false,
       anchorFound: false,

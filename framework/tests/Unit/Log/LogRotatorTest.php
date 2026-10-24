@@ -37,8 +37,13 @@ final class LogRotatorTest extends TestCase
 
     private bool $handlerInstalled = false;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logrotator-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -47,6 +52,7 @@ final class LogRotatorTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         if ($this->handlerInstalled) {
             restore_error_handler();
             $this->handlerInstalled = false;
@@ -60,8 +66,13 @@ final class LogRotatorTest extends TestCase
         file_put_contents($this->dir . '/daemon.log', 'one');
         file_put_contents($this->dir . '/worker.log', 'two');
 
+        $before = time();
         $report = new LogRotator($this->dir)->rotate();
 
+        $this->assertContains($report->batchDirName, [
+            gmdate('Y-m-d-H-i-s\Z', $before),
+            gmdate('Y-m-d-H-i-s\Z', time()),
+        ]);
         $this->assertSame(2, $report->movedCount);
         $this->assertSame([], $report->failedFiles);
         // The live files are gone.
@@ -253,8 +264,8 @@ final class LogRotatorTest extends TestCase
         $now = time();
 
         return [
-            $stagingDir . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, $now),
-            $stagingDir . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, $now + 1),
+            $stagingDir . '/' . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $now),
+            $stagingDir . '/' . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $now + 1),
         ];
     }
 

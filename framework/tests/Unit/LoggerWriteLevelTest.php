@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
+use Hilos\Log\LogLineReader;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -28,6 +29,29 @@ final class LoggerWriteLevelTest extends TestCase
         Logger::setWriteLevel(LogLevel::Info);
 
         parent::tearDown();
+    }
+
+    public function testBypassStampIsUtcEvenWhenTheProcessIsNot(): void
+    {
+        $previousZone = date_default_timezone_get();
+        $logFile = $this->createTempLogFile();
+        Logger::setLogFile($logFile);
+        Logger::setWriteLevel(LogLevel::Error);
+        date_default_timezone_set('America/Los_Angeles');
+        try {
+            $beforeMs = (int)floor(microtime(true) * 1000);
+            Logger::logWriteLevelChange('Log write level set to ERROR');
+            $afterMs = (int)floor(microtime(true) * 1000);
+            $line = (string)file_get_contents($logFile);
+
+            $this->assertMatchesRegularExpression('/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] /', $line);
+            $stampMs = LogLineReader::stampMilliseconds($line);
+            $this->assertNotNull($stampMs);
+            $this->assertGreaterThanOrEqual($beforeMs, $stampMs);
+            $this->assertLessThanOrEqual($afterMs, $stampMs);
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
     }
 
     /**

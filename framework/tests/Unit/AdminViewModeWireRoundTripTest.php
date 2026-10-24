@@ -93,7 +93,7 @@ final class AdminViewModeWireRoundTripTest extends TestCase
             'log follow with hidden text' => [new LogsLinesAppendedSignalData(
                 'follow-1',
                 [[
-                    LogsReadLinesReplyDTO::time => '2026-09-01 01:02:03.004',
+                    LogsReadLinesReplyDTO::time => '2026-09-01T01:02:03.004Z',
                     LogsReadLinesReplyDTO::text => HiddenValue::mark(),
                     LogsReadLinesReplyDTO::level => 'INFO',
                     LogsReadLinesReplyDTO::isContinuation => false,
@@ -136,7 +136,7 @@ final class AdminViewModeWireRoundTripTest extends TestCase
     {
         foreach ([HiddenValue::mark(), 'visible'] as $text) {
             $reply = new LogsReadLinesReplyDTO(true, [[
-                LogsReadLinesReplyDTO::time => '2026-09-01 01:02:03.004',
+                LogsReadLinesReplyDTO::time => '2026-09-01T01:02:03.004Z',
                 LogsReadLinesReplyDTO::text => $text,
                 LogsReadLinesReplyDTO::level => 'INFO',
                 LogsReadLinesReplyDTO::isContinuation => false,

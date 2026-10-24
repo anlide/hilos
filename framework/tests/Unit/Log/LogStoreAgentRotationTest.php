@@ -55,8 +55,13 @@ final class LogStoreAgentRotationTest extends TestCase
 
     private ?EnvAccessor $previousEnv = null;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->t0 = time();
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logstore-rotation-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
@@ -77,6 +82,7 @@ final class LogStoreAgentRotationTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         foreach ([
             EnvConstants::DAEMON_LOG_FILE,
             EnvConstants::DAEMON_ERROR_LOG_FILE,
@@ -359,7 +365,7 @@ final class LogStoreAgentRotationTest extends TestCase
      */
     private function batchDirName(int $timestamp): string
     {
-        return date(LogRotationConstants::TIMESTAMP_FORMAT, $timestamp);
+        return gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $timestamp);
     }
 
     /**

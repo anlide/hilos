@@ -541,7 +541,7 @@ final class LogStoreAgent extends AbstractAgent
         );
 
         foreach ($report->removedBatchTimestamps as $batchTimestamp => $takenAt) {
-            $batch = self::batchLabel(date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp));
+            $batch = self::batchLabel(gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp));
             $this->logAgentInfo("Log cleanup: removed batch {$batch}, taken at " . date('Y-m-d H:i:s', $takenAt));
         }
         foreach ($report->failedPaths as $failedPath) {
@@ -1303,7 +1303,7 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $logDirectory . DIRECTORY_SEPARATOR . self::batchSubdirectory($logDirectory, $batchTimestamp)
-            . DIRECTORY_SEPARATOR . date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
+            . DIRECTORY_SEPARATOR . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
     }
 
     /**
@@ -1468,7 +1468,7 @@ final class LogStoreAgent extends AbstractAgent
             : self::batchSubdirectory($logDirectory, $request->batchTimestamp);
 
         return $subdirectory
-            . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, $request->batchTimestamp)
+            . '/' . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $request->batchTimestamp)
             . '/' . $request->stream;
     }
 
@@ -2226,7 +2226,7 @@ final class LogStoreAgent extends AbstractAgent
      */
     private static function batchSubdirectory(string $logDirectory, int $batchTimestamp): string
     {
-        $name = date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
+        $name = gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
         $inArchive = $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
             . DIRECTORY_SEPARATOR . $name;
         if (is_dir($inArchive)) {

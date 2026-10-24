@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 import {
   HIDDEN_VALUE,
   HilosPages,
+  bindTimeZoneState,
   createSignal,
+  hilosTimeZone,
   OVERVIEW_SIGNAL,
 } from '@hilos/core/base'
 import type {
@@ -26,7 +28,7 @@ function node(
   return {
     nodeId: 'node-1',
     available: true,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
     archiveBytes: 1024 * 1024 * 1024,
     growthBytesPerDay: 190 * 1024 * 1024,
@@ -45,7 +47,7 @@ function overview(
   return {
     available: true,
     totalRotationsAllTime: 384,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     logKeysPerDaemon: 4,
     totalWeightDaemonKeysBytes: 220 * 1024 * 1024,
     logKeysPerAgent: 14,
@@ -74,10 +76,70 @@ function failure(
   return {
     nodeId: 'standalone',
     stream: 'worker-monopolistic-5.error.log',
-    at: '2026-09-06T10:00:02.125+00:00',
+    at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
     traceFrames: 3,
     ...overrides,
+  }
+}
+
+const DST_MOMENT = Date.parse('2026-03-29T01:30:00.123Z')
+const DST_MOMENT_ISO = '2026-03-29T01:30:00.123Z'
+
+function rotationLabel(timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    timeZone,
+  }).format(new Date(DST_MOMENT))
+}
+
+function recentLabel(timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    timeZone,
+  }).format(new Date(DST_MOMENT))
+}
+
+function bindReaderZone(): {
+  setZone: (timeZone: string) => void
+  restore: () => void
+} {
+  type ZoneSignal = { type: string; data: unknown }
+  const previousZone = hilosTimeZone.get()
+  const listeners = new Set<(signal: ZoneSignal) => void>()
+  const connection = {
+    projectTimeZone: 'UTC',
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event !== 'projectSignal') return () => {}
+      const receive = listener as unknown as (signal: ZoneSignal) => void
+      listeners.add(receive)
+      return () => listeners.delete(receive)
+    },
+  } as unknown as HilosConnection
+  const release = bindTimeZoneState(connection)
+  const setZone = (timeZone: string): void => {
+    for (const listener of listeners) {
+      listener({
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 1, timeZone } } },
+      })
+    }
+  }
+  setZone('UTC')
+
+  return {
+    setZone,
+    restore(): void {
+      setZone(previousZone)
+      release()
+    },
   }
 }
 
@@ -149,6 +211,48 @@ function mountPage(connection: HilosConnection) {
 }
 
 describe('HilosLogsPage', () => {
+  it('reformats the overview moments on a reader-zone change without another frame', async () => {
+    const zone = bindReaderZone()
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    try {
+      push(
+        overview({
+          lastRotationAt: DST_MOMENT_ISO,
+          recentErrors: [
+            failure({ at: DST_MOMENT_ISO, message: HIDDEN_VALUE }),
+          ],
+        }),
+      )
+      await nextTick()
+
+      const rotation = wrapper.get('[data-id="hilos-logs-tile-rotation"]')
+      const recent = wrapper.get('[data-id="hilos-logs-recent-row"]')
+      const rotationElement = rotation.element
+      const recentElement = recent.element
+      expect(rotation.text()).toBe(rotationLabel('UTC'))
+      expect(recent.text()).toContain(recentLabel('UTC'))
+      expect(recent.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+
+      zone.setZone('America/Los_Angeles')
+      await nextTick()
+
+      expect(wrapper.get('[data-id="hilos-logs-tile-rotation"]').element).toBe(
+        rotationElement,
+      )
+      expect(wrapper.get('[data-id="hilos-logs-recent-row"]').element).toBe(
+        recentElement,
+      )
+      expect(rotation.text()).toBe(rotationLabel('America/Los_Angeles'))
+      expect(recent.text()).toContain(recentLabel('America/Los_Angeles'))
+      expect(recent.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+    } finally {
+      wrapper.unmount()
+      zone.restore()
+    }
+  })
+
   it('draws a hidden recent message and forecast as separate marks', async () => {
     const { connection, push } = makeConnection()
     const wrapper = mountPage(connection)
@@ -349,7 +453,7 @@ describe('HilosLogsPage', () => {
     const row = wrapper.find('[data-id="hilos-logs-recent-row"]')
     expect(row.exists()).toBe(true)
     expect(row.attributes('href')).toBe(
-      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
     )
     expect(row.text()).toContain('login action failed')
   })

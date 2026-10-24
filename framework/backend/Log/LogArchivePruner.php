@@ -61,7 +61,7 @@ final class LogArchivePruner
         $unreadableMarkerDirNames = [];
 
         foreach ($batchTimestamps as $batchTimestamp) {
-            $dirName = date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
+            $dirName = gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
             // Every segment of the path is minted here, from a number and two constants, and the
             // name is then held against the pattern rotation writes: nothing that addresses a
             // deletion comes off the wire, however the timestamp reached the caller.

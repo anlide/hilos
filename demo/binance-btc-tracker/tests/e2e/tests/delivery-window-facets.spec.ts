@@ -75,10 +75,6 @@ test('logs initial answers keep own state, response and declared facets in one p
     await expect(shownByTestId(page, 'hilos-table-facet-class-any')).toHaveText(
       /^\d+$/,
     )
-    const countBefore = await shownByTestId(
-      page,
-      'hilos-table-facet-class-any',
-    ).textContent()
     await shownByTestId(page, 'hilos-table-filter-class').click()
     const rowKeysBefore = await page
       .locator(ROWS)
@@ -159,6 +155,18 @@ test('logs initial answers keep own state, response and declared facets in one p
     )
     expect(restoredKeys.length).toBeGreaterThan(0)
     expect(object(window).limit).toBe(descriptor.limit)
+    const restoredFacetFrame = restored.frames.find(
+      ({ wire }) =>
+        object(wire).type === 'table_facet_counts' &&
+        object(object(wire).data).tableKey === 'hilosLogKeys',
+    )!
+    const restoredFacet = object(
+      object(object(restoredFacetFrame.wire).data).facets,
+    ).class
+    expect(object(restoredFacet).any).toEqual({
+      count: object(window).totalCount,
+      exact: object(window).totalExact,
+    })
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expectPageReady(page)
     // Byte totals and ordering can change while disconnected, and keep changing
@@ -219,9 +227,58 @@ test('logs initial answers keep own state, response and declared facets in one p
       .toBeNull()
     expect(restoredKeys.some((key) => rowKeysBefore.includes(key))).toBe(true)
     await shownByTestId(page, 'hilos-table-filter-class').click()
-    await expect(shownByTestId(page, 'hilos-table-facet-class-any')).toHaveText(
-      countBefore!,
-    )
+    // New log streams can appear too. The restored delivery must agree within
+    // itself (above); the live dropdown must draw the latest facet frame, even
+    // when it has advanced beyond that delivery or the pre-disconnect count.
+    const latestFacetFrame = () =>
+      log.packets
+        .filter((packet) => packet.socket === socket + 1)
+        .flatMap((packet) => packet.frames)
+        .reverse()
+        .find(
+          ({ wire }) =>
+            object(wire).type === 'table_facet_counts' &&
+            object(object(wire).data).page === 'hilos_logs_keys' &&
+            object(object(wire).data).tableKey === 'hilosLogKeys',
+        )!
+    await expect
+      .poll(async () => {
+        const before = latestFacetFrame()
+        const facet = object(object(object(before.wire).data).facets).class
+        const counts = {
+          any: object(facet).any,
+          ...object(object(facet).options),
+        }
+        expect(Object.keys(counts).sort()).toEqual([
+          'agent',
+          'any',
+          'daemon',
+          'worker',
+        ])
+        const shown: Record<string, string | null> = {}
+        const expected: Record<string, string> = {}
+        for (const [key, value] of Object.entries(counts)) {
+          expect(object(value).exact).toBe(true)
+          expect(object(value).count).toEqual(expect.any(Number))
+          expected[key] = String(object(value).count)
+          shown[key] = await shownByTestId(
+            page,
+            `hilos-table-facet-class-${key}`,
+          ).textContent()
+        }
+        if (latestFacetFrame() !== before) {
+          return {
+            shown,
+            changed: 'a newer facet frame arrived during the read',
+          }
+        }
+        return Object.keys(expected).every(
+          (key) => shown[key] === expected[key],
+        )
+          ? null
+          : { shown, expected }
+      })
+      .toBeNull()
     await expectDocumentUnchanged(page)
     expect(log.sockets()).toBe(socket + 1)
     expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(

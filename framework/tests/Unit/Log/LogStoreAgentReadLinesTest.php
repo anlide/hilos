@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Log;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
@@ -44,7 +46,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
     private const string REQUEST_ID = 'req-1';
 
     /** @var string Name of the rotated batch the archive fixture is written into */
-    private const string BATCH_DIR = '2026-08-01-00-00-00';
+    private const string BATCH_DIR = '2026-08-01-00-00-00Z';
 
     /** @var int Bytes of unstamped lines put between an entry and the end of its file, past the 8 MiB an anchored read searches back */
     private const int PAST_THE_ANCHOR_SEARCH_BYTES = 9 * 1024 * 1024;
@@ -58,8 +60,13 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
     private ?EnvAccessor $previousEnv = null;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-logstore-read-' . uniqid('', true);
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
@@ -76,6 +83,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name);
         if ($this->previousEnv !== null) {
@@ -93,7 +101,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
     public function testALiveFileComesBackAsAPageOfLinesOnTheAskersAck(): void
     {
-        $this->write('worker-0.log', "[2026-08-01 00:00:00.000] first\n[2026-08-01 00:00:01.000] ERROR: second\n");
+        $this->write('worker-0.log', "[2026-08-01T00:00:00.000Z] first\n[2026-08-01T00:00:01.000Z] ERROR: second\n");
 
         new LogStoreAgent()->onSignalAgent(
             new AgentSignalData($this->request(LogsReadLinesActionDTO::SOURCE_LIVE, null, 'worker-0.log')),
@@ -108,7 +116,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertSame(
-            ['2026-08-01 00:00:00.000', '2026-08-01 00:00:01.000'],
+            ['2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::time),
         );
     }
@@ -121,11 +129,11 @@ final class LogStoreAgentReadLinesTest extends TestCase
     public function testAnAnchoredReadOpensThePageOnTheEntryAndReadsOnFromIt(): void
     {
         $lines = [
-            '[2026-08-01 00:00:00.000] booted',
-            '[2026-08-01 00:00:01.000] served',
-            '[2026-08-01 00:00:02.500] ERROR: the entry the row names',
+            '[2026-08-01T00:00:00.000Z] booted',
+            '[2026-08-01T00:00:01.000Z] served',
+            '[2026-08-01T00:00:02.500Z] ERROR: the entry the row names',
             '#0 /app/a.php(7): a()',
-            '[2026-08-01 00:00:03.000] served again',
+            '[2026-08-01T00:00:03.000Z] served again',
         ];
         $this->write('worker-0.log', implode("\n", $lines) . "\n");
 
@@ -163,7 +171,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
     public function testAnAnchoredReadOfTheDaemonErrorStreamTagsTheEntryError(): void
     {
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name . '=' . $this->dir . '/daemon-error.log');
-        $this->write('daemon-error.log', "[2026-08-01 00:00:02.500] failure\n");
+        $this->write('daemon-error.log', "[2026-08-01T00:00:02.500Z] failure\n");
 
         $this->read($this->request(
             LogsReadLinesActionDTO::SOURCE_LIVE,
@@ -186,7 +194,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
      */
     public function testAnAnchorTheFileDoesNotHoldAnswersTheTailAndSaysSo(): void
     {
-        $lines = ['[2026-08-01 00:00:05.000] first after the rotation', '[2026-08-01 00:00:06.000] next'];
+        $lines = ['[2026-08-01T00:00:05.000Z] first after the rotation', '[2026-08-01T00:00:06.000Z] next'];
         $this->write('worker-0.log', implode("\n", $lines) . "\n");
 
         $this->read($this->request(
@@ -211,11 +219,11 @@ final class LogStoreAgentReadLinesTest extends TestCase
      */
     public function testAnAnchorBeyondTheSearchAnswersTheTailToo(): void
     {
-        $last = '[2026-08-01 00:00:09.000] the last line';
+        $last = '[2026-08-01T00:00:09.000Z] the last line';
         // Written a block at a time: the file is bigger than what a test may hold in memory at once.
         $handle = fopen($this->dir . DIRECTORY_SEPARATOR . 'worker-0.log', 'wb');
         $this->assertNotFalse($handle);
-        fwrite($handle, "[2026-08-01 00:00:02.500] ERROR: the entry the row names\n");
+        fwrite($handle, "[2026-08-01T00:00:02.500Z] ERROR: the entry the row names\n");
         $block = str_repeat("#0 /app/src/Service/Handler.php(120): Handler->handle()\n", 1000);
         for ($written = 0; $written < self::PAST_THE_ANCHOR_SEARCH_BYTES; $written += strlen($block)) {
             fwrite($handle, $block);
@@ -244,7 +252,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
     {
         $lines = [];
         for ($index = 0; $index < self::ONE_PAST_A_PAGE_LINES; $index++) {
-            $lines[] = "[2026-08-01 00:00:00.000] line {$index}";
+            $lines[] = "[2026-08-01T00:00:00.000Z] line {$index}";
         }
         $this->write('worker-0.log', implode("\n", $lines) . "\n");
         $firstShown = self::ONE_PAST_A_PAGE_LINES - 200;
@@ -266,7 +274,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
      */
     public function testABatchIsReadFromTheDirectoryItsTimestampNames(): void
     {
-        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $this->writeBatch('worker-0.log', "[2026-08-01T00:00:00.000Z] archived\n");
 
         new LogStoreAgent()->onSignalAgent(
             new AgentSignalData($this->request(
@@ -294,7 +302,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
     {
         $this->write(
             'worker-0.log',
-            "[2026-08-01 00:00:00.000] quiet\n[2026-08-01 00:00:01.000] ERROR: boom\n    #0 somewhere.php\n",
+            "[2026-08-01T00:00:00.000Z] quiet\n[2026-08-01T00:00:01.000Z] ERROR: boom\n    #0 somewhere.php\n",
         );
 
         new LogStoreAgent()->onSignalAgent(
@@ -314,7 +322,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertSame(
-            ['2026-08-01 00:00:01.000', null],
+            ['2026-08-01T00:00:01.000Z', null],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::time),
         );
         $this->assertSame(
@@ -325,20 +333,20 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
     public function testAViewerReadsTimesAndLevelsButNoTextEvenOnAContinuation(): void
     {
-        $this->write('worker-0.log', "[2026-08-01 00:00:01.000] ERROR: private text\nprivate continuation\n");
+        $this->write('worker-0.log', "[2026-08-01T00:00:01.000Z] ERROR: private text\nprivate continuation\n");
 
         $this->read($this->request(LogsReadLinesActionDTO::SOURCE_LIVE, null, 'worker-0.log', hideText: true));
 
         $lines = $this->acked()[LogsReadLinesReplyDTO::lines];
         $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column($lines, LogsReadLinesReplyDTO::text));
-        $this->assertSame(['2026-08-01 00:00:01.000', null], array_column($lines, LogsReadLinesReplyDTO::time));
+        $this->assertSame(['2026-08-01T00:00:01.000Z', null], array_column($lines, LogsReadLinesReplyDTO::time));
         $this->assertSame([Logger::LEVEL_ERROR, Logger::LEVEL_ERROR], array_column($lines, LogsReadLinesReplyDTO::level));
         $this->assertSame([false, true], array_column($lines, LogsReadLinesReplyDTO::isContinuation));
     }
 
     public function testAnAnchoredReadAndAnAnchorMissBothHideTheirPages(): void
     {
-        $this->write('worker-0.log', "[2026-08-01 00:00:01.000] first\n[2026-08-01 00:00:02.000] second\n");
+        $this->write('worker-0.log', "[2026-08-01T00:00:01.000Z] first\n[2026-08-01T00:00:02.000Z] second\n");
 
         $this->read($this->request(
             LogsReadLinesActionDTO::SOURCE_LIVE,
@@ -414,7 +422,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
     public function testAnUntrackedReadIsNotReadAndNotAnswered(): void
     {
-        $this->write('worker-0.log', "[2026-08-01 00:00:00.000] first\n");
+        $this->write('worker-0.log', "[2026-08-01T00:00:00.000Z] first\n");
 
         new LogStoreAgent()->onSignalAgent(
             new AgentSignalData($this->request(
@@ -478,22 +486,22 @@ final class LogStoreAgentReadLinesTest extends TestCase
     private function read(LogsReadLinesSignalData $request): void
     {
         new LogStoreAgent()->onSignalAgent(
-            new AgentSignalData($request),
+            new AgentSignalData(LogsReadLinesSignalData::fromArray($request->toArray())),
             'agent',
             HilosSignalConstants::LOGS_AGENT_READ_LINES,
         );
     }
 
     /**
-     * The unix milliseconds a line stamped with this local time is read as.
+     * The unix milliseconds a line stamped with this UTC time is read as.
      *
-     * @param string $stamp Local time without milliseconds
+     * @param string $stamp UTC time without milliseconds
      * @param int $milliseconds Millisecond part of the stamp
      * @return int Unix milliseconds
      */
     private function milliseconds(string $stamp, int $milliseconds): int
     {
-        return strtotime($stamp) * 1000 + $milliseconds;
+        return strtotime($stamp . ' UTC') * 1000 + $milliseconds;
     }
 
     /**
@@ -523,7 +531,11 @@ final class LogStoreAgentReadLinesTest extends TestCase
      */
     private function batchTimestamp(): int
     {
-        $parsed = DateTimeImmutable::createFromFormat(LogRotationConstants::TIMESTAMP_FORMAT, self::BATCH_DIR);
+        $parsed = DateTimeImmutable::createFromFormat(
+            '!' . LogRotationConstants::TIMESTAMP_FORMAT,
+            self::BATCH_DIR,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
         $this->assertNotFalse($parsed);
 
         return $parsed->getTimestamp();

@@ -59,7 +59,7 @@ export interface HilosLogKeyRow {
   readonly live: boolean
   /** Archived batches the stream occurs in. */
   readonly batchCount: number
-  /** Newest batch holding the stream, or null when it has never been rotated. */
+  /** UTC epoch milliseconds of the newest batch holding the stream, or null when it has never been rotated. */
   readonly lastBatchAt: number | null
   /** Weight of the live file and every archived occurrence together. */
   readonly bytes: number

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -35,7 +36,7 @@ final class ClusterLogIndexPortionSignalData extends BaseDTO implements SignalDa
     /** Payload key: the node slots this frame carries, each one whole. */
     public const string nodes = 'nodes';
 
-    /** Slot row key: Unix timestamp at which the aggregator heard from that node. */
+    /** Slot row key: UTC epoch milliseconds at which the aggregator heard from that node. */
     public const string receivedAt = 'receivedAt';
 
     /** Slot row key: that node's index, in the form {@see NodeLogIndexSignalData} gives it. */
@@ -43,7 +44,7 @@ final class ClusterLogIndexPortionSignalData extends BaseDTO implements SignalDa
 
     /**
      * @param bool $snapshot Whether the frame replaces the receiver's whole picture
-     * @param list<ClusterLogNodeSlot> $nodes Node slots this frame carries, each one whole
+     * @param list<ClusterLogNodeSlot> $nodes Internal slots with epoch-second moments, serialized as milliseconds
      */
     public function __construct(
         public readonly bool $snapshot,
@@ -72,7 +73,7 @@ final class ClusterLogIndexPortionSignalData extends BaseDTO implements SignalDa
             self::snapshot => $this->snapshot,
             self::nodes => array_map(
                 static fn (ClusterLogNodeSlot $slot): array => [
-                    self::receivedAt => $slot->receivedAt,
+                    self::receivedAt => $slot->receivedAt * TimeConstants::MS_PER_SECOND,
                     self::index => NodeLogIndexSignalData::fromIndex($slot->index)->toArray(),
                 ],
                 $this->nodes,
@@ -105,7 +106,7 @@ final class ClusterLogIndexPortionSignalData extends BaseDTO implements SignalDa
             $slots[] = new ClusterLogNodeSlot(
                 nodeId: $index->nodeId,
                 index: $index,
-                receivedAt: self::requireInt($row, self::receivedAt),
+                receivedAt: intdiv(self::requireInt($row, self::receivedAt), TimeConstants::MS_PER_SECOND),
             );
         }
 

@@ -57,10 +57,10 @@ function row(
 ): HilosLogRotationRow {
   return {
     rowKey: 'node-1:1800000000',
-    batchAt: 1800000000,
+    batchAt: 1800000000000,
     node: 'node-1',
-    path: 'archive/2027-01-15-08-00-00/',
-    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    path: 'archive/2027-01-15-08-00-00Z/',
+    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 2,
     agentFileCount: 12,
     workerFileCount: 8,
@@ -98,33 +98,33 @@ describe('resolveHilosLogRotationRow', () => {
   it('reads the batch slot into the view-model', () => {
     const resolved = resolveHilosLogRotationRow(
       rotationTableRow('node-2:1800000000', {
-        batchAt: 1800000000,
+        batchAt: 1800000000000,
         node: 'node-2',
-        path: 'archive/2027-01-15-08-00-00/',
-        absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+        path: 'archive/2027-01-15-08-00-00Z/',
+        absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
         daemonFileCount: 3,
         agentFileCount: 11,
         workerFileCount: 8,
         workerMonopolisticFileCount: 2,
         bytes: 4096,
         retentionState: HILOS_ROTATION_STATE_DUE,
-        pruneNotBefore: 1800086400,
+        pruneNotBefore: 1800086400000,
       }),
     )
 
     expect(resolved).toEqual({
       rowKey: 'node-2:1800000000',
-      batchAt: 1800000000,
+      batchAt: 1800000000000,
       node: 'node-2',
-      path: 'archive/2027-01-15-08-00-00/',
-      absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+      path: 'archive/2027-01-15-08-00-00Z/',
+      absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
       daemonFileCount: 3,
       agentFileCount: 11,
       workerFileCount: 8,
       workerMonopolisticFileCount: 2,
       bytes: 4096,
       retentionState: HILOS_ROTATION_STATE_DUE,
-      pruneNotBefore: 1800086400,
+      pruneNotBefore: 1800086400000,
     })
   })
 
@@ -132,7 +132,7 @@ describe('resolveHilosLogRotationRow', () => {
     const resolved = resolveHilosLogRotationRow(
       rotationTableRow('standalone:1800000000', {
         node: 'standalone',
-        batchAt: 1800000000,
+        batchAt: 1800000000000,
         bytes: 10,
       }),
     )
@@ -142,7 +142,10 @@ describe('resolveHilosLogRotationRow', () => {
 
   it('keeps an unreported log root null, so no address is invented for it', () => {
     const resolved = resolveHilosLogRotationRow(
-      rotationTableRow('node-1:1800000000', { batchAt: 1800000000, bytes: 10 }),
+      rotationTableRow('node-1:1800000000', {
+        batchAt: 1800000000000,
+        bytes: 10,
+      }),
     )
 
     expect(resolved.absolutePath).toBeNull()
@@ -150,7 +153,10 @@ describe('resolveHilosLogRotationRow', () => {
 
   it('keeps an absent prune deadline null, which the modal says in words', () => {
     const resolved = resolveHilosLogRotationRow(
-      rotationTableRow('node-1:1800000000', { batchAt: 1800000000, bytes: 10 }),
+      rotationTableRow('node-1:1800000000', {
+        batchAt: 1800000000000,
+        bytes: 10,
+      }),
     )
 
     expect(resolved.pruneNotBefore).toBeNull()
@@ -398,13 +404,13 @@ describe('formatRetentionRule', () => {
 describe('rotationTakeoutAddress', () => {
   it('leads with the node, because the batch is on that machine and only there', () => {
     expect(rotationTakeoutAddress(row(), true)).toBe(
-      'node-1:/var/log/hilos/archive/2027-01-15-08-00-00/',
+      'node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     )
   })
 
   it('is the path alone on a standalone installation', () => {
     expect(rotationTakeoutAddress(row({ node: 'standalone' }), false)).toBe(
-      '/var/log/hilos/archive/2027-01-15-08-00-00/',
+      '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     )
   })
 
@@ -416,13 +422,13 @@ describe('rotationTakeoutAddress', () => {
 describe('rotationTakeoutCommand', () => {
   it('copies the batch into a folder named after it, under the node it came from', () => {
     expect(rotationTakeoutCommand(row(), true)).toBe(
-      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
     )
   })
 
   it('drops the node level of the destination on standalone', () => {
     expect(rotationTakeoutCommand(row({ node: 'standalone' }), false)).toBe(
-      'rsync -a /var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/2027-01-15-08-00-00/',
+      'rsync -a /var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/2027-01-15-08-00-00Z/',
     )
   })
 
@@ -451,13 +457,13 @@ describe('createHilosLogRotationsActions', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
-      row({ node: 'node-2', batchAt: 1800000000 }),
+      row({ node: 'node-2', batchAt: 1800000000000 }),
     )
 
     expect(sent).toEqual([
       {
         action: LOGS_TAKEOUT_CONFIRM_ACTION,
-        payload: { nodeId: 'node-2', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-2', batchTimestamp: 1800000000000 },
       },
     ])
   })
@@ -471,7 +477,7 @@ describe('createHilosLogRotationsActions', () => {
 
     expect(sent[0]?.payload).toEqual({
       nodeId: 'standalone',
-      batchTimestamp: 1800000000,
+      batchTimestamp: 1800000000000,
     })
   })
 
@@ -479,13 +485,13 @@ describe('createHilosLogRotationsActions', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutUndo(
-      row({ node: 'node-2', batchAt: 1800000000 }),
+      row({ node: 'node-2', batchAt: 1800000000000 }),
     )
 
     expect(sent).toEqual([
       {
         action: LOGS_TAKEOUT_UNDO_ACTION,
-        payload: { nodeId: 'node-2', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-2', batchTimestamp: 1800000000000 },
       },
     ])
   })
@@ -499,7 +505,7 @@ describe('createHilosLogRotationsActions', () => {
 
     expect(sent[0]?.payload).toEqual({
       nodeId: 'standalone',
-      batchTimestamp: 1800000000,
+      batchTimestamp: 1800000000000,
     })
   })
 })
@@ -820,8 +826,8 @@ describe('createHilosLogRotationsTable and the address', () => {
       ],
       4,
       true,
-      { batchAt: 1800000060 },
-      { batchAt: 1800000000 },
+      { batchAt: 1800000060000 },
+      { batchAt: 1800000000000 },
       2,
     )
 

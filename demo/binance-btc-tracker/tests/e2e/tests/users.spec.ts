@@ -1,20 +1,30 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  controlSocketReconnect,
+  deliveryObject as object,
   dismissToasts,
   expectHilosUserBlockSettled,
   expectHilosUserOverview,
   expectHilosUserOverviewAccessibility,
+  expectSessionRotation,
+  isRotateCookie,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin, signUpAdmin } from '../helpers/adminGrant'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { gotoPage } from '../helpers/page'
+import {
+  grantAdminToSelf,
+  sessionToken,
+  setAdmin,
+  signUpAdmin,
+} from '../helpers/adminGrant.js'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import {
   clickSubmit,
   PASSWORD,
   signUpPerson,
   typeInto,
-} from '../helpers/session'
+} from '../helpers/session.js'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -397,11 +407,14 @@ test("shows a person's standing on the card and in the takeover strip", async ({
   browser,
   page,
 }) => {
+  const reconnect = await controlSocketReconnect(page)
+  const log = watchDeliveryFrames(page)
+  const rotationEvidence: Record<string, unknown> = {}
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(page)
+    const adminId = await signUpAdmin(page)
     const person = await signUpPerson(personPage)
     await gotoPage(page, `/hilos/user/${person.userId}`)
     const badge = page.getByTestId('user-standing-badge')
@@ -428,19 +441,68 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     page.on('websocket', () => {
       sockets += 1
     })
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
     const strip = page.getByTestId('impersonation-banner')
-    await expect(strip).toHaveClass(/\balert-danger\b/)
-    await expect(
-      page.getByTestId('nav-profile-name').getByTestId('avatar-mark'),
-    ).toHaveClass(/\btext-danger-emphasis\b/)
+    await expectSessionRotation(expect, page, async () => {
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+      await expect(strip).toHaveClass(/\balert-danger\b/)
+      await expect(
+        page.getByTestId('nav-profile-name').getByTestId('avatar-mark'),
+      ).toHaveClass(/\btext-danger-emphasis\b/)
+    })
     await expect.poll(() => sockets).toBeGreaterThan(0)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    await clickSubmit(page.getByTestId('impersonation-stop'))
-    await expect(strip).toBeHidden()
-    await expect(page.getByTestId('nav-admin')).toBeVisible()
+    const stopSocket = log.sockets()
+    const cookieBeforeStop = await sessionToken(page)
+    await expectSessionRotation(expect, page, async () => {
+      await reconnect.hold()
+      await clickSubmit(page.getByTestId('impersonation-stop'))
+      await expect(strip).toBeHidden()
+      await expect(page.getByTestId('nav-admin')).toBeVisible()
+      // Reproduce the former navigation boundary: the old socket already
+      // names the administrator, but its replacement has not exchanged the
+      // cookie. Neither the hidden strip nor the admin entry proves rotation.
+      await expect
+        .poll(async () =>
+          (await page.context().cookies()).some(({ name }) =>
+            isRotateCookie(name),
+          ),
+        )
+        .toBe(true)
+      const oldSocketFrames = log.packets
+        .filter(({ socket }) => socket === stopSocket)
+        .flatMap(({ frames }) => frames)
+      const identity = oldSocketFrames
+        .slice()
+        .reverse()
+        .find(({ wire }) => object(wire).type === 'handshake_response')!
+      const entities = object(object(identity.wire).data).entities
+      const held = {
+        restoredUserId: object(object(entities).currentUser).id,
+        impersonatedBy: object(entities).impersonatedBy,
+        credentialUnchanged: (await sessionToken(page)) === cookieBeforeStop,
+        replacementWelcomed: log.packets.some(
+          (packet) =>
+            packet.socket > stopSocket &&
+            packet.frames.some(({ wire }) => object(wire).type === 'handshake'),
+        ),
+      }
+      rotationEvidence.held = held
+      expect(held).toEqual({
+        restoredUserId: adminId,
+        impersonatedBy: null,
+        credentialUnchanged: true,
+        replacementWelcomed: false,
+      })
+      await reconnect.release()
+    })
+    await expect
+      .poll(async () => (await sessionToken(page)) !== cookieBeforeStop)
+      .toBe(true)
+    rotationEvidence.credentialRotated = true
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await gotoPage(page, `/hilos/user/${person.userId}`, PAGE_READY)
+    await expect(page.getByTestId('nav-admin')).toBeVisible()
     await clickSubmit(page.getByTestId('hilos-user-deletion-open'))
     // Scheduling someone else's deletion is the administrator's to confirm (HIL-1275).
     await typeInto(page.getByTestId('step-up-password'), PASSWORD)
@@ -458,6 +520,12 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(badge).toHaveText('Deletion scheduled')
   } finally {
+    log.stop()
+    await test.info().attach('standing-takeover-rotation', {
+      body: JSON.stringify({ ...rotationEvidence, packets: log.packets }),
+      contentType: 'application/json',
+    })
+    await reconnect.dispose()
     await personContext.close()
   }
 })

@@ -627,7 +627,10 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     private function confirmation(string $nodeId): LogsTakeoutConfirmActionDTO
     {
-        return new LogsTakeoutConfirmActionDTO(nodeId: $nodeId, batchTimestamp: self::CONFIRMED_BATCH_AT);
+        return LogsTakeoutConfirmActionDTO::fromArray([
+            'nodeId' => $nodeId,
+            'batchTimestamp' => self::CONFIRMED_BATCH_AT * 1000,
+        ]);
     }
 
     /**
@@ -638,7 +641,10 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     private function withdrawal(string $nodeId): LogsTakeoutUndoActionDTO
     {
-        return new LogsTakeoutUndoActionDTO(nodeId: $nodeId, batchTimestamp: self::CONFIRMED_BATCH_AT);
+        return LogsTakeoutUndoActionDTO::fromArray([
+            'nodeId' => $nodeId,
+            'batchTimestamp' => self::CONFIRMED_BATCH_AT * 1000,
+        ]);
     }
 
     /**

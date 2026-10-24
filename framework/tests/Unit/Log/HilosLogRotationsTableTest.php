@@ -45,14 +45,20 @@ final class HilosLogRotationsTableTest extends TestCase
     /** One day in seconds, the spacing of the fixture batches. */
     private const int DAY = 86_400;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         parent::setUp();
         ClusterLogIndexMirror::forgetPicture();
     }
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         ClusterLogIndexMirror::forgetPicture();
 
         parent::tearDown();
@@ -99,7 +105,7 @@ final class HilosLogRotationsTableTest extends TestCase
         $rows = $this->rows(new TableQueryDTO());
 
         $this->assertSame(
-            [self::NOW, self::NOW - self::DAY, self::NOW - 3 * self::DAY],
+            [1_800_000_000_000, 1_799_913_600_000, 1_799_740_800_000],
             array_map(static fn($row): int => $row->batchAt, $rows),
         );
     }
@@ -128,7 +134,7 @@ final class HilosLogRotationsTableTest extends TestCase
 
         $this->assertCount(1, $due);
         $this->assertSame('node-1', $due[0]->node);
-        $this->assertSame(self::NOW - 10 * self::DAY, $due[0]->batchAt);
+        $this->assertSame((self::NOW - 10 * self::DAY) * 1000, $due[0]->batchAt);
     }
 
     public function testStandaloneRowUsesItsEffectiveNodeIdInTheKey(): void
@@ -138,6 +144,10 @@ final class HilosLogRotationsTableTest extends TestCase
         $row = $this->rows(new TableQueryDTO())[0];
         $this->assertSame('standalone', $row->node);
         $this->assertSame('standalone:' . self::NOW, $row->rowKey);
+        $this->assertSame(1_800_000_000_000, $row->batchAt);
+        $this->assertSame(1_800_000_000_000, $row->toArray()['batchAt']);
+        $this->assertSame('archive/2027-01-15-08-00-00Z/', $row->path);
+        $this->assertSame($row->toArray(), HilosLogRotationsTableRow::fromArray($row->toArray())->toArray());
     }
 
     /**
@@ -228,7 +238,7 @@ final class HilosLogRotationsTableTest extends TestCase
             carrying: [self::NOW],
         ));
 
-        $directory = date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
+        $directory = gmdate(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
         $rows = $this->rows(new TableQueryDTO());
 
         $this->assertSame(
@@ -258,7 +268,7 @@ final class HilosLogRotationsTableTest extends TestCase
             filter: [HilosLogRotationsTable::FILTER_STATE => HilosLogRotationsTable::STATE_DUE],
         ));
 
-        $this->assertSame([self::NOW - self::DAY], array_map(static fn($row): int => $row->batchAt, $rows));
+        $this->assertSame([(self::NOW - self::DAY) * 1000], array_map(static fn($row): int => $row->batchAt, $rows));
     }
 
     /**
@@ -273,7 +283,7 @@ final class HilosLogRotationsTableTest extends TestCase
             $this->node('node-2', [self::NOW], logDirectory: '/srv/hilos/log/'),
         );
 
-        $directory = date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
+        $directory = gmdate(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
 
         $this->assertSame(
             [
@@ -297,7 +307,7 @@ final class HilosLogRotationsTableTest extends TestCase
         $this->assertNull($row->absolutePath);
         $this->assertSame(
             LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
-                . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW) . '/',
+                . '/' . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW) . '/',
             $row->path,
             'The relative name is the node\'s own and survives a missing root',
         );
@@ -316,7 +326,7 @@ final class HilosLogRotationsTableTest extends TestCase
         );
 
         $this->assertSame(
-            [self::NOW + self::DAY, self::NOW + 3_600],
+            [1_800_086_400_000, 1_800_003_600_000],
             array_map(static fn($row): ?int => $row->pruneNotBefore, $this->rows(new TableQueryDTO())),
         );
     }
@@ -393,7 +403,7 @@ final class HilosLogRotationsTableTest extends TestCase
         ));
 
         $this->assertSame(
-            [self::NOW - self::DAY, self::NOW - 2 * self::DAY],
+            [(self::NOW - self::DAY) * 1000, (self::NOW - 2 * self::DAY) * 1000],
             array_map(static fn($row): int => $row->batchAt, $rows),
         );
     }
@@ -412,8 +422,8 @@ final class HilosLogRotationsTableTest extends TestCase
         $byNode = $this->rows(new TableQueryDTO(search: 'node-2'));
         $this->assertSame(['node-2'], array_map(static fn($row): ?string => $row->node, $byNode));
 
-        $byDate = $this->rows(new TableQueryDTO(search: date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW)));
-        $this->assertSame([self::NOW], array_map(static fn($row): int => $row->batchAt, $byDate));
+        $byDate = $this->rows(new TableQueryDTO(search: gmdate(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW)));
+        $this->assertSame([1_800_000_000_000], array_map(static fn($row): int => $row->batchAt, $byDate));
     }
 
     /**
@@ -468,7 +478,7 @@ final class HilosLogRotationsTableTest extends TestCase
         $this->assertSame(3, $row->workerMonopolisticFileCount);
         $this->assertSame(
             LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
-                . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW) . '/',
+                . '/' . gmdate(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW) . '/',
             $row->path,
         );
     }

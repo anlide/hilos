@@ -70,7 +70,7 @@ export const OVERVIEW_NODE_ID_FIELD = 'nodeId'
 /** Row payload key of whether that node could read its own log store. */
 export const OVERVIEW_NODE_AVAILABLE_FIELD = 'available'
 
-/** Row payload key of the node's newest rotation, ISO 8601. */
+/** Row payload key of the node's newest rotation, ISO UTC with .000Z. */
 export const OVERVIEW_NODE_LAST_ROTATION_FIELD = 'lastRotationAt'
 
 /** Row payload key of what the node's live files weigh. */
@@ -142,6 +142,7 @@ export const overviewNodeSchema = z.looseObject({
 /**
  * One row of the recent-failures panel, in either of its tabs.
  *
+ * `at` is ISO UTC with milliseconds and Z.
  * Every field but the frame count is a string the node measured, so none of them is
  * nullable: a row exists because a line was really written. The frame count keeps its
  * null, which is the difference between "there is a stack to look at" and "there is
@@ -231,6 +232,7 @@ export const logViewerStreamSchema = z.looseObject({
   key: z.string(),
   class: z.string(),
   live: z.boolean(),
+  /** Rotation moments in UTC epoch milliseconds. */
   batchTimestamps: z.array(z.number()),
 })
 
@@ -238,6 +240,7 @@ export const logViewerStreamSchema = z.looseObject({
 export const logViewerNodeSchema = z.looseObject({
   nodeId: z.string(),
   available: z.boolean(),
+  /** Rotation moments in UTC epoch milliseconds. */
   batches: z.array(z.number()),
   streams: z.array(logViewerStreamSchema),
 })
@@ -267,6 +270,8 @@ export type HilosLogViewerStream = z.infer<typeof logViewerStreamSchema>
 /**
  * One line as the owner of the file sends it, in a read reply and in a follow
  * frame alike (PHP `LogsReadLinesReplyDTO::linesFromPage()`).
+ * `time` is a complete ISO UTC string with milliseconds and Z, or null for a
+ * continuation without a stamp; the feed retains it until presentation.
  *
  * One shape for both because the browser draws the first page and every frame
  * after it with one renderer; a second shape here would be a second renderer.

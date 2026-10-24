@@ -4,32 +4,32 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Logs;
 
-use DateTimeImmutable;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\DTO\TableSortDTO;
-use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
-use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
-use Hilos\Core\Table\DTO\TableSortOrderDTO;
-use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
-use Hilos\Core\Table\DTO\TableFacetCountDTO;
-use Hilos\Core\Table\TableFacetTally;
 
 /**
  * Framework log-rotations table: the archived rotation batches of every node (HIL-387).
@@ -335,7 +335,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             $path = self::batchPath($batch);
             $rows[] = [
                 HilosLogRotationsTableRow::rowKey => self::rowKey($slot->nodeId, $batch->timestamp),
-                HilosLogRotationsTableRow::batchAt => $batch->timestamp,
+                HilosLogRotationsTableRow::batchAt => $batch->timestamp * TimeConstants::MS_PER_SECOND,
                 HilosLogRotationsTableRow::node => $slot->nodeId,
                 HilosLogRotationsTableRow::path => $path,
                 HilosLogRotationsTableRow::absolutePath => self::absolutePath($slot->index->logDirectory, $path),
@@ -420,12 +420,8 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     /**
      * Names the directory of one batch, relative to that node's log root.
      *
-     * The name is re-derived rather than carried: {@see LogBatchSummary} holds the instant and not
-     * the directory it was parsed out of. That round-trips exactly while every node of the cluster
-     * runs in one timezone — the rotator formats the name in the writing node's, and this formats
-     * it back in the page worker's. Nodes set to different timezones would show a path off by the
-     * offset; carrying the name itself is the cure, and it belongs to the read model this leaf
-     * reads rather than writes.
+     * The name is re-derived in UTC, the same zone the rotator writes on disk, independently of
+     * the reader's display zone and the page worker's process zone.
      *
      * The subtree is the batch's own (HIL-870): a batch still being carried is in `staging/`, and
      * printing the archive address of a directory that is not there yet would send an
@@ -437,9 +433,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      */
     private static function batchPath(LogBatchSummary $batch): string
     {
-        $name = new DateTimeImmutable()
-            ->setTimestamp($batch->timestamp)
-            ->format(LogRotationConstants::TIMESTAMP_FORMAT);
+        $name = gmdate(LogRotationConstants::TIMESTAMP_FORMAT, $batch->timestamp);
         $subdirectory = $batch->carrying
             ? LogRotationConstants::LOG_STAGING_SUBDIR_NAME
             : LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
@@ -482,7 +476,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      *
      * @param LogBatchSummary $batch Batch as its node reported it
      * @param int $windowSeconds Seconds that node protects a confirmed batch for
-     * @return ?int Unix instant the pruner may first delete this batch, or null when there is none
+     * @return ?int UTC epoch milliseconds when the pruner may first delete this batch, or null when there is none
      */
     private static function pruneNotBefore(LogBatchSummary $batch, int $windowSeconds): ?int
     {
@@ -490,7 +484,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             return null;
         }
 
-        return $batch->takenAt + $windowSeconds;
+        return ($batch->takenAt + $windowSeconds) * TimeConstants::MS_PER_SECOND;
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Pages\Logs\DTO;
 
 use Hilos\AdminViewMode\WireField;
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
@@ -52,7 +53,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     /** Node row key: effective node id. */
     public const string nodeId = 'nodeId';
 
-    /** Node row key: ascending Unix timestamps of the rotation batches the node holds. */
+    /** Node row key: ascending UTC epoch milliseconds of the rotation batches the node holds. */
     public const string batches = 'batches';
 
     /** Node row key: the streams the node has, live and archived alike. */
@@ -72,7 +73,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     /** Stream row key: whether the stream is present among the live (non-archived) files. */
     public const string live = 'live';
 
-    /** Stream row key: ascending Unix timestamps of the batches the stream occurs in. */
+    /** Stream row key: ascending UTC epoch milliseconds of the batches the stream occurs in. */
     public const string batchTimestamps = 'batchTimestamps';
 
     /**
@@ -80,7 +81,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
      * @param bool $clusterEnabled Whether cluster mode is enabled
      * @param list<array{nodeId: string, available: bool, batches: list<int>,
      *     streams: list<array{key: string, class: string, live: bool, batchTimestamps: list<int>}>}> $nodes
-     *     The nodes the picture holds, each with its batches and its streams
+     *     Transport arrays with epoch-millisecond moments, copied literally by toArray/fromArray
      */
     public function __construct(
         public readonly ?bool $available,
@@ -225,7 +226,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     }
 
     /**
-     * Lays out one node: what it is called, whether it can be read, and what it holds.
+     * Projects internal epoch seconds into catalog epoch milliseconds; catalog arrays already use transport units.
      *
      * A node that cannot be read keeps its entry with empty lists rather than being dropped. The
      * select still offers it, and choosing it says why nothing is there — a node silently missing
@@ -241,7 +242,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
             self::nodeId => $slot->nodeId,
             self::available => $slot->index->available,
             self::batches => array_map(
-                static fn(LogBatchSummary $batch): int => $batch->timestamp,
+                static fn(LogBatchSummary $batch): int => $batch->timestamp * TimeConstants::MS_PER_SECOND,
                 $slot->index->batches,
             ),
             self::streams => array_map(
@@ -249,7 +250,10 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
                     self::key => $stream->key,
                     self::streamClass => $stream->class,
                     self::live => $stream->live,
-                    self::batchTimestamps => $stream->batchTimestamps,
+                    self::batchTimestamps => array_map(
+                        static fn (int $timestamp): int => $timestamp * TimeConstants::MS_PER_SECOND,
+                        $stream->batchTimestamps,
+                    ),
                 ],
                 $slot->index->keys,
             ),
@@ -279,11 +283,11 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     }
 
     /**
-     * Reads a list of Unix timestamps, refusing anything in it that is not one.
+     * Reads a list of UTC epoch milliseconds, refusing anything in it that is not one.
      *
      * @param array<string, mixed> $data Node row or stream row from the wire
      * @param string $listKey Payload key holding the list
-     * @return list<int> Timestamps, in the order the row lists them
+     * @return list<int> UTC epoch milliseconds, in the order the row lists them
      * @throws InvalidFormatException When the list is absent or carries something that is not a timestamp
      */
     private static function timestamps(array $data, string $listKey): array

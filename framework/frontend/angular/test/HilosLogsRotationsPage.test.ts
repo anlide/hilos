@@ -284,10 +284,10 @@ function batch(
 ): Record<string, unknown> {
   return {
     rowKey: 'node-1:1800000000',
-    batchAt: 1800000000,
+    batchAt: 1800000000000,
     node: null,
-    path: 'archive/2027-01-15-08-00-00/',
-    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    path: 'archive/2027-01-15-08-00-00Z/',
+    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
     agentFileCount: 12,
     workerFileCount: 8,
@@ -544,7 +544,7 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'carrying' }),
+      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'carrying' }),
     ])
     fixture.detectChanges()
 
@@ -620,9 +620,9 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
-      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
-      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2000, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3000, retentionState: 'taken' }),
     ])
     fixture.detectChanges()
 
@@ -648,14 +648,16 @@ describe('HilosLogsRotationsPage', () => {
     const fixture = mountPage(connection)
 
     pushHeader(header())
-    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: 1800086400 })])
+    pushWindow([
+      batch({ retentionState: 'taken', pruneNotBefore: 1800086400000 }),
+    ])
     fixture.detectChanges()
     clickById(fixture, 'hilos-rotation-undo')
 
     expect(
       byId(fixture, 'hilos-rotation-undo-deadline')?.textContent,
     ).toContain(
-      `The cleaner may delete this batch after ${new Date(1800086400 * 1000).toLocaleString()}.`,
+      `The cleaner may delete this batch after ${new Date(1800086400000).toLocaleString()}.`,
     )
   })
 
@@ -692,7 +694,7 @@ describe('HilosLogsRotationsPage', () => {
     expect(dispatched).toMatchObject([
       {
         action: 'logs_takeout_undo',
-        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
       },
     ])
     expect(screenText(fixture)).toContain('Has the batch not been carried off?')
@@ -717,7 +719,7 @@ describe('HilosLogsRotationsPage', () => {
     fixture.detectChanges()
 
     // The page's unfiltered window is not drawn; the table asks for the awaiting one.
-    expect(screenText(fixture)).not.toContain('archive/2027-01-15-08-00-00/')
+    expect(screenText(fixture)).not.toContain('archive/2027-01-15-08-00-00Z/')
     expect(
       (byId(fixture, 'hilos-table-filter-state') as HTMLInputElement).checked,
     ).toBe(true)
@@ -917,7 +919,7 @@ describe('HilosLogsRotationsPage', () => {
     expect(dispatched).toMatchObject([
       {
         action: 'logs_takeout_confirm',
-        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
       },
     ])
   })

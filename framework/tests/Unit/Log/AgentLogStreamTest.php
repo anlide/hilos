@@ -33,7 +33,7 @@ final class AgentLogStreamTest extends TestCase
             $this->dir,
             'agent-1',
             Logger::LEVEL_INFO,
-            '[2026-09-14 12:00:00.123] info message',
+            '[2026-09-14T12:00:00.123Z] info message',
             false,
         );
 
@@ -45,7 +45,7 @@ final class AgentLogStreamTest extends TestCase
 
         $content = file_get_contents($mainLog);
         $this->assertNotFalse($content);
-        $this->assertMatchesRegularExpression('/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[INFO\] /', $content);
+        $this->assertMatchesRegularExpression('/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] \[INFO\] /', $content);
         $this->assertStringContainsString('info message', $content);
     }
 
@@ -58,7 +58,7 @@ final class AgentLogStreamTest extends TestCase
             $this->dir,
             'agent-1',
             Logger::LEVEL_ERROR,
-            '[2026-09-14 12:00:00.123] error message',
+            '[2026-09-14T12:00:00.123Z] error message',
             false,
         );
 
@@ -70,7 +70,7 @@ final class AgentLogStreamTest extends TestCase
 
         $content = file_get_contents($errorLog);
         $this->assertNotFalse($content);
-        $this->assertSame("[2026-09-14 12:00:00.123] error message\n", $content);
+        $this->assertSame("[2026-09-14T12:00:00.123Z] error message\n", $content);
     }
 
     /**
@@ -82,7 +82,7 @@ final class AgentLogStreamTest extends TestCase
             $this->dir,
             'agent-1',
             Logger::LEVEL_WARNING,
-            '[2026-09-14 12:00:00.123] warning on stderr',
+            '[2026-09-14T12:00:00.123Z] warning on stderr',
             true,
         );
 
@@ -94,7 +94,7 @@ final class AgentLogStreamTest extends TestCase
 
         $content = file_get_contents($errorLog);
         $this->assertNotFalse($content);
-        $this->assertSame("[2026-09-14 12:00:00.123] warning on stderr\n", $content);
+        $this->assertSame("[2026-09-14T12:00:00.123Z] warning on stderr\n", $content);
     }
 
     /**
@@ -106,7 +106,7 @@ final class AgentLogStreamTest extends TestCase
             $this->dir,
             'chat:room:42',
             Logger::LEVEL_INFO,
-            '[2026-09-14 12:00:00.123] message',
+            '[2026-09-14T12:00:00.123Z] message',
             false,
         );
 

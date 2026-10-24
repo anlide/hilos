@@ -160,6 +160,44 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertSame(300, $overview->totalWeightWorkerKeysBytes);
     }
 
+    public function testOverviewMomentsUseUtcWithMillisecondsRegardlessOfProcessZone(): void
+    {
+        $previousZone = date_default_timezone_get();
+        date_default_timezone_set('Pacific/Kiritimati');
+        try {
+            $seconds = time() - 30;
+            $atMs = $seconds * TimeConstants::MS_PER_SECOND + 123;
+            $expectedAt = gmdate('Y-m-d\TH:i:s', $seconds) . '.123Z';
+            $this->fileThePicture(
+                self::nodeSlot(
+                    'node-1',
+                    batches: [self::batch(1767227405)],
+                    recentErrors: [new LogRecentEntry($atMs, 'worker-1.error.log', 'failure', null)],
+                    recentWarnings: [new LogRecentEntry($atMs, 'worker-1.log', 'warning', null)],
+                ),
+                self::nodeSlot('node-2'),
+            );
+            $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+            $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+            $overview = $this->overview()->toArray();
+            $this->assertSame('2026-01-01T00:30:05.000Z', $overview[HilosLogsOverviewSignalData::lastRotationAt]);
+            $this->assertSame(
+                ['2026-01-01T00:30:05.000Z', null],
+                array_column($overview[HilosLogsOverviewSignalData::nodes], HilosLogsOverviewSignalData::lastRotationAt),
+            );
+            $this->assertSame($expectedAt, $overview[HilosLogsOverviewSignalData::recentErrors][0][HilosLogsOverviewSignalData::at]);
+            $this->assertSame($expectedAt, $overview[HilosLogsOverviewSignalData::recentWarnings][0][HilosLogsOverviewSignalData::at]);
+
+            $this->drainTheQueue();
+            $this->fileThePicture(self::nodeSlot('node-1'));
+            $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            $this->assertNull($this->overview()->lastRotationAt);
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
     /**
      * Opening the page before the aggregator has answered gives the third state and not zeros: the
      * figures are UNKNOWN, where false would report every log store in the cluster as unreadable

@@ -73,7 +73,7 @@ export {
 export interface HilosLogRotationRow {
   /** `<node>:<timestamp>`, and also the table row key. */
   readonly rowKey: string
-  /** Unix timestamp of the rotation the batch was written by. */
+  /** UTC epoch milliseconds of the rotation the batch was written by. */
   readonly batchAt: number
   /** Effective node id holding the batch. */
   readonly node: string
@@ -98,7 +98,7 @@ export interface HilosLogRotationRow {
   /** Retention verdict: one of {@link HILOS_ROTATION_STATE_KEPT} and its neighbours. */
   readonly retentionState: string
   /**
-   * Unix instant this batch's own node may first prune it, or null when there is
+   * UTC epoch milliseconds when this batch's own node may first prune it, or null when there is
    * no instant to name — the batch is unconfirmed, or that node's window is zero
    * and its pruner will take a confirmed batch on its very next pass.
    */

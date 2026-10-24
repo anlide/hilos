@@ -62,7 +62,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
      * @param string $type Worker kind: {@see HilosLogWorkersTable::TYPE_MONOPOLISTIC} or {@see HilosLogWorkersTable::TYPE_REGULAR}
      * @param bool $live Whether the stream is still being written, or only present in the archive
      * @param int $batchCount Number of archived batches the stream occurs in
-     * @param ?int $lastBatchAt Unix timestamp of the newest batch holding the stream, null when there is none
+     * @param ?int $lastBatchAt UTC epoch milliseconds of the newest batch holding the stream, null when there is none
      * @param int $bytes Weight of the live file and every archived occurrence together
      */
     public function __construct(
@@ -98,7 +98,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
     /**
      * Serializes the row to the log-workers table payload shape.
      *
-     * @return array<string, mixed> Row payload
+     * @return array<string, mixed> Row payload with epoch-millisecond moments copied literally
      */
     public function toArray(): array
     {
@@ -119,7 +119,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
     /**
      * Builds a log-worker row from raw table payload.
      *
-     * @param array<string, mixed> $data Raw row payload
+     * @param array<string, mixed> $data Raw row payload with moments already in UTC epoch milliseconds
      * @return static Reconstructed log-workers table row
      * @throws InvalidFormatException When the payload is missing a field the row is built from
      */

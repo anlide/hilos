@@ -6,6 +6,7 @@ namespace Hilos\Pages\Logs\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Log\LogBatchTakeoutMarker;
@@ -29,14 +30,14 @@ final class LogsTakeoutUndoActionDTO extends ActionPayloadDTO
     /** Payload key: id of the node holding the batch, empty for this node. */
     public const string nodeId = 'nodeId';
 
-    /** Payload key: Unix timestamp of the rotation batch whose confirmation is withdrawn. */
+    /** Payload key: UTC epoch milliseconds of the rotation batch whose confirmation is withdrawn. */
     public const string batchTimestamp = 'batchTimestamp';
 
     public const array SECRET_FIELDS = [];
 
     /**
      * @param string $nodeId Id of the node holding the batch, empty for this node
-     * @param int $batchTimestamp Unix timestamp of the rotation batch whose confirmation is withdrawn
+     * @param int $batchTimestamp Internal epoch seconds of the rotation batch whose confirmation is withdrawn
      */
     public function __construct(
         public readonly string $nodeId,
@@ -76,9 +77,13 @@ final class LogsTakeoutUndoActionDTO extends ActionPayloadDTO
             throw new InvalidFormatException('Batch timestamp precedes the epoch');
         }
 
+        if ($batchTimestamp % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new InvalidFormatException('Batch timestamp must name a whole second in epoch milliseconds');
+        }
+
         return new static(
             nodeId: self::requireString($inner, self::nodeId),
-            batchTimestamp: $batchTimestamp,
+            batchTimestamp: intdiv($batchTimestamp, TimeConstants::MS_PER_SECOND),
         );
     }
 
@@ -89,7 +94,7 @@ final class LogsTakeoutUndoActionDTO extends ActionPayloadDTO
     {
         return [
             self::nodeId => $this->nodeId,
-            self::batchTimestamp => $this->batchTimestamp,
+            self::batchTimestamp => $this->batchTimestamp * TimeConstants::MS_PER_SECOND,
         ];
     }
 }

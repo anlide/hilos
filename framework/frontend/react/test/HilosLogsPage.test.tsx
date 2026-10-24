@@ -26,7 +26,7 @@ function node(
   return {
     nodeId: 'node-1',
     available: true,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
     archiveBytes: 1024 * 1024 * 1024,
     growthBytesPerDay: 190 * 1024 * 1024,
@@ -45,7 +45,7 @@ function overview(
   return {
     available: true,
     totalRotationsAllTime: 384,
-    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    lastRotationAt: '2026-09-02T03:00:00.000Z',
     logKeysPerDaemon: 4,
     totalWeightDaemonKeysBytes: 220 * 1024 * 1024,
     logKeysPerAgent: 14,
@@ -74,7 +74,7 @@ function failure(
   return {
     nodeId: 'standalone',
     stream: 'worker-monopolistic-5.error.log',
-    at: '2026-09-06T10:00:02.125+00:00',
+    at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
     traceFrames: 3,
     ...overrides,
@@ -361,7 +361,7 @@ describe('HilosLogsPage', () => {
 
     const row = byId(container, 'hilos-logs-recent-row')
     expect(row?.getAttribute('href')).toBe(
-      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
     )
     expect(row?.textContent).toContain('login action failed')
   })

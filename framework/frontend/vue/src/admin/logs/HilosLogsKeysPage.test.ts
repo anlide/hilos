@@ -144,7 +144,7 @@ function stream(
     class: 'worker',
     live: true,
     batchCount: 12,
-    lastBatchAt: 1800000000,
+    lastBatchAt: 1800000000000,
     bytes: 1536 * 1024 * 1024,
     growthPerDay: 2 * 1024 * 1024,
     growthSort: 2 * 1024 * 1024,
@@ -312,7 +312,7 @@ describe('HilosLogsKeysPage', () => {
         key: 'worker-1.log',
         node: 'node-1',
         live: false,
-        lastBatchAt: 1799999000,
+        lastBatchAt: 1799999000000,
       }),
     ])
     await nextTick()
@@ -326,7 +326,7 @@ describe('HilosLogsKeysPage', () => {
       wrapper
         .find('[data-id="hilos-log-key-open-node-1:worker-1.log"]')
         .attributes('href'),
-    ).toBe('/hilos/logs/view/node-1/1799999000/worker-1.log')
+    ).toBe('/hilos/logs/view/node-1/1799999000000/worker-1.log')
   })
 
   it('draws an unmeasured day as a dash rather than as a standstill', async () => {

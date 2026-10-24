@@ -365,6 +365,16 @@ export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'
 export { watchDaemonSource } from './daemonSource.js'
 export {
+  watchLogFrames,
+  logMomentLabel,
+  logBatchDirectory,
+  expectLogUtcMoment,
+  expectLogEpochMoment,
+  expectLogLineClock,
+  expectLogBatchViewer,
+  type LogFrameLog,
+} from './logs.js'
+export {
   backupMomentRow,
   enterCalendarDate,
   expectBackupMoments,

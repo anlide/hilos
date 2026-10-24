@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -42,7 +43,7 @@ final class LogsTakeoutUndoSignalData extends BaseDTO implements SignalDataInter
 
     /**
      * @param string $nodeId Id of the node holding the batch, empty for this node
-     * @param int $batchTimestamp Unix timestamp of the rotation batch whose confirmation is withdrawn
+     * @param int $batchTimestamp Internal epoch seconds of the rotation batch whose confirmation is withdrawn
      * @param string $acceptKey Accept key of the connection waiting for the answer
      * @param string $action Action name the reply acknowledges
      * @param ?string $requestId Request id the browser minted, or null when the action was not tracked
@@ -81,13 +82,13 @@ final class LogsTakeoutUndoSignalData extends BaseDTO implements SignalDataInter
     }
 
     /**
-     * @return array<string, mixed> DTO data as array
+     * @return array<string, mixed> Transport data with batchTimestamp in UTC epoch milliseconds
      */
     public function toArray(): array
     {
         return [
             LogsTakeoutUndoActionDTO::nodeId => $this->nodeId,
-            LogsTakeoutUndoActionDTO::batchTimestamp => $this->batchTimestamp,
+            LogsTakeoutUndoActionDTO::batchTimestamp => $this->batchTimestamp * TimeConstants::MS_PER_SECOND,
             self::acceptKey => $this->acceptKey,
             self::action => $this->action,
             self::requestId => $this->requestId,
@@ -102,9 +103,14 @@ final class LogsTakeoutUndoSignalData extends BaseDTO implements SignalDataInter
      */
     public static function fromArray(array $data): static
     {
+        $batchTimestamp = self::requireInt($data, LogsTakeoutUndoActionDTO::batchTimestamp);
+        if ($batchTimestamp % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new InvalidFormatException('Batch timestamp must name a whole second in epoch milliseconds');
+        }
+
         return new static(
             nodeId: self::requireString($data, LogsTakeoutUndoActionDTO::nodeId),
-            batchTimestamp: self::requireInt($data, LogsTakeoutUndoActionDTO::batchTimestamp),
+            batchTimestamp: intdiv($batchTimestamp, TimeConstants::MS_PER_SECOND),
             acceptKey: self::requireString($data, self::acceptKey),
             action: self::requireString($data, self::action),
             requestId: self::optionalString($data, self::requestId),

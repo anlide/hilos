@@ -70,7 +70,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
 
     /**
      * @param string $rowKey Stable row key, `<node>:<timestamp>`
-     * @param int $batchAt Unix timestamp of the rotation batch
+     * @param int $batchAt UTC epoch milliseconds of the rotation batch
      * @param string $node Node holding the batch
      * @param string $path Archive directory of the batch, relative to the node's log root
      * @param ?string $absolutePath Archive directory of the batch on its own node, null when that
@@ -81,7 +81,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      * @param int $workerMonopolisticFileCount Number of monopolistic worker files in the batch
      * @param int $bytes Weight of the whole batch directory, every stream class included
      * @param string $retentionState One of the {@see HilosLogRotationsTable} retention states
-     * @param ?int $pruneNotBefore Unix instant the pruner may first delete this batch, or null when
+     * @param ?int $pruneNotBefore UTC epoch milliseconds when the pruner may first delete this batch, or null when
      *     the batch is unconfirmed or its node protects a confirmed batch for no time at all
      */
     public function __construct(
@@ -121,7 +121,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     /**
      * Serializes the row to the log-rotations table payload shape.
      *
-     * @return array<string, mixed> Row payload
+     * @return array<string, mixed> Row payload with epoch-millisecond moments copied literally
      */
     public function toArray(): array
     {
@@ -146,7 +146,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     /**
      * Builds a rotation row from raw table payload.
      *
-     * @param array<string, mixed> $data Raw row payload
+     * @param array<string, mixed> $data Raw row payload with moments already in UTC epoch milliseconds
      * @return static Reconstructed rotation table row
      * @throws InvalidFormatException When the payload is missing a field the row is built from
      */

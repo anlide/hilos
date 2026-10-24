@@ -135,7 +135,7 @@ final class LogsFollowRefusalTest extends IntegrationTestCase
 
     public function testWithTheModeOffRevokingAdminRefusesTheOpenFollowAndSendsNothingFurther(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] already on the file\n");
+        $this->write("[2026-08-01T00:00:00.000Z] already on the file\n");
         $names = array_map(
             static fn (SignalDTO $signal): string => $signal->signalName->getName(),
             $this->subscribe(),
@@ -148,7 +148,7 @@ final class LogsFollowRefusalTest extends IntegrationTestCase
         $store->onSignalAgent($start['carrier'], 'agent', $start['name']);
         $this->drainSignals();
 
-        $this->append("[2026-08-01 00:00:01.000] " . self::FOLLOWED_TEXT . "\n");
+        $this->append("[2026-08-01T00:00:01.000Z] " . self::FOLLOWED_TEXT . "\n");
         $store->pushAppendedLines();
         $live = $this->appendedToConnection();
         self::assertFalse($live->stopped);
@@ -166,7 +166,7 @@ final class LogsFollowRefusalTest extends IntegrationTestCase
         self::assertTrue($stopped->stopped);
         self::assertSame(self::REQUEST_ID, $stopped->followId);
 
-        $this->append("[2026-08-01 00:00:02.000] arrived after the refusal\n");
+        $this->append("[2026-08-01T00:00:02.000Z] arrived after the refusal\n");
         $store->pushAppendedLines();
         $this->assertConnectionReceivedNothing();
     }

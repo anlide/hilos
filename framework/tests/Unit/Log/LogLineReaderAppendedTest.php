@@ -28,14 +28,20 @@ final class LogLineReaderAppendedTest extends TestCase
     /** Temp log root created per test; removed in {@see tearDown()}. */
     private string $root;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('hilos-log-tail-', true);
         mkdir($this->root);
     }
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         foreach (glob($this->root . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
             unlink($file);
         }
@@ -44,15 +50,15 @@ final class LogLineReaderAppendedTest extends TestCase
 
     public function testReadFromEndCursorReturnsExactlyTheAppendedLines(): void
     {
-        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n[2026-07-28 12:00:00.002] second\n");
+        $this->write('worker-1.log', "[2026-07-28T12:00:00.001Z] first\n[2026-07-28T12:00:00.002Z] second\n");
         $reader = new LogLineReader($this->root);
 
         $first = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
-        $this->append('worker-1.log', "[2026-07-28 12:00:00.003] third\n[2026-07-28 12:00:00.004] fourth\n");
+        $this->append('worker-1.log', "[2026-07-28T12:00:00.003Z] third\n[2026-07-28T12:00:00.004Z] fourth\n");
         $second = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $first->endCursor));
 
         $this->assertSame(
-            ['[2026-07-28 12:00:00.003] third', '[2026-07-28 12:00:00.004] fourth'],
+            ['[2026-07-28T12:00:00.003Z] third', '[2026-07-28T12:00:00.004Z] fourth'],
             self::texts($second),
         );
         $this->assertSame(filesize($this->root . DIRECTORY_SEPARATOR . 'worker-1.log'), $second->endCursor);
@@ -60,25 +66,25 @@ final class LogLineReaderAppendedTest extends TestCase
 
     public function testHalfWrittenTrailingLineIsHeldBackAndDeliveredOnceComplete(): void
     {
-        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n[2026-07-28 12:00:00.002] hal");
+        $this->write('worker-1.log', "[2026-07-28T12:00:00.001Z] first\n[2026-07-28T12:00:00.002Z] hal");
         $reader = new LogLineReader($this->root);
 
         $first = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
 
-        $this->assertSame(['[2026-07-28 12:00:00.001] first'], self::texts($first));
-        $this->assertSame(strlen("[2026-07-28 12:00:00.001] first\n"), $first->endCursor);
+        $this->assertSame(['[2026-07-28T12:00:00.001Z] first'], self::texts($first));
+        $this->assertSame(strlen("[2026-07-28T12:00:00.001Z] first\n"), $first->endCursor);
 
         $this->append('worker-1.log', "f written\n");
         $second = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $first->endCursor));
 
-        $this->assertSame(['[2026-07-28 12:00:00.002] half written'], self::texts($second));
+        $this->assertSame(['[2026-07-28T12:00:00.002Z] half written'], self::texts($second));
     }
 
     public function testStackTraceCutByAPageBoundaryKeepsItsErrorLevel(): void
     {
         $this->write(
             'worker-1.log',
-            "[2026-07-28 12:00:00.001] ERROR: connection failed\n#0 /app/foo.php(10): bar()\n#1 {main}\n",
+            "[2026-07-28T12:00:00.001Z] ERROR: connection failed\n#0 /app/foo.php(10): bar()\n#1 {main}\n",
         );
         $reader = new LogLineReader($this->root);
 
@@ -103,7 +109,7 @@ final class LogLineReaderAppendedTest extends TestCase
     {
         $this->write(
             'worker-1.log',
-            "[2026-07-28 12:00:00.001] ERROR: connection failed\n#0 /app/foo.php(10): bar()\n",
+            "[2026-07-28T12:00:00.001Z] ERROR: connection failed\n#0 /app/foo.php(10): bar()\n",
         );
         $reader = new LogLineReader($this->root);
 
@@ -129,14 +135,14 @@ final class LogLineReaderAppendedTest extends TestCase
     {
         $this->write(
             'worker-1.log',
-            "[2026-07-28 12:00:00.001] first\n[2026-07-28 12:00:00.002] WARNING: second\n",
+            "[2026-07-28T12:00:00.001Z] first\n[2026-07-28T12:00:00.002Z] WARNING: second\n",
         );
         $reader = new LogLineReader($this->root);
 
         $limited = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD, limit: 1));
         $whole = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
 
-        $this->assertSame(strlen("[2026-07-28 12:00:00.001] first\n"), $limited->endCursor);
+        $this->assertSame(strlen("[2026-07-28T12:00:00.001Z] first\n"), $limited->endCursor);
         $this->assertSame(Logger::LEVEL_INFO, $limited->endLevel);
         $this->assertSame(filesize($this->root . DIRECTORY_SEPARATOR . 'worker-1.log'), $whole->endCursor);
         $this->assertSame(Logger::LEVEL_WARNING, $whole->endLevel);
@@ -144,7 +150,7 @@ final class LogLineReaderAppendedTest extends TestCase
 
     public function testEndPositionStandsStillWhenNothingWasAppended(): void
     {
-        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n");
+        $this->write('worker-1.log', "[2026-07-28T12:00:00.001Z] first\n");
         $reader = new LogLineReader($this->root);
         $size = filesize($this->root . DIRECTORY_SEPARATOR . 'worker-1.log');
 
@@ -169,7 +175,7 @@ final class LogLineReaderAppendedTest extends TestCase
     {
         $this->write(
             'worker-1.log',
-            "[2026-07-28 12:00:00.001] first\n[2026-07-28 12:00:00.002] second\n",
+            "[2026-07-28T12:00:00.001Z] first\n[2026-07-28T12:00:00.002Z] second\n",
         );
         $reader = new LogLineReader($this->root);
 
@@ -184,7 +190,7 @@ final class LogLineReaderAppendedTest extends TestCase
 
     public function testSizeAnswersThroughTheTraversalGuard(): void
     {
-        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n");
+        $this->write('worker-1.log', "[2026-07-28T12:00:00.001Z] first\n");
         file_put_contents(dirname($this->root) . DIRECTORY_SEPARATOR . 'outside-secret.log', "secret\n");
         $reader = new LogLineReader($this->root);
 
@@ -193,7 +199,7 @@ final class LogLineReaderAppendedTest extends TestCase
         $missing = $reader->size('does-not-exist.log');
 
         unlink(dirname($this->root) . DIRECTORY_SEPARATOR . 'outside-secret.log');
-        $this->assertSame(strlen("[2026-07-28 12:00:00.001] first\n"), $inside);
+        $this->assertSame(strlen("[2026-07-28T12:00:00.001Z] first\n"), $inside);
         $this->assertNull($outside);
         $this->assertNull($missing);
         $this->assertNull((new LogLineReader(null))->size('worker-1.log'));
@@ -205,16 +211,16 @@ final class LogLineReaderAppendedTest extends TestCase
      */
     public function testSizeSeesGrowthAppendedByAnotherProcess(): void
     {
-        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n");
+        $this->write('worker-1.log', "[2026-07-28T12:00:00.001Z] first\n");
         $reader = new LogLineReader($this->root);
         $path = $this->root . DIRECTORY_SEPARATOR . 'worker-1.log';
 
         $warmed = $reader->size('worker-1.log');
-        $this->appendFromAnotherProcess('worker-1.log', "[2026-07-28 12:00:00.002] second\n");
+        $this->appendFromAnotherProcess('worker-1.log', "[2026-07-28T12:00:00.002Z] second\n");
         $grown = $reader->size('worker-1.log');
 
         clearstatcache(true, $path);
-        $this->assertSame(strlen("[2026-07-28 12:00:00.001] first\n"), $warmed);
+        $this->assertSame(strlen("[2026-07-28T12:00:00.001Z] first\n"), $warmed);
         $this->assertGreaterThan($warmed, filesize($path), 'The other process must really have appended');
         $this->assertSame(filesize($path), $grown);
     }

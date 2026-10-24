@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
@@ -112,13 +113,11 @@ class TimeHelper
     /**
      * Get current timestamp with milliseconds.
      *
-     * @return string Timestamp in format 'Y-m-d H:i:s.v' (e.g., '2025-11-02 16:26:26.123')
+     * @return string UTC ISO timestamp with milliseconds (e.g., '2025-11-02T16:26:26.123Z')
      */
     public static function getTimestampWithMs(): string
     {
-        $microtime = microtime(true);
-        $timestamp = (int) $microtime;
-        $milliseconds = (int) (($microtime - $timestamp) * TimeConstants::MS_PER_SECOND);
-        return date('Y-m-d H:i:s', $timestamp) . '.' . str_pad((string) $milliseconds, 3, '0', STR_PAD_LEFT);
+        return new DateTimeImmutable('now', new DateTimeZone(TimeConstants::UTC_TIME_ZONE))
+            ->format(TimeConstants::ISO_UTC_MILLISECONDS_FORMAT);
     }
 }

@@ -229,15 +229,15 @@ final class LogsViewPageReadLinesTest extends TestCase
      */
     private function request(string $nodeId): LogsReadLinesActionDTO
     {
-        return new LogsReadLinesActionDTO(
-            nodeId: $nodeId,
-            source: LogsReadLinesActionDTO::SOURCE_BATCH,
-            batchTimestamp: 1774000000,
-            stream: 'worker-0.log',
-            level: 'ERROR',
-            substring: 'timeout',
-            cursor: 4096,
-        );
+        return LogsReadLinesActionDTO::fromArray([
+            'nodeId' => $nodeId,
+            'source' => 'batch',
+            'batchTimestamp' => 1_774_000_000_000,
+            'stream' => 'worker-0.log',
+            'level' => 'ERROR',
+            'substring' => 'timeout',
+            'cursor' => 4096,
+        ]);
     }
 
     /**

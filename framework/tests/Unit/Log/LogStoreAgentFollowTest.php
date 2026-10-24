@@ -102,7 +102,7 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testTheStartAnswersWithTheEndOfTheFileAndFollowsOnFromExactlyThere(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] before the follow\n");
+        $this->write("[2026-08-01T00:00:00.000Z] before the follow\n");
         $agent = $this->following();
 
         $reply = $this->acked(self::REQUEST_ID);
@@ -112,7 +112,7 @@ final class LogStoreAgentFollowTest extends TestCase
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
 
-        $this->append("[2026-08-01 00:00:01.000] after the follow\n");
+        $this->append("[2026-08-01T00:00:01.000Z] after the follow\n");
         $agent->pushAppendedLines();
 
         $frame = $this->frame(self::ACCEPT_KEY);
@@ -128,19 +128,19 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testAViewerFollowHidesTheFirstPageAndEachAppendedLine(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] private before\n");
+        $this->write("[2026-08-01T00:00:00.000Z] private before\n");
         $agent = $this->following(hideText: true);
 
         $first = $this->acked(self::REQUEST_ID)[LogsReadLinesReplyDTO::lines];
         $this->assertSame(HiddenValue::mark(), $first[0][LogsReadLinesReplyDTO::text]);
-        $this->assertSame('2026-08-01 00:00:00.000', $first[0][LogsReadLinesReplyDTO::time]);
+        $this->assertSame('2026-08-01T00:00:00.000Z', $first[0][LogsReadLinesReplyDTO::time]);
 
-        $this->append("[2026-08-01 00:00:01.000] WARNING: private after\nprivate continuation\n");
+        $this->append("[2026-08-01T00:00:01.000Z] WARNING: private after\nprivate continuation\n");
         $agent->pushAppendedLines();
 
         $frame = $this->frame(self::ACCEPT_KEY);
         $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column($frame->lines, LogsReadLinesReplyDTO::text));
-        $this->assertSame(['2026-08-01 00:00:01.000', null], array_column($frame->lines, LogsReadLinesReplyDTO::time));
+        $this->assertSame(['2026-08-01T00:00:01.000Z', null], array_column($frame->lines, LogsReadLinesReplyDTO::time));
         $this->assertSame([Logger::LEVEL_WARNING, Logger::LEVEL_WARNING], array_column($frame->lines, LogsReadLinesReplyDTO::level));
         $this->assertFalse($frame->rotated);
         $this->assertNull($frame->skippedBytes);
@@ -148,7 +148,7 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testAFollowStartedInsideAnEntryGivesItsTailTheLevelOfItsHead(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] ERROR: before the follow\n");
+        $this->write("[2026-08-01T00:00:00.000Z] ERROR: before the follow\n");
         $agent = $this->following(level: Logger::LEVEL_ERROR);
         $this->acked(self::REQUEST_ID);
 
@@ -167,7 +167,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $agent = $this->following(level: Logger::LEVEL_ERROR, stream: self::ERROR_STREAM);
         $this->acked(self::REQUEST_ID);
 
-        $this->append("[2026-08-01 00:00:00.000] worker failure\n", self::ERROR_STREAM);
+        $this->append("[2026-08-01T00:00:00.000Z] worker failure\n", self::ERROR_STREAM);
         $agent->pushAppendedLines();
 
         $this->assertSame(
@@ -178,7 +178,7 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testAFileThatGainedNothingProducesNoFrameAtAll(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] quiet\n");
+        $this->write("[2026-08-01T00:00:00.000Z] quiet\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
@@ -194,12 +194,12 @@ final class LogStoreAgentFollowTest extends TestCase
      */
     public function testAFileCarriedOffByRotationRestartsTheFollowAtTheStartOfTheNewOne(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] before rotation\n");
+        $this->write("[2026-08-01T00:00:00.000Z] before rotation\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
         rename($this->path(), $this->dir . DIRECTORY_SEPARATOR . 'worker-0.log.rotated');
-        $this->write("[2026-08-01 00:00:02.000] after rotation\n");
+        $this->write("[2026-08-01T00:00:02.000Z] after rotation\n");
         $agent->pushAppendedLines();
 
         $rotated = $this->frame(self::ACCEPT_KEY);
@@ -215,11 +215,11 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testATruncatedFileIsReadTheSameWayAsARotatedOne(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] a long first line that will be cut away\n");
+        $this->write("[2026-08-01T00:00:00.000Z] a long first line that will be cut away\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
-        $this->write("[2026-08-01 00:00:01.000] short\n");
+        $this->write("[2026-08-01T00:00:01.000Z] short\n");
         $agent->pushAppendedLines();
 
         $this->assertTrue($this->frame(self::ACCEPT_KEY)->rotated);
@@ -238,7 +238,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $agent->pushAppendedLines();
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
-        $this->write("[2026-08-01 00:00:00.000] the worker finally started\n");
+        $this->write("[2026-08-01T00:00:00.000Z] the worker finally started\n");
         $agent->pushAppendedLines();
 
         $this->assertSame(
@@ -253,11 +253,11 @@ final class LogStoreAgentFollowTest extends TestCase
      */
     public function testAViewerTooFarBehindIsJumpedToTheEndAndToldHowMuchItMissed(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] start\n");
+        $this->write("[2026-08-01T00:00:00.000Z] start\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
-        $flood = str_repeat("[2026-08-01 00:00:01.000] flooding the log\n", 30000);
+        $flood = str_repeat("[2026-08-01T00:00:01.000Z] flooding the log\n", 30000);
         $this->append($flood);
         $agent->pushAppendedLines();
 
@@ -276,15 +276,15 @@ final class LogStoreAgentFollowTest extends TestCase
      */
     public function testLinesTheFilterRejectsWakeNobodyAndDoNotHideTheNextMatchingOne(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] start\n");
+        $this->write("[2026-08-01T00:00:00.000Z] start\n");
         $agent = $this->following(level: Logger::LEVEL_ERROR);
         $this->acked(self::REQUEST_ID);
 
-        $this->append("[2026-08-01 00:00:01.000] nothing to see\n[2026-08-01 00:00:02.000] still nothing\n");
+        $this->append("[2026-08-01T00:00:01.000Z] nothing to see\n[2026-08-01T00:00:02.000Z] still nothing\n");
         $agent->pushAppendedLines();
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
-        $this->append("[2026-08-01 00:00:03.000] ERROR: there it is\n");
+        $this->append("[2026-08-01T00:00:03.000Z] ERROR: there it is\n");
         $agent->pushAppendedLines();
 
         $this->assertSame(
@@ -300,12 +300,12 @@ final class LogStoreAgentFollowTest extends TestCase
      */
     public function testAViewerGoneFromTheConnectionRosterIsDroppedWithoutReadingItsFile(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] start\n");
+        $this->write("[2026-08-01T00:00:00.000Z] start\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
         $this->disconnect(self::ACCEPT_KEY);
-        $this->append("[2026-08-01 00:00:01.000] nobody is listening\n");
+        $this->append("[2026-08-01T00:00:01.000Z] nobody is listening\n");
         $agent->pushAppendedLines();
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A departed viewer is sent nothing');
@@ -318,7 +318,7 @@ final class LogStoreAgentFollowTest extends TestCase
 
     public function testTheViewerAskingToStopIsDroppedAndReadNoFurther(): void
     {
-        $this->write("[2026-08-01 00:00:00.000] start\n");
+        $this->write("[2026-08-01T00:00:00.000Z] start\n");
         $agent = $this->following();
         $this->acked(self::REQUEST_ID);
 
@@ -330,7 +330,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $stopped = $this->frame(self::ACCEPT_KEY);
         $this->assertTrue($stopped->stopped);
         $this->assertSame(self::REQUEST_ID, $stopped->followId);
-        $this->append("[2026-08-01 00:00:01.000] after the stop\n");
+        $this->append("[2026-08-01T00:00:01.000Z] after the stop\n");
         $agent->pushAppendedLines();
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
@@ -355,7 +355,7 @@ final class LogStoreAgentFollowTest extends TestCase
     public function testTwoViewersOfOneFileAreAnsweredEachThroughItsOwnFilter(): void
     {
         $this->connect(self::OTHER_ACCEPT_KEY);
-        $this->write("[2026-08-01 00:00:00.000] start\n");
+        $this->write("[2026-08-01T00:00:00.000Z] start\n");
         $agent = $this->following(level: Logger::LEVEL_ERROR);
         $this->acked(self::REQUEST_ID);
         $agent->onSignalAgent(
@@ -374,7 +374,7 @@ final class LogStoreAgentFollowTest extends TestCase
         );
         $this->acked(self::OTHER_REQUEST_ID, self::OTHER_ACCEPT_KEY);
 
-        $this->append("[2026-08-01 00:00:01.000] routine\n[2026-08-01 00:00:02.000] ERROR: not routine\n");
+        $this->append("[2026-08-01T00:00:01.000Z] routine\n[2026-08-01T00:00:02.000Z] ERROR: not routine\n");
         $agent->pushAppendedLines();
 
         $filtered = $this->frame(self::ACCEPT_KEY);

@@ -42,14 +42,14 @@ final class LogRotationConstants
     /**
      * Format string for a rotation batch directory name (PHP date/createFromFormat).
      *
-     * Example folder name: 2026-03-23-19-01-20
+     * Example UTC folder name: 2026-03-23-19-01-20Z
      */
-    public const string TIMESTAMP_FORMAT = 'Y-m-d-H-i-s';
+    public const string TIMESTAMP_FORMAT = 'Y-m-d-H-i-s\Z';
 
     /**
      * Regex matching a single rotation batch directory name under the archive subdirectory.
      *
      * Must correspond to {@see self::TIMESTAMP_FORMAT}.
      */
-    public const string TIMESTAMP_DIR_NAME_PATTERN = '/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/';
+    public const string TIMESTAMP_DIR_NAME_PATTERN = '/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}Z$/';
 }

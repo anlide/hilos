@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Logs\DTO;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -23,11 +24,11 @@ use Hilos\Log\LogBatchTakeoutMarker;
  */
 final class LogsTakeoutConfirmReplyDTO extends ActionReplyDTO
 {
-    /** Reply key: Unix timestamp the batch is recorded as carried off at. */
+    /** Reply key: UTC epoch milliseconds the batch is recorded as carried off at. */
     public const string takenAt = 'takenAt';
 
     /**
-     * @param int $takenAt Unix timestamp the batch is recorded as carried off at
+     * @param int $takenAt Internal epoch seconds the batch is recorded as carried off at
      */
     public function __construct(
         public readonly int $takenAt,
@@ -46,7 +47,7 @@ final class LogsTakeoutConfirmReplyDTO extends ActionReplyDTO
      */
     public static function fromArray(array $data): static
     {
-        return new static(takenAt: self::requireInt($data, self::takenAt));
+        return new static(takenAt: intdiv(self::requireInt($data, self::takenAt), TimeConstants::MS_PER_SECOND));
     }
 
     /**
@@ -54,6 +55,6 @@ final class LogsTakeoutConfirmReplyDTO extends ActionReplyDTO
      */
     public function toArray(): array
     {
-        return [self::takenAt => $this->takenAt];
+        return [self::takenAt => $this->takenAt * TimeConstants::MS_PER_SECOND];
     }
 }

@@ -23,6 +23,7 @@ Bootstrap classes only, save the one pre-wrap declaration the pane calls for
 because Bootstrap has no utility for it (styling-rules.md, same exception as
 HilosActionError). -->
 <script setup lang="ts">
+import { formatMoment } from '@hilos/core'
 import {
   createHilosLogViewer,
   hasLogViewerNodes,
@@ -46,6 +47,7 @@ import {
   hilosAdminAccess,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
+  hilosTimeZone,
   type PageRouteMatch,
 } from '@hilos/core/base'
 import {
@@ -73,6 +75,7 @@ const props = defineProps<{
 // Read the same source from which that child provides its view-mode verdict.
 const adminAccess = useSignal(hilosAdminAccess)
 const viewMode = computed(() => adminAccess.value === 'view')
+const timeZone = useSignal(hilosTimeZone)
 
 const router = inject(hilosRouterKey)
 // The address IS what this screen is showing, so the navigator is what it reads
@@ -155,7 +158,8 @@ function sourceValue(source: typeof LOG_SOURCE_LIVE | number | null): string {
 }
 
 function batchLabel(batch: number): string {
-  return new Date(batch * 1000).toLocaleString()
+  void timeZone.value
+  return formatMoment(batch, { kind: 'dateTime' }) ?? '—'
 }
 
 function onNode(event: Event): void {
@@ -594,9 +598,11 @@ function toggle(entry: HilosLogViewerEntry): void {
               >
                 {{ row.level }}
               </span>
-              <span class="text-body-secondary text-nowrap">{{
-                row.time
-              }}</span>
+              <span
+                class="text-body-secondary text-nowrap"
+                data-id="hilos-log-entry-time"
+                >{{ row.time }}</span
+              >
               <span class="flex-grow-1"
                 ><HilosHideable :value="row.text"
               /></span>

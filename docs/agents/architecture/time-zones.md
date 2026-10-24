@@ -357,10 +357,15 @@ The resulting next run is still an absolute moment: on the wire it follows
 [A Moment On The Wire](#a-moment-on-the-wire). A calendar used to calculate a
 moment does not become a different wire format.
 
-On disk, both a **log line's timestamp and a rotation batch's name use UTC
-with `Z`**. The log screen uses the reader's zone. Rotation batches do not use
-the project zone (owner's decision, 2026-10-17, HIL-1589:26749).
-(not in the code yet — HIL-1589)
+On disk, a log line's timestamp is `[YYYY-MM-DDTHH:mm:ss.SSSZ]`.
+`TimeHelper::getTimestampWithMs()` writes it in explicit UTC, and
+`LogLineReader` parses it in UTC without dropping its milliseconds. A rotation
+batch directory is named `YYYY-MM-DD-HH-mm-ssZ`; `LogRotator` writes that name
+and `LogStoreReader` parses it in UTC. Neither form nor the physical path is
+localized. The Vue log screen renders line timestamps, batch labels and undo
+deadlines with `formatMoment` in the reader's zone. Rotation batches do not use
+the project zone (owner's decision, 2026-10-17, HIL-1589:26749); the rotation
+schedule remains in the project zone.
 
 ## One Core Formatter
 
@@ -488,7 +493,7 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Sessions and devices | (not in the code yet — HIL-1586) |
 | Notifications and deliveries | (not in the code yet — HIL-1587) |
 | People | (not in the code yet — HIL-1588) |
-| Logs | (not in the code yet — HIL-1589) |
+| Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | (not in the code yet — HIL-1591) |
 | Cron | (not in the code yet — HIL-1592) |
 | React | (not in the code yet — HIL-1594) |

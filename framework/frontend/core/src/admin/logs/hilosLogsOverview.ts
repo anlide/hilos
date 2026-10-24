@@ -243,7 +243,7 @@ export function formatLogsOverviewRotationAt(at: string | null): string {
   }
 
   return (
-    formatMoment(readLogsMoment(at), {
+    formatMoment(at, {
       kind: 'dateTime',
       format: {
         year: 'numeric',
@@ -665,37 +665,15 @@ export function logsOverviewRecentEmptyLead(tab: HilosLogsRecentTab): string {
  * happened within the last hour, and a date on every row would be the same date
  * repeated. An instant that cannot be read is a dash rather than `Invalid Date`.
  *
- * @param at The instant as ISO 8601, as the node that wrote the line read it.
+ * @param at The instant as ISO UTC with milliseconds and Z.
  */
 export function formatLogsOverviewRecentAt(at: string): string {
   return (
-    formatMoment(readLogsMoment(at), {
+    formatMoment(at, {
       kind: 'time',
       format: { hour: 'numeric', minute: 'numeric', second: 'numeric' },
     }) ?? NOTHING_KNOWN
   )
-}
-
-/**
- * Normalize only legacy log timestamps with an explicit numeric offset.
- * UTC strings pass unchanged; a missing zone never borrows the device's zone.
- *
- * @param at A log timestamp from the existing reader boundary.
- */
-function readLogsMoment(at: string): string {
-  const parts =
-    /^((?:\d{4}|[+-]\d{6})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?[+-]\d{2}:?\d{2}$/.exec(
-      at,
-    )
-  if (parts === null || parts[0] !== at) return at
-  const wallTime = new Date(`${parts[1]}Z`)
-  if (
-    !Number.isFinite(wallTime.getTime()) ||
-    !wallTime.toISOString().startsWith(`${parts[1]}.`)
-  )
-    return at
-  const parsed = new Date(at)
-  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : at
 }
 
 /**

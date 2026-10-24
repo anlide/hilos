@@ -6,6 +6,7 @@ namespace Hilos\Pages\Logs\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Log\LogLineReader;
@@ -38,7 +39,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
     /** Payload key: which half of the store to read, {@see SOURCE_LIVE} or {@see SOURCE_BATCH}. */
     public const string source = 'source';
 
-    /** Payload key: unix timestamp of the rotated batch, required when the source is a batch. */
+    /** Payload key: UTC epoch milliseconds of the rotated batch, required when the source is a batch. */
     public const string batchTimestamp = 'batchTimestamp';
 
     /** Payload key: file name of the stream inside the source, for example `worker-0.log`. */
@@ -61,7 +62,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $source Which half of the store to read
-     * @param ?int $batchTimestamp Unix timestamp of the rotated batch, or null for the live source
+     * @param ?int $batchTimestamp Internal epoch seconds of the rotated batch, or null for the live source
      * @param string $stream File name of the stream inside the source
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
@@ -121,6 +122,10 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
             throw new InvalidFormatException('Batch timestamp precedes the epoch');
         }
 
+        if ($batchTimestamp !== null && $batchTimestamp % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new InvalidFormatException('Batch timestamp must name a whole second in epoch milliseconds');
+        }
+
         $stream = trim(self::requireString($inner, self::stream));
         if ($stream === '') {
             throw new InvalidFormatException('A read names the stream it reads');
@@ -149,7 +154,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
             source: $source,
             // The live source has no batch to name, and a stamp sent beside it would be a second
             // opinion about which file this is. It is dropped, not carried and ignored.
-            batchTimestamp: $source === self::SOURCE_BATCH ? $batchTimestamp : null,
+            batchTimestamp: $source === self::SOURCE_BATCH ? intdiv($batchTimestamp, TimeConstants::MS_PER_SECOND) : null,
             stream: $stream,
             level: $level,
             substring: self::optionalString($inner, self::substring),
@@ -166,7 +171,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
         return [
             self::nodeId => $this->nodeId,
             self::source => $this->source,
-            self::batchTimestamp => $this->batchTimestamp,
+            self::batchTimestamp => $this->batchTimestamp === null ? null : $this->batchTimestamp * TimeConstants::MS_PER_SECOND,
             self::stream => $this->stream,
             self::level => $this->level,
             self::substring => $this->substring,

@@ -49,7 +49,7 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
     /** Reply key: whether the anchor the read asked for was found; null when it asked for none (HIL-868). */
     public const string anchorFound = 'anchorFound';
 
-    /** Line key: the local timestamp opening an entry, or null for an unstamped line. */
+    /** Line key: UTC ISO timestamp with milliseconds and Z, or null for an unstamped line. */
     public const string time = 'time';
 
     /** Line key: entry text after the stamp and level, or the hidden mark. */
@@ -149,7 +149,8 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      *
      * @param LogLinePage $page Page the reader produced
      * @param bool $hideText Whether line text must be replaced by the hidden mark
-     * @return list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> Lines, oldest first
+     * @return list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}>
+     *     Lines with UTC ISO time or null, oldest first
      */
     public static function linesFromPage(LogLinePage $page, bool $hideText): array
     {

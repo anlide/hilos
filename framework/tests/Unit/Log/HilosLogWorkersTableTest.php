@@ -162,7 +162,9 @@ final class HilosLogWorkersTableTest extends TestCase
 
         $rows = $this->rows(new TableQueryDTO());
 
-        $this->assertSame(self::NOW - 100, $rows[0]->lastBatchAt);
+        $this->assertSame(1_799_999_900_000, $rows[0]->lastBatchAt);
+        $this->assertSame(1_799_999_900_000, $rows[0]->toArray()['lastBatchAt']);
+        $this->assertNull($rows[1]->toArray()['lastBatchAt']);
         $this->assertNull($rows[1]->lastBatchAt);
     }
 

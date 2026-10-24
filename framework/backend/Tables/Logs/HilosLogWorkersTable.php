@@ -5,28 +5,29 @@ declare(strict_types=1);
 namespace Hilos\Tables\Logs;
 
 use Hilos\AdminViewMode\WireField;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\DTO\TableSortDTO;
-use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
-use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
-use Hilos\Core\Table\DTO\TableSortOrderDTO;
-use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Pages\Logs\AbstractHilosLogsWorkersPage;
-use Hilos\Core\Table\DTO\TableFacetCountDTO;
-use Hilos\Core\Table\TableFacetTally;
 
 /**
  * Framework log-workers table: the worker streams of every node, one row per stream on a node (HIL-386).
@@ -301,7 +302,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
                 // the viewer opens it there, and on the live file there would be nothing to read.
                 HilosLogWorkersTableRow::lastBatchAt => $summary->batchTimestamps === []
                     ? null
-                    : max($summary->batchTimestamps),
+                    : max($summary->batchTimestamps) * TimeConstants::MS_PER_SECOND,
                 // The live file and every archived occurrence together: what the stream costs.
                 HilosLogWorkersTableRow::bytes => $summary->totalBytes,
             ];

@@ -42,14 +42,20 @@ final class LogRecentTailReaderTest extends TestCase
     /** Temp log root created per test; removed in {@see tearDown()}. */
     private string $root;
 
+    /** Process zone deliberately differs from the UTC disk contract. */
+    private string $previousTimeZone;
+
     protected function setUp(): void
     {
+        $this->previousTimeZone = date_default_timezone_get();
+        date_default_timezone_set('America/Los_Angeles');
         $this->root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('hilos-error-tail-', true);
         mkdir($this->root);
     }
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->previousTimeZone);
         foreach (glob($this->root . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
             unlink($file);
         }
@@ -59,10 +65,10 @@ final class LogRecentTailReaderTest extends TestCase
     public function testTailReturnsTheLastEntriesNewestFirst(): void
     {
         $this->write([
-            $this->entryLine('2026-09-06 10:00:00.001', 'first'),
-            $this->entryLine('2026-09-06 10:00:00.002', 'second'),
-            $this->entryLine('2026-09-06 10:00:00.003', 'third'),
-            $this->entryLine('2026-09-06 10:00:00.004', 'fourth'),
+            $this->entryLine('2026-09-06T10:00:00.001Z', 'first'),
+            $this->entryLine('2026-09-06T10:00:00.002Z', 'second'),
+            $this->entryLine('2026-09-06T10:00:00.003Z', 'third'),
+            $this->entryLine('2026-09-06T10:00:00.004Z', 'fourth'),
         ]);
 
         $entries = $this->reader()->readStream(self::STREAM, 3);
@@ -79,7 +85,7 @@ final class LogRecentTailReaderTest extends TestCase
     public function testALineWithoutATimestampIsDropped(): void
     {
         $this->write([
-            $this->entryLine('2026-09-06 10:00:00.001', 'stamped'),
+            $this->entryLine('2026-09-06T10:00:00.001Z', 'stamped'),
             'PHP Fatal error: printed straight past the Logger',
         ]);
 
@@ -91,12 +97,26 @@ final class LogRecentTailReaderTest extends TestCase
         $this->assertSame('stamped', $entries[0]->message);
     }
 
+    public function testOnlyAValidUtcStampGetsAnExactMoment(): void
+    {
+        $this->write([
+            $this->entryLine('2026-01-01T00:30:05.123Z', 'UTC'),
+            $this->entryLine('2026-01-01 00:30:05.123', 'legacy'),
+            $this->entryLine('2026-02-31T00:30:05.123Z', 'impossible'),
+        ]);
+
+        $entries = $this->reader()->readStream(self::STREAM, 10);
+        $this->assertCount(1, $entries);
+        $this->assertSame(1767227405123, $entries[0]->atMs);
+        $this->assertSame('UTC', $entries[0]->message);
+    }
+
     public function testTheContextTraceBecomesAFrameCountAndAnEntryWithoutOneCarriesNull(): void
     {
         $this->write([
-            $this->entryLine('2026-09-06 10:00:00.001', 'plain failure'),
-            $this->entryLine('2026-09-06 10:00:00.002', 'thrown failure', "#0 /app/a.php(7): a()\n#1 /app/b.php(3): b()\n#2 {main}"),
-            $this->entryLine('2026-09-06 10:00:00.003', 'failure with context, no trace', null, ['attempt' => 3]),
+            $this->entryLine('2026-09-06T10:00:00.001Z', 'plain failure'),
+            $this->entryLine('2026-09-06T10:00:00.002Z', 'thrown failure', "#0 /app/a.php(7): a()\n#1 /app/b.php(3): b()\n#2 {main}"),
+            $this->entryLine('2026-09-06T10:00:00.003Z', 'failure with context, no trace', null, ['attempt' => 3]),
         ]);
 
         $entries = $this->reader()->readStream(self::STREAM, 10);
@@ -112,7 +132,7 @@ final class LogRecentTailReaderTest extends TestCase
     public function testTheMessageIsCutAndTheCutDoesNotCostTheTrace(): void
     {
         $message = str_repeat('a', 40) . ' {not json after all}';
-        $this->write([$this->entryLine('2026-09-06 10:00:00.001', $message, "#0 /app/a.php(7): a()\n#1 {main}")]);
+        $this->write([$this->entryLine('2026-09-06T10:00:00.001Z', $message, "#0 /app/a.php(7): a()\n#1 {main}")]);
 
         $entries = (new LogRecentTailReader(new LogLineReader($this->root), 20))->readStream(self::STREAM, 10);
 
@@ -125,11 +145,11 @@ final class LogRecentTailReaderTest extends TestCase
     public function testALevelFilterTakesTheWarningsAndPassesTheirNeighborsBy(): void
     {
         $this->write([
-            $this->entryLine('2026-09-06 10:00:00.001', 'worker started'),
-            $this->entryLine('2026-09-06 10:00:00.002', 'WARNING: disk nearly full'),
-            $this->entryLine('2026-09-06 10:00:00.003', 'ERROR: payment failed', "#0 /app/a.php(7): a()\n#1 {main}"),
-            $this->entryLine('2026-09-06 10:00:00.004', 'WARNING: retrying'),
-            $this->entryLine('2026-09-06 10:00:00.005', 'request served'),
+            $this->entryLine('2026-09-06T10:00:00.001Z', 'worker started'),
+            $this->entryLine('2026-09-06T10:00:00.002Z', 'WARNING: disk nearly full'),
+            $this->entryLine('2026-09-06T10:00:00.003Z', 'ERROR: payment failed', "#0 /app/a.php(7): a()\n#1 {main}"),
+            $this->entryLine('2026-09-06T10:00:00.004Z', 'WARNING: retrying'),
+            $this->entryLine('2026-09-06T10:00:00.005Z', 'request served'),
         ], self::ORDINARY_STREAM);
 
         $entries = $this->reader()->readStream(self::ORDINARY_STREAM, 10, Logger::LEVEL_WARNING);
@@ -143,14 +163,14 @@ final class LogRecentTailReaderTest extends TestCase
 
     public function testAWindowCeilingKeepsTheReadFromGoingFurtherBack(): void
     {
-        $lines = [$this->entryLine('2026-09-06 10:00:00.001', 'WARNING: behind the ceiling')];
+        $lines = [$this->entryLine('2026-09-06T10:00:00.001Z', 'WARNING: behind the ceiling')];
         $written = 0;
         while ($written < self::PADDING_BYTES) {
-            $line = $this->entryLine('2026-09-06 10:00:01.000', 'request served ' . count($lines));
+            $line = $this->entryLine('2026-09-06T10:00:01.000Z', 'request served ' . count($lines));
             $lines[] = $line;
             $written += strlen($line) + 1;
         }
-        $lines[] = $this->entryLine('2026-09-06 10:00:02.000', 'WARNING: within reach');
+        $lines[] = $this->entryLine('2026-09-06T10:00:02.000Z', 'WARNING: within reach');
         $this->write($lines, self::ORDINARY_STREAM);
 
         $capped = $this->reader()->readStream(self::ORDINARY_STREAM, 10, Logger::LEVEL_WARNING, self::WINDOW_BYTES);
@@ -169,8 +189,8 @@ final class LogRecentTailReaderTest extends TestCase
     public function testTheLevelPrefixIsLeftOutOfTheMessageInEitherForm(): void
     {
         $this->write([
-            $this->entryLine('2026-09-06 10:00:00.001', 'WARNING: written by a worker'),
-            $this->entryLine('2026-09-06 10:00:00.002', '[WARNING] written into an agent file'),
+            $this->entryLine('2026-09-06T10:00:00.001Z', 'WARNING: written by a worker'),
+            $this->entryLine('2026-09-06T10:00:00.002Z', '[WARNING] written into an agent file'),
         ], self::ORDINARY_STREAM);
 
         $entries = $this->reader()->readStream(self::ORDINARY_STREAM, 10, Logger::LEVEL_WARNING);
@@ -234,15 +254,15 @@ final class LogRecentTailReaderTest extends TestCase
     }
 
     /**
-     * The unix milliseconds an entry stamped with this local time must be read as.
+     * The unix milliseconds an entry stamped with this UTC time must be read as.
      *
-     * @param string $stamp Local time without milliseconds
+     * @param string $stamp UTC time without milliseconds
      * @param int $milliseconds Millisecond part of the stamp
      *
      * @return int Unix milliseconds
      */
     private function milliseconds(string $stamp, int $milliseconds): int
     {
-        return strtotime($stamp) * 1000 + $milliseconds;
+        return strtotime($stamp . ' UTC') * 1000 + $milliseconds;
     }
 }
