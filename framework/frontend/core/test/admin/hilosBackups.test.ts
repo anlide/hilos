@@ -96,9 +96,13 @@ function gateContext(scopes: ScopeManager): HilosBackupsContext {
 
 /** A context the table factory can be handed to read its declared frame. */
 function tableContext(): HilosBackupsContext {
-  // The factory touches the connection only from `start()` and the dispatches;
-  // reading the declared frame needs neither.
-  return {} as unknown as HilosBackupsContext
+  return {
+    connection: {
+      sendTableFacets: () => {},
+      sendTableViewport: () => {},
+      sendTableRendered: () => {},
+    },
+  } as unknown as HilosBackupsContext
 }
 
 /** A context whose action lifecycle records what was dispatched over it. */
@@ -793,6 +797,40 @@ describe('createHilosBackupsTable', () => {
     table.controller.frame.declaration?.mainAction?.press()
 
     expect(opened).toBe(1)
+  })
+
+  it('marks a failed backup as refused and a completed backup as not refused', () => {
+    const table = createHilosBackupsTable(tableContext(), {
+      openCreate: () => undefined,
+    })
+    table.controller.ingestSubscriptionWindow(
+      [
+        {
+          rowKey: 'failed-run',
+          slots: { backup: { finished: null } },
+        },
+        {
+          rowKey: 'successful-run',
+          slots: { backup: { finished: true } },
+        },
+        {
+          rowKey: 'explicit-boolean-run',
+          slots: { backup: { finished: false } },
+        },
+      ],
+      3,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    const rows = table.controller.rows.get()
+    expect(rows[0]?.refused).toBe(true)
+    expect(rows[1]?.refused).toBe(false)
+    expect(rows[2]?.refused).toBe(false)
   })
 })
 

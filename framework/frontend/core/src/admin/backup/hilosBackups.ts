@@ -1187,6 +1187,7 @@ export function createHilosBackupsTable(
 ): HilosBackupsTable {
   const controller = new TableViewportController<HilosBackupRow>({
     resolve: resolveHilosBackupRow,
+    refused: (row) => row.finished === null,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
         HilosPages.BACKUP,

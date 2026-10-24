@@ -24,6 +24,7 @@ function makeRow(
     selected: false,
     expanded: false,
     expandable: !placeholder,
+    refused: false,
     staleSources,
   }
 }

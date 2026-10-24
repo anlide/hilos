@@ -799,6 +799,7 @@ describe('TableViewportController frame body', () => {
         selected: false,
         expanded: false,
         expandable: false,
+        refused: false,
         staleSources: [],
       },
     ])

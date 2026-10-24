@@ -1097,6 +1097,7 @@ describe('TableViewportController', () => {
         selected: false,
         expanded: false,
         expandable: true,
+        refused: false,
         staleSources: [],
       },
     ])
@@ -1462,6 +1463,7 @@ describe('TableViewportController', () => {
       selected: false,
       expanded: false,
       expandable: false,
+      refused: false,
       staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
@@ -1537,6 +1539,7 @@ describe('TableViewportController', () => {
         selected: false,
         expanded: false,
         expandable: false,
+        refused: false,
         staleSources: [],
       },
     ])
@@ -1568,6 +1571,7 @@ describe('TableViewportController', () => {
         selected: false,
         expanded: false,
         expandable: false,
+        refused: false,
         staleSources: [],
       },
     ])
@@ -1599,6 +1603,7 @@ describe('TableViewportController', () => {
         selected: false,
         expanded: false,
         expandable: false,
+        refused: false,
         staleSources: [],
       },
     ])
@@ -1689,6 +1694,7 @@ describe('TableViewportController', () => {
         selected: false,
         expanded: false,
         expandable: false,
+        refused: false,
         staleSources: [],
       },
     ])
@@ -2120,6 +2126,7 @@ describe('TableViewportController', () => {
       selected: false,
       expanded: false,
       expandable: false,
+      refused: false,
       staleSources: [],
     })
   })
@@ -5336,5 +5343,258 @@ describe('TableViewportController text expansion', () => {
     })
     expect(registration.record('a', 'wide')?.retained).toBe(42)
     controller.dispose()
+  })
+})
+
+describe('TableViewportController refused predicate', () => {
+  it('defaults to false on every row when the option is omitted', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { status: 'failed' } },
+        { rowKey: 'b', slots: { status: 'ok' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+
+    const rows = controller.rows.get()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.refused).toBe(false)
+    expect(rows[1]?.refused).toBe(false)
+  })
+
+  it('evaluates true or false according to the predicate for live rows', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      refused: (row) => row.slots.status === 'failed',
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [
+        { rowKey: 'a', slots: { status: 'failed' } },
+        { rowKey: 'b', slots: { status: 'ok' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    const rows = controller.rows.get()
+    expect(rows[0]?.refused).toBe(true)
+    expect(rows[1]?.refused).toBe(false)
+  })
+
+  it('re-evaluates refused on domain data changes and reactive dependency changes without a new window', () => {
+    const activeRefusalSignal = createSignal<string | null>(null)
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      refused: (row) =>
+        row.slots.status === 'failed' ||
+        row.rowKey === activeRefusalSignal.get(),
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [
+        { rowKey: 'a', slots: { status: 'ok' } },
+        { rowKey: 'b', slots: { status: 'ok' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(controller.rows.get()[0]?.refused).toBe(false)
+    expect(controller.rows.get()[1]?.refused).toBe(false)
+
+    // Domain data update via delta
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { status: 'failed' } },
+    })
+    expect(controller.rows.get()[0]?.refused).toBe(true)
+    expect(controller.rows.get()[1]?.refused).toBe(false)
+
+    // Domain data cleared via delta
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { status: 'ok' } },
+    })
+    expect(controller.rows.get()[0]?.refused).toBe(false)
+
+    // Reactive dependency update
+    activeRefusalSignal.set('b')
+    expect(controller.rows.get()[0]?.refused).toBe(false)
+    expect(controller.rows.get()[1]?.refused).toBe(true)
+
+    activeRefusalSignal.set(null)
+    expect(controller.rows.get()[1]?.refused).toBe(false)
+  })
+
+  it('yields false on placeholders and never passes a placeholder to the predicate', () => {
+    const inspectedRows: Array<TableRow | null> = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      refused: (row) => {
+        inspectedRows.push(row)
+        return row.slots.status === 'failed'
+      },
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { status: 'failed' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(controller.rows.get()[0]?.refused).toBe(true)
+    expect(inspectedRows).toHaveLength(1)
+    inspectedRows.length = 0
+
+    // Depart row 'a' into a placeholder
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+
+    const row = controller.rows.get()[0]
+    expect(row?.placeholder).toBe(true)
+    expect(row?.refused).toBe(false)
+    expect(inspectedRows).toHaveLength(0)
+  })
+
+  it('re-evaluates refused when a placeholder is restored to a live record', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      refused: (row) => row.slots.status === 'failed',
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { status: 'failed' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(controller.rows.get()[0]?.refused).toBe(true)
+
+    // Depart into placeholder
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.rows.get()[0]?.refused).toBe(false)
+
+    // Restore live row
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { status: 'failed' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(controller.rows.get()[0]?.placeholder).toBe(false)
+    expect(controller.rows.get()[0]?.refused).toBe(true)
+
+    // Update with non-failed status
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { status: 'ok' } },
+    })
+    expect(controller.rows.get()[0]?.refused).toBe(false)
+  })
+
+  it('does not disturb pending, highlight, or expanded state', () => {
+    vi.useFakeTimers()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      refused: (row) => row.slots.status === 'failed',
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { status: 'failed' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    let row = controller.rows.get()[0]
+    expect(row?.refused).toBe(true)
+    expect(row?.pending).toBeNull()
+    expect(row?.highlighted).toBe(false)
+    expect(row?.expanded).toBe(false)
+
+    // Highlight on update
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { status: 'failed', note: 'new' } },
+    })
+    row = controller.rows.get()[0]
+    expect(row?.refused).toBe(true)
+    expect(row?.highlighted).toBe(true)
+
+    // Expand
+    controller.expandRow('a', true)
+    row = controller.rows.get()[0]
+    expect(row?.refused).toBe(true)
+    expect(row?.expanded).toBe(true)
+    expect(row?.highlighted).toBe(true)
+
+    // Pending removal before Apply
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    row = controller.rows.get()[0]
+    expect(row?.refused).toBe(true)
+    expect(row?.pending).toBe('remove')
+    expect(row?.expanded).toBe(true)
+    expect(row?.highlighted).toBe(true)
+
+    vi.advanceTimersByTime(2000)
+    row = controller.rows.get()[0]
+    expect(row?.highlighted).toBe(false)
+    expect(row?.refused).toBe(true)
+    expect(row?.pending).toBe('remove')
   })
 })

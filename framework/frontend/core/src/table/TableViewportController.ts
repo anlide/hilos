@@ -318,6 +318,14 @@ export interface TableViewportRow<R> {
    */
   readonly expandable: boolean
   /**
+   * True when the row represents a refused or failed record in its domain — for
+   * example, a backup that failed its run. This is a domain-level outcome of the
+   * record itself, not an error loading the viewport window or an action failure.
+   * Always false for a placeholder, and false by default when no
+   * {@link TableViewportControllerOptions.refused} predicate was provided.
+   */
+  readonly refused: boolean
+  /**
    * The row slots whose values stopped being kept up to date, empty when the row is
    * current. Always a list rather than an optional field: the views read it on every
    * row they draw, and an optional one would make each of them write `?? []` of its
@@ -456,6 +464,20 @@ export interface TableViewportControllerOptions<R> {
    * @param row The resolved row.
    */
   expandable?(row: R): boolean
+  /**
+   * Whether one resolved live row represents a refused or failed domain record.
+   * Absent means no row is refused (always false).
+   *
+   * Evaluated inside a computed signal over resolved live rows; placeholder rows
+   * are never passed to this predicate. A reactive read made inside this callback
+   * automatically tracks updates.
+   *
+   * Declared as an optional method rather than a function-typed field to preserve
+   * controller variance (for the same reason as {@link expandable}).
+   *
+   * @param row The resolved row.
+   */
+  refused?(row: R): boolean
   /**
    * Send the current viewport descriptor to the backend — typically
    * `HilosConnection.sendTableViewport` bound to this table's page and key. The
@@ -1030,6 +1052,7 @@ export class TableViewportController<R> implements TableWindowSink {
           : (pendingKinds.get(raw.rowKey) ?? null)
         const row = raw.kind === 'live' ? options.resolve(raw.row) : null
         const expandable = row !== null && (options.expandable?.(row) ?? true)
+        const refused = row !== null && (options.refused?.(row) ?? false)
 
         return {
           rowKey: raw.rowKey,
@@ -1047,6 +1070,7 @@ export class TableViewportController<R> implements TableWindowSink {
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
           expanded: expandable && expandedKeys.has(raw.rowKey),
           expandable,
+          refused,
           staleSources: placeholder
             ? NO_STALE_SOURCES
             : (raw.row.staleSources ?? NO_STALE_SOURCES),

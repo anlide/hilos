@@ -600,8 +600,8 @@
     "outputSha256": "82a42ce7b51b795b737601842d5b7a48514b3b6f898bcdb3870a9d443e44b39c"
   },
   "src/table/TableViewportController.ts": {
-    "sourceSha256": "2660a94404d7bb8dc8b9bc773435f853ca6eee3865eed7b02e82f51bd02efb0c",
-    "outputSha256": "46387d2856d79ec6d3fa3adc6005e627ffa2885dc59007d928e791abe78cdaf8"
+    "sourceSha256": "14e123e77378b73375827b863fa61af749a93326b4d2afdd4a297397cb953dd2",
+    "outputSha256": "6b750bf924d2cc7cc36275962552c2c2a4ce2b591aec3a3f2ddc0fd553ea4066"
   },
   "src/table/hilosTableColumn.ts": {
     "sourceSha256": "30ae4f7d042525888bc00ca9916ed291ae4adc9c5461b5bd9c317a385004776e",

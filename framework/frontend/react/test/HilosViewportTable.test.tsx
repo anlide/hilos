@@ -42,7 +42,13 @@ const TWO_COLUMNS: HilosTableColumn[] = [
   { key: 'id', label: 'Id', sortable: true },
 ]
 
-function makeController(frame: HilosTableFrame = { columns: COLUMNS }): {
+function makeController(
+  frame: HilosTableFrame = { columns: COLUMNS },
+  options: {
+    refused?: (row: Row) => boolean
+    expandable?: (row: Row) => boolean
+  } = {},
+): {
   controller: TableViewportController<Row>
   sent: TableViewportDescriptor[]
 } {
@@ -51,6 +57,10 @@ function makeController(frame: HilosTableFrame = { columns: COLUMNS }): {
     resolve: (raw) => ({ name: String(raw.slots.name) }),
     sendViewport: (descriptor) => sent.push(descriptor),
     frame,
+    ...(options.refused !== undefined ? { refused: options.refused } : {}),
+    ...(options.expandable !== undefined
+      ? { expandable: options.expandable }
+      : {}),
   })
 
   return { controller, sent }
@@ -66,7 +76,10 @@ function renderTable(controller: TableViewportController<Row>) {
 }
 
 describe('HilosViewportTable', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
 
   it('renders a row per window row through the cell renderer', () => {
     const { controller } = makeController()
@@ -267,6 +280,205 @@ describe('HilosViewportTable', () => {
     const row = container.querySelector('[data-id="hilos-table-row-a"]')
     expect(row?.classList.contains('table-warning')).toBe(true)
     expect(row?.classList.contains('table-success')).toBe(false)
+  })
+
+  it('marks a refused row red, leaves an unrefused row unpainted, and keeps other contextual classes away', () => {
+    const { controller: plainController } = makeController()
+    plainController.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container: plainContainer } = renderTable(plainController)
+    const plainRowA = plainContainer.querySelector(
+      '[data-id="hilos-table-row-a"]',
+    )
+    const plainRowB = plainContainer.querySelector(
+      '[data-id="hilos-table-row-b"]',
+    )
+    expect(plainRowA?.classList.contains('table-danger')).toBe(false)
+    expect(plainRowA?.classList.contains('table-warning')).toBe(false)
+    expect(plainRowA?.classList.contains('table-success')).toBe(false)
+    expect(plainRowA?.classList.contains('table-active')).toBe(false)
+    expect(plainRowB?.classList.contains('table-danger')).toBe(false)
+
+    const { controller } = makeController(undefined, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderTable(controller)
+
+    const rowA = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(rowA?.classList.contains('table-danger')).toBe(true)
+    expect(rowA?.classList.contains('table-warning')).toBe(false)
+    expect(rowA?.classList.contains('table-success')).toBe(false)
+    expect(rowA?.classList.contains('table-active')).toBe(false)
+
+    const rowB = container.querySelector('[data-id="hilos-table-row-b"]')
+    expect(rowB?.classList.contains('table-danger')).toBe(false)
+    expect(rowB?.classList.contains('table-warning')).toBe(false)
+    expect(rowB?.classList.contains('table-success')).toBe(false)
+    expect(rowB?.classList.contains('table-active')).toBe(false)
+  })
+
+  it('lets the waiting outrank the refusal on a row that is both', () => {
+    const { controller } = makeController(undefined, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'refused' } },
+    })
+    const { container } = renderTable(controller)
+
+    const row = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(row?.classList.contains('table-warning')).toBe(true)
+    expect(row?.classList.contains('table-danger')).toBe(false)
+    expect(row?.classList.contains('table-success')).toBe(false)
+  })
+
+  it('lets a fresh highlight outrank the refusal on a row, returning to red once the highlight expires', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(undefined, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderTable(controller)
+    const row = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(row?.classList.contains('table-danger')).toBe(true)
+    expect(row?.classList.contains('table-success')).toBe(false)
+
+    // Landing an update highlights the row for 2s
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'refused' } },
+      })
+    })
+    expect(row?.classList.contains('table-success')).toBe(true)
+    expect(row?.classList.contains('table-danger')).toBe(false)
+    expect(row?.classList.contains('table-warning')).toBe(false)
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(row?.classList.contains('table-danger')).toBe(true)
+    expect(row?.classList.contains('table-success')).toBe(false)
+    expect(row?.classList.contains('table-warning')).toBe(false)
+  })
+
+  it('clears red when a row refusal is cured, and does not paint a departed placeholder row red', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(undefined, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderTable(controller)
+    const row = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(row?.classList.contains('table-danger')).toBe(true)
+
+    // Cure the refusal via update
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'cured' } },
+      })
+    })
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(row?.classList.contains('table-danger')).toBe(false)
+    expect(row?.classList.contains('table-success')).toBe(false)
+    expect(row?.classList.contains('table-warning')).toBe(false)
+
+    // Turn into placeholder
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      controller.apply()
+    })
+    const placeholderRow = container.querySelector(
+      '[data-id="hilos-table-row-a"]',
+    )
+    expect(placeholderRow?.classList.contains('table-danger')).toBe(false)
+    expect(placeholderRow?.classList.contains('table-warning')).toBe(false)
+    expect(placeholderRow?.classList.contains('table-success')).toBe(false)
+  })
+
+  it('keeps an expanded refused row red and an expanded unrefused row active', () => {
+    const { controller } = makeController(undefined, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.expandRow('a', true)
+    controller.expandRow('b', true)
+    const { container } = renderTable(controller)
+
+    const rowA = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(rowA?.classList.contains('table-danger')).toBe(true)
+    expect(rowA?.classList.contains('table-active')).toBe(false)
+    expect(rowA?.classList.contains('table-warning')).toBe(false)
+    expect(rowA?.classList.contains('table-success')).toBe(false)
+
+    const rowB = container.querySelector('[data-id="hilos-table-row-b"]')
+    expect(rowB?.classList.contains('table-active')).toBe(true)
+    expect(rowB?.classList.contains('table-danger')).toBe(false)
+    expect(rowB?.classList.contains('table-warning')).toBe(false)
+    expect(rowB?.classList.contains('table-success')).toBe(false)
   })
 
   it('keeps the state column before and after waiting arrives', () => {
@@ -699,7 +911,10 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
 })
 
 describe('HilosViewportTable drawing a row as a card', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
 
   /** The sender of the declared operation, which this block never presses. */
   function neverRun(): ActionHandle<HilosTableBulkAccepted> {
@@ -986,6 +1201,194 @@ describe('HilosViewportTable drawing a row as a card', () => {
 
     expect(card.classList.contains('border-warning')).toBe(true)
     expect(card.classList.contains('border-success')).toBe(false)
+  })
+
+  it('marks a refused card red, leaves an unrefused card unpainted, and keeps other border classes away', () => {
+    const { controller: plainController } = makeController(CARD_FRAME)
+    plainController.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container: plainContainer } = renderCards(plainController)
+    const plainCardA = cardOf(plainContainer, 'a')
+    const plainCardB = cardOf(plainContainer, 'b')
+    expect(plainCardA.classList.contains('border-danger')).toBe(false)
+    expect(plainCardA.classList.contains('border-warning')).toBe(false)
+    expect(plainCardA.classList.contains('border-success')).toBe(false)
+    expect(plainCardB.classList.contains('border-danger')).toBe(false)
+
+    const { controller } = makeController(CARD_FRAME, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderCards(controller)
+
+    const cardA = cardOf(container, 'a')
+    expect(cardA.classList.contains('border-danger')).toBe(true)
+    expect(cardA.classList.contains('border-warning')).toBe(false)
+    expect(cardA.classList.contains('border-success')).toBe(false)
+
+    const cardB = cardOf(container, 'b')
+    expect(cardB.classList.contains('border-danger')).toBe(false)
+    expect(cardB.classList.contains('border-warning')).toBe(false)
+    expect(cardB.classList.contains('border-success')).toBe(false)
+  })
+
+  it('lets the waiting outrank the refusal on a card that is both', () => {
+    const { controller } = makeController(CARD_FRAME, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'refused' } },
+    })
+    const { container } = renderCards(controller)
+    const card = cardOf(container, 'a')
+
+    expect(card.classList.contains('border-warning')).toBe(true)
+    expect(card.classList.contains('border-danger')).toBe(false)
+    expect(card.classList.contains('border-success')).toBe(false)
+  })
+
+  it('lets a fresh highlight outrank the refusal on a card, returning to red once the highlight expires', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(CARD_FRAME, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderCards(controller)
+    const card = cardOf(container, 'a')
+    expect(card.classList.contains('border-danger')).toBe(true)
+
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'refused' } },
+      })
+    })
+    expect(card.classList.contains('border-success')).toBe(true)
+    expect(card.classList.contains('border-danger')).toBe(false)
+    expect(card.classList.contains('border-warning')).toBe(false)
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(card.classList.contains('border-danger')).toBe(true)
+    expect(card.classList.contains('border-success')).toBe(false)
+    expect(card.classList.contains('border-warning')).toBe(false)
+  })
+
+  it('clears red when a card refusal is cured, and does not paint a departed placeholder card red', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(CARD_FRAME, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'refused' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderCards(controller)
+    const card = cardOf(container, 'a')
+    expect(card.classList.contains('border-danger')).toBe(true)
+
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'cured' } },
+      })
+    })
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(card.classList.contains('border-danger')).toBe(false)
+    expect(card.classList.contains('border-success')).toBe(false)
+    expect(card.classList.contains('border-warning')).toBe(false)
+
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      controller.apply()
+    })
+    const placeholderCard = cardOf(container, 'a')
+    expect(placeholderCard.classList.contains('border-danger')).toBe(false)
+    expect(placeholderCard.classList.contains('border-warning')).toBe(false)
+    expect(placeholderCard.classList.contains('border-success')).toBe(false)
+  })
+
+  it('keeps an expanded refused card border-danger without grey, and an expanded unrefused card borderless', () => {
+    const { controller } = makeController(CARD_FRAME, {
+      refused: (row) => row.name === 'refused',
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'refused' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.expandRow('a', true)
+    controller.expandRow('b', true)
+    const { container } = renderCards(controller)
+
+    const cardA = cardOf(container, 'a')
+    expect(cardA.classList.contains('border-danger')).toBe(true)
+    expect(cardA.classList.contains('border-secondary')).toBe(false)
+    expect(cardA.classList.contains('border-active')).toBe(false)
+    expect(cardA.classList.contains('border-warning')).toBe(false)
+    expect(cardA.classList.contains('border-success')).toBe(false)
+
+    const cardB = cardOf(container, 'b')
+    expect(cardB.classList.contains('border-danger')).toBe(false)
+    expect(cardB.classList.contains('border-secondary')).toBe(false)
+    expect(cardB.classList.contains('border-active')).toBe(false)
+    expect(cardB.classList.contains('border-warning')).toBe(false)
+    expect(cardB.classList.contains('border-success')).toBe(false)
   })
 
   it('keeps framework marks in their own room after the page badge', () => {

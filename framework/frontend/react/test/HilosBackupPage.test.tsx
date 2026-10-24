@@ -63,7 +63,7 @@ interface BackupSlot {
   durationSeconds: number
   keep: boolean
   status: string
-  finished: boolean
+  finished: boolean | null
   checksumState: string
   shipState: string
   [key: string]: unknown
@@ -258,6 +258,7 @@ describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
   const HIDDEN = { _hidden: true }
   const FAILED_ID = '2026-09-11_03-00-00'
   const SHIP_FAILED_ID = '2026-09-12_03-00-00'
+  const LEGACY_FAILED_ID = '2026-09-13_03-00-00'
 
   /** The modal standing on the page, or null. */
   function modal(): HTMLElement | null {
@@ -273,8 +274,17 @@ describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
           status: 'error',
           finished: null,
           failureReason: HIDDEN,
-        } as unknown as BackupSlot,
+        },
       },
+      {
+        id: LEGACY_FAILED_ID,
+        backup: {
+          ...ARCHIVE_FIXTURE.backup,
+          status: 'failed',
+          finished: null,
+        },
+      },
+      ARCHIVE_FIXTURE,
       {
         id: SHIP_FAILED_ID,
         backup: {
@@ -285,6 +295,64 @@ describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
       },
     ])
     mountPage(context)
+
+    // A failed backup with finished: null is refused and tinted danger on both projections.
+    const failedRow = document.querySelector<HTMLTableRowElement>(
+      `table [data-id="hilos-table-row-${FAILED_ID}"]`,
+    )
+    expect(failedRow?.classList.contains('table-danger')).toBe(true)
+    expect(failedRow?.classList.contains('table-success')).toBe(false)
+    expect(failedRow?.classList.contains('table-warning')).toBe(false)
+
+    const failedCard = document.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${FAILED_ID}"]`,
+    )
+    expect(failedCard?.classList.contains('border-danger')).toBe(true)
+    expect(failedCard?.classList.contains('border-success')).toBe(false)
+    expect(failedCard?.classList.contains('border-warning')).toBe(false)
+
+    expect(failedRow?.textContent).toContain('error')
+    expect(failedCard?.textContent).toContain('error')
+
+    // A legacy failure without a failureReason stays danger-tinted on both projections.
+    const legacyRow = document.querySelector<HTMLTableRowElement>(
+      `table [data-id="hilos-table-row-${LEGACY_FAILED_ID}"]`,
+    )
+    expect(legacyRow?.classList.contains('table-danger')).toBe(true)
+    expect(legacyRow?.classList.contains('table-success')).toBe(false)
+    expect(legacyRow?.classList.contains('table-warning')).toBe(false)
+
+    const legacyCard = document.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${LEGACY_FAILED_ID}"]`,
+    )
+    expect(legacyCard?.classList.contains('border-danger')).toBe(true)
+    expect(legacyCard?.classList.contains('border-success')).toBe(false)
+    expect(legacyCard?.classList.contains('border-warning')).toBe(false)
+
+    expect(legacyRow?.textContent).toContain('failed')
+    expect(legacyCard?.textContent).toContain('failed')
+
+    // An ordinary successful backup has finished: true and wears no danger tint.
+    const okRow = document.querySelector<HTMLTableRowElement>(
+      `table [data-id="hilos-table-row-${ARCHIVE_ID}"]`,
+    )
+    expect(okRow?.classList.contains('table-danger')).toBe(false)
+
+    const okCard = document.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${ARCHIVE_ID}"]`,
+    )
+    expect(okCard?.classList.contains('border-danger')).toBe(false)
+
+    // A ship failure on a successful archive does not color the whole record.
+    const shipFailedRow = document.querySelector<HTMLTableRowElement>(
+      `table [data-id="hilos-table-row-${SHIP_FAILED_ID}"]`,
+    )
+    expect(shipFailedRow?.classList.contains('table-danger')).toBe(false)
+
+    const shipFailedCard = document.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${SHIP_FAILED_ID}"]`,
+    )
+    expect(shipFailedCard?.classList.contains('border-danger')).toBe(false)
 
     fireEvent.click(inTable(`hilos-backup-details-${FAILED_ID}`) as Element)
     expect(

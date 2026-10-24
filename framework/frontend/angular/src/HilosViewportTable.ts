@@ -1478,19 +1478,26 @@ export class HilosViewportTable<R> {
   // A row's tint, resolved in the order the mockup resolves it (section 4): amber
   // while a pending change waits on the row — a move and a removal alike — and green
   // for the couple of seconds after a value landed. Waiting outranks the highlight,
-  // because it is the one of the two the reader still has to act on. Red belongs to a
-  // refused write, not to waiting. Grey comes last of the three: amber and green
-  // speak of something that happened to the row and the reader has yet to take in,
-  // while grey says only that the reader opened this one themselves. Bootstrap's
-  // contextual row classes carry their own dark-mode variants, so they adapt to the
-  // active theme with no custom styles. An untinted row gets the empty string, which
-  // is what the [class] binding takes.
+  // because it is the one of the two the reader still has to act on. Red marks a
+  // record that stands refused — a failed backup or an unacknowledged write that
+  // refused to apply; it sits behind a fresh highlight so the reader first sees that
+  // a change arrived, but outranks the opened row's grey because refusal is a state
+  // of the record itself rather than the reader's view over it. Grey comes last of
+  // them: amber, green, and red speak of something that happened to the record and
+  // the reader has yet to take in, while grey says only that the reader opened this
+  // one themselves. Bootstrap's contextual row fills stay light in dark mode, with
+  // their own dark text keeping them readable. Keep the stock Bootstrap colors
+  // intentionally: Hilos has no palette (HIL-1295). An untinted row gets the empty
+  // string, which is what the [class] binding takes.
   protected rowClass(view: TableViewportRow<R>): string {
     if (view.pending !== null) {
       return 'table-warning'
     }
     if (view.highlighted) {
       return 'table-success'
+    }
+    if (view.refused) {
+      return 'table-danger'
     }
 
     return view.expanded ? 'table-active' : ''
@@ -1515,15 +1522,21 @@ export class HilosViewportTable<R> {
   }
 
   // A card's tint, resolved in the order the row's is: amber while a change waits
-  // on the record, green for the couple of seconds after a value landed, and
-  // nothing otherwise. It is worn as a border rather than a fill — Bootstrap's
-  // contextual row classes are built for the cells of a table (Flow F5).
+  // on the record, green for the couple of seconds after a value landed, red when
+  // the record stands refused, and nothing otherwise. It is worn as a border
+  // rather than a fill — Bootstrap's contextual row classes are built for the
+  // cells of a table — and an expanded card takes no grey: the row wears grey to
+  // tie itself to a panel drawn under it, while a card holds its panel inside its
+  // own body (Flow F5).
   protected cardClass(view: TableViewportRow<R>): string {
     if (view.pending !== null) {
       return 'border-warning'
     }
+    if (view.highlighted) {
+      return 'border-success'
+    }
 
-    return view.highlighted ? 'border-success' : ''
+    return view.refused ? 'border-danger' : ''
   }
 
   // The template the page marked for one column's cell, or undefined where it marked

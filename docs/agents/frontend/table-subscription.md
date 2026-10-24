@@ -270,6 +270,18 @@ follow the same resolved arrays. If a filter disappears or its selected option
 vanishes, its value is cleared. If an active column order disappears, the window
 returns to its opening order; a loaded table asks the server for the updated window.
 
+A table whose records may represent a failed or refused domain outcome — such
+as a failed backup — declares the `refused: (row) => boolean` option on
+`TableViewportController`. The controller evaluates it reactively for each live row
+and exposes the boolean `refused` on `TableViewportRow` (`false` by default, and
+always `false` for placeholders). All three view layers apply a consistent
+contextual priority: on a wide row, `table-warning` (pending) > `table-success`
+(highlighted) > `table-danger` (refused) > `table-active` (expanded); on a card,
+`border-warning` > `border-success` > `border-danger` (expanded cards take no
+grey border). A fresh update highlights green for 2 seconds before returning to
+red refusal, clearing the refusal removes the danger tint, and pending changes
+outrank both.
+
 Three things follow from the declaration and are read off the controller's
 `frame` getter rather than recomputed per view layer — the card a row projects to
 on a narrow screen is a fourth and has its own section below:
