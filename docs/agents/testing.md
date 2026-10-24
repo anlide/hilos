@@ -329,8 +329,9 @@ the processor when both want it. A new stand service takes the same line.
 
 **Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
 order does not either; a fleet leaves with its own step (`downsStand`), which is
-hygiene rather than separation. A red step beside a fleet is read like any other —
-the neighbours in the step's `SNAPSHOT.txt`, then the re-run alone described below.
+hygiene rather than separation. A red step beside a fleet keeps the full run red.
+The neighbors in its `SNAPSHOT.txt` and host load are diagnostic evidence, as are
+the narrow re-runs described below.
 
 There is **no fail-fast**. A red step skips what depends on it, unrelated branches
 finish, and the runner exits non-zero if anything was red. Each step writes its own
@@ -348,42 +349,59 @@ whole directory and reads as fresh, which on HIL-853 handed a reader the very li
 fix under test had just removed — out of a demo `scripts/test-suite.php` does not
 contain at all. The `rc` ledger is never swept.
 
-### A step that only passed on a retry says so
+### A test that only passed on a retry makes the step red
 
-Playwright retries twice in CI, so a flickering test leaves its step `ok` and the
-run's exit code zero. That verdict stands, but it is no longer silent: the step's
-ledger entry grows a field (`chat-e2e rc=0 unstable=3`), keeping the `<id> rc=<n>`
-grammar every reader already parses, and the summary ends with an
-`=== unstable: <S> step(s), <T> retried test(s) ===` section naming the specs. A
-run with nothing to report prints neither, so a green log is byte for byte what it
-always was and the section appearing at all means there is something to look at.
-Who owns a named flicker — and why it is not automatically the ticket in hand — is
-in [frontend/testing-strategy.md](frontend/testing-strategy.md).
+**The full run owns the verdict.** A test that passes only on a retry (↻) makes
+its step `FAILED`, even if the underlying command exits zero. The runner reads
+`hilos-unstable` from the completed step's own log before releasing dependencies:
+`effectiveRc = processRc != 0 ? processRc : (unstable.count > 0 ? 1 : 0)`.
+A native nonzero exit code is preserved. END, artifacts, the ledger and SUMMARY
+all use this one result; failed dependencies skip their descendants while
+independent branches finish. A failure or a skipped step makes the run nonzero.
 
-### A red step under concurrency is not a verdict
+The ledger keeps its grammar: `chat-e2e rc=1 unstable=3` for a successful command
+with three retried tests. A clean step stays `<id> rc=0`, and a skipped step has
+`SKIPPED` without `rc=`. The summary retains
+`=== unstable: <S> step(s), <T> retried test(s) ===` with the reported names.
+A clean run adds neither an unstable field nor an unstable section.
 
-Re-run it **alone on the same HEAD** before believing it. An e2e step re-runs only
-its red tests — the `file:line` of each entry under `N failed` in its log, and the
-specs its `hilos-unstable:` line names — through `--tests=`, because the whole step
-alone costs nearly as much as the full run (`tasks-e2e` alone ~18 minutes against a
-full run of ~22, 2026-10-21) and adds nothing to the verdict:
-`php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71,tests/b.spec.ts:12`.
-Any other step re-runs whole: `php scripts/run-test-suite.php <id> --lanes=1`.
+Playwright reports `hilos-unstable: <N> (<spec:line>, ...)`. A cluster scenario
+that succeeds after a timeout retry reports exactly one
+`hilos-unstable: 1 (cluster/scenario-46)` line, using its scenario number,
+regardless of the number of attempts. A first-attempt success or a scenario
+skipped by `FLAKY_SKIP` prints none. Exhausted retries and hard errors retain
+the first failure. Automatic retry counts and timeout scaling are unchanged.
 
-- **red again** — real. Treat it as any other failure.
-- **green alone** — the step is green. Name the test that went red as possibly
-  flaky, with the run it failed in and the run it passed in, and go on. Do not
-  repeat the full run, at one lane or at several: a full run at one lane took
-  about 55 minutes with no fail-fast and never changed the verdict, and a
-  flicker is caught by watching the tests named this way, not by rerunning the
-  suite.
+Names and history help attribute the cause; they do not turn a red verdict green.
+See [frontend/testing-strategy.md](frontend/testing-strategy.md#a-retried-test-makes-the-step-red-and-its-cause-must-be-traced).
 
-What must never happen is a red waved off as "probably the neighbour" without that
-re-run: it is exactly how a genuine regression reaches the base wearing the excuse
-of concurrency. The check is cheap — one demo block is 1–3 minutes, and the red
-tests of an e2e step with its stand about as much — and it only happens on red. The other
-half of the defense is that Playwright's caps stretch with host load rather than
-firing ([frontend/testing-strategy.md](frontend/testing-strategy.md)).
+### Narrow runs collect evidence
+
+Use narrow runs while implementing and debugging. For an e2e step, name its red
+or unstable tests with `--tests=` and use `--repeat=N` to gather N observations
+of each selected test in one clean cycle. On `total-refac`, the diagnostic call is:
+
+```bash
+php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71 --repeat=5
+```
+
+`N` is a decimal integer from 1 through PHP's maximum integer, without a sign,
+fraction or exponent. An explicit `--repeat`, including `--repeat=1`, requires
+nonempty `--tests=` and exactly one existing step id with `takesTests=true`;
+a tag, multiple targets or a cluster scenario step is refused before the graph
+starts. Without the option, existing full and pointed runs behave as before.
+The selected command receives escaped selectors and `--repeat-each=N` after
+Composer's `--`; dependencies and stand preparation run once. Automatic retries
+remain in effect for each observation. No fail-fast is added: all N observations
+are collected even with red tests, unless the run itself is interrupted.
+
+A non-e2e step can be investigated with
+`php scripts/run-test-suite.php <id> --lanes=1`. These narrow loops help the
+executor diagnose a defect; they do not replace Verify. Five green observations
+on the same HEAD do not erase a red full run. Concurrency, host load and an older
+flake explain a failure's origin without changing its verdict. Report a foreign
+cause without repairing it inside the current ticket; quarantine is separate
+work (HIL-1796).
 
 ## The cluster stands — three demos, three shapes
 
@@ -628,6 +646,12 @@ From a demo directory, run
 `../../framework/docker/cluster/run docker/docker-compose.cluster.yml <command> [args]`.
 For example, `up`, `status`, `inspect m1` and `down` operate the selected stand.
 The existing `composer run test:cluster:*` names remain convenient entry points.
+From the repository root, `composer run test:cluster:unit` runs the harness's
+stdlib Python unit tests in the same disposable runtime. The `unit` command
+runs before loading the compose stand, checking its registry or dispatching a
+stand action; it starts no cluster and makes no SQL or network calls in its tests.
+The independent `cluster-unit` graph step includes this check in the full run.
+
 `composer run test:cluster:down` keeps using the existing
 `scripts/down-stands.php`; calling the shell runner's `down` is a standalone
 path. Use `down --volumes` only when intentionally deleting the stand's

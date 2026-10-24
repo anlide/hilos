@@ -55,11 +55,11 @@ final class StepArtifactsTest extends TestCase
     ];
 
     /**
-     * Steps that name no stand on purpose. framework-image builds an image and
-     * never raises a container; a new step without a key must be added here
-     * rather than hide as "this one has none".
+     * Steps that name no stand on purpose. framework-image only builds an image;
+     * cluster-unit runs in a disposable runtime without a stand. A new step without
+     * a key must be added here rather than hide as "this one has none".
      */
-    private const array STEPS_WITHOUT_A_STAND = ['framework-image'];
+    private const array STEPS_WITHOUT_A_STAND = ['framework-image', 'cluster-unit'];
 
     /** Temporary repository and snapshot trees used by the file-copy cases. */
     private ?string $fixtureRoot = null;

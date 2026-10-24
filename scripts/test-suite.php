@@ -7,10 +7,9 @@ require_once __DIR__ . '/framework-pieces.php';
 /**
  * The full test run, as a graph instead of a script.
  *
- * `scripts/run-test-suite.php` executes this; the two together replace the fixed
- * sequence that composer, GitHub Actions and hilos-ops/verify-run.sh each used to
- * spell out for themselves. Adding a demo is an entry in this list, not an edit to
- * anyone's control flow.
+ * `scripts/run-test-suite.php` executes this graph for both composer and
+ * hilos-ops/verify-run.sh, including on a fresh checkout without hilos-ops.
+ * Adding a demo is an entry in this list, not an edit to anyone's control flow.
  *
  * This file returns a list of steps. A step is:
  *   id       the name the run reports it under. These ids are load-bearing: the
@@ -94,10 +93,11 @@ require_once __DIR__ . '/framework-pieces.php';
  * Decided by the owner on 2026-09-29 on 43 full runs on nova-de (27–29.09),
  * where cluster overlapped chat-e2e for 1.5–6 minutes and every one was green;
  * run 0659 added three more e2e suites beside them. A red step beside a fleet
- * is read like any other: the neighbours in the step's SNAPSHOT.txt, then a
- * re-run alone. Keeping the fleets apart from EACH OTHER, should that be
- * needed, belongs to the leaves that add them. The three fleets need nothing of
- * the kind: in run 0747 on nova-de (2026-10-02, HIL-1216),
+ * is read like any other: the full verdict stays red; neighbors in the step's
+ * SNAPSHOT.txt and narrow re-runs supply diagnostic evidence. Keeping the fleets
+ * apart from EACH OTHER, should that be needed, belongs to the leaves that add
+ * them. The three fleets need nothing of the kind: in run 0747 on nova-de
+ * (2026-10-02, HIL-1216),
  * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together
  * for 1m21s, and all were green. Log-streams may run beside any fleet too: in
@@ -118,6 +118,16 @@ $demos = [
 ];
 
 $steps = [
+    // HIL-1795: 5.714s through the container gateway on 2026-10-24; no stand is raised.
+    [
+        'id' => 'cluster-unit',
+        'command' => 'composer run test:cluster:unit',
+        'cwd' => '.',
+        'deps' => [],
+        'group' => null,
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 6,
+    ],
     // Rebuilding cli-test up front, because `docker compose run` only builds an
     // image when there is NONE: an edited Dockerfile.test-cli otherwise rides the
     // old image silently (HIL-274 added default-mysql-client to it, and without

@@ -5618,9 +5618,10 @@ FLAKY_SKIP = {
 def run_scenario(name, fn):
     """Run one scenario, retrying a PURE convergence timeout (transient) up to
     SCENARIO_RETRIES times after re-converging the mesh. Returns the pass detail,
+    reporting a successful retry once through hilos-unstable for the suite runner,
     or raises the FIRST failure (hard invariant assertions are never retried).
 
-    The first failure is the verdict, and a retry cannot replace it. A retry runs
+    If no attempt succeeds, a later failure cannot replace the first. A retry runs
     on a stand the first attempt left skewed, so what it trips over is usually a
     precondition of its own making - and naming that in the summary hides the
     cause behind its consequence and burns the retry budget getting there.
@@ -5633,7 +5634,10 @@ def run_scenario(name, fn):
     first_failure = None
     for attempt in range(1, SCENARIO_RETRIES + 2):
         try:
-            return fn()
+            detail = fn()
+            if first_failure is not None:
+                print(f"hilos-unstable: 1 (cluster/scenario-{name.split()[0]})")
+            return detail
         except ScenarioTimeout as e:
             if first_failure is None:
                 first_failure = e

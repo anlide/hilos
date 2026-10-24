@@ -9,9 +9,10 @@ declare(strict_types=1);
  * the rc ledger and the closing summary.
  *
  * The runner knows this grammar and nothing about Playwright's own formats,
- * because the same runner has to work in GitHub Actions and on a fresh checkout. A
- * step that never prints the line — phpunit, vitest, check — reports zero by
- * staying quiet, and so does a Playwright step whose tests all passed first time.
+ * so the verdict works on a fresh checkout without hilos-ops. Cluster scenarios
+ * report retries with the same grammar. A step that never prints the line —
+ * phpunit, vitest, check — reports zero by staying quiet, and so does a
+ * Playwright step whose tests all passed first time.
  *
  * Silence at zero is the rule this file exists to keep: no line means no field in
  * the ledger and no section in the summary, so a clean run looks byte for byte the
@@ -22,7 +23,7 @@ declare(strict_types=1);
  * `framework/tests/Unit/UnstableLineTest.php` can both require it.
  */
 
-/** The one line a Playwright step prints about the tests that only passed on a retry. */
+/** The one line a step prints about tests or scenarios that only passed on a retry. */
 const UNSTABLE_LINE_PATTERN = '/^hilos-unstable: (\d+) \((.*)\)$/m';
 
 /** How a reported list is split back into names, tolerating stray spacing. */
@@ -58,6 +59,16 @@ function readUnstableTests(string $log): array
     }
 
     return ['count' => $count, 'tests' => $tests];
+}
+
+/**
+ * @param int $processRc The command's own exit code.
+ * @param array{count: int} $unstable Retries reported by the completed step.
+ * @return int The single verdict: preserve a native failure, fail a retried success.
+ */
+function effectiveStepRc(int $processRc, array $unstable): int
+{
+    return $processRc !== 0 ? $processRc : ($unstable['count'] > 0 ? 1 : 0);
 }
 
 /**

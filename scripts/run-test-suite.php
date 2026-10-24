@@ -23,13 +23,11 @@ declare(strict_types=1);
  * Options:
  *   --lanes=N      steps at a time; overrides HILOS_TEST_LANES and the adaptive
  *                  default, which is sized from the cores and the available memory
- *                  of the machine (`scripts/lane-count.php`). `--lanes=1` is the
- *                  lever the attribution rule needs: a step that goes red under
- *                  concurrency is not a verdict until it has been re-run alone on
- *                  the same HEAD. That re-run judges the step by the same rule as
- *                  the concurrent run did: the lane count is not a timeout
- *                  multiplier, and every suite reads its factor from the load and
- *                  the memory of the host at the moment it starts.
+ *                  of the machine (`scripts/lane-count.php`). `--lanes=1` gathers
+ *                  diagnostic evidence alone. The full run owns the verdict;
+ *                  a narrow green re-run does not replace a full red one.
+ *                  Lane count is not a timeout multiplier: every suite reads its
+ *                  factor from host load and memory at the moment it starts.
  *   --log-dir=DIR  where the per-step logs land (default `var/test-suite`). A full run
  *                  also sweeps out of it the logs of steps the manifest no longer
  *                  lists; a re-run of one step sweeps nothing.
@@ -39,16 +37,19 @@ declare(strict_types=1);
  *                  with exactly one target, and only a step that declares
  *                  `takesTests`: the re-run of a red e2e step names its red tests
  *                  rather than paying for the whole suite again.
+ *   --repeat=N    a positive decimal integer within PHP int range. Requires
+ *                  nonempty --tests and exactly one step id with takesTests.
+ *                  Runs each selected test N times in one clean cycle; dependencies
+ *                  run once, automatic retries stay unchanged, and there is no fail-fast.
  *   --artifact-dir=DIR
  *                  where each step's snapshot of the stand lands (default
  *                  `<log-dir>/artifacts`), one subdirectory per step. Taken at
  *                  every outcome, so that reading a red step starts from what it
  *                  left behind rather than from what the log seemed to say.
  *
- * This file knows nothing about hilos-ops or about any particular CI: composer,
- * GitHub Actions and hilos-ops/verify-run.sh all drive it through the same command
- * line, and a dependency in the other direction would mean the suite cannot run on
- * a fresh checkout.
+ * Composer and hilos-ops/verify-run.sh drive the same repository-owned command
+ * line. The runner also works on a fresh checkout without hilos-ops: its verdict
+ * depends only on each command's exit code and the hilos-unstable evidence it prints.
  */
 
 /** Poll interval while waiting for the running steps, in microseconds. */
@@ -59,6 +60,9 @@ const LANES_OPTION = '--lanes';
 
 /** The option naming the tests to run inside one e2e step. */
 const TESTS_OPTION = '--tests';
+
+/** The option requesting this many observations of each selected test. */
+const REPEAT_OPTION = '--repeat';
 
 /** What separates the tests listed in one TESTS_OPTION value. */
 const TESTS_SEPARATOR = ',';
@@ -86,36 +90,64 @@ enum StepOutcome: string
     case Skipped = 'skipped';
 }
 
-$root = dirname(__DIR__);
-require_once $root . '/scripts/lane-count.php';
-require_once $root . '/scripts/launch-order.php';
-require_once $root . '/scripts/unstable-line.php';
-require_once $root . '/scripts/step-artifacts.php';
-require_once $root . '/scripts/stand-registry.php';
-require_once $root . '/scripts/stand-teardown.php';
-require_once $root . '/scripts/evidence-sweep.php';
-$options = parseArguments(array_slice($argv, 1));
-$manifest = narrowToTests(indexById(require $root . '/scripts/test-suite.php'), $options['targets'], $options['tests']);
-$plan = planFor($manifest, $options['targets']);
-['count' => $lanes, 'source' => $lanesSource] = resolveLanes($options['lanes']);
-$logDir = $options['logDir'] ?? $root . '/var/test-suite';
+require_once __DIR__ . '/lane-count.php';
+require_once __DIR__ . '/launch-order.php';
+require_once __DIR__ . '/unstable-line.php';
+require_once __DIR__ . '/step-artifacts.php';
+require_once __DIR__ . '/stand-registry.php';
+require_once __DIR__ . '/stand-teardown.php';
+require_once __DIR__ . '/evidence-sweep.php';
 
-if ($options['list']) {
-    printPlan($manifest, $plan, $lanes, $lanesSource);
-    exit(0);
+if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
+    try {
+        exit(runTestSuite(array_slice($argv, 1)));
+    } catch (InvalidArgumentException $exception) {
+        fail($exception->getMessage());
+    }
 }
 
-exit(runPlan(
-    $root,
-    $manifest,
-    $plan,
-    $lanes,
-    $lanesSource,
-    $logDir,
-    $options['rcFile'] ?? $logDir . '/rc',
-    $options['artifactDir'] ?? $logDir . '/artifacts',
-    $options['targets'] === [],
-));
+/**
+ * @param array<int, string> $arguments Everything after the script name.
+ * @return int The run's exit code, or zero for help and a printed plan.
+ * @throws InvalidArgumentException When an option or its target is invalid.
+ */
+function runTestSuite(array $arguments): int
+{
+    $root = dirname(__DIR__);
+    $options = parseArguments($arguments);
+    if ($options['help']) {
+        printUsage();
+
+        return 0;
+    }
+    $manifest = narrowToTests(
+        indexById(require $root . '/scripts/test-suite.php'),
+        $options['targets'],
+        $options['tests'],
+        $options['repeat'],
+    );
+    $plan = planFor($manifest, $options['targets']);
+    ['count' => $lanes, 'source' => $lanesSource] = resolveLanes($options['lanes']);
+    $logDir = $options['logDir'] ?? $root . '/var/test-suite';
+
+    if ($options['list']) {
+        printPlan($manifest, $plan, $lanes, $lanesSource);
+
+        return 0;
+    }
+
+    return runPlan(
+        $root,
+        $manifest,
+        $plan,
+        $lanes,
+        $lanesSource,
+        $logDir,
+        $options['rcFile'] ?? $logDir . '/rc',
+        $options['artifactDir'] ?? $logDir . '/artifacts',
+        $options['targets'] === [],
+    );
+}
 
 // ------------------------------------------------------------------ arguments
 
@@ -124,7 +156,9 @@ exit(runPlan(
  *
  * @param array<int, string> $arguments Everything after the script name.
  * @return array{targets: array<int, string>, lanes: int|null, logDir: string|null,
- *     rcFile: string|null, artifactDir: string|null, list: bool, tests: array<int, string>}
+ *     rcFile: string|null, artifactDir: string|null, list: bool, help: bool, tests: array<int, string>, repeat: int|null}
+ *     Parsed options; repeat is null only when the option was absent.
+ * @throws InvalidArgumentException When an option has an invalid value or is unknown.
  */
 function parseArguments(array $arguments): array
 {
@@ -135,18 +169,22 @@ function parseArguments(array $arguments): array
         'rcFile' => null,
         'artifactDir' => null,
         'list' => false,
+        'help' => false,
         'tests' => [],
+        'repeat' => null,
     ];
+    $testList = null;
     foreach ($arguments as $argument) {
         if ($argument === '--help' || $argument === '-h') {
-            printUsage();
-            exit(0);
+            $parsed['help'] = true;
         } elseif ($argument === '--list') {
             $parsed['list'] = true;
         } elseif (str_starts_with($argument, LANES_OPTION . '=')) {
             $parsed['lanes'] = readLaneCount(substr($argument, strlen(LANES_OPTION . '=')), LANES_OPTION);
         } elseif (str_starts_with($argument, TESTS_OPTION . '=')) {
-            $parsed['tests'] = readTestList(substr($argument, strlen(TESTS_OPTION . '=')));
+            $testList = substr($argument, strlen(TESTS_OPTION . '='));
+        } elseif (str_starts_with($argument, REPEAT_OPTION . '=')) {
+            $parsed['repeat'] = readRepeatCount(substr($argument, strlen(REPEAT_OPTION . '=')));
         } elseif (str_starts_with($argument, '--log-dir=')) {
             $parsed['logDir'] = rtrim(substr($argument, strlen('--log-dir=')), '/');
         } elseif (str_starts_with($argument, '--rc-file=')) {
@@ -154,9 +192,18 @@ function parseArguments(array $arguments): array
         } elseif (str_starts_with($argument, '--artifact-dir=')) {
             $parsed['artifactDir'] = rtrim(substr($argument, strlen('--artifact-dir=')), '/');
         } elseif (str_starts_with($argument, '-')) {
-            fail('unknown option ' . $argument);
+            throw new InvalidArgumentException('unknown option ' . $argument);
         } else {
             $parsed['targets'][] = $argument;
+        }
+    }
+    if ($testList !== null) {
+        try {
+            $parsed['tests'] = readTestList($testList);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException(
+                ($parsed['repeat'] === null ? '' : REPEAT_OPTION . ': ') . $exception->getMessage(),
+            );
         }
     }
 
@@ -164,32 +211,53 @@ function parseArguments(array $arguments): array
 }
 
 /**
- * A positive lane count, or a fatal error naming where the bad value came from.
+ * @param string $value The decimal text after REPEAT_OPTION's equals sign.
+ * @return int A positive count within PHP's integer range.
+ * @throws InvalidArgumentException When the value is not a positive decimal integer or overflows.
+ */
+function readRepeatCount(string $value): int
+{
+    $digits = ltrim($value, '0');
+    $maximum = (string)PHP_INT_MAX;
+    if (preg_match('/\A[0-9]+\z/', $value) !== 1 || $digits === ''
+        || strlen($digits) > strlen($maximum)
+        || (strlen($digits) === strlen($maximum) && strcmp($digits, $maximum) > 0)
+    ) {
+        throw new InvalidArgumentException(REPEAT_OPTION . ' must be a positive integer within PHP int range, got ' . var_export($value, true));
+    }
+
+    return (int)$digits;
+}
+
+/**
+ * A positive lane count, or a refusal naming where the bad value came from.
  *
  * @param string $value The raw text.
  * @param string $source What to blame in the message — an option or a variable.
- * @return int
+ * @return int The requested lane count.
+ * @throws InvalidArgumentException When the value is not positive decimal text.
  */
 function readLaneCount(string $value, string $source): int
 {
     if (preg_match('/^\d+$/', $value) !== 1 || (int)$value < 1) {
-        fail($source . ' must be a positive integer, got ' . var_export($value, true));
+        throw new InvalidArgumentException($source . ' must be a positive integer, got ' . var_export($value, true));
     }
 
     return (int)$value;
 }
 
 /**
- * The tests a TESTS_OPTION value names, or a fatal error when it names none.
+ * The tests a TESTS_OPTION value names, or a refusal when it names none.
  *
  * @param string $value The raw text after the `=`.
- * @return array<int, string>
+ * @return array<int, string> The nonempty test selectors.
+ * @throws InvalidArgumentException When the option names no test.
  */
 function readTestList(string $value): array
 {
     $tests = array_values(array_filter(array_map(trim(...), explode(TESTS_SEPARATOR, $value)), static fn(string $test): bool => $test !== ''));
     if ($tests === []) {
-        fail(TESTS_OPTION . ' names no test');
+        throw new InvalidArgumentException(TESTS_OPTION . ' names no test');
     }
 
     return $tests;
@@ -207,6 +275,9 @@ function printUsage(): void
           --lanes=N       steps at a time (overrides HILOS_TEST_LANES).
           --tests=LIST    tests inside the one e2e step targeted, comma-separated
                           as Playwright takes them (tests/a.spec.ts:71).
+          --repeat=N      run each named test N times (positive decimal PHP int);
+                          requires --tests and exactly one step id taking tests.
+                          Dependencies run once; automatic retries stay unchanged.
           --log-dir=DIR   per-step logs (default var/test-suite).
           --rc-file=PATH  the `<id> rc=<n>` ledger (default <log-dir>/rc).
           --artifact-dir=DIR
@@ -258,18 +329,29 @@ function indexById(array $steps): array
  * @param array<string, array{command: string}> $manifest Steps by id.
  * @param array<int, string> $targets Step ids and tags from the command line.
  * @param array<int, string> $tests The tests TESTS_OPTION named; empty when it was not given.
- * @return array<string, array{command: string}>
+ * @param int|null $repeat Observations per selected test; null leaves the command unchanged beyond its tests.
+ * @return array<string, array{command: string}> The manifest with only the selected step's command narrowed.
+ * @throws InvalidArgumentException When tests or repeat do not target exactly one capable step.
  */
-function narrowToTests(array $manifest, array $targets, array $tests): array
+function narrowToTests(array $manifest, array $targets, array $tests, ?int $repeat = null): array
 {
+    if ($repeat !== null && ($repeat < 1 || $tests === [])) {
+        throw new InvalidArgumentException(REPEAT_OPTION . ' requires a positive count and nonempty ' . TESTS_OPTION);
+    }
     if ($tests === []) {
         return $manifest;
     }
     $target = count($targets) === 1 ? $targets[0] : null;
     if ($target === null || ($manifest[$target]['takesTests'] ?? false) !== true) {
-        fail(TESTS_OPTION . ' names tests of one e2e step: give exactly one target, the id of a step that takes tests');
+        throw new InvalidArgumentException(
+            ($repeat === null ? TESTS_OPTION : REPEAT_OPTION)
+                . ' names tests of one e2e step: give exactly one target, the id of a step that takes tests',
+        );
     }
     $manifest[$target]['command'] .= ' -- ' . implode(' ', array_map(escapeshellarg(...), $tests));
+    if ($repeat !== null) {
+        $manifest[$target]['command'] .= ' --repeat-each=' . $repeat;
+    }
 
     return $manifest;
 }
@@ -348,6 +430,7 @@ function printPlan(array $manifest, array $plan, int $lanes, string $lanesSource
  *
  * @param int|null $override The `--lanes=` value, when one was given.
  * @return array{count: int, source: string} Steps at a time, and the words for what decided it.
+ * @throws InvalidArgumentException When the lane-count environment variable is invalid.
  */
 function resolveLanes(?int $override): array
 {
@@ -693,8 +776,9 @@ function launch(string $root, array $step, string $logPath, array $neighbors): a
  * Whichever running steps have exited since the last look.
  *
  * A step's flaky tests are read here, together with the rest of its result: the
- * log is complete the moment the process is gone, and every consumer downstream —
- * the ledger, the summary — then gets a record that is whole.
+ * log is complete the moment the process is gone. The effective verdict is red
+ * for a native failure or a retried success before dependencies, artifacts, END,
+ * the ledger and the summary consume the result.
  *
  * @param array<string, array{handle: resource, since: float, at: string,
  *     neighbors: array<int, string>}> $running Ids in flight.
@@ -711,17 +795,40 @@ function reap(array $running, array $logs): array
             continue;
         }
         proc_close($step['handle']);
-        $finished[$id] = [
-            'outcome' => $status['exitcode'] === 0 ? StepOutcome::Ok : StepOutcome::Failed,
-            'rc' => $status['exitcode'],
-            'at' => $step['at'],
-            'seconds' => microtime(true) - $step['since'],
-            'note' => '',
-            'unstable' => readUnstableTests(readStepLog($logs[$id])),
-        ];
+        $finished[$id] = finishedStep(
+            $status['exitcode'],
+            readStepLog($logs[$id]),
+            $step['at'],
+            microtime(true) - $step['since'],
+        );
     }
 
     return $finished;
+}
+
+/**
+ * Classify a completed command before publishing it to dependencies and reports.
+ *
+ * @param int $processRc The command's own exit code.
+ * @param string $log The complete output of this step only.
+ * @param string $at The step's start time.
+ * @param float $seconds The step's elapsed duration.
+ * @return array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
+ *     unstable: array{count: int, tests: array<int, string>}} The effective verdict and its evidence.
+ */
+function finishedStep(int $processRc, string $log, string $at, float $seconds): array
+{
+    $unstable = readUnstableTests($log);
+    $rc = effectiveStepRc($processRc, $unstable);
+
+    return [
+        'outcome' => $rc === 0 ? StepOutcome::Ok : StepOutcome::Failed,
+        'rc' => $rc,
+        'at' => $at,
+        'seconds' => $seconds,
+        'note' => '',
+        'unstable' => $unstable,
+    ];
 }
 
 /**
@@ -802,7 +909,17 @@ function reportFinish(string $id, array $finished, string $logPath, $rc, array $
     // Straight under the verdict, because that is where the reader already is, and
     // the stand it points at is about to be torn down by whatever runs next.
     fwrite(STDOUT, artifactPointerLine($id, $artifacts) . "\n");
-    fwrite($rc, sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable'])));
+    fwrite($rc, stepLedgerLine($id, $finished));
+}
+
+/**
+ * @param string $id The completed step's id.
+ * @param array{rc: int, unstable: array{count: int}} $finished The effective result.
+ * @return string The existing ledger grammar with retry evidence only when present.
+ */
+function stepLedgerLine(string $id, array $finished): string
+{
+    return sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable']));
 }
 
 /**
@@ -866,7 +983,29 @@ function reportSkip(string $id, array $skipped, $rc): void
  */
 function summarize(array $plan, array $done, array $artifacts, int $lanes, float $wall, string $logDir): int
 {
-    fwrite(STDOUT, sprintf("=== SUMMARY %s — %s at %d lane(s) ===\n", now(), formatDuration($wall), $lanes));
+    $report = suiteSummary($plan, $done, $artifacts, $lanes, $wall, $logDir, now());
+    fwrite(STDOUT, $report['text']);
+
+    return $report['rc'];
+}
+
+/**
+ * Format the closing table with the same verdict the scheduler already consumed.
+ *
+ * @param array<int, string> $plan Step ids that were planned, in manifest order.
+ * @param array<string, array{outcome: StepOutcome, seconds: float, note: string,
+ *     unstable: array{count: int, tests: array<int, string>}}> $done Results by id.
+ * @param array<string, array{path: string, reason: string}> $artifacts Snapshots taken, by id.
+ *     A skipped step has none: it never ran, so there was nothing of it on the stand.
+ * @param int $lanes Steps at a time.
+ * @param float $wall Seconds the whole run took.
+ * @param string $logDir Where the per-step logs are.
+ * @param string $at The summary timestamp.
+ * @return array{rc: int, text: string} The run verdict and the complete closing report.
+ */
+function suiteSummary(array $plan, array $done, array $artifacts, int $lanes, float $wall, string $logDir, string $at): array
+{
+    $text = sprintf("=== SUMMARY %s — %s at %d lane(s) ===\n", $at, formatDuration($wall), $lanes);
     $red = 0;
     $notRun = 0;
     $unstable = [];
@@ -884,27 +1023,27 @@ function summarize(array $plan, array $done, array $artifacts, int $lanes, float
         if (isset($artifacts[$id])) {
             $collected[$id] = $artifacts[$id];
         }
-        fwrite(STDOUT, sprintf(
+        $text .= sprintf(
             "  %-8s %-20s %8s  %s\n",
             $result['outcome']->value,
             $id,
             $isSkip ? '-' : formatDuration($result['seconds']),
             $isSkip ? 'blocked by ' . $result['note'] : $logDir . '/' . $id . '.log',
-        ));
+        );
     }
-    fwrite(STDOUT, sprintf(
+    $text .= sprintf(
         "=== %d ok, %d failed, %d skipped — logs in %s ===\n",
         count($plan) - $red - $notRun,
         $red,
         $notRun,
         $logDir,
-    ));
-    fwrite(STDOUT, artifactSummarySection($collected));
+    );
+    $text .= artifactSummarySection($collected);
     // A run with nothing to report writes nothing here, so a green log is the same
     // text it has always been and the section showing up is itself the news.
-    fwrite(STDOUT, unstableSummarySection($unstable));
+    $text .= unstableSummarySection($unstable);
 
-    return $red + $notRun === 0 ? 0 : 1;
+    return ['rc' => $red + $notRun === 0 ? 0 : 1, 'text' => $text];
 }
 
 // ------------------------------------------------------------------------- io

@@ -60,6 +60,7 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
                        daemon leader loss + recovery, then live and after-loss;
                        --daemon selects daemon only; other pointing keeps the older phases;
                        clear old logs, preserve freeze stores and open through their owners
+  unit                 run harness unit tests without loading or starting a stand
 
 Exit code: 0 done (a green matrix), 1 failed (a red matrix), 2 the stand or the call refused.
 """
@@ -89,7 +90,7 @@ COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "clie
             "container-id", "container-log",
             "partition", "heal", "cut", "mend", "logs",
             "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
-            "db-proxy", "scenarios", "e2e")
+            "db-proxy", "scenarios", "e2e", "unit")
 
 
 def check_registry(stand, shown):
@@ -199,6 +200,12 @@ def main(argv):
         return REFUSED
     compose, command, args = argv[1], argv[2], argv[3:]
     try:
+        if command == "unit":
+            if args:
+                raise StandRefused("usage: cluster unit")
+            import unittest
+            suite = unittest.defaultTestLoader.discover(str(pathlib.Path(__file__).parent), pattern="test_*.py")
+            return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
         stand = load_stand(compose)
         check_registry(stand, compose)
         return dispatch(stand, command, args, shlex.join([prog, compose]))

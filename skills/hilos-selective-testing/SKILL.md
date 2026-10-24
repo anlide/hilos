@@ -18,11 +18,11 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 - The ladder for a defect two processes disagree about, and when a unit test may
   spawn a second process: `docs/agents/testing.md`, section "A cross-process
   defect is an e2e defect first".
-- The step graph, lanes, and what a red step under concurrency means:
+- The step graph, lanes, and the full-run verdict:
   `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
-- What a retried test reports, and whose debt it is:
-  `docs/agents/frontend/testing-strategy.md`, section "A retried test is reported,
-  and is not automatically your debt".
+- Retry evidence and attribution:
+  `docs/agents/frontend/testing-strategy.md`, section
+  "A retried test makes the step red, and its cause must be traced".
 - Command mechanics, DB reset, and the re-run contract: the rest of
   `docs/agents/testing.md`.
 
@@ -50,13 +50,12 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    the demo whose stand it is, a fresh stand every time; which stand carries which
    scenario: `docs/agents/testing.md`, section "The cluster stands — three demos,
    three shapes".
-8. A step that went red while another step was running is not a verdict: re-run it
-   alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
-   alone makes the step green: name the test as possibly flaky and do not repeat
-   the full run.
-9. An `=== unstable: ... ===` section at the end of a run names tests that only
-   passed on a retry. It does not widen the scope you chose: name the test, check
-   how long it has flickered, and leave a foreign one to its own ticket.
+8. Use narrow runs for debugging and evidence as described in
+   `docs/agents/testing.md`, "Narrow runs collect evidence". The full run owns the
+   verdict; a narrow green run on the same HEAD cannot replace a full red one.
+9. An `=== unstable: ... ===` section names tests that only passed on a retry and
+   made their step red. Trace their history without widening the ticket's scope;
+   attribution does not change the verdict.
 
 ## Hard Rules
 

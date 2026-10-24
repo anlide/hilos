@@ -12,10 +12,9 @@ require_once __DIR__ . '/../../../scripts/unstable-line.php';
  * The runner's half of the flaky gate: the grammar it reads out of a step's log,
  * and the two shapes it turns the result into.
  *
- * The file under test is a plain script rather than a class, so it is required by
- * path — it is loaded the same way `scripts/run-test-suite.php` loads it, and the
- * runner itself is deliberately not loaded here, because requiring it would run a
- * whole test suite.
+ * The file under test is a plain script rather than a class, required by path
+ * just as the runner loads it. TestSuiteRunnerTest imports the runner itself;
+ * neither import starts a test graph.
  */
 final class UnstableLineTest extends TestCase
 {
@@ -102,9 +101,28 @@ final class UnstableLineTest extends TestCase
         $unstable = ['count' => 3, 'tests' => ['tests/chat.spec.ts:42']];
 
         $this->assertSame(
-            'chat-e2e rc=0 unstable=3',
-            'chat-e2e rc=0' . unstableLedgerField($unstable),
+            'chat-e2e rc=1 unstable=3',
+            'chat-e2e rc=' . effectiveStepRc(0, $unstable) . unstableLedgerField($unstable),
         );
+    }
+
+    /** The cluster producer uses the same grammar and keeps its scenario identifier. */
+    public function testReadsAClusterScenario(): void
+    {
+        $this->assertSame(
+            ['count' => 1, 'tests' => ['cluster/scenario-46']],
+            readUnstableTests("hilos-unstable: 1 (cluster/scenario-46)\n"),
+        );
+    }
+
+    /** A retry makes a successful command red, while a native failure retains its code. */
+    public function testEffectiveExitCodeIncludesRetryEvidence(): void
+    {
+        $unstable = readUnstableTests("hilos-unstable: 1 (cluster/scenario-46)\n");
+        $this->assertSame(1, effectiveStepRc(0, $unstable));
+        $this->assertSame(7, effectiveStepRc(7, $unstable));
+        $this->assertSame(7, effectiveStepRc(7, noUnstableTests()));
+        $this->assertSame(0, effectiveStepRc(0, noUnstableTests()));
     }
 
     /** A run where every step was clean prints no section — the point of the gate. */

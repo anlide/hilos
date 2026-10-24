@@ -14,12 +14,11 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Test commands and test-writing rules: `docs/agents/testing.md`
 - Before writing or changing a rollback-scoped PHP integration test:
   [Rollback-scoped integration tests](../../docs/agents/testing/integration-tests.md).
-- The full run — the step graph, lanes, and the re-run rule for red under
-  concurrency: `docs/agents/testing.md`, section "The full run — one graph, a
-  bounded number of lanes"
-- What a retried test reports, and whose debt it is:
-  `docs/agents/frontend/testing-strategy.md`, section "A retried test is reported,
-  and is not automatically your debt"
+- The step graph, lanes, full-run verdict and narrow diagnostic repeats:
+  `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
+- Retry evidence and attribution:
+  `docs/agents/frontend/testing-strategy.md`, section
+  "A retried test makes the step red, and its cause must be traced".
 - Migrations, schema checks, DB reset, monitoring: `docs/agents/cli/commands.md`
 - Legacy CLI reference only if needed: `docs/cli-commands.md`
 
@@ -44,6 +43,7 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Everything, as one graph: `composer run test:suite`
 - One step of that graph, alone: `php scripts/run-test-suite.php <id> --lanes=1`
 - Named tests of one e2e step, alone: `php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71`
+- Five diagnostic observations on `total-refac`: `php scripts/run-test-suite.php <id> --lanes=1 --tests=tests/a.spec.ts:71 --repeat=5`
 
 ## Hard Rules
 
@@ -56,12 +56,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
   first", and its docblock must name what stopped e2e and the stand gateway.
 - Never run `phpunit` or `vendor/bin/phpunit` directly from the host.
 - Prefer composer scripts documented in `docs/agents/testing.md`.
-- A step of `test:suite` that goes red while another step was running is not a
-  verdict — re-run it with `--lanes=1` on the same HEAD before believing it; an
-  e2e step re-runs only its red tests, named with `--tests=`.
-  Green alone: the step is green and the test is named as possibly flaky. Do not
-  run the whole suite with `--lanes=1`.
-- Read the run's `=== unstable: ... ===` section when there is one: those tests
-  only passed on a retry. The step's `ok` stands, but name the test and check how
-  long it has been flickering before treating it as yours — never bounce your own
-  work over a foreign flicker, and never repair a foreign spec inside your ticket.
+- The full run owns the verdict. A retried success makes the step red; a narrow
+  green run on the same HEAD does not override it. Use narrow runs for debugging
+  and evidence as described in `docs/agents/testing.md`, "Narrow runs collect evidence".
+- Read `=== unstable: ... ===`, name the tests and trace their history. Attribution
+  does not change the verdict; report a foreign cause without fixing it in this ticket.

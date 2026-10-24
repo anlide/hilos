@@ -1,18 +1,12 @@
-// Make Playwright's retried tests machine-readable: a step that went green only
-// because a test passed on a retry prints ONE line naming what flickered, so the
-// runner can carry it into the run's summary and its rc ledger (HIL-560).
+// Make Playwright's retried tests machine-readable: print ONE line naming what
+// flickered so the repository runner can fail the step and carry the evidence
+// into the summary and rc ledger, even when Playwright itself exits zero.
+// The reporter supplies evidence; scripts/run-test-suite.php owns the verdict.
 //
-// `retries: 2` turning a flaky test into rc=0 is the right verdict — the suite
-// did pass — but it also makes the flicker invisible, and an invisible flicker
-// gets attributed to whichever ticket happens to be on Verify next. That
-// misattribution cost HIL-468 two bounces, a needs-human label and a day of a
-// healthy ticket standing still.
-//
-// The line is the entire contract between this file and
-// `scripts/run-test-suite.php`. The runner parses this grammar and knows nothing
-// about Playwright's own formats, because the same runner has to work in GitHub
-// Actions, and a step that prints no such line (phpunit, vitest, check) reports
-// zero by staying quiet.
+// The line is the entire contract between this file and the runner. It works
+// on a fresh checkout without hilos-ops and needs no Playwright-specific parser.
+// A step that prints no such line (phpunit, vitest, check) reports zero by
+// staying quiet.
 //
 // Silence at zero is deliberate and holds at every level — no line here, no field
 // in the ledger, no section in the summary. A clean run has to look byte for byte
