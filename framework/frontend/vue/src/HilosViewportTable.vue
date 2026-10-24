@@ -850,7 +850,7 @@ function onSelectPage(event: Event): void {
                     <button
                       v-if="detailFields.length > 0 && view.expandable"
                       type="button"
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-outline-secondary ms-auto"
                       :data-id="`hilos-table-expand-${view.rowKey}`"
                       :aria-expanded="view.expanded"
                       :aria-controls="detailId(view.rowKey)"
@@ -1229,7 +1229,7 @@ function onSelectPage(event: Event): void {
                     <button
                       v-if="detailFields.length > 0 && view.expandable"
                       type="button"
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-outline-secondary ms-auto"
                       :data-id="`hilos-table-expand-${view.rowKey}`"
                       :aria-expanded="view.expanded"
                       :aria-controls="cardDetailId(view.rowKey)"

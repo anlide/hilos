@@ -526,7 +526,7 @@ export interface BulkUntouchedContext {
                           @if (detailFields().length > 0 && view.expandable) {
                             <button
                               type="button"
-                              class="btn btn-sm btn-outline-secondary"
+                              class="btn btn-sm btn-outline-secondary ms-auto"
                               [attr.data-id]="
                                 'hilos-table-expand-' + view.rowKey
                               "
@@ -899,7 +899,7 @@ export interface BulkUntouchedContext {
                             @if (detailFields().length > 0 && view.expandable) {
                               <button
                                 type="button"
-                                class="btn btn-sm btn-outline-secondary"
+                                class="btn btn-sm btn-outline-secondary ms-auto"
                                 [attr.data-id]="
                                   'hilos-table-expand-' + view.rowKey
                                 "

@@ -387,7 +387,11 @@ export function HilosViewportTable<R>({
             </span>
           ) : null}
           {detailFields.length > 0 && view.expandable
-            ? expandControl(view, panelId, 'btn btn-sm btn-outline-secondary')
+            ? expandControl(
+                view,
+                panelId,
+                'btn btn-sm btn-outline-secondary ms-auto',
+              )
             : null}
         </span>
       </span>
