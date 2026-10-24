@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   act,
   cleanup,
@@ -10,6 +11,7 @@ import {
   ActionError,
   bindAdminAccess,
   ScopeManager,
+  pageIdentity,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
@@ -39,7 +41,7 @@ function harness(showLogLinks?: boolean) {
   }))
   const scopes = new ScopeManager()
   releases.push(bindAdminAccess(scopes))
-  const scope = scopes.openPage(HilosPages.DAEMON_AGENTS)
+  const scope = openNodePage(scopes, HilosPages.DAEMON_AGENTS)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_AGENTS,
     params: { nodeId: 'n1' },
@@ -51,12 +53,7 @@ function harness(showLogLinks?: boolean) {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'Agents',
-      lead: '',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page: string) =>
       page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -164,11 +161,13 @@ afterEach(() => {
 })
 const LIVE: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'leader',
   silentSince: null,
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'silent',
   silentSince: 1_700_000_000,
 }
@@ -269,7 +268,7 @@ describe('HilosDaemonAgentsPage', () => {
       'last report',
     )
     expect(h.find('hilos-table-row-room:12')).toBe(row)
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     h.window([agent({ idle: true, workerIndex: null, workerKind: null })])
     const updated = h.find('hilos-table-row-room:12')!
     expect(updated).not.toBe(row)
@@ -294,6 +293,7 @@ describe('HilosDaemonAgentsPage', () => {
       const h = ready(placement)
       h.heading({
         clustered,
+        role: null,
         state: clustered ? 'leader' : null,
         silentSince: null,
       })
@@ -506,7 +506,12 @@ describe('HilosDaemonAgentsPage', () => {
 
   it('omits agent log links in rows and cards when showLogLinks is false while keeping restart lifecycle and retaining flag across node changes', async () => {
     const h = harness(false)
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([agent()])
 
@@ -545,7 +550,7 @@ describe('HilosDaemonAgentsPage', () => {
       }),
     )
     h.window([agent({ rowKey: 'room:99', agentId: 'room:99' })])
-    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
     expect(h.find('hilos-daemon-agent-log-room:99')).toBeNull()
     expect(
       h

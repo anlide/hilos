@@ -3,7 +3,6 @@ import { Fragment, useContext, useEffect, useMemo } from 'react'
 import {
   createHilosDaemonEnvKeysTable,
   createHilosDaemonEnvOrphansTable,
-  daemonEnvNodeHeading,
   daemonEnvSourceBadge,
   daemonEnvSummary,
   DAEMON_ENV_FILTER_ATTENTION,
@@ -26,17 +25,17 @@ import {
   type HilosDaemonEnvContext,
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
-import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
+import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 import { HilosDaemonEnvValue } from './HilosDaemonEnvValue.js'
 import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
 
 /** Props for the framework's environment page. */
 export interface HilosDaemonEnvPageProps {
   context: HilosDaemonEnvContext
+  showLogLinks?: boolean
 }
 
 /** @param keys Catalog names in the order reported by the node. */
@@ -50,7 +49,10 @@ function keyNames(keys: readonly string[]) {
 }
 
 /** @param props The project's connection and page scope. */
-export function HilosDaemonEnvPage({ context }: HilosDaemonEnvPageProps) {
+export function HilosDaemonEnvPage({
+  context,
+  showLogLinks = true,
+}: HilosDaemonEnvPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosDaemonEnvPage requires a provided Hilos router.')
@@ -68,7 +70,6 @@ export function HilosDaemonEnvPage({ context }: HilosDaemonEnvPageProps) {
     useMemo(() => readHilosDaemonEnvPage(context.scopes), [context]),
   )
   const filter = useSignal(keys.controller.filter)
-  const heading = daemonEnvNodeHeading(page)
   const summary =
     !page.nodeSilent && page.environment !== null
       ? daemonEnvSummary(page.environment.keys)
@@ -94,8 +95,11 @@ export function HilosDaemonEnvPage({ context }: HilosDaemonEnvPageProps) {
   }, [keys, orphans])
 
   return (
-    <HilosAdminPage page={HilosPages.DAEMON_ENV}>
-      <HilosDaemonNodeLine nodeId={nodeId} heading={heading} />
+    <HilosDaemonNodeShell
+      context={context}
+      showLogLinks={showLogLinks}
+      page={HilosPages.DAEMON_ENV}
+    >
       <div className="hilos-stack mb-3">
         <p
           className="small text-body-secondary mb-0 invisible"
@@ -443,6 +447,6 @@ export function HilosDaemonEnvPage({ context }: HilosDaemonEnvPageProps) {
           )
         }
       />
-    </HilosAdminPage>
+    </HilosDaemonNodeShell>
   )
 }

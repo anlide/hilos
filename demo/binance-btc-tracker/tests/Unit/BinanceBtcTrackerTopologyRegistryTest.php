@@ -68,6 +68,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
@@ -377,6 +378,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
             DaemonPage::PAGE => DaemonPage::class,
+            DaemonNodePage::PAGE => DaemonNodePage::class,
             DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
             DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
             DaemonCronPage::PAGE => DaemonCronPage::class,
@@ -850,6 +852,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::DAEMON, Hilos::features());
         foreach ([
             DaemonPage::class,
+            DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
             DaemonCronPage::class,
@@ -860,6 +863,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 

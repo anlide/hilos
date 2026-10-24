@@ -121,6 +121,7 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
@@ -410,6 +411,7 @@ final class Hilos extends HilosFacade
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         DaemonPage::PAGE => DaemonPage::class,
+        DaemonNodePage::PAGE => DaemonNodePage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
         DaemonCronPage::PAGE => DaemonCronPage::class,

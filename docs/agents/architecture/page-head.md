@@ -8,7 +8,7 @@ This is the approved rule for adoption. Markers name the parts that later leaves
 still implement; the binding points below describe today's code separately. An
 owner that has not been adopted keeps its existing head and child cards. Country
 was the first carrier in HIL-1559; that leaf did not adopt the whole
-Internationalization section. Country and Internationalization use the shared
+Internationalization section. Country, Daemon Node and Internationalization use the shared
 head across Vue, React and Angular; Maintenance uses the shared head there, with
 Circle served only in Vue. Chat and Binance opt the User Overview into the
 shared head in Vue; React and Angular retain their legacy user card until their
@@ -488,7 +488,7 @@ adds no product tests or selectors.
 
 These are navigation scenarios, not declarations of page keys, routes or
 activation. The backend owner, breadcrumb and tab calculations are implemented;
-Country, Maintenance, and Internationalization are the current owners opted in.
+Country, Daemon Node, Maintenance, and Internationalization are the current owners opted in.
 Their server replies carry the catalog head skeleton; `<name>` in the country
 examples is data from the page, not a literal caption. The section has Overview,
 Languages, and Countries tabs in all three SDKs. The core binding, title path and
@@ -537,7 +537,7 @@ sequence without studying these files. They do not specify a future API.
 
 | Area | Current binding point | Current state and remaining behavior |
 |---|---|---|
-| Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country instance, the Maintenance section, the Internationalization section and Status are opted in. `hilos_i18n` has `pageHead=true` and breadcrumb `Internationalization`; `hilos_i18n_language` remains `entity=true` without `pageHead=true`, and Country's entity/head metadata is unchanged. `hilos_maintenance_circle` is a child of the Maintenance owner. The shared `hilos_user` entry has parent `hilos_users`, `entity=true` and breadcrumb `User`, with no `pageHead=true`; only the Chat and Binance provider entries opt that owner in. |
+| Backend catalog | `PageCatalogProviderInterface::pages()`, `PageCatalogConstants`, `HilosPageCatalog::CATALOG`, `TopologyValidator::validatePageCatalogEntry()` and `validatePageCatalogHead()` | Optional `breadcrumb`, `entity` and `pageHead` fields; validation checks their types, owner placement and non-empty captions for tabs of an adopted owner. Country instance, Daemon Node instance, the Maintenance section, the Internationalization section and Status are opted in. `hilos_i18n` has `pageHead=true` and breadcrumb `Internationalization`; `hilos_i18n_language` remains `entity=true` without `pageHead=true`, and Country's entity/head metadata is unchanged. `hilos_maintenance_circle` is a child of the Maintenance owner. The shared `hilos_user` entry has parent `hilos_users`, `entity=true` and breadcrumb `User`, with no `pageHead=true`; only the Chat and Binance provider entries opt that owner in. |
 | Status catalog | `HilosPageCatalog::CATALOG`, `HilosPageConstants::HILOS_STATUS` and `HILOS_STATUS_COMPONENTS` | Status is a section under Dashboard, in the Platform card, with `pageHead=true`, breadcrumb `Status`, icon `bi-activity` and its current lead. Components is its child with breadcrumb `Components`. The server row is Overview / Components. |
 | Backend owner and row calculation | `PageCatalogResolver::identity()`, `rowOwner()`, `rowOwnerOf()`, `breadcrumb()`, `head()`, `children()` and private `pageTabs()` | Resolves the nearest entity or top-level admin section, uses legacy page-label breadcrumbs for unadopted owners, and builds the adopted breadcrumb and depth-first row. The row filters pages the project serves and pages applicable to the owner's route params. |
 | User child pages | `HilosPageConstants::HILOS_USER_ROLES`, `HILOS_USER_ACCESS`, `HILOS_USER_SESSIONS`; `HILOS_UNBUILT_PAGES`; the user page registrations in each app | The catalog and frontend routes declare Roles, Access and Sessions after Overview. None has a served backend page or a view in Vue, React or Angular; all three are marked unbuilt, so no child link is rendered. With Overview as the sole built page, the shared tabs row is hidden. A later served user tab can mount the existing shell. |

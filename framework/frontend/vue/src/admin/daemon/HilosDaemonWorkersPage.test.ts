@@ -1,3 +1,4 @@
+import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount } from '@vue/test-utils'
 import {
   DAEMON_NODE_DATA,
@@ -7,18 +8,19 @@ import {
 import {
   HilosPages,
   ScopeManager,
+  pageIdentity,
   createSignal,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonWorkersPage from './HilosDaemonWorkersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
-function router(diagramBuilt = false): HilosRouter {
+function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.DAEMON_WORKERS,
@@ -29,7 +31,7 @@ function router(diagramBuilt = false): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
       diagramBuilt && page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -45,8 +47,8 @@ function router(diagramBuilt = false): HilosRouter {
 }
 
 function harness(diagramBuilt = false) {
-  const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_WORKERS)
+  const scopes = markRaw(new ScopeManager())
+  const scope = openNodePage(scopes, HilosPages.DAEMON_WORKERS)
   const listeners: Array<(signal: { data: unknown }) => void> = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
@@ -64,8 +66,7 @@ function harness(diagramBuilt = false) {
   const view = mount(HilosDaemonWorkersPage, {
     props: { context: { connection, scopes } },
     global: {
-      provide: { [hilosRouterKey as symbol]: router(diagramBuilt) },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      provide: { [hilosRouterKey as symbol]: router(diagramBuilt, scopes) },
     },
   })
 
@@ -115,38 +116,44 @@ function worker(
 describe('HilosDaemonWorkersPage', () => {
   it('shows a cluster state and the diagram only when the root is built', async () => {
     const built = harness(true)
-    built.heading({ clustered: true, state: 'leader', silentSince: null })
+    built.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     await nextTick()
-    expect(built.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe(
+    expect(built.view.find('[data-id="hilos-page-head-title"]').text()).toBe(
       'n1',
     )
     expect(built.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Leader',
     )
     expect(
-      built.view
-        .find('[data-id="hilos-daemon-node-state"]')
-        .attributes('data-state'),
-    ).toBe('leader')
+      built.view.find('[data-id="hilos-daemon-node-state"]').classes(),
+    ).toContain('bg-warning-subtle')
     expect(
-      built.view
-        .find('[data-id="hilos-daemon-node-diagram"]')
-        .attributes('href'),
+      built.view.find('[data-id="hilos-page-head-action"]').attributes('href'),
     ).toBe('/hilos/daemon')
     built.view.unmount()
 
     const staged = harness()
-    staged.heading({ clustered: true, state: 'leader', silentSince: null })
+    staged.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     await nextTick()
     expect(
-      staged.view.find('[data-id="hilos-daemon-node-diagram"]').exists(),
+      staged.view.find('[data-id="hilos-page-head-action"]').exists(),
     ).toBe(false)
     staged.view.unmount()
   })
 
   it('shows a single installation without a cluster state or diagram', async () => {
     const h = harness(true)
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-solo"]').text()).toBe(
       'Single installation',
@@ -154,7 +161,7 @@ describe('HilosDaemonWorkersPage', () => {
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').exists()).toBe(
       false,
     )
-    expect(h.view.find('[data-id="hilos-daemon-node-diagram"]').exists()).toBe(
+    expect(h.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
       false,
     )
     h.view.unmount()
@@ -168,7 +175,12 @@ describe('HilosDaemonWorkersPage', () => {
       h.view.find('[data-id="hilos-daemon-workers-empty-waiting"]').text(),
     ).toContain('not zero workers')
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Silent',
@@ -183,7 +195,12 @@ describe('HilosDaemonWorkersPage', () => {
       h.view.find('[data-id="hilos-daemon-workers-empty-none"]').text(),
     ).toBe('The node reports no workers')
 
-    h.heading({ clustered: true, state: 'standby', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Standby',
@@ -194,7 +211,12 @@ describe('HilosDaemonWorkersPage', () => {
 
   it('draws worker cells and agent details and keeps last rows under silence', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([
       worker(),
@@ -247,7 +269,12 @@ describe('HilosDaemonWorkersPage', () => {
         .text(),
     ).toBe('—')
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     expect(
       h.view.find('[data-id="hilos-daemon-workers-silent"]').text(),

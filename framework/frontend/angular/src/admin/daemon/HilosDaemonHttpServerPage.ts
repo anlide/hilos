@@ -9,14 +9,13 @@ import {
   signal,
 } from '@angular/core'
 import {
-  HilosAdminPage,
   HilosViewportTable,
   HilosTableCell,
   HILOS_ROUTER,
   hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
+import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 import {
   createHilosDaemonHttpRoutesTable,
   daemonHttpEmptyState,
@@ -43,15 +42,8 @@ import { HilosPages } from '@hilos/core/base'
 @Component({
   selector: 'hilos-daemon-http-server-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    NgClass,
-    HilosAdminPage,
-    HilosViewportTable,
-    HilosTableCell,
-    HilosDaemonNodeLine,
-  ],
-  template: `@let nodeId = this.nodeId();
-    @let heading = this.heading();
+  imports: [NgClass, HilosViewportTable, HilosTableCell, HilosDaemonNodeShell],
+  template: `
     @let routes = this.routes();
     @let summary = this.summary();
     @let emptyState = this.emptyState();
@@ -60,161 +52,181 @@ import { HilosPages } from '@hilos/core/base'
     @let status = this.status();
     @let statusMessage = this.statusMessage();
 
-    <hilos-admin-page [page]="page">
-      <hilos-daemon-node-line
-        [nodeId]="nodeId"
-        [heading]="heading"
-      ></hilos-daemon-node-line>
-
-      <div class="hilos-stack mb-3">
-        <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
-          {{ waitingMessage }}
-        </p>
-        <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
-          {{ silentMessage }}
-        </p>
-        <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
-          {{ lastReportReserve }}
-        </p>
-        @if (status !== null) {
+    <hilos-daemon-node-shell [context]="context()" [page]="page">
+      <ng-template #pageBody>
+        <div class="hilos-stack mb-3">
           <p
-            class="small text-body-secondary mb-0"
-            data-id="hilos-daemon-http-status"
-            [attr.data-status]="status"
+            class="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
           >
-            {{ statusMessage }}
+            {{ waitingMessage }}
           </p>
-        }
-      </div>
-      <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
-        <div class="col">
-          <div class="border rounded-3 p-3 h-100">
-            <div
-              class="d-flex align-items-center gap-2 text-body-secondary mb-1"
-            >
-              <i class="bi bi-globe" aria-hidden="true"></i
-              ><span class="small">Address</span>
-            </div>
-            <div
-              class="fs-6 font-monospace lh-1 mb-1 text-break"
-              data-id="hilos-daemon-http-address"
-            >
-              {{ summary === null ? '—' : formatDaemonHttpAddress(summary) }}
-            </div>
-            <div class="small text-body-secondary">
-              {{
-                summary === null ? '—' : silent ? 'Last report' : 'Listening'
-              }}
-            </div>
-          </div>
-        </div>
-        <div class="col">
-          <div class="border rounded-3 p-3 h-100">
-            <div
-              class="d-flex align-items-center gap-2 text-body-secondary mb-1"
-            >
-              <i class="bi bi-arrow-down-up" aria-hidden="true"></i
-              ><span class="small">Requests</span>
-            </div>
-            <div
-              class="fs-5 lh-1 mb-1 text-break"
-              data-id="hilos-daemon-http-requests"
-            >
-              {{
-                summary === null ? '—' : formatDaemonHttpCount(summary.requests)
-              }}
-            </div>
-            <div
-              class="small text-body-secondary"
-              data-id="hilos-daemon-http-period"
-            >
-              {{ period }}
-            </div>
-          </div>
-        </div>
-        <div class="col">
-          <div class="border rounded-3 p-3 h-100">
-            <div
-              class="d-flex align-items-center gap-2 text-body-secondary mb-1"
-            >
-              <i class="bi bi-exclamation-triangle" aria-hidden="true"></i
-              ><span class="small">Errors</span>
-            </div>
-            <div
-              class="fs-5 lh-1 mb-1 text-break"
-              data-id="hilos-daemon-http-errors"
-            >
-              {{
-                summary === null
-                  ? '—'
-                  : formatDaemonHttpCount(summary.serverErrors)
-              }}
-            </div>
-            <div class="small text-body-secondary">{{ '5xx · ' + period }}</div>
-          </div>
-        </div>
-        <div class="col">
-          <div class="border rounded-3 p-3 h-100">
-            <div
-              class="d-flex align-items-center gap-2 text-body-secondary mb-1"
-            >
-              <i class="bi bi-hourglass-split" aria-hidden="true"></i
-              ><span class="small">Slow</span>
-            </div>
-            <div
-              class="fs-5 lh-1 mb-1 text-break"
-              data-id="hilos-daemon-http-slow"
-            >
-              {{ summary === null ? '—' : formatDaemonHttpCount(summary.slow) }}
-            </div>
-            <div class="small text-body-secondary">
-              {{ 'Over 1 s · ' + period }}
-            </div>
-          </div>
-        </div>
-      </div>
-      <hilos-viewport-table [controller]="routes.controller">
-        <ng-template [hilosTableCell]="DAEMON_HTTP_ROUTE_PATH_FIELD" let-row>
-          <code>{{ formatDaemonHttpRoute(row) }}</code>
-          @if (row.agentType !== null) {
-            <span class="small text-body-secondary ms-1">agent</span>
-            <span
-              class="badge bg-body-tertiary text-body border font-monospace ms-1"
-              >{{ row.agentType }}</span
-            >
-          }
-        </ng-template>
-        <ng-template
-          [hilosTableCell]="DAEMON_HTTP_ROUTE_REQUESTS_FIELD"
-          let-row
-        >
-          <span [ngClass]="{ 'text-body-secondary': row.requests === 0 }">{{
-            formatDaemonHttpCount(row.requests)
-          }}</span>
-        </ng-template>
-        <ng-template [hilosTableCell]="DAEMON_HTTP_ROUTE_ERRORS_FIELD" let-row>
-          <span [ngClass]="{ 'text-body-secondary': row.serverErrors === 0 }">{{
-            formatDaemonHttpCount(row.serverErrors)
-          }}</span>
-        </ng-template>
-        <ng-template [hilosTableCell]="DAEMON_HTTP_ROUTE_SLOWEST_FIELD" let-row>
-          <span
-            class="small"
-            [ngClass]="{ 'text-body-secondary': row.slowestMs === null }"
-            >{{ formatDaemonHttpSlowest(row) }}</span
+          <p
+            class="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
           >
-        </ng-template>
-        <ng-template #empty>
-          @if (emptyState === 'waiting') {
-            <div>{{ waitingMessage }}</div>
-          } @else if (emptyState === 'silent') {
-            <div>{{ silentMessage }}</div>
-          } @else {
-            <div>Loading…</div>
+            {{ silentMessage }}
+          </p>
+          <p
+            class="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
+          >
+            {{ lastReportReserve }}
+          </p>
+          @if (status !== null) {
+            <p
+              class="small text-body-secondary mb-0"
+              data-id="hilos-daemon-http-status"
+              [attr.data-status]="status"
+            >
+              {{ statusMessage }}
+            </p>
           }
-        </ng-template>
-      </hilos-viewport-table>
-    </hilos-admin-page> `,
+        </div>
+        <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
+          <div class="col">
+            <div class="border rounded-3 p-3 h-100">
+              <div
+                class="d-flex align-items-center gap-2 text-body-secondary mb-1"
+              >
+                <i class="bi bi-globe" aria-hidden="true"></i
+                ><span class="small">Address</span>
+              </div>
+              <div
+                class="fs-6 font-monospace lh-1 mb-1 text-break"
+                data-id="hilos-daemon-http-address"
+              >
+                {{ summary === null ? '—' : formatDaemonHttpAddress(summary) }}
+              </div>
+              <div class="small text-body-secondary">
+                {{
+                  summary === null ? '—' : silent ? 'Last report' : 'Listening'
+                }}
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="border rounded-3 p-3 h-100">
+              <div
+                class="d-flex align-items-center gap-2 text-body-secondary mb-1"
+              >
+                <i class="bi bi-arrow-down-up" aria-hidden="true"></i
+                ><span class="small">Requests</span>
+              </div>
+              <div
+                class="fs-5 lh-1 mb-1 text-break"
+                data-id="hilos-daemon-http-requests"
+              >
+                {{
+                  summary === null
+                    ? '—'
+                    : formatDaemonHttpCount(summary.requests)
+                }}
+              </div>
+              <div
+                class="small text-body-secondary"
+                data-id="hilos-daemon-http-period"
+              >
+                {{ period }}
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="border rounded-3 p-3 h-100">
+              <div
+                class="d-flex align-items-center gap-2 text-body-secondary mb-1"
+              >
+                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i
+                ><span class="small">Errors</span>
+              </div>
+              <div
+                class="fs-5 lh-1 mb-1 text-break"
+                data-id="hilos-daemon-http-errors"
+              >
+                {{
+                  summary === null
+                    ? '—'
+                    : formatDaemonHttpCount(summary.serverErrors)
+                }}
+              </div>
+              <div class="small text-body-secondary">
+                {{ '5xx · ' + period }}
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="border rounded-3 p-3 h-100">
+              <div
+                class="d-flex align-items-center gap-2 text-body-secondary mb-1"
+              >
+                <i class="bi bi-hourglass-split" aria-hidden="true"></i
+                ><span class="small">Slow</span>
+              </div>
+              <div
+                class="fs-5 lh-1 mb-1 text-break"
+                data-id="hilos-daemon-http-slow"
+              >
+                {{
+                  summary === null ? '—' : formatDaemonHttpCount(summary.slow)
+                }}
+              </div>
+              <div class="small text-body-secondary">
+                {{ 'Over 1 s · ' + period }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <hilos-viewport-table [controller]="routes.controller">
+          <ng-template [hilosTableCell]="DAEMON_HTTP_ROUTE_PATH_FIELD" let-row>
+            <code>{{ formatDaemonHttpRoute(row) }}</code>
+            @if (row.agentType !== null) {
+              <span class="small text-body-secondary ms-1">agent</span>
+              <span
+                class="badge bg-body-tertiary text-body border font-monospace ms-1"
+                >{{ row.agentType }}</span
+              >
+            }
+          </ng-template>
+          <ng-template
+            [hilosTableCell]="DAEMON_HTTP_ROUTE_REQUESTS_FIELD"
+            let-row
+          >
+            <span [ngClass]="{ 'text-body-secondary': row.requests === 0 }">{{
+              formatDaemonHttpCount(row.requests)
+            }}</span>
+          </ng-template>
+          <ng-template
+            [hilosTableCell]="DAEMON_HTTP_ROUTE_ERRORS_FIELD"
+            let-row
+          >
+            <span
+              [ngClass]="{ 'text-body-secondary': row.serverErrors === 0 }"
+              >{{ formatDaemonHttpCount(row.serverErrors) }}</span
+            >
+          </ng-template>
+          <ng-template
+            [hilosTableCell]="DAEMON_HTTP_ROUTE_SLOWEST_FIELD"
+            let-row
+          >
+            <span
+              class="small"
+              [ngClass]="{ 'text-body-secondary': row.slowestMs === null }"
+              >{{ formatDaemonHttpSlowest(row) }}</span
+            >
+          </ng-template>
+          <ng-template #empty>
+            @if (emptyState === 'waiting') {
+              <div>{{ waitingMessage }}</div>
+            } @else if (emptyState === 'silent') {
+              <div>{{ silentMessage }}</div>
+            } @else {
+              <div>Loading…</div>
+            }
+          </ng-template>
+        </hilos-viewport-table>
+      </ng-template>
+    </hilos-daemon-node-shell>
+  `,
 })
 export class HilosDaemonHttpServerPage {
   private readonly router = inject(HILOS_ROUTER)

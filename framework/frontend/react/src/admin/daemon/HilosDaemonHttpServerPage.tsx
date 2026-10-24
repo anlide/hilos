@@ -19,20 +19,21 @@ import {
   type HilosDaemonHttpContext,
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
-import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
+import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 
 /** Props for the framework's HTTP server page. */
 export interface HilosDaemonHttpServerPageProps {
   context: HilosDaemonHttpContext
+  showLogLinks?: boolean
 }
 
 /** @param props The project's connection and page scope. */
 export function HilosDaemonHttpServerPage({
   context,
+  showLogLinks = true,
 }: HilosDaemonHttpServerPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
@@ -74,8 +75,11 @@ export function HilosDaemonHttpServerPage({
     return () => routes.dispose()
   }, [routes])
   return (
-    <HilosAdminPage page={HilosPages.DAEMON_HTTP_SERVER}>
-      <HilosDaemonNodeLine nodeId={nodeId} heading={heading} />
+    <HilosDaemonNodeShell
+      context={context}
+      showLogLinks={showLogLinks}
+      page={HilosPages.DAEMON_HTTP_SERVER}
+    >
       <div className="hilos-stack mb-3">
         <p
           className="small text-body-secondary mb-0 invisible"
@@ -229,6 +233,6 @@ export function HilosDaemonHttpServerPage({
           </div>
         }
       />
-    </HilosAdminPage>
+    </HilosDaemonNodeShell>
   )
 }

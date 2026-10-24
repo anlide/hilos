@@ -1,9 +1,11 @@
+import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
   HilosPages,
   ingest,
   ScopeManager,
+  pageIdentity,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
@@ -13,18 +15,20 @@ import {
   type HilosDaemonNodeHeading,
 } from '@hilos/core/admin/daemon'
 import { describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonHttpServerPage from './HilosDaemonHttpServerPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const LIVE_HEADING: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'leader',
   silentSince: null,
 }
 const SILENT_HEADING: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'silent',
   silentSince: 1_700_000_000,
 }
@@ -59,8 +63,8 @@ function route(
 }
 
 function harness(diagramBuilt = false, nodeId = 'n1') {
-  const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.DAEMON_HTTP_SERVER)
+  const scopes = markRaw(new ScopeManager())
+  openNodePage(scopes, HilosPages.DAEMON_HTTP_SERVER)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_HTTP_SERVER,
     params: { nodeId },
@@ -72,7 +76,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
       diagramBuilt && page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -116,7 +120,6 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
     props: { context: { connection, scopes } },
     global: {
       provide: { [hilosRouterKey as symbol]: router },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
 
@@ -194,7 +197,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
         params: { nodeId: nextNodeId },
         admin: true,
       })
-      scopes.openPage(HilosPages.DAEMON_HTTP_SERVER)
+      openNodePage(scopes, HilosPages.DAEMON_HTTP_SERVER)
     },
   }
 }
@@ -344,7 +347,7 @@ describe('HilosDaemonHttpServerPage', () => {
   it('words silence without an HTTP report and reserves every message state', async () => {
     const h = harness()
     await nextTick()
-    const twins = h.view.findAll('main > .hilos-stack > p.invisible')
+    const twins = h.view.findAll('.hilos-stack > p.invisible')
     expect(twins).toHaveLength(3)
     for (const twin of twins) {
       expect(twin.attributes('aria-hidden')).toBe('true')
@@ -369,9 +372,7 @@ describe('HilosDaemonHttpServerPage', () => {
     h.response(summary(), LIVE_HEADING)
     await nextTick()
     expect(
-      h.view
-        .findAll('main > .hilos-stack > p.invisible')
-        .map((node) => node.element),
+      h.view.findAll('.hilos-stack > p.invisible').map((node) => node.element),
     ).toEqual(twins.map((node) => node.element))
     h.view.unmount()
   })
@@ -420,31 +421,32 @@ describe('HilosDaemonHttpServerPage', () => {
     h.view.unmount()
   })
 
-  it('hides the unbuilt diagram and draws the node line on standalone', async () => {
+  it('hides the unbuilt diagram and draws the shared node head on standalone', async () => {
     const h = harness()
     h.response(summary())
     await nextTick()
-    expect(h.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe('n1')
-    expect(h.view.find('[data-id="hilos-daemon-node-diagram"]').exists()).toBe(
+    expect(h.view.find('[data-id="hilos-page-head-title"]').text()).toBe('n1')
+    expect(h.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
       false,
     )
     h.view.unmount()
     const solo = harness(true, 'standalone')
     solo.response(summary(), {
       clustered: false,
+      role: null,
       state: null,
       silentSince: null,
     })
     await nextTick()
-    expect(solo.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe(
+    expect(solo.view.find('[data-id="hilos-page-head-title"]').text()).toBe(
       'standalone',
     )
     expect(solo.view.find('[data-id="hilos-daemon-node-solo"]').text()).toBe(
       'Single installation',
     )
-    expect(
-      solo.view.find('[data-id="hilos-daemon-node-diagram"]').exists(),
-    ).toBe(false)
+    expect(solo.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
+      false,
+    )
     solo.view.unmount()
   })
 
@@ -453,7 +455,7 @@ describe('HilosDaemonHttpServerPage', () => {
     h.response(summary())
     await nextTick()
     expect(
-      h.view.find('[data-id="hilos-daemon-node-diagram"]').attributes('href'),
+      h.view.find('[data-id="hilos-page-head-action"]').attributes('href'),
     ).toBe('/hilos/daemon')
     h.view.unmount()
   })
@@ -476,7 +478,7 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(h.listeners.get('tableWindow')?.size).toBe(1)
     expect(h.sendViewport).toHaveBeenCalledTimes(1)
     expect(h.sendViewport.mock.calls[0]?.[2].filter).toEqual({ node: 'n2' })
-    expect(h.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe('n2')
+    expect(h.view.find('[data-id="hilos-page-head-title"]').text()).toBe('n2')
     expect(h.view.find('[data-id="hilos-daemon-http-address"]').text()).toBe(
       'n2:8080',
     )

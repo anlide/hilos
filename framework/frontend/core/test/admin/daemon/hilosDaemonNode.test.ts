@@ -14,6 +14,23 @@ import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 
 describe('daemon node heading', () => {
+  it('requires role, preserves unknown role and reads only the reported role', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_WORKERS)
+    const heading = readHilosDaemonNodeHeading(scopes)
+    const oldShape = { clustered: true, state: 'leader', silentSince: null }
+    page.data.set('node', oldShape)
+    expect(heading.get()).toBeNull()
+    for (const role of [null, 'master', 'slave']) {
+      page.data.set('node', { ...oldShape, role })
+      expect(heading.get()).toEqual({ ...oldShape, role })
+    }
+    page.data.set('node', { ...oldShape, role: 'leader' })
+    expect(heading.get()).toBeNull()
+    scopes.dropPage()
+    expect(heading.get()).toBeNull()
+  })
+
   it('returns null when the page has no node data or an invalid shape', () => {
     const scopes = new ScopeManager()
     const page = scopes.openPage(HilosPages.DAEMON_WORKERS)
@@ -22,6 +39,7 @@ describe('daemon node heading', () => {
     expect(heading.get()).toBeNull()
     page.data.set('node', {
       clustered: true,
+      role: null,
       state: 'leader',
       silentSince: null,
       extra: true,
@@ -29,6 +47,7 @@ describe('daemon node heading', () => {
     expect(heading.get()).toBeNull()
     page.data.set('node', {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 42.5,
     })
@@ -42,22 +61,26 @@ describe('daemon node heading', () => {
 
     page.data.set('node', {
       clustered: true,
+      role: null,
       state: 'leader',
       silentSince: null,
     })
     expect(heading.get()).toEqual({
       clustered: true,
+      role: null,
       state: 'leader',
       silentSince: null,
     })
 
     page.data.set('node', {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1_700_000_000,
     })
     expect(heading.get()).toEqual({
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1_700_000_000,
     })
@@ -83,8 +106,18 @@ describe('daemon processes empty state', () => {
   })
 
   it('distinguishes a completed empty roster, silence, and waiting', () => {
-    const silent = { clustered: true, state: 'silent', silentSince: 42 }
-    const standby = { clustered: true, state: 'standby', silentSince: null }
+    const silent = {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 42,
+    }
+    const standby = {
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    }
 
     expect(daemonProcessesEmptyState(null, true)).toBe('none')
     expect(daemonProcessesEmptyState(silent, true)).toBe('none')
@@ -107,6 +140,7 @@ describe('daemon node labels and diagram path', () => {
     const nowMs = 1_700_000_100_000
     const heading: HilosDaemonNodeHeading = {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1_700_000_000,
     }

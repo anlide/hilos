@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\LocalNodeEnvironment;
@@ -18,10 +22,13 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Fs\Watch\FsRescanSchedule;
 use Hilos\Hilos;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -50,6 +57,8 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         Hilos::$browser = new DaemonNodeEnvironmentTestBrowser();
         Hilos::$rt = new DaemonNodeEnvironmentRtContext();
         Hilos::$rt->configure();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
         DaemonNodeEnvironmentCatalog::$catalog = [
             self::KEY => [EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING],
         ];
@@ -64,6 +73,7 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
     protected function tearDown(): void
     {
         $this->agent?->onStop();
+        RtTruthSourceRegistry::unregisterDaemon(HilosClusterNode::RT_COLLECTION);
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = $this->previousRouter;
@@ -87,6 +97,11 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->assertSame(1, $firstFrame->picture->environment?->catalogKeys);
         $this->assertSame($this->agent->environmentReading(), LocalNodeEnvironment::reading());
 
+        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$browser->page = new DaemonNodeEnvironmentTestPage($this->agent);
+        $initial = Hilos::$browser->page->payload('ak-live')->data;
+        $this->assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave'], $initial['node']);
+
         Hilos::$sr->subscribeToPage(
             HilosPageConstants::HILOS_DAEMON_ENV,
             new WebSocketPageSubscribeSignalDTO('ak-live', HilosPageConstants::HILOS_DAEMON_ENV,
@@ -104,16 +119,28 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->assertSame(1, $reading?->summary()->drifted);
         $this->assertSame([['ak-live', HilosPageConstants::HILOS_DAEMON_ENV]], Hilos::$browser->resent);
         $this->assertSame($reading, Hilos::$browser->readingAtResend[0]);
+        $this->assertSame($initial['node'], Hilos::$browser->payloads[0]->data['node']);
+        $this->assertFalse(Hilos::$browser->payloads[0]->data['nodeSilent']);
+        $this->assertSame('second', Hilos::$browser->payloads[0]->data['environment']['keys'][0]['disk']['value']['text']);
 
         $this->forceWatchWindowDue();
         $this->agent->onTick();
         $this->assertCount(1, Hilos::$browser->resent);
 
-        Hilos::$rt->connectionsSource()?->remove('ak-live');
+        Hilos::$browser->viewer = true;
         file_put_contents($this->root . '/.env', self::KEY . "=third\n");
         $this->forceWatchWindowDue();
         $this->agent->onTick();
-        $this->assertCount(1, Hilos::$browser->resent);
+        $this->assertCount(2, Hilos::$browser->resent);
+        $this->assertSame($initial['node'], Hilos::$browser->payloads[1]->data['node']);
+        $this->assertSame(HiddenValue::mark(), Hilos::$browser->payloads[1]->data['environment']['keys'][0]['value']);
+        $this->assertNull(Hilos::$browser->payloads[1]->data['environment']['keys'][0]['disk']);
+
+        Hilos::$rt->connectionsSource()?->remove('ak-live');
+        file_put_contents($this->root . '/.env', self::KEY . "=fourth\n");
+        $this->forceWatchWindowDue();
+        $this->agent->onTick();
+        $this->assertCount(2, Hilos::$browser->resent);
     }
 
     public function testHolderForgetsOnlyItsNodeOnStop(): void
@@ -147,10 +174,30 @@ final class DaemonNodeEnvironmentTestBrowser extends BrowserContext
     /** @var list<?NodeEnvironmentReading> Reading held at the instant of re-answer */
     public array $readingAtResend = [];
 
+    /** @var list<PagePayload> Whole environment answers built on live resends */
+    public array $payloads = [];
+
+    public ?DaemonNodeEnvironmentTestPage $page = null;
+    public bool $viewer = false;
+
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return $this->viewer;
+    }
+
     public function resendPageWhole(string $page, string $acceptKey): void
     {
         $this->resent[] = [$acceptKey, $page];
         $this->readingAtResend[] = LocalNodeEnvironment::reading();
+        $this->payloads[] = $this->page->payload($acceptKey);
+    }
+}
+
+final class DaemonNodeEnvironmentTestPage extends AbstractHilosDaemonEnvPage
+{
+    public function payload(string $acceptKey): PagePayload
+    {
+        return $this->buildPagePayload($acceptKey, new PageRouteParams(['nodeId' => 'standalone']));
     }
 }
 

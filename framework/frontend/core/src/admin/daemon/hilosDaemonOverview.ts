@@ -1,5 +1,4 @@
-// The Daemon root reads one whole page answer. Selection is local UI state;
-// node states, consensus and measurements remain the backend's verdicts.
+// The Daemon root reads the lean cluster picture and primary database address.
 
 import { z } from 'zod'
 
@@ -8,13 +7,10 @@ import { formatBytes } from '../../format/bytes.js'
 import { type HilosPathResolver } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import {
-  computedSignal,
-  createSignal,
-  subscribeSignal,
-  type ReadonlySignal,
-} from '../../state/signal.js'
+import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { LOG_SOURCE_LIVE } from '../logs/hilosLogViewer.js'
+import { type HilosDaemonNodeHeading } from './hilosDaemonNode.js'
+import { type HilosDaemonNodeOverviewData } from './hilosDaemonNodeOverview.js'
 import {
   DAEMON_WORKER_KIND_MONOPOLISTIC,
   DAEMON_WORKER_KIND_REGULAR,
@@ -44,38 +40,20 @@ export const daemonOverviewNodeSchema = z
     state: z.enum(['leader', 'standby', 'data', 'silent']).nullable(),
     silentSince: z.number().int().nullable(),
     workers: z.array(daemonOverviewWorkerSchema).readonly().nullable(),
-    workerRestarts24h: countSchema.nullable(),
-    uptimeMinutes: countSchema.nullable(),
     measurements: z
       .strictObject({
-        startedAt: z.number().int(),
         cores: measurementSchema,
-        coresBound: z.enum(['quota', 'cpus']).nullable(),
         daemonCores: measurementSchema,
-        masterCores: measurementSchema,
-        machineLoad: countSchema.nullable(),
         masterMemory: countSchema.nullable(),
         workersMemory: countSchema.nullable(),
         workersMeasured: countSchema,
         memoryCeiling: countSchema.nullable(),
-        memoryCeilingBound: z.enum(['cgroup', 'machine']).nullable(),
-        phpMemoryLimit: countSchema.nullable(),
       })
       .readonly()
       .nullable(),
     standing: z
       .strictObject({
-        sessions: countSchema,
         connections: countSchema,
-      })
-      .readonly()
-      .nullable(),
-    environment: z
-      .strictObject({
-        missingRequired: countSchema,
-        fromExample: countSchema,
-        drifted: countSchema,
-        orphans: countSchema,
       })
       .readonly()
       .nullable(),
@@ -105,13 +83,6 @@ export const daemonOverviewSchema = z
       })
       .readonly()
       .nullable(),
-    environmentComparison: z
-      .strictObject({
-        answeringNodes: countSchema,
-        divergedKeys: countSchema.nullable(),
-        sourcesDifferKeys: countSchema.nullable(),
-      })
-      .readonly(),
   })
   .readonly()
 
@@ -138,15 +109,10 @@ export interface HilosDaemonContext {
   readonly scopes: ScopeManager
 }
 
-/** The whole answer, local node selection and the view's subscription lifetime. */
+/** Readonly projections of the root's one page answer. */
 export interface HilosDaemonOverview {
   readonly overview: ReadonlySignal<HilosDaemonOverviewData | null>
   readonly database: ReadonlySignal<HilosDaemonDatabaseData | null>
-  readonly selectedNodeId: ReadonlySignal<string | null>
-  readonly selectedNode: ReadonlySignal<HilosDaemonOverviewNode | null>
-  selectNode(nodeId: string): void
-  start(): void
-  dispose(): void
 }
 
 /** @param scopes Page scopes filled centrally by bindPageScope. */
@@ -175,44 +141,9 @@ export function readHilosDaemonDatabase(
 export function createHilosDaemonOverview(
   context: HilosDaemonContext,
 ): HilosDaemonOverview {
-  const overview = readHilosDaemonOverview(context.scopes)
-  const database = readHilosDaemonDatabase(context.scopes)
-  const chosen = createSignal<string | null>(null)
-  const selectedNode = computedSignal(() => {
-    const nodes = overview.get()?.nodes ?? []
-    return (
-      nodes.find((node) => node.nodeId === chosen.get()) ??
-      nodes.find((node) => node.state === 'leader') ??
-      [...nodes].sort((a, b) =>
-        a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0,
-      )[0] ??
-      null
-    )
-  })
-  const selectedNodeId = computedSignal(
-    () => selectedNode.get()?.nodeId ?? null,
-  )
-  let off: (() => void) | undefined
-
   return {
-    overview,
-    database,
-    selectedNodeId,
-    selectedNode,
-    selectNode(nodeId) {
-      if (overview.get()?.nodes.some((node) => node.nodeId === nodeId)) {
-        chosen.set(nodeId)
-      }
-    },
-    start() {
-      if (off !== undefined) return
-      chosen.set(selectedNodeId.get())
-      off = subscribeSignal(overview, () => chosen.set(selectedNodeId.get()))
-    },
-    dispose() {
-      off?.()
-      off = undefined
-    },
+    overview: readHilosDaemonOverview(context.scopes),
+    database: readHilosDaemonDatabase(context.scopes),
   }
 }
 
@@ -289,9 +220,12 @@ export function formatDaemonUptime(minutes: number | null | undefined): string {
 }
 
 /** @param node The node whose measured process memory is displayed. */
-export function daemonTotalMemory(
-  node: HilosDaemonOverviewNode,
-): number | null {
+export function daemonTotalMemory(node: {
+  readonly measurements: {
+    readonly masterMemory: number | null
+    readonly workersMemory: number | null
+  } | null
+}): number | null {
   const measurements = node.measurements
   return measurements?.masterMemory == null ||
     measurements.workersMemory === null
@@ -300,9 +234,9 @@ export function daemonTotalMemory(
 }
 
 /** @param node The reported roster; no synthetic workers are counted. */
-export function daemonMonopolisticCount(
-  node: HilosDaemonOverviewNode,
-): number | null {
+export function daemonMonopolisticCount(node: {
+  readonly workers: readonly { readonly kind: string }[] | null
+}): number | null {
   return node.workers === null
     ? null
     : node.workers.filter(
@@ -319,7 +253,7 @@ export function daemonWorkerOccupancy(
 
 /** @param node A report carrying environment diagnostic counts. */
 export function daemonEnvironmentAttention(
-  node: HilosDaemonOverviewNode,
+  node: Pick<HilosDaemonNodeOverviewData, 'environment'>,
 ): number | null {
   const env = node.environment
   return env === null
@@ -329,17 +263,17 @@ export function daemonEnvironmentAttention(
 
 /**
  * This is the sum of two cluster comparison categories, not a per-node key count.
- * @param overview The backend's existing environment comparison.
- * @param node The node selected in the inspector.
+ * @param overview The addressed node and the backend's environment comparison.
+ * @param heading Installation mode from the current page's node heading.
  */
 export function daemonEnvironmentDifferences(
-  overview: HilosDaemonOverviewData,
-  node: HilosDaemonOverviewNode,
+  overview: HilosDaemonNodeOverviewData,
+  heading: HilosDaemonNodeHeading,
 ): number | null {
   const comparison = overview.environmentComparison
-  return !overview.clustered ||
-    !node.online ||
-    node.environment === null ||
+  return !heading.clustered ||
+    !overview.online ||
+    overview.environment === null ||
     comparison.answeringNodes < 2 ||
     comparison.divergedKeys === null ||
     comparison.sourcesDifferKeys === null
@@ -385,7 +319,7 @@ export function formatDaemonDatabaseAddress(
   return `mysql://${host}:${database.port}/${encodeURIComponent(database.name)}`
 }
 
-/** @param nodeId Locally selected node; no selection resolves no node child. */
+/** @param nodeId An explicit node identity, or null when no node is addressed. */
 export function daemonNodeChildParams(
   nodeId: string | null,
 ): Record<string, string> {
@@ -395,7 +329,7 @@ export function daemonNodeChildParams(
 /**
  * Leave the stream unselected: the viewer chooses the node's actual log file.
  * @param resolvePath The application's router, including its unbuilt gate.
- * @param nodeId The selected node's actual identity.
+ * @param nodeId The addressed node's actual identity.
  */
 export function daemonNodeLogPath(
   resolvePath: HilosPathResolver,

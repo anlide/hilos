@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -6,6 +7,7 @@ import {
   HilosPages,
   ingest,
   ScopeManager,
+  pageIdentity,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
@@ -15,7 +17,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 function harness() {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.DAEMON_ENV)
+  openNodePage(scopes, HilosPages.DAEMON_ENV)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_ENV,
     params: { nodeId: 'n1' },
@@ -27,12 +29,7 @@ function harness() {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'Environment',
-      lead: '',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page: string) =>
       page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -106,7 +103,16 @@ function harness() {
       orphans?: Record<string, unknown>[],
     ) {
       act(() => {
-        const data = { environment, nodeSilent }
+        const data = {
+          environment,
+          nodeSilent,
+          node: {
+            clustered: environment?.cluster ?? true,
+            state: nodeSilent ? 'silent' : null,
+            silentSince: null,
+            role: null,
+          },
+        }
         ingest(scopes.page()!, { data })
         emit('projectSignal', {
           type: 'page_response',
@@ -167,7 +173,7 @@ function harness() {
     },
     selectNode(nodeId: string) {
       act(() => {
-        scopes.openPage(HilosPages.DAEMON_ENV)
+        openNodePage(scopes, HilosPages.DAEMON_ENV)
         currentRoute.set({
           page: HilosPages.DAEMON_ENV,
           params: { nodeId },
@@ -422,7 +428,7 @@ describe('HilosDaemonEnvPage', () => {
     h.response(environment(), false, [], [])
     expect(h.find('hilos-daemon-env-keys')?.textContent).toBe('0')
     expect(h.find('hilos-daemon-node-state')).toBeNull()
-    expect(h.find('hilos-daemon-node-diagram')?.getAttribute('href')).toBe(
+    expect(h.find('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
     )
     expect(h.find('hilos-daemon-env-orphans-empty')?.textContent).toBe(
@@ -432,7 +438,7 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
       'Single installation',
     )
-    expect(h.find('hilos-daemon-node-diagram')).toBeNull()
+    expect(h.find('hilos-page-head-action')).toBeNull()
     expect(h.find('hilos-daemon-env-silent')).toBeNull()
   })
 
@@ -530,7 +536,7 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.listeners.get('tableWindow')?.size).toBe(2)
     expect(h.find('hilos-table-row-OLD')).toBeNull()
     expect(h.find('hilos-table-row-NEW')).not.toBeNull()
-    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
     expect(
       (h.find('hilos-table-filter-attention') as HTMLInputElement).checked,
     ).toBe(false)

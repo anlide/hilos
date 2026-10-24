@@ -25,6 +25,7 @@ import {
   type HilosDaemonOverviewData,
   type HilosDaemonOverviewNode,
 } from '../../../src/admin/daemon/hilosDaemonOverview.js'
+import { type HilosDaemonNodeOverviewData } from '../../../src/admin/daemon/hilosDaemonNodeOverview.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -44,24 +45,15 @@ function node(
       { index: 2, kind: 'monopolistic', agentCount: 1 },
       { index: 5, kind: 'monopolistic', agentCount: 0 },
     ],
-    workerRestarts24h: 0,
-    uptimeMinutes: 125,
     measurements: {
-      startedAt: 1_700_000_000,
       cores: 2,
-      coresBound: 'quota',
       daemonCores: 0.5,
-      masterCores: 0.1,
-      machineLoad: 25,
       masterMemory: 1024,
       workersMemory: 3072,
       workersMeasured: 2,
       memoryCeiling: 8192,
-      memoryCeilingBound: 'cgroup',
-      phpMemoryLimit: 16384,
     },
-    standing: { sessions: 2, connections: 3 },
-    environment: { missingRequired: 1, fromExample: 2, drifted: 3, orphans: 4 },
+    standing: { connections: 3 },
     ...overrides,
   }
 }
@@ -85,11 +77,6 @@ function picture(
       onlineMasters: 2,
       masters: 3,
       quorumSize: 2,
-    },
-    environmentComparison: {
-      answeringNodes: 2,
-      divergedKeys: 2,
-      sourcesDifferKeys: 1,
     },
   }
 }
@@ -136,9 +123,6 @@ describe('Daemon overview readers', () => {
           workers: null,
           measurements: null,
           standing: null,
-          environment: null,
-          uptimeMinutes: null,
-          workerRestarts24h: null,
         }),
       ]),
     )
@@ -210,8 +194,10 @@ describe('Daemon overview readers', () => {
     { workers: [{ index: 1, kind: 'other', agentCount: 1 }] },
     { measurements: { ...node('n').measurements, workersMeasured: null } },
     { measurements: { ...node('n').measurements, daemonCores: NaN } },
-    { environment: { ...node('n').environment, APP_ENV: 'prod' } },
-    { standing: { connections: 1 } },
+    { environment: { APP_ENV: 'prod' } },
+    { standing: { connections: 1, sessions: 1 } },
+    { uptimeMinutes: 1 },
+    { workerRestarts24h: 1 },
   ])('rejects a malformed or enlarged node contract: %j', (overrides) => {
     const { scopes, page } = harness()
     const read = readHilosDaemonOverview(scopes)
@@ -220,6 +206,38 @@ describe('Daemon overview readers', () => {
       nodes: [{ ...node('n'), ...overrides }],
     })
     expect(read.get()).toBeNull()
+  })
+
+  it.each([
+    'startedAt',
+    'coresBound',
+    'masterCores',
+    'machineLoad',
+    'memoryCeilingBound',
+    'phpMemoryLimit',
+  ])('refuses removed root measurement field %s', (field) => {
+    const h = harness()
+    const lean = node('n')
+    h.page.data.set(
+      'daemon',
+      picture([
+        { ...lean, measurements: { ...lean.measurements!, [field]: null } },
+      ]),
+    )
+    expect(h.overview.overview.get()).toBeNull()
+  })
+
+  it('refuses root environmentComparison even when it contains no values', () => {
+    const h = harness()
+    h.page.data.set('daemon', {
+      ...picture(),
+      environmentComparison: {
+        answeringNodes: 0,
+        divergedKeys: null,
+        sourcesDifferKeys: null,
+      },
+    })
+    expect(h.overview.overview.get()).toBeNull()
   })
 
   it('reads the database independently and refuses credentials or partial data', () => {
@@ -245,62 +263,27 @@ describe('Daemon overview readers', () => {
   })
 })
 
-describe('Daemon local node selection', () => {
-  it('starts with the leader, retains a silent selection and replaces only a removed node', () => {
+describe('Daemon root projections', () => {
+  it('exposes only readonly overview and database signals without a lifecycle or selection', () => {
     const h = harness()
-    h.overview.start()
-    h.overview.start()
-    expect(h.overview.selectedNodeId.get()).toBeNull()
+    expect(Object.keys(h.overview)).toEqual(['overview', 'database'])
+    expect(h.overview.overview.get()).toBeNull()
+    h.page.data.set('daemon', picture([node('z'), node('a')]))
+    h.page.data.set('database', database)
+    expect(h.overview.overview.get()?.nodes.map((item) => item.nodeId)).toEqual(
+      ['z', 'a'],
+    )
+    expect(h.overview.database.get()).toEqual(database)
     h.page.data.set(
       'daemon',
-      picture([node('b'), node('z', { state: 'leader' }), node('a')]),
+      picture([node('a', { online: false, state: 'silent' })]),
     )
-    expect(h.overview.selectedNodeId.get()).toBe('z')
-    h.overview.selectNode('b')
-    h.overview.selectNode('absent')
-    expect(h.overview.selectedNodeId.get()).toBe('b')
-    h.page.data.set(
-      'daemon',
-      picture([
-        node('b', { state: 'silent', online: false }),
-        node('a', { state: 'leader' }),
-      ]),
-    )
-    expect(h.overview.selectedNodeId.get()).toBe('b')
-    expect(h.overview.selectedNode.get()?.state).toBe('silent')
-    h.page.data.set('daemon', picture([node('a', { state: 'leader' })]))
-    expect(h.overview.selectedNodeId.get()).toBe('a')
-    h.page.data.set('daemon', picture([node('b'), node('c')]))
-    expect(h.overview.selectedNodeId.get()).toBe('b')
-    h.page.data.set(
-      'daemon',
-      picture([node('a'), node('b'), node('c', { state: 'leader' })]),
-    )
-    expect(h.overview.selectedNodeId.get()).toBe('b')
-    h.page.data.set('daemon', picture())
-    expect(h.overview.selectedNode.get()).toBeNull()
+    expect(h.overview.overview.get()?.nodes[0]?.state).toBe('silent')
+    h.scopes.openPage('elsewhere')
+    expect(h.overview.overview.get()).toBeNull()
+    expect(h.overview.database.get()).toBeNull()
     expect(h.sendAction).not.toHaveBeenCalled()
     expect(h.on).not.toHaveBeenCalled()
-    h.overview.dispose()
-  })
-
-  it('chooses the first node by id without a leader and releases reconciliation on dispose', () => {
-    const h = harness()
-    h.page.data.set('daemon', picture([node('z'), node('b'), node('a')]))
-    h.overview.start()
-    expect(h.overview.selectedNodeId.get()).toBe('a')
-    h.overview.selectNode('z')
-    h.overview.dispose()
-    h.overview.dispose()
-    h.page.data.set('daemon', picture([node('a')]))
-    expect(h.overview.selectedNodeId.get()).toBe('a')
-    h.page.data.set('daemon', picture([node('a'), node('z')]))
-    expect(h.overview.selectedNodeId.get()).toBe('z')
-    h.overview.start()
-    h.page.data.set('daemon', picture([node('a')]))
-    h.page.data.set('daemon', picture([node('a'), node('z')]))
-    expect(h.overview.selectedNodeId.get()).toBe('a')
-    h.overview.dispose()
   })
 })
 
@@ -366,17 +349,47 @@ describe('Daemon diagnostic calculations and formatting', () => {
   })
 
   it('keeps comparison unknown until comparable, including silent and unreported nodes', () => {
-    const n = node('n')
-    const p = picture([n])
+    const n: HilosDaemonNodeOverviewData = {
+      nodeId: 'n',
+      online: true,
+      workers: [],
+      workerRestarts24h: 0,
+      uptimeMinutes: 0,
+      measurements: null,
+      standing: null,
+      environment: {
+        missingRequired: 1,
+        fromExample: 2,
+        drifted: 3,
+        orphans: 4,
+      },
+      environmentComparison: {
+        answeringNodes: 2,
+        divergedKeys: 2,
+        sourcesDifferKeys: 1,
+      },
+    }
+    const p = {
+      ...n,
+      environmentComparison: n.environmentComparison,
+    }
+    const heading = {
+      clustered: true,
+      role: null,
+      state: null,
+      silentSince: null,
+    }
     expect(daemonEnvironmentAttention(n)).toBe(10)
     expect(daemonEnvironmentAttention({ ...n, environment: null })).toBeNull()
-    expect(daemonEnvironmentDifferences(p, n)).toBe(3)
-    expect(daemonEnvironmentDifferences(p, { ...n, online: false })).toBeNull()
+    expect(daemonEnvironmentDifferences(p, heading)).toBe(3)
     expect(
-      daemonEnvironmentDifferences(p, { ...n, environment: null }),
+      daemonEnvironmentDifferences({ ...p, online: false }, heading),
     ).toBeNull()
     expect(
-      daemonEnvironmentDifferences({ ...p, clustered: false }, n),
+      daemonEnvironmentDifferences({ ...p, environment: null }, heading),
+    ).toBeNull()
+    expect(
+      daemonEnvironmentDifferences(p, { ...heading, clustered: false }),
     ).toBeNull()
     expect(
       daemonEnvironmentDifferences(
@@ -388,7 +401,7 @@ describe('Daemon diagnostic calculations and formatting', () => {
             sourcesDifferKeys: null,
           },
         },
-        n,
+        heading,
       ),
     ).toBeNull()
     expect(
@@ -401,7 +414,7 @@ describe('Daemon diagnostic calculations and formatting', () => {
             sourcesDifferKeys: 0,
           },
         },
-        n,
+        heading,
       ),
     ).toBe(0)
   })

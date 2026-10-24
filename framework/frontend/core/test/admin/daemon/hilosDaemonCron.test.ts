@@ -185,20 +185,35 @@ describe('daemon cron empty state', () => {
   })
 
   it('keeps a reported empty schedule distinct from an absent report', () => {
-    const silent = { clustered: true, state: 'silent', silentSince: 42 }
+    const silent = {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 42,
+    }
 
     expect(daemonCronEmptyState(null, true)).toBe('none')
     expect(daemonCronEmptyState(silent, true)).toBe('none')
   })
 
   it('explains an absent cron report on a silent node', () => {
-    const silent = { clustered: true, state: 'silent', silentSince: 42 }
+    const silent = {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 42,
+    }
 
     expect(daemonCronEmptyState(silent, false)).toBe('silent')
   })
 
   it('waits for an absent cron report on any other node', () => {
-    const standby = { clustered: true, state: 'standby', silentSince: null }
+    const standby = {
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    }
 
     expect(daemonCronEmptyState(null, false)).toBe('waiting')
     expect(daemonCronEmptyState(standby, false)).toBe('waiting')
@@ -206,7 +221,12 @@ describe('daemon cron empty state', () => {
 })
 
 describe('daemon cron idle notice', () => {
-  const standby = { clustered: true, state: 'standby', silentSince: null }
+  const standby = {
+    clustered: true,
+    role: null,
+    state: 'standby',
+    silentSince: null,
+  }
   const idle = row({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })
 
   it('ignores agent rules even when they carry an idle reason', () => {
@@ -227,6 +247,7 @@ describe('daemon cron idle notice', () => {
     expect(
       daemonCronIdleNotice([row()], {
         clustered: false,
+        role: null,
         state: null,
         silentSince: null,
       }),
@@ -255,7 +276,12 @@ describe('daemon cron idle notice', () => {
   })
 
   it('holds no room on a standalone node or without daemon rules', () => {
-    const standalone = { clustered: false, state: null, silentSince: null }
+    const standalone = {
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+    }
 
     expect(daemonCronHoldsIdleNotice([row()], standalone)).toBe(false)
     expect(daemonCronHoldsIdleNotice([idle], standalone)).toBe(false)

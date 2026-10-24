@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
@@ -37,6 +38,7 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
     /**
      * @param string $nodeId Node to describe
      * @return array<string, mixed> Own page data for the node
+     * @throws HilosException When a node-page projection rejects its source picture
      * @throws EnvException When cluster mode cannot be read
      */
     protected static function nodeData(string $nodeId): array
@@ -47,10 +49,11 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
     /**
      * Publishes changed node data without replacing any held window.
      *
+     * @param ?list<string> $nodeIds Addressed nodes, including ones absent from the picture; null keeps the picture's roster
      * @throws HilosException When the page data cannot be encoded
      * @throws EnvException When cluster mode cannot be read
      */
-    protected static function publishChangedNodePages(): void
+    protected static function publishChangedNodePages(?array $nodeIds = null): void
     {
         // TODO: This payload uses the first portion of the cluster picture before the full snapshot;
         // a node missing from that portion reads as absent. Known exception to
@@ -59,23 +62,26 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
         // for the full snapshot, as the Daemon overview does in
         // framework/backend/Pages/Daemon/DTO/HilosDaemonOverviewData.php::fromPicture(),
         // and marking the portion as "still gathering".
-        foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
+        foreach ($nodeIds ?? array_map(
+            static fn (ClusterDaemonNodeView $node): string => $node->nodeId,
+            ClusterDaemonPictureMirror::picture()?->nodes() ?? [],
+        ) as $nodeId) {
             $fingerprint = null;
-            $previousFingerprint = self::$nodeDataFingerprints[static::PAGE][$node->nodeId] ?? null;
+            $previousFingerprint = self::$nodeDataFingerprints[static::PAGE][$nodeId] ?? null;
             foreach (Hilos::$sr?->getAcceptKeysForPage(
                 static::PAGE,
                 HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
-                $node->nodeId,
+                $nodeId,
             ) ?? [] as $acceptKey) {
                 Hilos::$browser?->publishPageData(
                     static::PAGE,
                     $acceptKey,
-                    static function () use ($acceptKey, $node, &$fingerprint, $previousFingerprint): PagePayload {
+                    static function () use ($acceptKey, $nodeId, &$fingerprint, $previousFingerprint): PagePayload {
                         if (Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
                             return new PagePayload();
                         }
 
-                        $data = static::nodeData($node->nodeId);
+                        $data = static::nodeData($nodeId);
                         try {
                             $fingerprint = json_encode($data, JSON_THROW_ON_ERROR);
                         } catch (JsonException $exception) {
@@ -89,7 +95,7 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
                 );
             }
             if ($fingerprint !== null) {
-                self::$nodeDataFingerprints[static::PAGE][$node->nodeId] = $fingerprint;
+                self::$nodeDataFingerprints[static::PAGE][$nodeId] = $fingerprint;
             }
         }
     }
@@ -143,10 +149,21 @@ abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPag
         return [self::NODE => WireField::notPersonal()];
     }
 
-    /** Forgets only this page's node-line comparison state. */
-    protected static function forgetNodePages(): void
+    /**
+     * @param ?list<string> $retainedNodeIds Keep only these active addresses, or forget the whole page when null
+     */
+    protected static function forgetNodePages(?array $retainedNodeIds = null): void
     {
-        unset(self::$nodeDataFingerprints[static::PAGE]);
+        if ($retainedNodeIds === null) {
+            unset(self::$nodeDataFingerprints[static::PAGE]);
+
+            return;
+        }
+
+        self::$nodeDataFingerprints[static::PAGE] = array_intersect_key(
+            self::$nodeDataFingerprints[static::PAGE] ?? [],
+            array_fill_keys($retainedNodeIds, true),
+        );
     }
 
     /**

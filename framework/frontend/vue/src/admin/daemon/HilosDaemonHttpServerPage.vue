@@ -25,11 +25,10 @@ import {
   watch,
 } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
-import HilosDaemonNodeLine from './HilosDaemonNodeLine.vue'
+import HilosDaemonNodeShell from './HilosDaemonNodeShell.vue'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -109,8 +108,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON_HTTP_SERVER">
-    <HilosDaemonNodeLine :node-id="nodeId" :heading="heading" />
+  <HilosDaemonNodeShell
+    :context="context"
+    :page="HilosPages.DAEMON_HTTP_SERVER"
+  >
     <!-- The twins share the message's grid cell and reserve its tallest state.
     They carry no stable selector or accessible name. -->
     <div class="hilos-stack mb-3">
@@ -243,5 +244,5 @@ onUnmounted(() => {
         <div v-else>Loading…</div>
       </template>
     </HilosViewportTable>
-  </HilosAdminPage>
+  </HilosDaemonNodeShell>
 </template>

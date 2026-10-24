@@ -7,6 +7,9 @@ import {
   DAEMON_ROOT_CRUMB,
   expectClusterOverview,
   expectClusterDaemonNodePage,
+  expectClusterDaemonNodeOverview,
+  expectDaemonNodeHead,
+  expectDaemonPage,
   expectClusterDaemonCronSchedule,
   expectDaemonWorkerAgent,
   expectClusterLeaderPlacement,
@@ -14,6 +17,8 @@ import {
   shownByTestId,
   watchDaemonCronFrames,
   watchDaemonMismatchFrames,
+  watchDaemonNodeFrames,
+  watchPageErrorFrames,
   watchSocketFrames,
   createSocketFrameReader,
   type SocketFrame,
@@ -51,7 +56,7 @@ test.describe.configure({ retries: 0 })
 test.fixme('cluster daemon: foreign node pages, remote restart, environment mismatch and leader loss', async ({
   browser,
 }) => {
-  // Remote reports, a real restart and recovery on four original tabs exceed one UI round trip.
+  // Remote reports, a real restart and recovery of the original tabs exceed one UI round trip.
   test.slow()
   const remote = daemonClusterEnvironment()
   // Both existing followers keep their contexts. Only the one that stays follower
@@ -59,6 +64,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
   const candidates: Array<{
     nodeId: string
     pages: ReturnType<typeof observeRecovery>[]
+    overview: ReturnType<typeof watchDaemonNodeFrames>
     privacy: ReturnType<typeof watchDaemonMismatchFrames>
     privacyMark: number
   }> = []
@@ -87,13 +93,17 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       const pages = [observeRecovery(first)]
       const mismatch = await first.context().newPage()
       const privacy = watchDaemonMismatchFrames(mismatch)
-      candidates.push({ nodeId, pages, privacy, privacyMark: 0 })
+      const leaderOverview = observeRecovery(await first.context().newPage())
+      const overview = watchDaemonNodeFrames(leaderOverview.page)
+      candidates.push({ nodeId, pages, overview, privacy, privacyMark: 0 })
       await grantAdminToSelf(first)
       await gotoPage(first, DAEMON_ROOT_PATH, PAGE_READY)
       await expectClusterOverview(reports, first, initialPicture)
       if (nodeId === followers[0]) {
         const nodePage = await first.context().newPage()
         const cron = watchDaemonCronFrames(nodePage)
+        const overview = watchDaemonNodeFrames(nodePage)
+        const refusals = watchPageErrorFrames(nodePage)
         const workerFrames: SocketFrame[] = []
         const workers = watchSocketFrames(nodePage, (frame) => {
           const wire = frame.wire as { data?: { page?: string } } | undefined
@@ -103,12 +113,6 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         try {
           await gotoPage(nodePage, DAEMON_ROOT_PATH, PAGE_READY)
           await expectClusterOverview(reports, nodePage, initialPicture)
-          await nodePage
-            .getByTestId(`hilos-daemon-node-${remote.nodeId}`)
-            .click()
-          await expect(
-            nodePage.getByTestId('hilos-daemon-inspector'),
-          ).toHaveAttribute('data-node-id', remote.nodeId)
           // A new worker in an unordered open window arrives as a count only.
           // Open Workers after this exact agent's occupied worker reaches the
           // real node picture, rather than expecting a background full window.
@@ -137,6 +141,28 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             }),
             contentType: 'application/json',
           })
+          const nodeLink = nodePage.getByTestId(
+            `hilos-daemon-node-${remote.nodeId}`,
+          )
+          await nodeLink.focus()
+          await nodeLink.press('Enter')
+          await expectClusterDaemonNodeOverview(
+            reports,
+            nodePage,
+            overview.frames,
+            {
+              nodeId: remote.nodeId,
+              state: 'Data',
+              role: 'slave',
+            },
+          )
+          await nodePage.reload()
+          await expectClusterDaemonNodeOverview(
+            reports,
+            nodePage,
+            overview.frames,
+            { nodeId: remote.nodeId, state: 'Data', role: 'slave' },
+          )
           for (const [child, path] of [
             ['workers', 'workers'],
             ['agents', 'agents'],
@@ -145,16 +171,32 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             ['env', 'env'],
           ]) {
             const pageKey = `hilos_daemon_${child}`
-            const link = nodePage.getByTestId(`hilos-admin-child-${pageKey}`)
+            const link = nodePage.getByTestId(`hilos-page-tab-${pageKey}`)
             await expect(link).toHaveAttribute(
               'href',
               `${DAEMON_ROOT_PATH}/${remote.nodeId}/${path}`,
             )
             await link.click()
+            await expect(nodePage).toHaveURL(
+              `${DAEMON_ROOT_PATH}/${remote.nodeId}/${path}`,
+            )
+            await expectDaemonNodeHead(
+              reports,
+              nodePage,
+              pageKey,
+              remote.nodeId,
+            )
             await expectClusterDaemonNodePage(reports, nodePage, {
               pageKey,
               nodeId: remote.nodeId,
             })
+            await expect(
+              nodePage.getByTestId('hilos-daemon-node-role'),
+            ).toHaveText('Role: slave')
+            if (child !== 'env')
+              await expect(
+                nodePage.getByTestId('hilos-daemon-node-state'),
+              ).toHaveText('Data')
             if (child === 'workers') {
               await expectDaemonWorkerAgent(reports, nodePage, RESTART_AGENT)
             } else if (child === 'agents') {
@@ -276,16 +318,66 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
                 'hilos_pass',
               )
             }
-            await nodePage.getByTestId(DAEMON_ROOT_CRUMB).click()
-            await expectClusterOverview(reports, nodePage, initialPicture)
             await nodePage
-              .getByTestId(`hilos-daemon-node-${remote.nodeId}`)
+              .getByTestId('hilos-page-tab-hilos_daemon_node')
               .click()
+            await expectClusterDaemonNodeOverview(
+              reports,
+              nodePage,
+              overview.frames,
+              {
+                nodeId: remote.nodeId,
+                state: 'Data',
+                role: 'slave',
+              },
+            )
           }
+          await nodePage.getByTestId('hilos-daemon-node-log').click()
+          await expectDaemonPage(reports, nodePage, 'hilos_logs_view')
+          await expect(nodePage).toHaveURL(
+            `/hilos/logs/view/${remote.nodeId}/live`,
+          )
+          await expect(nodePage.getByTestId('hilos-log-source')).toHaveValue(
+            'live',
+          )
+          await nodePage.goBack()
+          await expectClusterDaemonNodeOverview(
+            reports,
+            nodePage,
+            overview.frames,
+            {
+              nodeId: remote.nodeId,
+              state: 'Data',
+              role: 'slave',
+            },
+          )
+          await nodePage.getByTestId(DAEMON_ROOT_CRUMB).click()
+          await expectClusterOverview(reports, nodePage, initialPicture)
+          await gotoPage(nodePage, `${DAEMON_ROOT_PATH}/unknown-node`)
+          await reports
+            .poll(() => refusals.at(-1)?.data)
+            .toMatchObject({
+              page: 'hilos_daemon_node',
+              httpCode: 404,
+              errorCode: 'not_found',
+            })
+          await expect(nodePage.getByTestId('page-error')).toHaveAttribute(
+            'data-error-code',
+            '404',
+          )
+          await expect(nodePage.getByTestId('hilos-page-head')).toHaveCount(0)
+          await expect(nodePage.getByTestId('hilos-page-tabs')).toHaveCount(0)
         } finally {
           cron.stop()
+          overview.stop()
           workers.stop()
           try {
+            for (const frame of overview.frames)
+              expect(frame.raw).not.toContain(remote.envValue)
+            await test.info().attach('daemon-foreign-node-overview', {
+              body: JSON.stringify(overview.frames),
+              contentType: 'application/json',
+            })
             await test.info().attach('daemon-workers-reports', {
               body: JSON.stringify(workerFrames),
               contentType: 'application/json',
@@ -304,6 +396,8 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         placement,
         observeRecovery(mismatch),
         observeRecovery(await first.context().newPage()),
+        leaderOverview,
+        observeRecovery(await first.context().newPage()),
       )
       await gotoPage(placement.page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectClusterOverview(reports, placement.page, initialPicture)
@@ -321,6 +415,37 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         agentTypes: LEADER_AGENTS,
         leaderId: CLUSTER_LEADER,
       })
+      await gotoPage(
+        leaderOverview.page,
+        `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,
+        PAGE_READY,
+      )
+      await expectClusterDaemonNodeOverview(
+        reports,
+        leaderOverview.page,
+        overview.frames,
+        {
+          nodeId: CLUSTER_LEADER,
+          state: 'Leader',
+          role: 'master',
+        },
+      )
+      await gotoPage(
+        pages[5].page,
+        `${DAEMON_ROOT_PATH}/${remote.nodeId}/workers`,
+        PAGE_READY,
+      )
+      await expectDaemonNodeHead(
+        reports,
+        pages[5].page,
+        'hilos_daemon_workers',
+        remote.nodeId,
+      )
+      await expectClusterDaemonNodePage(reports, pages[5].page, {
+        pageKey: 'hilos_daemon_workers',
+        nodeId: remote.nodeId,
+      })
+      await expectDaemonWorkerAgent(reports, pages[5].page, RESTART_AGENT)
       await expect(mismatch.locator('body')).not.toContainText(remote.envValue)
       expect(
         privacy.frames.some((frame) => frame.type === 'page_response'),
@@ -354,7 +479,14 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
     )
     expect(survivor).toBeDefined()
     if (survivor === undefined) throw new Error('No surviving source follower')
-    const [diagram, placement, mismatch, dashboard] = survivor.pages
+    const [
+      diagram,
+      placement,
+      mismatch,
+      dashboard,
+      leaderOverview,
+      foreignWorkers,
+    ] = survivor.pages
     await expectClusterOverview(reports, diagram.page, {
       ...initialPicture,
       leaderId: result.leaderId,
@@ -366,6 +498,27 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       leaderId: result.leaderId,
       silentNodeId: CLUSTER_LEADER,
     })
+    await expectClusterDaemonNodeOverview(
+      reports,
+      leaderOverview.page,
+      survivor.overview.frames,
+      {
+        nodeId: CLUSTER_LEADER,
+        state: 'Silent',
+        role: 'master',
+      },
+    )
+    await expectDaemonNodeHead(
+      reports,
+      foreignWorkers.page,
+      'hilos_daemon_workers',
+      remote.nodeId,
+    )
+    await expectClusterDaemonNodePage(reports, foreignWorkers.page, {
+      pageKey: 'hilos_daemon_workers',
+      nodeId: remote.nodeId,
+    })
+    await expectDaemonWorkerAgent(reports, foreignWorkers.page, RESTART_AGENT)
     await expectClusterEnvironmentMismatch(reports, mismatch.page, {
       key: remote.envKey,
       remoteNodeId: remote.nodeId,
@@ -381,12 +534,14 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       await reports
         .poll(() => observation.sinceMark().received.length)
         .toBeGreaterThan(0)
-      const pageKey =
-        index < 2
-          ? 'hilos_daemon'
-          : index === 2
-            ? 'hilos_daemon_env_mismatch'
-            : 'hilos'
+      const { pageKey, params } = [
+        { pageKey: 'hilos_daemon', params: {} },
+        { pageKey: 'hilos_daemon', params: {} },
+        { pageKey: 'hilos_daemon_env_mismatch', params: {} },
+        { pageKey: 'hilos', params: {} },
+        { pageKey: 'hilos_daemon_node', params: { nodeId: CLUSTER_LEADER } },
+        { pageKey: 'hilos_daemon_workers', params: { nodeId: remote.nodeId } },
+      ][index]
       await reports
         .poll(() => observation.sinceMark().answered)
         .toContain(pageKey)
@@ -394,23 +549,18 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       expect(evidence.sockets).toBe(0)
       expect(evidence.closed).toBe(0)
       expect(evidence.received).toContainEqual({
-        page:
-          index < 2
-            ? 'hilos_daemon'
-            : index === 2
-              ? 'hilos_daemon_env_mismatch'
-              : 'hilos',
-        params: {},
+        page: pageKey,
+        params,
       })
       expect(evidence.sent).toContain('page_subscribe')
       expect(evidence.sent).not.toContain('action')
       expect(evidence.subscribed).toContainEqual(
         expect.objectContaining({
           page: pageKey,
-          params: {},
+          params,
         }),
       )
-      if (index === 1 || index === 2) {
+      if (index === 1 || index === 2 || index === 5) {
         expect(evidence.subscribed).toContainEqual(
           expect.objectContaining({
             page: pageKey,
@@ -452,6 +602,26 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       body: JSON.stringify({ source: survivor.nodeId, ...after }),
       contentType: 'application/json',
     })
+    // A known silent member stays an ordinary addressed link, without a 404.
+    await diagram.page
+      .getByTestId(`hilos-daemon-node-${CLUSTER_LEADER}`)
+      .click()
+    await expectDaemonNodeHead(
+      reports,
+      diagram.page,
+      'hilos_daemon_node',
+      CLUSTER_LEADER,
+    )
+    await expect(diagram.page).toHaveURL(
+      `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,
+    )
+    await expect(
+      diagram.page.getByTestId('hilos-daemon-node-state'),
+    ).toHaveText('Silent')
+    await expect(
+      diagram.page.getByTestId('hilos-daemon-report-notice'),
+    ).toContainText('values from the last report')
+    await expect(diagram.page.getByTestId('page-error')).toHaveCount(0)
   } catch (failure) {
     await test.info().attach('daemon-primary-failure', {
       body: JSON.stringify(
@@ -470,7 +640,14 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
     // Save every original follower's physical frames before closing any context.
     // A timed-out close must not hide the other follower's recovery evidence.
     for (const candidate of candidates) {
+      candidate.overview.stop()
       candidate.privacy.stop()
+      for (const frame of candidate.overview.frames)
+        expect(frame.raw).not.toContain(remote.envValue)
+      await test.info().attach(`daemon-node-overview-${candidate.nodeId}`, {
+        body: JSON.stringify(candidate.overview.frames),
+        contentType: 'application/json',
+      })
       await test.info().attach(`daemon-mismatch-privacy-${candidate.nodeId}`, {
         body: JSON.stringify({
           beforeKill: candidate.privacyMark,

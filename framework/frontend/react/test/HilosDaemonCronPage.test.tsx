@@ -1,7 +1,9 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ScopeManager,
+  pageIdentity,
   createSignal,
   HilosPages,
   type HilosConnection,
@@ -14,7 +16,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 function harness() {
   const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_CRON)
+  const scope = openNodePage(scopes, HilosPages.DAEMON_CRON)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_CRON,
     params: { nodeId: 'n1' },
@@ -26,12 +28,7 @@ function harness() {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'Cron',
-      lead: '',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page: string) =>
       page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -125,7 +122,12 @@ describe('HilosDaemonCronPage', () => {
     expect(h.find('hilos-daemon-cron-empty-waiting')?.textContent).toContain(
       'not zero rules',
     )
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     expect(h.find('hilos-daemon-cron-empty-silent')?.textContent).toContain(
       'never reported',
     )
@@ -139,11 +141,16 @@ describe('HilosDaemonCronPage', () => {
     expect(h.find('hilos-daemon-cron-silent')?.textContent).toContain(
       'from its last report',
     )
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     expect(h.find('hilos-daemon-node-state')?.textContent).toBe('Leader')
     expect(h.find('hilos-table-row-/cleanup')).toBe(row)
     expect(h.find('hilos-daemon-cron-silent')).toBeNull()
-    expect(h.find('hilos-daemon-node-diagram')?.getAttribute('href')).toBe(
+    expect(h.find('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
     )
   })
@@ -154,6 +161,7 @@ describe('HilosDaemonCronPage', () => {
       const h = harness()
       h.heading({
         clustered: true,
+        role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000 : null,
       })
@@ -199,11 +207,21 @@ describe('HilosDaemonCronPage', () => {
 
   it('keeps the notice room on leadership change and takes none without daemon rules', () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'standby', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    })
     h.window([rule({ idleReason: 'not_leader' })])
     const room = h.view.container.querySelector('.alert-warning.invisible')
     expect(room).not.toBeNull()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.window([rule()])
     expect(h.find('hilos-daemon-cron-not-leader')).toBeNull()
     expect(h.view.container.querySelector('.alert-warning.invisible')).toBe(
@@ -213,7 +231,7 @@ describe('HilosDaemonCronPage', () => {
     expect(
       h.view.container.querySelector('.alert-warning.invisible'),
     ).toBeNull()
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     h.window([rule()])
     expect(
       h.view.container.querySelector('.alert-warning.invisible'),
@@ -251,7 +269,7 @@ describe('HilosDaemonCronPage', () => {
     expect(h.find('hilos-table-row-/cleanup')?.textContent).toContain(
       'updated-rule',
     )
-    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
     h.view.unmount()
     expect(h.unregister).toHaveBeenCalledTimes(2)
     expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(

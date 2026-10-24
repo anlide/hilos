@@ -50,6 +50,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PersonPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
@@ -270,6 +271,7 @@ class Hilos extends HilosFacade
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         DaemonPage::PAGE => DaemonPage::class,
+        DaemonNodePage::PAGE => DaemonNodePage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
         DaemonCronPage::PAGE => DaemonCronPage::class,

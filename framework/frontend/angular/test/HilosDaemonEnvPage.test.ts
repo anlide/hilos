@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   DAEMON_ENV_ENVIRONMENT_DATA,
   DAEMON_ENV_NODE_SILENT_DATA,
@@ -55,6 +56,12 @@ describe('HilosDaemonEnvPage', () => {
         disk: { source: 'env', value: { kind: 'text', text: 'edited-value' } },
       }),
     ]
+    h.scope.data.set('node', {
+      clustered: true,
+      state: null,
+      silentSince: null,
+      role: null,
+    })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
       nodeId: 'n1',
       cluster: true,
@@ -93,6 +100,12 @@ describe('HilosDaemonEnvPage', () => {
       key('INTEGER', { type: 'integer', value: { kind: 'text', text: '42' } }),
       key('EMPTY', { value: { kind: 'text', text: '' } }),
     ]
+    h.scope.data.set('node', {
+      clustered: true,
+      state: null,
+      silentSince: null,
+      role: null,
+    })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
       nodeId: 'n1',
       cluster: true,
@@ -150,6 +163,12 @@ describe('HilosDaemonEnvPage', () => {
       search: 'PORT',
     })
     const keys = [key('PORT')]
+    h.scope.data.set('node', {
+      clustered: true,
+      state: null,
+      silentSince: null,
+      role: null,
+    })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
       nodeId: 'n1',
       cluster: true,
@@ -157,6 +176,12 @@ describe('HilosDaemonEnvPage', () => {
     })
     h.window('hilosDaemonEnvKeys', windowRows(keys))
     expect(h.root.textContent).toContain('visible-value')
+    h.scope.data.set('node', {
+      clustered: true,
+      state: 'silent',
+      silentSince: null,
+      role: null,
+    })
     h.scope.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
     h.detect()
     expect(h.el('hilos-daemon-env-silent')?.textContent).toContain(
@@ -186,9 +211,15 @@ describe('HilosDaemonEnvPage', () => {
       node: 'n2',
     })
     const scopes = new ScopeManager()
-    scopes.openPage(HilosPages.DAEMON_ENV)
+    openNodePage(scopes, HilosPages.DAEMON_ENV)
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
+    h.scope.data.set('node', {
+      clustered: true,
+      state: 'silent',
+      silentSince: null,
+      role: null,
+    })
     h.scope.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
     h.detect()
     expect(h.el('hilos-daemon-env-silent')).toBeNull()

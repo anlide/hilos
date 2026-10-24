@@ -295,9 +295,11 @@ function reactBindings(file: ts.SourceFile, scope: ts.Node = file): Binding[] {
   const visit = (node: ts.Node): void => {
     if (
       (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
-      ['HilosAdminPage', 'HilosSettingPresetsPage'].includes(
-        node.tagName.getText(file),
-      )
+      [
+        'HilosAdminPage',
+        'HilosSettingPresetsPage',
+        'HilosDaemonNodeShell',
+      ].includes(node.tagName.getText(file))
     ) {
       const attribute = node.attributes.properties.find(
         (prop) => ts.isJsxAttribute(prop) && prop.name.getText(file) === 'page',
@@ -392,8 +394,8 @@ function templateBindings(
     const bindings: Binding[] = []
     const tag =
       layer === 'vue'
-        ? /<(?:HilosAdminPage|HilosSettingPresetsPage|HilosUserPageShell)\b[^>]*>/g
-        : /<hilos-(?:admin|setting-presets)-page\b[^>]*>/g
+        ? /<(?:HilosAdminPage|HilosSettingPresetsPage|HilosDaemonNodeShell|HilosUserPageShell)\b[^>]*>/g
+        : /<(?:hilos-(?:admin|setting-presets)-page\b|hilos-daemon-node-shell(?=[\s/>]))[^>]*>/g
     for (const match of clean.matchAll(tag)) {
       const attribute =
         layer === 'vue'

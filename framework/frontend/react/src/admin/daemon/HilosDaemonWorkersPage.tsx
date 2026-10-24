@@ -21,12 +21,11 @@ import {
   type HilosDaemonWorkersContext,
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
-import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
+import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 
 /** Props for the framework's workers page. */
 export interface HilosDaemonWorkersPageProps {
@@ -62,8 +61,11 @@ export function HilosDaemonWorkersPage({
     return () => workers.dispose()
   }, [workers])
   return (
-    <HilosAdminPage page={HilosPages.DAEMON_WORKERS}>
-      <HilosDaemonNodeLine nodeId={nodeId} heading={heading} />
+    <HilosDaemonNodeShell
+      context={context}
+      showLogLinks={showLogLinks}
+      page={HilosPages.DAEMON_WORKERS}
+    >
       <div className="position-relative">
         <p className="small text-body-secondary invisible" aria-hidden="true">
           This node has been silent since September 30, 2026, 11:59 PM. The
@@ -158,6 +160,6 @@ export function HilosDaemonWorkersPage({
           )
         }
       />
-    </HilosAdminPage>
+    </HilosDaemonNodeShell>
   )
 }

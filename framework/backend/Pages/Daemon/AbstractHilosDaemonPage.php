@@ -8,7 +8,6 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
@@ -99,7 +98,6 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Root route parameters
      * @return PagePayload Technical overview with full placement totals and primary database metadata
-     * @throws InvalidArgumentException When a generated environment cell contradicts its state
      * @throws EnvException When cluster mode cannot be read
      * @throws HilosException When the overview fingerprint cannot be encoded
      * @throws DatabaseException When the previously active database connection cannot be restored
@@ -136,7 +134,6 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
 
     /**
      * @return ?HilosDaemonOverviewData Projection only after the first full mirror snapshot
-     * @throws InvalidArgumentException When a generated environment cell contradicts its state
      * @throws EnvException When cluster mode cannot be read
      */
     private static function overview(): ?HilosDaemonOverviewData

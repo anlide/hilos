@@ -22,6 +22,7 @@ export const daemonNodeHeadingSchema = z.strictObject({
   clustered: z.boolean(),
   state: z.string().nullable(),
   silentSince: z.number().int().nullable(),
+  role: z.enum(['master', 'slave']).nullable(),
 })
 
 export type HilosDaemonNodeHeading = z.infer<typeof daemonNodeHeadingSchema>

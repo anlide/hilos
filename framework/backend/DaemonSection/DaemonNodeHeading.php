@@ -4,22 +4,27 @@ declare(strict_types=1);
 
 namespace Hilos\DaemonSection;
 
+use Hilos\Cluster\NodeRole;
+
 /** One node line for the node pages of the Daemon section. */
 final readonly class DaemonNodeHeading
 {
     public const string clustered = 'clustered';
     public const string state = 'state';
     public const string silentSince = 'silentSince';
+    public const string role = 'role';
 
     /**
      * @param bool $clustered Whether the installation is clustered
      * @param ?DaemonNodeState $state State word from the cluster picture
      * @param ?int $silentSince Last report time only when the node is silent
+     * @param ?NodeRole $role Declared role from the last node report
      */
     public function __construct(
         public bool $clustered,
         public ?DaemonNodeState $state,
         public ?int $silentSince,
+        public ?NodeRole $role,
     ) {
     }
 
@@ -36,16 +41,17 @@ final readonly class DaemonNodeHeading
         $state = $picture?->stateOf($nodeId);
         $silentSince = $state === DaemonNodeState::Silent ? $picture?->node($nodeId)?->slot?->receivedAt : null;
 
-        return new self($clustered, $state, $silentSince);
+        return new self($clustered, $state, $silentSince, $picture?->node($nodeId)?->slot?->picture->role);
     }
 
-    /** @return array{clustered: bool, state: ?string, silentSince: ?int} Browser node line */
+    /** @return array{clustered: bool, state: ?string, silentSince: ?int, role: ?string} Browser node line */
     public function toArray(): array
     {
         return [
             self::clustered => $this->clustered,
             self::state => $this->state?->value,
             self::silentSince => $this->silentSince,
+            self::role => $this->role?->value,
         ];
     }
 }

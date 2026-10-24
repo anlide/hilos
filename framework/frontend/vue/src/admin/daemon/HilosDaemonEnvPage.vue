@@ -5,7 +5,6 @@ supply the catalog-key and orphan rows. -->
 import {
   createHilosDaemonEnvKeysTable,
   createHilosDaemonEnvOrphansTable,
-  daemonEnvNodeHeading,
   daemonEnvSourceBadge,
   daemonEnvSummary,
   DAEMON_ENV_FILTER_ATTENTION,
@@ -31,12 +30,11 @@ import {
   watch,
 } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
-import HilosDaemonNodeLine from './HilosDaemonNodeLine.vue'
+import HilosDaemonNodeShell from './HilosDaemonNodeShell.vue'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -61,7 +59,6 @@ const orphans = shallowRef(
 )
 
 const page = useSignal(readHilosDaemonEnvPage(props.context.scopes))
-const heading = computed(() => daemonEnvNodeHeading(page.value))
 const nodeSilent = computed(() => page.value.nodeSilent)
 const summary = computed(() =>
   page.value.environment ? daemonEnvSummary(page.value.environment.keys) : null,
@@ -111,9 +108,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON_ENV">
-    <HilosDaemonNodeLine :node-id="nodeId" :heading="heading" />
-
+  <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_ENV">
     <p
       v-if="nodeSilent"
       class="small text-body-secondary"
@@ -523,5 +518,5 @@ onUnmounted(() => {
         </span>
       </template>
     </HilosViewportTable>
-  </HilosAdminPage>
+  </HilosDaemonNodeShell>
 </template>

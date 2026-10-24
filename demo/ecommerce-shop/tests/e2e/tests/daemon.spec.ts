@@ -4,6 +4,12 @@ import {
   DAEMON_PLACEMENT_TYPE,
   DAEMON_ROOT_CRUMB,
   DAEMON_ROOT_PATH,
+  DAEMON_NODE_PATH,
+  DAEMON_NODE_TABS,
+  watchDaemonNodeFrames,
+  expectDaemonNodeLive,
+  expectDaemonNodeHead,
+  expectStandaloneNodeOverview,
   DAEMON_WORKERS_CHILD,
   expectClusterDaemonNodePage,
   expectClusterOverview,
@@ -13,6 +19,7 @@ import {
   expectStandaloneWorkers,
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 
@@ -23,6 +30,8 @@ import { gotoPage, PAGE_READY } from '../helpers/page.js'
 // and workers, agents, and environment for the chosen nodeId.
 // Accepts DAEMON_SMOKE_NODES for standalone vs cluster execution.
 const DATABASE_HOST = 'ecommerce-shop-mysql-test'
+
+test.afterEach(() => setAdminViewMode(false))
 
 const SMOKE_NODES = process.env.DAEMON_SMOKE_NODES
   ? process.env.DAEMON_SMOKE_NODES.split(',')
@@ -54,9 +63,7 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
       silentNodeIds: [],
     })
   } else {
-    await expectStandaloneOverview(expect, page, DATABASE_HOST, {
-      showLogLinks: false,
-    })
+    await expectStandaloneOverview(expect, page, DATABASE_HOST)
   }
 
   // Cold load of the Daemon section root.
@@ -100,9 +107,7 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
       'true',
     )
   } else {
-    await expectStandaloneOverview(expect, page, DATABASE_HOST, {
-      showLogLinks: false,
-    })
+    await expectStandaloneOverview(expect, page, DATABASE_HOST)
   }
 
   // Absence of the node log link on the root overview.
@@ -115,10 +120,11 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
 
   const nodeButton = page.getByTestId(`hilos-daemon-node-${targetNodeId}`)
   await nodeButton.click()
-  await expect(page.getByTestId('hilos-daemon-inspector')).toHaveAttribute(
-    'data-node-id',
-    targetNodeId,
-  )
+  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', targetNodeId, {
+    showLogLinks: false,
+  })
+  if (!SMOKE_NODES)
+    await expectStandaloneNodeOverview(expect, page, { showLogLinks: false })
 
   // Workers
   const workersLink = page.getByTestId(DAEMON_WORKERS_CHILD)
@@ -140,15 +146,23 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
     await expectStandaloneWorkers(expect, page)
   }
   await expect(page.getByTestId(/^hilos-daemon-worker-log-/)).toHaveCount(0)
+  await expectDaemonNodeHead(
+    expect,
+    page,
+    'hilos_daemon_workers',
+    targetNodeId,
+    { showLogLinks: false },
+  )
 
   await page.getByTestId(DAEMON_ROOT_CRUMB).click()
   await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
 
   // Agents
-  if (SMOKE_NODES) {
-    await page.getByTestId(`hilos-daemon-node-${targetNodeId}`).click()
-  }
-  const agentsLink = page.getByTestId('hilos-admin-child-hilos_daemon_agents')
+  await page.getByTestId(`hilos-daemon-node-${targetNodeId}`).click()
+  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', targetNodeId, {
+    showLogLinks: false,
+  })
+  const agentsLink = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
   await expect(agentsLink).toHaveAttribute(
     'href',
     `${DAEMON_ROOT_PATH}/${targetNodeId}/agents`,
@@ -164,7 +178,9 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
       nodeId: targetNodeId,
     })
   } else {
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agents')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'standalone',
+    )
     await expect(
       shownByTestId(page, /^hilos-table-(row|card)-/),
     ).not.toHaveCount(0)
@@ -176,15 +192,23 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
     ).toBeEnabled()
   }
   await expect(page.getByTestId(/^hilos-daemon-agent-log-/)).toHaveCount(0)
+  await expectDaemonNodeHead(
+    expect,
+    page,
+    'hilos_daemon_agents',
+    targetNodeId,
+    { showLogLinks: false },
+  )
 
   await page.getByTestId(DAEMON_ROOT_CRUMB).click()
   await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
 
   // Environment
-  if (SMOKE_NODES) {
-    await page.getByTestId(`hilos-daemon-node-${targetNodeId}`).click()
-  }
-  const envLink = page.getByTestId('hilos-admin-child-hilos_daemon_env')
+  await page.getByTestId(`hilos-daemon-node-${targetNodeId}`).click()
+  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', targetNodeId, {
+    showLogLinks: false,
+  })
+  const envLink = page.getByTestId('hilos-page-tab-hilos_daemon_env')
   await expect(envLink).toHaveAttribute(
     'href',
     `${DAEMON_ROOT_PATH}/${targetNodeId}/env`,
@@ -206,3 +230,57 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   await page.getByTestId(DAEMON_ROOT_CRUMB).click()
   await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
 })
+
+for (const viewer of [false, true]) {
+  test(`keeps all six addressed Node pages free of log links after reload and history as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+    page,
+    context,
+  }) => {
+    // Each tab opens its own live subscription, followed by a full reload.
+    test.slow()
+    await setAdminViewMode(viewer)
+    if (!viewer) await grantAdminToSelf(page)
+    const reports = watchDaemonNodeFrames(page)
+    await gotoPage(page, DAEMON_NODE_PATH, PAGE_READY)
+    await expectStandaloneNodeOverview(expect, page, { showLogLinks: false })
+    const beforeLive = reports.frames.length
+    const visitor = await context.newPage()
+    try {
+      await gotoPage(visitor, '/', PAGE_READY)
+      await expectDaemonNodeLive(expect, page, reports.frames, beforeLive)
+      await expectStandaloneNodeOverview(expect, page, { showLogLinks: false })
+    } finally {
+      await visitor.close()
+    }
+    for (const tab of DAEMON_NODE_TABS) {
+      const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
+      await link.focus()
+      await link.press('Enter')
+      await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+        showLogLinks: false,
+      })
+      await page.reload()
+      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+        showLogLinks: false,
+      })
+      await expect(
+        page.getByTestId(/^hilos-daemon-(worker|agent)-log-/),
+      ).toHaveCount(0)
+      if (tab.key !== 'hilos_daemon_node') {
+        await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+        await expectStandaloneNodeOverview(expect, page, {
+          showLogLinks: false,
+        })
+        await page.goBack()
+        await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+          showLogLinks: false,
+        })
+        await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+        await expectStandaloneNodeOverview(expect, page, {
+          showLogLinks: false,
+        })
+      }
+    }
+  })
+}

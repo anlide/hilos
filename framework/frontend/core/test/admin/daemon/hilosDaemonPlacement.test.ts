@@ -318,21 +318,14 @@ function viewPicture(
         state: 'leader',
         silentSince: null,
         workers: [],
-        workerRestarts24h: 0,
-        uptimeMinutes: 0,
+
         measurements: null,
         standing: null,
-        environment: null,
         ...overrides,
       },
     ],
     consensus: null,
     placement: { instances: 2, types: 1, clusterTypes: 1, unplacedTypes: [] },
-    environmentComparison: {
-      answeringNodes: 1,
-      divergedKeys: null,
-      sourcesDifferKeys: null,
-    },
   }
 }
 

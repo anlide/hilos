@@ -1,3 +1,4 @@
+import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount } from '@vue/test-utils'
 import {
   DAEMON_CRON_IDLE_NOT_LEADER,
@@ -8,21 +9,22 @@ import {
 import {
   HilosPages,
   ScopeManager,
+  pageIdentity,
   createSignal,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonCronPage from './HilosDaemonCronPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const NOTICE_ROOM =
-  'main > .position-relative > .alert.invisible[aria-hidden="true"]'
+  '.position-relative > .alert-warning.invisible[aria-hidden="true"]'
 
-function router(diagramBuilt = false): HilosRouter {
+function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.DAEMON_CRON,
@@ -33,7 +35,7 @@ function router(diagramBuilt = false): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
       diagramBuilt && page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -49,8 +51,8 @@ function router(diagramBuilt = false): HilosRouter {
 }
 
 function harness(diagramBuilt = false) {
-  const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_CRON)
+  const scopes = markRaw(new ScopeManager())
+  const scope = openNodePage(scopes, HilosPages.DAEMON_CRON)
   const listeners: Array<(signal: { data: unknown }) => void> = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
@@ -68,8 +70,7 @@ function harness(diagramBuilt = false) {
   const view = mount(HilosDaemonCronPage, {
     props: { context: { connection, scopes } },
     global: {
-      provide: { [hilosRouterKey as symbol]: router(diagramBuilt) },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      provide: { [hilosRouterKey as symbol]: router(diagramBuilt, scopes) },
     },
   })
 
@@ -117,38 +118,44 @@ function rule(
 describe('HilosDaemonCronPage', () => {
   it('shows a cluster state and the diagram only when the root is built', async () => {
     const built = harness(true)
-    built.heading({ clustered: true, state: 'leader', silentSince: null })
+    built.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     await nextTick()
-    expect(built.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe(
+    expect(built.view.find('[data-id="hilos-page-head-title"]').text()).toBe(
       'n1',
     )
     expect(built.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Leader',
     )
     expect(
-      built.view
-        .find('[data-id="hilos-daemon-node-state"]')
-        .attributes('data-state'),
-    ).toBe('leader')
+      built.view.find('[data-id="hilos-daemon-node-state"]').classes(),
+    ).toContain('bg-warning-subtle')
     expect(
-      built.view
-        .find('[data-id="hilos-daemon-node-diagram"]')
-        .attributes('href'),
+      built.view.find('[data-id="hilos-page-head-action"]').attributes('href'),
     ).toBe('/hilos/daemon')
     built.view.unmount()
 
     const staged = harness()
-    staged.heading({ clustered: true, state: 'leader', silentSince: null })
+    staged.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     await nextTick()
     expect(
-      staged.view.find('[data-id="hilos-daemon-node-diagram"]').exists(),
+      staged.view.find('[data-id="hilos-page-head-action"]').exists(),
     ).toBe(false)
     staged.view.unmount()
   })
 
   it('shows a single installation without a cluster state or diagram', async () => {
     const h = harness(true)
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-solo"]').text()).toBe(
       'Single installation',
@@ -156,7 +163,7 @@ describe('HilosDaemonCronPage', () => {
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').exists()).toBe(
       false,
     )
-    expect(h.view.find('[data-id="hilos-daemon-node-diagram"]').exists()).toBe(
+    expect(h.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
       false,
     )
     h.view.unmount()
@@ -174,7 +181,12 @@ describe('HilosDaemonCronPage', () => {
       'Nothing has arrived from this node yet — not zero rules.',
     )
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     const silent = h.view.find('[data-id="hilos-daemon-cron-empty-silent"]')
     expect(silent.text()).toContain(
@@ -200,7 +212,12 @@ describe('HilosDaemonCronPage', () => {
 
   it('keeps the last rule rows and shows the silence line only while rows remain', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([rule()])
     await nextTick()
@@ -209,7 +226,12 @@ describe('HilosDaemonCronPage', () => {
       false,
     )
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     expect(
       h.view.find('[data-id="hilos-daemon-cron-silent"]').text(),
@@ -239,6 +261,7 @@ describe('HilosDaemonCronPage', () => {
       const h = harness()
       h.heading({
         clustered: true,
+        role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000 : null,
       })
@@ -272,12 +295,22 @@ describe('HilosDaemonCronPage', () => {
 
   it('holds the same notice room when the node becomes the leader', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'standby', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    })
     h.window([rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })])
     await nextTick()
     const reserve = h.view.find(NOTICE_ROOM)
 
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.window([rule()])
     await nextTick()
     expect(
@@ -289,7 +322,7 @@ describe('HilosDaemonCronPage', () => {
 
   it('takes no notice room on a standalone node', async () => {
     const h = harness()
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     h.window([rule()])
     await nextTick()
     expect(
@@ -303,7 +336,12 @@ describe('HilosDaemonCronPage', () => {
     'takes no notice room without daemon rules',
     async ({ rows }) => {
       const h = harness()
-      h.heading({ clustered: true, state: 'standby', silentSince: null })
+      h.heading({
+        clustered: true,
+        role: null,
+        state: 'standby',
+        silentSince: null,
+      })
       h.window(rows)
       await nextTick()
       expect(
@@ -316,7 +354,12 @@ describe('HilosDaemonCronPage', () => {
 
   it('draws daemon and agent executors, rule names and expressions', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.window([
       rule(),
       rule({
@@ -345,7 +388,7 @@ describe('HilosDaemonCronPage', () => {
     expect(agentExecutor.classes()).toContain('font-monospace')
     expect(agentExecutor.find('i').exists()).toBe(false)
 
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     await nextTick()
     expect(daemonExecutor.text()).toBe('Daemon')
     h.view.unmount()
@@ -353,7 +396,12 @@ describe('HilosDaemonCronPage', () => {
 
   it('words and mutes idle and absent run moments without muting actual moments', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'standby', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'standby',
+      silentSince: null,
+    })
     h.window([
       rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER }),
       rule({

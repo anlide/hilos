@@ -312,9 +312,14 @@ export class App {
     [HilosPages.PROFILE_AGREEMENTS]: ProfileAgreements,
     [HilosPages.PROFILE_AGREEMENTS_HISTORY]: ProfileAgreementsHistory,
     [HilosPages.PROFILE_DATA]: ProfileData,
-    // The three built Daemon screens bind this project to the SDK contexts.
+    // The built Daemon screens bind this project to the SDK contexts.
     [HilosPages.DAEMON]: lazyPage(() =>
       import('./views/hilos/daemon/daemon.js').then((module) => module.Daemon),
+    ),
+    [HilosPages.DAEMON_NODE]: lazyPage(() =>
+      import('./views/hilos/daemon/node.js').then(
+        (module) => module.DaemonNode,
+      ),
     ),
     [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
       import('./views/hilos/daemon/workers.js').then(

@@ -1,7 +1,9 @@
+import { nodeTabs, openNodePage } from './hilosDaemonNode.js'
 import type { Type } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import {
   ScopeManager,
+  pageIdentity,
   createSignal,
   createAppPageRouter,
   HilosPages,
@@ -32,24 +34,15 @@ export function daemonNode(
       { index: 0, kind: 'regular', agentCount: 2 },
       { index: 4, kind: 'monopolistic', agentCount: 1 },
     ],
-    workerRestarts24h: 0,
-    uptimeMinutes: 125,
     measurements: {
-      startedAt: 1700000000,
       cores: 2,
-      coresBound: 'quota',
       daemonCores: 3,
-      masterCores: 0.1,
-      machineLoad: 25,
       masterMemory: 1024,
       workersMemory: 3072,
       workersMeasured: 2,
       memoryCeiling: 2048,
-      memoryCeilingBound: 'cgroup',
-      phpMemoryLimit: 8192,
     },
-    standing: { sessions: 2, connections: 3 },
-    environment: { missingRequired: 1, fromExample: 2, drifted: 3, orphans: 4 },
+    standing: { connections: 3 },
     ...overrides,
   }
 }
@@ -78,11 +71,6 @@ export function daemonPicture(
           quorumSize: 3,
         }
       : null,
-    environmentComparison: {
-      answeringNodes: clustered ? 2 : 1,
-      divergedKeys: clustered ? 2 : null,
-      sourcesDifferKeys: clustered ? 1 : null,
-    },
   }
 }
 
@@ -93,7 +81,8 @@ export function daemonHarness<T>(
   actions?: ActionLifecycle,
 ) {
   const scopes = new ScopeManager()
-  const scope = scopes.openPage(page)
+  const isNodePage = nodeTabs.some((tab) => tab.page === page)
+  const scope = isNodePage ? openNodePage(scopes, page) : scopes.openPage(page)
   const listeners = new Map<string, Set<(value: never) => void>>()
   const emit = (event: string, value: unknown): void => {
     for (const listener of listeners.get(event) ?? []) listener(value as never)
@@ -131,19 +120,27 @@ export function daemonHarness<T>(
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'Daemon',
-      lead: '',
-      breadcrumb: [{ page: HilosPages.DAEMON, label: 'Daemon' }],
-      children: [
-        {
-          page: HilosPages.DAEMON_WORKERS,
-          label: 'Workers',
+    pageIdentity: !isNodePage
+      ? createSignal({
+          label: 'Daemon',
           lead: '',
-          icon: null,
-        },
-      ],
-    }),
+          breadcrumb: [{ page: HilosPages.DAEMON, label: 'Daemon' }],
+          children: [
+            {
+              page: HilosPages.DAEMON_NODE,
+              label: 'Node',
+              lead: 'One node: processor, memory, environment summary, and maintenance.',
+              icon: 'bi-hdd-network',
+            },
+            {
+              page: HilosPages.DAEMON_ENV_MISMATCH,
+              label: 'Env mismatch',
+              lead: 'Environment keys whose values differ across the cluster.',
+              icon: null,
+            },
+          ],
+        })
+      : pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: matcher.path,
     clearPageError: vi.fn(),

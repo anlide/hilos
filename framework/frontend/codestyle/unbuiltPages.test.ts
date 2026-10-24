@@ -120,6 +120,112 @@ it.each(LAYERS)(
   },
 )
 
+it('recognizes a Vue node page through its shared Node Shell', () => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/vue/src/admin/Built.vue'
+    writeFileSync(
+      join(root, path),
+      `<template>
+  <HilosDaemonNodeShell :page="HilosPages.BUILT"><p>Node overview</p></HilosDaemonNodeShell>
+</template>
+`,
+    )
+    const views = readViews(root, 'vue', readPages(source(root, KEYS_PATH)))
+    expect(views.get('hilos_built')).toEqual({ path, line: 2, bare: false })
+    expect(checkTree(root)).toEqual([])
+  })
+})
+
+it('recognizes only an exact Angular Node Shell with a declared page field', () => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/angular/src/admin/Built.ts'
+    const component = (template: string, field = 'HilosPages.BUILT') => `
+      const example = '<hilos-daemon-node-shell [page]="page" />'
+      @Component({ template: \`${template}\` })
+      export class Built { readonly page = ${field} }
+    `
+    writeFileSync(
+      join(root, path),
+      component(
+        '<hilos-daemon-node-shell [page]="page"><p>Overview</p></hilos-daemon-node-shell>',
+      ),
+    )
+    const views = readViews(root, 'angular', readPages(source(root, KEYS_PATH)))
+    expect(views.get('hilos_built')).toEqual({ path, line: 3, bare: false })
+    expect(checkTree(root)).toEqual([])
+    writeFileSync(
+      join(root, 'framework/frontend/angular/src/admin/hilosAdminViews.ts'),
+      'export function hilosAdminViews() { return {} }',
+    )
+    for (const [template, field] of [
+      ['<hilos-daemon-node-shell-like [page]="page" />', 'HilosPages.BUILT'],
+      ['<hilos-daemon-node-shellLike [page]="page" />', 'HilosPages.BUILT'],
+      [
+        '<!-- <hilos-daemon-node-shell [page]="page" /> --><p>Example</p>',
+        'HilosPages.BUILT',
+      ],
+      [
+        '<hilos-daemon-node-shell page="HilosPages.BUILT" />',
+        'HilosPages.BUILT',
+      ],
+      ['<hilos-daemon-node-shell [page]="page" />', 'HilosPages[key]'],
+      ['<hilos-daemon-node-shell [page]="other" />', 'HilosPages.BUILT'],
+    ]) {
+      writeFileSync(join(root, path), component(template, field))
+      expect(
+        readViews(root, 'angular', readPages(source(root, KEYS_PATH))).has(
+          'hilos_built',
+        ),
+      ).toBe(false)
+    }
+  })
+})
+
+it('recognizes only explicit React Node Shell page bindings', () => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/react/src/admin/Built.tsx'
+    writeFileSync(
+      join(root, path),
+      `export function Built() {
+      // <HilosDaemonNodeShell page={HilosPages.STUB} />
+      const example = '<HilosDaemonNodeShell page={HilosPages.STUB} />'
+      return <HilosDaemonNodeShell page={HilosPages.BUILT}><p>Node overview</p></HilosDaemonNodeShell>
+    }`,
+    )
+    const views = readViews(root, 'react', readPages(source(root, KEYS_PATH)))
+    expect(views.get('hilos_built')).toEqual({ path, line: 4, bare: false })
+    expect(views.get('hilos_stub')?.bare).toBe(true)
+    expect(checkTree(root)).toEqual([])
+    // Remove the lazy map to judge these negative examples only by their JSX.
+    writeFileSync(
+      join(root, 'framework/frontend/react/src/admin/hilosAdminViews.ts'),
+      'export function hilosAdminViews() { return {} }',
+    )
+    for (const opening of [
+      '<OtherShell page={HilosPages.BUILT}>',
+      '<HilosDaemonNodeShellLike page={HilosPages.BUILT}>',
+      '<HilosDaemonNodeShell page="HilosPages.BUILT">',
+      '<HilosDaemonNodeShell page={page}>',
+    ]) {
+      const tag = opening.match(/^<([A-Za-z]+)/)![1]
+      writeFileSync(
+        join(root, path),
+        `export function Built() {
+        // <HilosDaemonNodeShell page={HilosPages.BUILT} />
+        const example = '<HilosDaemonNodeShell page={HilosPages.BUILT} />'
+        return ${opening}<p>Node overview</p></${tag}>
+      }`,
+      )
+      const invalid = readViews(
+        root,
+        'react',
+        readPages(source(root, KEYS_PATH)),
+      )
+      expect(invalid.has('hilos_built')).toBe(false)
+    }
+  })
+})
+
 it.each(LAYERS)(
   'accepts a %s eager named import through a public section entrypoint',
   (layer) => {

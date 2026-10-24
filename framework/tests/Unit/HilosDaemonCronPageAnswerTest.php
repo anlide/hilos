@@ -63,7 +63,7 @@ final class HilosDaemonCronPageAnswerTest extends TestCase
         $page = new DaemonCronAnswerTestPage(new DaemonCollectorAgent());
 
         self::assertSame([
-            AbstractHilosDaemonCronPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null],
+            AbstractHilosDaemonCronPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null],
             AbstractHilosDaemonCronPage::CRON_REPORTED => false,
         ], $page->payload($this->address())->data);
         self::assertEquals([
@@ -99,7 +99,7 @@ final class HilosDaemonCronPageAnswerTest extends TestCase
         $this->publish(new DaemonCronPicture(null, []), NodeRole::Slave);
         $page = new DaemonCronAnswerTestPage(new DaemonCollectorAgent());
 
-        self::assertSame(['clustered' => true, 'state' => 'data', 'silentSince' => null],
+        self::assertSame(['clustered' => true, 'state' => 'data', 'silentSince' => null, 'role' => 'slave'],
             $page->payload($this->address())->data[AbstractHilosDaemonCronPage::NODE]);
     }
 

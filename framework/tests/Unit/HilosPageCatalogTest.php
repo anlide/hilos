@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 92;
+    private const int CATALOG_ENTRIES = 93;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -193,12 +193,16 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame($allItems, array_values(array_unique($allItems)));
     }
 
-    public function testDaemonEnvironmentPagesBelongToTheSection(): void
+    public function testDaemonEnvironmentBelongsToNodeAndMismatchToSection(): void
     {
-        foreach ([HilosPageConstants::HILOS_DAEMON_ENV, HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH] as $page) {
-            $entry = HilosPageCatalog::CATALOG[$page];
-            self::assertSame(HilosPageConstants::HILOS_DAEMON, $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
-        }
+        self::assertSame(
+            HilosPageConstants::HILOS_DAEMON_NODE,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
+        self::assertSame(
+            HilosPageConstants::HILOS_DAEMON,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
         self::assertSame(
             'Environment',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV][PageCatalogConstants::CATALOG_ENTRY_LABEL],
@@ -306,6 +310,7 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame([
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_MAINTENANCE,
             HilosPageConstants::HILOS_STATUS,
             HilosPageConstants::HILOS_ANALYTICS,
@@ -314,6 +319,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
         ], $entities);

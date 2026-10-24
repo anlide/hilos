@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import {
-  DAEMON_NODE_STATE_SILENT,
+  readHilosDaemonNodeHeading,
   type HilosDaemonNodeHeading,
 } from './hilosDaemonNode.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
@@ -116,6 +116,7 @@ export interface HilosDaemonEnvironment {
 
 /** Page state holding the parsed node environment or silence indicator. */
 export interface HilosDaemonEnvPageState {
+  readonly node: HilosDaemonNodeHeading | null
   readonly environment: HilosDaemonEnvironment | null
   readonly nodeSilent: boolean
 }
@@ -237,6 +238,7 @@ export function readHilosDaemonEnvPage(
 ): ReadonlySignal<HilosDaemonEnvPageState> {
   const environmentSignal = scopes.pageDataSignal(DAEMON_ENV_ENVIRONMENT_DATA)
   const nodeSilentSignal = scopes.pageDataSignal(DAEMON_ENV_NODE_SILENT_DATA)
+  const node = readHilosDaemonNodeHeading(scopes)
 
   return computedSignal(() => {
     const parsed = environmentPayloadSchema.safeParse(environmentSignal.get())
@@ -252,7 +254,7 @@ export function readHilosDaemonEnvPage(
       : null
     const nodeSilent = nodeSilentSignal.get() === true
 
-    return { environment, nodeSilent }
+    return { node: node.get(), environment, nodeSilent }
   })
 }
 
@@ -583,33 +585,14 @@ export function formatDaemonEnvDriftNotice(row: HilosDaemonEnvKeyRow): {
 }
 
 /**
- * Derive the node heading for the Daemon environment page.
- *
- * The environment page has no state word of its own (D-214, docs/agents/architecture/daemon-section.md
- * "The Node's State"). When the node is silent, the answer comes from the section fallback agent;
- * in a cluster the diagram link is correct, while on a standalone installation silence is a brief
- * node agent restart window where the root link is also valid.
+ * Read the node owner's heading, including its installation mode during silence.
  *
  * @param state The current environment page state.
  */
 export function daemonEnvNodeHeading(
   state: HilosDaemonEnvPageState,
 ): HilosDaemonNodeHeading | null {
-  if (state.environment !== null) {
-    return {
-      clustered: state.environment.cluster,
-      state: null,
-      silentSince: null,
-    }
-  }
-  if (state.nodeSilent) {
-    return {
-      clustered: true,
-      state: DAEMON_NODE_STATE_SILENT,
-      silentSince: null,
-    }
-  }
-  return null
+  return state.node
 }
 
 /**

@@ -19,6 +19,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
@@ -59,6 +60,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
         AbstractHilosDaemonCronPage::onPictureForgotten();
         AbstractHilosDaemonHttpServerPage::onPictureForgotten();
         AbstractHilosDaemonWorkersPage::onPictureForgotten();
+        AbstractHilosDaemonNodeOverviewPage::onPictureForgotten();
         AbstractHilosDaemonEnvMismatchPage::onPictureForgotten();
         AbstractHilosDaemonPage::onPictureForgotten();
         $this->rosteredViewers = [];
@@ -85,6 +87,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
                     AbstractHilosDaemonCronPage::onPictureChanged($before);
                     AbstractHilosDaemonHttpServerPage::onPictureChanged($before);
                     AbstractHilosDaemonWorkersPage::onPictureChanged($before);
+                    AbstractHilosDaemonNodeOverviewPage::onPictureChanged($before);
                     AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
                     AbstractHilosDaemonPage::onPictureChanged($before);
                 }

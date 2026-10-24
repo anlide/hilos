@@ -148,6 +148,11 @@ const moderationValues = [
   'SIGNAL_MODERATION_CHECK',
   'moderationCheckSchema',
 ]
+const daemonNodeValues = [
+  'DAEMON_NODE_OVERVIEW_DATA',
+  'daemonNodeOverviewSchema',
+  'readHilosDaemonNodeOverview',
+]
 /** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
 const statusValues = [
   'HILOS_STATUS_ACTION_COPY',
@@ -201,6 +206,7 @@ const profileRenameValues = [
 /** Presentation copy shared by the user section and compatibility root. */
 const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY']
 const expectedValues = [
+  ...daemonNodeValues,
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
   ...logViewerValues,
@@ -474,6 +480,7 @@ describe('core public entries', () => {
     ).toEqual(
       [
         ...legacy.type,
+        'HilosDaemonNodeOverviewData',
         ...i18nOverviewTypes,
         ...pageHeadTypes,
         ...publicLegalTypes,

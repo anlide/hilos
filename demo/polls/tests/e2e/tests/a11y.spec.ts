@@ -12,6 +12,10 @@ import {
 } from '../helpers/session'
 import {
   expectDesktopShell,
+  DAEMON_NODE_PATH,
+  DAEMON_NODE_TABS,
+  expectDaemonNodeHead,
+  expectDaemonNodeTableName,
   expectPasswordVisibility,
   watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -315,5 +319,27 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
   } finally {
     // Browser erase leaves the account and its held acceptance intact.
     await holdLegalRevision(person.userId, 'privacy', '2026-10-09')
+  }
+})
+
+test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({
+  page,
+}) => {
+  // Six addressed pages, each with a real subscription and keyboard navigation.
+  test.slow()
+  await grantAdminToSelf(page)
+  await gotoPage(page, DAEMON_NODE_PATH)
+  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+  for (const tab of DAEMON_NODE_TABS.slice(1)) {
+    const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
+    await link.focus()
+    await expect(link).toBeFocused()
+    await link.press('Enter')
+    await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+    await expectDaemonNodeHead(expect, page, tab.key)
+    if (tab.key !== 'hilos_daemon_env')
+      await expectDaemonNodeTableName(expect, page)
+    await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+    await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
   }
 })

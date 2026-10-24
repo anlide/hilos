@@ -95,8 +95,18 @@ describe('daemon HTTP summary', () => {
 
 describe('daemon HTTP empty state', () => {
   it('distinguishes waiting, silence without a report and known metrics', () => {
-    const silent = { clustered: true, state: 'silent', silentSince: 42 }
-    const leader = { clustered: true, state: 'leader', silentSince: null }
+    const silent = {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 42,
+    }
+    const leader = {
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    }
     expect(daemonHttpEmptyState(null, null)).toBe('waiting')
     expect(daemonHttpEmptyState(leader, null)).toBe('waiting')
     expect(daemonHttpEmptyState(silent, null)).toBe('silent')

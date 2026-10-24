@@ -1,8 +1,11 @@
+import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import {
   ActionError,
+  bindAdminAccess,
   HilosPages,
   ScopeManager,
+  pageIdentity,
   createSignal,
   type ActionHandle,
   type ActionLifecycle,
@@ -17,19 +20,20 @@ import {
   type HilosDaemonNodeHeading,
 } from '@hilos/core/admin/daemon'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonAgentsPage from './HilosDaemonAgentsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
-import { hilosAdminViewModeKey } from '../../hilosAdminViewMode.js'
 
 const views: VueWrapper[] = []
+const releases: Array<() => void> = []
 afterEach(() => {
   for (const view of views.splice(0)) view.unmount()
+  for (const release of releases.splice(0)) release()
   document.body.innerHTML = ''
 })
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.DAEMON_AGENTS,
@@ -40,7 +44,7 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: () => undefined,
     clearPageError: () => {},
@@ -55,8 +59,8 @@ function router(): HilosRouter {
 }
 
 function harness() {
-  const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_AGENTS)
+  const scopes = markRaw(new ScopeManager())
+  const scope = openNodePage(scopes, HilosPages.DAEMON_AGENTS)
   const listeners: Array<(signal: { data: unknown }) => void> = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
@@ -75,8 +79,7 @@ function harness() {
   const view = mount(HilosDaemonAgentsPage, {
     props: { context: { connection, scopes, actions: {} as ActionLifecycle } },
     global: {
-      provide: { [hilosRouterKey as symbol]: router() },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      provide: { [hilosRouterKey as symbol]: router(scopes) },
     },
   })
 
@@ -126,16 +129,21 @@ function agent(
 }
 
 describe('HilosDaemonAgentsPage', () => {
-  it('draws the node line and all three empty states', async () => {
+  it('draws the shared node head and all three empty states', async () => {
     const h = harness()
     h.window([])
     await nextTick()
-    expect(h.view.find('[data-id="hilos-daemon-node-id"]').text()).toBe('n1')
+    expect(h.view.find('[data-id="hilos-page-head-title"]').text()).toBe('n1')
     expect(
       h.view.find('[data-id="hilos-daemon-agents-empty-waiting"]').text(),
     ).toContain('not zero agents')
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
       'Silent',
@@ -157,7 +165,12 @@ describe('HilosDaemonAgentsPage', () => {
 
   it('draws workers, clustered kind, ownership width and a log link', async () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([
       agent(),
@@ -196,7 +209,12 @@ describe('HilosDaemonAgentsPage', () => {
         .tagName,
     ).toBe('A')
 
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     await nextTick()
     expect(
       h.view.find('[data-id="hilos-daemon-agents-silent"]').text(),
@@ -209,7 +227,7 @@ describe('HilosDaemonAgentsPage', () => {
 
   it('labels a single installation without cluster placement', async () => {
     const h = harness()
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     h.reported(true)
     h.window([agent({ idle: true })])
     await nextTick()
@@ -227,10 +245,13 @@ describe('HilosDaemonAgentsPage', () => {
 })
 
 function restartHarness(clustered = false, placement = 'node', viewer = false) {
-  const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_AGENTS)
+  const scopes = markRaw(new ScopeManager())
+  releases.push(bindAdminAccess(scopes))
+  scopes.session.data.set('adminViewMode', viewer)
+  const scope = openNodePage(scopes, HilosPages.DAEMON_AGENTS)
   scope.data.set(DAEMON_NODE_DATA, {
     clustered,
+    role: null,
     state: clustered ? 'leader' : null,
     silentSince: null,
   })
@@ -268,7 +289,7 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: () => undefined,
     clearPageError: () => {},
@@ -292,9 +313,7 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
     global: {
       provide: {
         [hilosRouterKey as symbol]: router,
-        [hilosAdminViewModeKey as symbol]: ref(viewer),
       },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
   views.push(view)
@@ -464,6 +483,7 @@ describe('HilosDaemonAgentsPage restart', () => {
     h.window()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 10,
     })

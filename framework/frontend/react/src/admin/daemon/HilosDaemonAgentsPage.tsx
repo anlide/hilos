@@ -22,7 +22,6 @@ import {
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
 import { HilosActionError } from '../../HilosActionError.js'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -31,7 +30,7 @@ import { useLookOnly } from '../../hilosLookOnly.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
-import { HilosDaemonNodeLine } from './HilosDaemonNodeLine.js'
+import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 
 /** Props for the framework's agents page. */
 export interface HilosDaemonAgentsPageProps {
@@ -50,14 +49,18 @@ export function HilosDaemonAgentsPage({
   const route = useSignal(router.currentRoute)
   const nodeId = route.params.nodeId ?? ''
   return (
-    <HilosAdminPage page={HilosPages.DAEMON_AGENTS}>
+    <HilosDaemonNodeShell
+      context={context}
+      showLogLinks={showLogLinks}
+      page={HilosPages.DAEMON_AGENTS}
+    >
       <Agents
         key={nodeId}
         context={context}
         nodeId={nodeId}
         showLogLinks={showLogLinks}
       />
-    </HilosAdminPage>
+    </HilosDaemonNodeShell>
   )
 }
 
@@ -139,7 +142,6 @@ function Agents({
 
   return (
     <>
-      <HilosDaemonNodeLine nodeId={nodeId} heading={heading} />
       <div className="hilos-stack">
         <p className="small text-body-secondary invisible" aria-hidden="true">
           This node has been silent since September 30, 2026, 11:59 PM. The

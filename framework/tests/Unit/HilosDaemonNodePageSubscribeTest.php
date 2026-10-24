@@ -19,10 +19,14 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodePage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
+use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** Node-addressed Daemon pages refuse malformed or unknown nodes before page_response. */
@@ -51,10 +55,17 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$browser = null;
         RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
+        ClusterDaemonPictureMirror::forgetPicture();
+        AbstractHilosDaemonNodeOverviewPage::onPictureForgotten();
     }
 
     protected function tearDown(): void
     {
+        ClusterDaemonPictureMirror::forgetPicture();
+        AbstractHilosDaemonNodeOverviewPage::onPictureForgotten();
+        foreach (ClusterDaemonPictureMirror::viewerKeys() as $key) {
+            ClusterDaemonPictureMirror::removeViewer($key);
+        }
         RtTruthSourceRegistry::unregisterDaemon(HilosClusterNode::RT_COLLECTION);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousRouter;
@@ -68,10 +79,12 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         parent::tearDown();
     }
 
-    public function testKnownOfflineNodeStillReceivesThePage(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testKnownOfflineNodeStillReceivesThePage(string $pageClass): void
     {
         $this->publishNode('offline-node', false);
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, $this->address('offline-node'));
 
@@ -88,25 +101,31 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
     }
 
-    public function testMissingNodeIdIsAParameterRefusal(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testMissingNodeIdIsAParameterRefusal(string $pageClass): void
     {
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $this->expectException(MissingPageRouteParamException::class);
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
     }
 
-    public function testEmptyNodeIdIsAParameterRefusal(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testEmptyNodeIdIsAParameterRefusal(string $pageClass): void
     {
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $this->expectException(MissingPageRouteParamException::class);
         $page->onSubscribe(self::ACCEPT_KEY, $this->address(''));
     }
 
-    public function testMalformedNodeIdIsAParameterRefusal(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testMalformedNodeIdIsAParameterRefusal(string $pageClass): void
     {
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $this->expectException(MissingPageRouteParamException::class);
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([
@@ -114,19 +133,23 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         ]));
     }
 
-    public function testUnknownNodeIsAResourceRefusal(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testUnknownNodeIsAResourceRefusal(string $pageClass): void
     {
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $this->expectException(PageResourceNotFoundException::class);
         $this->expectExceptionMessage('Unknown Daemon node: missing-node');
         $page->onSubscribe(self::ACCEPT_KEY, $this->address('missing-node'));
     }
 
-    public function testUpdateRechecksTheNodeBeforeASecondResponse(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testUpdateRechecksTheNodeBeforeASecondResponse(string $pageClass): void
     {
         $this->publishNode('known-node', true);
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
         $page->onSubscribe(self::ACCEPT_KEY, $this->address('known-node'));
         Hilos::$sr?->getNextQueuedSignal();
 
@@ -134,10 +157,12 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         $page->onUpdateSubscription(self::ACCEPT_KEY, $this->address('missing-node'));
     }
 
-    public function testUpdateOfAKnownNodeRefreshesThePageResponse(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
+    #[DataProvider('nodePages')]
+    public function testUpdateOfAKnownNodeRefreshesThePageResponse(string $pageClass): void
     {
         $this->publishNode('known-node', true);
-        $page = new DaemonNodePageTestWorkersPage(new DaemonNodePageTestAgent());
+        $page = new $pageClass(new DaemonNodePageTestAgent());
 
         $page->onUpdateSubscription(self::ACCEPT_KEY, $this->address('known-node'));
 
@@ -163,6 +188,15 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
+    }
+
+    /** @return array<string, array{class-string<AbstractHilosDaemonNodePage>}> Shared node admission and the new leaf */
+    public static function nodePages(): array
+    {
+        return [
+            'workers' => [DaemonNodePageTestWorkersPage::class],
+            'node overview' => [DaemonNodePageTestOverviewPage::class],
+        ];
     }
 
     /**
@@ -209,6 +243,10 @@ final class DaemonNodePageTestAgent implements PageAgentInterface
 }
 
 final class DaemonNodePageTestWorkersPage extends AbstractHilosDaemonWorkersPage
+{
+}
+
+final class DaemonNodePageTestOverviewPage extends AbstractHilosDaemonNodeOverviewPage
 {
 }
 

@@ -18,7 +18,6 @@ use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Hilos\AbstractHilosDaemonAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
-use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
@@ -172,7 +171,6 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $response = $this->onlyResponse();
         self::assertSame([
             'clustered' => false, 'nodes' => [], 'consensus' => null,
-            'environmentComparison' => ['answeringNodes' => 0, 'divergedKeys' => null, 'sourcesDifferKeys' => null],
             'placement' => ['instances' => null, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => null],
         ], $response->payload->data['daemon']);
         self::assertSame([HilosClusterNode::RT_COLLECTION], AbstractHilosDaemonPage::READS_RT);
@@ -188,8 +186,8 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame(['a', 's', 'z'], array_column($nodes, 'nodeId'));
         self::assertSame([
             'nodeId' => 'a', 'online' => true, 'role' => 'master', 'state' => null, 'silentSince' => null,
-            'workers' => null, 'workerRestarts24h' => null, 'uptimeMinutes' => null,
-            'measurements' => null, 'standing' => null, 'environment' => null,
+            'workers' => null,
+            'measurements' => null, 'standing' => null,
         ], $nodes[0]);
         self::assertSame('silent', $nodes[1]['state']);
         self::assertSame(90, $nodes[1]['silentSince']);
@@ -200,7 +198,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertNull($nodes[2]['workers']);
     }
 
-    public function testOnlyActualWorkersCountsAndEnvironmentDiagnosticsLeaveTheProjection(): void
+    public function testOnlyActualWorkersAndConnectionsLeaveTheLeanProjection(): void
     {
         $roster = new DaemonProcessRoster([
             new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, 11, 1048576, [$this->agent('hidden:1')]),
@@ -219,9 +217,10 @@ final class HilosDaemonOverviewPageTest extends TestCase
             ['index' => 4, 'kind' => 'monopolistic', 'agentCount' => 0],
             ['index' => 8, 'kind' => 'monopolistic', 'agentCount' => 1],
         ], $node['workers']);
-        self::assertSame(0, $node['workerRestarts24h']);
-        self::assertSame(['sessions' => 0, 'connections' => 0], $node['standing']);
-        self::assertSame(['missingRequired' => 0, 'fromExample' => 2, 'drifted' => 3, 'orphans' => 4], $node['environment']);
+        self::assertArrayNotHasKey('workerRestarts24h', $node);
+        self::assertArrayNotHasKey('uptimeMinutes', $node);
+        self::assertSame(['connections' => 0], $node['standing']);
+        self::assertArrayNotHasKey('environment', $node);
         $wire = json_encode($node, JSON_THROW_ON_ERROR);
         foreach (['APP_ENV', 'secret-label', 'fingerprints', 'catalogKeys', 'hidden:', 'memoryBytes', 'pid'] as $private) {
             self::assertStringNotContainsString($private, $wire);
@@ -230,7 +229,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
             'n1', NodeRole::Master, 100, new DaemonProcessRoster([], [], 0),
         ))))['nodes'][0];
         self::assertSame([], $empty['workers']);
-        self::assertSame(0, $empty['workerRestarts24h']);
+        self::assertArrayNotHasKey('workerRestarts24h', $empty);
     }
 
     public function testPlacementCountsEveryWorkerAndEveryNodeCopyAndUsesDeclaredKinds(): void
@@ -312,24 +311,26 @@ final class HilosDaemonOverviewPageTest extends TestCase
         }
     }
 
-    public function testMeasurementsKeepEveryFieldAndByteUnitAndUptimeUsesTheReportedSample(): void
+    public function testMeasurementsKeepOnlyDiagramFieldsAndByteUnits(): void
     {
         $measurements = new DaemonMeasurements(100, 2.5, DaemonMeasurements::CORES_QUOTA, 0.0, 0.0, 0,
             1048576, 2097152, 2, 1073741824, DaemonMeasurements::CEILING_CGROUP, 134217728);
         $report = new NodeDaemonPicture('n1', NodeRole::Master, 279, measurements: $measurements);
         $picture = ClusterDaemonPicture::empty()->withNode($this->node($report));
         $node = $this->projection($picture)['nodes'][0];
-        self::assertSame(2, $node['uptimeMinutes']);
-        self::assertSame(DaemonStatusDTO::measurementsToArray($measurements), $node['measurements']);
-        self::assertEquals($measurements, DaemonStatusDTO::measurementsFromArray($node['measurements']));
+        self::assertArrayNotHasKey('uptimeMinutes', $node);
+        self::assertSame([
+            'cores' => 2.5, 'daemonCores' => 0.0, 'masterMemory' => 1048576,
+            'workersMemory' => 2097152, 'workersMeasured' => 2, 'memoryCeiling' => 1073741824,
+        ], $node['measurements']);
         self::assertSame(1048576, $node['measurements']['masterMemory']);
         self::assertSame(2097152, $node['measurements']['workersMemory']);
         self::assertSame(1073741824, $node['measurements']['memoryCeiling']);
         $silent = $this->projection($picture->withNode($this->node($report, false, 1000)))['nodes'][0];
-        self::assertSame(2, $silent['uptimeMinutes']);
+        self::assertArrayNotHasKey('uptimeMinutes', $silent);
         self::assertSame($node['measurements'], $silent['measurements']);
         $futureStart = $this->projection($picture->withNode($this->node($report->sampledAt(50))))['nodes'][0];
-        self::assertSame(0, $futureStart['uptimeMinutes']);
+        self::assertSame($node['measurements'], $futureStart['measurements']);
         $unknown = new DaemonMeasurements(100, null, null, null, null, null, null, null, 0, null, null, null);
         $node = $this->projection($picture->withNode($this->node($report->withMeasurements($unknown))))['nodes'][0];
         self::assertNull($node['measurements']['daemonCores']);
@@ -337,7 +338,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame(0, $node['measurements']['workersMeasured']);
     }
 
-    public function testStateAndConsensusComeFromTheSourceAndStandbyStillHasBrowserSessions(): void
+    public function testStateAndConsensusComeFromTheSourceAndStandbyStillHasBrowserConnections(): void
     {
         $picture = ClusterDaemonPicture::empty()
             ->withNode($this->master('b', ConsensusRole::Follower, 5, 'a', 3))
@@ -346,8 +347,8 @@ final class HilosDaemonOverviewPageTest extends TestCase
                 standing: new DaemonNodeStanding(0, 0, true, null))));
         $projection = $this->projection($picture);
         self::assertSame(['leader', 'standby', 'data'], array_column($projection['nodes'], 'state'));
-        self::assertSame(['sessions' => 3, 'connections' => 4], $projection['nodes'][1]['standing']);
-        self::assertSame(['sessions' => 0, 'connections' => 0], $projection['nodes'][2]['standing']);
+        self::assertSame(['connections' => 4], $projection['nodes'][1]['standing']);
+        self::assertSame(['connections' => 0], $projection['nodes'][2]['standing']);
         self::assertSame([
             'nodeId' => 'a', 'term' => 5, 'leaderId' => 'a', 'onlineMasters' => 1, 'masters' => 3, 'quorumSize' => 2,
         ], $projection['consensus']);
@@ -365,29 +366,21 @@ final class HilosDaemonOverviewPageTest extends TestCase
         ))['consensus']);
     }
 
-    public function testEnvironmentComparisonUsesAnsweringNodesAndExcludesPerNodeKeys(): void
+    public function testEnvironmentOnlyChangesDoNotChangeTheRootProjectionOrItsLiveFingerprint(): void
     {
-        $picture = ClusterDaemonPicture::empty();
-        foreach (['b', 'a'] as $id) {
-            $summary = new NodeEnvironmentSummary(3, 0, 0, 0, 0, [
-                new NodeEnvironmentFingerprint('DIVERGED', 'string', EnvSource::PROCESS, false, $id),
-                new NodeEnvironmentFingerprint('SOURCE', 'string', $id === 'a' ? EnvSource::PROCESS : EnvSource::ENV_FILE, false, 'same'),
-                new NodeEnvironmentFingerprint('PER_NODE', 'string', EnvSource::PROCESS, true, $id),
-            ]);
-            $picture = $picture->withNode($this->node(new NodeDaemonPicture($id, NodeRole::Master, 100, environment: $summary)));
-        }
-        self::assertSame(['answeringNodes' => 2, 'divergedKeys' => 1, 'sourcesDifferKeys' => 1],
-            $this->projection($picture)['environmentComparison']);
-        self::assertSame(['answeringNodes' => 2, 'divergedKeys' => null, 'sourcesDifferKeys' => null],
-            $this->projection($picture, false)['environmentComparison']);
-        $silent = $picture->node('b');
-        $picture = $picture->withNode(new ClusterDaemonNodeView('b', false, $silent->slot));
-        self::assertSame(['answeringNodes' => 1, 'divergedKeys' => null, 'sourcesDifferKeys' => null],
-            $this->projection($picture)['environmentComparison']);
-        $picture = $picture->withNode($this->node(new NodeDaemonPicture('b', NodeRole::Master, 100,
-            environment: new NodeEnvironmentSummary(3, 0, 0, 0, 0, $picture->node('a')->slot->picture->environment->fingerprints))));
-        self::assertSame(['answeringNodes' => 2, 'divergedKeys' => 0, 'sourcesDifferKeys' => 0],
-            $this->projection($picture)['environmentComparison']);
+        $report = new NodeDaemonPicture('n1', NodeRole::Master, 100,
+            environment: new NodeEnvironmentSummary(3, 0, 0, 0, 0, [
+                new NodeEnvironmentFingerprint('APP_ENV', 'string', EnvSource::PROCESS, false, 'aaaaaaaaaaaaaaaa'),
+            ]));
+        $this->deliver([$this->node($report)]);
+        $this->subscribe('root');
+        $before = $this->onlyResponse()->payload->data['daemon'];
+        self::assertArrayNotHasKey('environmentComparison', $before);
+        $this->deliver([$this->node($report->withEnvironment(new NodeEnvironmentSummary(3, 1, 2, 3, 4, [
+            new NodeEnvironmentFingerprint('APP_ENV', 'string', EnvSource::ENV_FILE, false, 'bbbbbbbbbbbbbbbb'),
+        ])))], false);
+        self::assertSame([], $this->drain());
+        self::assertSame($before, $this->projection(ClusterDaemonPictureMirror::picture(), false));
     }
 
     public function testSubscriptionAndChangedOverviewAnswerOnceWithIdentityOwnDataAndExistingWindow(): void
@@ -413,7 +406,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->deliver([$this->node($report->withStanding(new DaemonNodeStanding(0, 0, false, null)))]);
         $response = $this->onlyResponse();
         self::assertSame([], $this->resender->attempts);
-        self::assertSame(['sessions' => 0, 'connections' => 0], $response->payload->data['daemon']['nodes'][0]['standing']);
+        self::assertSame(['connections' => 0], $response->payload->data['daemon']['nodes'][0]['standing']);
         self::assertSame(['data'], array_keys($response->payload->toArray()));
         self::assertSame(['daemon'], array_keys($response->payload->data));
         self::assertSame($viewport, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE));

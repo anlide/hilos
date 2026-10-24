@@ -1,11 +1,16 @@
 // One page answer feeds the overview and the placement table. Switching these
 // local diagrams keeps their handles and never navigates or resubscribes.
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import {
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from 'react'
 import {
   createHilosDaemonOverview,
   createHilosDaemonPlacementView,
   daemonMonopolisticCount,
-  daemonNodeChildParams,
   daemonPercentage,
   daemonProgressWidth,
   daemonTotalMemory,
@@ -14,16 +19,19 @@ import {
   formatDaemonCores,
   formatDaemonDatabaseAddress,
   formatDaemonNodeState,
+  formatDaemonNodeSilentSince,
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
   type HilosDaemonContext,
+  type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
+import { HilosLink } from '../../HilosLink.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
-import { HilosDaemonNodeInspector } from './HilosDaemonNodeInspector.js'
 import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 
 /** Props for the Daemon section root. */
@@ -33,10 +41,7 @@ export interface HilosDaemonPageProps {
 }
 
 /** @param props The project's connection and page scope. */
-export function HilosDaemonPage({
-  context,
-  showLogLinks = true,
-}: HilosDaemonPageProps) {
+export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
   const daemon = useMemo(() => createHilosDaemonOverview(context), [context])
   const placement = useMemo(
     () => createHilosDaemonPlacementView(context, daemon.overview),
@@ -46,21 +51,17 @@ export function HilosDaemonPage({
   const [placementOpened, setPlacementOpened] = useState(false)
   const overview = useSignal(daemon.overview)
   const database = useSignal(daemon.database)
-  const selectedNodeId = useSignal(daemon.selectedNodeId)
-  const selectedNode = useSignal(daemon.selectedNode)
+  const router = useContext(HilosRouterContext)
+  if (!router)
+    throw new Error('HilosDaemonPage requires a provided Hilos router.')
   useEffect(() => {
-    daemon.start()
     placement.start()
     return () => {
       placement.dispose()
-      daemon.dispose()
     }
-  }, [daemon, placement])
+  }, [placement])
   return (
-    <HilosAdminPage
-      page={HilosPages.DAEMON}
-      childParams={daemonNodeChildParams(selectedNodeId)}
-    >
+    <HilosAdminPage page={HilosPages.DAEMON}>
       <div className="nav nav-tabs mb-3" aria-label="Daemon diagrams">
         <button
           type="button"
@@ -163,14 +164,14 @@ export function HilosDaemonPage({
                         </span>
                       </div>
                     )}
-                    <button
-                      type="button"
-                      className={`btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start ${selectedNodeId === node.nodeId ? 'border-primary border-2' : node.state === 'silent' ? 'border-danger-subtle' : ''}`}
-                      aria-pressed={selectedNodeId === node.nodeId}
-                      aria-label={`Select node ${node.nodeId}`}
+                    <HilosLink
+                      to={router.resolvePath(HilosPages.DAEMON_NODE, {
+                        nodeId: node.nodeId,
+                      })!}
+                      className={`btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none ${!node.online ? 'border-danger-subtle' : ''}`}
+                      aria-label={`Node ${node.nodeId}`}
                       data-id={`hilos-daemon-node-${node.nodeId}`}
                       data-state={node.state}
-                      onClick={() => daemon.selectNode(node.nodeId)}
                     >
                       <span className="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <i className="bi bi-hdd-network" aria-hidden="true" />
@@ -191,126 +192,141 @@ export function HilosDaemonPage({
                           </span>
                         )}
                       </span>
-                      <span
-                        className="d-flex flex-wrap gap-1 mb-3"
-                        data-id={`hilos-daemon-workers-${node.nodeId}`}
-                      >
-                        {node.workers === null ? (
-                          <span className="small text-body-secondary">
-                            Workers: —
-                          </span>
-                        ) : node.workers.length === 0 ? (
-                          <span className="small text-body-secondary">
-                            No workers
-                          </span>
-                        ) : (
-                          node.workers.map((worker) => (
-                            <span
-                              key={`${worker.kind}:${worker.index}`}
-                              className={`badge border font-monospace ${daemonWorkerOccupancy(worker) === 'free' ? 'bg-body-tertiary text-body border-secondary-subtle' : 'bg-primary-subtle text-primary-emphasis border-primary-subtle'}`}
-                              data-id={`hilos-daemon-worker-${node.nodeId}-${worker.kind}-${worker.index}`}
-                              data-occupancy={daemonWorkerOccupancy(worker)}
-                              title={`${worker.kind === 'monopolistic' ? 'Monopolistic' : 'Ordinary'} worker · ${daemonWorkerOccupancy(worker)} · ${worker.agentCount} agents`}
-                            >
-                              {formatDaemonWorkerName(
-                                worker.index,
-                                worker.kind,
-                              )}
-                              <span className="visually-hidden">
-                                {' '}
-                                · {daemonWorkerOccupancy(worker)} ·{' '}
-                                {worker.agentCount} agents
-                              </span>
-                            </span>
-                          ))
-                        )}
-                      </span>
-                      <span className="d-block small">
-                        <span className="d-flex justify-content-between gap-2 mb-1">
-                          <span>Daemon CPU</span>
-                          <span>
-                            {formatDaemonCores(node.measurements?.daemonCores)}{' '}
-                            / {formatDaemonCores(node.measurements?.cores)}{' '}
-                            cores
-                          </span>
-                        </span>
+                      {!node.online ? (
                         <span
-                          className="d-block progress hilos-progress-track"
-                          aria-hidden="true"
+                          className="d-block small text-body-secondary"
+                          data-id={`hilos-daemon-silent-${node.nodeId}`}
                         >
+                          Silent since {formatSilentSince(node) ?? '—'}
+                        </span>
+                      ) : (
+                        <>
                           <span
-                            className="progress-bar hilos-progress"
-                            style={
-                              {
-                                '--hilos-progress': daemonProgressWidth(
-                                  daemonPercentage(
-                                    node.measurements?.daemonCores,
-                                    node.measurements?.cores,
-                                  ),
-                                ),
-                              } as CSSProperties
-                            }
-                          />
-                        </span>
-                        <span className="d-block text-body-secondary mb-2">
-                          {formatDaemonPercentage(
-                            daemonPercentage(
-                              node.measurements?.daemonCores,
-                              node.measurements?.cores,
-                            ),
-                          )}{' '}
-                          of available CPU
-                        </span>
-                        <span className="d-flex justify-content-between gap-2 mb-1">
-                          <span>Measured memory</span>
-                          <span>
-                            {formatDaemonBytes(daemonTotalMemory(node))} /{' '}
-                            {formatDaemonBytes(
-                              node.measurements?.memoryCeiling,
+                            className="d-flex flex-wrap gap-1 mb-3"
+                            data-id={`hilos-daemon-workers-${node.nodeId}`}
+                          >
+                            {node.workers === null ? (
+                              <span className="small text-body-secondary">
+                                Workers: —
+                              </span>
+                            ) : node.workers.length === 0 ? (
+                              <span className="small text-body-secondary">
+                                No workers
+                              </span>
+                            ) : (
+                              node.workers.map((worker) => (
+                                <span
+                                  key={`${worker.kind}:${worker.index}`}
+                                  className={`badge border font-monospace ${daemonWorkerOccupancy(worker) === 'free' ? 'bg-body-tertiary text-body border-secondary-subtle' : 'bg-primary-subtle text-primary-emphasis border-primary-subtle'}`}
+                                  data-id={`hilos-daemon-worker-${node.nodeId}-${worker.kind}-${worker.index}`}
+                                  data-occupancy={daemonWorkerOccupancy(worker)}
+                                  title={`${worker.kind === 'monopolistic' ? 'Monopolistic' : 'Ordinary'} worker · ${daemonWorkerOccupancy(worker)} · ${worker.agentCount} agents`}
+                                >
+                                  {formatDaemonWorkerName(
+                                    worker.index,
+                                    worker.kind,
+                                  )}
+                                  <span className="visually-hidden">
+                                    {' '}
+                                    · {daemonWorkerOccupancy(worker)} ·{' '}
+                                    {worker.agentCount} agents
+                                  </span>
+                                </span>
+                              ))
                             )}
                           </span>
-                        </span>
-                        <span
-                          className="d-block progress hilos-progress-track"
-                          aria-hidden="true"
-                        >
-                          <span
-                            className="progress-bar hilos-progress"
-                            style={
-                              {
-                                '--hilos-progress': daemonProgressWidth(
-                                  daemonPercentage(
-                                    daemonTotalMemory(node),
-                                    node.measurements?.memoryCeiling,
-                                  ),
+                          <span className="d-block small">
+                            <span className="d-flex justify-content-between gap-2 mb-1">
+                              <span>Daemon CPU</span>
+                              <span>
+                                {formatDaemonCores(
+                                  node.measurements?.daemonCores,
+                                )}{' '}
+                                / {formatDaemonCores(node.measurements?.cores)}{' '}
+                                cores
+                              </span>
+                            </span>
+                            <span
+                              className="d-block progress hilos-progress-track"
+                              aria-hidden="true"
+                            >
+                              <span
+                                className="progress-bar hilos-progress"
+                                style={
+                                  {
+                                    '--hilos-progress': daemonProgressWidth(
+                                      daemonPercentage(
+                                        node.measurements?.daemonCores,
+                                        node.measurements?.cores,
+                                      ),
+                                    ),
+                                  } as CSSProperties
+                                }
+                              />
+                            </span>
+                            <span className="d-block text-body-secondary mb-2">
+                              {formatDaemonPercentage(
+                                daemonPercentage(
+                                  node.measurements?.daemonCores,
+                                  node.measurements?.cores,
                                 ),
-                              } as CSSProperties
-                            }
-                          />
-                        </span>
-                        <span className="d-block text-body-secondary mb-2">
-                          {formatDaemonNumber(
-                            node.measurements?.workersMeasured,
-                          )}{' '}
-                          worker processes measured
-                        </span>
-                        <span className="d-block">
-                          Monopolistic:{' '}
-                          {formatDaemonNumber(daemonMonopolisticCount(node))}
-                        </span>
-                        <span className="d-block text-body-secondary mb-2">
-                          Pool grows on demand
-                        </span>
-                        <span
-                          className="d-block"
-                          data-id={`hilos-daemon-browsers-${node.nodeId}`}
-                        >
-                          {node.role === 'slave'
-                            ? 'Does not accept browsers'
-                            : `Browser connections: ${formatDaemonNumber(node.standing?.connections)}`}
-                        </span>
-                      </span>
-                    </button>
+                              )}{' '}
+                              of available CPU
+                            </span>
+                            <span className="d-flex justify-content-between gap-2 mb-1">
+                              <span>Measured memory</span>
+                              <span>
+                                {formatDaemonBytes(daemonTotalMemory(node))} /{' '}
+                                {formatDaemonBytes(
+                                  node.measurements?.memoryCeiling,
+                                )}
+                              </span>
+                            </span>
+                            <span
+                              className="d-block progress hilos-progress-track"
+                              aria-hidden="true"
+                            >
+                              <span
+                                className="progress-bar hilos-progress"
+                                style={
+                                  {
+                                    '--hilos-progress': daemonProgressWidth(
+                                      daemonPercentage(
+                                        daemonTotalMemory(node),
+                                        node.measurements?.memoryCeiling,
+                                      ),
+                                    ),
+                                  } as CSSProperties
+                                }
+                              />
+                            </span>
+                            <span className="d-block text-body-secondary mb-2">
+                              {formatDaemonNumber(
+                                node.measurements?.workersMeasured,
+                              )}{' '}
+                              worker processes measured
+                            </span>
+                            <span className="d-block">
+                              Monopolistic:{' '}
+                              {formatDaemonNumber(
+                                daemonMonopolisticCount(node),
+                              )}
+                            </span>
+                            <span className="d-block text-body-secondary mb-2">
+                              Pool grows on demand
+                            </span>
+                            <span
+                              className="d-block"
+                              data-id={`hilos-daemon-browsers-${node.nodeId}`}
+                            >
+                              {node.role === 'slave'
+                                ? 'Does not accept browsers'
+                                : `Browser connections: ${formatDaemonNumber(node.standing?.connections)}`}
+                            </span>
+                          </span>
+                        </>
+                      )}
+                    </HilosLink>
                   </div>
                 ))}
               </div>
@@ -349,14 +365,12 @@ export function HilosDaemonPage({
             Shared primary connection
           </p>
         </section>
-        {overview && selectedNode && (
-          <HilosDaemonNodeInspector
-            overview={overview}
-            node={selectedNode}
-            showLogLinks={showLogLinks}
-          />
-        )}
       </div>
     </HilosAdminPage>
   )
+}
+
+/** The silent node's own last-known silence boundary. */
+function formatSilentSince(node: HilosDaemonOverviewNode): string | null {
+  return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
 }

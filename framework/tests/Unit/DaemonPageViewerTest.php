@@ -15,12 +15,15 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\Hilos;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodePage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** Only answered Daemon pages count viewers; closes and roster loss release them. */
@@ -64,9 +67,11 @@ final class DaemonPageViewerTest extends TestCase
         self::assertSame(0, ClusterDaemonPictureMirror::viewerCount());
     }
 
-    public function testARefusedNodeAddressDoesNotCountAsAViewer(): void
+    /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Refused node leaf */
+    #[DataProvider('nodePages')]
+    public function testARefusedNodeAddressDoesNotCountAsAViewer(string $pageClass): void
     {
-        $page = new DaemonViewerWorkersPage(new DaemonViewerPageAgent());
+        $page = new $pageClass(new DaemonViewerPageAgent());
         try {
             $page->onSubscribe('ak-refused', new PageRouteParams([]));
             self::fail('The missing node address must be refused');
@@ -95,6 +100,15 @@ final class DaemonPageViewerTest extends TestCase
         $agent->tickAt(microtime(true) + 2.0);
         self::assertSame([], ClusterDaemonPictureMirror::viewerKeys());
     }
+
+    /** @return array<string, array{class-string<AbstractHilosDaemonNodePage>}> Node leaves sharing the viewer hooks */
+    public static function nodePages(): array
+    {
+        return [
+            'workers' => [DaemonViewerWorkersPage::class],
+            'node overview' => [DaemonViewerNodeOverviewPage::class],
+        ];
+    }
 }
 
 final class DaemonViewerOverviewPage extends AbstractHilosDaemonPage
@@ -102,6 +116,10 @@ final class DaemonViewerOverviewPage extends AbstractHilosDaemonPage
 }
 
 final class DaemonViewerWorkersPage extends AbstractHilosDaemonWorkersPage
+{
+}
+
+final class DaemonViewerNodeOverviewPage extends AbstractHilosDaemonNodeOverviewPage
 {
 }
 

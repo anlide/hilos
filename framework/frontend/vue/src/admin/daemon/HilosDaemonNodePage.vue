@@ -1,12 +1,6 @@
-import { NgClass } from '@angular/common'
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  signal,
-} from '@angular/core'
+<!-- One addressed node's diagnostics from its page answer. The Shell owns the
+shared head; this page owns the Overview tiles and no controller or timer. -->
+<script setup lang="ts">
 import {
   daemonCoresBoundHint,
   daemonEnvironmentAttention,
@@ -14,77 +8,118 @@ import {
   daemonMemoryBoundHint,
   daemonMonopolisticCount,
   daemonNodeChildParams,
-  daemonNodeLogPath,
   daemonPercentage,
   daemonProgressWidth,
   daemonTotalMemory,
   formatDaemonBytes,
   formatDaemonCores,
   formatDaemonNodeSilentSince,
-  formatDaemonNodeState,
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonUptime,
-  type HilosDaemonOverviewData,
-  type HilosDaemonOverviewNode,
+  readHilosDaemonNodeHeading,
+  readHilosDaemonNodeOverview,
+  type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
-import {
-  HilosLink,
-  HilosLongText,
-  HilosModal,
-  HILOS_ROUTER,
-} from '@hilos/angular/base'
+import { computedSignal, HilosPages } from '@hilos/core/base'
+import { computed, inject, ref, watch } from 'vue'
 
-/** Angular view of the Daemon NodeInspector. */
-@Component({
-  selector: 'hilos-daemon-node-inspector',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, HilosLink, HilosLongText, HilosModal],
-  template: `
-    @let current = node();
+import HilosLink from '../../HilosLink.vue'
+import HilosLongText from '../../HilosLongText.vue'
+import HilosModal from '../../HilosModal.vue'
+import HilosSkeleton from '../../HilosSkeleton.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
+import HilosDaemonNodeShell from './HilosDaemonNodeShell.vue'
 
-    <section
-      class="border border-primary-subtle rounded p-3"
-      data-id="hilos-daemon-inspector"
-      [attr.data-node-id]="current.nodeId"
+const props = defineProps<{ context: HilosDaemonContext }>()
+const router = inject(hilosRouterKey)
+if (!router)
+  throw new Error('HilosDaemonNodePage requires a provided Hilos router.')
+
+const overview = readHilosDaemonNodeOverview(props.context.scopes)
+const nodeHeading = readHilosDaemonNodeHeading(props.context.scopes)
+const current = useSignal(
+  computedSignal(() => {
+    const route = router.currentRoute.get()
+    const scope = props.context.scopes.page()
+    const node = overview.get()
+    const heading = nodeHeading.get()
+    return scope?.key === HilosPages.DAEMON_NODE &&
+      route.page === HilosPages.DAEMON_NODE &&
+      router.pageError.get() === null &&
+      node !== null &&
+      heading !== null &&
+      node.nodeId !== '' &&
+      node.nodeId === route.params.nodeId
+      ? { node, heading, scope }
+      : null
+  }),
+)
+const node = computed(() => current.value?.node)
+const heading = computed(() => current.value?.heading)
+const measurements = computed(() => node.value?.measurements)
+const cpuPercent = computed(() =>
+  daemonPercentage(measurements.value?.daemonCores, measurements.value?.cores),
+)
+const memory = computed(() =>
+  node.value ? daemonTotalMemory(node.value) : null,
+)
+const memoryPercent = computed(() =>
+  daemonPercentage(memory.value, measurements.value?.memoryCeiling),
+)
+const silentSince = computed(() =>
+  formatDaemonNodeSilentSince(heading.value ?? null, Date.now()),
+)
+const envPath = computed(() =>
+  node.value
+    ? router.resolvePath(
+        HilosPages.DAEMON_ENV,
+        daemonNodeChildParams(node.value.nodeId),
+      )
+    : undefined,
+)
+const mismatchPath = computed(() =>
+  heading.value?.clustered
+    ? router.resolvePath(HilosPages.DAEMON_ENV_MISMATCH, {})
+    : undefined,
+)
+const noticeOpen = ref(false)
+watch(
+  [() => current.value?.node.nodeId, () => current.value?.scope],
+  () => {
+    noticeOpen.value = false
+  },
+  // Release the opening even when clear and recovery precede the next render.
+  { flush: 'sync' },
+)
+const reportNotice = computed(() => {
+  if (!node.value || !heading.value) return null
+  const reported =
+    node.value.workers !== null ||
+    node.value.measurements !== null ||
+    node.value.standing !== null ||
+    node.value.environment !== null ||
+    node.value.uptimeMinutes !== null ||
+    node.value.workerRestarts24h !== null
+  if (!reported) {
+    return heading.value.state === 'silent'
+      ? 'Silent · this node has not reported yet.'
+      : 'This node has not reported yet.'
+  }
+  return !node.value.online
+    ? `Silent · values from the last report. Last arrival: ${silentSince.value ?? '—'}.`
+    : null
+})
+</script>
+
+<template>
+  <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_NODE">
+    <div
+      v-if="node && heading"
+      data-id="hilos-daemon-node-overview"
+      :data-node-id="node.nodeId"
     >
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <i class="bi bi-hdd-network" aria-hidden="true"></i>
-        <h2 class="h6 font-monospace text-break mb-0">{{ current.nodeId }}</h2>
-        @if (overview().clustered) {
-          <span
-            class="badge border"
-            [ngClass]="
-              current.state === 'silent'
-                ? 'bg-danger-subtle text-danger-emphasis border-danger-subtle'
-                : 'bg-body-tertiary text-body'
-            "
-            data-id="hilos-daemon-inspector-state"
-            >{{
-              current.state === null
-                ? '—'
-                : formatDaemonNodeState(current.state)
-            }}</span
-          >
-          <span class="badge bg-body-tertiary text-body border"
-            >Role: {{ current.role ?? '—' }}</span
-          >
-        } @else {
-          <span class="badge bg-body-tertiary text-body border"
-            >Single installation</span
-          >
-        }
-        @if (logPath(); as logPathValue) {
-          <a
-            [hilosLink]="logPathValue"
-            class="small ms-auto"
-            data-id="hilos-daemon-node-log"
-            >Node log <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i
-          ></a>
-        }
-      </div>
-
       <div class="hilos-stack mb-3 small text-body-secondary">
         <div
           class="invisible d-flex align-items-center gap-2"
@@ -98,39 +133,39 @@ import {
         </div>
         <div
           class="d-flex align-items-center gap-2"
-          [ngClass]="{ invisible: reportNotice() === null }"
-          [attr.aria-hidden]="reportNotice() === null ? true : undefined"
-          [attr.inert]="reportNotice() === null ? '' : null"
+          :class="{ invisible: reportNotice === null }"
+          :aria-hidden="reportNotice === null ? true : undefined"
+          :inert="reportNotice === null"
           data-id="hilos-daemon-report-notice"
         >
           <span class="flex-grow-1 text-truncate">{{
-            reportNotice() ?? ''
+            reportNotice ?? '\u00a0'
           }}</span>
           <button
             type="button"
             class="btn btn-link btn-sm p-0 flex-shrink-0"
             aria-label="Show report details"
             data-id="hilos-daemon-report-details"
-            (click)="noticeOpen.set(true)"
+            @click="noticeOpen = true"
           >
             <i class="bi bi-info-circle" aria-hidden="true"></i>
           </button>
         </div>
       </div>
 
-      <h3 class="h6">Processor</h3>
+      <h2 class="h6">Processor</h2>
       <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
         <div class="col">
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Node cores</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-cores">
-              {{ formatDaemonCores(measurements()?.cores) }}
+              {{ formatDaemonCores(measurements?.cores) }}
             </dd>
             <dd
               class="small mb-0"
-              [title]="daemonCoresBoundHint(measurements()?.coresBound)"
+              :title="daemonCoresBoundHint(measurements?.coresBound)"
             >
-              {{ daemonCoresBoundHint(measurements()?.coresBound) }}
+              {{ daemonCoresBoundHint(measurements?.coresBound) }}
             </dd>
           </dl>
         </div>
@@ -138,11 +173,11 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Daemon CPU</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-daemon-cores">
-              {{ formatDaemonCores(measurements()?.daemonCores) }}
+              {{ formatDaemonCores(measurements?.daemonCores) }}
               <span class="small">cores</span>
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-cpu-percent">
-              {{ formatDaemonPercentage(cpuPercent()) }} of available CPU
+              {{ formatDaemonPercentage(cpuPercent) }} of available CPU
             </dd>
             <dd class="mb-0">
               <div
@@ -151,7 +186,9 @@ import {
               >
                 <div
                   class="progress-bar hilos-progress"
-                  [style.--hilos-progress]="daemonProgressWidth(cpuPercent())"
+                  :style="{
+                    '--hilos-progress': daemonProgressWidth(cpuPercent),
+                  }"
                 ></div>
               </div>
             </dd>
@@ -161,7 +198,7 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Master CPU</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonCores(measurements()?.masterCores) }}
+              {{ formatDaemonCores(measurements?.masterCores) }}
               <span class="small">cores</span>
             </dd>
             <dd class="small mb-0">Daemon process without workers</dd>
@@ -171,20 +208,20 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Machine CPU</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonPercentage(measurements()?.machineLoad) }}
+              {{ formatDaemonPercentage(measurements?.machineLoad) }}
             </dd>
             <dd class="small mb-0">Whole machine, including other processes</dd>
           </dl>
         </div>
       </div>
 
-      <h3 class="h6">Memory</h3>
+      <h2 class="h6">Memory</h2>
       <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
         <div class="col">
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Master</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements()?.masterMemory) }}
+              {{ formatDaemonBytes(measurements?.masterMemory) }}
             </dd>
             <dd class="small mb-0">Daemon process</dd>
           </dl>
@@ -193,11 +230,11 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Workers</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements()?.workersMemory) }}
+              {{ formatDaemonBytes(measurements?.workersMemory) }}
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-workers-measured">
-              {{ formatDaemonNumber(measurements()?.workersMeasured) }} of
-              {{ formatDaemonNumber(current.workers?.length) }} worker processes
+              {{ formatDaemonNumber(measurements?.workersMeasured) }} of
+              {{ formatDaemonNumber(node.workers?.length) }} worker processes
               measured
             </dd>
           </dl>
@@ -206,10 +243,10 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Measured total</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-total-memory">
-              {{ formatDaemonBytes(memory()) }}
+              {{ formatDaemonBytes(memory) }}
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-memory-percent">
-              {{ formatDaemonPercentage(memoryPercent()) }} of ceiling
+              {{ formatDaemonPercentage(memoryPercent) }} of ceiling
             </dd>
             <dd class="mb-0">
               <div
@@ -218,9 +255,9 @@ import {
               >
                 <div
                   class="progress-bar hilos-progress"
-                  [style.--hilos-progress]="
-                    daemonProgressWidth(memoryPercent())
-                  "
+                  :style="{
+                    '--hilos-progress': daemonProgressWidth(memoryPercent),
+                  }"
                 ></div>
               </div>
             </dd>
@@ -230,31 +267,29 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Ceiling</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements()?.memoryCeiling) }}
+              {{ formatDaemonBytes(measurements?.memoryCeiling) }}
             </dd>
             <dd
               class="small mb-0"
-              [title]="
-                daemonMemoryBoundHint(measurements()?.memoryCeilingBound)
-              "
+              :title="daemonMemoryBoundHint(measurements?.memoryCeilingBound)"
             >
-              {{ daemonMemoryBoundHint(measurements()?.memoryCeilingBound) }}
+              {{ daemonMemoryBoundHint(measurements?.memoryCeilingBound) }}
             </dd>
           </dl>
         </div>
       </div>
       <p class="small text-body-secondary">
         PHP memory limit per process:
-        {{ formatDaemonBytes(measurements()?.phpMemoryLimit) }}
+        {{ formatDaemonBytes(measurements?.phpMemoryLimit) }}
       </p>
 
-      <h3 class="h6">Node</h3>
+      <h2 class="h6">Node</h2>
       <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
         <div class="col">
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Uptime</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-uptime">
-              {{ formatDaemonUptime(current.uptimeMinutes) }}
+              {{ formatDaemonUptime(node.uptimeMinutes) }}
             </dd>
             <dd class="small mb-0">At the last report</dd>
           </dl>
@@ -263,7 +298,7 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Monopolistic</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-monopolistic-count">
-              {{ formatDaemonNumber(daemonMonopolisticCount(current)) }}
+              {{ formatDaemonNumber(daemonMonopolisticCount(node)) }}
             </dd>
             <dd class="small mb-0">Pool grows on demand</dd>
           </dl>
@@ -274,7 +309,7 @@ import {
               Worker replacements / 24 h
             </dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonNumber(current.workerRestarts24h) }}
+              {{ formatDaemonNumber(node.workerRestarts24h) }}
             </dd>
             <dd class="small mb-0">After unexpected worker loss</dd>
           </dl>
@@ -286,40 +321,37 @@ import {
             </dt>
             <dd class="fs-5 mb-1">
               {{
-                current.role === 'slave'
+                heading.role === 'slave'
                   ? '—'
-                  : formatDaemonNumber(current.standing?.sessions)
+                  : formatDaemonNumber(node.standing?.sessions)
               }}
             </dd>
-            <dd class="small mb-0" data-id="hilos-daemon-inspector-connections">
+            <dd class="small mb-0" data-id="hilos-daemon-node-connections">
               {{
-                current.role === 'slave'
+                heading.role === 'slave'
                   ? 'Does not accept browsers'
-                  : formatDaemonNumber(current.standing?.connections) +
-                    ' connections'
+                  : `${formatDaemonNumber(node.standing?.connections)} connections`
               }}
             </dd>
           </dl>
         </div>
       </div>
 
-      <h3 class="h6">Environment</h3>
+      <h2 class="h6">Environment</h2>
       <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
         <div class="col">
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">APP_ENV</dt>
             <dd class="small mb-0 mt-2">
-              @if (envPath(); as envPathValue) {
-                <a
-                  [hilosLink]="envPathValue"
-                  data-id="hilos-daemon-environment-link"
-                  >On the environment page</a
-                >
-              } @else {
-                <span data-id="hilos-daemon-environment-unbuilt"
-                  >Environment page is not available yet</span
-                >
-              }
+              <HilosLink
+                v-if="envPath"
+                :to="envPath"
+                data-id="hilos-daemon-environment-link"
+                >On the environment page</HilosLink
+              >
+              <span v-else data-id="hilos-daemon-environment-unbuilt"
+                >Environment page is not available yet</span
+              >
             </dd>
             <dd class="small text-body-secondary mb-0 mt-1">
               Application environment
@@ -330,7 +362,7 @@ import {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Node ID</dt>
             <dd class="small font-monospace text-break mb-0 mt-2">
-              {{ current.nodeId }}
+              {{ node.nodeId }}
             </dd>
           </dl>
         </div>
@@ -340,7 +372,7 @@ import {
               Requires attention
             </dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-environment-attention">
-              {{ formatDaemonNumber(daemonEnvironmentAttention(current)) }}
+              {{ formatDaemonNumber(daemonEnvironmentAttention(node)) }}
             </dd>
             <dd class="small mb-0">
               Missing, example, disk drift and orphan flags
@@ -357,14 +389,12 @@ import {
               data-id="hilos-daemon-environment-differences"
             >
               {{
-                formatDaemonNumber(
-                  daemonEnvironmentDifferences(overview(), current)
-                )
+                formatDaemonNumber(daemonEnvironmentDifferences(node, heading))
               }}
             </dd>
             <dd class="small mb-0">
               {{
-                overview().clustered
+                heading.clustered
                   ? 'Diverged values and differing sources'
                   : 'No other nodes to compare'
               }}
@@ -372,17 +402,13 @@ import {
           </dl>
         </div>
       </div>
-      @if (mismatchPath(); as mismatchPathValue) {
-        <p class="small">
-          <a
-            [hilosLink]="mismatchPathValue"
-            data-id="hilos-daemon-mismatch-link"
-            >Environment differences</a
-          >
-        </p>
-      }
+      <p v-if="mismatchPath" class="small">
+        <HilosLink :to="mismatchPath" data-id="hilos-daemon-mismatch-link"
+          >Environment differences</HilosLink
+        >
+      </p>
 
-      <h3 class="h6">Node maintenance</h3>
+      <h2 class="h6">Node maintenance</h2>
       <p
         id="hilos-daemon-maintenance-unavailable"
         class="small text-body-secondary"
@@ -418,90 +444,27 @@ import {
           Force disconnect node
         </button>
       </div>
-    </section>
-    <hilos-modal
-      [(open)]="noticeOpen"
+    </div>
+    <div v-else data-id="hilos-daemon-node-waiting">
+      <p class="text-body-secondary">Waiting for the node picture…</p>
+      <HilosSkeleton />
+    </div>
+    <HilosModal
+      v-if="node"
+      v-model="noticeOpen"
       title="Node report"
-      initialFocus="dialog"
+      initial-focus="dialog"
     >
-      <hilos-long-text
+      <HilosLongText
         kind="prose"
-        [text]="reportNotice() ?? ''"
-        dataId="hilos-daemon-report-full"
-      ></hilos-long-text>
-      <ng-template #modalActions let-requestClose="requestClose">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          (click)="requestClose()"
-        >
+        :text="reportNotice ?? ''"
+        data-id="hilos-daemon-report-full"
+      />
+      <template #actions="{ requestClose }">
+        <button type="button" class="btn btn-secondary" @click="requestClose">
           Close
         </button>
-      </ng-template>
-    </hilos-modal>
-  `,
-})
-export class HilosDaemonNodeInspector {
-  protected readonly daemonCoresBoundHint = daemonCoresBoundHint
-  protected readonly daemonEnvironmentAttention = daemonEnvironmentAttention
-  protected readonly daemonEnvironmentDifferences = daemonEnvironmentDifferences
-  protected readonly daemonMemoryBoundHint = daemonMemoryBoundHint
-  protected readonly daemonMonopolisticCount = daemonMonopolisticCount
-  protected readonly daemonProgressWidth = daemonProgressWidth
-  protected readonly formatDaemonBytes = formatDaemonBytes
-  protected readonly formatDaemonCores = formatDaemonCores
-  protected readonly formatDaemonNodeState = formatDaemonNodeState
-  protected readonly formatDaemonNumber = formatDaemonNumber
-  protected readonly formatDaemonPercentage = formatDaemonPercentage
-  protected readonly formatDaemonUptime = formatDaemonUptime
-  /** The whole value-free node picture. */
-  readonly overview = input.required<HilosDaemonOverviewData>()
-  /** The locally selected node. */
-  readonly node = input.required<HilosDaemonOverviewNode>()
-  private readonly router = inject(HILOS_ROUTER)
-  protected readonly measurements = computed(() => this.node().measurements)
-  protected readonly cpuPercent = computed(() =>
-    daemonPercentage(
-      this.measurements()?.daemonCores,
-      this.measurements()?.cores,
-    ),
-  )
-  protected readonly memory = computed(() => daemonTotalMemory(this.node()))
-  protected readonly memoryPercent = computed(() =>
-    daemonPercentage(this.memory(), this.measurements()?.memoryCeiling),
-  )
-  protected readonly silentSince = computed(() =>
-    formatDaemonNodeSilentSince(
-      {
-        clustered: this.overview().clustered,
-        state: this.node().state,
-        silentSince: this.node().silentSince,
-      },
-      Date.now(),
-    ),
-  )
-  protected readonly envPath = computed(() =>
-    this.router.resolvePath(
-      HilosPages.DAEMON_ENV,
-      daemonNodeChildParams(this.node().nodeId),
-    ),
-  )
-  protected readonly mismatchPath = computed(() =>
-    this.overview().clustered
-      ? this.router.resolvePath(HilosPages.DAEMON_ENV_MISMATCH, {})
-      : undefined,
-  )
-  protected readonly logPath = computed(() =>
-    daemonNodeLogPath(this.router.resolvePath, this.node().nodeId),
-  )
-  protected readonly noticeOpen = signal(false)
-  protected readonly reportNotice = computed(() =>
-    this.node().state === 'silent'
-      ? this.node().role === null
-        ? 'Silent · this node has not reported yet.'
-        : `Silent · values from the last report. Last arrival: ${this.silentSince() ?? '—'}.`
-      : this.node().role === null
-        ? 'This node has not reported yet.'
-        : null,
-  )
-}
+      </template>
+    </HilosModal>
+  </HilosDaemonNodeShell>
+</template>

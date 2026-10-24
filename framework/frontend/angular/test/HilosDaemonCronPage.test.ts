@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
@@ -42,6 +43,7 @@ describe('HilosDaemonCronPage', () => {
     )
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })
@@ -58,6 +60,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'standby',
       silentSince: null,
     })
@@ -86,6 +89,7 @@ describe('HilosDaemonCronPage', () => {
     expect(h.root.querySelector('[aria-sort]')).toBeNull()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })
@@ -114,16 +118,18 @@ describe('HilosDaemonCronPage', () => {
       node: 'n2',
     })
     const scopes = new ScopeManager()
-    const replacement = scopes.openPage(HilosPages.DAEMON_CRON)
+    const replacement = openNodePage(scopes, HilosPages.DAEMON_CRON)
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
     replacement.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'leader',
       silentSince: null,
     })
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })

@@ -34,7 +34,12 @@ function raw(overrides: Record<string, unknown> = {}): TableRow {
 function harness() {
   const scopes = new ScopeManager()
   const page = scopes.openPage(HilosPages.DAEMON_AGENTS)
-  page.data.set('node', { clustered: false, state: null, silentSince: null })
+  page.data.set('node', {
+    clustered: false,
+    role: null,
+    state: null,
+    silentSince: null,
+  })
   const listeners = new Map<string, (payload: unknown) => void>()
   const sendAction = vi.fn(() => true)
   const connection = {
@@ -156,12 +161,14 @@ describe('daemon restart confirmation', () => {
     h.window()
     h.page.data.set('node', {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 10,
     })
     expect(h.restart.canSubmit.get()).toBe(false)
     h.page.data.set('node', {
       clustered: false,
+      role: null,
       state: null,
       silentSince: null,
     })

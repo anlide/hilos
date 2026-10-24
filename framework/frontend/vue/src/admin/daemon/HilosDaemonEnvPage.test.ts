@@ -1,3 +1,4 @@
+import { openNodePage } from '../../../test/helpers/hilosDaemonNode.js'
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
@@ -5,6 +6,7 @@ import {
   HilosPages,
   ingest,
   ScopeManager,
+  pageIdentity,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
@@ -14,14 +16,14 @@ import {
   DAEMON_ENV_NODE_SILENT_DATA,
 } from '@hilos/core/admin/daemon'
 import { describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonEnvPage from './HilosDaemonEnvPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 function harness(diagramBuilt = false, nodeId = 'n1') {
-  const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.DAEMON_ENV)
+  const scopes = markRaw(new ScopeManager())
+  openNodePage(scopes, HilosPages.DAEMON_ENV)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_ENV,
     params: { nodeId },
@@ -33,7 +35,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
       diagramBuilt && page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -78,7 +80,6 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
     props: { context: { connection, scopes } },
     global: {
       provide: { [hilosRouterKey as symbol]: router },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
 
@@ -139,6 +140,12 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
       const data = {
         [DAEMON_ENV_ENVIRONMENT_DATA]: environment,
         [DAEMON_ENV_NODE_SILENT_DATA]: nodeSilent,
+        node: {
+          clustered: environment?.cluster ?? true,
+          state: nodeSilent ? 'silent' : null,
+          silentSince: null,
+          role: null,
+        },
       }
       ingest(scopes.page()!, { data })
       emit('projectSignal', {
@@ -183,7 +190,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
         params: { nodeId: nextNodeId },
         admin: true,
       })
-      scopes.openPage(HilosPages.DAEMON_ENV)
+      openNodePage(scopes, HilosPages.DAEMON_ENV)
     },
   }
 }
@@ -597,9 +604,9 @@ describe('HilosDaemonEnvPage', () => {
     expect(solo.view.find('[data-id="hilos-daemon-node-state"]').exists()).toBe(
       false,
     )
-    expect(
-      solo.view.find('[data-id="hilos-daemon-node-diagram"]').exists(),
-    ).toBe(false)
+    expect(solo.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
+      false,
+    )
     solo.view.unmount()
 
     const cluster = harness(true, 'n1')
@@ -611,7 +618,7 @@ describe('HilosDaemonEnvPage', () => {
     await nextTick()
     expect(
       cluster.view
-        .find('[data-id="hilos-daemon-node-diagram"]')
+        .find('[data-id="hilos-page-head-action"]')
         .attributes('href'),
     ).toBe('/hilos/daemon')
     expect(

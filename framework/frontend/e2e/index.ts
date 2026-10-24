@@ -232,6 +232,15 @@ export {
 
 export {
   DAEMON_ROOT_PATH,
+  DAEMON_NODE_PATH,
+  DAEMON_NODE_TABS,
+  expectDaemonNodeHead,
+  expectDaemonNodeFits,
+  expectDaemonNodeTableName,
+  watchDaemonNodeFrames,
+  expectDaemonNodeAnswer,
+  expectDaemonNodeLive,
+  expectStandaloneNodeOverview,
   DAEMON_WORKERS_PATH,
   DAEMON_WORKERS_CHILD,
   DAEMON_ROOT_CRUMB,
@@ -250,6 +259,7 @@ export {
   expectStandaloneMismatch,
   expectClusterOverview,
   expectClusterDaemonNodePage,
+  expectClusterDaemonNodeOverview,
   expectClusterDaemonCronSchedule,
   expectDaemonWorkerAgent,
   expectClusterLeaderPlacement,

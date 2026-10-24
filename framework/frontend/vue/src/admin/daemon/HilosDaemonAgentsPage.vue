@@ -20,7 +20,6 @@ import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -28,7 +27,7 @@ import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
-import HilosDaemonNodeLine from './HilosDaemonNodeLine.vue'
+import HilosDaemonNodeShell from './HilosDaemonNodeShell.vue'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -120,8 +119,7 @@ async function submitRestart(): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON_AGENTS">
-    <HilosDaemonNodeLine :node-id="nodeId" :heading="heading" />
+  <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_AGENTS">
     <div class="position-relative">
       <p class="small text-body-secondary invisible" aria-hidden="true">
         This node has been silent since September 30, 2026, 11:59 PM. The agents
@@ -282,5 +280,5 @@ async function submitRestart(): Promise<void> {
         >
       </template>
     </HilosModal>
-  </HilosAdminPage>
+  </HilosDaemonNodeShell>
 </template>

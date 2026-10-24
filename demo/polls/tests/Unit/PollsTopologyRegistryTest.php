@@ -83,6 +83,7 @@ use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonCronPage;
@@ -1382,6 +1383,7 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::DAEMON, Hilos::features());
         foreach ([
             DaemonPage::class,
+            DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
             DaemonCronPage::class,
@@ -1392,6 +1394,7 @@ final class PollsTopologyRegistryTest extends TestCase
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 

@@ -67,6 +67,7 @@ abstract class AbstractHilosDaemonHttpServerPage extends AbstractHilosDaemonNode
     /**
      * @param string $nodeId Node to describe
      * @return array<string, mixed> Node line and HTTP summary
+     * @throws HilosException When the shared node projection rejects its source picture
      * @throws EnvException When cluster mode cannot be read for a node line
      */
     protected static function nodeData(string $nodeId): array

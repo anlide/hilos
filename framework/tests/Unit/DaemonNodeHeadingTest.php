@@ -20,9 +20,9 @@ final class DaemonNodeHeadingTest extends TestCase
 {
     public function testMissingPictureAndUnknownNodeHaveNoStateOrTime(): void
     {
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null],
+        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null],
             DaemonNodeHeading::of(null, 'n1', false)->toArray());
-        self::assertSame(['clustered' => true, 'state' => null, 'silentSince' => null],
+        self::assertSame(['clustered' => true, 'state' => null, 'silentSince' => null, 'role' => null],
             DaemonNodeHeading::of(ClusterDaemonPicture::empty(), 'n1', true)->toArray());
     }
 
@@ -36,6 +36,9 @@ final class DaemonNodeHeadingTest extends TestCase
         self::assertSame('leader', DaemonNodeHeading::of($picture, 'leader', true)->toArray()['state']);
         self::assertSame('standby', DaemonNodeHeading::of($picture, 'standby', true)->toArray()['state']);
         self::assertSame('data', DaemonNodeHeading::of($picture, 'data', true)->toArray()['state']);
+        self::assertSame('master', DaemonNodeHeading::of($picture, 'leader', true)->toArray()['role']);
+        self::assertSame('master', DaemonNodeHeading::of($picture, 'standby', true)->toArray()['role']);
+        self::assertSame('slave', DaemonNodeHeading::of($picture, 'data', true)->toArray()['role']);
         self::assertNull(DaemonNodeHeading::of($picture, 'leader', true)->toArray()['silentSince']);
     }
 
@@ -47,9 +50,9 @@ final class DaemonNodeHeadingTest extends TestCase
             )))
             ->withNode(new ClusterDaemonNodeView('without-slot', false, null));
 
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 42],
+        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 42, 'role' => 'master'],
             DaemonNodeHeading::of($picture, 'with-slot', true)->toArray());
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => null],
+        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => null],
             DaemonNodeHeading::of($picture, 'without-slot', true)->toArray());
     }
 
@@ -58,8 +61,8 @@ final class DaemonNodeHeadingTest extends TestCase
         $picture = ClusterDaemonPicture::empty()->withNode($this->node('standalone', NodeRole::Master, false));
         $line = DaemonNodeHeading::of($picture, 'standalone', false)->toArray();
 
-        self::assertSame(['clustered', 'state', 'silentSince'], array_keys($line));
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null], $line);
+        self::assertSame(['clustered', 'state', 'silentSince', 'role'], array_keys($line));
+        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'], $line);
     }
 
     /**

@@ -119,6 +119,28 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     )
   })
 
+  it('addresses a Daemon node with encoded params while static paths retain priority', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    expect(HilosPages.DAEMON_NODE).toBe('hilos_daemon_node')
+    expect(HILOS_ROUTE_DECLARATIONS[HilosPages.DAEMON_NODE]).toEqual({
+      path: '/hilos/daemon/{nodeId}',
+      admin: true,
+    })
+    const nodeId = 'node / east%?'
+    const path = resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId })!
+    expect(path).toBe('/hilos/daemon/node%20%2F%20east%25%3F')
+    expect(router.match(path)).toEqual({
+      page: HilosPages.DAEMON_NODE,
+      params: { nodeId },
+      admin: true,
+    })
+    expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
+      page: HilosPages.DAEMON_ENV_MISMATCH,
+      params: {},
+      admin: true,
+    })
+  })
+
   it('routes Daemon children through a required node segment', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const children = [
@@ -139,7 +161,11 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
         params: { nodeId: 'standalone' },
         admin: true,
       })
-      expect(router.match(`/hilos/daemon/${tail}`).page).toBeNull()
+      expect(router.match(`/hilos/daemon/${tail}`)).toEqual({
+        page: HilosPages.DAEMON_NODE,
+        params: { nodeId: tail },
+        admin: true,
+      })
     }
     expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
       page: HilosPages.DAEMON_ENV_MISMATCH,

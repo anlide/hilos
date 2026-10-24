@@ -139,6 +139,7 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     /**
      * @param string $nodeId Node to describe
      * @return array<string, mixed> Node line and first agent-report verdict
+     * @throws HilosException When the shared node projection rejects its source picture
      * @throws EnvException When cluster mode cannot be read
      */
     protected static function nodeData(string $nodeId): array

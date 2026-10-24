@@ -1,7 +1,9 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ScopeManager,
+  pageIdentity,
   createSignal,
   HilosPages,
   type HilosConnection,
@@ -14,7 +16,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 function harness(showLogLinks?: boolean) {
   const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.DAEMON_WORKERS)
+  const scope = openNodePage(scopes, HilosPages.DAEMON_WORKERS)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_WORKERS,
     params: { nodeId: 'n1' },
@@ -26,12 +28,7 @@ function harness(showLogLinks?: boolean) {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'Workers',
-      lead: '',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page: string) =>
       page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -129,12 +126,17 @@ describe('HilosDaemonWorkersPage', () => {
     expect(h.find('hilos-daemon-workers-empty-waiting')?.textContent).toContain(
       'not zero workers',
     )
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     expect(h.find('hilos-daemon-workers-empty-silent')?.textContent).toContain(
       'never reported',
     )
     expect(h.find('hilos-daemon-node-state')?.textContent).toBe('Silent')
-    expect(h.find('hilos-daemon-node-diagram')?.getAttribute('href')).toBe(
+    expect(h.find('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
     )
     h.reported(true)
@@ -142,17 +144,22 @@ describe('HilosDaemonWorkersPage', () => {
       'The node reports no workers',
     )
     expect(h.find('hilos-daemon-workers-silent')).toBeNull()
-    h.heading({ clustered: false, state: null, silentSince: null })
+    h.heading({ clustered: false, role: null, state: null, silentSince: null })
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
       'Single installation',
     )
     expect(h.find('hilos-daemon-node-state')).toBeNull()
-    expect(h.find('hilos-daemon-node-diagram')).toBeNull()
+    expect(h.find('hilos-page-head-action')).toBeNull()
   })
 
   it('renders workers, unknown and zero values, details and live ids while retaining silent rows', () => {
     const h = harness()
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([
       worker(),
@@ -198,7 +205,12 @@ describe('HilosDaemonWorkersPage', () => {
     expect(updated).not.toBe(regular)
     expect(regular.isConnected).toBe(false)
     expect(updated.textContent).toContain('0 B')
-    h.heading({ clustered: true, state: 'silent', silentSince: 1_700_000_000 })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 1_700_000_000,
+    })
     expect(h.find('hilos-daemon-workers-silent')?.textContent).toContain(
       'from its last report',
     )
@@ -233,7 +245,7 @@ describe('HilosDaemonWorkersPage', () => {
       [...h.listeners.values()].reduce((n, group) => n + group.size, 0),
     ).toBe(listenerCount)
     h.window([worker()])
-    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
     expect(
       h.find('hilos-daemon-worker-log-regular:1')?.getAttribute('href'),
     ).toBe('/hilos/logs/view/n2/live/worker-regular-1.log')
@@ -246,7 +258,12 @@ describe('HilosDaemonWorkersPage', () => {
 
   it('omits worker log links in rows and cards when showLogLinks is false while retaining data and expansion', () => {
     const h = harness(false)
-    h.heading({ clustered: true, state: 'leader', silentSince: null })
+    h.heading({
+      clustered: true,
+      role: null,
+      state: 'leader',
+      silentSince: null,
+    })
     h.reported(true)
     h.window([worker()])
     const regular = h.find('hilos-table-row-regular:1')!

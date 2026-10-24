@@ -17,11 +17,10 @@ import {
 import { HilosPages } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
-import HilosDaemonNodeLine from './HilosDaemonNodeLine.vue'
+import HilosDaemonNodeShell from './HilosDaemonNodeShell.vue'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -59,8 +58,7 @@ onUnmounted(() => cron.dispose())
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON_CRON">
-    <HilosDaemonNodeLine :node-id="nodeId" :heading="heading" />
+  <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_CRON">
     <div class="position-relative">
       <p class="small text-body-secondary invisible" aria-hidden="true">
         This node has been silent since September 30, 2026, 11:59 PM. The rules
@@ -169,5 +167,5 @@ onUnmounted(() => cron.dispose())
         </div>
       </template>
     </HilosViewportTable>
-  </HilosAdminPage>
+  </HilosDaemonNodeShell>
 </template>

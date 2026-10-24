@@ -244,6 +244,12 @@ export {
   type HilosDaemonEnvMismatchEmptyState,
 } from './hilosDaemonEnvMismatch.js'
 export {
+  DAEMON_NODE_OVERVIEW_DATA,
+  daemonNodeOverviewSchema,
+  readHilosDaemonNodeOverview,
+  type HilosDaemonNodeOverviewData,
+} from './hilosDaemonNodeOverview.js'
+export {
   DAEMON_NODE_DATA,
   DAEMON_PROCESSES_REPORTED_DATA,
   DAEMON_NODE_STATE_LEADER,

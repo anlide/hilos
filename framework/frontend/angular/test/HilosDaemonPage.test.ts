@@ -46,10 +46,9 @@ function seed(h: ReturnType<typeof harness>): void {
 }
 
 describe('HilosDaemonPage', () => {
-  it('waits for the picture, selects locally and updates child and Logs links', () => {
+  it('waits for the lean picture and draws addressable node boxes with live metrics', () => {
     const h = harness()
     expect(h.el('hilos-daemon-overview-waiting')).not.toBeNull()
-    expect(h.el('hilos-daemon-inspector')).toBeNull()
     seed(h)
     h.scope.data.set(DAEMON_DATABASE_DATA, {
       host: 'db',
@@ -62,32 +61,132 @@ describe('HilosDaemonPage', () => {
     expect(h.el('hilos-daemon-database-address')?.textContent).toContain(
       'mysql://db:3306/project',
     )
-    const requests = h.sendViewport.mock.calls.length
+    const box = h.el('hilos-daemon-node-n2')!
+    expect(box.tagName).toBe('A')
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/n2')
+    expect(box.getAttribute('aria-label')).toBe('Node n2')
+    expect(box.getAttribute('aria-pressed')).toBeNull()
+    expect(box.textContent).toContain('150%')
+    expect(box.textContent).toContain('4.0 KB')
+    expect(box.textContent).toContain('2 worker processes measured')
+    expect(h.el('hilos-daemon-inspector')).toBeNull()
     expect(
       h.el('hilos-daemon-worker-n1-regular-0')?.getAttribute('title'),
     ).toBe('Ordinary worker · occupied · 2 agents')
-    expect(
-      h.el('hilos-daemon-worker-n1-monopolistic-4')?.getAttribute('title'),
-    ).toBe('Monopolistic worker · occupied · 1 agents')
-    h.el('hilos-daemon-node-n2')!.click()
+    const requests = h.sendViewport.mock.calls.length
+    box.click()
     h.detect()
-    expect(h.el('hilos-daemon-inspector')?.getAttribute('data-node-id')).toBe(
-      'n2',
-    )
-    expect(
-      h.el('hilos-admin-child-hilos_daemon_workers')?.getAttribute('href'),
-    ).toBe('/hilos/daemon/n2/workers')
-    expect(h.el('hilos-daemon-node-log')?.getAttribute('href')).toContain(
-      '/hilos/logs/view/n2/',
-    )
-    expect(h.router.navigate).not.toHaveBeenCalled()
-    expect(h.router.replacePath).not.toHaveBeenCalled()
+    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/n2')
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
-    expect(h.el('hilos-daemon-monopolistic-count')?.textContent).toContain('1')
-    expect(h.el('hilos-daemon-cpu-percent')?.textContent).toContain('150%')
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
     expect(h.unregister).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces silent metrics with time and restores only a current report', () => {
+    const h = harness()
+    h.scope.data.set(
+      DAEMON_OVERVIEW_DATA,
+      daemonPicture([
+        daemonNode('n1', {
+          online: false,
+          state: 'silent',
+          silentSince: 1_700_000_000,
+        }),
+      ]),
+    )
+    h.detect()
+    const box = () => h.el('hilos-daemon-node-n1')!
+    expect(box().textContent).toContain('Silent since')
+    expect(h.el('hilos-daemon-silent-n1')?.textContent).not.toContain('—')
+    expect(box().getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box().textContent).not.toContain('Daemon CPU')
+    expect(box().textContent).not.toContain('Measured memory')
+    expect(h.el('hilos-daemon-workers-n1')).toBeNull()
+    h.scope.data.set(
+      DAEMON_OVERVIEW_DATA,
+      daemonPicture([
+        daemonNode('n1', {
+          online: false,
+          state: 'silent',
+          silentSince: null,
+          measurements: null,
+          workers: null,
+          standing: null,
+        }),
+      ]),
+    )
+    h.detect()
+    expect(box().textContent).toContain('Silent since —')
+    seed(h)
+    expect(box().textContent).toContain('150%')
+    expect(h.el('hilos-daemon-inspector')).toBeNull()
+    h.fixture.destroy()
+  })
+
+  it('keeps unknown, empty and zero distinct and encodes a standalone node address', () => {
+    const h = harness()
+    h.scope.data.set(DAEMON_OVERVIEW_DATA, daemonPicture([]))
+    h.detect()
+    expect(h.el('hilos-daemon-overview-empty')?.textContent).toContain(
+      'No nodes in the picture',
+    )
+    const nodeId = 'node /?#%2F🌍'
+    h.scope.data.set(
+      DAEMON_OVERVIEW_DATA,
+      daemonPicture(
+        [
+          daemonNode(nodeId, {
+            workers: null,
+            measurements: null,
+            standing: null,
+          }),
+        ],
+        false,
+      ),
+    )
+    h.detect()
+    const box = () =>
+      [...h.root.querySelectorAll('a')].find(
+        (item) =>
+          item.getAttribute('data-id') === `hilos-daemon-node-${nodeId}`,
+      )!
+    expect(box().textContent).toContain('Single installation')
+    expect(box().textContent).toContain('Workers: —')
+    expect(box().textContent).toContain('Browser connections: —')
+    expect(box().getAttribute('href')).toBe(
+      h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId }),
+    )
+    const zero = daemonNode(nodeId)
+    h.scope.data.set(
+      DAEMON_OVERVIEW_DATA,
+      daemonPicture(
+        [
+          {
+            ...zero,
+            workers: [],
+            standing: { connections: 0 },
+            measurements: {
+              ...zero.measurements!,
+              cores: 0,
+              daemonCores: 0,
+              masterMemory: 0,
+              workersMemory: 0,
+              workersMeasured: 0,
+              memoryCeiling: 0,
+            },
+          },
+        ],
+        false,
+      ),
+    )
+    h.detect()
+    expect(box().textContent).toContain('No workers')
+    expect(box().textContent).toContain('Browser connections: 0')
+    expect(box().textContent).toContain('0 B / 0 B')
+    expect(h.el('hilos-daemon-consensus')).toBeNull()
+    expect(h.el('hilos-daemon-inspector')).toBeNull()
+    h.fixture.destroy()
   })
 
   it('draws inline details under the selected type and inside its card, keeping tabs mounted', () => {

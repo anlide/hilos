@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   DAEMON_NODE_DATA,
   DAEMON_PROCESSES_REPORTED_DATA,
@@ -36,12 +37,13 @@ describe('HilosDaemonWorkersPage', () => {
     )
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })
     h.detect()
     expect(h.el('hilos-daemon-node-state')?.textContent).toContain('Silent')
-    expect(h.el('hilos-daemon-node-diagram')?.getAttribute('href')).toBe(
+    expect(h.el('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
     )
     expect(h.el('hilos-daemon-workers-empty-silent')).not.toBeNull()
@@ -57,6 +59,7 @@ describe('HilosDaemonWorkersPage', () => {
     h.window('hilosDaemonWorkers', [worker])
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })
@@ -90,13 +93,13 @@ describe('HilosDaemonWorkersPage', () => {
     })
     h.detect()
     expect(h.unregister).toHaveBeenCalledTimes(1)
-    expect(h.el('hilos-daemon-node-id')?.textContent).toContain('n2')
+    expect(h.el('hilos-page-head-title')?.textContent).toContain('n2')
     h.window('hilosDaemonWorkers', [worker])
     expect(h.register.mock.calls.at(-1)?.[1].descriptor().filter).toEqual({
       node: 'n2',
     })
     const scopes = new ScopeManager()
-    scopes.openPage(HilosPages.DAEMON_WORKERS)
+    openNodePage(scopes, HilosPages.DAEMON_WORKERS)
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
     expect(h.unregister).toHaveBeenCalledTimes(2)

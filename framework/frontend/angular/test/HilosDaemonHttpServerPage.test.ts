@@ -1,3 +1,4 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   DAEMON_HTTP_DATA,
   DAEMON_NODE_DATA,
@@ -43,6 +44,7 @@ describe('HilosDaemonHttpServerPage', () => {
     )
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      role: null,
       state: 'silent',
       silentSince: 1700000000,
     })
@@ -104,7 +106,7 @@ describe('HilosDaemonHttpServerPage', () => {
       node: 'n2',
     })
     const scopes = new ScopeManager()
-    const replacement = scopes.openPage(HilosPages.DAEMON_HTTP_SERVER)
+    const replacement = openNodePage(scopes, HilosPages.DAEMON_HTTP_SERVER)
     replacement.data.set(DAEMON_HTTP_DATA, { ...summary, port: 9090 })
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()

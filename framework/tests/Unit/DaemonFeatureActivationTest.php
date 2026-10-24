@@ -24,6 +24,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
@@ -40,13 +41,14 @@ use PHPUnit\Framework\TestCase;
 /** Pins the real Daemon feature definition and its startup refusal contract. */
 final class DaemonFeatureActivationTest extends TestCase
 {
-    public function testDefinitionRequiresExactlyEightPagesAndThreeAgentsWithoutLogs(): void
+    public function testDefinitionRequiresExactlyNinePagesAndThreeAgentsWithoutLogs(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::DAEMON);
 
         self::assertInstanceOf(DaemonFeature::class, $definition);
         self::assertSame([
             AbstractHilosDaemonPage::class,
+            AbstractHilosDaemonNodeOverviewPage::class,
             AbstractHilosDaemonWorkersPage::class,
             AbstractHilosDaemonAgentsPage::class,
             AbstractHilosDaemonCronPage::class,
@@ -100,6 +102,15 @@ final class DaemonFeatureActivationTest extends TestCase
             . AbstractHilosDaemonWebsocketsPage::class);
 
         DaemonFeatureMissingPageHilos::validateFeatureActivation();
+    }
+
+    public function testMissingNodeOverviewRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but no page in PAGES extends '
+            . AbstractHilosDaemonNodeOverviewPage::class);
+
+        DaemonFeatureMissingNodePageHilos::validateFeatureActivation();
     }
 
     public function testMissingCronTableRefusesStartup(): void
@@ -272,6 +283,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
 
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
@@ -358,6 +370,10 @@ final class DaemonFeaturePage extends AbstractHilosDaemonPage
 {
 }
 
+final class DaemonFeatureNodePage extends AbstractHilosDaemonNodeOverviewPage
+{
+}
+
 final class DaemonFeatureWorkersPage extends AbstractHilosDaemonWorkersPage
 {
 }
@@ -390,6 +406,7 @@ final class DaemonFeatureMissingPageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
@@ -551,6 +568,7 @@ final class DaemonFeatureMissingEnvPageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
@@ -580,4 +598,18 @@ final class DaemonFeatureMissingProxyHilos extends DaemonFeatureCompleteHilos
 final class DaemonFeatureUndeclaredHilos extends DaemonFeatureCompleteHilos
 {
     protected const array FEATURES = [];
+}
+
+final class DaemonFeatureMissingNodePageHilos extends DaemonFeatureCompleteHilos
+{
+    public const array PAGES = [
+        DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
+        DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
+        DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
+        DaemonFeatureWebsocketsPage::PAGE => DaemonFeatureWebsocketsPage::class,
+        DaemonFeatureHttpServerPage::PAGE => DaemonFeatureHttpServerPage::class,
+        DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
+        DaemonFeatureEnvMismatchPage::PAGE => DaemonFeatureEnvMismatchPage::class,
+    ];
 }

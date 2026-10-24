@@ -10,6 +10,18 @@ import {
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import {
   DAEMON_ROOT_PATH,
+  DAEMON_NODE_PATH,
+  DAEMON_NODE_TABS,
+  expectDaemonNodeHead,
+  expectDaemonNodeFits,
+  watchPageErrorFrames,
+  expectDaemonNodeTableName,
+  expectStandaloneNodeOverview,
+  holdPageReply,
+  countSentFrames,
+  watchDaemonNodeFrames,
+  expectDaemonNodeAnswer,
+  expectDaemonNodeLive,
   DAEMON_WORKERS_PATH,
   DAEMON_WORKERS_CHILD,
   DAEMON_ROOT_CRUMB,
@@ -67,10 +79,8 @@ test.describe('daemon overview', () => {
     const node = page.getByTestId('hilos-daemon-node-standalone')
     await node.focus()
     await node.press('Enter')
-    await node.press('Space')
-    await node.click()
-    await expect(node).toHaveAttribute('aria-pressed', 'true')
-    await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
+    await expect(page).toHaveURL(new RegExp(`${DAEMON_NODE_PATH}$`))
+    await expectStandaloneNodeOverview(expect, page)
 
     await page.getByTestId(DAEMON_WORKERS_CHILD).click()
     await expect(page).toHaveURL(new RegExp(`${DAEMON_WORKERS_PATH}$`))
@@ -82,6 +92,8 @@ test.describe('daemon overview', () => {
     await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
 
+    await page.getByTestId('hilos-daemon-node-standalone').click()
+    await expectStandaloneNodeOverview(expect, page)
     await page.getByTestId('hilos-daemon-node-log').click()
     await expectDaemonPage(expect, page, 'hilos_logs_view')
     await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
@@ -94,8 +106,8 @@ test.describe('daemon overview', () => {
     await expect(streams).toHaveValue('')
     await expect(page).toHaveURL(/\/hilos\/logs\/view\/standalone\/live$/)
     await page.goBack()
-    await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
-    await expectStandaloneOverview(expect, page, DATABASE_HOST)
+    await expect(page).toHaveURL(new RegExp(`${DAEMON_NODE_PATH}$`))
+    await expectStandaloneNodeOverview(expect, page)
   })
 
   test('keeps the complete technical root available in admin view mode', async ({
@@ -283,13 +295,7 @@ test.describe('daemon overview', () => {
       page.getByTestId('hilos-daemon-database-address'),
       page.getByTestId('hilos-daemon-database-migration'),
       page.getByTestId('hilos-daemon-placement-tab'),
-      page.getByTestId('hilos-daemon-node-log'),
-      page.getByTestId(DAEMON_WORKERS_CHILD),
       ...(await page.getByTestId(/^hilos-daemon-worker-standalone-/).all()),
-      ...(await page
-        .getByTestId('hilos-daemon-maintenance')
-        .locator('button')
-        .all()),
     ]) {
       await target.scrollIntoViewIfNeeded()
       await fitsInScrollport(target)
@@ -350,15 +356,23 @@ test.describe('daemon overview', () => {
     await shownByTestId(page, 'hilos-daemon-placement-collapse').click()
     await page.getByTestId('hilos-daemon-nodes-tab').click()
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
+    await page.getByTestId('hilos-daemon-node-standalone').click()
+    await expectStandaloneNodeOverview(expect, page)
     await page.getByTestId(DAEMON_WORKERS_CHILD).click()
     await expectDaemonPage(expect, page, 'hilos_daemon_workers')
     await expectStandaloneWorkers(expect, page)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Workers')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'standalone',
+    )
     await page.getByTestId(DAEMON_ROOT_CRUMB).click()
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
-    await page.getByTestId('hilos-admin-child-hilos_daemon_agents').click()
+    await page.getByTestId('hilos-daemon-node-standalone').click()
+    await expectStandaloneNodeOverview(expect, page)
+    await page.getByTestId('hilos-page-tab-hilos_daemon_agents').click()
     await expectDaemonPage(expect, page, 'hilos_daemon_agents')
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agents')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'standalone',
+    )
     await expect(
       shownByTestId(
         page,
@@ -367,14 +381,15 @@ test.describe('daemon overview', () => {
     ).toBeEnabled()
     await page.getByTestId(DAEMON_ROOT_CRUMB).click()
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
-    for (const child of ['cron', 'http_server', 'env', 'env_mismatch']) {
+    for (const child of ['cron', 'http_server', 'env']) {
       const key = `hilos_daemon_${child}`
-      await page.getByTestId(`hilos-admin-child-${key}`).click()
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page)
+      await page.getByTestId(`hilos-page-tab-${key}`).click()
       await expectDaemonPage(expect, page, key)
       if (child === 'cron') await expectStandaloneCron(expect, page)
       if (child === 'http_server') await expectStandaloneHttp(expect, page)
       if (child === 'env') await expectStandaloneEnvironment(expect, page)
-      if (child === 'env_mismatch') await expectStandaloneMismatch(expect, page)
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -384,6 +399,111 @@ test.describe('daemon overview', () => {
 
 test.describe('daemon node pages', () => {
   test.afterEach(() => setAdminViewMode(false))
+
+  for (const viewer of [false, true]) {
+    test(`cold loads the addressed Node, reloads and follows every tab with history as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+      page,
+      context,
+    }) => {
+      // Cold reply hold, reload and six independent table subscriptions.
+      test.slow()
+      await setAdminViewMode(viewer)
+      if (!viewer) await signUpAdmin(page)
+      const cold = await context.newPage()
+      const held = await holdPageReply(cold, 'hilos_daemon_node')
+      const reports = watchDaemonNodeFrames(cold)
+      const refusals = watchPageErrorFrames(cold)
+      const subscribes = countSentFrames(cold, '"type":"page_subscribe"')
+      const actions = countSentFrames(cold, '"type":"action"')
+      try {
+        const ready = gotoPage(cold, DAEMON_NODE_PATH, PAGE_READY)
+        await held.received
+        await expect(cold.getByTestId('hilos-page-skeleton')).toBeVisible()
+        await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
+        await expect(cold.getByTestId('hilos-breadcrumb')).toHaveCount(0)
+        held.release()
+        await ready
+        await expectStandaloneNodeOverview(expect, cold)
+        await expectDaemonNodeAnswer(expect, cold, reports.frames)
+        await expectDaemonNodeFits(expect, cold)
+        expect(subscribes()).toBe(1)
+        expect(actions()).toBe(0)
+        const beforeLive = reports.frames.length
+        const visitor = await context.newPage()
+        try {
+          await gotoPage(visitor, '/', PAGE_READY)
+          await expectDaemonNodeLive(expect, cold, reports.frames, beforeLive)
+          await expectStandaloneNodeOverview(expect, cold)
+          expect(subscribes()).toBe(1)
+          expect(actions()).toBe(0)
+        } finally {
+          await visitor.close()
+        }
+        if (viewer)
+          await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
+        await cold.reload()
+        await expectStandaloneNodeOverview(expect, cold)
+        for (const tab of DAEMON_NODE_TABS.slice(1)) {
+          const link = cold.getByTestId(`hilos-page-tab-${tab.key}`)
+          await link.focus()
+          await expect(link).toBeFocused()
+          await link.press('Enter')
+          await expect(cold).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+          await expectDaemonNodeHead(expect, cold, tab.key)
+          if (tab.key !== 'hilos_daemon_env')
+            await expectDaemonNodeTableName(expect, cold)
+          if (tab.key === 'hilos_daemon_agents') {
+            const restart = shownByTestId(
+              cold,
+              `hilos-daemon-agent-restart-${DAEMON_PLACEMENT_TYPE}`,
+            )
+            if (viewer) await expect(restart).toBeDisabled()
+            else await expect(restart).toBeEnabled()
+          }
+          await cold.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+          await expectStandaloneNodeOverview(expect, cold)
+        }
+        await cold.getByTestId('hilos-daemon-environment-link').click()
+        await expectDaemonNodeHead(expect, cold, 'hilos_daemon_env')
+        await cold.goBack()
+        await expectStandaloneNodeOverview(expect, cold)
+        await cold.goForward()
+        await expectDaemonNodeHead(expect, cold, 'hilos_daemon_env')
+        await cold.goBack()
+        await expectStandaloneNodeOverview(expect, cold)
+        await cold.getByTestId('hilos-daemon-node-log').click()
+        await expectDaemonPage(expect, cold, 'hilos_logs_view')
+        await expect(cold).toHaveURL('/hilos/logs/view/standalone/live')
+        await expect(cold.getByTestId('hilos-log-source')).toHaveValue('live')
+        await cold.goBack()
+        await expectStandaloneNodeOverview(expect, cold)
+        await gotoPage(cold, '/hilos/daemon/unknown-node')
+        await expect
+          .poll(() => refusals.at(-1)?.data)
+          .toMatchObject({
+            page: 'hilos_daemon_node',
+            httpCode: 404,
+            errorCode: 'not_found',
+          })
+        await expect(cold.getByTestId('page-error')).toHaveAttribute(
+          'data-error-code',
+          '404',
+        )
+        await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
+        await expect(cold.getByTestId('hilos-page-tabs')).toHaveCount(0)
+        await expect(
+          cold.getByTestId('hilos-daemon-node-overview'),
+        ).toHaveCount(0)
+        await expect(cold.getByTestId('page-error')).not.toContainText(
+          'standalone',
+        )
+      } finally {
+        held.dispose()
+        reports.stop()
+        await cold.close()
+      }
+    })
+  }
 
   for (const viewer of [false, true]) {
     test(`reads Workers and Cron with named tables and keyboard links as ${viewer ? 'a viewer' : 'an admin'}`, async ({
@@ -396,14 +516,16 @@ test.describe('daemon node pages', () => {
       await page.setViewportSize({ width: 1280, height: 812 })
       await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page)
       await page.getByTestId(DAEMON_WORKERS_CHILD).focus()
       await page.getByTestId(DAEMON_WORKERS_CHILD).press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_workers')
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'Workers',
+        'standalone',
       )
       const surface = page.getByRole('table')
-      await expect(surface).toHaveAccessibleName('Workers')
+      await expect(surface).toHaveAccessibleName('standalone')
       const expand = shownByTestId(page, /^hilos-table-expand-/).first()
       await expect(expand).toBeVisible()
       await expand.focus()
@@ -425,7 +547,9 @@ test.describe('daemon node pages', () => {
       await expectDaemonPage(expect, page, 'hilos_daemon_workers')
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      const cron = page.getByTestId('hilos-admin-child-hilos_daemon_cron')
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page)
+      const cron = page.getByTestId('hilos-page-tab-hilos_daemon_cron')
       await expect(cron).toHaveAttribute(
         'href',
         '/hilos/daemon/standalone/cron',
@@ -433,9 +557,11 @@ test.describe('daemon node pages', () => {
       await cron.focus()
       await cron.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_cron')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Cron')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        'standalone',
+      )
       const schedule = page.getByRole('table')
-      await expect(schedule).toHaveAccessibleName('Cron')
+      await expect(schedule).toHaveAccessibleName('standalone')
       await expectStandaloneCron(expect, page)
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -465,7 +591,9 @@ test.describe('daemon node pages', () => {
       await page.setViewportSize({ width: 1280, height: 812 })
       await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      const agents = page.getByTestId('hilos-admin-child-hilos_daemon_agents')
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page)
+      const agents = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
       await expect(agents).toHaveAttribute(
         'href',
         '/hilos/daemon/standalone/agents',
@@ -473,9 +601,11 @@ test.describe('daemon node pages', () => {
       await agents.focus()
       await agents.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_agents')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agents')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        'standalone',
+      )
       const surface = page.getByRole('table')
-      await expect(surface).toHaveAccessibleName('Agents')
+      await expect(surface).toHaveAccessibleName('standalone')
       await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
       const search = page.getByTestId('hilos-table-search')
       await expect(search).toHaveAccessibleName('Search by agent id…')
@@ -542,9 +672,9 @@ test.describe('daemon node pages', () => {
       await expectDaemonPage(expect, page, 'hilos_daemon_agents')
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      const http = page.getByTestId(
-        'hilos-admin-child-hilos_daemon_http_server',
-      )
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page)
+      const http = page.getByTestId('hilos-page-tab-hilos_daemon_http_server')
       await expect(http).toHaveAttribute(
         'href',
         '/hilos/daemon/standalone/http',
@@ -553,10 +683,10 @@ test.describe('daemon node pages', () => {
       await http.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_http_server')
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'HTTP server',
+        'standalone',
       )
       const routes = page.getByRole('table')
-      await expect(routes).toHaveAccessibleName('HTTP server')
+      await expect(routes).toHaveAccessibleName('standalone')
       await expectStandaloneHttp(expect, page)
       await expect(page.getByTestId('hilos-table-search')).toHaveCount(0)
       for (const target of [
@@ -668,6 +798,8 @@ test.describe('daemon environment', () => {
     await signUpAdmin(page)
     await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
+    await page.getByTestId('hilos-daemon-node-standalone').click()
+    await expectStandaloneNodeOverview(expect, page)
     const link = page.getByTestId('hilos-daemon-environment-link')
     await link.scrollIntoViewIfNeeded()
     await link.focus()
@@ -678,7 +810,7 @@ test.describe('daemon environment', () => {
     await expectStandaloneEnvironment(expect, page)
     const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Environment',
+      'standalone',
     )
     for (const name of ['Catalog keys', 'Orphans in .env', 'Reading ladder']) {
       await expect(page.getByRole('table', { name })).toBeVisible()
@@ -733,12 +865,20 @@ test.describe('daemon environment', () => {
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
     for (const child of ['cron', 'http_server', 'env', 'env_mismatch']) {
       const key = `hilos_daemon_${child}`
-      const link = page.getByTestId(`hilos-admin-child-${key}`)
-      if (child === 'env_mismatch') {
-        await expect(link).toHaveAttribute('href', '/hilos/daemon/env-mismatch')
+      await gotoPage(
+        page,
+        child === 'env_mismatch'
+          ? '/hilos/daemon/env-mismatch'
+          : DAEMON_NODE_PATH,
+        PAGE_READY,
+      )
+      if (child !== 'env_mismatch')
+        await expectStandaloneNodeOverview(expect, page)
+      const link = page.getByTestId(`hilos-page-tab-${key}`)
+      if (child !== 'env_mismatch') {
+        await link.focus()
+        await link.press('Enter')
       }
-      await link.focus()
-      await link.press('Enter')
       await expectDaemonPage(expect, page, key)
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       await expect(page.getByTestId('view-mode-banner')).toHaveText(

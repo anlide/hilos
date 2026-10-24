@@ -149,6 +149,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.DAEMON]: lazyPage(() =>
     import('./views/Hilos/Daemon/Daemon.vue').then((m) => m.default),
   ),
+  [HilosPages.DAEMON_NODE]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Node.vue').then((m) => m.default),
+  ),
   [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
     import('./views/Hilos/Daemon/Workers.vue').then((m) => m.default),
   ),

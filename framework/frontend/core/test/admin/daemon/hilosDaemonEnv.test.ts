@@ -464,6 +464,7 @@ describe('readHilosDaemonEnvPage', () => {
     const stateSignal = readHilosDaemonEnvPage(scopes)
 
     expect(stateSignal.get()).toEqual({
+      node: null,
       environment: null,
       nodeSilent: false,
     })
@@ -595,6 +596,7 @@ describe('readHilosDaemonEnvPage', () => {
     page.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
 
     expect(stateSignal.get()).toEqual({
+      node: null,
       environment: null,
       nodeSilent: true,
     })
@@ -631,6 +633,7 @@ describe('readHilosDaemonEnvPage', () => {
     })
     page.data.set(DAEMON_ENV_NODE_SILENT_DATA, false)
     expect(stateSignal.get()).toEqual({
+      node: null,
       environment: { nodeId: 'node-1', cluster: true, keys: [] },
       nodeSilent: false,
     })
@@ -642,6 +645,7 @@ describe('readHilosDaemonEnvPage', () => {
     })
     page.data.set(DAEMON_ENV_NODE_SILENT_DATA, false)
     expect(stateSignal.get()).toEqual({
+      node: null,
       environment: { nodeId: 'node-2', cluster: false, keys: [] },
       nodeSilent: false,
     })
@@ -740,50 +744,58 @@ describe('formatDaemonEnvDriftNotice', () => {
 })
 
 describe('daemonEnvNodeHeading', () => {
-  it('derives heading for live cluster, live standalone, silent node, and initial/waiting state', () => {
-    // live cluster
+  it('uses the own node response for live and silent cluster and standalone pages', () => {
+    for (const clustered of [false, true]) {
+      for (const silent of [false, true]) {
+        const node = {
+          clustered,
+          state: silent ? DAEMON_NODE_STATE_SILENT : null,
+          silentSince: null,
+          role: 'slave' as const,
+        }
+        expect(
+          daemonEnvNodeHeading({
+            node,
+            environment: silent
+              ? null
+              : { nodeId: 'n1', cluster: clustered, keys: [] },
+            nodeSilent: silent,
+          }),
+        ).toBe(node)
+      }
+    }
     expect(
       daemonEnvNodeHeading({
-        environment: { nodeId: 'n1', cluster: true, keys: [] },
-        nodeSilent: false,
-      }),
-    ).toEqual({
-      clustered: true,
-      state: null,
-      silentSince: null,
-    })
-
-    // live standalone
-    expect(
-      daemonEnvNodeHeading({
-        environment: { nodeId: 'standalone', cluster: false, keys: [] },
-        nodeSilent: false,
-      }),
-    ).toEqual({
-      clustered: false,
-      state: null,
-      silentSince: null,
-    })
-
-    // silent node
-    expect(
-      daemonEnvNodeHeading({
-        environment: null,
-        nodeSilent: true,
-      }),
-    ).toEqual({
-      clustered: true,
-      state: DAEMON_NODE_STATE_SILENT,
-      silentSince: null,
-    })
-
-    // nothing yet / waiting
-    expect(
-      daemonEnvNodeHeading({
+        node: null,
         environment: null,
         nodeSilent: false,
       }),
     ).toBeNull()
+  })
+
+  it('follows own node live updates and clears it on scope replacement and loss', () => {
+    const scopes = new ScopeManager()
+    const state = readHilosDaemonEnvPage(scopes)
+    const page = scopes.openPage(HilosPages.DAEMON_ENV)
+    const node = {
+      clustered: false,
+      state: null,
+      silentSince: null,
+      role: 'master',
+    }
+    page.data.set('node', node)
+    expect(daemonEnvNodeHeading(state.get())).toEqual(node)
+    page.data.set('node', { ...node, state: 'silent' })
+    expect(daemonEnvNodeHeading(state.get())).toEqual({
+      ...node,
+      state: 'silent',
+    })
+    scopes.openPage(HilosPages.DAEMON_ENV)
+    expect(daemonEnvNodeHeading(state.get())).toBeNull()
+    page.data.set('node', node)
+    expect(daemonEnvNodeHeading(state.get())).toBeNull()
+    scopes.dropPage()
+    expect(daemonEnvNodeHeading(state.get())).toBeNull()
   })
 })
 

@@ -98,6 +98,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.DAEMON]: lazyPage(() =>
     import('./views/Hilos/Daemon/Daemon.js').then((m) => m.default),
   ),
+  [HilosPages.DAEMON_NODE]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Node.js').then((m) => m.default),
+  ),
   [HilosPages.DAEMON_WORKERS]: lazyPage(() =>
     import('./views/Hilos/Daemon/Workers.js').then((m) => m.default),
   ),

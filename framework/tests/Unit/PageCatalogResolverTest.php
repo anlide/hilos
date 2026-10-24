@@ -275,6 +275,50 @@ final class PageCatalogResolverTest extends TestCase
         );
     }
 
+    public function testNodePagesShareTheirOwnHeadAndOrderedTabs(): void
+    {
+        DaemonPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['nodeId' => 'node /?#']);
+        $expected = [
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_DAEMON_NODE,
+                'label' => 'Node',
+                'lead' => 'One node: processor, memory, environment summary, and maintenance.',
+                'icon' => 'bi-hdd-network',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Daemon'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_NODE, 'label' => 'Node'],
+            ],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_DAEMON_NODE, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_WORKERS, 'label' => 'Workers'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_AGENTS, 'label' => 'Agents'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_CRON, 'label' => 'Cron'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_WEBSOCKETS, 'label' => 'WebSockets'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, 'label' => 'HTTP'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_ENV, 'label' => 'Environment'],
+            ],
+            'pageChildren' => [],
+        ];
+        foreach ([
+            HilosPageConstants::HILOS_DAEMON_NODE,
+            HilosPageConstants::HILOS_DAEMON_WORKERS,
+            HilosPageConstants::HILOS_DAEMON_AGENTS,
+            HilosPageConstants::HILOS_DAEMON_CRON,
+            HilosPageConstants::HILOS_DAEMON_WEBSOCKETS,
+            HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
+            HilosPageConstants::HILOS_DAEMON_ENV,
+        ] as $page) {
+            self::assertSame($expected, PageCatalogResolver::head($page, $params)?->toArray(), $page);
+            self::assertSame(HilosPageConstants::HILOS_DAEMON_NODE, PageCatalogResolver::rowOwner($page));
+        }
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_DAEMON, $params));
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $params));
+        self::assertSame(HilosPageConstants::HILOS_DAEMON, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH));
+    }
+
     /** Providers that have not adopted the user keep the legacy breadcrumb through each child. */
     public function testUserEntityAndItsChildrenStayLegacyWithoutAProjectOptIn(): void
     {
@@ -1096,6 +1140,22 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
 
         return $entry;
     }
+}
+
+/** Register the whole Node owner while retaining the legacy Daemon root. */
+abstract class DaemonPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_DAEMON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_NODE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_WORKERS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_AGENTS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_CRON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_HTTP_SERVER => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_ENV => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH => PageHeadTestPage::class,
+    ];
 }
 
 abstract class StatusPageCatalogHilos extends Hilos

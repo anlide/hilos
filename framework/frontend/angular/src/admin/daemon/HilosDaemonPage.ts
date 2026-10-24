@@ -5,13 +5,13 @@ import {
   computed,
   effect,
   input,
+  inject,
   signal,
 } from '@angular/core'
 import {
   createHilosDaemonOverview,
   createHilosDaemonPlacementView,
   daemonMonopolisticCount,
-  daemonNodeChildParams,
   daemonPercentage,
   daemonProgressWidth,
   daemonTotalMemory,
@@ -20,6 +20,7 @@ import {
   formatDaemonCores,
   formatDaemonDatabaseAddress,
   formatDaemonNodeState,
+  formatDaemonNodeSilentSince,
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
@@ -28,10 +29,11 @@ import {
 import { HilosPages } from '@hilos/core/base'
 import {
   HilosAdminPage,
+  HilosLink,
+  HILOS_ROUTER,
   HilosSkeleton,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosDaemonNodeInspector } from './HilosDaemonNodeInspector.js'
 import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 import type {
   HilosDaemonOverviewData,
@@ -47,14 +49,14 @@ import type {
     NgClass,
     HilosAdminPage,
     HilosSkeleton,
-    HilosDaemonNodeInspector,
+    HilosLink,
     HilosDaemonPlacement,
   ],
   template: `
     @let picture = overview();
     @let primary = database();
 
-    <hilos-admin-page [page]="page" [childParams]="childParams()">
+    <hilos-admin-page [page]="page">
       <div class="nav nav-tabs mb-3" aria-label="Daemon diagrams">
         <button
           type="button"
@@ -189,27 +191,17 @@ import type {
                       >
                     </div>
                   }
-                  <button
-                    type="button"
-                    class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start"
-                    [ngClass]="{
-                      'border-primary border-2':
-                        selectedNodeId() === node.nodeId,
-                      'border-danger-subtle':
-                        node.state === 'silent' &&
-                        selectedNodeId() !== node.nodeId,
-                    }"
-                    [attr.aria-pressed]="selectedNodeId() === node.nodeId"
-                    [attr.aria-label]="'Select node ' + node.nodeId"
+                  <a
+                    [hilosLink]="
+                      router.resolvePath(pages.DAEMON_NODE, {
+                        nodeId: node.nodeId,
+                      })!
+                    "
+                    class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none"
+                    [ngClass]="{ 'border-danger-subtle': !node.online }"
+                    [attr.aria-label]="'Node ' + node.nodeId"
                     [attr.data-id]="'hilos-daemon-node-' + node.nodeId"
                     [attr.data-state]="node.state"
-                    (click)="daemon().selectNode(node.nodeId)"
-                    (keydown.enter)="
-                      $event.preventDefault(); daemon().selectNode(node.nodeId)
-                    "
-                    (keydown.space)="
-                      $event.preventDefault(); daemon().selectNode(node.nodeId)
-                    "
                   >
                     <span
                       class="d-flex flex-wrap align-items-center gap-2 mb-3"
@@ -238,149 +230,166 @@ import type {
                         >
                       }
                     </span>
-                    <span
-                      class="d-flex flex-wrap gap-1 mb-3"
-                      [attr.data-id]="'hilos-daemon-workers-' + node.nodeId"
-                    >
-                      @if (node.workers === null) {
-                        <span class="small text-body-secondary"
-                          >Workers: —</span
-                        >
-                      } @else if (node.workers.length === 0) {
-                        <span class="small text-body-secondary"
-                          >No workers</span
-                        >
-                      }
-                      @for (
-                        worker of node.workers ?? [];
-                        track worker.kind + ':' + worker.index
-                      ) {
-                        <span
-                          class="badge border font-monospace"
-                          [ngClass]="
-                            daemonWorkerOccupancy(worker) === 'free'
-                              ? 'bg-body-tertiary text-body border-secondary-subtle'
-                              : 'bg-primary-subtle text-primary-emphasis border-primary-subtle'
-                          "
-                          [attr.data-id]="
-                            'hilos-daemon-worker-' +
-                            node.nodeId +
-                            '-' +
-                            worker.kind +
-                            '-' +
-                            worker.index
-                          "
-                          [attr.data-occupancy]="daemonWorkerOccupancy(worker)"
-                          [title]="
-                            (worker.kind === 'monopolistic'
-                              ? 'Monopolistic'
-                              : 'Ordinary') +
-                            ' worker · ' +
-                            daemonWorkerOccupancy(worker) +
-                            ' · ' +
-                            worker.agentCount +
-                            ' agents'
-                          "
-                        >
-                          {{
-                            formatDaemonWorkerName(worker.index, worker.kind)
-                          }}
-                          <span class="visually-hidden">
-                            · {{ daemonWorkerOccupancy(worker) }} ·
-                            {{ worker.agentCount }} agents</span
-                          >
-                        </span>
-                      }
-                    </span>
-                    <span class="d-block small">
-                      <span class="d-flex justify-content-between gap-2 mb-1"
-                        ><span>Daemon CPU</span
-                        ><span
-                          >{{
-                            formatDaemonCores(node.measurements?.daemonCores)
-                          }}
-                          /
-                          {{ formatDaemonCores(node.measurements?.cores) }}
-                          cores</span
-                        ></span
-                      >
+                    @if (!node.online) {
                       <span
-                        class="d-block progress hilos-progress-track"
-                        aria-hidden="true"
-                        ><span
-                          class="progress-bar hilos-progress"
-                          [style.--hilos-progress]="
-                            daemonProgressWidth(
+                        class="d-block small text-body-secondary"
+                        [attr.data-id]="'hilos-daemon-silent-' + node.nodeId"
+                      >
+                        Silent since {{ formatSilentSince(node) ?? '—' }}
+                      </span>
+                    } @else {
+                      <span
+                        class="d-flex flex-wrap gap-1 mb-3"
+                        [attr.data-id]="'hilos-daemon-workers-' + node.nodeId"
+                      >
+                        @if (node.workers === null) {
+                          <span class="small text-body-secondary"
+                            >Workers: —</span
+                          >
+                        } @else if (node.workers.length === 0) {
+                          <span class="small text-body-secondary"
+                            >No workers</span
+                          >
+                        }
+                        @for (
+                          worker of node.workers ?? [];
+                          track worker.kind + ':' + worker.index
+                        ) {
+                          <span
+                            class="badge border font-monospace"
+                            [ngClass]="
+                              daemonWorkerOccupancy(worker) === 'free'
+                                ? 'bg-body-tertiary text-body border-secondary-subtle'
+                                : 'bg-primary-subtle text-primary-emphasis border-primary-subtle'
+                            "
+                            [attr.data-id]="
+                              'hilos-daemon-worker-' +
+                              node.nodeId +
+                              '-' +
+                              worker.kind +
+                              '-' +
+                              worker.index
+                            "
+                            [attr.data-occupancy]="
+                              daemonWorkerOccupancy(worker)
+                            "
+                            [title]="
+                              (worker.kind === 'monopolistic'
+                                ? 'Monopolistic'
+                                : 'Ordinary') +
+                              ' worker · ' +
+                              daemonWorkerOccupancy(worker) +
+                              ' · ' +
+                              worker.agentCount +
+                              ' agents'
+                            "
+                          >
+                            {{
+                              formatDaemonWorkerName(worker.index, worker.kind)
+                            }}
+                            <span class="visually-hidden">
+                              · {{ daemonWorkerOccupancy(worker) }} ·
+                              {{ worker.agentCount }} agents</span
+                            >
+                          </span>
+                        }
+                      </span>
+                      <span class="d-block small">
+                        <span class="d-flex justify-content-between gap-2 mb-1"
+                          ><span>Daemon CPU</span
+                          ><span
+                            >{{
+                              formatDaemonCores(node.measurements?.daemonCores)
+                            }}
+                            /
+                            {{ formatDaemonCores(node.measurements?.cores) }}
+                            cores</span
+                          ></span
+                        >
+                        <span
+                          class="d-block progress hilos-progress-track"
+                          aria-hidden="true"
+                          ><span
+                            class="progress-bar hilos-progress"
+                            [style.--hilos-progress]="
+                              daemonProgressWidth(
+                                daemonPercentage(
+                                  node.measurements?.daemonCores,
+                                  node.measurements?.cores
+                                )
+                              )
+                            "
+                          ></span
+                        ></span>
+                        <span class="d-block text-body-secondary mb-2"
+                          >{{
+                            formatDaemonPercentage(
                               daemonPercentage(
                                 node.measurements?.daemonCores,
                                 node.measurements?.cores
                               )
                             )
-                          "
-                        ></span
-                      ></span>
-                      <span class="d-block text-body-secondary mb-2"
-                        >{{
-                          formatDaemonPercentage(
-                            daemonPercentage(
-                              node.measurements?.daemonCores,
-                              node.measurements?.cores
-                            )
-                          )
-                        }}
-                        of available CPU</span
-                      >
-                      <span class="d-flex justify-content-between gap-2 mb-1"
-                        ><span>Measured memory</span
-                        ><span
-                          >{{ formatDaemonBytes(daemonTotalMemory(node)) }} /
-                          {{
-                            formatDaemonBytes(node.measurements?.memoryCeiling)
-                          }}</span
-                        ></span
-                      >
-                      <span
-                        class="d-block progress hilos-progress-track"
-                        aria-hidden="true"
-                        ><span
-                          class="progress-bar hilos-progress"
-                          [style.--hilos-progress]="
-                            daemonProgressWidth(
-                              daemonPercentage(
-                                daemonTotalMemory(node),
+                          }}
+                          of available CPU</span
+                        >
+                        <span class="d-flex justify-content-between gap-2 mb-1"
+                          ><span>Measured memory</span
+                          ><span
+                            >{{ formatDaemonBytes(daemonTotalMemory(node)) }} /
+                            {{
+                              formatDaemonBytes(
                                 node.measurements?.memoryCeiling
                               )
+                            }}</span
+                          ></span
+                        >
+                        <span
+                          class="d-block progress hilos-progress-track"
+                          aria-hidden="true"
+                          ><span
+                            class="progress-bar hilos-progress"
+                            [style.--hilos-progress]="
+                              daemonProgressWidth(
+                                daemonPercentage(
+                                  daemonTotalMemory(node),
+                                  node.measurements?.memoryCeiling
+                                )
+                              )
+                            "
+                          ></span
+                        ></span>
+                        <span class="d-block text-body-secondary mb-2"
+                          >{{
+                            formatDaemonNumber(
+                              node.measurements?.workersMeasured
                             )
+                          }}
+                          worker processes measured</span
+                        >
+                        <span class="d-block"
+                          >Monopolistic:
+                          {{
+                            formatDaemonNumber(daemonMonopolisticCount(node))
+                          }}</span
+                        >
+                        <span class="d-block text-body-secondary mb-2"
+                          >Pool grows on demand</span
+                        >
+                        <span
+                          class="d-block"
+                          [attr.data-id]="
+                            'hilos-daemon-browsers-' + node.nodeId
                           "
-                        ></span
-                      ></span>
-                      <span class="d-block text-body-secondary mb-2"
-                        >{{
-                          formatDaemonNumber(node.measurements?.workersMeasured)
-                        }}
-                        worker processes measured</span
-                      >
-                      <span class="d-block"
-                        >Monopolistic:
-                        {{
-                          formatDaemonNumber(daemonMonopolisticCount(node))
-                        }}</span
-                      >
-                      <span class="d-block text-body-secondary mb-2"
-                        >Pool grows on demand</span
-                      >
-                      <span
-                        class="d-block"
-                        [attr.data-id]="'hilos-daemon-browsers-' + node.nodeId"
-                        >{{
-                          node.role === 'slave'
-                            ? 'Does not accept browsers'
-                            : 'Browser connections: ' +
-                              formatDaemonNumber(node.standing?.connections)
-                        }}</span
-                      >
-                    </span>
-                  </button>
+                          >{{
+                            node.role === 'slave'
+                              ? 'Does not accept browsers'
+                              : 'Browser connections: ' +
+                                formatDaemonNumber(node.standing?.connections)
+                          }}</span
+                        >
+                      </span>
+                    }
+                  </a>
                 </div>
               }
             </div>
@@ -418,20 +427,13 @@ import type {
             Shared primary connection
           </p>
         </section>
-
-        @if (picture; as picture) {
-          @if (selectedNode(); as node) {
-            <hilos-daemon-node-inspector
-              [overview]="picture"
-              [node]="node"
-            ></hilos-daemon-node-inspector>
-          }
-        }
       </div>
     </hilos-admin-page>
   `,
 })
 export class HilosDaemonPage {
+  protected readonly router = inject(HILOS_ROUTER)
+  protected readonly pages = HilosPages
   protected readonly daemonMonopolisticCount = daemonMonopolisticCount
   protected readonly daemonPercentage = daemonPercentage
   protected readonly daemonProgressWidth = daemonProgressWidth
@@ -455,11 +457,6 @@ export class HilosDaemonPage {
   )
   protected readonly overview = signal<HilosDaemonOverviewData | null>(null)
   protected readonly database = signal<HilosDaemonDatabaseData | null>(null)
-  protected readonly selectedNodeId = signal<string | null>(null)
-  protected readonly selectedNode = signal<HilosDaemonOverviewNode | null>(null)
-  protected readonly childParams = computed(() =>
-    daemonNodeChildParams(this.selectedNodeId()),
-  )
   protected readonly placementActive = signal(false)
   protected readonly placementOpened = signal(false)
   constructor() {
@@ -469,18 +466,19 @@ export class HilosDaemonPage {
       const stops = [
         mirrorHilosSignal(daemon.overview, this.overview),
         mirrorHilosSignal(daemon.database, this.database),
-        mirrorHilosSignal(daemon.selectedNodeId, this.selectedNodeId),
-        mirrorHilosSignal(daemon.selectedNode, this.selectedNode),
       ]
-      daemon.start()
       placement.start()
       onCleanup(() => {
         stops.forEach((stop) => stop())
         placement.dispose()
-        daemon.dispose()
       })
     })
   }
+  /** The silent node's own last-known silence boundary. */
+  protected formatSilentSince(node: HilosDaemonOverviewNode): string | null {
+    return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
+  }
+
   protected openPlacement(): void {
     this.placementOpened.set(true)
     this.placementActive.set(true)

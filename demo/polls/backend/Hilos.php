@@ -67,6 +67,7 @@ use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonCronPage;
@@ -289,6 +290,7 @@ final class Hilos extends HilosFacade
         CountryDetailPage::PAGE => CountryDetailPage::class,
         CountryNamesPage::PAGE => CountryNamesPage::class,
         DaemonPage::PAGE => DaemonPage::class,
+        DaemonNodePage::PAGE => DaemonNodePage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
         DaemonCronPage::PAGE => DaemonCronPage::class,

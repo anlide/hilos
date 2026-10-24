@@ -42,6 +42,7 @@ use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
@@ -231,6 +232,7 @@ final class Hilos extends HilosFacade
         CountryDetailPage::PAGE => CountryDetailPage::class,
         CountryNamesPage::PAGE => CountryNamesPage::class,
         DaemonPage::PAGE => DaemonPage::class,
+        DaemonNodePage::PAGE => DaemonNodePage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
         DaemonCronPage::PAGE => DaemonCronPage::class,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Pages\Daemon;
 
 use Hilos\AdminViewMode\WireField;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
@@ -17,8 +18,11 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\DaemonSection\DaemonNodeHeading;
+use Hilos\DaemonSection\DaemonNodeState;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Pages\Daemon\DTO\HilosDaemonNodeSubscribeParams;
 
 /** Node environment page served by its node's replica or the section fallback. */
@@ -49,6 +53,7 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
      * @return PagePayload Complete node environment or a silent-node answer
      * @throws MissingPageRouteParamException When the node id is absent
      * @throws EnvException When cluster mode cannot be read
+     * @throws HilosException When the declared node identity cannot be read
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
@@ -56,8 +61,15 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
         $agent = $this->getAgent();
         $reading = $agent instanceof DaemonNodeAgent ? $agent->environmentReading() : null;
         $ownerAnswers = $reading !== null && $reading->nodeId === $nodeId;
+        $role = Hilos::$rt?->hilosClusterNodes[$nodeId]?->role;
 
         return new PagePayload(data: [
+            self::NODE => new DaemonNodeHeading(
+                Hilos::$cluster?->isEnabled() === true,
+                $ownerAnswers ? null : DaemonNodeState::Silent,
+                null,
+                $role === null ? null : NodeRole::tryFrom($role),
+            )->toArray(),
             self::ENVIRONMENT => $ownerAnswers
                 ? $reading->view(Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true,
                     Hilos::$cluster?->isEnabled() === true)
@@ -70,6 +82,7 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
     protected function dataFields(): array
     {
         return [
+            self::NODE => WireField::notPersonal(),
             self::ENVIRONMENT => WireField::notPersonal(),
             self::NODE_SILENT => WireField::notPersonal(),
         ];

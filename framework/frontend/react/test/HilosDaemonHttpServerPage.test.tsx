@@ -1,9 +1,11 @@
+import { openNodePage } from './helpers/hilosDaemonNode.js'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ingest,
   type HilosDaemonHttpSummary,
   ScopeManager,
+  pageIdentity,
   createSignal,
   HilosPages,
   type HilosConnection,
@@ -16,7 +18,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 function harness() {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.DAEMON_HTTP_SERVER)
+  openNodePage(scopes, HilosPages.DAEMON_HTTP_SERVER)
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.DAEMON_HTTP_SERVER,
     params: { nodeId: 'n1' },
@@ -28,12 +30,7 @@ function harness() {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal({
-      label: 'HTTP server',
-      lead: '',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page: string) =>
       page === HilosPages.DAEMON ? '/hilos/daemon' : undefined,
@@ -112,7 +109,7 @@ function harness() {
     },
     selectNode(nodeId: string) {
       act(() => {
-        scopes.openPage(HilosPages.DAEMON_HTTP_SERVER)
+        openNodePage(scopes, HilosPages.DAEMON_HTTP_SERVER)
         currentRoute.set({
           page: HilosPages.DAEMON_HTTP_SERVER,
           params: { nodeId },
@@ -147,11 +144,13 @@ function harness() {
 afterEach(cleanup)
 const LIVE: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'leader',
   silentSince: null,
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
+  role: null,
   state: 'silent',
   silentSince: 1700000000,
 }
@@ -394,18 +393,23 @@ describe('HilosDaemonHttpServerPage', () => {
       'hilosDaemonHttpRoutes',
       expect.objectContaining({ filter: { node: 'n2' } }),
     )
-    expect(h.find('hilos-daemon-node-id')?.textContent).toBe('n2')
+    expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
     expect(h.find('hilos-daemon-http-address')?.textContent).toBe('n2:8080')
     expect(h.find('hilos-table-row-GET /status')).toBeNull()
     expect(h.find('hilos-table-row-GET /n2')).not.toBeNull()
-    expect(h.find('hilos-daemon-node-diagram')?.getAttribute('href')).toBe(
+    expect(h.find('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
     )
-    h.response(summary(), { clustered: false, state: null, silentSince: null })
+    h.response(summary(), {
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+    })
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
       'Single installation',
     )
-    expect(h.find('hilos-daemon-node-diagram')).toBeNull()
+    expect(h.find('hilos-page-head-action')).toBeNull()
     h.view.unmount()
     expect(h.unregister).toHaveBeenCalledTimes(2)
     expect([...h.listeners.values()].every((g) => g.size === 0)).toBe(true)
