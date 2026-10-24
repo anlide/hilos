@@ -93,6 +93,7 @@ enum StepOutcome: string
 require_once __DIR__ . '/lane-count.php';
 require_once __DIR__ . '/launch-order.php';
 require_once __DIR__ . '/unstable-line.php';
+require_once __DIR__ . '/quarantine-line.php';
 require_once __DIR__ . '/step-artifacts.php';
 require_once __DIR__ . '/stand-registry.php';
 require_once __DIR__ . '/stand-teardown.php';
@@ -577,7 +578,10 @@ function runPlan(
      *     missing: array<int, string>}> $artifacts Snapshots taken, by step id. */
     $artifacts = [];
     /** @var array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
-     *     unstable: array{count: int, tests: array<int, string>}}> $done */
+     *     unstable: array{count: int, tests: array<int, string>},
+     *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+     *         flake: string, status: string, file: string, line: int, project: string,
+     *         titlePath: list<string>, reason: string}>}}> $done */
     $done = [];
 
     while ($pending !== [] || $running !== []) {
@@ -784,7 +788,10 @@ function launch(string $root, array $step, string $logPath, array $neighbors): a
  *     neighbors: array<int, string>}> $running Ids in flight.
  * @param array<string, string> $logs Log path by step id.
  * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
- *     unstable: array{count: int, tests: array<int, string>}}>
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}}> Completed verdicts and reports.
  */
 function reap(array $running, array $logs): array
 {
@@ -814,7 +821,10 @@ function reap(array $running, array $logs): array
  * @param string $at The step's start time.
  * @param float $seconds The step's elapsed duration.
  * @return array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
- *     unstable: array{count: int, tests: array<int, string>}} The effective verdict and its evidence.
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}} The verdict and independent report data.
  */
 function finishedStep(int $processRc, string $log, string $at, float $seconds): array
 {
@@ -828,6 +838,7 @@ function finishedStep(int $processRc, string $log, string $at, float $seconds): 
         'seconds' => $seconds,
         'note' => '',
         'unstable' => $unstable,
+        'quarantine' => readQuarantineTests($log),
     ];
 }
 
@@ -857,7 +868,11 @@ function readStepLog(string $logPath): string
  *
  * @param array{deps: array<int, string>} $step The step being skipped.
  * @param array<string, array{outcome: StepOutcome}> $done Ids already finished.
- * @return array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string}
+ * @return array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}} A blocked verdict with empty reports.
  */
 function skipped(array $step, array $done): array
 {
@@ -876,6 +891,7 @@ function skipped(array $step, array $done): array
         'seconds' => 0.0,
         'note' => $blocker,
         'unstable' => noUnstableTests(),
+        'quarantine' => noQuarantineTests(),
     ];
 }
 
@@ -889,7 +905,10 @@ function skipped(array $step, array $done): array
  *
  * @param string $id The step that finished.
  * @param array{rc: int, at: string, seconds: float,
- *     unstable: array{count: int, tests: array<int, string>}} $finished How it went.
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}} $finished How it went.
  * @param string $logPath Its output file.
  * @param resource $rc The ledger.
  * @param array{path: string, reason: string, standCommand: string|null} $artifacts Where the
@@ -914,12 +933,19 @@ function reportFinish(string $id, array $finished, string $logPath, $rc, array $
 
 /**
  * @param string $id The completed step's id.
- * @param array{rc: int, unstable: array{count: int}} $finished The effective result.
- * @return string The existing ledger grammar with retry evidence only when present.
+ * @param array{rc: int, unstable: array{count: int},
+ *     quarantine: array{count: int, failed: int, notRun: int}} $finished Verdict and report data.
+ * @return string The existing verdict followed by optional retry and quarantine fields.
  */
 function stepLedgerLine(string $id, array $finished): string
 {
-    return sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable']));
+    return sprintf(
+        "%s rc=%d%s%s\n",
+        $id,
+        $finished['rc'],
+        unstableLedgerField($finished['unstable']),
+        quarantineLedgerField($finished['quarantine']),
+    );
 }
 
 /**
@@ -973,7 +999,10 @@ function reportSkip(string $id, array $skipped, $rc): void
  *
  * @param array<int, string> $plan Step ids that were planned, in manifest order.
  * @param array<string, array{outcome: StepOutcome, seconds: float, note: string,
- *     unstable: array{count: int, tests: array<int, string>}}> $done Results by id.
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}}> $done Results by id.
  * @param array<string, array{path: string, reason: string}> $artifacts Snapshots taken, by id.
  *     A skipped step has none: it never ran, so there was nothing of it on the stand.
  * @param int $lanes Steps at a time.
@@ -994,7 +1023,10 @@ function summarize(array $plan, array $done, array $artifacts, int $lanes, float
  *
  * @param array<int, string> $plan Step ids that were planned, in manifest order.
  * @param array<string, array{outcome: StepOutcome, seconds: float, note: string,
- *     unstable: array{count: int, tests: array<int, string>}}> $done Results by id.
+ *     unstable: array{count: int, tests: array<int, string>},
+ *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
+ *         flake: string, status: string, file: string, line: int, project: string,
+ *         titlePath: list<string>, reason: string}>}}> $done Results by id.
  * @param array<string, array{path: string, reason: string}> $artifacts Snapshots taken, by id.
  *     A skipped step has none: it never ran, so there was nothing of it on the stand.
  * @param int $lanes Steps at a time.
@@ -1009,6 +1041,7 @@ function suiteSummary(array $plan, array $done, array $artifacts, int $lanes, fl
     $red = 0;
     $notRun = 0;
     $unstable = [];
+    $quarantine = [];
     $collected = [];
     foreach ($plan as $id) {
         $result = $done[$id];
@@ -1020,6 +1053,7 @@ function suiteSummary(array $plan, array $done, array $artifacts, int $lanes, fl
             $notRun++;
         }
         $unstable[$id] = $result['unstable'];
+        $quarantine[$id] = $result['quarantine'];
         if (isset($artifacts[$id])) {
             $collected[$id] = $artifacts[$id];
         }
@@ -1042,6 +1076,7 @@ function suiteSummary(array $plan, array $done, array $artifacts, int $lanes, fl
     // A run with nothing to report writes nothing here, so a green log is the same
     // text it has always been and the section showing up is itself the news.
     $text .= unstableSummarySection($unstable);
+    $text .= quarantineSummarySection($quarantine);
 
     return ['rc' => $red + $notRun === 0 ? 0 : 1, 'text' => $text];
 }

@@ -129,32 +129,35 @@ test('renames a user from the detail page and re-renders live', async ({
 // live user renders offline with 0 sessions), same family as the bots "No
 // suitable regular worker" flake. Passes 5/5 in isolation; disabled pending
 // HIL-376 (daemon degradation).
-test.fixme('shows the connected user as online with a live session', async ({
-  page,
-}) => {
-  // Give this browser an account and take its id from the grant reply (HIL-611:
-  // a visitor has no user row, and the page publishes no id for one), then open
-  // its detail directly. Robust against how many users the shared DB has
-  // accumulated: the self row need not be on the first viewport page of
-  // /hilos/users (which shows only the first 10 by ascending id).
-  const userId = await grantAdminToSelf(page)
+// Quarantine: F-002; original reason and parking date above.
+test(
+  'shows the connected user as online with a live session',
+  { tag: '@quarantine:F-002' },
+  async ({ page }) => {
+    // Give this browser an account and take its id from the grant reply (HIL-611:
+    // a visitor has no user row, and the page publishes no id for one), then open
+    // its detail directly. Robust against how many users the shared DB has
+    // accumulated: the self row need not be on the first viewport page of
+    // /hilos/users (which shows only the first 10 by ascending id).
+    const userId = await grantAdminToSelf(page)
 
-  await gotoPage(page, `/hilos/user/${userId}`)
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+    await gotoPage(page, `/hilos/user/${userId}`)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
-  // Regression: a connected user must render online with at least one live
-  // session. The detail table's computed presence fields were never populated
-  // (the project browser context returned null), so the live user rendered as
-  // offline with 0 sessions. The presence badge stands over an invisible twin
-  // holding the room of its widest word (HIL-1566); the visible one is read.
-  await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
-  await expect(
-    page
-      .locator('[data-id="hilos-user-detail"] .badge')
-      .filter({ visible: true }),
-  ).toHaveText('online')
-})
+    // Regression: a connected user must render online with at least one live
+    // session. The detail table's computed presence fields were never populated
+    // (the project browser context returned null), so the live user rendered as
+    // offline with 0 sessions. The presence badge stands over an invisible twin
+    // holding the room of its widest word (HIL-1566); the visible one is read.
+    await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
+    await expect(
+      page
+        .locator('[data-id="hilos-user-detail"] .badge')
+        .filter({ visible: true }),
+    ).toHaveText('online')
+  },
+)
 
 test('a rename in one tab lands at once in another, raising no Apply', async ({
   page,

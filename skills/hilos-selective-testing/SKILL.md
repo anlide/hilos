@@ -23,6 +23,8 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 - Retry evidence and attribution:
   `docs/agents/frontend/testing-strategy.md`, section
   "A retried test makes the step red, and its cause must be traced".
+- Main versus quarantine observations and native diagnostic repeats:
+  `docs/agents/testing.md`, "Playwright quarantine" and "Narrow runs collect evidence".
 - Command mechanics, DB reset, and the re-run contract: the rest of
   `docs/agents/testing.md`.
 
@@ -55,7 +57,9 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    verdict; a narrow green run on the same HEAD cannot replace a full red one.
 9. An `=== unstable: ... ===` section names tests that only passed on a retry and
    made their step red. Trace their history without widening the ticket's scope;
-   attribution does not change the verdict.
+   attribution does not change the verdict. Quarantine failed/not-run results
+   are separate observations; diagnostic repeats neither heal a tag nor add to
+   the full cycle's quarantine statistics.
 
 ## Hard Rules
 

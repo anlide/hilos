@@ -19,6 +19,8 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   `docs/agents/frontend/testing-strategy.md`.
 - What is already in the shared toolbox: `framework/frontend/e2e/index.ts`.
 - Full-reset-per-test and the re-run contract: `docs/agents/testing.md`.
+- Static quarantine tags and affected parameterized variants:
+  `docs/agents/frontend/testing-strategy.md`, "Quarantine — a static tag and one attempt after main".
 - The spec needs an external service on the stand — adding a channel or an
   emulator, a stub against an emulator, where a caught message lands:
   `docs/agents/stand-services.md`.
@@ -87,6 +89,10 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
     and its steps are no slower than on the base. Otherwise the timeout is a
     finding — a slowdown or a hang — not a budget: same file, "A test that ran
     out of its cap".
+
+17. When parking an identified flake, keep its reason, date and body and declare
+    `@quarantine:F-NNN` statically on the affected variant; follow the linked
+    quarantine section instead of adding a runtime `test.fixme`.
 
 ## Hard Rules
 

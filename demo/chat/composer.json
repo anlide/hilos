@@ -101,7 +101,7 @@
             "@test:db-prepare",
             "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build chat-test chat-nginx-test"
         ],
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-uploads.yml --profile e2e run --rm chat-e2e-runner npx playwright test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-uploads.yml --profile e2e run --rm chat-e2e-runner node ../../../../framework/frontend/scripts/playwright-run.mjs",
         "test:e2e-down": "composer run test:down",
         "test:e2e-full": [
             "@test:down @no_additional_args",

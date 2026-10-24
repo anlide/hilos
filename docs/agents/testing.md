@@ -154,8 +154,8 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 
 **A pointed cycle is the full cycle.** Every link of `test:e2e-full` but `@test:e2e`
 carries Composer's `@no_additional_args`, so what follows `--` reaches only
-`npx playwright test`: teardown, database reset and daemon boot run exactly as they
-do unpointed. A filter that matches no test is red (`No tests found`), not green.
+the shared Playwright entry: teardown, database reset and daemon boot run
+exactly as they do unpointed. A filter that matches no test is red (`No tests found`), not green.
 It needs Composer ≥ 2.8.0 — an older one hands the marker to `test:down` as an
 argument, and the first link is red on an unknown stand. Bringing the stack up once
 and repeating `test:e2e` against it is not a verdict: the database is dirty between
@@ -375,6 +375,54 @@ the first failure. Automatic retry counts and timeout scaling are unchanged.
 Names and history help attribute the cause; they do not turn a red verdict green.
 See [frontend/testing-strategy.md](frontend/testing-strategy.md#a-retried-test-makes-the-step-red-and-its-cause-must-be-traced).
 
+### Playwright quarantine
+
+All six demos' `test:e2e` composer commands and e2e package `test` scripts use
+`framework/frontend/scripts/playwright-run.mjs`. It collects the original
+Playwright selection, partitions static `@quarantine:F-NNN` tags from main,
+and runs main before one quarantine attempt per selected project, even after a
+main failure. Main keeps its native rc, configured retries and `hilos-unstable`
+evidence; quarantine never emits `hilos-unstable`. An empty main set succeeds
+without starting a browser or a cluster controller. An empty original selection
+still fails. Editor `test:ui` and raw Playwright remain diagnostic tools.
+The complete composer cycle finishes both sets before its existing teardown.
+
+Declare the tag on the affected test or parameterized variant, as described in
+[the frontend strategy](frontend/testing-strategy.md#quarantine--a-static-tag-and-one-attempt-after-main).
+Quarantine does not repair the test or close its F record.
+
+Each selected tagged identity emits exactly one `hilos-quarantine: <JSON>` line,
+with `flake`, `status`, `file`, `line`, `project`, `titlePath` and `reason`.
+The file is relative to the config root; the positive line is a reading address.
+History identifies an observation by F record, project, file and title path,
+without the line. A real browser pass counts as `passed` only after its host
+checks succeed. Browser `failed` / `timedOut` count as failed; `skipped`,
+`interrupted` and `notRun` count as not run. A missing result is completed from
+the collected plan as `notRun` with a reason. A host failure after a browser
+pass demotes it to `failed`; preparation failure before the browser is `notRun`.
+The host defers publication until cleanup, so no later correction line is needed.
+
+The append-only ledger adds `quarantine=<N> quarantine_failed=<F>
+quarantine_not_run=<R>` only to a step with observations. SUMMARY adds
+`=== quarantine: <S> step(s), <T> test(s), <F> failed, <R> not run ===`
+and the JSON observations. Neither changes rc, step outcome, dependencies or
+the main unstable verdict. With zero quarantine observations the ledger and
+summary stay byte-for-byte unchanged.
+
+Quarantine runs with one worker, one attempt, no retries and retained failure
+traces. Its outputs live under `test-results/quarantine/<project>` and
+`playwright-report/quarantine/<project>`, separate from main and other projects;
+the ordinary recursive artifact collector keeps both. Each cluster invocation
+uses a private `data/cluster-quarantine/<uuid>` plan/result directory across the
+existing repository bind mount. Only its own files are removed.
+
+`composer run test:framework:frontend:quarantine` runs the real, browserless
+Playwright CLI integration of the shared entry in the frontend container.
+`test:framework:frontend` includes it after unit tests, before lint/format. It
+checks collection, real reporter sidecars, native filtering and the main rc;
+unit tests inject the executor rather than launching a second runner. The
+cluster host's regression tests are included in `test:cluster:unit`.
+
 ### Narrow runs collect evidence
 
 Use narrow runs while implementing and debugging. For an e2e step, name its red
@@ -392,16 +440,19 @@ a tag, multiple targets or a cluster scenario step is refused before the graph
 starts. Without the option, existing full and pointed runs behave as before.
 The selected command receives escaped selectors and `--repeat-each=N` after
 Composer's `--`; dependencies and stand preparation run once. Automatic retries
-remain in effect for each observation. No fail-fast is added: all N observations
-are collected even with red tests, unless the run itself is interrupted.
+remain in effect for each observation. An explicit repeat selects the native
+diagnostic path, including tagged tests: it emits ordinary unstable evidence,
+not quarantine observations or quarantine statistics for the full cycle. No
+fail-fast is added: all N observations are collected even with red tests,
+unless the run itself is interrupted.
 
 A non-e2e step can be investigated with
 `php scripts/run-test-suite.php <id> --lanes=1`. These narrow loops help the
 executor diagnose a defect; they do not replace Verify. Five green observations
 on the same HEAD do not erase a red full run. Concurrency, host load and an older
 flake explain a failure's origin without changing its verdict. Report a foreign
-cause without repairing it inside the current ticket; quarantine is separate
-work (HIL-1796).
+cause without repairing it inside the current ticket. A diagnostic green result
+does not authorize removing a quarantine tag or closing its F record.
 
 ## The cluster stands — three demos, three shapes
 
@@ -827,24 +878,47 @@ placement to move, and runs the after-loss phase: the archive is out of reach
 and the log node offline.
 `composer -d demo/binance-btc-tracker run test:cluster:e2e` runs that suite
 alone on a fresh stand; `-- --grep circle` points the existing live/after-loss
-phases. An unpointed Binance run first executes the separate `daemon` project:
-foreign Workers/Agents/Cron/HTTP/Env, a remote UI restart proved by fresh node
-journals, mismatch privacy, then loss of the original leader. Two original
-follower contexts retain scheme, placement, mismatch and dashboard tabs; the
-source that remains follower proves addressed `page_resubscribe`, ordinary
-subscribe and live updates on its original sockets/documents. Both LEADER
-rows (`hilos_index`, `hilos_daemon`) move; the dead column remains unknown.
-`-- --daemon` runs only that project, with additional Playwright arguments
-forwarded to it. The destructive spec has no retries.
+phases. The harness collects a static plan before destructive host actions.
+Every selected main project finishes before any quarantine project starts.
+A nonempty main `daemon` project retains its original place before live and
+strict recovery checks; with the entire daemon scenario tagged, main daemon is
+empty and starts no controller or readiness wait. A main failure may skip its
+dependent after-loss phase, while the quarantine tail still runs and preserves
+main's native rc.
 
-The host alone changes the remote environment; it kills the leader only after the
-browser's run-id-bound readiness request. On every exit it joins its controller,
-restores the master, clears that environment override, waits for all five members
-to converge and removes only that run's control files. Cleanup failure is red;
-the old phases start only on the restored stand, with roles read again. Inspect
-before/after, fresh restart journal tails, Cron and mismatch page-response/table-window
+The tail runs selected quarantine after-loss tests first, only with a valid
+original fault request and a stopped slave. Without that state they are
+`notRun`, never substituted with live. Before quarantine live, the host starts
+the stopped slave, waits for all members to converge and reads leader/follower
+and term again. It opens a recognized saved freeze through the existing test
+bootstrap and refreshes roles before live and daemon. Quarantine daemon runs
+last. There is no database reset or stand teardown between main and the tail.
+`-- --daemon` selects daemon only, including forwarded Playwright filters; a
+pointed live run does not add daemon. Each selected quarantine project runs
+at most once.
+
+The daemon scenario checks foreign Workers/Agents/Cron/HTTP/Env, a remote UI
+restart proved by fresh node journals, mismatch privacy, then loss of the
+original leader. Two original follower contexts retain scheme, placement,
+mismatch and dashboard tabs; the source that remains follower proves addressed
+`page_resubscribe`, ordinary subscribe and live updates on its original
+sockets/documents. Both LEADER rows (`hilos_index`, `hilos_daemon`) move; the
+dead column remains unknown. The destructive spec has no retries.
+
+The host alone changes the remote environment; it kills the leader only after
+the browser's run-id-bound readiness request. On every exit it joins its
+controller, restores the master, clears that environment override, waits for
+all five members to converge, checks every restart for startup refusal and
+removes only that run's control files. Live delivery control likewise stops
+and joins before restoring its captured faults and checking controller errors.
+A main cleanup failure stays red, and any later main phase requires restored
+roles. For quarantined daemon, ordinary phases have already finished: a host
+failure becomes one final failed/not-run observation, without changing main rc.
+The original failure reason is retained alongside any recovery failure.
+Inspect before/after, fresh restart journal tails, Cron and mismatch page-response/table-window
 frames and socket/document recovery proof are Playwright attachments under
-`test-results/cluster-daemon`; the harness prints restoration/convergence too.
+main's `test-results/cluster-daemon`, or `test-results/quarantine/daemon` for
+the tagged scenario; the harness prints restoration/convergence too.
 The scenario and browser
 steps share a group because both reset the same compose project (HIL-1232).
 Before the browser stand starts, a fresh CLI image clears its stopped nodes'

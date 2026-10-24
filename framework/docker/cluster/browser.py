@@ -1,9 +1,12 @@
 """Playwright phases for a cluster stand, with host-controlled node loss and recovery."""
 
 import json
+import re
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 import control
 import delivery
@@ -11,10 +14,33 @@ import scenarios
 from stand import StandRefused
 
 
-FLAKY_SKIP = {
-    # FIXME(F-023, 2026-10-23): skipped daemon browser leaves no handshake · чужой · попытка 1 · HIL-1641
-    "daemon": "F-023: skipped daemon browser leaves no handshake",
-}
+PLAYWRIGHT_ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
+QUARANTINE_STATUSES = frozenset(("passed", "failed", "timedOut", "skipped", "interrupted", "notRun"))
+
+
+@dataclass
+class _PhaseResult:
+    """Browser rc and host checks of one invocation, before any final reporting."""
+
+    native_rc: int = 0
+    started: bool = False
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def code(self):
+        return self.native_rc or (1 if self.errors else 0)
+
+    def fail(self, reason):
+        self.errors.append(reason)
+        print(reason, flush=True)
+
+
+@dataclass
+class _LossState:
+    """Only this run's stopped slave; retain it even if convergence fails."""
+
+    stopped: str | None = None
+    ready: bool = False
 
 
 def daemon_phase_selected(stand, extra_args):
@@ -51,10 +77,24 @@ def _environment(stand, leader, follower, phase, stopped=None):
     return env
 
 
-def _phase(stand, env, phase, extra_args):
-    """Run one project in a fresh runner container, keeping stdout in the harness log."""
-    return control.run_e2e_runner(stand, env, "npx", "playwright", "test", "-c",
-                                  "playwright.cluster.config.ts", "--project", phase, *extra_args)
+def _phase(stand, env, phase, extra_args, hilos_phase="main", run_env=None):
+    """Use the container gateway and one explicit set; diagnostic keeps native repeats."""
+    internal = [] if hilos_phase == "diagnostic" else [f"--hilos-phase={hilos_phase}"]
+    # The collected plan already intersects the caller's project filters. Keeping
+    # them here would union another project into this one native invocation.
+    args = []
+    index = 0
+    while index < len(extra_args):
+        arg = extra_args[index]
+        index += 1
+        if arg == "--project":
+            while index < len(extra_args) and not extra_args[index].startswith("-"):
+                index += 1
+        elif not arg.startswith("--project="):
+            args.append(arg)
+    return control.run_e2e_runner(
+        stand, {**env, **(run_env or {})}, "node", PLAYWRIGHT_ENTRY, *internal,
+        "-c", "playwright.cluster.config.ts", *args, f"--project={phase}")
 
 
 def _switch(outcome):
@@ -144,8 +184,8 @@ class _DaemonController:
                 print(f"cluster e2e daemon: could not publish failure: {write_error}")
 
 
-def _daemon_phase(stand, extra_args):
-    """Run the live leader-loss spec, restoring every fault before any older phase starts.
+def _daemon_phase(stand, extra_args, hilos_phase="main", run_env=None):
+    """Run leader loss and restore every fault before returning its host verdict.
 
     Every node the host starts - the remote under its own environment and back, the killed
     leader - is read in its own log once the cluster has converged after it: a start refused for
@@ -160,7 +200,7 @@ def _daemon_phase(stand, extra_args):
     directory_created = False
     override_attempted = False
     restarts = []
-    failed = False
+    result = _PhaseResult()
     try:
         directory.mkdir(parents=True)
         directory_created = True
@@ -183,16 +223,16 @@ def _daemon_phase(stand, extra_args):
         thread = threading.Thread(target=controller.run, name=f"daemon-e2e-{run_id}")
         thread.start()
         try:
-            failed = _phase(stand, env, "daemon", extra_args) != 0
+            result.started = True
+            result.native_rc = _phase(stand, env, "daemon", extra_args, hilos_phase, run_env)
         finally:
             controller.stop.set()
             thread.join()
         if controller.error is not None or not controller.completed:
-            print("cluster e2e daemon: failed: no successful leader kill/election handshake")
-            failed = True
+            result.fail("cluster e2e daemon: failed: " + (controller.error or
+                        "no successful leader kill/election handshake"))
     except Exception as error:
-        print(f"cluster e2e daemon: failed: {error}")
-        failed = True
+        result.fail(f"cluster e2e daemon: failed: {error}")
     finally:
         # Join before starting the master: an in-flight election must finish before recovery.
         if thread is not None and thread.is_alive():
@@ -204,28 +244,24 @@ def _daemon_phase(stand, extra_args):
                                  "after its restart"))
                 _switch(control.start(stand, controller.leader))
             except Exception as error:
-                print(f"cluster e2e daemon: master recovery failed: {error}")
-                failed = True
+                result.fail(f"cluster e2e daemon: master recovery failed: {error}")
         if override_attempted:
             try:
                 restarts.append((remote, scenarios.node_log_mark(remote),
                                  "after its recreation on the stand's environment"))
                 _switch(control.own_env(stand, remote, "off"))
             except Exception as error:
-                print(f"cluster e2e daemon: environment recovery failed: {error}")
-                failed = True
+                result.fail(f"cluster e2e daemon: environment recovery failed: {error}")
             try:
                 views = scenarios.wait_converge(stand.members)
                 print(f"cluster e2e daemon: recovery converged all members: {scenarios.summarize(views)}")
             except Exception as error:
-                print(f"cluster e2e daemon: recovery convergence failed: {error}")
-                failed = True
+                result.fail(f"cluster e2e daemon: recovery convergence failed: {error}")
             for node, mark, window in restarts:
                 try:
                     scenarios.assert_no_startup_refusal(node, mark, window)
                 except AssertionError as error:
-                    print(f"cluster e2e daemon: recovery start failed: {error}")
-                    failed = True
+                    result.fail(f"cluster e2e daemon: recovery start failed: {error}")
         try:
             # Never sweep another run, or even the parent directory. Temp files belong to
             # this handshake too and may remain if a writer failed before its rename.
@@ -234,138 +270,296 @@ def _daemon_phase(stand, extra_args):
                     (directory / name).unlink(missing_ok=True)
                 directory.rmdir()
         except OSError as error:
-            print(f"cluster e2e daemon: control cleanup failed: {error}")
-            failed = True
-    print(f"cluster e2e: phase daemon {'failed' if failed else 'passed; master and environment restored'}")
-    return 1 if failed else 0
+            result.fail(f"cluster e2e daemon: control cleanup failed: {error}")
+    print(f"cluster e2e: phase daemon {'failed' if result.code else 'passed; master and environment restored'}")
+    return result
 
 
-def _live_phase(stand, env, extra_args, leader, term):
-    """Automatically offer in-phase worker faults in both pointed and full carrier runs."""
-    if stand.demo_dir.name != "binance-btc-tracker":
-        return _phase(stand, env, "live", extra_args)
-    run_id = uuid.uuid4().hex
-    directory = stand.demo_dir / "data" / "cluster-delivery-e2e" / run_id
-    directory.mkdir(parents=True)
-    controller = delivery.DeliveryController(stand, directory, run_id, leader, term)
-    thread = threading.Thread(target=controller.run, name=f"delivery-e2e-{run_id}")
-    env = {**env, "CLUSTER_DELIVERY_RUN_ID": run_id,
-           "CLUSTER_DELIVERY_CONTROL_DIR": "/hilos/" + directory.relative_to(
-               stand.demo_dir.parent.parent).as_posix()}
-    failed = False
+def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_env=None):
+    """Join delivery control before restoring its faults and collecting its host verdict."""
+    result = _PhaseResult()
+    controller = None
+    thread = None
+    directory = stand.demo_dir / "data" / "cluster-delivery-e2e" / uuid.uuid4().hex
+    directory_created = False
     try:
-        thread.start()
-        failed = _phase(stand, env, "live", extra_args) != 0
+        if stand.demo_dir.name == "binance-btc-tracker":
+            directory.mkdir(parents=True)
+            directory_created = True
+            run_id = directory.name
+            controller = delivery.DeliveryController(stand, directory, run_id, leader, term)
+            thread = threading.Thread(target=controller.run, name=f"delivery-e2e-{run_id}")
+            env = {**env, "CLUSTER_DELIVERY_RUN_ID": run_id,
+                   "CLUSTER_DELIVERY_CONTROL_DIR": _child_path(stand, directory)}
+            thread.start()
+        result.started = True
+        result.native_rc = _phase(stand, env, "live", extra_args, hilos_phase, run_env)
+    except Exception as error:
+        result.fail(f"cluster delivery: phase failed: {error}")
     finally:
-        controller.stop.set()
-        if thread.ident is not None:
-            thread.join()
+        if controller is not None:
+            controller.stop.set()
+            if thread is not None and thread.ident is not None:
+                thread.join()
+            try:
+                controller.restore()
+            except Exception as error:
+                result.fail(f"cluster delivery: restoration failed: {error}")
+            if controller.error is not None:
+                result.fail(f"cluster delivery: controller failed: {controller.error}")
         try:
-            controller.restore()
-        except Exception as error:
-            print(f"cluster delivery: restoration failed: {error}", flush=True)
-            failed = True
-        if controller.error is not None:
-            print(f"cluster delivery: controller failed: {controller.error}", flush=True)
-            failed = True
-        try:
-            # Sequence files belong to this UUID only. Never sweep the parent,
-            # browser artifacts or journals, even after an interrupted write.
-            for sequence in range(1, controller.sequence + 2):
-                for side in ("request", "result"):
-                    for suffix in ("json", "json.tmp"):
-                        (directory / f"{side}-{sequence}.{suffix}").unlink(missing_ok=True)
-            directory.rmdir()
+            # Sequence files belong to this UUID only, including interrupted writes.
+            if directory_created:
+                if controller is not None:
+                    for sequence in range(1, controller.sequence + 2):
+                        for side in ("request", "result"):
+                            for suffix in ("json", "json.tmp"):
+                                (directory / f"{side}-{sequence}.{suffix}").unlink(missing_ok=True)
+                directory.rmdir()
         except OSError as error:
-            print(f"cluster delivery: control cleanup failed: {error}", flush=True)
-            failed = True
-    return 1 if failed else 0
+            result.fail(f"cluster delivery: control cleanup failed: {error}")
+    return result
+
+
+def _child_path(stand, path):
+    """The existing repository bind is the only host/runner file bridge."""
+    return "/hilos/" + path.relative_to(stand.demo_dir.parent.parent).as_posix()
+
+
+def _identity(test):
+    return test["flake"], test["project"], test["file"], tuple(test["titlePath"])
+
+
+def _read_tests(path, *, plan=False):
+    """Validate the version-1 Node boundary, without treating bool as an integer."""
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(value, dict) or type(value.get("version")) is not int
+            or value["version"] != 1 or not isinstance(value.get("tests"), list)):
+        raise ValueError("invalid quarantine sidecar version or tests")
+    seen = set()
+    for row in value["tests"]:
+        required = {"flake", "project", "file", "line", "titlePath"}
+        required |= {"selector"} if plan else {"status", "reason"}
+        if not isinstance(row, dict) or not required.issubset(row):
+            raise ValueError("invalid quarantine test row")
+        flake = row.get("flake")
+        file = row.get("file")
+        titles = row.get("titlePath")
+        if (not isinstance(row.get("project"), str) or not isinstance(file, str) or not file
+                or "\\" in file or ":" in file or PurePosixPath(file).is_absolute()
+                or ".." in PurePosixPath(file).parts
+                or type(row.get("line")) is not int or row["line"] < 1
+                or not isinstance(titles, list) or not titles
+                or any(not isinstance(title, str) or not title for title in titles)
+                or not (plan and flake is None or isinstance(flake, str)
+                        and re.fullmatch(r"F-[0-9]{3,}", flake))):
+            raise ValueError("invalid quarantine test identity")
+        if plan:
+            tokens = [row["project"], file, *titles]
+            selector = f"[{row['project']}] › {file}:{row['line']} › " + " › ".join(titles)
+            if (any(token.strip() != token or re.search(r"[\r\n›]", token) for token in tokens)
+                    or row.get("selector") != selector):
+                raise ValueError("invalid quarantine plan selector")
+        elif (not isinstance(row.get("status"), str) or row["status"] not in QUARANTINE_STATUSES
+              or not isinstance(row.get("reason"), str)):
+            raise ValueError("invalid quarantine observation")
+        key = _identity(row)
+        if key in seen:
+            raise ValueError("duplicate quarantine test identity")
+        seen.add(key)
+    return value["tests"]
+
+
+def _normalize(tests, observations, reason, host_error=""):
+    """One final row per selected identity; only a browser pass can be demoted."""
+    observed = {_identity(row): row for row in observations}
+    result = []
+    for test in tests:
+        row = observed.get(_identity(test))
+        status = row["status"] if row else "notRun"
+        explanation = row["reason"] if row else reason
+        if status == "passed" and host_error:
+            status, explanation = "failed", host_error
+        result.append({key: test[key] for key in ("flake", "file", "line", "project", "titlePath")} |
+                      {"status": status, "reason": explanation})
+    return result
+
+
+def _observations(tests, path, result):
+    observations = []
+    if result.started:
+        try:
+            observations = _read_tests(path)
+        except (OSError, ValueError, TypeError) as error:
+            result.fail(f"cluster quarantine: cannot read {path.name}: {error}")
+    reason = "; ".join(result.errors) or f"No browser result was reported (Playwright rc={result.native_rc})"
+    return _normalize(tests, observations, reason, "; ".join(result.errors))
+
+
+def _roles(stand, phase, stopped=None):
+    nodes = [node for node in stand.members if node != stopped]
+    views = scenarios.wait_converge(nodes)
+    leader = scenarios.leaders(views)[0]
+    follower = next(master for master in stand.masters if master != leader)
+    print(f"cluster e2e: {phase} leader {leader} (term {views[leader]['term']}), browser on {follower}")
+    return _environment(stand, leader, follower, phase, stopped), leader, views[leader]["term"]
+
+
+def _prepare_loss(stand, fault_file, loss):
+    """Keep the original request and stopped node until every after-loss set has finished."""
+    if loss.stopped is None:
+        fault = json.loads(fault_file.read_text(encoding="utf-8"))
+        if (not isinstance(fault, dict) or fault.get("stop") not in stand.slaves
+                or not isinstance(fault.get("reason"), str)):
+            raise ValueError("invalid after-loss fault request: expected a slave and reason")
+        loss.stopped = fault["stop"]
+        print(f"== stopping {loss.stopped}: {fault['reason']} ==")
+        _switch(control.kill(stand, loss.stopped))
+    survivors = [node for node in stand.members if node != loss.stopped]
+    scenarios.wait_until(
+        lambda current: len(scenarios.leaders(current)) == 1
+        and all(row.get("nodeId") != loss.stopped or row.get("state") not in ("placing", "started")
+                for row in scenarios.leader_placements(current)),
+        scenarios.FAILOVER_TIMEOUT, f"no hosted placement remains on {loss.stopped}", nodes=survivors)
+    loss.ready = True
+
+
+def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase):
+    """Finish the selected main dependency chain before the caller starts any quarantine."""
+    projects = {test["project"] for test in tests}
+    if "daemon" in projects:
+        result = _daemon_phase(stand, extra_args, hilos_phase, run_env)
+        if result.code:
+            return result.code
+    if "live" in projects:
+        env, leader, term = _roles(stand, "live")
+        result = _live_phase(stand, env, extra_args, leader, term, hilos_phase, run_env)
+        if result.code:
+            print("cluster e2e: failed: phase live")
+            return result.code
+    if "after-loss" not in projects:
+        return 0
+    if not fault_file.exists():
+        print("cluster e2e: the suite asked no node to stop; after-loss not run")
+        return 0
+    _prepare_loss(stand, fault_file, loss)
+    env, _, _ = _roles(stand, "after-loss", loss.stopped)
+    return _phase(stand, env, "after-loss", extra_args, hilos_phase, run_env)
+
+
+def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, loss):
+    """After-loss uses the captured fault, live restores it, daemon is always last."""
+    observations = []
+    for project in ("after-loss", "live", "daemon"):
+        selected = [test for test in tests if test["project"] == project]
+        if not selected:
+            continue
+        path = directory / f"{project}.json"
+        env_files = {**run_env, "HILOS_E2E_RESULT_FILE": _child_path(stand, path),
+                     "HILOS_E2E_DEFER_REPORT": "1"}
+        result = _PhaseResult()
+        try:
+            if project == "after-loss":
+                if not loss.ready:
+                    _prepare_loss(stand, fault_file, loss)
+                env, _, _ = _roles(stand, project, loss.stopped)
+                result.started = True
+                result.native_rc = _phase(stand, env, project, extra_args, "quarantine", env_files)
+            else:
+                if loss.stopped is not None:
+                    _switch(control.start(stand, loss.stopped))
+                    scenarios.wait_converge(stand.members)
+                    loss.stopped, loss.ready = None, False
+                control.ensure_open_for_tests(stand, scenarios.CONVERGE_TIMEOUT)
+                env, leader, term = _roles(stand, project)
+                if project == "daemon":
+                    result = _daemon_phase(stand, extra_args, "quarantine", env_files)
+                else:
+                    result = _live_phase(stand, env, extra_args, leader, term, "quarantine", env_files)
+        except Exception as error:
+            result.fail(f"cluster quarantine {project}: host preparation/invocation failed: {error}")
+        observations.extend(_observations(selected, path, result))
+    return observations
 
 
 def run(stand, extra_args):
-    """The carrier adds daemon/recovery before live; pointing preserves each stand's projects."""
+    """Plan once, finish every selected main phase, then quarantine without changing main rc."""
     run_daemon = daemon_phase_selected(stand, extra_args)
     scenarios.bind(stand)
     daemon_only = "--daemon" in extra_args
     extra_args = [arg for arg in extra_args if arg != "--daemon"]
+    diagnostic = any(arg == "--repeat-each" or arg.startswith("--repeat-each=") for arg in extra_args)
+    directory = stand.demo_dir / "data" / "cluster-quarantine" / uuid.uuid4().hex
+    directory_created = False
+    tests, quarantine, observations = [], [], []
+    main_rc = 1
+    reason = "Cluster setup did not finish"
+    cleanup_error = ""
     print(f"cluster e2e: stand {stand.project}, browser suite through {stand.entry.container}")
     try:
-        views = scenarios.wait_converge(stand.members)
-    except scenarios.ScenarioTimeout as error:
-        print(f"FATAL: cluster never converged: {error}")
-        return 1
-
-    leader = scenarios.leaders(views)[0]
-    follower = next(master for master in stand.masters if master != leader)
-    print(f"cluster e2e: leader {leader} (term {views[leader].get('term')}), browser on {follower}")
-    fault_file = stand.demo_dir / "data" / "cluster-e2e-fault.json"
-    fault_file.unlink(missing_ok=True)
-
-    live_env = _environment(stand, leader, follower, "live")
-    install = control.run_e2e_runner(
-        stand, live_env, "node", "../../../../framework/frontend/scripts/npm-install-if-stale.mjs")
-    if install != 0:
-        print("cluster e2e: failed: runner dependencies")
-        return 1
-    if run_daemon and "daemon" in FLAKY_SKIP:
-        print(f"cluster e2e: phase daemon SKIP ({FLAKY_SKIP['daemon']})")
-        if daemon_only:
-            print("=== summary ===\n  browser suite skipped: phase daemon")
-            return 0
-    elif run_daemon:
-        if _daemon_phase(stand, extra_args) != 0:
-            return 1
-        if daemon_only:
-            print("=== summary ===\n  browser suite passed: phase daemon")
-            return 0
-        # Recovery can change both roles. Older specs must start from the restored stand.
-        views = scenarios.wait_converge(stand.members)
-        leader = scenarios.leaders(views)[0]
-        follower = next(master for master in stand.masters if master != leader)
-        live_env = _environment(stand, leader, follower, "live")
-        print(f"cluster e2e: restored leader {leader} (term {views[leader].get('term')}), "
-              f"live browser on {follower}")
-    if _live_phase(stand, live_env, extra_args, leader, views[leader]["term"]) != 0:
-        print("cluster e2e: failed: phase live")
-        return 1
-
-    if not fault_file.exists():
-        print("cluster e2e: the suite asked no node to stop; after-loss not run")
-        print("=== summary ===\n  browser suite passed")
-        return 0
-    try:
-        fault = json.loads(fault_file.read_text(encoding="utf-8"))
-        stopped = fault["stop"]
-        reason = fault["reason"]
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f"cluster e2e: invalid fault request: {error}")
-        return 1
-    if stopped not in stand.slaves:
-        print(f"cluster e2e: the suite asked to stop {stopped}, which is not a slave; after-loss not run")
-        return 1
-
-    print(f"== stopping {stopped}: {reason} ==")
-    outcome = control.kill(stand, stopped)
-    if outcome.code != 0:
-        print(f"cluster e2e: failed to stop {stopped}: {outcome.err}")
-        return 1
-    survivors = [node for node in stand.members if node != stopped]
-    try:
-        scenarios.wait_until(
-            lambda current: len(scenarios.leaders(current)) == 1
-            and all(row.get("nodeId") != stopped or row.get("state") not in ("placing", "started")
-                    for row in scenarios.leader_placements(current)),
-            scenarios.FAILOVER_TIMEOUT,
-            f"no hosted placement remains on {stopped}",
-            nodes=survivors,
-        )
-    except scenarios.ScenarioTimeout as error:
-        print(f"cluster e2e: failed: after-loss convergence: {error}")
-        return 1
-
-    after_env = _environment(stand, leader, follower, "after-loss", stopped)
-    if _phase(stand, after_env, "after-loss", extra_args) != 0:
-        print("=== summary ===\n  browser suite failed: phase after-loss")
-        return 1
-    print("=== summary ===\n  browser suite passed")
-    return 0
+        env, _, _ = _roles(stand, "live")
+        install = control.run_e2e_runner(
+            stand, env, "node", "../../../../framework/frontend/scripts/npm-install-if-stale.mjs")
+        if install != 0:
+            raise RuntimeError(f"runner dependencies exited {install}")
+        directory.mkdir(parents=True)
+        directory_created = True
+        plan_file = directory / "plan.json"
+        run_env = {"HILOS_E2E_PLAN_FILE": _child_path(stand, plan_file)}
+        collection_env = {**env, **run_env}
+        if stand.demo_dir.name == "binance-btc-tracker":
+            # delivery-window declares its client while collecting and reads this
+            # directory. No request is sent by --list; start no controller here.
+            collection_env.update({"CLUSTER_DELIVERY_RUN_ID": directory.name,
+                                   "CLUSTER_DELIVERY_CONTROL_DIR": _child_path(stand, directory)})
+        # Repeats are execution, not selection. Collect one static identity while
+        # forwarding the original repeat count to the native diagnostic phase.
+        collection_args = []
+        arguments = iter(extra_args)
+        for arg in arguments:
+            if arg == "--repeat-each":
+                next(arguments, None)
+            elif not arg.startswith("--repeat-each="):
+                collection_args.append(arg)
+        # --list evaluates the original filters before any controller can mutate the stand.
+        code = control.run_e2e_runner(
+            stand, collection_env, "node", PLAYWRIGHT_ENTRY, "--hilos-phase=plan",
+            "-c", "playwright.cluster.config.ts", *collection_args)
+        if code != 0:
+            raise RuntimeError(f"test collection exited {code}")
+        tests = _read_tests(plan_file, plan=True)
+        allowed = {"daemon"} if daemon_only else {"live", "after-loss"} | ({"daemon"} if run_daemon else set())
+        tests = [test for test in tests if test["project"] in allowed]
+        if not tests:
+            raise RuntimeError("No tests found in the selected cluster projects")
+        _atomic_json(plan_file, {"version": 1, "tests": tests})
+        quarantine = [] if diagnostic else [test for test in tests if test["flake"] is not None]
+        main = tests if diagnostic else [test for test in tests if test["flake"] is None]
+        fault_file = stand.demo_dir / "data" / "cluster-e2e-fault.json"
+        fault_file.unlink(missing_ok=True)
+        loss = _LossState()
+        try:
+            main_rc = _main(stand, main, extra_args, run_env, fault_file, loss,
+                            "diagnostic" if diagnostic else "main")
+        except Exception as error:
+            main_rc = 1
+            print(f"cluster e2e: main failed: {error}")
+        observations = _quarantine_tail(stand, quarantine, extra_args, directory, run_env, fault_file, loss)
+        reason = "Quarantine host did not start the selected test"
+    except Exception as error:
+        reason = f"cluster e2e: failed: {error}"
+        print(reason)
+    finally:
+        if directory_created:
+            try:
+                # Address only this UUID's own protocol files, never another run or the parent.
+                for name in ("plan.json", "plan.json.tmp", "after-loss.json", "live.json", "daemon.json"):
+                    (directory / name).unlink(missing_ok=True)
+                directory.rmdir()
+            except OSError as error:
+                cleanup_error = f"cluster quarantine: sidecar cleanup failed: {error}"
+                print(cleanup_error)
+    for row in _normalize(quarantine, observations, reason, cleanup_error):
+        print("hilos-quarantine: " + json.dumps(row, ensure_ascii=True, separators=(",", ":")))
+    print(f"=== summary ===\n  browser main suite {'failed' if main_rc else 'passed'}")
+    return main_rc

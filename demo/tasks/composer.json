@@ -90,7 +90,7 @@
             "@test:db-prepare",
             "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build tasks-daemon-test tasks-nginx-test"
         ],
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-restart.yml --profile e2e run --rm tasks-e2e-runner npx playwright test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-restart.yml --profile e2e run --rm tasks-e2e-runner node ../../../../framework/frontend/scripts/playwright-run.mjs",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
             "@test:down @no_additional_args",

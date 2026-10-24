@@ -2,6 +2,9 @@
 // how a name is spelled, and — the whole point of the gate — that a clean run
 // prints nothing at all. No browser and no run are involved, which is exactly why
 // the rule takes the reported tests as an argument.
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 
 import UnstableReporter, { unstableLine } from './unstable-reporter.mjs'
@@ -60,6 +63,67 @@ it('writes the line to stdout once the run ends', () => {
 
 it('writes NOTHING at all when the run was clean', () => {
   expect(reportedBy([EXPECTED])).toEqual([])
+})
+
+it('collects actual quarantine attempts silently, preserving partial results', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hilos-results-unit-'))
+  const file = join(directory, 'results.json')
+  vi.stubEnv('HILOS_E2E_PHASE', 'quarantine')
+  vi.stubEnv('HILOS_E2E_RESULT_FILE', file)
+  const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+  const reporter = new UnstableReporter()
+  const tagged = {
+    ...FLAKY,
+    title: 'tagged',
+    tags: ['@quarantine:F-023'],
+    parent: {
+      type: 'file',
+      title: 'file',
+      parent: null,
+      project: () => ({ name: 'desktop' }),
+    },
+  }
+  try {
+    reporter.onBegin({ rootDir: ROOT_DIR }, { allTests: () => [tagged] })
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+      version: 1,
+      tests: [],
+    })
+    reporter.onTestEnd(tagged, {
+      status: 'timedOut',
+      error: { message: 'test cap' },
+    })
+    const result = JSON.parse(readFileSync(file, 'utf8'))
+    expect(result.tests).toEqual([
+      {
+        flake: 'F-023',
+        status: 'timedOut',
+        file: 'tests/chat.spec.ts',
+        line: 42,
+        project: 'desktop',
+        titlePath: ['tagged'],
+        reason: 'test cap',
+      },
+    ])
+    reporter.onEnd()
+    expect(stdout).not.toHaveBeenCalled()
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(result)
+  } finally {
+    stdout.mockRestore()
+    vi.unstubAllEnvs()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('retains ordinary unstable reporting for tagged diagnostic repetitions', () => {
+  vi.stubEnv('HILOS_E2E_PHASE', 'diagnostic')
+  try {
+    expect(reportedBy([{ ...FLAKY, tags: ['@quarantine:F-023'] }])).toEqual([
+      'hilos-unstable: 1 (tests/chat.spec.ts:42)\n',
+    ])
+  } finally {
+    vi.unstubAllEnvs()
+  }
 })
 
 /**

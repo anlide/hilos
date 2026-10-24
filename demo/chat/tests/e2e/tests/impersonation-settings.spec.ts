@@ -44,68 +44,73 @@ async function setScope(page: Page, scope: 'view' | 'act'): Promise<void> {
 // is the installation's and stays on view, so both retries fail at their first
 // setScope(page, 'view') with Save disabled. Parked by the owner on 03.10.2026
 // (HOTFIX) without a diagnosis of why the edit button is missing after Stop.
-test.fixme('a takeover that only looks says so, is refused a message, and Stop still returns', async ({
-  browser,
-  page,
-}) => {
-  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
-  const personPage = await personContext.newPage()
-  const strip = page.getByTestId('impersonation-banner')
-  let viewOnly = false
-  try {
-    await signUpAdmin(page)
-    const person = await signUp(personPage)
-
-    await setScope(page, 'view')
-    viewOnly = true
-    await expect(page.getByTestId('hilos-toast-success')).toContainText(
-      'Impersonation setting saved.',
-    )
-    await dismissToasts(page)
-
-    // The takeover rotates the session token, and the client reopens its socket
-    // for it; the proof the reopen happened is the next socket.
-    await gotoPage(page, `/hilos/user/${person.userId}`)
-    let sockets = 0
-    page.on('websocket', () => {
-      sockets += 1
+// Quarantine: F-005; original reason and parking date above.
+test(
+  'a takeover that only looks says so, is refused a message, and Stop still returns',
+  { tag: '@quarantine:F-005' },
+  async ({ browser, page }) => {
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const personContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
     })
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
-    await expect(strip).toBeVisible()
-    await expect(strip).toContainText(person.name)
-    await expect(strip).toContainText('view only')
-    await expect.poll(() => sockets).toBeGreaterThan(0)
-    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    const personPage = await personContext.newPage()
+    const strip = page.getByTestId('impersonation-banner')
+    let viewOnly = false
+    try {
+      await signUpAdmin(page)
+      const person = await signUp(personPage)
 
-    // Reading is open; writing is refused before it reaches the chat.
-    await gotoPage(page, '/')
-    await expect(strip).toContainText('view only')
-    await typeInto(
-      page.getByTestId('message-input'),
-      `a message that must not be published ${Date.now()}`,
-    )
-    await clickSubmit(page.getByTestId('message-send'))
-    await expect(page.getByTestId('message-error')).toHaveText(
-      VIEW_ONLY_REFUSAL,
-    )
+      await setScope(page, 'view')
+      viewOnly = true
+      await expect(page.getByTestId('hilos-toast-success')).toContainText(
+        'Impersonation setting saved.',
+      )
+      await dismissToasts(page)
 
-    // Stop is the shell's and stays live inside a takeover that only looks.
-    await clickSubmit(page.getByTestId('impersonation-stop'))
-    await expect(strip).toBeHidden()
-    await expect(page.getByTestId('nav-admin')).toBeVisible()
+      // The takeover rotates the session token, and the client reopens its socket
+      // for it; the proof the reopen happened is the next socket.
+      await gotoPage(page, `/hilos/user/${person.userId}`)
+      let sockets = 0
+      page.on('websocket', () => {
+        sockets += 1
+      })
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+      await expect(strip).toBeVisible()
+      await expect(strip).toContainText(person.name)
+      await expect(strip).toContainText('view only')
+      await expect.poll(() => sockets).toBeGreaterThan(0)
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-    await setScope(page, 'act')
-    viewOnly = false
-  } finally {
-    if (viewOnly) {
-      if (await strip.isVisible()) {
-        await clickSubmit(page.getByTestId('impersonation-stop'))
-        await expect(strip).toBeHidden()
-      }
+      // Reading is open; writing is refused before it reaches the chat.
+      await gotoPage(page, '/')
+      await expect(strip).toContainText('view only')
+      await typeInto(
+        page.getByTestId('message-input'),
+        `a message that must not be published ${Date.now()}`,
+      )
+      await clickSubmit(page.getByTestId('message-send'))
+      await expect(page.getByTestId('message-error')).toHaveText(
+        VIEW_ONLY_REFUSAL,
+      )
+
+      // Stop is the shell's and stays live inside a takeover that only looks.
+      await clickSubmit(page.getByTestId('impersonation-stop'))
+      await expect(strip).toBeHidden()
+      await expect(page.getByTestId('nav-admin')).toBeVisible()
+
       await setScope(page, 'act')
+      viewOnly = false
+    } finally {
+      if (viewOnly) {
+        if (await strip.isVisible()) {
+          await clickSubmit(page.getByTestId('impersonation-stop'))
+          await expect(strip).toBeHidden()
+        }
+        await setScope(page, 'act')
+      }
+      await personContext.close()
     }
-    await personContext.close()
-  }
-})
+  },
+)

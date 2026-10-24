@@ -14,8 +14,11 @@
 // is something to look at; a line printed every single run becomes background
 // exactly the way today's "N flaky" does.
 
+import { writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
+
+import { normalizeResults, plannedTest } from './quarantine.mjs'
 
 /** The grammar's fixed head; `scripts/unstable-line.php` matches the same text. */
 const LINE_PREFIX = 'hilos-unstable: '
@@ -68,6 +71,9 @@ export default class UnstableReporter {
   /** @type {{ allTests: () => Array<ReportedTest> } | null} The root suite. */
   #suite = null
 
+  // Run-local reporter observations; no application runtime is loaded here.
+  #observations = []
+
   /**
    * @param {{ rootDir: string }} config The resolved Playwright configuration.
    * @param {{ allTests: () => Array<ReportedTest> }} suite The root suite.
@@ -75,11 +81,45 @@ export default class UnstableReporter {
   onBegin(config, suite) {
     this.#rootDir = config.rootDir
     this.#suite = suite
+    if (process.env.HILOS_E2E_PHASE === 'quarantine') this.#writeResults()
+  }
+
+  /** Persist real attempts as they arrive, including a partially finished run. */
+  onTestEnd(test, result) {
+    if (process.env.HILOS_E2E_PHASE !== 'quarantine') return
+    const plan = plannedTest(test, this.#rootDir)
+    if (plan.flake === null) return
+    this.#observations.push(
+      ...normalizeResults(
+        [plan],
+        [
+          {
+            ...plan,
+            status: result.status,
+            reason: result.error?.message ?? '',
+          },
+        ],
+      ),
+    )
+    this.#writeResults()
+  }
+
+  #writeResults() {
+    if (!process.env.HILOS_E2E_RESULT_FILE) {
+      throw new Error('HILOS_E2E_RESULT_FILE is required in quarantine')
+    }
+    writeFileSync(
+      process.env.HILOS_E2E_RESULT_FILE,
+      JSON.stringify({
+        version: 1,
+        tests: this.#observations,
+      }),
+    )
   }
 
   /** Print the line, if this run has one to print. */
   onEnd() {
-    if (this.#suite === null) {
+    if (process.env.HILOS_E2E_PHASE === 'quarantine' || this.#suite === null) {
       return
     }
     const line = unstableLine(this.#suite.allTests(), this.#rootDir)

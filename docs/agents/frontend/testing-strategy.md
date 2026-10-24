@@ -935,8 +935,38 @@ not make a red full run green.
 The full run owns the verdict. A narrow green re-run on the same HEAD, including
 five observations with `--tests=... --repeat=5`, is diagnostic evidence and does
 not replace the full red result. The command and validation rules live in
-[testing.md](../testing.md#narrow-runs-collect-evidence). Quarantine is separate
-work (HIL-1796); this reporting rule does not design it.
+[testing.md](../testing.md#narrow-runs-collect-evidence).
+
+### Quarantine — a static tag and one attempt after main
+
+Park an already identified flake with a static Playwright details tag tied to
+its existing F record, keeping its body, assertions, original reason and date:
+
+```ts
+test('the scenario', { tag: '@quarantine:F-023' }, async ({ page }) => {
+  // The original scenario and assertions stay here.
+})
+```
+
+For a parameterized test, tag only the affected variant at declaration time:
+`test(name, viewer ? {} : { tag: '@quarantine:F-019' }, fn)`. The viewer remains
+in main. A runtime `test.fixme(!viewer)` cannot supply the static plan; replace
+it with that details argument. Do not use `test.fail()` to mask a refusal.
+
+The shared entry collects the original selectors and project filters first,
+then runs main with its configured retries. Once every selected main phase
+finishes, even when main is red, it runs each selected quarantined test once,
+with no retries. A quarantine pass requires a real browser pass and successful
+host checks. A browser failure or timeout stays failed; a skipped, interrupted
+or missing test is reported as not run. These observations do not change main's
+rc or its retry-to-red rule. The report and isolated artifacts are documented
+in [testing.md](../testing.md#playwright-quarantine).
+
+Keep the tag and the F record until removal is explicitly authorized; one green
+attempt does not heal a flake. Moving a test into quarantine does not authorize
+changing its selectors, waits, assertions or timeout. Explicit diagnostic
+repeats exercise tagged tests through the native retry path, outside quarantine
+statistics; see [narrow runs](../testing.md#narrow-runs-collect-evidence).
 
 ## Filling inputs — keyboard, not `fill`
 

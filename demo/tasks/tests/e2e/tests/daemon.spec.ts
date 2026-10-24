@@ -579,130 +579,134 @@ test.describe('daemon node pages', () => {
   }
 
   for (const viewer of [false, true]) {
-    test(`reads Agents and HTTP with keyboard navigation as ${viewer ? 'a viewer' : 'an admin'}`, async ({
-      page,
-    }) => {
-      // FIXME(F-021, 2026-10-23): restart confirmation does not return focus · чужой · попытка 3 · HIL-1641
-      test.fixme(!viewer, 'F-021: restart confirmation does not return focus')
-      // It follows real page subscriptions and an agent's live log.
-      test.slow()
-      await setAdminViewMode(viewer)
-      if (!viewer) await signUpAdmin(page)
-      await page.setViewportSize({ width: 1280, height: 812 })
-      await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await page.getByTestId('hilos-daemon-node-standalone').click()
-      await expectStandaloneNodeOverview(expect, page)
-      const agents = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
-      await expect(agents).toHaveAttribute(
-        'href',
-        '/hilos/daemon/standalone/agents',
-      )
-      await agents.focus()
-      await agents.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon_agents')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'standalone',
-      )
-      const surface = page.getByRole('table')
-      await expect(surface).toHaveAccessibleName('standalone')
-      await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
-      const search = page.getByTestId('hilos-table-search')
-      await expect(search).toHaveAccessibleName('Search by agent id…')
-      await search.fill('')
-      await search.pressSequentially(RESTART_AGENT, { delay: 10 })
-      const row = shownByTestId(page, `hilos-table-row-${RESTART_AGENT}`)
-      await expect(row).toBeVisible()
-      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-      await expect(row).toContainText('settings')
-      await expect(row).toContainText('Stays up')
-      const restart = shownByTestId(
-        page,
-        `hilos-daemon-agent-restart-${RESTART_AGENT}`,
-      )
-      if (viewer) {
-        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
-        await expect(restart).toBeDisabled()
-        await expect(restart).toHaveAttribute(
-          'aria-describedby',
-          /(^| )hilos-view-mode-strip-text( |$)/,
+    test(
+      `reads Agents and HTTP with keyboard navigation as ${viewer ? 'a viewer' : 'an admin'}`,
+      viewer ? {} : { tag: '@quarantine:F-021' },
+      async ({ page }) => {
+        // FIXME(F-021, 2026-10-23): restart confirmation does not return focus · чужой · попытка 3 · HIL-1641
+        // It follows real page subscriptions and an agent's live log.
+        test.slow()
+        await setAdminViewMode(viewer)
+        if (!viewer) await signUpAdmin(page)
+        await page.setViewportSize({ width: 1280, height: 812 })
+        await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
+        await expectStandaloneOverview(expect, page, DATABASE_HOST)
+        await page.getByTestId('hilos-daemon-node-standalone').click()
+        await expectStandaloneNodeOverview(expect, page)
+        const agents = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
+        await expect(agents).toHaveAttribute(
+          'href',
+          '/hilos/daemon/standalone/agents',
         )
-      } else {
-        await expect(restart).toBeEnabled()
-        await restart.focus()
-        await restart.press('Enter')
-        const modal = page.getByTestId('modal')
-        await expect(modal).toBeFocused()
-        await expect(modal).toHaveAccessibleName('Restart agent')
-        await expect(page.getByTestId('hilos-daemon-restart-cli')).toHaveText(
-          `php cli.php agent:restart ${RESTART_AGENT}`,
+        await agents.focus()
+        await agents.press('Enter')
+        await expectDaemonPage(expect, page, 'hilos_daemon_agents')
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+          'standalone',
         )
-        await expect(
-          page.getByTestId('hilos-daemon-restart-policy'),
-        ).toHaveCount(0)
+        const surface = page.getByRole('table')
+        await expect(surface).toHaveAccessibleName('standalone')
+        await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+        const search = page.getByTestId('hilos-table-search')
+        await expect(search).toHaveAccessibleName('Search by agent id…')
+        await search.fill('')
+        await search.pressSequentially(RESTART_AGENT, { delay: 10 })
+        const row = shownByTestId(page, `hilos-table-row-${RESTART_AGENT}`)
+        await expect(row).toBeVisible()
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        await expect(row).toContainText('settings')
+        await expect(row).toContainText('Stays up')
+        const restart = shownByTestId(
+          page,
+          `hilos-daemon-agent-restart-${RESTART_AGENT}`,
+        )
+        if (viewer) {
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+          await expect(restart).toBeDisabled()
+          await expect(restart).toHaveAttribute(
+            'aria-describedby',
+            /(^| )hilos-view-mode-strip-text( |$)/,
+          )
+        } else {
+          await expect(restart).toBeEnabled()
+          await restart.focus()
+          await restart.press('Enter')
+          const modal = page.getByTestId('modal')
+          await expect(modal).toBeFocused()
+          await expect(modal).toHaveAccessibleName('Restart agent')
+          await expect(page.getByTestId('hilos-daemon-restart-cli')).toHaveText(
+            `php cli.php agent:restart ${RESTART_AGENT}`,
+          )
+          await expect(
+            page.getByTestId('hilos-daemon-restart-policy'),
+          ).toHaveCount(0)
+          for (const target of [
+            modal,
+            page.getByTestId('hilos-daemon-restart-cli'),
+            page.getByTestId('hilos-daemon-restart-cancel'),
+            page.getByTestId('hilos-daemon-restart-confirm'),
+          ]) {
+            await target.scrollIntoViewIfNeeded()
+            await fitsInScrollport(target)
+          }
+          await test.info().attach('restart', {
+            body: await modal.screenshot(),
+            contentType: 'image/png',
+          })
+          await modal.press('Enter')
+          await expect(modal).toBeVisible()
+          await modal.press('Escape')
+          await expect(modal).toHaveCount(0)
+          await expect(restart).toBeFocused()
+        }
+        const log = shownByTestId(
+          page,
+          `hilos-daemon-agent-log-${RESTART_AGENT}`,
+        )
+        await expect(log).toHaveAttribute(
+          'href',
+          /\/hilos\/logs\/view\/standalone\/live\/agent-/,
+        )
+        await log.focus()
+        await log.press('Enter')
+        await expectDaemonPage(expect, page, 'hilos_logs_view')
+        await expect(page.getByTestId('hilos-log-stream')).not.toHaveValue('')
+        await page.goBack()
+        await expectDaemonPage(expect, page, 'hilos_daemon_agents')
+        await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+        await expectStandaloneOverview(expect, page, DATABASE_HOST)
+        await page.getByTestId('hilos-daemon-node-standalone').click()
+        await expectStandaloneNodeOverview(expect, page)
+        const http = page.getByTestId('hilos-page-tab-hilos_daemon_http_server')
+        await expect(http).toHaveAttribute(
+          'href',
+          '/hilos/daemon/standalone/http',
+        )
+        await http.focus()
+        await http.press('Enter')
+        await expectDaemonPage(expect, page, 'hilos_daemon_http_server')
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+          'standalone',
+        )
+        const routes = page.getByRole('table')
+        await expect(routes).toHaveAccessibleName('standalone')
+        await expectStandaloneHttp(expect, page)
+        await expect(page.getByTestId('hilos-table-search')).toHaveCount(0)
         for (const target of [
-          modal,
-          page.getByTestId('hilos-daemon-restart-cli'),
-          page.getByTestId('hilos-daemon-restart-cancel'),
-          page.getByTestId('hilos-daemon-restart-confirm'),
+          page.getByTestId('hilos-daemon-http-address'),
+          page.getByTestId('hilos-daemon-http-period'),
         ]) {
           await target.scrollIntoViewIfNeeded()
           await fitsInScrollport(target)
         }
-        await test.info().attach('restart', {
-          body: await modal.screenshot(),
+        await test.info().attach(`http-${viewer}`, {
+          body: await page.getByTestId('hilos-admin-page').screenshot(),
           contentType: 'image/png',
         })
-        await modal.press('Enter')
-        await expect(modal).toBeVisible()
-        await modal.press('Escape')
-        await expect(modal).toHaveCount(0)
-        await expect(restart).toBeFocused()
-      }
-      const log = shownByTestId(page, `hilos-daemon-agent-log-${RESTART_AGENT}`)
-      await expect(log).toHaveAttribute(
-        'href',
-        /\/hilos\/logs\/view\/standalone\/live\/agent-/,
-      )
-      await log.focus()
-      await log.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_logs_view')
-      await expect(page.getByTestId('hilos-log-stream')).not.toHaveValue('')
-      await page.goBack()
-      await expectDaemonPage(expect, page, 'hilos_daemon_agents')
-      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await page.getByTestId('hilos-daemon-node-standalone').click()
-      await expectStandaloneNodeOverview(expect, page)
-      const http = page.getByTestId('hilos-page-tab-hilos_daemon_http_server')
-      await expect(http).toHaveAttribute(
-        'href',
-        '/hilos/daemon/standalone/http',
-      )
-      await http.focus()
-      await http.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon_http_server')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'standalone',
-      )
-      const routes = page.getByRole('table')
-      await expect(routes).toHaveAccessibleName('standalone')
-      await expectStandaloneHttp(expect, page)
-      await expect(page.getByTestId('hilos-table-search')).toHaveCount(0)
-      for (const target of [
-        page.getByTestId('hilos-daemon-http-address'),
-        page.getByTestId('hilos-daemon-http-period'),
-      ]) {
-        await target.scrollIntoViewIfNeeded()
-        await fitsInScrollport(target)
-      }
-      await test.info().attach(`http-${viewer}`, {
-        body: await page.getByTestId('hilos-admin-page').screenshot(),
-        contentType: 'image/png',
-      })
-      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-    })
+        await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+        await expectStandaloneOverview(expect, page, DATABASE_HOST)
+      },
+    )
   }
 })
 

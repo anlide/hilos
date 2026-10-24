@@ -57,8 +57,8 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's; open saved freezes via CLI
   e2e [--daemon] [Playwright args]  run the cluster browser suite on a fresh stand:
-                       daemon leader loss + recovery, then live and after-loss;
-                       --daemon selects daemon only; other pointing keeps the older phases;
+                       selected main phases, then quarantine after-loss/live, daemon last;
+                       --daemon selects daemon only; pointed live does not add daemon;
                        clear old logs, preserve freeze stores and open through their owners
   unit                 run harness unit tests without loading or starting a stand
 
@@ -143,7 +143,7 @@ def run_scenarios(stand, args, prog):
 
 
 def run_e2e(stand, args, prog):
-    """Refuse missing browser prerequisites before touching the stand, then run selected phases."""
+    """Boot once, then let the browser plan finish main before its quarantine tail."""
     if stand.e2e is None:
         raise StandRefused(f"{stand.compose}: no e2e block in x-hilos-cluster")
     browser.daemon_phase_selected(stand, args)

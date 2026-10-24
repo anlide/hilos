@@ -19,6 +19,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Retry evidence and attribution:
   `docs/agents/frontend/testing-strategy.md`, section
   "A retried test makes the step red, and its cause must be traced".
+- Shared Playwright entry, quarantine ledger/artifacts and diagnostic repeats:
+  `docs/agents/testing.md`, "Playwright quarantine" and "Narrow runs collect evidence".
 - Migrations, schema checks, DB reset, monitoring: `docs/agents/cli/commands.md`
 - Legacy CLI reference only if needed: `docs/cli-commands.md`
 
@@ -29,7 +31,9 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 3. For framework tests, run composer scripts from the repo root.
 4. For demo/chat tests, run composer scripts from `demo/chat`.
 5. Use DB setup/reset scripts before integration tests that require a clean schema.
-6. Report any skipped tests and the reason.
+6. Report any skipped tests and the reason. Read quarantine failed/not-run
+   observations separately from main's rc; an explicit diagnostic repeat does
+   not contribute quarantine statistics or override the full-run verdict.
 
 ## Common Choices
 

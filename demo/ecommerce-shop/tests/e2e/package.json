@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "playwright test",
+    "test": "node ../../../../framework/frontend/scripts/playwright-run.mjs",
     "test:ui": "playwright test --ui",
     "check": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",

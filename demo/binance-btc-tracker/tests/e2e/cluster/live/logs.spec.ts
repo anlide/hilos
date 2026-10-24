@@ -28,18 +28,23 @@ import { tableRowKeys } from '../../helpers/table.js'
 // every node of that run are kept in
 // runs/0982/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
 // Parked by the owner on 09.10.2026 (HOTFIX) without a diagnosis.
-test.fixme('the logs overview names every member node', async ({ browser }) => {
-  const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
-  try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, '/hilos/logs', PAGE_READY)
-    for (const node of [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]) {
-      await expect(page.getByTestId(`hilos-logs-node-${node}`)).toBeVisible()
+// Quarantine: F-009; original reason and parking date above.
+test(
+  'the logs overview names every member node',
+  { tag: '@quarantine:F-009' },
+  async ({ browser }) => {
+    const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
+    try {
+      await grantAdminToSelf(page)
+      await gotoPage(page, '/hilos/logs', PAGE_READY)
+      for (const node of [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]) {
+        await expect(page.getByTestId(`hilos-logs-node-${node}`)).toBeVisible()
+      }
+    } finally {
+      await page.context().close()
     }
-  } finally {
-    await page.context().close()
-  }
-})
+  },
+)
 
 test('a slave live file followed from a follower master receives a line appended on that slave', async ({
   browser,

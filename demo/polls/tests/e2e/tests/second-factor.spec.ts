@@ -93,28 +93,31 @@ test.describe('two-step verification', () => {
   // original was red once in 64 (0975). Each time the trusted browser was not let
   // straight in: auth-surface still stood 5.1-5.75 s after the password. Parked by
   // the owner on 09.10.2026 (HOTFIX) without a diagnosis.
-  test.fixme('asks the code on the next sign-in, and not again on a trusted browser', async ({
-    page,
-  }) => {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile/security')
-    const app = await connectFirstApp(page, PASSWORD)
+  // Quarantine: F-010; original reason and parking date above.
+  test(
+    'asks the code on the next sign-in, and not again on a trusted browser',
+    { tag: '@quarantine:F-010' },
+    async ({ page }) => {
+      const user = await signUp(page)
+      await gotoPage(page, '/profile/security')
+      const app = await connectFirstApp(page, PASSWORD)
 
-    await logout(page)
-    await signInToCodeStep(page, user.email)
-    const { code, step } = await nextTotpCode(app.secret, app.spent)
-    await typeInto(page.getByTestId('auth-code'), code)
-    await page.getByTestId('auth-trust-device').check()
-    await submitCodeStep(page)
-    expect(step).toBeGreaterThan(app.spent)
+      await logout(page)
+      await signInToCodeStep(page, user.email)
+      const { code, step } = await nextTotpCode(app.secret, app.spent)
+      await typeInto(page.getByTestId('auth-code'), code)
+      await page.getByTestId('auth-trust-device').check()
+      await submitCodeStep(page)
+      expect(step).toBeGreaterThan(app.spent)
 
-    // The browser is trusted now: the same password lets it straight in.
-    await logout(page)
-    await gotoPage(page, '/profile')
-    await enterIdentifierAndPassword(page, user.email, PASSWORD)
-    await clickSubmit(page.getByTestId('auth-submit'))
-    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  })
+      // The browser is trusted now: the same password lets it straight in.
+      await logout(page)
+      await gotoPage(page, '/profile')
+      await enterIdentifierAndPassword(page, user.email, PASSWORD)
+      await clickSubmit(page.getByTestId('auth-submit'))
+      await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    },
+  )
 
   test('takes a backup code once', async ({ page, browser }) => {
     const user = await signUp(page)

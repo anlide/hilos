@@ -104,115 +104,121 @@ async function presentCode(page: Page, code: string): Promise<void> {
 // never completes. On 1274 and 1277 the auth throttle also went silent for 8-9 s and
 // refused the first registration. Node journals:
 // runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
-test.fixme('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
-  browser,
-}) => {
-  // Multiple masters settle a freeze, verification window and self-reload in this test.
-  test.slow()
-  const before = await clusterInspect(CLUSTER_FOLLOWER)
-  await expectLeaderUnmoved(before)
-  const pages = await Promise.all(
-    CLUSTER_MASTERS.map((node) => newMasterPage(browser, node)),
-  )
-  try {
-    for (const page of pages) {
-      await gotoPage(page, '/')
-      await expect(page.getByTestId('conn-state')).toHaveText('connected')
-      await expect(page.getByTestId('maintenance')).toBeHidden()
-    }
-    const follower = pages[CLUSTER_MASTERS.indexOf(CLUSTER_FOLLOWER)]
-    const person = await signUpPerson(follower)
-    expect(await enterProtectedMode(OPERATION)).toBe('active')
-    for (const page of pages) {
-      await expect(page.getByTestId('maintenance')).toBeVisible()
-      await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
-    }
-    expect(await leaveProtectedMode()).toBe('verifying')
-    for (const page of pages) {
-      await expect(page.getByTestId('maintenance')).toBeVisible()
-      await markDocument(page)
-    }
-    expect(await openProtectedMode()).toBe('inactive')
-    for (const page of pages) {
-      await expectSelfReload(page)
-      await expect(page.getByTestId('maintenance')).toBeHidden()
-      await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    }
-    await expect(follower.getByTestId('self-user')).toHaveText(person.name)
-    await expect(follower.getByTestId('self-user-id')).toHaveText(
-      String(person.userId),
-    )
-  } finally {
-    await Promise.all(pages.map((page) => page.context().close()))
+test(
+  'every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person',
+  { tag: '@quarantine:F-016' },
+  async ({ browser }) => {
+    // Multiple masters settle a freeze, verification window and self-reload in this test.
+    test.slow()
+    const before = await clusterInspect(CLUSTER_FOLLOWER)
     await expectLeaderUnmoved(before)
-  }
-})
+    const pages = await Promise.all(
+      CLUSTER_MASTERS.map((node) => newMasterPage(browser, node)),
+    )
+    try {
+      for (const page of pages) {
+        await gotoPage(page, '/')
+        await expect(page.getByTestId('conn-state')).toHaveText('connected')
+        await expect(page.getByTestId('maintenance')).toBeHidden()
+      }
+      const follower = pages[CLUSTER_MASTERS.indexOf(CLUSTER_FOLLOWER)]
+      const person = await signUpPerson(follower)
+      expect(await enterProtectedMode(OPERATION)).toBe('active')
+      for (const page of pages) {
+        await expect(page.getByTestId('maintenance')).toBeVisible()
+        await expect(page.getByTestId('maintenance-title')).toHaveText(
+          STUB_TITLE,
+        )
+      }
+      expect(await leaveProtectedMode()).toBe('verifying')
+      for (const page of pages) {
+        await expect(page.getByTestId('maintenance')).toBeVisible()
+        await markDocument(page)
+      }
+      expect(await openProtectedMode()).toBe('inactive')
+      for (const page of pages) {
+        await expectSelfReload(page)
+        await expect(page.getByTestId('maintenance')).toBeHidden()
+        await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      }
+      await expect(follower.getByTestId('self-user')).toHaveText(person.name)
+      await expect(follower.getByTestId('self-user-id')).toHaveText(
+        String(person.userId),
+      )
+    } finally {
+      await Promise.all(pages.map((page) => page.context().close()))
+      await expectLeaderUnmoved(before)
+    }
+  },
+)
 
 // FIXME(F-016, 2026-10-18): parked with the test above; the reason is above it.
-test.fixme("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
-  browser,
-}) => {
-  // Multiple masters settle a freeze, verification window and self-reload in this test.
-  test.slow()
-  const before = await clusterInspect(CLUSTER_FOLLOWER)
-  await expectLeaderUnmoved(before)
-  const operator = await newMasterPage(browser, CLUSTER_FOLLOWER)
-  const member = await newMasterPage(browser, CLUSTER_FOLLOWER)
-  const bystander = await newMasterPage(browser, CLUSTER_FOLLOWER)
-  try {
-    await grantAdminToSelf(operator)
-    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
-    await clearMaintenanceCircle(operator)
-    const operatorSession = await sessionToken(operator)
-
-    const memberEmail = await signUp(member)
-    await addToMaintenanceCircle(operator, memberEmail)
-    await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
-    await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
-      CIRCLE_ONLINE,
-    )
-    await gotoPage(operator, '/')
-    await gotoPage(member, '/')
-    await expect(member.getByTestId('conn-state')).toHaveText('connected')
-    await gotoPage(bystander, '/')
-    await expect(bystander.getByTestId('conn-state')).toHaveText('connected')
-
-    expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
-      'active',
-    )
-    expect(await leaveProtectedMode()).toBe('verifying')
-    const inside = await inspectProtectedMode(
-      undefined,
-      nodeHost(CLUSTER_FOLLOWER),
-    )
-    expect(inside.circleSize).toBe(1)
-    expect(inside.circleAdmitted).toBe(1)
-    await expectInsideMainPage(operator)
-    await onMaster(operator, CLUSTER_LEADER)
-    await operator.reload()
-    await expectInsideMainPage(operator)
-    await expectInsideMainPage(member)
-    await expect(bystander.getByTestId('maintenance')).toBeVisible()
-
-    expect(await closeProtectedMode()).toBe('active')
-    await expect(member.getByTestId('maintenance')).toBeVisible()
-    await expect(bystander.getByTestId('maintenance')).toBeVisible()
-    await markDocument(operator)
-    await markDocument(member)
-    await markDocument(bystander)
-    expect(await openProtectedMode()).toBe('inactive')
-    await expectSelfReload(operator)
-    await expectSelfReload(member)
-    await expectSelfReload(bystander)
-    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
-    await clearMaintenanceCircle(operator)
-  } finally {
-    await operator.context().close()
-    await member.context().close()
-    await bystander.context().close()
+test(
+  "the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does",
+  { tag: '@quarantine:F-016' },
+  async ({ browser }) => {
+    // Multiple masters settle a freeze, verification window and self-reload in this test.
+    test.slow()
+    const before = await clusterInspect(CLUSTER_FOLLOWER)
     await expectLeaderUnmoved(before)
-  }
-})
+    const operator = await newMasterPage(browser, CLUSTER_FOLLOWER)
+    const member = await newMasterPage(browser, CLUSTER_FOLLOWER)
+    const bystander = await newMasterPage(browser, CLUSTER_FOLLOWER)
+    try {
+      await grantAdminToSelf(operator)
+      await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
+      await clearMaintenanceCircle(operator)
+      const operatorSession = await sessionToken(operator)
+
+      const memberEmail = await signUp(member)
+      await addToMaintenanceCircle(operator, memberEmail)
+      await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
+      await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
+        CIRCLE_ONLINE,
+      )
+      await gotoPage(operator, '/')
+      await gotoPage(member, '/')
+      await expect(member.getByTestId('conn-state')).toHaveText('connected')
+      await gotoPage(bystander, '/')
+      await expect(bystander.getByTestId('conn-state')).toHaveText('connected')
+
+      expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+        'active',
+      )
+      expect(await leaveProtectedMode()).toBe('verifying')
+      const inside = await inspectProtectedMode(
+        undefined,
+        nodeHost(CLUSTER_FOLLOWER),
+      )
+      expect(inside.circleSize).toBe(1)
+      expect(inside.circleAdmitted).toBe(1)
+      await expectInsideMainPage(operator)
+      await onMaster(operator, CLUSTER_LEADER)
+      await operator.reload()
+      await expectInsideMainPage(operator)
+      await expectInsideMainPage(member)
+      await expect(bystander.getByTestId('maintenance')).toBeVisible()
+
+      expect(await closeProtectedMode()).toBe('active')
+      await expect(member.getByTestId('maintenance')).toBeVisible()
+      await expect(bystander.getByTestId('maintenance')).toBeVisible()
+      await markDocument(operator)
+      await markDocument(member)
+      await markDocument(bystander)
+      expect(await openProtectedMode()).toBe('inactive')
+      await expectSelfReload(operator)
+      await expectSelfReload(member)
+      await expectSelfReload(bystander)
+      await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
+      await clearMaintenanceCircle(operator)
+    } finally {
+      await operator.context().close()
+      await member.context().close()
+      await bystander.context().close()
+      await expectLeaderUnmoved(before)
+    }
+  },
+)
 
 test('a minted code lets a tab on a follower master in, it stays in after a reload onto another master, and a bystander there keeps the form', async ({
   browser,

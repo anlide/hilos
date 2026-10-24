@@ -246,114 +246,118 @@ test.afterEach(async () => {
 })
 
 // FIXME(F-018, 2026-10-22): the restart button detaches while the test scrolls to it · чужой · попытка 1 · HIL-1782
-test.fixme('keeps a quiet agent log on missing live after rotation until its latest batch link is opened', async ({
-  page,
-}) => {
-  // Two log-store walks, settings round trips and real page subscriptions.
-  test.slow()
-  const agent = 'hilos_settings_library'
-  const stream = `agent-${agent}.log`
-  const livePath = `/hilos/logs/view/standalone/live/${stream}`
+test(
+  'keeps a quiet agent log on missing live after rotation until its latest batch link is opened',
+  { tag: '@quarantine:F-018' },
+  async ({ page }) => {
+    // Two log-store walks, settings round trips and real page subscriptions.
+    test.slow()
+    const agent = 'hilos_settings_library'
+    const stream = `agent-${agent}.log`
+    const livePath = `/hilos/logs/view/standalone/live/${stream}`
 
-  await grantAdminToSelf(page)
-  const settings = await page.context().newPage()
-  control = settings
-  await gotoPage(settings, '/hilos/settings', PAGE_READY)
-  await setSetting(settings, ROTATION_MAX_AGE, '0')
+    await grantAdminToSelf(page)
+    const settings = await page.context().newPage()
+    control = settings
+    await gotoPage(settings, '/hilos/settings', PAGE_READY)
+    await setSetting(settings, ROTATION_MAX_AGE, '0')
 
-  // A previous attempt may already have archived this quiet writer's startup.
-  // Restart through the real Daemon dialog to get a live file on every attempt;
-  // successful settings writes themselves never print into the library's log.
-  await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
-  const search = page.getByTestId('hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially(agent, { delay: 10 })
-  const restart = shownByTestId(page, `hilos-daemon-agent-restart-${agent}`)
-  await restart.scrollIntoViewIfNeeded()
-  await expect(restart).toBeVisible()
-  await expect(restart).toBeEnabled()
-  await restart.focus()
-  await restart.click()
-  const confirm = page.getByTestId('hilos-daemon-restart-confirm')
-  await confirm.scrollIntoViewIfNeeded()
-  await expect(confirm).toBeVisible()
-  await expect(confirm).toBeEnabled()
-  await confirm.focus()
-  await confirm.click()
-  await expect(page.getByTestId('modal')).toHaveCount(0)
-  await expect(
-    page.getByTestId('hilos-toast-success').filter({
-      hasText: `Agent ${agent} restarted on node standalone.`,
-    }),
-  ).toBeVisible()
-  await dismissToasts(page)
+    // A previous attempt may already have archived this quiet writer's startup.
+    // Restart through the real Daemon dialog to get a live file on every attempt;
+    // successful settings writes themselves never print into the library's log.
+    await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    const search = page.getByTestId('hilos-table-search')
+    await search.fill('')
+    await search.pressSequentially(agent, { delay: 10 })
+    const restart = shownByTestId(page, `hilos-daemon-agent-restart-${agent}`)
+    await restart.scrollIntoViewIfNeeded()
+    await expect(restart).toBeVisible()
+    await expect(restart).toBeEnabled()
+    await restart.focus()
+    await restart.click()
+    const confirm = page.getByTestId('hilos-daemon-restart-confirm')
+    await confirm.scrollIntoViewIfNeeded()
+    await expect(confirm).toBeVisible()
+    await expect(confirm).toBeEnabled()
+    await confirm.focus()
+    await confirm.click()
+    await expect(page.getByTestId('modal')).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-toast-success').filter({
+        hasText: `Agent ${agent} restarted on node standalone.`,
+      }),
+    ).toBeVisible()
+    await dismissToasts(page)
 
-  await gotoPage(page, livePath, PAGE_READY)
-  await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
-  await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
-  const entry = page.getByTestId('hilos-log-entry').first()
-  await expect(entry).toBeVisible({ timeout: WALK_WAIT_MS })
-  const liveEntry = (await entry.textContent()) ?? ''
-  expect(liveEntry).not.toBe('')
+    await gotoPage(page, livePath, PAGE_READY)
+    await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
+    await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
+    const entry = page.getByTestId('hilos-log-entry').first()
+    await expect(entry).toBeVisible({ timeout: WALK_WAIT_MS })
+    const liveEntry = (await entry.textContent()) ?? ''
+    expect(liveEntry).not.toBe('')
 
-  await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
-  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-  const before = await rowKeys(page)
-  await setSetting(settings, ROTATION_MAX_AGE, '1')
-  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-    '1 second after the last rotation',
-    { timeout: WALK_WAIT_MS },
-  )
-  await expect
-    .poll(async () => (await newBatchKeys(page, before)).length, {
+    await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
+    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+    const before = await rowKeys(page)
+    await setSetting(settings, ROTATION_MAX_AGE, '1')
+    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+      '1 second after the last rotation',
+      { timeout: WALK_WAIT_MS },
+    )
+    await expect
+      .poll(async () => (await newBatchKeys(page, before)).length, {
+        timeout: WALK_WAIT_MS,
+      })
+      .toBeGreaterThanOrEqual(1)
+    const batch = batchInstant((await newBatchKeys(page, before))[0] ?? '')
+    expect(batch).toBeGreaterThan(0)
+    await resetSetting(settings, ROTATION_MAX_AGE)
+
+    await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await search.fill('')
+    await search.pressSequentially(agent, { delay: 10 })
+    const log = shownByTestId(page, `hilos-daemon-agent-log-${agent}`)
+    await expect(log).toHaveAttribute('href', livePath)
+    await log.click()
+    await expectPageReady(page)
+
+    // A new viewer has no retained lines from before rotation. Its completed read
+    // must prove this exact live file is missing: a new batch alone does not prove
+    // the writer is quiet, and a displayed stream option does not prove a file.
+    await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible({
       timeout: WALK_WAIT_MS,
     })
-    .toBeGreaterThanOrEqual(1)
-  const batch = batchInstant((await newBatchKeys(page, before))[0] ?? '')
-  expect(batch).toBeGreaterThan(0)
-  await resetSetting(settings, ROTATION_MAX_AGE)
+    await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
+    await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
+    await expect(page).toHaveURL(livePath)
+    await expect(page.getByTestId('hilos-log-entry')).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
-  await search.fill('')
-  await search.pressSequentially(agent, { delay: 10 })
-  const log = shownByTestId(page, `hilos-daemon-agent-log-${agent}`)
-  await expect(log).toHaveAttribute('href', livePath)
-  await log.click()
-  await expectPageReady(page)
+    const archivePath = `/hilos/logs/view/standalone/${batch}/${stream}`
+    const latestBatch = page.getByTestId('hilos-log-latest-batch')
+    await expect(latestBatch).toHaveAttribute('href', archivePath)
+    await latestBatch.click()
+    await expectPageReady(page)
+    await expect(page).toHaveURL(archivePath)
+    await expect(page.getByTestId('hilos-log-source')).toHaveValue(
+      String(batch),
+    )
+    await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
+    await expect(page.getByTestId('hilos-log-pane')).toContainText(liveEntry)
+    await expect(page.getByTestId('hilos-log-empty-missing')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-log-follow')).toBeDisabled()
+    await expect(page.getByTestId('hilos-log-follow-off')).toBeVisible()
+    await expect(page.getByTestId('hilos-log-tail-badge')).toHaveCount(0)
 
-  // A new viewer has no retained lines from before rotation. Its completed read
-  // must prove this exact live file is missing: a new batch alone does not prove
-  // the writer is quiet, and a displayed stream option does not prove a file.
-  await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible({
-    timeout: WALK_WAIT_MS,
-  })
-  await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
-  await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
-  await expect(page).toHaveURL(livePath)
-  await expect(page.getByTestId('hilos-log-entry')).toHaveCount(0)
-
-  const archivePath = `/hilos/logs/view/standalone/${batch}/${stream}`
-  const latestBatch = page.getByTestId('hilos-log-latest-batch')
-  await expect(latestBatch).toHaveAttribute('href', archivePath)
-  await latestBatch.click()
-  await expectPageReady(page)
-  await expect(page).toHaveURL(archivePath)
-  await expect(page.getByTestId('hilos-log-source')).toHaveValue(String(batch))
-  await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
-  await expect(page.getByTestId('hilos-log-pane')).toContainText(liveEntry)
-  await expect(page.getByTestId('hilos-log-empty-missing')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-log-follow')).toBeDisabled()
-  await expect(page.getByTestId('hilos-log-follow-off')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-tail-badge')).toHaveCount(0)
-
-  await page.getByTestId('hilos-log-source').selectOption('live')
-  await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
-  await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
-  await expect(page).toHaveURL(livePath)
-  await expect(latestBatch).toHaveAttribute('href', archivePath)
-  // Keep the independent control tab registered for afterEach on either path.
-})
+    await page.getByTestId('hilos-log-source').selectOption('live')
+    await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible()
+    await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
+    await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
+    await expect(page).toHaveURL(livePath)
+    await expect(latestBatch).toHaveAttribute('href', archivePath)
+    // Keep the independent control tab registered for afterEach on either path.
+  },
+)
 
 test('rotates on the configured threshold, carries a batch off on the operator confirmation, and prunes exactly that batch while the table updates itself', async ({
   page,

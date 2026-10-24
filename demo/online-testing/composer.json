@@ -94,7 +94,7 @@
             "@test:db-prepare",
             "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build online-testing-daemon-test online-testing-nginx-test"
         ],
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm online-testing-e2e-runner npx playwright test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm online-testing-e2e-runner node ../../../../framework/frontend/scripts/playwright-run.mjs",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
             "@test:down @no_additional_args",
