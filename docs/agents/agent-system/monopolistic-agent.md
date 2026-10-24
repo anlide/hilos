@@ -33,9 +33,12 @@ final class MyAgentDaemon extends AbstractAgentDaemon
 
 A monopolistic agent is usually the **owner** of a DB or RT collection — the one
 writer whose copy the collection is, with every other agent reading it or asking
-the owner for a change by signal. A collection has exactly one full owner. How
-ownership is declared, and why a claim is also the owner's reader interest, is
-[truth-source.md](../architecture/truth-source.md).
+the owner for a change by signal. A collection written by the application has
+exactly one full owner; a collection the database writes by triggers has none,
+and no agent claims it. How ownership is declared, and why a claim is also the
+owner's reader interest, is [truth-source.md](../architecture/truth-source.md);
+the trigger-written case is its
+[A Collection Written Outside The Application](../architecture/truth-source.md#a-collection-written-outside-the-application).
 
 ## Regular agent
 
