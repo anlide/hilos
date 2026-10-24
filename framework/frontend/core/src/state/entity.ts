@@ -11,6 +11,7 @@ import { type EntityId } from './EntityStore.js'
 import {
   readBoolean,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from './fieldReaders.js'
@@ -40,8 +41,10 @@ export interface User extends Entity {
   readonly name: string
   /** Published profile photo variant URL, or null for initials. */
   readonly photo: string | null
-  /** Last activity timestamp, or null when never recorded. */
-  readonly lastActivity: string | null
+  /** Last activity in epoch milliseconds UTC, or null when never recorded. */
+  readonly lastActivity: number | null
+  /** The person's own IANA time zone, or null for Automatic. */
+  readonly timeZone: string | null
 }
 
 /**
@@ -66,6 +69,7 @@ export function userFromFields(
     block: readBoolean(fields, 'block'),
     name: readString(fields, 'name'),
     photo: readStringOrNull(fields, 'photo'),
-    lastActivity: readStringOrNull(fields, 'lastActivity'),
+    lastActivity: readNumberOrNull(fields, 'lastActivity'),
+    timeZone: readStringOrNull(fields, 'timeZone'),
   }
 }

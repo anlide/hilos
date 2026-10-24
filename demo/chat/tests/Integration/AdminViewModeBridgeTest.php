@@ -28,11 +28,14 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Object\Item\AccountDeletion;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
@@ -129,6 +132,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertTrue($user[HilosUserTableRow::block]);
         self::assertArrayHasKey(HilosUserTableRow::lastActivity, $user);
         self::assertFalse(HiddenValue::isMark($user[HilosUserTableRow::lastActivity]));
+        self::assertTrue(HiddenValue::isMark($user[ObjectUser::timeZone]));
         $connections = $slots[HilosUserDetailBrowserTable::CONNECTIONS];
         self::assertSame($this->personId, $connections[HilosConnection::userId]);
         self::assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections[HilosUserPresenceSummary::presence]);
@@ -161,6 +165,49 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $sent = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
         self::assertStringNotContainsString('Olena Kovalenko', $sent);
         self::assertStringNotContainsString($this->personAddress, $sent);
+    }
+
+    public function testAViewerNeverReceivesTheStoredTimeZoneInTheCard(): void
+    {
+        Hilos::$db->users[$this->personId]->actions->setTimeZone('Pacific/Honolulu');
+        $this->connect(admin: false);
+
+        $snapshot = $this->subscribe(UserPage::class, ['userId' => (string) $this->personId]);
+        $user = $this->declarativeRow($snapshot)[PagePayload::slots][ChatDbContext::users];
+        self::assertTrue(HiddenValue::isMark($user[ObjectUser::timeZone]));
+
+        $nullUpdateFrames = $this->writePersonTimeZoneAndFlushBrowserUpdate(null);
+        $nullUpdate = $this->declarativeRow($nullUpdateFrames)[PagePayload::slots][ChatDbContext::users];
+        self::assertTrue(HiddenValue::isMark($nullUpdate[ObjectUser::timeZone]));
+
+        $ianaUpdateFrames = $this->writePersonTimeZoneAndFlushBrowserUpdate('Pacific/Honolulu');
+        $ianaUpdate = $this->declarativeRow($ianaUpdateFrames)[PagePayload::slots][ChatDbContext::users];
+        self::assertTrue(HiddenValue::isMark($ianaUpdate[ObjectUser::timeZone]));
+        self::assertStringNotContainsString(
+            'Pacific/Honolulu',
+            json_encode(self::payloads([...$snapshot, ...$nullUpdateFrames, ...$ianaUpdateFrames]), JSON_THROW_ON_ERROR),
+        );
+    }
+
+    public function testAnAdminReceivesTimeZoneSourceUpdatesAndNullInTheFirstSnapshot(): void
+    {
+        $this->connect(admin: true);
+
+        $snapshot = $this->subscribe(UserPage::class, ['userId' => (string) $this->personId]);
+        $user = $this->declarativeRow($snapshot)[PagePayload::slots][ChatDbContext::users];
+        self::assertNull($user[ObjectUser::timeZone]);
+
+        $ianaUpdateFrames = $this->writePersonTimeZoneAndFlushBrowserUpdate('Pacific/Honolulu');
+        $ianaUpdate = $this->declarativeRow($ianaUpdateFrames)[PagePayload::slots][ChatDbContext::users];
+        self::assertSame('Pacific/Honolulu', $ianaUpdate[ObjectUser::timeZone]);
+
+        $nullUpdateFrames = $this->writePersonTimeZoneAndFlushBrowserUpdate(null);
+        $nullUpdate = $this->declarativeRow($nullUpdateFrames)[PagePayload::slots][ChatDbContext::users];
+        self::assertNull($nullUpdate[ObjectUser::timeZone]);
+        self::assertStringNotContainsString(
+            HiddenValue::KEY,
+            json_encode(self::payloads([...$snapshot, ...$ianaUpdateFrames, ...$nullUpdateFrames]), JSON_THROW_ON_ERROR),
+        );
     }
 
     public function testAViewerSeesThePeopleListWithTheNameHiddenAndTheRestShown(): void
@@ -280,6 +327,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
 
     public function testAnAdminIsSentThePagesWithoutASingleMark(): void
     {
+        Hilos::$db->users[$this->personId]->actions->setTimeZone('Pacific/Honolulu');
         $this->connect(admin: true);
 
         $card = $this->subscribe(UserPage::class, ['userId' => (string) $this->personId]);
@@ -295,6 +343,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
 
         $user = $this->declarativeRow($frames)[PagePayload::slots][ChatDbContext::users];
         self::assertSame('Olena Kovalenko', $user[HilosUserTableRow::name]);
+        self::assertSame('Pacific/Honolulu', $user[ObjectUser::timeZone]);
         self::assertNotSame([], $this->window($card, ChatTableContext::hilosMergeCandidates)[TableWindowSignalData::rows]);
         self::assertInstanceOf(AccountStandingStateSignalData::class, $standing);
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode($standing->toArray(), JSON_THROW_ON_ERROR));
@@ -317,6 +366,27 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', $this->name()), 0, 32));
         $session->actions->bindUser((int) $user->id);
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, (int) $user->id, $session->token, (int) $session->id);
+    }
+
+    /**
+     * Writes a stored zone and flushes its source update through the subscribed card.
+     *
+     * @param ?string $timeZone Zone written to the person, or null for Automatic
+     * @return list<array{name: string, data: SignalDataInterface}> Browser frames after fan-out
+     */
+    private function writePersonTimeZoneAndFlushBrowserUpdate(?string $timeZone): array
+    {
+        $previousTimeZone = Hilos::$db->users[$this->personId]->timeZone;
+        Hilos::$db->users[$this->personId]->actions->setTimeZone($timeZone);
+        Hilos::$browser?->record(SourceChange::dbUpdated(
+            HilosDbContext::users,
+            (string) $this->personId,
+            [EntityUser::time_zone => $timeZone],
+            previous: [EntityUser::time_zone => $previousTimeZone],
+        ));
+        self::assertSame([], Hilos::$browser?->flushToSignalRouter());
+
+        return $this->queuedFrames();
     }
 
     /**

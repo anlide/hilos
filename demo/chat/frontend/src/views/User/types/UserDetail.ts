@@ -9,8 +9,8 @@ import { type Presence } from '../../../types/Presence'
 export interface UserDetail {
   /** The user's display name. */
   readonly name: string
-  /** The last activity timestamp, empty when never recorded. */
-  readonly lastActivity: string
+  /** Last activity in epoch milliseconds UTC, or null when never recorded. */
+  readonly lastActivity: number | null
   /** The user's connection presence. */
   readonly presence: Presence
   /** The number of the user's active online sessions. */

@@ -18,6 +18,7 @@ import {
   bindSessionScope,
   createAppPageRouter,
   formatCalendarDate,
+  formatMoment,
   HIDDEN_VALUE,
   hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -34,6 +35,7 @@ import {
   USER_ENTITY_TYPE,
   userFromFields,
 } from '@hilos/core/base'
+import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
 import type {
   HilosConnection,
   HilosRouter,
@@ -539,6 +541,12 @@ describe('HilosUserPage Overview', () => {
     const { context, sent } = userContext(true, {
       impersonation: impersonationSettings(),
     })
+    context.scopes
+      .page()!
+      .entities.upsert(
+        { type: 'user', id: 1 },
+        { timeZone: 'Pacific/Honolulu' },
+      )
     context.scopes.page()!.data.set('accountStanding', standing())
     const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
       h('section', { 'data-id': 'project-user-overview' }, [
@@ -570,6 +578,18 @@ describe('HilosUserPage Overview', () => {
       'Impersonation',
       'Merge another account into this one',
     ])
+    const profile = overview.get('section:first-of-type')
+    const timeZone = profile.get('[data-id="hilos-user-time-zone"]')
+    expect(timeZone.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      'Pacific/Honolulu',
+    ])
+    expect(profile.text().indexOf('Display name')).toBeLessThan(
+      profile.text().indexOf('Time zone'),
+    )
+    expect(timeZone.findAll('button, a, input, select, textarea')).toHaveLength(
+      0,
+    )
     expect(
       overview
         .findAll('section')
@@ -588,7 +608,7 @@ describe('HilosUserPage Overview', () => {
     )
     expect(overview.find('dl').exists()).toBe(false)
     expect(overview.text()).not.toMatch(
-      /User ID|Online sessions|Last activity|Superadmin|Time zone|Delegations/,
+      /User ID|Online sessions|Last activity|Superadmin|Delegations/,
     )
     expect(overview.findAll('.badge').map((badge) => badge.text())).toEqual([])
     expect(
@@ -612,6 +632,85 @@ describe('HilosUserPage Overview', () => {
     await opener.trigger('click')
     expect(nameInput().value).toBe('Alice')
     expect(saveButton().disabled).toBe(true)
+  })
+
+  it('renders the read-only time zone through live visible and hidden entity updates', async () => {
+    const { context } = userContext()
+    const page = context.scopes.page()!
+    const userRef = { type: 'user', id: 1 }
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    const row = wrapper.get('[data-id="hilos-user-time-zone"]')
+    const selectedTimeZone = 'Pacific/Honolulu'
+    const automaticTimeZone = 'Automatic — follows the browser'
+    const attributeValues = (): string =>
+      [row.element, ...Array.from(row.element.querySelectorAll('*'))]
+        .flatMap((element) =>
+          Array.from(element.attributes, (attribute) => attribute.value),
+        )
+        .join(' ')
+    const updateTimeZone = async (
+      timeZone: Hideable<string | null>,
+    ): Promise<void> => {
+      page.entities.upsert(userRef, { timeZone })
+      await nextTick()
+    }
+    const expectHidden = (): void => {
+      expect(row.get('[data-id="hilos-hidden"]').text()).toBe('Hidden')
+      expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+        'Time zone',
+      ])
+      expect(row.element.outerHTML).not.toContain(selectedTimeZone)
+      expect(row.element.outerHTML).not.toContain(automaticTimeZone)
+      expect(attributeValues()).not.toContain(selectedTimeZone)
+      expect(attributeValues()).not.toContain(automaticTimeZone)
+    }
+
+    expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      automaticTimeZone,
+    ])
+    expect(row.findAll('button, a, input, select, textarea')).toHaveLength(0)
+
+    await updateTimeZone(HIDDEN_VALUE)
+    expectHidden()
+
+    await updateTimeZone(selectedTimeZone)
+    expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      selectedTimeZone,
+    ])
+    expect(attributeValues()).not.toContain(selectedTimeZone)
+
+    await updateTimeZone(HIDDEN_VALUE)
+    expectHidden()
+
+    await updateTimeZone(selectedTimeZone)
+    expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      selectedTimeZone,
+    ])
+    await updateTimeZone(null)
+    expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      automaticTimeZone,
+    ])
+    await updateTimeZone(HIDDEN_VALUE)
+    expectHidden()
+
+    await updateTimeZone(selectedTimeZone)
+    expect(row.findAll('p').map((paragraph) => paragraph.text())).toEqual([
+      'Time zone',
+      selectedTimeZone,
+    ])
   })
 
   it('uses affirmative state sentences without Yes/No badges and keeps deletion details', async () => {
@@ -779,6 +878,48 @@ describe('HilosUserPage Overview', () => {
 })
 
 describe('HilosUserPage rename modal', () => {
+  it('reformats activity in an already open candidate picker and keeps null or invalid values empty', async () => {
+    const zone = readerTimeZone()
+    try {
+      const world = userContext(true)
+      const page = world.context.scopes.page()!
+      page.entities.upsert({ type: 'user', id: 2 }, { lastActivity: 0 })
+      const wrapper = mount(HilosUserPage, {
+        props: { context: markRaw(world.context) },
+        attachTo: document.body,
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(world.context.scopes) },
+        },
+      })
+      mounted.push(wrapper)
+      await nextTick()
+      modalEl('hilos-user-merge-open')?.click()
+      await flushPromises()
+      await nextTick()
+      const automatic = formatMoment(0)
+      expect(modalEl('modal')?.textContent).toContain(automatic)
+      zone.choose('Pacific/Kiritimati')
+      await nextTick()
+      expect(formatMoment(0)).not.toBe(automatic)
+      expect(modalEl('modal')?.textContent).toContain(formatMoment(0))
+      expect(modalEl('modal')?.textContent).not.toContain(automatic)
+      zone.choose(null)
+      await nextTick()
+      expect(modalEl('modal')?.textContent).toContain(automatic)
+      for (const lastActivity of [null, NaN]) {
+        page.entities.upsert({ type: 'user', id: 2 }, { lastActivity })
+        await nextTick()
+        expect(modalEl('modal')?.textContent).not.toContain(automatic)
+        expect(modalEl('modal')?.textContent).toContain('—')
+      }
+      expect(
+        world.context.users.signal({ type: 'user', id: 2 }).get()?.lastActivity,
+      ).toBeNaN()
+    } finally {
+      zone.release()
+    }
+  })
+
   it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
     const disabled = userContext()
     const disabledWrapper = mount(HilosUserPage, {

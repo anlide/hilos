@@ -27,6 +27,7 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The edits of one person's second factor, written by that person's agent (HIL-1406).
@@ -298,9 +299,11 @@ final class SecondFactorPersonEdits
      */
     public function unlock(UserSecondFactorUnlockSignalData $request): UserSecondFactorUnlockDoneSignalData
     {
+        $lockedUntil = Hilos::$db->secondFactorSettings->actions->unlockAppCodes($this->userId);
+
         return new UserSecondFactorUnlockDoneSignalData(
             $request,
-            Hilos::$db->secondFactorSettings->actions->unlockAppCodes($this->userId),
+            $lockedUntil === null ? null : TimeHelper::sqlToMs($lockedUntil),
             null,
             null,
             null,

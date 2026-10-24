@@ -12,6 +12,8 @@ sessions and the activity. A skeleton shows until the profile
 entity lands (or when the id is unknown and the subscription is rejected).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
+import { computed } from 'vue'
+import { formatMoment, hilosTimeZone } from '@hilos/core/base'
 import { HilosAvatar, HilosLink, useSignal } from '@hilos/vue/base'
 
 import { PAGE_USER } from '../../pages/keys'
@@ -24,6 +26,13 @@ defineOptions({ name: 'UserPage' })
 const MERGED_ICON = 'bi-sign-merge-left'
 
 const detail = useSignal(userDetail)
+const timeZone = useSignal(hilosTimeZone)
+const lastActivity = computed(() => {
+  void timeZone.value
+  return detail.value?.lastActivity == null
+    ? null
+    : formatMoment(detail.value.lastActivity)
+})
 
 /**
  * The address of a person's page, for the survivor a merged account points at.
@@ -78,10 +87,10 @@ function userHref(id: number): string | undefined {
           <dd class="col-sm-9" data-id="user-sessions">
             {{ detail.onlineSessionCount }}
           </dd>
-          <template v-if="detail.lastActivity">
+          <template v-if="lastActivity !== null">
             <dt class="col-sm-3">Last activity</dt>
             <dd class="col-sm-9" data-id="user-last-activity">
-              {{ detail.lastActivity }}
+              {{ lastActivity }}
             </dd>
           </template>
         </dl>

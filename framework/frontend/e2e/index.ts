@@ -158,6 +158,7 @@ export {
   tableTextToggle,
   expectTableTextControl,
   tableRowKeyByText,
+  advanceTableToRow,
   openTableFixture,
   expectDataFreeDeparture,
   expectInertTableHolders,
@@ -340,6 +341,15 @@ export {
   expectHilosUserOverview,
   expectHilosUserOverviewAccessibility,
 } from './hilosUserOverview.js'
+export {
+  expectHiddenUserTimeZones,
+  expectUserActivityDisplay,
+  expectUserActivityMoment,
+  expectUserActivityWire,
+  expectUserTimeZone,
+  userTableRows,
+  type UserTableRow,
+} from './users.js'
 export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
 
@@ -382,6 +392,7 @@ export {
   enterCalendarDate,
   expectBackupMoments,
   expectMaintenanceMoment,
+  expectReaderMillisecondMoment,
   expectReaderMoment,
   readerMoment,
 } from './moments.js'

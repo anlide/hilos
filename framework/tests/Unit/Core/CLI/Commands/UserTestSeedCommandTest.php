@@ -51,6 +51,11 @@ final class UserTestSeedCommandTest extends TestCase
         self::assertSame('load-007', UserTestSeedCommand::fixtureIdentifier(7, 9, 'load'));
     }
 
+    public function testDeclaresTheOptionalTimeZoneOption(): void
+    {
+        self::assertSame(['prefix', 'password', 'time-zone'], UserTestSeedCommand::OPTIONS);
+    }
+
     public function testRejectsNonIntegerCount(): void
     {
         $this->expectOutputRegex('/Usage/');
@@ -105,5 +110,29 @@ final class UserTestSeedCommandTest extends TestCase
             ExitCode::CONFIG_ERROR,
             new UserTestSeedCommand()->execute([], ['5']),
         );
+    }
+
+    public function testAcceptsAnExactIanaTimeZone(): void
+    {
+        $this->expectOutputRegex('/does not support fixture users/');
+        self::assertSame(
+            ExitCode::CONFIG_ERROR,
+            new UserTestSeedCommand()->execute(['time-zone' => 'Pacific/Honolulu'], ['1']),
+        );
+    }
+
+    public function testRejectsInvalidTimeZoneValues(): void
+    {
+        foreach (['', 'Unknown/Place', '+02:00', []] as $timeZone) {
+            ob_start();
+            try {
+                $exitCode = new UserTestSeedCommand()->execute(['time-zone' => $timeZone], ['1']);
+            } finally {
+                $output = (string)ob_get_clean();
+            }
+
+            self::assertSame(ExitCode::INVALID_ARGUMENT, $exitCode);
+            self::assertStringContainsString('--time-zone', $output);
+        }
     }
 }

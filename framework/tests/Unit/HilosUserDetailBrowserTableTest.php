@@ -110,6 +110,7 @@ final class HilosUserDetailBrowserTableTest extends TestCase
             [
                 User::id => HilosUserTableRow::id,
                 User::name => HilosUserTableRow::name,
+                User::timeZone => User::timeZone,
                 User::lastActivity => HilosUserTableRow::lastActivity,
                 User::admin => HilosUserTableRow::admin,
                 User::block => HilosUserTableRow::block,

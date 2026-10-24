@@ -24,6 +24,6 @@ final class SecondFactorUnlockCommandConstants
     /** @var string Reply key: whether a lock was in force when it was lifted */
     public const string FIELD_WAS_LOCKED = 'wasLocked';
 
-    /** @var string Reply key: end of the lifted lock (SQL datetime), null when none was in force */
+    /** @var string Reply key: end of the lifted lock in UTC epoch milliseconds (int), null when none was in force */
     public const string FIELD_LOCKED_UNTIL = 'lockedUntil';
 }

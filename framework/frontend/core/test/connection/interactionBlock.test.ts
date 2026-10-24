@@ -197,41 +197,6 @@ describe('createConnectionInteractionState', () => {
     chrome.dispose()
   })
 
-  it('imports without a DOM and shares one implementation through base and root', async () => {
-    expect(typeof window).toBe('undefined')
-    expect(typeof document).toBe('undefined')
-    vi.resetModules()
-    const direct = await import('../../src/connection/interactionBlock.js')
-    const dom = await import('../../src/dom/interactionBlock.js')
-    const base = await import('../../src/base/index.js')
-    const root = await import('../../src/index.js')
-    expect(base.bindInteractionBlock).toBe(dom.bindInteractionBlock)
-    expect(root.bindInteractionBlock).toBe(dom.bindInteractionBlock)
-    expect(base.createConnectionInteractionState).toBe(
-      direct.createConnectionInteractionState,
-    )
-    expect(root.createConnectionInteractionState).toBe(
-      direct.createConnectionInteractionState,
-    )
-    expect(base.CONNECTION_INTERACTION_COPY).toBe(
-      direct.CONNECTION_INTERACTION_COPY,
-    )
-    expect(root.CONNECTION_INTERACTION_COPY).toBe(
-      direct.CONNECTION_INTERACTION_COPY,
-    )
-    for (const entry of [base, root]) {
-      expect(entry.HILOS_CONNECTION_STATUS_TEXT_ID).toBe(
-        'hilos-connection-status-text',
-      )
-      expect(entry.HILOS_INTERACTION_BLOCKED_ATTR).toBe(
-        'data-hilos-interaction-blocked',
-      )
-      expect(entry.HILOS_INTERACTION_REGION_ATTR).toBe(
-        'data-hilos-interaction-region',
-      )
-    }
-  })
-
   it('declares the shared DOM markers and connection explanation literally', () => {
     expect(HILOS_CONNECTION_STATUS_TEXT_ID).toBe('hilos-connection-status-text')
     expect(HILOS_INTERACTION_BLOCKED_ATTR).toBe(

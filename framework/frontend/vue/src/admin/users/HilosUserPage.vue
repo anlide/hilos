@@ -629,6 +629,16 @@ function submit(): void {
             <div class="flex-grow-1">
               <p class="fw-medium mb-1">{{ overviewCopy.displayName }}</p>
               <HilosHideable :value="detail.name" />
+              <div class="mt-3" data-id="hilos-user-time-zone">
+                <p class="fw-medium mb-1">{{ overviewCopy.timeZone }}</p>
+                <HilosHideable :value="detail.timeZone">
+                  <template #default="{ value }">
+                    <p class="mb-0">
+                      {{ value ?? overviewCopy.automaticTimeZone }}
+                    </p>
+                  </template>
+                </HilosHideable>
+              </div>
             </div>
             <button
               v-if="mergedNotice === null"

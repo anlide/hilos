@@ -165,6 +165,30 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         $this->assertSame([self::BETA], self::rowKeys($snapshot->rows));
     }
 
+    public function testCandidatesCarryNumericActivityWhilePagingByTheirDeclaredIdOrder(): void
+    {
+        $this->seedPeople();
+        Database::sqlRun('UPDATE `hilos_user` SET `last_activity` = ? WHERE `id` IN (?, ?)', [
+            '2026-09-30 10:00:00', self::BETA, self::GAMMA,
+        ]);
+        $table = $this->table();
+        $first = $table->getPage(new TableQueryDTO(limit: 2));
+        $this->assertSame([self::ALPHA, self::BETA], self::rowKeys($first->rows));
+        $this->assertSame(['id' => self::BETA], $first->lastAnchor?->toArray());
+        $this->assertNull($table->browserRow($first->rows[0])[BrowserPageSignalData::sources]['users']['lastActivity']);
+        $this->assertSame(
+            1790762400000,
+            $table->browserRow($first->rows[1])[BrowserPageSignalData::sources]['users']['lastActivity'],
+        );
+        $next = $table->getPage(new TableQueryDTO(limit: 2, anchor: $first->lastAnchor));
+        $this->assertSame([self::GAMMA, self::TWELVE], self::rowKeys($next->rows));
+        $this->assertSame(['id' => self::GAMMA], $next->firstAnchor?->toArray());
+        $this->assertSame(
+            1790762400000,
+            $table->browserRow($next->rows[0])[BrowserPageSignalData::sources]['users']['lastActivity'],
+        );
+    }
+
     /**
      * @throws HilosException On database error
      */

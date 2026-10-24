@@ -3,6 +3,7 @@ import { defineComponent, h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   bindAdminAccess,
+  formatMoment,
   createAppPageRouter,
   createHilosRouter,
   DEFAULT_SKELETON_DELAY_MS,
@@ -32,6 +33,7 @@ import { HilosUserPageShell } from './index.js'
 import HilosView from '../../HilosView.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
 
 enableAutoUnmount(afterEach)
 const releases: Array<() => void> = []
@@ -148,7 +150,7 @@ function harness(
     values: {
       id?: number
       name?: Hideable<string>
-      lastActivity?: string | null
+      lastActivity?: number | null
       photo?: Hideable<string | null>
       presence?: HilosPresence
       standing?: HilosAccountStanding | typeof HIDDEN_VALUE
@@ -246,9 +248,43 @@ async function settle(): Promise<void> {
 }
 
 describe('HilosUserPageShell', () => {
+  it('updates the activity text in the open head when the reader changes zone or returns to Automatic', async () => {
+    const zone = readerTimeZone()
+    releases.push(zone.release)
+    const t = harness()
+    t.answer({ lastActivity: 0 })
+    const view = t.mount()
+    const automatic = formatMoment(0)
+    expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
+      `#1 · Last seen ${automatic}`,
+    )
+    zone.choose('Pacific/Kiritimati')
+    await settle()
+    expect(formatMoment(0)).not.toBe(automatic)
+    expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
+      `#1 · Last seen ${formatMoment(0)}`,
+    )
+    zone.choose(null)
+    await settle()
+    expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
+      `#1 · Last seen ${automatic}`,
+    )
+  })
+
+  it.each([null, NaN, Infinity])(
+    'omits absent or invalid activity %j from the head',
+    (lastActivity) => {
+      const t = harness()
+      t.answer({ lastActivity })
+      expect(t.mount().get('[data-id="hilos-page-head-block"] p').text()).toBe(
+        '#1',
+      )
+    },
+  )
+
   it('renders one shared head, three crumbs, the avatar and a live permitted name and title', async () => {
     const t = harness()
-    t.answer({ lastActivity: '2026-10-23 12:34:56', analytics: true })
+    t.answer({ lastActivity: 1792758896000, analytics: true })
     const view = t.mount()
     expect(view.findAll('h1')).toHaveLength(1)
     expect(view.get('h1').text()).toBe('Alice')
@@ -265,7 +301,7 @@ describe('HilosUserPageShell', () => {
     expect(t.navigation.currentTitle.get()).toBe('Alice · Test app')
     expect(view.get('[data-id="hilos-avatar"]').text()).toBe('A')
     expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
-      '#1 · Last seen 2026-10-23 12:34:56',
+      '#1 · Last seen Oct 23, 2026, 12:34:56 PM',
     )
     expect(view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
     expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)

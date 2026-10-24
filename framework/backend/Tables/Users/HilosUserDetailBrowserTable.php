@@ -95,6 +95,7 @@ final class HilosUserDetailBrowserTable
                 BrowserTableFieldKey::FIELDS => [
                     ObjectUser::id => HilosUserTableRow::id,
                     ObjectUser::name => HilosUserTableRow::name,
+                    ObjectUser::timeZone => ObjectUser::timeZone,
                     ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
                     ObjectUser::admin => HilosUserTableRow::admin,
                     ObjectUser::block => HilosUserTableRow::block,

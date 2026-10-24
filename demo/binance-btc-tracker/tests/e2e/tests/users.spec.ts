@@ -1,15 +1,31 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  advanceTableToRow,
   controlSocketReconnect,
+  countSentFrames,
   deliveryObject as object,
   dismissToasts,
+  expectHiddenUserTimeZones,
   expectHilosUserBlockSettled,
   expectHilosUserOverview,
   expectHilosUserOverviewAccessibility,
   expectSessionRotation,
+  expectTableRowOrder,
+  expectUserActivityDisplay,
+  expectUserActivityMoment,
+  expectUserTimeZone,
+  forwardSessionTimeZone,
   isRotateCookie,
+  ROWS,
+  tableRowKeyByText,
+  userTableRows,
+  watchClientDocument,
   watchDeliveryFrames,
+  watchFirstRowTop,
+  watchHeight,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   grantAdminToSelf,
@@ -25,6 +41,24 @@ import {
   signUpPerson,
   typeInto,
 } from '../helpers/session.js'
+
+// A fixture owns the second context's teardown, so closing it after a timeout
+// cannot replace the test's original failure or prevent the afterEach mode reset.
+const viewerTest = test.extend<{ viewerPage: Page }>({
+  viewerPage: async (
+    { browser, baseURL, ignoreHTTPSErrors, locale, timezoneId },
+    use,
+  ) => {
+    const context = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      locale,
+      timezoneId,
+    })
+    await use(await context.newPage())
+    await context.close()
+  },
+})
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -114,6 +148,285 @@ test('user Overview has no empty project section and supports keyboard rename', 
   await expect(connections).toHaveText(/^[1-9]\d*$/)
   await expect(connections.locator('..')).toContainText('Open connections')
   await expectHilosUserOverviewAccessibility(expect, page)
+})
+
+test.describe('people time zones and numeric activity', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Asia/Tokyo' })
+  test.afterEach(() => setAdminViewMode(false))
+
+  const chosenName = 'timezone-chosen-001'
+  const chosenZone = 'Pacific/Honolulu'
+  const ownZone = 'Europe/Kyiv'
+  const browserZone = 'Asia/Tokyo'
+
+  test('keeps the saved Profile zone while list and card follow the reader on the same sockets', async ({
+    page,
+  }) => {
+    const listSocket = await forwardSessionTimeZone(page, ownZone)
+    const listPageRequests = countSentFrames(page, '"type":"page_')
+    const listTableRequests = countSentFrames(page, '"type":"table_')
+    const card = await page.context().newPage()
+    const cardSocket = await forwardSessionTimeZone(card, ownZone)
+    const cardPageRequests = countSentFrames(card, '"type":"page_')
+    const cardTableRequests = countSentFrames(card, '"type":"table_')
+    try {
+      const readerId = await signUpAdmin(page)
+      await gotoPage(page, `/hilos/user/${readerId}`)
+      await expectUserTimeZone(expect, page, null)
+      expect(userTableRows(listSocket.frames).at(-1)?.user.timeZone).toBeNull()
+
+      await gotoPage(page, '/hilos/users')
+      await typeInto(page.getByTestId('hilos-table-search'), chosenName)
+      const chosenId = Number(await tableRowKeyByText(expect, page, chosenName))
+      expect(chosenId).toBeGreaterThan(0)
+      // The extra pagination fixtures reproduce the full-suite pager: page 3
+      // is omitted at the first window. Clear search and await real rows before
+      // advancing by identity, retaining an unfiltered multi-row proof.
+      await page.getByTestId('hilos-table-search').fill('')
+      await expect.poll(() => page.locator(ROWS).count()).toBeGreaterThan(1)
+      await expect(page.getByTestId('hilos-table-page-1')).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+      await expect(page.getByTestId('hilos-table-page-3')).toHaveCount(0)
+      await advanceTableToRow(expect, page, String(chosenId))
+      const moment = expectUserActivityMoment(
+        expect,
+        listSocket.frames,
+        'hilosUsers',
+        chosenId,
+      )
+      const listOwn = await expectUserActivityDisplay(
+        expect,
+        page,
+        chosenId,
+        moment,
+        ownZone,
+        'list',
+      )
+
+      await gotoPage(card, `/hilos/user/${chosenId}`)
+      await expectUserTimeZone(expect, card, chosenZone)
+      expect(userTableRows(cardSocket.frames).at(-1)?.user.timeZone).toBe(
+        chosenZone,
+      )
+      expect(
+        expectUserActivityMoment(
+          expect,
+          cardSocket.frames,
+          'userDetail',
+          chosenId,
+        ),
+      ).toBe(moment)
+      await expectUserActivityDisplay(
+        expect,
+        card,
+        chosenId,
+        moment,
+        ownZone,
+        'card',
+      )
+
+      const listDocument = await watchClientDocument(page)
+      const cardDocument = await watchClientDocument(card)
+      try {
+        const rowTop = await watchFirstRowTop(page)
+        const headHeight = await watchHeight(
+          card.getByTestId('hilos-page-head'),
+        )
+        const keys = await page
+          .locator(ROWS)
+          .evaluateAll((rows) =>
+            rows.map((row) =>
+              row.getAttribute('data-id')!.slice('hilos-table-row-'.length),
+            ),
+          )
+        expect(keys.length).toBeGreaterThan(1)
+        const requests = [
+          listPageRequests(),
+          listTableRequests(),
+          cardPageRequests(),
+          cardTableRequests(),
+        ]
+        expect(requests[0]).toBeGreaterThan(0)
+        expect(requests[1]).toBeGreaterThan(0)
+        expect(requests[2]).toBeGreaterThan(0)
+        const sockets = [listSocket.sockets(), cardSocket.sockets()]
+        for (const socket of [listSocket, cardSocket]) {
+          expect(socket.sessions.at(-1)).toMatchObject({
+            data: {
+              entities: { currentUser: { id: readerId, timeZone: ownZone } },
+            },
+          })
+          socket.replay(null)
+        }
+
+        const automatic = await expectUserActivityDisplay(
+          expect,
+          page,
+          chosenId,
+          moment,
+          browserZone,
+          'list',
+        )
+        expect(automatic).not.toBe(listOwn)
+        await expectUserActivityDisplay(
+          expect,
+          card,
+          chosenId,
+          moment,
+          browserZone,
+          'card',
+        )
+        await expectUserTimeZone(expect, card, chosenZone)
+        // All absence assertions follow the changed DOM: the restate has landed.
+        expect([listSocket.sockets(), cardSocket.sockets()]).toEqual(sockets)
+        expect([
+          listPageRequests(),
+          listTableRequests(),
+          cardPageRequests(),
+          cardTableRequests(),
+        ]).toEqual(requests)
+        await listDocument.unchanged()
+        await cardDocument.unchanged()
+        await expectTableRowOrder(expect, page, keys)
+        await rowTop.unchanged()
+        await headHeight.unchanged()
+        for (const socket of [listSocket, cardSocket]) {
+          expect(socket.sessions.at(-1)).toMatchObject({
+            data: {
+              entities: { currentUser: { id: readerId, timeZone: null } },
+            },
+          })
+        }
+        expect(
+          expectUserActivityMoment(
+            expect,
+            listSocket.frames,
+            'hilosUsers',
+            chosenId,
+          ),
+        ).toBe(moment)
+        expect(
+          expectUserActivityMoment(
+            expect,
+            cardSocket.frames,
+            'userDetail',
+            chosenId,
+          ),
+        ).toBe(moment)
+        await test.info().attach('people-reader-zone-wire', {
+          body: JSON.stringify({
+            list: listSocket.frames,
+            card: cardSocket.frames,
+            sessions: [listSocket.sessions, cardSocket.sessions],
+          }),
+          contentType: 'application/json',
+        })
+      } finally {
+        await listDocument.dispose()
+        await cardDocument.dispose()
+      }
+    } finally {
+      listSocket.dispose()
+      cardSocket.dispose()
+      await card.close()
+    }
+  })
+
+  for (const viewer of ['guest', 'person'] as const) {
+    viewerTest(
+      `a ${viewer} sees both saved and Automatic zones as Hidden without their values in server frames`,
+      async ({ page, viewerPage }) => {
+        const adminFrames: SocketFrame[] = []
+        const adminWire = watchSocketFrames(page, (frame) =>
+          adminFrames.push(frame),
+        )
+        const frames: SocketFrame[] = []
+        const viewerWire = watchSocketFrames(viewerPage, (frame) =>
+          frames.push(frame),
+        )
+        try {
+          const automaticId = await signUpAdmin(page)
+          await gotoPage(page, `/hilos/user/${automaticId}`)
+          await expectUserTimeZone(expect, page, null)
+          expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBeNull()
+          await gotoPage(page, '/hilos/users')
+          await typeInto(page.getByTestId('hilos-table-search'), chosenName)
+          const chosenId = Number(
+            await tableRowKeyByText(expect, page, chosenName),
+          )
+          await gotoPage(page, `/hilos/user/${chosenId}`)
+          await expectUserTimeZone(expect, page, chosenZone)
+          expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBe(
+            chosenZone,
+          )
+          if (viewer === 'person') await signUpPerson(viewerPage)
+          await setAdminViewMode(true)
+
+          // Viewer names are hidden. Address real fixtures by the ids the admin
+          // resolved, never by a search over a hidden name or a replacement row.
+          for (const userId of [chosenId, automaticId]) {
+            await gotoPage(viewerPage, `/hilos/user/${userId}`)
+            await expect(
+              viewerPage.getByTestId('view-mode-banner'),
+            ).toBeVisible()
+            await expectUserTimeZone(expect, viewerPage, { _hidden: true })
+            const moment = expectUserActivityMoment(
+              expect,
+              frames,
+              'userDetail',
+              userId,
+            )
+            await expectUserActivityDisplay(
+              expect,
+              viewerPage,
+              userId,
+              moment,
+              browserZone,
+              'card',
+            )
+          }
+          await gotoPage(viewerPage, '/hilos/users')
+          await expect
+            .poll(() => viewerPage.locator(ROWS).count())
+            .toBeGreaterThan(1)
+          await expect(
+            viewerPage.getByTestId('hilos-table-page-3'),
+          ).toHaveCount(0)
+          await advanceTableToRow(expect, viewerPage, String(chosenId))
+          expect(await viewerPage.locator(ROWS).count()).toBeGreaterThan(1)
+          const moment = expectUserActivityMoment(
+            expect,
+            frames,
+            'hilosUsers',
+            chosenId,
+          )
+          await expectUserActivityDisplay(
+            expect,
+            viewerPage,
+            chosenId,
+            moment,
+            browserZone,
+            'list',
+          )
+          expectHiddenUserTimeZones(
+            expect,
+            frames,
+            [chosenId, automaticId],
+            chosenZone,
+          )
+          await test.info().attach(`people-${viewer}-raw-frames`, {
+            body: JSON.stringify(frames),
+            contentType: 'application/json',
+          })
+        } finally {
+          adminWire.stop()
+          viewerWire.stop()
+        }
+      },
+    )
+  }
 })
 
 test('filters the users table from the search box', async ({ page }) => {

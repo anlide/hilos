@@ -1995,7 +1995,7 @@ def scenario_39_person_agents_across_nodes():
         assert_facts(admin=1)
         locked_until = expected["hilos_second_factor_setting"][user_x]["app_code_locked_until"]
         command("second-factor:unlock",
-                f"Reply (ok): user #{user_x} was locked until {locked_until}; app codes are accepted again")
+                f"Reply (ok): user #{user_x} was locked until {locked_until} +00:00 (UTC); app codes are accepted again")
         assert_facts(unlocked=True)
 
         begin_phase("ordinary idle with no frames addressed to X")

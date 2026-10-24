@@ -28,6 +28,31 @@ export async function expectReaderMoment(
   return stamp
 }
 
+/** Numeric wire proof and an independent oracle in the actual browser's locale. */
+export async function expectReaderMillisecondMoment(
+  expect: Expect,
+  target: Locator,
+  moment: unknown,
+  timeZone: string,
+  prefix = '',
+): Promise<string> {
+  expect(moment).toEqual(expect.any(Number))
+  expect(Number.isSafeInteger(moment)).toBe(true)
+  const stamp = moment as number
+  expect(Number.isFinite(new Date(stamp).getTime())).toBe(true)
+  const expected = await target.page().evaluate(
+    ({ stamp, timeZone }) =>
+      new Intl.DateTimeFormat(undefined, {
+        timeZone,
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      }).format(new Date(stamp)),
+    { stamp, timeZone },
+  )
+  await expect(target).toHaveText(`${prefix}${expected}`)
+  return expected
+}
+
 /** Read the latest real initial/replacement window containing this archive. */
 export function backupMomentRow(log: DeliveryFrameLog, id: string) {
   for (const packet of log.packets.slice().reverse()) {

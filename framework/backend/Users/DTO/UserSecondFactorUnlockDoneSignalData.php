@@ -28,14 +28,14 @@ final class UserSecondFactorUnlockDoneSignalData extends BaseDTO implements Sign
 
     /**
      * @param UserSecondFactorUnlockSignalData $request The request being answered, untouched
-     * @param ?string $lockedUntil End of the lifted lock (SQL datetime) when one was in force, or null when none was
+     * @param ?int $lockedUntil End of the lifted lock in UTC epoch milliseconds, or null when none was in force
      * @param ?string $error Why the lock was not lifted, or null when it was
      * @param ?string $errorType Class name of the failure the refusal stands for, or null when nothing was held back
      * @param ?string $errorDetail Original message of that failure, or null when nothing was held back
      */
     public function __construct(
         public readonly UserSecondFactorUnlockSignalData $request,
-        public readonly ?string $lockedUntil,
+        public readonly ?int $lockedUntil,
         public readonly ?string $error,
         public readonly ?string $errorType,
         public readonly ?string $errorDetail,
@@ -61,7 +61,7 @@ final class UserSecondFactorUnlockDoneSignalData extends BaseDTO implements Sign
     {
         return new static(
             request: UserSecondFactorUnlockSignalData::fromArray(self::requireArray($data, self::request)),
-            lockedUntil: self::optionalString($data, self::lockedUntil),
+            lockedUntil: self::optionalInt($data, self::lockedUntil),
             error: self::optionalString($data, self::error),
             errorType: self::optionalString($data, self::errorType),
             errorDetail: self::optionalString($data, self::errorDetail),

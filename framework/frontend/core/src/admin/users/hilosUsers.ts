@@ -32,6 +32,7 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatCalendarDate } from '../../format/date.js'
+import { formatMoment } from '../../format/moment.js'
 import {
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
@@ -170,7 +171,7 @@ export interface HilosUserRow {
    * {@link HIDDEN_VALUE} for a viewer of the admin view mode, who is sent it hidden.
    */
   readonly name: Hideable<string>
-  /** Last activity timestamp, or null when never recorded. */
+  /** Ready dateTime display text in the reader's zone, or null without a valid moment. */
   readonly lastActivity: string | null
   /** Live connection presence (from the inline `connections` slot). */
   readonly presence: HilosPresence
@@ -186,6 +187,8 @@ export interface HilosUserRow {
 
 /** One user-detail row, including whether its account owns a password identity. */
 export interface HilosUserDetailRow extends HilosUserRow {
+  /** The person's own IANA time zone, null for Automatic, or hidden in view mode. */
+  readonly timeZone: Hideable<string | null>
   /** Whether the account currently owns a password identity. */
   readonly hasPassword: boolean
   /** Confirmed-app presence, hidden from a viewer of the admin view mode. */
@@ -225,7 +228,7 @@ export interface HilosMergeCandidateRow {
    * Hidden from a viewer of the admin view mode.
    */
   readonly name: Hideable<string>
-  /** Last activity timestamp, or null when never recorded. */
+  /** Ready dateTime display text in the reader's zone, or null without a valid moment. */
   readonly lastActivity: string | null
   /**
    * Safe sign-in identity metadata.
@@ -323,6 +326,8 @@ const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 const USER_SLOT = 'users'
 /** Field of the user entity carrying the display name (`userFromFields`). */
 const USER_NAME_FIELD = 'name'
+/** Field of the user entity carrying the person's own time zone. */
+const USER_TIME_ZONE_FIELD = 'timeZone'
 const USER_IDENTITIES_SLOT = 'identities'
 const USER_SECOND_FACTORS_SLOT = 'secondFactors'
 const USER_DELETION_SLOT = 'accountDeletions'
@@ -501,7 +506,8 @@ export function resolveHilosUserRow<TUser extends User>(
   return {
     id: Number(user?.id ?? row.rowKey),
     name: nameHidden ? HIDDEN_VALUE : (user?.name ?? ''),
-    lastActivity: user?.lastActivity ?? null,
+    lastActivity:
+      user?.lastActivity == null ? null : formatMoment(user.lastActivity),
     presence: toHilosPresence(connection?.[USER_PRESENCE_FIELD]),
     onlineSessionCount: connection
       ? readNumber(connection, USER_ONLINE_SESSION_COUNT_FIELD)
@@ -558,7 +564,8 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
   return {
     id: Number(user?.id ?? row.rowKey),
     name: nameHidden ? HIDDEN_VALUE : (user?.name ?? ''),
-    lastActivity: user?.lastActivity ?? null,
+    lastActivity:
+      user?.lastActivity == null ? null : formatMoment(user.lastActivity),
     identities,
     hasPassword:
       merge === undefined ? false : readBoolean(merge, USER_HAS_PASSWORD_FIELD),
@@ -906,6 +913,9 @@ export function createHilosUserDetail<TUser extends User>(
     ]
     const ref = row.slots[USER_SLOT] as EntityRef | undefined
     const user = ref ? context.users.signal(ref).get() : undefined
+    const timeZoneHidden = ref
+      ? context.users.hidden(ref, USER_TIME_ZONE_FIELD).get()
+      : false
     const deletion = recordSlot(row.slots[USER_DELETION_SLOT])
     const deletionEffectiveAt = deletion
       ? readNumberOrNull(deletion, USER_DELETION_EFFECTIVE_AT_FIELD)
@@ -913,6 +923,7 @@ export function createHilosUserDetail<TUser extends User>(
 
     return {
       ...resolveHilosUserRow(row, context.users),
+      timeZone: timeZoneHidden ? HIDDEN_VALUE : (user?.timeZone ?? null),
       admin: user?.admin ?? false,
       block: user?.block ?? false,
       deletionEffectiveAt,
@@ -1443,6 +1454,8 @@ export const HILOS_USER_OVERVIEW_COPY = {
   openConnections: 'Open connections',
   profile: 'Profile',
   displayName: 'Display name',
+  timeZone: 'Time zone',
+  automaticTimeZone: 'Automatic — follows the browser',
   changeName: 'Change name',
   accountState: 'Account state',
   actingAs: 'Acting as another person',

@@ -55,6 +55,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * One ceiling on wrong app codes per person, wherever the code is typed (HIL-1285).
@@ -370,6 +371,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->lockByProfile();
         $until = Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeLockedUntil;
         $this->assertNotNull($until);
+        $this->assertIsString($until);
 
         $reply = $this->unlock(self::USER_ID);
 
@@ -377,7 +379,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->assertSame([
             SecondFactorUnlockCommandConstants::FIELD_USER_ID => self::USER_ID,
             SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => true,
-            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $until,
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => TimeHelper::sqlToMs($until),
         ], $reply->payload);
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
         $this->assertSame([0, null, 0, null], [

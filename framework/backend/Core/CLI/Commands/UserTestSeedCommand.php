@@ -4,21 +4,26 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use DateTimeZone;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
- * Test-only: bulk-seed N fixture users, each with an unverified password identity.
+ * Test-only: bulk-seed N fixture users, each with an unverified password identity and optional IANA time zone.
  *
  * An e2e author needs the /hilos/users viewport table populated on volume (virtual
  * scroll, window paging, server search) without registering N users through the form.
@@ -43,11 +48,14 @@ final class UserTestSeedCommand extends TestOnlyCommand
     public const array OPTIONS = [
         self::OPTION_PREFIX,
         self::OPTION_PASSWORD,
+        self::OPTION_TIME_ZONE,
     ];
 
     private const string OPTION_PREFIX = 'prefix';
 
     private const string OPTION_PASSWORD = 'password';
+
+    private const string OPTION_TIME_ZONE = 'time-zone';
 
     /** @var string Default identifier prefix when --prefix is not given */
     private const string DEFAULT_PREFIX = 'seed';
@@ -80,7 +88,7 @@ final class UserTestSeedCommand extends TestOnlyCommand
 
     public function getDescription(): string
     {
-        return 'Bulk-seed N fixture users with password identities (test-only)';
+        return 'Bulk-seed N fixture users with password identities and an optional IANA time zone (test-only)';
     }
 
     public function getHelp(): string
@@ -99,7 +107,7 @@ run). A project that does not implement the fixture-user seam is reported with a
 error, not a fatal.
 
 Usage:
-  php cli.php test:user:seed <count> [--prefix=<p>] [--password=<p>]
+  php cli.php test:user:seed <count> [--prefix=<p>] [--password=<p>] [--time-zone=<IANA>]
 
 Arguments:
   <count>       Positive integer: how many users to seed
@@ -107,33 +115,40 @@ Arguments:
 Options:
   --prefix=<p>   Identifier/name prefix (default: {$defaultPrefix})
   --password=<p> Shared plaintext password (default: matches the e2e helper's PASSWORD)
+  --time-zone=<IANA> Exact IANA time zone to store on every fixture user
 
 Examples:
   php cli.php test:user:seed 25
   php cli.php test:user:seed 200 --prefix=load --password=hunter2
+  php cli.php test:user:seed 1 --prefix=timezone-chosen --time-zone=Pacific/Honolulu
 HELP;
     }
 
     /**
      * Seeds `count` users, hashing the shared password once and reusing it for all.
      *
-     * @param array<string, mixed> $options Parsed options: --prefix, --password
+     * @param array<string, mixed> $options Parsed options: --prefix, --password, --time-zone
      * @param list<string> $args Positional args: [0] count
      * @return int Exit code (0 on success)
      * @throws DatabaseException When the user or identity write fails
      * @throws DuplicateValueException When an identity for a generated email already exists
      * @throws EmptyValueException When a generated identifier is empty (unreachable: built here)
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws ItemNotFoundException When a created user is missing from the user collection
+     * @throws ItemNotFoundForUpdateException When a created user has no persisted id
      * @throws LogicException When collection class constants are not configured
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws ValidationException When the user time zone is not accepted by the user action
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws HilosException When persisting a user time zone fails
      */
     protected function run(array $options, array $args): int
     {
         // external-boundary: the operator's command line, checked on the very next line
         $countArg = $args[0] ?? '';
         if (preg_match('/^\d+$/', $countArg) !== 1 || (int)$countArg <= 0) {
-            echo "Usage: {$this->getName()} <count> [--prefix=<p>] [--password=<p>]  (count: positive integer)\n";
+            echo "Usage: {$this->getName()} <count> [--prefix=<p>] [--password=<p>] [--time-zone=<IANA>]"
+                . "  (count: positive integer)\n";
 
             return ExitCode::INVALID_ARGUMENT;
         }
@@ -151,6 +166,20 @@ HELP;
             echo "Option --password must be a non-empty string.\n";
 
             return ExitCode::INVALID_ARGUMENT;
+        }
+
+        $timeZone = null;
+        if (array_key_exists(self::OPTION_TIME_ZONE, $options)) {
+            $timeZoneOption = $options[self::OPTION_TIME_ZONE];
+            if (
+                !is_string($timeZoneOption)
+                || !in_array($timeZoneOption, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true)
+            ) {
+                echo "Option --time-zone must be an exact IANA time zone identifier.\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
+            $timeZone = $timeZoneOption;
         }
 
         // One bcrypt for the whole run: password_hash(PASSWORD_DEFAULT) is ~340ms and all
@@ -172,6 +201,10 @@ HELP;
                 echo "This project does not support fixture users (no createFixtureUser seam).\n";
 
                 return ExitCode::CONFIG_ERROR;
+            }
+
+            if ($timeZone !== null) {
+                Hilos::$db->users[$userId]->actions->setTimeZone($timeZone);
             }
 
             Hilos::$db->identities->createPasswordIdentityWithHash($userId, $email, $hash);

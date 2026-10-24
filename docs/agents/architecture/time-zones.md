@@ -188,8 +188,10 @@ classifies `time_zone` as personal and assigns `NULLIFY` for restore
 anonymization ([backup-anonymization.md](backup-anonymization.md)); the journal
 records that the column changed without its value
 ([change-log.md](change-log.md)). Admin-view mode reads the same personal-field
-verdict ([admin-view-mode.md](admin-view-mode.md)); a visible row for this value
-in the admin table is a separate later change (HIL-1588).
+verdict ([admin-view-mode.md](admin-view-mode.md)) on `timeZone` in the
+`userDetail` browser-source row. A viewer receives the hidden mark even when the
+stored value is null. The Vue Profile card's read-only row is described in
+[People: Activity And Account-Zone Reads](#people-activity-and-account-zone-reads).
 
 ## What The Browser Reports And The Person Keeps
 
@@ -319,6 +321,16 @@ offset and zone name in human-readable text such as notification bodies: use
 `format('Y-m-d H:i P (e)')`, or use `$timeZone->getName()` when naming the zone
 separately. The exports below keep their stated format.
 Leave the standard SMTP `Date` header unchanged.
+
+The `second-factor:unlock` reply carries `lockedUntil` as a nullable UTC epoch-
+millisecond integer. [SecondFactorPersonEdits::unlock()](../../../framework/backend/Auth/SecondFactor/SecondFactorPersonEdits.php)
+converts the stored SQL moment once before creating
+[UserSecondFactorUnlockDoneSignalData](../../../framework/backend/Users/DTO/UserSecondFactorUnlockDoneSignalData.php);
+the users library relays that value and sets `wasLocked` from whether
+`lockedUntil` is non-null. [SecondFactorUnlockCommand](../../../framework/backend/Core/CLI/Commands/SecondFactorUnlockCommand.php)
+formats the moment as `Y-m-d H:i:s P (e)` with
+[`TimeHelper::serverTextTimeZone()`](../../../framework/backend/Utils/Helpers/TimeHelper.php)
+and no account recipient, so the server-text policy supplies the display zone.
 
 Use that same mode for the personal data archive, a person's analytics export
 and the acceptances CSV. The CSV's recipient is the administrator who requested
@@ -541,6 +553,43 @@ browser metadata and does not display a moment. The guard and formatter are
 specified here, not implemented by this documentation leaf.
 (not in the code yet — HIL-1576)
 
+## People: Activity And Account-Zone Reads
+
+The SQL `last_activity` column and its Entity/Object value remain date-time
+storage. The read-facing [User View](../../../framework/backend/Database/View/Item/User.php)
+converts it with `TimeHelper::sqlToMs()` and returns nullable UTC epoch
+milliseconds as `lastActivity`; [HilosUserTableRow](../../../framework/backend/Tables/Users/HilosUserTableRow.php)
+keeps the same `?int` wire value. The Hilos users list sorts and pages by the
+numeric moment, with the user id as the tie-breaker for equal timestamps; detail
+and merge-candidate rows carry the same moment, and missing activity remains
+null.
+
+Core's typed [User](../../../framework/frontend/core/src/state/entity.ts) has
+`lastActivity: number | null` and `timeZone: string | null`. The list, detail
+and merge-candidate models in the [people module](../../../framework/frontend/core/src/admin/users/hilosUsers.ts)
+call `formatMoment()` in the current `hilosTimeZone`; formatting follows
+reader-zone changes while table ordering stays on the numeric moment. The
+[public chat user page](../../../demo/chat/frontend/src/views/User/User.vue)
+keeps the raw activity number and formats it in a Vue computed value that tracks
+`hilosTimeZone`. Epoch zero is a valid moment; absent or invalid values produce
+no activity label.
+
+[HilosUserDetailBrowserTable](../../../framework/backend/Tables/Users/HilosUserDetailBrowserTable.php)
+projects the existing `time_zone` column through the ordinary `userDetail`
+browser-source snapshot and fan-out. Core represents the detail value as
+`Hideable<string | null>`: an administrator sees the exact IANA name or null,
+and a viewer receives the hidden mark even when the stored value is null. The
+Vue [user Profile card](../../../framework/frontend/vue/src/admin/users/HilosUserPage.vue)
+places its read-only **Time zone** row after **Display name** and shows the exact
+name, **Automatic — follows the browser**, or **Hidden**. The target person's
+zone is descriptive; dates on the card still use the reader's `hilosTimeZone`.
+
+The optional `--time-zone` on the test-only
+[UserTestSeedCommand](../../../framework/backend/Core/CLI/Commands/UserTestSeedCommand.php)
+accepts only an exact IANA identifier, validates it before fixture writes, and
+stores it through
+[`UserActions::setTimeZone()`](../../../framework/backend/Database/Actions/Item/UserActions.php).
+
 ## Remaining Migration
 
 The wire norm applies to new work; existing payloads and screens still need
@@ -551,7 +600,6 @@ mixed formats, not a prerequisite for reading or applying this rule.
 |---|---|
 | Sessions and devices | (not in the code yet — HIL-1586) |
 | Notifications and deliveries | (not in the code yet — HIL-1587) |
-| People | (not in the code yet — HIL-1588) |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | (not in the code yet — HIL-1591) |
 | React | (not in the code yet — HIL-1594) |

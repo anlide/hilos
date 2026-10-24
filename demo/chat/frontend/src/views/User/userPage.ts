@@ -73,7 +73,7 @@ export const userDetail: ReadonlySignal<UserDetail | undefined> =
 
     return {
       name: user.name,
-      lastActivity: user.lastActivity ?? '',
+      lastActivity: user.lastActivity,
       presence: toPresence(presence?.[PRESENCE_FIELD]),
       onlineSessionCount: presence
         ? readNumber(presence, ONLINE_SESSION_COUNT_FIELD)

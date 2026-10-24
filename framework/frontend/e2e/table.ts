@@ -151,6 +151,50 @@ export async function tableRowKeyByText(
 }
 
 /**
+ * Advance real server windows until a known row is visible. Start from a settled
+ * window before the wanted row; no page number or server window size is assumed.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the table.
+ * @param rowKey The key previously resolved from the real UI or wire.
+ */
+export async function advanceTableToRow(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+): Promise<void> {
+  const table = page.getByTestId(TABLE)
+  const row = table.getByTestId(`${ROW_PREFIX}${rowKey}`)
+  const loading = table.getByTestId('hilos-table-loading')
+  const keys = () =>
+    table
+      .locator(ROWS)
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-id')))
+  await expect(table).toBeVisible()
+  await expect(loading).toHaveCount(0)
+  await expect.poll(async () => (await keys()).length).toBeGreaterThan(0)
+  while (!(await row.isVisible())) {
+    const before = await keys()
+    const next = table.getByTestId('hilos-table-next')
+    await expect(next, `another window can contain row ${rowKey}`).toBeEnabled()
+    await next.click()
+    // The footer moves immediately; the changed, non-loading rows prove that
+    // the server's next window has actually arrived before another step.
+    await expect
+      .poll(async () => {
+        const after = await keys()
+        return (
+          after.length > 0 &&
+          JSON.stringify(after) !== JSON.stringify(before) &&
+          (await loading.count()) === 0
+        )
+      })
+      .toBe(true)
+  }
+  await expect(row).toBeVisible()
+}
+
+/**
  * Check permitted movement by stable record identities in the visible tree.
  *
  * @param expect The spec's expect.

@@ -556,8 +556,8 @@
     "outputSha256": "6e0e092a5d299c01d779098f994aee9545ff57c1bdcc77420e6e01f79308548d"
   },
   "src/state/entity.ts": {
-    "sourceSha256": "1c573abc21ccb9bf7455750b6645094cd673c6717b811bd1156d18729942bf6d",
-    "outputSha256": "8fb3a9dd039f2f7ae16332b0c050b7442f66ff9e58a630e598cf30005c0ae31e"
+    "sourceSha256": "0d6ae1314c4be8dfd8634f99d80d0e141b6a82781ee47ab3cc945648a22bc193",
+    "outputSha256": "0d2230aaee48f54fd934aca7b39bbc6b0e94e1ba74c9da2517d0849fd9b51d3c"
   },
   "src/state/fieldReaders.ts": {
     "sourceSha256": "6a1f32d4ee9f212c09f896374e6703ab81991dbe24194094d416d33521417811",

@@ -52,7 +52,7 @@ function router(): HilosRouter {
 interface UserSeed {
   id: number
   name: Hideable<string>
-  lastActivity: string | null
+  lastActivity: number | null
   presence: string
   onlineSessionCount: number
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
@@ -198,7 +198,7 @@ function twoUsers(): HilosUsersContext {
     {
       id: 1,
       name: 'Alice',
-      lastActivity: '2026-06-19 10:00',
+      lastActivity: 1781863200000,
       presence: 'online',
       onlineSessionCount: 2,
     },
@@ -404,14 +404,14 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
             {
               id: 1,
               name: 'Alice',
-              lastActivity: '2026-10-21 10:00',
+              lastActivity: 1792576800000,
               presence: 'online',
               onlineSessionCount: 1,
             },
             {
               id: 2,
               name: 'Bob',
-              lastActivity: '2026-10-21 11:00',
+              lastActivity: 1792580400000,
               presence: 'probably_offline',
               onlineSessionCount: 2,
             },
@@ -455,14 +455,14 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
       container.querySelectorAll('[data-id="hilos-table-row-2"] td')[3]
         ?.textContent,
     ).toBe('2')
-    expect(container.textContent).toContain('2026-10-21 11:00')
+    expect(container.textContent).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
   it('changes the word in place as the presence changes live, apart from a source gone quiet', async () => {
     const alice = {
       id: 1,
       name: 'Alice',
-      lastActivity: '2026-10-21 10:00',
+      lastActivity: 1792576800000,
       presence: 'online',
       onlineSessionCount: 1,
     }
@@ -516,6 +516,6 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(presence(container, 1).badge?.textContent).toBe('offline')
     expect(tone(presence(container, 1).badge)).toEqual(['text-bg-secondary'])
     expect(presence(container, 1).twin?.textContent).toBe('probably offline')
-    expect(container.textContent).toContain('2026-10-21 10:00')
+    expect(container.textContent).toContain('Oct 21, 2026, 10:00:00 AM')
   })
 })

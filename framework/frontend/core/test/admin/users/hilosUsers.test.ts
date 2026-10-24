@@ -1,4 +1,8 @@
-import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
+import { formatMoment } from '../../../src/format/moment.js'
+import {
+  bindTimeZoneState,
+  hilosTimeZone,
+} from '../../../src/timeZone/timeZoneState.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -12,6 +16,7 @@ import {
   createHilosUserStanding,
   hilosPresenceBadge,
   HILOS_PRESENCE_WIDEST_LABEL,
+  HILOS_USER_OVERVIEW_COPY,
   hilosStandingBadge,
   HILOS_USER_ANALYTICS_ENABLED_KEY,
   hilosUserAnalyticsEnabled,
@@ -80,6 +85,134 @@ function userStore(): {
   return { scopes, users }
 }
 
+describe('activity display projections', () => {
+  it.each([
+    null,
+    undefined,
+    '2026-09-24 10:00',
+    NaN,
+    Infinity,
+    8640000000000001,
+  ])(
+    'returns null display text for an absent or invalid activity %j',
+    (lastActivity) => {
+      const { scopes, users } = userStore()
+      const ref = { type: 'user', id: 7 }
+      scopes.page()!.entities.upsert(ref, { id: 7, lastActivity })
+      const row: TableRow = { rowKey: '7', slots: { users: ref } }
+      scopes.page()!.tables.upsert('userDetail', 7, row.slots)
+      expect(resolveHilosUserRow(row, users).lastActivity).toBeNull()
+      expect(resolveHilosMergeCandidateRow(row, users).lastActivity).toBeNull()
+      expect(
+        createHilosUserDetail({ scopes, users } as HilosUsersContext).get()
+          ?.lastActivity,
+      ).toBeNull()
+    },
+  )
+
+  it('reformats mounted rows, detail and candidates on own-zone changes and Automatic without changing table state', () => {
+    const { scopes, users } = userStore()
+    const browserZone = new Intl.DateTimeFormat().resolvedOptions()
+    const browserZoneSpy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ ...browserZone, timeZone: 'Asia/Tokyo' })
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const send = vi.fn(() => true)
+    const connection = {
+      projectTimeZone: 'UTC',
+      on(event: string, listener: (signal: ProjectSignal) => void) {
+        if (event === 'projectSignal') listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+      sendTableViewport: send,
+      sendTableRendered: () => true,
+    } as unknown as HilosConnection
+    const release = bindTimeZoneState(connection)
+    const choose = (timeZone: string | null): void => {
+      for (const listener of listeners) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 99, timeZone } } },
+        } as ProjectSignal)
+      }
+    }
+    const context = { scopes, users, connection } as HilosUsersContext
+    const list = createHilosUsersTable(context)
+    const candidates = createHilosMergeCandidates(context)
+    const rows: TableRow[] = [7, 8].map((id) => {
+      const ref = { type: 'user', id }
+      scopes.page()!.entities.upsert(ref, {
+        id,
+        name: `Person ${id}`,
+        lastActivity: id === 7 ? 0 : 1790244000000,
+        timeZone: id === 7 ? 'Pacific/Honolulu' : null,
+      })
+      return { rowKey: String(id), slots: { users: ref } }
+    })
+    scopes.page()!.tables.upsert('userDetail', 7, rows[0].slots)
+    const detail = createHilosUserDetail(context)
+    list.controller.ingestWindow(rows, 2, true, null, null, 10)
+    candidates.controller.ingestWindow(rows, 2, true, null, null, 10)
+    const descriptor = list.controller.descriptor()
+    const person = users.signal({ type: 'user', id: 7 })
+    const raw = person.get()
+    choose('Europe/Kyiv')
+    const kyivActivity = formatMoment(0)
+    try {
+      expect(detail.get()?.timeZone).toBe('Pacific/Honolulu')
+      expect(detail.get()?.lastActivity).toBe(kyivActivity)
+      expect(list.controller.rows.get()[0].row?.lastActivity).toBe(kyivActivity)
+      expect(candidates.controller.rows.get()[0].row?.lastActivity).toBe(
+        kyivActivity,
+      )
+
+      scopes
+        .page()!
+        .entities.upsert({ type: 'user', id: 7 }, { timeZone: 'Asia/Tokyo' })
+      expect(detail.get()?.timeZone).toBe('Asia/Tokyo')
+      expect(detail.get()?.lastActivity).toBe(kyivActivity)
+
+      choose(null)
+      const automaticActivity = formatMoment(0)
+      expect(automaticActivity).toBe(
+        new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'medium',
+          timeZone: 'Asia/Tokyo',
+        }).format(0),
+      )
+      expect(automaticActivity).not.toBe(kyivActivity)
+      expect(detail.get()?.lastActivity).toBe(automaticActivity)
+      expect(list.controller.rows.get()[0].row?.lastActivity).toBe(
+        automaticActivity,
+      )
+      expect(candidates.controller.rows.get()[0].row?.lastActivity).toBe(
+        automaticActivity,
+      )
+      expect(list.controller.rows.get().map((row) => row.rowKey)).toEqual([
+        '7',
+        '8',
+      ])
+      expect(candidates.controller.rows.get().map((row) => row.rowKey)).toEqual(
+        ['7', '8'],
+      )
+      expect(list.controller.pendingCount.get()).toBe(0)
+      expect(list.controller.descriptor()).toEqual(descriptor)
+      expect(person.get()?.lastActivity).toBe(0)
+      expect(raw?.lastActivity).toBe(0)
+      expect(send).not.toHaveBeenCalled()
+    } finally {
+      list.dispose()
+      candidates.dispose()
+      choose('UTC')
+      release()
+      browserZoneSpy.mockRestore()
+    }
+  })
+})
+
 describe('resolveHilosMergeCandidateRow', () => {
   it('preserves hidden protection instead of treating it as an unprotected account', () => {
     const { scopes, users } = userStore()
@@ -107,7 +240,7 @@ describe('resolveHilosMergeCandidateRow', () => {
       .page()
       ?.entities.upsert(
         { type: 'user', id: 7 },
-        { id: 7, name: 'Loser', lastActivity: '2026-09-24 10:00' },
+        { id: 7, name: 'Loser', lastActivity: 1790244000000 },
       )
     const row: TableRow = {
       rowKey: '7',
@@ -132,7 +265,7 @@ describe('resolveHilosMergeCandidateRow', () => {
     expect(resolveHilosMergeCandidateRow(row, users)).toEqual({
       id: 7,
       name: 'Loser',
-      lastActivity: '2026-09-24 10:00',
+      lastActivity: 'Sep 24, 2026, 10:00:00 AM',
       identities: [
         {
           type: 'email',
@@ -221,6 +354,38 @@ afterEach(() => {
 })
 
 describe('createHilosUserDetail', () => {
+  it('distinguishes a visible Automatic zone from a hidden zone and follows entity changes', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 1 }
+    page.entities.upsert(ref, {
+      id: 1,
+      name: 'Ada',
+      lastActivity: null,
+      timeZone: 'Pacific/Honolulu',
+    })
+    page.tables.upsert('userDetail', 1, { users: ref })
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+
+    expect(detail.get()?.timeZone).toBe('Pacific/Honolulu')
+    page.entities.upsert(ref, { timeZone: null })
+    expect(detail.get()?.timeZone).toBeNull()
+    expect(detail.get()?.timeZone).not.toBe(HIDDEN_VALUE)
+
+    page.entities.upsert(ref, { timeZone: { _hidden: true } })
+    expect(detail.get()?.timeZone).toBe(HIDDEN_VALUE)
+
+    page.entities.upsert(ref, { timeZone: 'America/Los_Angeles' })
+    expect(detail.get()?.timeZone).toBe('America/Los_Angeles')
+  })
+
+  it("owns the shared Overview labels for a person's time zone", () => {
+    expect(HILOS_USER_OVERVIEW_COPY.timeZone).toBe('Time zone')
+    expect(HILOS_USER_OVERVIEW_COPY.automaticTimeZone).toBe(
+      'Automatic — follows the browser',
+    )
+  })
+
   it('follows live rights and block changes while preserving the UTC deletion moment', () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)
@@ -691,6 +856,7 @@ describe('hilosUserLifecyclePromptOffered', () => {
     id: 5,
     name: 'Maria',
     lastActivity: null,
+    timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
     hasPassword: true,
@@ -1105,6 +1271,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     id: 5,
     name: 'Maria',
     lastActivity: null,
+    timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
     hasPassword: true,
@@ -1339,6 +1506,7 @@ describe('a merged account on the card (HIL-1292)', () => {
     id: 5,
     name: 'Maria',
     lastActivity: null,
+    timeZone: null,
     presence: 'offline',
     onlineSessionCount: 0,
     hasPassword: true,
@@ -1938,6 +2106,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       id: 5,
       name: 'Maria',
       lastActivity: null,
+      timeZone: null,
       presence: 'online',
       onlineSessionCount: 1,
       hasPassword: true,
@@ -1982,6 +2151,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     id: 5,
     name: 'Maria',
     lastActivity: null,
+    timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
     hasPassword: true,

@@ -35,12 +35,22 @@ final class HilosUserTableRow extends AbstractTableRow
     public const string name = ObjectUser::name;
     public const string lastActivity = ObjectUser::lastActivity;
 
+    /**
+     * @param int $id Person ID
+     * @param bool $admin Panel operator flag
+     * @param bool $block Account block flag
+     * @param string $name Display name
+     * @param ?int $lastActivity Last activity in epoch milliseconds UTC, or null
+     * @param int $onlineSessionCount Open session count
+     * @param ?string $presence Connection presence
+     * @param bool $merged Whether the account was merged
+     */
     public function __construct(
         public int $id,
         public bool $admin = false,
         public bool $block = false,
         public string $name = '',
-        public ?string $lastActivity = null,
+        public ?int $lastActivity = null,
         public int $onlineSessionCount = 0,
         public ?string $presence = null,
         public bool $merged = false,
@@ -70,7 +80,7 @@ final class HilosUserTableRow extends AbstractTableRow
      * the merge flag closes the row.
      *
      * @return array{id: int, admin: bool, block: bool, onlineSessionCount: int, presence: ?string, name: string,
-     *     lastActivity: ?string, merged: bool}
+     *     lastActivity: ?int, merged: bool}
      */
     public function toArray(): array
     {
@@ -100,7 +110,7 @@ final class HilosUserTableRow extends AbstractTableRow
             admin: self::requireBool($data, self::admin),
             block: self::requireBool($data, self::block),
             name: self::requireString($data, self::name),
-            lastActivity: self::optionalString($data, self::lastActivity),
+            lastActivity: self::optionalInt($data, self::lastActivity),
             onlineSessionCount: self::requireInt($data, self::onlineSessionCount),
             presence: self::optionalString($data, self::presence),
             merged: self::requireBool($data, self::merged),

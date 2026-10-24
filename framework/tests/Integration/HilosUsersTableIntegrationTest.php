@@ -109,7 +109,7 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
             $row = self::userRow($this->table()->buildMutationForSourceEvent($change), $change->mutationType, $ann);
 
             $this->assertSame('Ann', $row->name);
-            $this->assertSame(self::LAST_ACTIVITY, $row->lastActivity);
+            $this->assertSame(1790762400000, $row->lastActivity);
             $this->assertFalse($row->admin);
             $this->assertFalse($row->block);
         }
@@ -168,6 +168,29 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
                 sort: TableSortOrderDTO::of(new TableSortDTO(HilosUserTableRow::name)),
             ))->rows),
         );
+    }
+
+    public function testActivityUsesNumericSortAndAnchorsAcrossEqualAndNullMoments(): void
+    {
+        $never = self::seedPerson('Never');
+        $earlier = self::seedPerson('Earlier', '2026-09-29 10:00:00');
+        $equalFirst = self::seedPerson('Equal first', self::LAST_ACTIVITY);
+        $equalLast = self::seedPerson('Equal last', self::LAST_ACTIVITY);
+        $table = $this->table();
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosUserTableRow::lastActivity));
+        $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2));
+
+        $this->assertSame([$earlier, $equalFirst], self::rowKeys($first->rows));
+        $this->assertSame([1790676000000, 1790762400000], array_map(
+            static fn(AbstractTableRow $row): mixed => $row->toArray()[HilosUserTableRow::lastActivity],
+            $first->rows,
+        ));
+        $this->assertSame(['lastActivity' => 1790676000000, 'id' => $earlier], $first->firstAnchor?->toArray());
+        $this->assertSame(['lastActivity' => 1790762400000, 'id' => $equalFirst], $first->lastAnchor?->toArray());
+        $next = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2, anchor: $first->lastAnchor));
+        $this->assertSame([$equalLast, $never], self::rowKeys($next->rows));
+        $this->assertSame(['lastActivity' => 1790762400000, 'id' => $equalLast], $next->firstAnchor?->toArray());
+        $this->assertSame(['lastActivity' => null, 'id' => $never], $next->lastAnchor?->toArray());
     }
 
     /**

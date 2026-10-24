@@ -108,7 +108,7 @@ function userContext(
   if (seed) {
     page.entities.upsert(
       { type: 'user', id: 1 },
-      { id: 1, name: 'Alice', lastActivity: '2026-06-19 10:00' },
+      { id: 1, name: 'Alice', lastActivity: 1781863200000 },
     )
     page.tables.upsert('userDetail', 1, {
       users: { type: 'user', id: 1 },

@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use DateTimeImmutable;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecondFactor\SecondFactorUnlockCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * SecondFactorUnlockCommand - lift the lock wrong app codes put on a person's second factor (HIL-1285).
@@ -94,6 +98,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args; the first is the person id
      * @return int Exit code (0 on success)
+     * @throws HilosException When the server text time-zone policy cannot be read
      */
     public function execute(array $options, array $args): int
     {
@@ -125,8 +130,11 @@ HELP;
         }
 
         $lockedUntil = $reply->payload[SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL] ?? null;
-        if ((bool)($reply->payload[SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED] ?? false) && is_string($lockedUntil)) {
-            echo "Reply (ok): user #{$userId} was locked until {$lockedUntil}; app codes are accepted again\n";
+        if ((bool)($reply->payload[SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED] ?? false) && is_int($lockedUntil)) {
+            $lockEnd = new DateTimeImmutable('@' . intdiv($lockedUntil, TimeConstants::MS_PER_SECOND))
+                ->setTimezone(TimeHelper::serverTextTimeZone())
+                ->format('Y-m-d H:i:s P (e)');
+            echo "Reply (ok): user #{$userId} was locked until {$lockEnd}; app codes are accepted again\n";
         } else {
             echo "Reply (ok): user #{$userId} had no lock; the miss count is cleared\n";
         }

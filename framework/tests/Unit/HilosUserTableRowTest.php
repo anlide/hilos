@@ -29,7 +29,7 @@ final class HilosUserTableRowTest extends TestCase
             admin: true,
             block: false,
             name: 'Ann',
-            lastActivity: '2026-09-30 10:00:00',
+            lastActivity: 1790762400000,
             onlineSessionCount: 3,
             presence: 'online',
             merged: true,
@@ -43,7 +43,7 @@ final class HilosUserTableRowTest extends TestCase
                 HilosUserTableRow::onlineSessionCount => 3,
                 HilosUserTableRow::presence => 'online',
                 HilosUserTableRow::name => 'Ann',
-                HilosUserTableRow::lastActivity => '2026-09-30 10:00:00',
+                HilosUserTableRow::lastActivity => 1790762400000,
                 HilosUserTableRow::merged => true,
             ],
             $row->toArray(),
@@ -69,6 +69,15 @@ final class HilosUserTableRowTest extends TestCase
         );
 
         $this->assertSame($row->toArray(), HilosUserTableRow::fromArray($row->toArray())->toArray());
+    }
+
+    public function testNumericActivitySurvivesTheRoundTripIncludingEpochZero(): void
+    {
+        foreach ([0, 1790762400000] as $moment) {
+            $row = new HilosUserTableRow(7, lastActivity: $moment);
+
+            $this->assertSame($row->toArray(), HilosUserTableRow::fromArray($row->toArray())->toArray());
+        }
     }
 
     public function testPresenceFieldNamesMatchTheSummaryDto(): void

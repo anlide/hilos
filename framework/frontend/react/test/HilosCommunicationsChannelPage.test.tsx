@@ -308,6 +308,17 @@ function saveButton(): HTMLButtonElement {
   return byId('hilos-channel-edit-save') as HTMLButtonElement
 }
 
+/** Settle the correlated action and its React updates before DOM teardown. */
+async function reply(
+  answer: (outcome: 'success' | 'fail') => void,
+  outcome: 'success' | 'fail',
+): Promise<void> {
+  await act(async () => {
+    answer(outcome)
+    await Promise.resolve()
+  })
+}
+
 /** Render the page and open the modal on the seeded row. */
 function openModal(context: HilosCommunicationsContext): void {
   const { container } = render(
@@ -373,8 +384,10 @@ describe('HilosCommunicationsChannelPage edit modal', () => {
     expect(byId('conflict-badge')).not.toBeNull()
   })
 
-  it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', () => {
-    const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
+  it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', async () => {
+    const { context, pushUpdate, sent, answer } = seededContext([
+      fromField('+1000'),
+    ])
     openModal(context)
     fireEvent.change(valueInput(), { target: { value: '+mine' } })
 
@@ -403,6 +416,9 @@ describe('HilosCommunicationsChannelPage edit modal', () => {
       field: 'from',
       value: '+mine',
     })
+
+    await reply(answer, 'success')
+    expect(byId('modal')).toBeNull()
   })
 
   it('Take theirs sets the field to the live value, says so, and locks save', () => {
@@ -551,16 +567,6 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
   function openReset(context: HilosCommunicationsContext): void {
     renderPage(context)
     fireEvent.click(resetButton())
-  }
-
-  async function reply(
-    answer: (outcome: 'success' | 'fail') => void,
-    outcome: 'success' | 'fail',
-  ): Promise<void> {
-    await act(async () => {
-      answer(outcome)
-      await Promise.resolve()
-    })
   }
 
   it('opens on ↺ with the row in focus and sends nothing', () => {
@@ -861,8 +867,8 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     expect(focus).toEqual([ROW_KEY, ''])
   })
 
-  it('an admin on a node in the mode sends a test as today', () => {
-    const { context, sent } = seededContext([fromField('+1000')])
+  it('an admin on a node in the mode sends a test as today', async () => {
+    const { context, sent, answer } = seededContext([fromField('+1000')])
     bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
     renderPage(context)
 
@@ -875,5 +881,10 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
 
     expect(sent[0]?.action).toBe('communications_channel_test')
     expect(sent[0]?.payload).toEqual({ channel: 'sms' })
+    expect(testButton?.getAttribute('aria-busy')).toBe('true')
+
+    await reply(answer, 'success')
+    expect(testButton?.getAttribute('aria-busy')).toBeNull()
+    expect(testButton?.disabled).toBe(false)
   })
 })

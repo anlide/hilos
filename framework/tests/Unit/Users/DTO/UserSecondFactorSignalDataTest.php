@@ -25,6 +25,7 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** The frames that carry a person's second factor to their agent and back survive the wire whole (HIL-1406). */
@@ -200,16 +201,77 @@ final class UserSecondFactorSignalDataTest extends TestCase
         self::assertFalse($restored->marked);
     }
 
-    public function testAnUnlockOfACommandAndItsAnswerRoundTrip(): void
+    /** @return iterable<string, array{?int}> Lock ends the answer may carry */
+    public static function unlockLockEnds(): iterable
+    {
+        yield 'milliseconds' => [1_790_000_000_000];
+        yield 'no lock' => [null];
+        yield 'epoch zero' => [0];
+    }
+
+    #[DataProvider('unlockLockEnds')]
+    public function testAnUnlockOfACommandAndItsAnswerRoundTrip(?int $lockedUntil): void
     {
         $request = new UserSecondFactorUnlockSignalData(7, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE, 'corr-1');
-        $done = new UserSecondFactorUnlockDoneSignalData($request, '2026-10-10 09:00:00', null, null, null);
+        $done = new UserSecondFactorUnlockDoneSignalData($request, $lockedUntil, null, null, null);
 
         $restored = UserSecondFactorUnlockDoneSignalData::fromArray(self::overTheWire($done->toArray()));
 
         self::assertEquals($done, $restored);
+        self::assertSame($request->toArray(), $restored->request->toArray());
         self::assertSame('corr-1', $restored->request->correlationId);
-        self::assertSame('2026-10-10 09:00:00', $restored->lockedUntil);
+        self::assertSame($lockedUntil, $restored->lockedUntil);
+        self::assertSame($lockedUntil, $restored->toArray()[UserSecondFactorUnlockDoneSignalData::lockedUntil]);
+    }
+
+    public function testAnUnlockRefusalKeepsTheRequestAndHasNoLockEnd(): void
+    {
+        $request = new UserSecondFactorUnlockSignalData(7, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE, 'corr-1');
+        $done = UserSecondFactorUnlockDoneSignalData::refused($request, ActionRefusal::fromThrowable(new DatabaseException('disk full')));
+
+        $restored = UserSecondFactorUnlockDoneSignalData::fromArray(self::overTheWire($done->toArray()));
+
+        self::assertEquals($done, $restored);
+        self::assertSame($request->toArray(), $restored->request->toArray());
+        self::assertNull($restored->lockedUntil);
+        self::assertNull($restored->toArray()[UserSecondFactorUnlockDoneSignalData::lockedUntil]);
+        self::assertSame($done->error, $restored->error);
+        self::assertSame('DatabaseException', $restored->errorType);
+        self::assertSame('disk full', $restored->errorDetail);
+    }
+
+    public function testAnUnlockAnswerMayOmitItsLockEnd(): void
+    {
+        $request = new UserSecondFactorUnlockSignalData(7, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE, 'corr-1');
+
+        $restored = UserSecondFactorUnlockDoneSignalData::fromArray([
+            UserSecondFactorUnlockDoneSignalData::request => $request->toArray(),
+        ]);
+
+        self::assertNull($restored->lockedUntil);
+        self::assertSame($request->toArray(), $restored->request->toArray());
+    }
+
+    /** @return iterable<string, array{mixed}> Non-integer values the wire reader must refuse */
+    public static function malformedUnlockLockEnds(): iterable
+    {
+        yield 'SQL string' => ['2026-10-10 09:00:00'];
+        yield 'numeric string' => ['1790000000000'];
+        yield 'float' => [1_790_000_000_000.0];
+        yield 'boolean' => [false];
+        yield 'array' => [[]];
+    }
+
+    #[DataProvider('malformedUnlockLockEnds')]
+    public function testAnUnlockAnswerRefusesANonIntegerLockEnd(mixed $lockedUntil): void
+    {
+        $request = new UserSecondFactorUnlockSignalData(7, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE, 'corr-1');
+        $this->expectException(InvalidFormatException::class);
+
+        UserSecondFactorUnlockDoneSignalData::fromArray([
+            UserSecondFactorUnlockDoneSignalData::request => $request->toArray(),
+            UserSecondFactorUnlockDoneSignalData::lockedUntil => $lockedUntil,
+        ]);
     }
 
     public function testARequestForNoPersonIsRefused(): void

@@ -8,6 +8,7 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  formatMoment,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -24,6 +25,7 @@ import type { HilosUsersContext } from '@hilos/core/admin/users'
 
 import HilosUsersPage from './HilosUsersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
 
 function router(): HilosRouter {
   return {
@@ -53,7 +55,7 @@ function router(): HilosRouter {
 interface UserSeed {
   id: number
   name: Hideable<string>
-  lastActivity: string | null
+  lastActivity: number | null
   presence: string
   onlineSessionCount: number
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
@@ -217,13 +219,49 @@ async function mountList(
 }
 
 describe('HilosUsersPage', () => {
+  it('reformats a shown activity without moving rows, with epoch zero present and invalid moments empty', async () => {
+    const zone = readerTimeZone()
+    try {
+      const wrapper = await mountList(
+        seededContext(
+          [0, null, NaN].map((lastActivity, index) => ({
+            id: index + 1,
+            name: `Person ${index + 1}`,
+            lastActivity,
+            presence: 'offline',
+            onlineSessionCount: 0,
+          })),
+        ),
+      )
+      const automatic = formatMoment(0)
+      expect(wrapper.text()).toContain(automatic)
+      expect(wrapper.text()).toContain('—')
+      zone.choose('Pacific/Kiritimati')
+      await nextTick()
+      expect(formatMoment(0)).not.toBe(automatic)
+      expect(wrapper.text()).toContain(formatMoment(0))
+      expect(wrapper.text()).not.toContain(automatic)
+      zone.choose(null)
+      await nextTick()
+      expect(wrapper.text()).toContain(automatic)
+      expect(wrapper.text().indexOf('Person 1')).toBeLessThan(
+        wrapper.text().indexOf('Person 2'),
+      )
+      expect(wrapper.text().indexOf('Person 2')).toBeLessThan(
+        wrapper.text().indexOf('Person 3'),
+      )
+    } finally {
+      zone.release()
+    }
+  })
+
   it('renders a row per user with the name and the presence', async () => {
     const wrapper = await mountList(
       seededContext([
         {
           id: 1,
           name: 'Alice',
-          lastActivity: '2026-06-19 10:00',
+          lastActivity: 1781863200000,
           presence: 'online',
           onlineSessionCount: 2,
         },
@@ -337,14 +375,14 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
         {
           id: 1,
           name: 'Alice',
-          lastActivity: '2026-10-21 10:00',
+          lastActivity: 1792576800000,
           presence: 'online',
           onlineSessionCount: 1,
         },
         {
           id: 2,
           name: 'Bob',
-          lastActivity: '2026-10-21 11:00',
+          lastActivity: 1792580400000,
           presence: 'probably_offline',
           onlineSessionCount: 2,
         },
@@ -385,14 +423,14 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(
       wrapper.find('[data-id="hilos-table-row-2"]').findAll('td')[3]?.text(),
     ).toBe('2')
-    expect(wrapper.text()).toContain('2026-10-21 11:00')
+    expect(wrapper.text()).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
   it('changes the word in place as the presence changes live, apart from a source gone quiet', async () => {
     const alice = {
       id: 1,
       name: 'Alice',
-      lastActivity: '2026-10-21 10:00',
+      lastActivity: 1792576800000,
       presence: 'online',
       onlineSessionCount: 1,
     }
@@ -443,6 +481,6 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(presence(wrapper, 1).badge.text()).toBe('offline')
     expect(tone(presence(wrapper, 1).badge)).toEqual(['text-bg-secondary'])
     expect(presence(wrapper, 1).twin.text()).toBe('probably offline')
-    expect(wrapper.text()).toContain('2026-10-21 10:00')
+    expect(wrapper.text()).toContain('Oct 21, 2026, 10:00:00 AM')
   })
 })

@@ -32,6 +32,7 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
     private const string TEST_AGENT_ID = 'test-agent';
     private const string SEED_PASSWORD = 'correct horse battery';
     private const int SEED_COUNT = 5;
+    private const string TIME_ZONE = 'Pacific/Honolulu';
 
     protected function setUp(): void
     {
@@ -67,6 +68,7 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
             $userId = $identity->userId;
             $this->assertNotNull($userId);
             $this->assertSame($local, Hilos::$db->users[$userId]->name);
+            $this->assertNull(Hilos::$db->users[$userId]->timeZone);
             $userIds[$userId] = true;
 
             // Every seeded user verifies against the one shared hash.
@@ -78,6 +80,43 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
         // Exactly N distinct users and N identities, no more.
         $this->assertCount(self::SEED_COUNT, $userIds);
         $this->assertSame(self::SEED_COUNT, $this->countPasswordIdentities($prefix . '-'));
+    }
+
+    /**
+     * The optional zone is persisted as the exact IANA identifier on each created user.
+     *
+     * @throws HilosException When a seed write or lookup fails
+     */
+    public function testSeedsTheExactIanaTimeZone(): void
+    {
+        $prefix = 'ittimezone' . RandomHelper::hex(4);
+
+        $this->assertSame(ExitCode::SUCCESS, $this->runSeed($prefix, 2, self::TIME_ZONE));
+
+        for ($i = 1; $i <= 2; $i++) {
+            $local = UserTestSeedCommand::fixtureIdentifier($i, 2, $prefix);
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $local . '@example.test');
+            $this->assertNotNull($identity);
+            $this->assertNotNull($identity->userId);
+            $this->assertSame(self::TIME_ZONE, Hilos::$db->users[$identity->userId]->timeZone);
+        }
+    }
+
+    /**
+     * An invalid zone is rejected before the command creates either fixture users or identities.
+     *
+     * @throws HilosException When a lookup or count query fails
+     */
+    public function testRejectsInvalidTimeZoneBeforeCreatingRows(): void
+    {
+        $prefix = 'itinvalidtimezone' . RandomHelper::hex(4);
+        $this->assertSame([], Hilos::$db->users->idsMatchingName($prefix));
+        $this->assertSame(0, $this->countPasswordIdentities($prefix . '-'));
+
+        $this->assertSame(ExitCode::INVALID_ARGUMENT, $this->runSeed($prefix, 1, '+02:00'));
+
+        $this->assertSame([], Hilos::$db->users->idsMatchingName($prefix));
+        $this->assertSame(0, $this->countPasswordIdentities($prefix . '-'));
     }
 
     /**
@@ -127,14 +166,20 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
      *
      * @param string $prefix Identifier prefix passed as --prefix
      * @param int $count How many users to seed
+     * @param ?string $timeZone Optional exact IANA time zone
      * @return int Command exit code
      * @throws HilosException When the seed run fails
      */
-    private function runSeed(string $prefix, int $count): int
+    private function runSeed(string $prefix, int $count, ?string $timeZone = null): int
     {
+        $options = ['prefix' => $prefix];
+        if ($timeZone !== null) {
+            $options['time-zone'] = $timeZone;
+        }
+
         ob_start();
         try {
-            return new UserTestSeedCommand()->execute(['prefix' => $prefix], [(string)$count]);
+            return new UserTestSeedCommand()->execute($options, [(string)$count]);
         } finally {
             ob_end_clean();
         }
