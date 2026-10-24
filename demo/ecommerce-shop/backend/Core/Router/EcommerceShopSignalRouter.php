@@ -36,6 +36,7 @@ final class EcommerceShopSignalRouter extends SignalRouter
     {
         return [
             AgentType::ECOMMERCE_SHOP,
+            AgentType::HILOS_INDEX,
         ];
     }
 
