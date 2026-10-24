@@ -138,9 +138,11 @@ it receives, and a reset to Automatic returns each tab to its own browser.
 
 The effective reader zone is the one value every SDK and demo uses. Each call
 to the core formatter reads `hilosTimeZone`, so it uses the current reader zone.
-The profile's Time zone row reads `hilosOwnTimeZone` and `hilosBrowserTimeZone`
-(not in the code yet — HIL-1585), and so does the selection window
-(not in the code yet — HIL-1593).
+The profile's Time zone row reads `hilosOwnTimeZone` and `hilosBrowserTimeZone`:
+it shows the account's choice when set, or the browser's zone marked as
+automatic (`<zone> · automatic`), falling back to the project zone and
+ultimately UTC when the browser supplies none. The selection window reads them
+as well (not in the code yet — HIL-1593).
 
 **Automatic** means the person has no choice of their own, so the current
 browser supplies the zone; it is not a zone name. The nullable account column

@@ -33,6 +33,11 @@ import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { THEME_COPY, THEME_POSITIONS } from '../theme/themeChoice.js'
 import { hilosThemeChoice } from '../theme/themeState.js'
 import {
+  hilosBrowserTimeZone,
+  hilosOwnTimeZone,
+  hilosTimeZone,
+} from '../timeZone/timeZoneState.js'
+import {
   createHilosDataExportStore,
   describeHilosDataExport,
   profileDataExportNode,
@@ -73,7 +78,9 @@ export const HILOS_PROFILE_ROOT_COPY = {
   account: 'Account',
   name: 'Name',
   email: 'Email',
+  timeZone: 'Time zone',
   theme: 'Theme',
+  automatic: 'automatic',
   verified: '{address} · verified',
   change: 'Change',
   sections: 'Sections',
@@ -158,6 +165,11 @@ export interface HilosProfileRootStore {
    * the default; null while switching is off, and there is no row.
    */
   readonly theme: ReadonlySignal<string | null>
+  /**
+   * The Time zone row's line — the person's own zone, or the browser's zone
+   * (falling back to project or UTC) marked as automatic.
+   */
+  readonly timeZone: ReadonlySignal<string>
   /** Start taking the sections from the page's answer and their frames. */
   start(): void
   /** Stop taking them. */
@@ -251,6 +263,15 @@ export function createHilosProfileRootStore(
         choice.position
 
       return choice.isDefault ? `${label} · ${THEME_COPY.default}` : label
+    }),
+    timeZone: computedSignal(() => {
+      const own = hilosOwnTimeZone.get()
+      const browser = hilosBrowserTimeZone.get()
+      const effective = hilosTimeZone.get()
+
+      return own !== null
+        ? own
+        : `${browser ?? effective} · ${HILOS_PROFILE_ROOT_COPY.automatic}`
     }),
     start() {
       stopPreferences ??= startHilosNotificationPreferences(context)

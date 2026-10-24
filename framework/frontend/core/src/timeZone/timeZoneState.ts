@@ -60,8 +60,9 @@ export const hilosTimeZone: ReadonlySignal<string> = computedSignal(() => {
  * The person's own usable zone, or null for Automatic, a guest, or a choice
  * this engine cannot use.
  *
- * SCAFFOLD: no production reader yet — bound at boot by this leaf; the profile's
- * Time zone row (HIL-1585) and the Time zone window (HIL-1593) will read it.
+ * The profile's Time zone row (HilosProfileRootStore.timeZone) reads this to
+ * project the account row; the Time zone window (HIL-1593) will read it as the
+ * initial selection.
  */
 export const hilosOwnTimeZone: ReadonlySignal<string | null> = computedSignal(
   () => snapshotSignal.get().ownTimeZone,
@@ -70,8 +71,9 @@ export const hilosOwnTimeZone: ReadonlySignal<string | null> = computedSignal(
 /**
  * The zone this browser reported at its latest read, or null when it cannot say.
  *
- * SCAFFOLD: no production reader yet — bound at boot by this leaf; the profile's
- * Time zone row (HIL-1585) and the Time zone window (HIL-1593) will read it.
+ * The profile's Time zone row (HilosProfileRootStore.timeZone) reads this when
+ * projecting the Automatic label; the Time zone window (HIL-1593) will read it
+ * for the automatic option.
  */
 export const hilosBrowserTimeZone: ReadonlySignal<string | null> =
   computedSignal(() => snapshotSignal.get().browserTimeZone)

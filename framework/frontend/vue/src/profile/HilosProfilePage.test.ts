@@ -2,15 +2,17 @@
 // project handed its rename, Email only with a verified address, a row per
 // catalog section in the catalog's order with its summary — but for a section
 // the root hides (HIL-1303) — the placeholder while the name is not known yet,
-// and the Theme row (HIL-1434).
+// the Time zone row (HIL-1585), and the Theme row (HIL-1434).
 import {
   ActionLifecycle,
   bindImpersonation,
   bindSessionScope,
   bindSignOut,
   bindThemeState,
+  bindTimeZoneState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
+  HILOS_PROFILE_ROOT_COPY,
   HilosPages,
   resolveHilosProfileSignInMethods,
   ScopeManager,
@@ -25,7 +27,7 @@ import {
   type PageRouteMatch,
   type ProjectSignal,
 } from '@hilos/core/base'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -39,6 +41,7 @@ const themeActions = new ActionLifecycle({
 
 let releaseTheme: (() => void) | undefined
 let releaseSession: (() => void) | undefined
+let releaseTimeZone: (() => void) | undefined
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -46,14 +49,21 @@ afterEach(() => {
   releaseTheme = undefined
   releaseSession?.()
   releaseSession = undefined
+  releaseTimeZone?.()
+  releaseTimeZone = undefined
   setHilosThemePick(null)
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   const restore = bindThemeState(
     { on: () => () => {} } as unknown as HilosConnection,
     new ScopeManager(),
     themeActions,
   )
   restore()
+  const restoreZone = bindTimeZoneState({
+    on: () => () => {},
+  } as unknown as HilosConnection)
+  restoreZone()
 })
 enableAutoUnmount(afterEach)
 
@@ -92,9 +102,11 @@ function bindTheme(
   pick: 'light' | 'dark' | 'system' | null = null,
 ) {
   releaseTheme?.()
+  releaseTimeZone?.()
   const conn = fakeConnection()
   const scopes = new ScopeManager()
   bindSessionScope(conn as unknown as HilosConnection, scopes)
+  releaseTimeZone = bindTimeZoneState(conn as unknown as HilosConnection)
   releaseTheme = bindThemeState(
     conn as unknown as HilosConnection,
     scopes,
@@ -210,6 +222,18 @@ function setMethods(
   })
 }
 
+function mockBrowserTimeZone(timeZone: string): void {
+  const original = Intl.DateTimeFormat.prototype.resolvedOptions
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+    function (this: Intl.DateTimeFormat) {
+      return {
+        ...original.call(this),
+        timeZone,
+      }
+    },
+  )
+}
+
 function mountPage(
   binding: HilosProfileBinding,
   scopes: ScopeManager = signedInScopes(),
@@ -219,6 +243,7 @@ function mountPage(
     actions: {} as ActionLifecycle,
   },
 ) {
+  releaseTimeZone ??= bindTimeZoneState(context.connection)
   return mount(HilosProfilePage, {
     attachTo: document.body,
     global: {
@@ -233,13 +258,18 @@ function mountPage(
 }
 
 /** A profile on the same live session/theme binding as the application shell. */
-function accountThemePage() {
+function accountThemePage(binding: HilosProfileBinding = nameOnly()) {
   const connection = fakeConnection()
   const scopes = new ScopeManager()
-  const dispatch = vi.fn(() => ({
+  const dispatch = vi.fn((action?: string) => ({
     requestId: 'theme',
     loading: createSignal(false),
-    done: Promise.resolve({}),
+    done: Promise.resolve({
+      reply:
+        action === 'hilos_step_up_start'
+          ? { required: false, purpose: 'rename' }
+          : {},
+    }),
   }))
   const actions = { dispatch } as unknown as ActionLifecycle
   bindSessionScope(connection as unknown as HilosConnection, scopes)
@@ -249,6 +279,7 @@ function accountThemePage() {
     stopSignOut()
     stopImpersonation()
   }
+  releaseTimeZone = bindTimeZoneState(connection as unknown as HilosConnection)
   releaseTheme = bindThemeState(
     connection as unknown as HilosConnection,
     scopes,
@@ -266,7 +297,7 @@ function accountThemePage() {
     },
     data: { themeSettings: { switchingEnabled: true, defaultTheme: 'system' } },
   })
-  const wrapper = mountPage(nameOnly(), scopes, {
+  const wrapper = mountPage(binding, scopes, {
     connection: connection as unknown as HilosConnection,
     scopes,
     actions,
@@ -457,7 +488,7 @@ describe('HilosProfilePage', () => {
     ).toBe(false)
   })
 
-  it('places the Theme row after Email, or after Name without an address', () => {
+  it('places the Time zone and Theme rows after Email, or after Name without an address', () => {
     bindTheme({ switchingEnabled: true, defaultTheme: 'system' })
 
     const scopesWithEmail = signedInScopes()
@@ -480,27 +511,232 @@ describe('HilosProfilePage', () => {
     const rowsWithEmail = wrapperWithEmail
       .find('[data-id="profile-detail"]')
       .findAll('.border-bottom')
-    expect(rowsWithEmail).toHaveLength(3)
+    expect(rowsWithEmail).toHaveLength(4)
     expect(rowsWithEmail[0].find('[data-id="profile-name"]').exists()).toBe(
       true,
     )
     expect(rowsWithEmail[1].find('[data-id="profile-email"]').exists()).toBe(
       true,
     )
-    expect(rowsWithEmail[2].find('[data-id="profile-theme"]').exists()).toBe(
+    expect(
+      rowsWithEmail[2].find('[data-id="profile-time-zone"]').exists(),
+    ).toBe(true)
+    expect(rowsWithEmail[2].find('i').classes()).toContain('bi-clock')
+    expect(rowsWithEmail[3].find('[data-id="profile-theme"]').exists()).toBe(
       true,
     )
-    expect(rowsWithEmail[2].find('i').classes()).toContain('bi-circle-half')
+    expect(rowsWithEmail[3].find('i').classes()).toContain('bi-circle-half')
 
     const wrapperNoEmail = mountPage(nameOnly())
     const rowsNoEmail = wrapperNoEmail
       .find('[data-id="profile-detail"]')
       .findAll('.border-bottom')
-    expect(rowsNoEmail).toHaveLength(2)
+    expect(rowsNoEmail).toHaveLength(3)
     expect(rowsNoEmail[0].find('[data-id="profile-name"]').exists()).toBe(true)
-    expect(rowsNoEmail[1].find('[data-id="profile-theme"]').exists()).toBe(true)
+    expect(rowsNoEmail[1].find('[data-id="profile-time-zone"]').exists()).toBe(
+      true,
+    )
+    expect(rowsNoEmail[1].find('i').classes()).toContain('bi-clock')
+    expect(rowsNoEmail[2].find('[data-id="profile-theme"]').exists()).toBe(true)
     expect(wrapperNoEmail.find('[data-id="profile-email"]').exists()).toBe(
       false,
+    )
+  })
+
+  it('renders the Time zone row with label, bi-clock, and no Change button or modal before Theme', () => {
+    mockBrowserTimeZone('Europe/Warsaw')
+    const { wrapper } = accountThemePage()
+
+    const row = wrapper.get('[data-id="profile-time-zone-row"]')
+    expect(row.classes()).toEqual([
+      'd-flex',
+      'align-items-center',
+      'gap-3',
+      'py-3',
+      'border-bottom',
+    ])
+
+    const icon = row.get('i')
+    expect(icon.classes()).toEqual([
+      'bi',
+      'bi-clock',
+      'fs-5',
+      'text-body-secondary',
+    ])
+    expect(icon.attributes('aria-hidden')).toBe('true')
+
+    expect(row.get('.fw-semibold').text()).toBe(
+      HILOS_PROFILE_ROOT_COPY.timeZone,
+    )
+    expect(row.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw · automatic',
+    )
+    expect(row.find('button').exists()).toBe(false)
+    expect(wrapper.find('[data-id="profile-time-zone-change"]').exists()).toBe(
+      false,
+    )
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).toBeNull()
+
+    const detailRows = wrapper
+      .find('[data-id="profile-detail"]')
+      .findAll('.border-bottom')
+    const timeZoneIndex = detailRows.findIndex((r) =>
+      r.find('[data-id="profile-time-zone"]').exists(),
+    )
+    const themeIndex = detailRows.findIndex((r) =>
+      r.find('[data-id="profile-theme"]').exists(),
+    )
+    expect(timeZoneIndex).toBe(themeIndex - 1)
+  })
+
+  it('keeps the Time zone row when theme switching is off', () => {
+    mockBrowserTimeZone('Europe/Warsaw')
+    bindTheme({ switchingEnabled: false, defaultTheme: 'system' }, null)
+    const wrapper = mountPage(nameOnly())
+
+    expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(false)
+    const row = wrapper.find('[data-id="profile-time-zone-row"]')
+    expect(row.exists()).toBe(true)
+    expect(row.find('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw · automatic',
+    )
+  })
+
+  it('updates own time zone and resets to browser via session response without remounting', async () => {
+    mockBrowserTimeZone('Europe/Warsaw')
+    const { wrapper, connection } = accountThemePage()
+
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw · automatic',
+    )
+
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          timeZone: 'Asia/Tokyo',
+        },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Asia/Tokyo',
+    )
+
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          timeZone: null,
+        },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw · automatic',
+    )
+
+    // Separately: own == browser -> null
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          timeZone: 'Europe/Warsaw',
+        },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw',
+    )
+
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          timeZone: null,
+        },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Europe/Warsaw · automatic',
+    )
+  })
+
+  it('does not reset open rename draft or other DOM when time zone updates', async () => {
+    mockBrowserTimeZone('Europe/Warsaw')
+    const { wrapper, connection } = accountThemePage({
+      ...nameOnly(),
+      rename: RENAME,
+    })
+
+    await wrapper.get('[data-id="profile-edit"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-id="profile-name-input"]',
+    )
+    expect(input).not.toBeNull()
+    if (input) {
+      input.value = 'Ann Draft'
+      input.dispatchEvent(new Event('input'))
+    }
+    await nextTick()
+    expect(
+      document.querySelector<HTMLInputElement>('[data-id="profile-name-input"]')
+        ?.value,
+    ).toBe('Ann Draft')
+
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          timeZone: 'Asia/Tokyo',
+        },
+      },
+    })
+    await nextTick()
+
+    expect(wrapper.get('[data-id="profile-time-zone"]').text()).toBe(
+      'Asia/Tokyo',
+    )
+    expect(
+      document.querySelector<HTMLInputElement>('[data-id="profile-name-input"]')
+        ?.value,
+    ).toBe('Ann Draft')
+    expect(wrapper.get('[data-id="profile-name"]').text()).toBe('Ann Lee')
+  })
+
+  it('keeps the placeholder and draws no Time zone row for a guest or while awaiting the name', () => {
+    const unauthenticated = new ScopeManager()
+    const guestWrapper = mountPage(nameOnly(), unauthenticated)
+    expect(guestWrapper.find('[data-id="profile-view"]').exists()).toBe(false)
+    expect(
+      guestWrapper.find('[data-id="profile-time-zone-row"]').exists(),
+    ).toBe(false)
+    expect(guestWrapper.find('[data-id="profile-loading"]').text()).toBe(
+      HILOS_PROFILE_ROOT_COPY.loading,
+    )
+
+    const awaitingWrapper = mountPage(nameOnly(''))
+    expect(awaitingWrapper.find('[data-id="profile-view"]').exists()).toBe(true)
+    expect(awaitingWrapper.find('[data-id="profile-detail"]').exists()).toBe(
+      false,
+    )
+    expect(
+      awaitingWrapper.find('[data-id="profile-time-zone-row"]').exists(),
+    ).toBe(false)
+    expect(awaitingWrapper.find('[data-id="profile-loading"]').text()).toBe(
+      HILOS_PROFILE_ROOT_COPY.loading,
     )
   })
 

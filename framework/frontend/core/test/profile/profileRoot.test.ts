@@ -8,9 +8,13 @@ import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { describeHilosNotificationChannels } from '../../src/notifications/notificationPreferences.js'
 import { HILOS_PROFILE_IDENTITIES_LIST } from '../../src/profile/profileIdentities.js'
-import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
+import {
+  type HandshakeSignal,
+  type ProjectSignal,
+} from '../../src/protocol/parseSignal.js'
 import {
   createHilosProfileRootStore,
+  HILOS_PROFILE_ROOT_COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   type HilosProfileBinding,
@@ -23,11 +27,12 @@ import {
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { ingest } from '../../src/state/normalizer.js'
-import { createSignal } from '../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
 import {
   bindThemeState,
   setHilosThemePick,
 } from '../../src/theme/themeState.js'
+import { bindTimeZoneState } from '../../src/timeZone/timeZoneState.js'
 
 function fakeStorage(initial: Record<string, string> = {}): Storage {
   const entries = new Map<string, string>(Object.entries(initial))
@@ -48,24 +53,42 @@ function fakeStorage(initial: Record<string, string> = {}): Storage {
   }
 }
 
-function fakeConnection() {
-  const listeners = new Set<(signal: ProjectSignal) => void>()
+function fakeConnection(projectTimeZone?: string) {
+  const handshakeListeners = new Set<(signal: HandshakeSignal) => void>()
+  const projectListeners = new Set<(signal: ProjectSignal) => void>()
 
   return {
+    projectTimeZone,
     on(event: string, listener: (payload: never) => void): () => void {
-      if (event === 'projectSignal') {
-        listeners.add(listener as (signal: ProjectSignal) => void)
-      }
+      const listeners =
+        event === 'handshake'
+          ? (handshakeListeners as Set<(payload: never) => void>)
+          : event === 'projectSignal'
+            ? (projectListeners as Set<(payload: never) => void>)
+            : new Set<(payload: never) => void>()
+      listeners.add(listener)
 
-      return () => listeners.delete(listener as (signal: ProjectSignal) => void)
+      return () => {
+        listeners.delete(listener)
+      }
     },
-    emit(type: string, data: unknown): void {
-      const signal = { type, data } as ProjectSignal
-      for (const listener of listeners) {
+    welcome(zone?: string): void {
+      this.projectTimeZone = zone
+      const signal = {
+        type: 'handshake',
+        data: { build: 'test' },
+      } as unknown as HandshakeSignal
+      for (const listener of handshakeListeners) {
         listener(signal)
       }
     },
-    listenerCount: () => listeners.size,
+    emit(type: string, data: unknown): void {
+      const signal = { type, data } as ProjectSignal
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
+    listenerCount: () => handshakeListeners.size + projectListeners.size,
   }
 }
 
@@ -443,6 +466,153 @@ describe('profile root store', () => {
     } finally {
       releaseTheme()
       setHilosThemePick(null)
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('exposes time zone and automatic copy words', () => {
+    expect(HILOS_PROFILE_ROOT_COPY.timeZone).toBe('Time zone')
+    expect(HILOS_PROFILE_ROOT_COPY.automatic).toBe('automatic')
+  })
+
+  it('follows own time zone, browser, and automatic fallback live', () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    function reportZone(timeZone: unknown): void {
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockReturnValue({
+        ...resolved,
+        timeZone: timeZone as string,
+      })
+    }
+
+    reportZone('Europe/Warsaw')
+    const windowEvents = new EventTarget()
+    const page = Object.assign(new EventTarget(), {
+      visibilityState: 'visible' as DocumentVisibilityState,
+    })
+    vi.stubGlobal(
+      'addEventListener',
+      windowEvents.addEventListener.bind(windowEvents),
+    )
+    vi.stubGlobal(
+      'removeEventListener',
+      windowEvents.removeEventListener.bind(windowEvents),
+    )
+    vi.stubGlobal('document', page)
+
+    const connection = fakeConnection()
+    const releaseTimeZone = bindTimeZoneState(
+      connection as unknown as HilosConnection,
+    )
+
+    try {
+      const store = rootStore(answeredScopes(), nameOnly())
+      const seen: string[] = []
+      const unsubscribe = subscribeSignal(store.timeZone, (value) => {
+        seen.push(value)
+      })
+
+      try {
+        // Automatic browser (Europe/Warsaw)
+        expect(store.timeZone.get()).toBe('Europe/Warsaw · automatic')
+
+        // own Asia/Tokyo
+        connection.emit('handshake_response', {
+          entities: {
+            currentUser: {
+              type: 'user',
+              id: 1,
+              timeZone: 'Asia/Tokyo',
+            },
+          },
+        })
+        expect(store.timeZone.get()).toBe('Asia/Tokyo')
+
+        // live own change
+        connection.emit('handshake_response', {
+          entities: {
+            currentUser: {
+              type: 'user',
+              id: 1,
+              timeZone: 'Europe/Paris',
+            },
+          },
+        })
+        expect(store.timeZone.get()).toBe('Europe/Paris')
+
+        // reset null
+        connection.emit('handshake_response', {
+          entities: {
+            currentUser: {
+              type: 'user',
+              id: 1,
+              timeZone: null,
+            },
+          },
+        })
+        expect(store.timeZone.get()).toBe('Europe/Warsaw · automatic')
+
+        // own == browser -> null (name is the same, but automatic mark appears)
+        connection.emit('handshake_response', {
+          entities: {
+            currentUser: {
+              type: 'user',
+              id: 1,
+              timeZone: 'Europe/Warsaw',
+            },
+          },
+        })
+        expect(store.timeZone.get()).toBe('Europe/Warsaw')
+
+        connection.emit('handshake_response', {
+          entities: {
+            currentUser: {
+              type: 'user',
+              id: 1,
+              timeZone: null,
+            },
+          },
+        })
+        expect(store.timeZone.get()).toBe('Europe/Warsaw · automatic')
+
+        // browser refresh via focus / visible when Automatic
+        reportZone('America/Chicago')
+        windowEvents.dispatchEvent(new Event('focus'))
+        expect(store.timeZone.get()).toBe('America/Chicago · automatic')
+
+        reportZone('Australia/Sydney')
+        page.visibilityState = 'visible'
+        page.dispatchEvent(new Event('visibilitychange'))
+        expect(store.timeZone.get()).toBe('Australia/Sydney · automatic')
+
+        // absence of browser -> project -> UTC
+        reportZone(null)
+        connection.welcome('America/New_York')
+        expect(store.timeZone.get()).toBe('America/New_York · automatic')
+
+        connection.welcome(undefined)
+        expect(store.timeZone.get()).toBe('UTC · automatic')
+
+        // Verify computed subscriptions captured every transition
+        expect(seen).toEqual([
+          'Asia/Tokyo',
+          'Europe/Paris',
+          'Europe/Warsaw · automatic',
+          'Europe/Warsaw',
+          'Europe/Warsaw · automatic',
+          'America/Chicago · automatic',
+          'Australia/Sydney · automatic',
+          'America/New_York · automatic',
+          'UTC · automatic',
+        ])
+      } finally {
+        unsubscribe()
+      }
+    } finally {
+      releaseTimeZone()
+      vi.restoreAllMocks()
       vi.unstubAllGlobals()
     }
   })

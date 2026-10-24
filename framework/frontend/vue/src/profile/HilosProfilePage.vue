@@ -1,4 +1,4 @@
-<!-- The profile root (HIL-1169): the person's own line, the Account rows (Name, Email, Theme), a row per catalog section with its live summary, and the danger zone. -->
+<!-- The profile root (HIL-1169): the person's own line, the Account rows (Name, Email, Time zone, Theme), a row per catalog section with its live summary, and the danger zone. -->
 <script setup lang="ts">
 import {
   computedSignal,
@@ -57,6 +57,7 @@ const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
 const passkeyOnly = useSignal(root.passkeyOnly)
 const theme = useSignal(root.theme)
+const timeZone = useSignal(root.timeZone)
 const impersonation = useSignal(hilosImpersonation)
 const themeOpen = ref(false)
 const name = useSignal(props.binding.name)
@@ -163,6 +164,18 @@ onUnmounted(() => {
           @click="email.open(verifiedEmail)"
           >{{ COPY.change }}</LoadingButton
         >
+      </div>
+      <div
+        class="d-flex align-items-center gap-3 py-3 border-bottom"
+        data-id="profile-time-zone-row"
+      >
+        <i class="bi bi-clock fs-5 text-body-secondary" aria-hidden="true"></i>
+        <div class="flex-grow-1 text-break">
+          <div class="fw-semibold small">{{ COPY.timeZone }}</div>
+          <div class="small text-body-secondary" data-id="profile-time-zone">
+            {{ timeZone }}
+          </div>
+        </div>
       </div>
       <div
         v-if="theme !== null"
