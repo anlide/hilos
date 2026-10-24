@@ -79,7 +79,7 @@ return (new ReflectionMethod(static::class, 'mount'))->getDeclaringClass()->getN
 
 ## Exceptions
 
-Two, and they are named rather than implied:
+Three, and they are named rather than implied:
 
 - **`framework/backend/Database/Schema/EntitySchemaAudit.php`** — asks whether a
   class is declared abstract, whether a property exists, whether it is static,
@@ -93,6 +93,11 @@ Two, and they are named rather than implied:
   plain-PHP API answers that, and the alternative is bending the design to keep
   the test writable. This exception is written down rather than left silent so
   that a test using Reflection is not read as debt.
+- **`framework/backend/Testing/`** — the test harness the framework hands to
+  projects through its autoload: `RollbackIntegrationTestCase` reads the
+  `IntegrationTest` and `BreaksOrmState` marks on a test. A mark is an attribute,
+  and PHP reads attributes only through Reflection. This is test code that sits
+  in a backend root for the autoload, not a permission for production code.
 
 ## Validation
 
@@ -116,5 +121,6 @@ The standing inventory is one grep:
 grep -rn "Reflection" framework/backend demo/*/backend --include=*.php
 ```
 
-Everything it returns outside `EntitySchemaAudit` is either new debt or a
-decision the owner has taken; nothing else belongs there.
+Everything it returns outside `EntitySchemaAudit` and
+`framework/backend/Testing/` is either new debt or a decision the owner has
+taken; nothing else belongs there.
