@@ -163,6 +163,14 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-person-badge',
         ],
+        HilosPageConstants::HILOS_MODERATION => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Moderation',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What is checked before it is shown, and by which rules.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-check',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Moderation',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
         HilosPageConstants::HILOS_I18N => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Internationalization',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Languages, countries, locales, and translation screens.',
@@ -602,6 +610,7 @@ final class HilosPageCatalog
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_USERS,
                 HilosPageConstants::HILOS_ROLES,
+                HilosPageConstants::HILOS_MODERATION,
                 HilosPageConstants::HILOS_LEGAL,
             ],
         ],

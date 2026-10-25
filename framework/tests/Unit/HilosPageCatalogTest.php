@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 95;
+    private const int CATALOG_ENTRIES = 96;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -163,6 +163,7 @@ final class HilosPageCatalogTest extends TestCase
                 PageCatalogConstants::SECTION_ITEMS => [
                     HilosPageConstants::HILOS_USERS,
                     HilosPageConstants::HILOS_ROLES,
+                    HilosPageConstants::HILOS_MODERATION,
                     HilosPageConstants::HILOS_LEGAL,
                 ],
             ],
@@ -219,8 +220,20 @@ final class HilosPageCatalogTest extends TestCase
         $allItems = array_merge(
             ...array_column(HilosPageCatalog::DASHBOARD_SECTIONS, PageCatalogConstants::SECTION_ITEMS),
         );
-        self::assertCount(18, $allItems);
+        self::assertCount(19, $allItems);
         self::assertSame($allItems, array_values(array_unique($allItems)));
+    }
+
+    public function testModerationBelongsToDashboardAndDeclaresPageHead(): void
+    {
+        $entry = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MODERATION];
+        self::assertSame('Moderation', $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL]);
+        self::assertSame('What is checked before it is shown, and by which rules.', $entry[PageCatalogConstants::CATALOG_ENTRY_LEAD]);
+        self::assertSame(HilosPageConstants::HILOS_DASHBOARD, $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+        self::assertSame('bi-shield-check', $entry[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertSame('Moderation', $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        self::assertTrue($entry[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD]);
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_ENTITY, $entry);
     }
 
     public function testDaemonEnvironmentBelongsToNodeAndMismatchToSection(): void
@@ -344,6 +357,7 @@ final class HilosPageCatalogTest extends TestCase
         }
 
         self::assertSame([
+            HilosPageConstants::HILOS_MODERATION,
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_DAEMON_NODE,

@@ -213,6 +213,9 @@ final class HilosPageConstants
     /** @var string Hilos — roles list */
     public const string HILOS_ROLES = 'hilos_roles';
 
+    /** @var string Hilos — moderation root */
+    public const string HILOS_MODERATION = 'hilos_moderation';
+
     /** @var string Hilos — MCP and Skills hub */
     public const string HILOS_MCP_SKILLS = 'hilos_mcp_skills';
 

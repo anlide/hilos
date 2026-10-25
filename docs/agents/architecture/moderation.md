@@ -372,8 +372,8 @@ added.
 
 The section has these pages, with Vue/chat as their first consumer:
 
-- `/hilos/moderation`, page key `hilos_moderation`: the kinds table.
-  (not in the code yet — HIL-1629)
+- `/hilos/moderation`, page key `hilos_moderation`: the kinds table
+  (`AbstractHilosModerationPage` / `HilosModerationPage`).
 - `/hilos/moderation/{kind}`: the kind's Overview, beside its Rules tab;
   an unknown kind answers 404. (not in the code yet — HIL-1630)
 - `/hilos/moderation/{kind}/rules`: custom rules or their built-in fallback;

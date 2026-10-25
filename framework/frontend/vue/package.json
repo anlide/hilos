@@ -104,6 +104,12 @@
       "import": "./dist/admin/mcp-skills.js",
       "default": "./dist/admin/mcp-skills.js"
     },
+    "./admin/moderation": {
+      "development": "./src/admin/moderation/index.ts",
+      "types": "./dist/admin/moderation/index.d.ts",
+      "import": "./dist/admin/moderation.js",
+      "default": "./dist/admin/moderation.js"
+    },
     "./admin/roles": {
       "development": "./src/admin/roles/index.ts",
       "types": "./dist/admin/roles/index.d.ts",

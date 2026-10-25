@@ -718,15 +718,14 @@ with their marked leaves:
    under the matching `TableContext` keys. `ChatTableContext` declares matching
    key constants, imports the framework classes and lists their typed
    `@property-read` entries; its `configure()` mounts the registered tables.
-   Register the section root page and bind `hilosModerationKinds` in
-   `PAGE_TABLES`.
-   (not in the code yet — HIL-1629)
+   Register the section root page (`AbstractHilosModerationPage`) and bind
+   `hilosModerationKinds` in `PAGE_TABLES`.
    Register the kind Overview page. (not in the code yet — HIL-1630)
    Register the kind Rules page and bind `hilosModerationRules` in `PAGE_TABLES`
    with the required `kind` preset supplied by its route.
    (not in the code yet — HIL-1631)
 6. Mount the chosen frontend's SDK views through thin project bindings:
-   Vue/chat mounts the root. (not in the code yet — HIL-1629)
+   Vue/chat mounts the root (`HilosModerationPage`).
    It mounts Overview. (not in the code yet — HIL-1630)
    It mounts Rules. (not in the code yet — HIL-1631)
    Its Add dialog follows. (not in the code yet — HIL-1632)

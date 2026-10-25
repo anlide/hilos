@@ -24,6 +24,8 @@ use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Status\Exception\StatusComponentDeclarationException;
 use Hilos\Status\StatusAgent;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Pages\Moderation\AbstractHilosModerationPage;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 
 /**
@@ -131,6 +133,7 @@ final class FeatureActivationValidator
             $errors,
         );
         $this->validateProfilePhoto($declared, $pages, $tables, $browserTables, $pageTables, $errors);
+        $this->validateModerationPage($declared, $pages, $tables, $browserTables, $pageTables, $errors);
         $this->validateModeration($hilosClass, $declared, $agents, $errors);
         $this->validateStatus($hilosClass, $declared, $agents, $errors);
 
@@ -594,6 +597,44 @@ final class FeatureActivationValidator
                 $errors,
             );
         }
+    }
+
+    /**
+     * @param list<HilosFeature> $declared Enabled features
+     * @param array $pages Page registry
+     * @param array $tables Server table registry
+     * @param array $browserTables Browser table registry
+     * @param array $pageTables Page table bindings
+     * @param list<string> $errors Accumulated activation refusals
+     */
+    private function validateModerationPage(
+        array $declared,
+        array $pages,
+        array $tables,
+        array $browserTables,
+        array $pageTables,
+        array &$errors,
+    ): void {
+        $moderationPage = $this->registeredExtending($pages, AbstractHilosModerationPage::class);
+        if ($moderationPage === null) {
+            return;
+        }
+
+        if (!in_array(HilosFeature::MODERATION, $declared, true)) {
+            $errors[] = "PAGES registers {$moderationPage} but {$this->name(HilosFeature::MODERATION)} is not declared in FEATURES";
+            return;
+        }
+
+        $this->validatePageTableBinding(
+            $this->name(HilosFeature::MODERATION),
+            AbstractHilosModerationPage::class,
+            HilosModerationKindsTable::class,
+            $pages,
+            $tables,
+            $browserTables,
+            $pageTables,
+            $errors,
+        );
     }
 
     /**

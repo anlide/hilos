@@ -104,6 +104,12 @@
       "import": "./dist/admin/legal/index.js",
       "default": "./dist/admin/legal/index.js"
     },
+    "./admin/moderation": {
+      "development": "./src/admin/moderation/index.ts",
+      "types": "./dist/admin/moderation/index.d.ts",
+      "import": "./dist/admin/moderation/index.js",
+      "default": "./dist/admin/moderation/index.js"
+    },
     "./build/initial-bundle-budget": {
       "types": "./bin/initial-bundle-budget.d.mts",
       "import": "./bin/initial-bundle-budget.mjs"

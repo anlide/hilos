@@ -161,6 +161,7 @@ use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
 use Demo\Chat\Pages\Hilos\ProfileDevicesPage;
 use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
+use Demo\Chat\Pages\Hilos\Moderation\ModerationPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityImpersonationPage;
@@ -432,6 +433,7 @@ final class Hilos extends HilosFacade
         HilosUsersPage::PAGE => HilosUsersPage::class,
         HilosUserPage::PAGE => HilosUserPage::class,
         RolesPage::PAGE => RolesPage::class,
+        ModerationPage::PAGE => ModerationPage::class,
         McpSkillsDashboardPage::PAGE => McpSkillsDashboardPage::class,
         McpSkillsMcpPage::PAGE => McpSkillsMcpPage::class,
         McpSkillsMcpLogsPage::PAGE => McpSkillsMcpLogsPage::class,
@@ -1001,6 +1003,9 @@ final class Hilos extends HilosFacade
         ],
         ChangeLogTablePage::PAGE => [
             ChatTableContext::hilosChangeLogHistory => [],
+        ],
+        ModerationPage::PAGE => [
+            ChatTableContext::hilosModerationKinds => [],
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
     ];

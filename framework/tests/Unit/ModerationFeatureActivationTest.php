@@ -30,6 +30,8 @@ use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Pages\Moderation\AbstractHilosModerationPage;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -141,6 +143,7 @@ final class ModerationFeatureActivationTest extends TestCase
         yield 'feature on, framework kinds, text alone without files, uploads or images' => [ModerationActivationHilos::class];
         yield 'feature on, project kinds' => [ModerationActivationProjectHilos::class];
         yield 'feature on, profile photos on' => [ModerationActivationPhotoHilos::class];
+        yield 'feature on, root page registered with its table binding' => [ModerationActivationWithPageHilos::class];
         yield 'feature off, framework kinds, no people library' => [ModerationActivationOffHilos::class];
         yield 'feature off, project kinds' => [ModerationActivationOffProjectHilos::class];
         yield 'feature off, rules library registered' => [ModerationActivationOffLibraryHilos::class];
@@ -223,6 +226,16 @@ final class ModerationFeatureActivationTest extends TestCase
             ModerationActivationLibraryWithoutWorkerHilos::class,
             'HilosFeature::MODERATION is declared but AGENTS[' . HilosAgentType::HILOS_MODERATION_RULES_LIBRARY
                 . '] does not declare both a worker and a daemon class',
+        ];
+        yield 'feature off, root page registered' => [
+            ModerationActivationOffRootHilos::class,
+            'PAGES registers ' . ModerationActivationPage::class
+                . ' but HilosFeature::MODERATION is not declared in FEATURES',
+        ];
+        yield 'feature on, root page registered without table binding' => [
+            ModerationActivationRootNoBindingHilos::class,
+            'HilosFeature::MODERATION is declared but PAGE_TABLES binds no page extending '
+                . AbstractHilosModerationPage::class . ' to ' . HilosModerationKindsTable::class,
         ];
     }
 
@@ -657,4 +670,45 @@ final class ModerationActivationCatalog implements CatalogProviderInterface
     {
         return ModerationSettingsCatalog::getCatalog();
     }
+}
+
+/** A concrete moderation page for activation checks. */
+final class ModerationActivationPage extends AbstractHilosModerationPage
+{
+}
+
+/** Moderation with a registered page and its kinds table binding. */
+abstract class ModerationActivationWithPageHilos extends ModerationActivationHilos
+{
+    public const array PAGES = [
+        ModerationActivationPage::PAGE => ModerationActivationPage::class,
+    ];
+
+    public const array TABLES = [
+        HilosModerationKindsTable::TABLE => HilosModerationKindsTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        ModerationActivationPage::PAGE => [
+            HilosModerationKindsTable::TABLE => [],
+        ],
+    ];
+}
+
+/** A project without moderation that still registers the moderation page. */
+abstract class ModerationActivationOffRootHilos extends ModerationActivationOffHilos
+{
+    public const array PAGES = [
+        ModerationActivationPage::PAGE => ModerationActivationPage::class,
+    ];
+}
+
+/** Moderation with a registered page but without a table binding. */
+abstract class ModerationActivationRootNoBindingHilos extends ModerationActivationHilos
+{
+    public const array PAGES = [
+        ModerationActivationPage::PAGE => ModerationActivationPage::class,
+    ];
+
+    public const array PAGE_TABLES = [];
 }

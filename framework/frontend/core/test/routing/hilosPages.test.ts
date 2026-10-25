@@ -77,6 +77,30 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/status').page).toBeNull()
   })
 
+  it('addresses the Moderation admin page without parameters with the PHP key', () => {
+    const page = HilosPages.MODERATION
+    const path = '/hilos/moderation'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_moderation')
+    expect(php).toContain(`HILOS_MODERATION = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    for (const layer of ['react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    }
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    expect(router.match(`${path}/profile_name`).page).toBeNull()
+  })
+
   it('addresses Circle without params under Maintenance with the PHP key', () => {
     const page = HilosPages.MAINTENANCE_CIRCLE
     const path = '/hilos/maintenance/circle'

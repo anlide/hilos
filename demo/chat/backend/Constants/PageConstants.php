@@ -125,6 +125,8 @@ final class PageConstants
 
     public const string HILOS_ROLES = HilosPageConstants::HILOS_ROLES;
 
+    public const string HILOS_MODERATION = HilosPageConstants::HILOS_MODERATION;
+
     public const string HILOS_MCP_SKILLS = HilosPageConstants::HILOS_MCP_SKILLS;
 
     public const string HILOS_MCP_SKILLS_MCP = HilosPageConstants::HILOS_MCP_SKILLS_MCP;

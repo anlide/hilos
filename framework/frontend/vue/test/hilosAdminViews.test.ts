@@ -24,6 +24,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.ANALYTICS_PEOPLE,
     HilosPages.ANALYTICS_BROWSER_SESSION,
     HilosPages.ANALYTICS_PERSON,
+    HilosPages.MODERATION,
   ]) {
     expect(views).not.toHaveProperty(key)
   }

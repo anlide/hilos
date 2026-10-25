@@ -18,6 +18,7 @@ import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
 import * as logs from '../../src/admin/logs/index.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
+import * as moderation from '../../src/admin/moderation/index.js'
 import * as security from '../../src/admin/security/index.js'
 import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
@@ -41,6 +42,7 @@ const sections = {
   legal,
   logs,
   maintenance,
+  moderation,
   security,
   settings,
   status,
@@ -280,6 +282,21 @@ const profileRenameValues = [
 ]
 /** Presentation copy shared by the user section and compatibility root. */
 const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY']
+/** Approved Moderation section exports; keep the legacy snapshot and base graph unchanged. */
+const adminModerationValues = [
+  'HILOS_MODERATION_COPY',
+  'HILOS_MODERATION_KINDS_TABLE',
+  'HILOS_MODERATION_KIND_SLOT',
+  'HilosModerationKindRowKey',
+  'createHilosModerationKindsTable',
+  'moderationKindPath',
+  'resolveHilosModerationKindRow',
+]
+const adminModerationTypes = [
+  'HilosModerationContext',
+  'HilosModerationKindRow',
+  'HilosModerationKindsTable',
+]
 const expectedValues = [
   ...daemonNodeValues,
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
@@ -293,6 +310,7 @@ const expectedValues = [
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
+  ...adminModerationValues,
   ...connectionInteractionValues,
   ...statusValues,
   ...profileRenameValues,
@@ -353,7 +371,7 @@ function runtimeClosure(entry: string): string[] {
 }
 
 describe('core public entries', () => {
-  it('publishes base and exactly fourteen sections with one tsc output per source', () => {
+  it('publishes base and exactly fifteen sections with one tsc output per source', () => {
     const manifest = JSON.parse(
       readFileSync(join(packageRoot, 'package.json'), 'utf8'),
     ) as {
@@ -628,6 +646,7 @@ describe('core public entries', () => {
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
         ...statusTypes,
+        ...adminModerationTypes,
         ...maintenanceFrameTypes,
       ].sort(),
     )
@@ -770,6 +789,7 @@ describe('core public entries', () => {
     expect(Object.keys(base)).not.toContain('createHilosBackupsTable')
     expect(Object.keys(base)).not.toContain('createHilosSettingPresets')
     expect(Object.keys(base)).not.toContain('legalAdminDocumentSchema')
+    expect(Object.keys(base)).not.toContain('createHilosModerationKindsTable')
   })
 
   it.each([

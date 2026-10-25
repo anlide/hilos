@@ -2693,6 +2693,8 @@ export {
 export { bindInteractionBlock } from './base/index.js'
 // Status remains behind its section entry; base imports no Status implementation.
 export * from './admin/status/index.js'
+// Moderation remains behind its section entry; base imports no Moderation implementation.
+export * from './admin/moderation/index.js'
 export {
   createHilosTimeZonePicker,
   type HilosTimeZonePicker,

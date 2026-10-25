@@ -71,20 +71,26 @@ const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
   import { HilosTableText } from '@hilos/vue/base'
   import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal } from '@hilos/vue/admin/status'
+  import { HilosModerationPage } from '@hilos/vue/admin/moderation'
   import type { HilosStatusContext, HilosStatusIncidentController } from '@hilos/core/admin/status'
+  import type { HilosModerationContext } from '@hilos/core/admin/moderation'
   import type { Hideable } from '@hilos/core/base'
   type StatusProps = InstanceType<typeof HilosStatusPage>['$props']
   type ComponentsProps = InstanceType<typeof HilosStatusComponentsPage>['$props']
   type ModalProps = InstanceType<typeof HilosStatusIncidentModal>['$props']
+  type ModerationProps = InstanceType<typeof HilosModerationPage>['$props']
   type Props = InstanceType<typeof HilosTableText>['$props']
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
   const exactValue: Same<Props['value'], Hideable<string>> = true
   const statusContext: Same<StatusProps['context'], HilosStatusContext> = true
   const componentsContext: Same<ComponentsProps['context'], HilosStatusContext> = true
+  const moderationContext: Same<ModerationProps['context'], HilosModerationContext> = true
   const incidentController: Same<ModalProps['controller'], HilosStatusIncidentController> = true
   // @ts-expect-error A Status page requires the project's typed context.
   const missingContext: StatusProps = {}
+  // @ts-expect-error A Moderation page requires the project's typed context.
+  const missingModerationContext: ModerationProps = {}
   const plain: Props['value'] = 'Full text'
   const hidden: Props['value'] = { _hidden: true }
   // @ts-expect-error The value is a string, never a numeric cell renderer.
@@ -256,6 +262,12 @@ try {
                 key => section[key] !== undefined && section[key] === root[key],
               ) && !(HilosPages.STATUS in hilosAdminViews()) && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews())
             }
+            export async function loadModeration() {
+              const section = await import('@hilos/vue/admin/moderation')
+              return section.HilosModerationPage !== undefined &&
+                section.HilosModerationPage === root.HilosModerationPage &&
+                !(HilosPages.MODERATION in hilosAdminViews())
+            }
             export async function loadDefaults() {
               const loaded = await Promise.all(Object.values(hilosAdminViews()).map(view => view.load()))
               return loaded.every(component => component && typeof component === 'object')
@@ -281,6 +293,7 @@ try {
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadStatus(), true)
+  assert.equal(await consumer.loadModeration(), true)
   assert.equal(await consumer.loadDefaults(), true)
   console.log(
     'Vue dist: public exports, graph boundaries, lazy defaults, core identity, tokens and CSS verified',

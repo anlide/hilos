@@ -498,6 +498,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos roles list. */
     public const string SUBSCRIPTION_PAGE_HILOS_ROLES = 'subscription_page_hilos_roles';
 
+    /** Subscription signal for Hilos moderation root page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_MODERATION = 'subscription_page_hilos_moderation';
+
     /** Subscription signal for Hilos MCP and Skills hub. */
     public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS = 'subscription_page_hilos_mcp_skills';
 

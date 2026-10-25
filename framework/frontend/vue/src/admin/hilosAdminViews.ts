@@ -21,6 +21,9 @@
 // project's Analytics context and are mounted explicitly under
 // HilosPages.ANALYTICS, HilosPages.ANALYTICS_PEOPLE,
 // HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON.
+// HilosModerationPage requires the project's Moderation context
+// (HilosModerationContext) and is mounted directly under
+// HilosPages.MODERATION rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -45,6 +48,9 @@ export function hilosAdminViews(): Record<string, PageView<Component>> {
     [HilosPages.ROLES]: lazyPage(() =>
       import('@hilos/vue/admin/roles').then((m) => m.HilosRolesPage),
     ),
+    // MODERATION is a real framework page since HIL-1629: its kinds table reads
+    // a live connection and page scopes, so a project mounts HilosModerationPage
+    // directly with its HilosModerationContext rather than through this default map.
     // I18N Overview, I18N_LANGUAGES and I18N_COUNTRIES need project context:
     // the overview reads page scopes, and the lists use a live connection and
     // action lifecycle. Projects mount thin views that provide these contexts.

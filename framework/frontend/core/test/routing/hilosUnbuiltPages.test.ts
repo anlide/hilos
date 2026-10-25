@@ -60,6 +60,16 @@ describe('hilosUnbuiltPages', () => {
     ).toBe(true)
   })
 
+  it('keeps React and Angular Moderation views unbuilt while Vue is built by this sheet', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION)).toBe(true)
+  })
+
   it('opens the Daemon environment page in all three view layers', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(false)

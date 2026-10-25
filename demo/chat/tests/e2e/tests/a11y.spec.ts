@@ -542,3 +542,28 @@ test('Node pages expose one entity heading, link tabs and tables named through t
     await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
   }
 })
+
+test('the moderation kinds root exposes one heading, named table and keyboard open link', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/moderation')
+  await expectPageReady(page)
+
+  // Exactly one h1 names the page from the shared head.
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Moderation')
+
+  // The page heading is the table's accessible name.
+  await expect(page.getByRole('table', { name: 'Moderation' })).toBeVisible()
+
+  // The Open link is reachable and operable from the keyboard.
+  const openLink = shownByTestId(
+    page,
+    'hilos-moderation-open-hilos_profile_name',
+  )
+  await openLink.focus()
+  await expect(openLink).toBeFocused()
+  await expect(openLink).toHaveAttribute('aria-label', 'Open Profile name')
+})

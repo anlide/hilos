@@ -12,8 +12,10 @@ import {
   hilosRouterKey,
   useConnectionState,
   useReconnectDragging,
+  HilosModerationPage,
 } from '../src/index.js'
 import * as base from '../src/base/index.js'
+import * as moderation from '../src/admin/moderation/index.js'
 
 it('exports the @hilos/vue public surface', () => {
   expect(useConnectionState).toBeTypeOf('function')
@@ -41,4 +43,9 @@ it('exports only the public text primitive with the same root/base identity', ()
     'useTableTextOverflow',
   ])
     expect(base).not.toHaveProperty(name)
+})
+
+it('exports HilosModerationPage from the root and section entry with the same identity', () => {
+  expect(HilosModerationPage).toBeTypeOf('object')
+  expect(moderation.HilosModerationPage).toBe(HilosModerationPage)
 })
