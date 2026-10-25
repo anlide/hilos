@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
@@ -227,7 +226,7 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $firstSession = $this->newSession('receipt-ak-one', $subjectId, $administratorId);
         $secondSession = $this->newSession('receipt-ak-two', $otherId);
         Hilos::initBrowser();
-        Hilos::initSignalRouter(new ChatSignalRouter());
+        Hilos::initSignalRouter(new JournalReceiptSyncRouter());
 
         $router = new PageSignalRouter(
             new JournalReceiptTestPageFactory(new JournalReceiptTestAgent()),
@@ -419,12 +418,22 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 self::WRITER_AGENT_ID,
             );
             $this->assertReceiptUpdatedFrame($frames[5], $receiptId, [
-                EntityChangeLogReceipt::agent => self::WRITER_AGENT_ID,
                 EntityChangeLogReceipt::open_handovers => 0,
             ], [
-                EntityChangeLogReceipt::agent => self::INITIATOR_AGENT_ID,
                 EntityChangeLogReceipt::open_handovers => 1,
             ]);
+            $this->assertSame([
+                null, null, null, 'agent', 'setting.orm-handover', self::INITIATOR_AGENT_ID, self::INITIATOR_AGENT_ID,
+            ], $this->receiptFields($receiptId));
+            Hilos::$sr->deliverTo();
+            $this->assertSame([
+                null, null, null, 'agent', 'setting.orm-handover', self::WRITER_AGENT_ID, self::INITIATOR_AGENT_ID,
+            ], $this->receiptFields($receiptId));
+            $attribution = $this->drainDbFrames();
+            $this->assertCount(1, $attribution);
+            $this->assertReceiptUpdatedFrame($attribution[0], $receiptId, [
+                EntityChangeLogReceipt::agent => self::WRITER_AGENT_ID,
+            ], []);
         }, [$key]);
     }
 
@@ -1034,7 +1043,7 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $previousAgent = ExecutionContext::currentAgentId();
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::WRITER_AGENT_ID);
         try {
-            Hilos::$sr = new SignalRouter();
+            Hilos::$sr = new JournalReceiptSyncRouter();
             ExecutionContext::setCurrentAgentId(self::WRITER_AGENT_ID);
             $body();
         } finally {

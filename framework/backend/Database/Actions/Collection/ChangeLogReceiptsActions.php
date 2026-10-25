@@ -9,6 +9,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\DatabaseException;
@@ -46,5 +47,21 @@ class ChangeLogReceiptsActions extends DbActions
         $this->ensureCanCreate();
 
         return $this->createDbItemFromObject($this->objectCollection->insertReceipt($data, $retainLocal));
+    }
+
+    /**
+     * Records attribution without loading a receipt; a missing or unchanged row is a no-op.
+     *
+     * @param int $receiptId Global receipt row id
+     * @param string $writerAgentId Agent that wrote the journaled business row
+     * @throws WriteNotAllowedException When no truth source in this process may update receipts
+     * @throws DatabaseException When the binding or update fails or a foreign transaction forbids the write
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     */
+    public function recordWriter(int $receiptId, string $writerAgentId): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+        $this->objectCollection->recordWriter($receiptId, $writerAgentId);
     }
 }

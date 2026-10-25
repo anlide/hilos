@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -40,8 +41,12 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
@@ -105,6 +110,7 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         JournalTriggerFiles::setPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers');
         $this->previousBrowser = Hilos::$browser;
         $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new JournalReceiptSyncRouter();
         $this->previousAgentId = ExecutionContext::currentAgentId();
         $this->originalTriggers = self::triggerCatalog();
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
@@ -139,6 +145,9 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
             Hilos::initBrowser($this->previousBrowser);
         }
         Hilos::$sr = $this->previousRouter;
+        if (isset(Hilos::$db->settings[self::KEY_PREFIX . 'receiver'])) {
+            Hilos::$db->settings[self::KEY_PREFIX . 'receiver']->actions->delete();
+        }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);
         foreach (self::triggerCatalog() as $row) {
             Database::sql('DROP TRIGGER `' . $row['TRIGGER_NAME'] . '`');
@@ -187,6 +196,8 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
 
         $this->assertSame(0, (int) $this->receipt($receiptId)['open_handovers']);
         $this->assertSame(1, $this->logCount($receiptId));
+        $this->assertSame('receipt-page-agent', $this->receipt($receiptId)['agent']);
+        Hilos::$sr->deliverTo($worker);
         $this->assertSame([
             (string) $administratorId, (string) $subjectId, (string) $sessionId,
             'web', JournalReceiptHandoverTestPage::WRITE_ACTION,
@@ -203,6 +214,90 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         Database::sql("SELECT `receipt_id` FROM {$database}.`hilos_change_log` WHERE `id` > ? ORDER BY `id` DESC LIMIT 1",
             [$this->baseline['hilos_change_log']]);
         $this->assertNull(Database::field('receipt_id'));
+    }
+
+    /** @return iterable<string, array{string}> Actual ORM row operations */
+    public static function journalRowOperations(): iterable
+    {
+        yield 'create' => ['create'];
+        yield 'update' => ['update'];
+        yield 'delete' => ['delete'];
+    }
+
+    /**
+     * The stored initiator changes only after an actual ORM fact reaches the actual receiver.
+     *
+     * @param string $operation Actual ORM operation under the receipt
+     */
+    #[DataProvider('journalRowOperations')]
+    public function testRowFactsAttributeCreateUpdateAndDeleteAfterDelivery(string $operation): void
+    {
+        $writer = 'test-agent';
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), $writer);
+        $worker = new JournalReceiptHandoverTestWorker();
+        ExecutionContext::setCurrentAgentId($writer);
+        $this->assertNotNull($writer);
+        $key = self::KEY_PREFIX . 'receiver';
+        if ($operation !== 'create') {
+            Hilos::$db->settings->actions->addOrphan($key, 'string', 'before', []);
+        }
+        $id = JournalReceiptScope::start(JournalReceiptData::web(17, 23, 31, 'receiver-test', 'initiator'));
+        $this->assertNotNull($id);
+        try {
+            JournalReceiptScope::runPart($id, $writer, static function () use ($operation, $key): void {
+                match ($operation) {
+                    'create' => Hilos::$db->settings->actions->addOrphan($key, 'string', 'created', []),
+                    'update' => Hilos::$db->settings[$key]->actions->updateValue('updated'),
+                    'delete' => Hilos::$db->settings[$key]->actions->delete(),
+                };
+            });
+            $this->assertSame('initiator', $this->receipt($id)['agent']);
+            $this->assertSame(1, $this->logCount($id));
+            Hilos::$sr->deliverTo($worker);
+            $this->assertSame(['17', '23', '31', 'web', 'receiver-test', $writer, 'session #31'], $this->receiptAttribution($id));
+            $this->assertSame(1, (int)$this->receipt($id)['open_handovers']);
+        } finally {
+            JournalReceiptScope::finish($id);
+        }
+        $this->assertSame(0, (int)$this->receipt($id)['open_handovers']);
+    }
+
+    /** A rolled-back write, absent metadata and nonjournaled or receipt facts never invent an author. */
+    public function testRollbackAndUnattributedFactsLeaveTheInitiator(): void
+    {
+        $worker = new JournalReceiptHandoverTestWorker();
+        TruthSourceRegistry::registerCreate(HilosDbContext::settings, 'test-agent');
+        ExecutionContext::setCurrentAgentId('test-agent');
+        $id = JournalReceiptScope::start(JournalReceiptData::agent('receiver-negative', 'initiator'));
+        $this->assertNotNull($id);
+        try {
+            JournalReceiptScope::runPart($id, 'rolled-back', function (): void {
+                Database::transactionStart();
+                try {
+                    Hilos::$db->settings->actions->addOrphan(self::KEY_PREFIX . 'rollback', 'string', 'rolled back', []);
+                } finally {
+                    Database::transactionRollback();
+                }
+            });
+            Hilos::$sr->deliverTo($worker);
+            $this->assertSame(0, $this->logCount($id));
+            $this->assertSame('initiator', $this->receipt($id)['agent']);
+            foreach ([
+                new DbSyncUpdatedSignalData(HilosDbContext::settings, 'missing-metadata', []),
+                new DbSyncUpdatedSignalData('not_journaled', '7', [], receiptId: $id, writerAgentId: 'false-writer'),
+                new DbSyncUpdatedSignalData(HilosDbContext::changeLogReceipts, (string)$id, [], receiptId: $id, writerAgentId: 'false-writer'),
+                new DbSyncUpdatedSignalData(HilosDbContext::settings, '7', [], receiptId: $id, writerAgentId: ''),
+            ] as $data) {
+                $worker->handleDaemonMessage(new DaemonAgentMessageDTO(DemoHilosChangeLogAgent::AGENT_TYPE, new SignalDTO(
+                    new SignalSource(SignalSource::DB), new SignalType(SignalTypeConstants::DB_SYNC_UPDATED),
+                    new SignalName(SignalConstants::DB_SYNC_UPDATED), $data,
+                )));
+                $this->assertSame('initiator', $this->receipt($id)['agent']);
+            }
+        } finally {
+            JournalReceiptScope::finish($id);
+        }
+        $this->assertNull($this->receipt($id));
     }
 
     public function testEmptyAndChainedHandoversCloseOnlyAfterTheLastFrame(): void
@@ -256,6 +351,7 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
             $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SettingsLibraryAgent::AGENT_TYPE, $frame));
 
             $this->assertSame(1, $this->logCount($receiptId));
+            Hilos::$sr->deliverTo($worker);
             $this->assertSame(SettingsLibraryAgent::AGENT_TYPE, $this->receipt($receiptId)['agent']);
             $this->assertSame(1, (int) $this->receipt($receiptId)['open_handovers']);
             $reply = $this->nextAgentFrame();
@@ -392,6 +488,7 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
             }
         }
         $this->assertSame(0, (int) $this->receipt($receiptId)['open_handovers']);
+        Hilos::$sr->deliverTo($worker);
         $this->assertSame(UserAgent::AGENT_TYPE . ':' . $targetId, $this->receipt($receiptId)['agent']);
         $this->assertSame((string) $administratorId, $this->receipt($receiptId)['actor_user_id']);
         $this->assertSame((string) $subjectId, $this->receipt($receiptId)['subject_user_id']);
@@ -617,7 +714,7 @@ final class JournalReceiptHandoverTestWorker extends WorkerManager
 
     protected function createSignalRouter(): SignalRouter
     {
-        return new ChatSignalRouter();
+        return Hilos::$sr instanceof JournalReceiptSyncRouter ? Hilos::$sr : new JournalReceiptSyncRouter();
     }
 
     protected function createAgentManager(): AgentManager
@@ -648,6 +745,7 @@ final class JournalReceiptHandoverTestAgentManager extends AgentManager
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         return match ($agentType) {
+            DemoHilosChangeLogAgent::AGENT_TYPE => new DemoHilosChangeLogAgent(),
             SettingsLibraryAgent::AGENT_TYPE => new SettingsLibraryAgent(),
             UsersLibraryAgent::AGENT_TYPE => new UsersLibraryAgent(),
             UserAgent::AGENT_TYPE => new UserAgent($agentIndex ?? throw new LogicException('Person agent needs an index')),
@@ -673,6 +771,7 @@ final class JournalReceiptHandoverEmptyPageFactory extends AbstractPageFactory
 final class JournalReceiptHandoverTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'journal_receipt_handover_test_agent';
+    public const array OWNS_DB = [HilosDbContext::settings => [TruthSourceOperation::Add]];
     public const string WRITE_SIGNAL = 'journal_receipt_handover_write';
     public const string NOOP_SIGNAL = 'journal_receipt_handover_noop';
     public const string CHAIN_SIGNAL = 'journal_receipt_handover_chain';
@@ -692,9 +791,9 @@ final class JournalReceiptHandoverTestAgent extends AbstractAgent
                 new AgentSignalData(new SignalData()),
             );
         } elseif ($name === self::WRITE_SIGNAL) {
-            Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)', [
-                'journal.receipt.hil1454.' . RandomHelper::hex(8), 'string', 'written',
-            ]);
+            Hilos::$db->settings->actions->addOrphan(
+                'journal.receipt.hil1454.' . RandomHelper::hex(8), 'string', 'written', [],
+            );
         }
     }
 }

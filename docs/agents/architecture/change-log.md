@@ -127,8 +127,8 @@ creates it in the process executing the action, before the handler or migration
 SQL file; creation is not handed to the journal agent. The receipt collection
 creates the row during that action, on the web, agent, CLI, cron and migration
 channels. `JournalReceiptScope` writes no journal-row SQL of its own. It calls
-the receipt actions `createReceipt`, `adjustHandovers`, `concludePart`,
-`deleteIfEmpty` and `deleteEmptyMigrationReceipt`.
+the receipt actions `createReceipt`, `adjustHandovers`, `deleteIfEmpty` and
+`deleteEmptyMigrationReceipt`.
 An INSERT whose response was lost is ambiguous and is never replayed to try to
 recover its number; its failure reaches the caller without running the work.
 
@@ -219,9 +219,12 @@ person and the writing agent. Its number travels in `AgentSignalData` as `receip
 the recipient handles the frame inside `JournalReceiptScope::join()`. The journal
 database is shared, so the same number applies when the recipient is on another
 node. Only a write during the handed-over frame belongs to the person's receipt.
-The receipt item counts journal rows before a part and again when that part
-concludes, to record the last agent that actually wrote a journaled row. Both
-counts stay in the ORM until HIL-1618. That attribution path is transitional.
+`JournalReceiptScope::runExistingReceipt()` reads the stored receipt for its
+hold lifecycle, but neither counts journal rows nor attributes the writer. On
+completion it applies only the net handover delta — outgoing frames minus one
+when `join()` releases the incoming frame — under the scoped runner, then keeps
+the existing cleanup. `runPart()` does not consume the local hold. The conditional
+`NOT EXISTS` in empty-receipt deletion remains a lifecycle check, not attribution.
 
 Business-row frames for created, updated and deleted rows carry `receiptId` and
 `writerAgentId`. `receiptId` is the current journal receipt or null outside one;
@@ -233,14 +236,54 @@ frame emitter or its recipient.
 This is the ORM change frame, distinct from the existing
 `AgentSignalData::receipt` handover field; it is delivered only to subscribers,
 without a broadcast.
-The journal agent declares reading the journaled business collections and uses
-those notifications to update the receipt's `agent`, removing both journal
-`COUNT` queries from attribution. (not in the code yet — HIL-1618)
-That notification is not proof that a trigger wrote a journal row: a lost frame
-can leave the initiating agent on the receipt, and raw SQL and migrations get
-no new ORM notification. The attribution agent does not calculate journal row
-numbers or times; a reader fetches those rows from the database.
-(not in the code yet — HIL-1618)
+
+`AbstractHilosChangeLogAgent::readDbCollections()` adds every mounted journaled
+business collection to its inherited reads through `JournaledTables::mounted()`.
+The worker registers that computed interest before creating the agent; see
+[Who Reads The Declaration, And When](truth-source.md#who-reads-the-declaration-and-when).
+The agent's `onSignalDbSyncCreated()`, `onSignalDbSyncUpdated()` and
+`onSignalDbSyncDeleted()` share `recordWriterFromDbSync()`. It accepts only a
+positive `receiptId`, a nonempty `writerAgentId` and a collection whose mounted
+Entity is journaled. Missing metadata, unmounted or nonjournaled collections,
+all six journal collections themselves, clear and rehydrate produce no
+attribution. The writer comes from the payload, never the transport source,
+emitter or receiving agent. An `HilosException` is logged once for that delivery;
+this best-effort bookkeeping does not change the completed business result.
+
+The receiver calls
+`Hilos::$db->changeLogReceipts->actions->recordWriter(int $receiptId, string $writerAgentId): void`
+under its `Update` claim. This is the narrow exception to the known-key
+item-action rule: indexing this cacheless collection would SELECT the receipt,
+while attribution must not read it. The collection action and its Object
+collection both guard `Update`; the SQL stays inside the existing ORM chain,
+not in an agent or a service. This is receipt attribution only, not a general
+`updateById` API or an alternative for other entities' known-key item actions.
+
+The Object collection checks `Database::assertCanWrite()` and executes one
+parameterized UPDATE on its binding's row connection, using the mounted Entity's
+table and column constants. It sets only `agent`, by the global receipt id,
+with a null-safe inequality and `tryReconnect: false`. There is no SELECT or
+INSERT: a missing receipt or an equal writer affects no row and returns without
+an announcement. The action changes neither `created_at`, the handover counter
+nor any other column, and does not rewrite previously returned cacheless snapshots.
+
+A changed receipt publishes one existing `DB_SYNC_UPDATED` and one
+`SourceChange::dbUpdated`, with `idString = (string) $receiptId`,
+`row = ['agent' => $writerAgentId]` and `previous = []`: the former value was not
+read. Both follow normal after-commit and rollback behavior. Mutation origin and
+request id, and the DB-sync receipt and writer metadata, come from the current
+execution context; the incoming business fact's metadata is not copied. With no
+current receipt the outgoing receipt and writer metadata are null. The receipt
+update cannot feed back into attribution because its Entity is not journaled.
+
+Attribution follows delivered facts, with no retry, deduplication or global write
+order guarantee. A notification does not prove that a trigger wrote a journal
+row. A lost frame can leave the initiating agent on the receipt; raw SQL and
+migrations produce no new ORM notification, and a vanished receipt is never
+recreated. The attribution agent calculates no journal row numbers or times;
+the feed reads those rows from the database. Both former journal `COUNT` queries
+and the `countEntries`, `concludePart` and `concludeSql` attribution methods are
+gone (HIL-1618).
 
 An agent that writes later on its own uses its own receipt with the `agent`
 channel for a concrete autonomous operation, such as sending a completed bot
@@ -251,9 +294,10 @@ concrete autonomous work in `JournalReceiptScope::run()` with
 for an asynchronous result. The action is the autonomous operation's code name,
 such as `bot_message`; actor, subject and session stay NULL. The source stays
 the initiating agent's id when work is handed over, while the agent becomes the
-last agent that actually wrote a journaled row. BotAgent opens its scope only
-for a ready, nonempty message sent to ChatAgent. The message stream is not
-journaled, so that empty receipt is deleted when the recipient closes the handover.
+writer reported by delivered journaled business-row facts. BotAgent opens its
+scope only for a ready, nonempty message sent to ChatAgent. The message stream
+is not journaled, so that empty receipt is deleted when the recipient closes
+the handover.
 
 ### One Scheduled Attempt Across Parts
 
@@ -264,7 +308,8 @@ The daemon supplies the expression that fired in `CronSignalDTO::cronExpression`
 A legacy payload may omit it or carry NULL: then the source is only the rule
 name, with no inferred schedule. Job parameters, user numbers and secrets do not
 belong in the source. `created_at` is the receipt's creation time, and the agent
-becomes the last recipient or local part that actually wrote a journaled row.
+follows delivered journaled business-row facts from recipients and local parts,
+under the best-effort rules above.
 
 The worker parses the CRON payload before opening one scope around its cron
 hook, the agent handler and the page dispatch. Their synchronous writes and
@@ -824,11 +869,11 @@ stay unchanged (HIL-1465).
 Peer forwarding preserves the business-row frame's `receiptId` and
 `writerAgentId` snapshot.
 The journal agent applies attribution through that frame path under its declared
-operations. (not in the code yet — HIL-1618)
+`Update` operation (HIL-1618).
 A separate cluster scenario proves the collection-based reading and new
 attribution path through any master. (not in the code yet — HIL-1621)
 That scenario is still to be added; the existing HIL-1465 scenario above remains
-coverage of the current path, not evidence that the new path already works.
+the earlier scenario, not acceptance of the new path under HIL-1621.
 
 The existing stands no longer carry primary/replica or Galera topologies, by
 the owner's decision of 2026-10-14. Specialized database carriers and six new

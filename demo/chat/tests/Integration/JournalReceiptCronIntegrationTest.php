@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Closure;
+use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
-use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -25,6 +25,8 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -100,6 +102,7 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
     {
         parent::setUp();
         $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new JournalReceiptSyncRouter();
         $this->previousBrowser = Hilos::$browser;
         $this->previousAgentId = ExecutionContext::currentAgentId();
         $this->previousSettings = Hilos::$setting;
@@ -606,10 +609,10 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
             $this->assertSame('initiator', $this->receipt($id)['agent']);
             $this->assertSame(1, (int) $this->receipt($id)['open_handovers']);
 
-            JournalReceiptScope::runPart($id, 'rolled-back-writer', function (): void {
+            $this->runPartAsAgent($id, 'rolled-back-writer', function (): void {
                 Database::transactionStart();
                 try {
-                    $this->writeSetting('rolled-back');
+                    $this->writeSetting('rolled-back', true);
                 } finally {
                     Database::transactionRollback();
                 }
@@ -617,16 +620,17 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
             $this->assertSame(0, $this->logCount($id));
             $this->assertSame('initiator', $this->receipt($id)['agent']);
 
-            JournalReceiptScope::runPart($id, 'first-writer', function (): void {
+            $this->runPartAsAgent($id, 'first-writer', function (): void {
                 Database::transactionStart();
                 try {
-                    $this->writeSetting('first');
+                    $this->writeSetting('first', true);
                     Database::transactionCommit();
                 } catch (DatabaseException $failure) {
                     Database::transactionRollback();
                     throw $failure;
                 }
             });
+            $this->deliverJournalFacts();
             $this->assertSame('first-writer', $this->receipt($id)['agent']);
             $this->assertNull(JournalReceiptScope::currentId());
             $this->assertNull(JournalReceiptScope::stampHandover());
@@ -636,11 +640,12 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
             Database::sql("SELECT `receipt_id` FROM {$database}.`hilos_change_log` ORDER BY `id` DESC LIMIT 1");
             $this->assertNull(Database::field('receipt_id'));
 
-            JournalReceiptScope::runPart($id, 'second-writer', function (): void {
-                $this->writeSetting('second');
+            $this->runPartAsAgent($id, 'second-writer', function (): void {
+                $this->writeSetting('second', true);
             });
             JournalReceiptScope::runPart($id, 'empty-after-write', static fn (): string => 'done');
             $this->assertSame(2, $this->logCount($id));
+            $this->deliverJournalFacts();
             $this->assertSame('second-writer', $this->receipt($id)['agent']);
             $this->assertSame($started['created_at'], $this->receipt($id)['created_at']);
             $this->assertSame($started['source'], $this->receipt($id)['source']);
@@ -695,9 +700,9 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $failure = new RuntimeException('Failed after a committed write');
         $calls = 0;
         try {
-            JournalReceiptScope::runPart($id, 'partial-writer', function () use ($failure, &$calls): void {
+            $this->runPartAsAgent($id, 'partial-writer', function () use ($failure, &$calls): void {
                 $calls++;
-                $this->writeSetting('partial-failure');
+                $this->writeSetting('partial-failure', true);
                 JournalReceiptScope::stampHandover();
                 throw $failure;
             });
@@ -705,7 +710,8 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         } catch (RuntimeException $caught) {
             $this->assertSame($failure, $caught);
             $this->assertSame(2, (int) $this->receipt($id)['open_handovers']);
-            $this->assertSame('partial-writer', $this->receipt($id)['agent']);
+            $this->deliverJournalFacts();
+        $this->assertSame('partial-writer', $this->receipt($id)['agent']);
         } finally {
             JournalReceiptScope::finish($id);
         }
@@ -714,6 +720,7 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $this->assertSame(1, (int) $this->receipt($id)['open_handovers']);
         JournalReceiptScope::join($id, 'reply-only', static fn (): string => 'done');
         $this->assertSame(0, (int) $this->receipt($id)['open_handovers']);
+        $this->deliverJournalFacts();
         $this->assertSame('partial-writer', $this->receipt($id)['agent']);
         $this->assertNull(JournalReceiptScope::currentId());
         $this->assertConnectionReceipt(null);
@@ -757,14 +764,15 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         JournalReceiptScope::runPart($id, 'sender', static fn (): ?int => JournalReceiptScope::stampHandover());
         JournalReceiptScope::finish($id);
         $this->assertSame(1, (int) $this->receipt($id)['open_handovers']);
-        JournalReceiptScope::join($id, 'recipient-writer', function (): void {
-            $this->writeSetting('recipient');
+        $this->joinAsAgent($id, 'recipient-writer', function (): void {
+            $this->writeSetting('recipient', true);
             JournalReceiptScope::stampHandover();
         });
         $this->assertSame(1, (int) $this->receipt($id)['open_handovers']);
         JournalReceiptScope::join($id, 'reply-only', static fn (): string => 'done');
         $this->assertSame(0, (int) $this->receipt($id)['open_handovers']);
         $this->assertSame(1, $this->logCount($id));
+        $this->deliverJournalFacts();
         $this->assertSame('recipient-writer', $this->receipt($id)['agent']);
         $this->assertSame('handover-write (* * * * *)', $this->receipt($id)['source']);
         $this->assertSame('cron', $this->receipt($id)['channel']);
@@ -833,15 +841,16 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $this->assertNotNull($id);
         try {
             $this->killPrimaryConnection();
-            JournalReceiptScope::runPart($id, 'writer', function () use ($id): void {
+            $this->runPartAsAgent($id, 'writer', function () use ($id): void {
                 $this->assertConnectionReceipt($id);
-                $this->writeSetting('after-failed-set');
+                $this->writeSetting('after-failed-set', true);
                 $this->killPrimaryConnection();
                 // Reconnect on a read, so this test does not rely on replaying an ambiguous business INSERT.
                 $this->assertConnectionReceipt($id);
-                $this->writeSetting('after-reconnect');
+                $this->writeSetting('after-reconnect', true);
             });
             $this->assertSame(2, $this->logCount($id));
+            $this->deliverJournalFacts();
             $this->assertSame('writer', $this->receipt($id)['agent']);
             $this->assertConnectionReceipt(null);
         } finally {
@@ -959,6 +968,8 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         self::assertSame('cron', $receipt['channel']);
         self::assertSame($rule, $receipt['action']);
         self::assertSame($expression === null ? $rule : $rule . ' (' . $expression . ')', $receipt['source']);
+        $this->deliverJournalFacts();
+        $receipt = $this->receipt($id);
         self::assertSame($writer, $receipt['agent']);
         self::assertNull($receipt['actor_user_id']);
         self::assertNull($receipt['subject_user_id']);
@@ -1041,9 +1052,65 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         }
     }
 
-    /** @param string $suffix Unique setting fixture key within this test */
-    private function writeSetting(string $suffix): void
+    /**
+     * Mirrors the worker's execution identity around a real local receipt part.
+     *
+     * @param ?int $id Existing receipt
+     * @param string $agentId Executing writer
+     * @param callable $callback Business work
+     * @return mixed Original callback result
+     */
+    private function runPartAsAgent(?int $id, string $agentId, callable $callback): mixed
     {
+        TruthSourceRegistry::registerCreate(HilosDbContext::settings, $agentId);
+        try {
+            return ExecutionContext::run(
+                new ExecutionFrame($agentId),
+                static fn () => JournalReceiptScope::runPart($id, $agentId, $callback),
+            );
+        } finally {
+            TruthSourceRegistry::unregisterCreate(HilosDbContext::settings, $agentId);
+        }
+    }
+
+    /**
+     * Mirrors the worker's identity around the real recipient entry.
+     *
+     * @param int $id Existing receipt
+     * @param string $agentId Executing recipient
+     * @param callable $callback Recipient work
+     * @return mixed Original callback result
+     */
+    private function joinAsAgent(int $id, string $agentId, callable $callback): mixed
+    {
+        TruthSourceRegistry::registerCreate(HilosDbContext::settings, $agentId);
+        try {
+            return ExecutionContext::run(
+                new ExecutionFrame($agentId),
+                static fn () => JournalReceiptScope::join($id, $agentId, $callback),
+            );
+        } finally {
+            TruthSourceRegistry::unregisterCreate(HilosDbContext::settings, $agentId);
+        }
+    }
+
+    /** Delivers the already committed ORM facts through the actual worker dispatcher. */
+    private function deliverJournalFacts(): void
+    {
+        Hilos::$sr->deliverTo();
+    }
+
+    /**
+     * @param string $suffix Unique setting fixture key within this test
+     * @param bool $orm Whether attribution needs actual ORM row facts
+     */
+    private function writeSetting(string $suffix, bool $orm = false): void
+    {
+        if ($orm) {
+            Hilos::$db->settings->actions->addOrphan(self::KEY_PREFIX . $suffix, 'string', 'written', []);
+
+            return;
+        }
         Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
             [self::KEY_PREFIX . $suffix, 'string', 'written'], tryReconnect: false);
     }
@@ -1157,7 +1224,7 @@ final class JournalReceiptCronTestWorker extends WorkerManager
     /** @return SignalRouter Project routes for real person handovers */
     protected function createSignalRouter(): SignalRouter
     {
-        return new ChatSignalRouter();
+        return Hilos::$sr instanceof JournalReceiptSyncRouter ? Hilos::$sr : new JournalReceiptSyncRouter();
     }
 
     /** @return AgentManager Manager that can create the fixture and the actual auth agents */
@@ -1204,6 +1271,7 @@ final class JournalReceiptCronTestAgentManager extends AgentManager
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         return match ($agentType) {
+            DemoHilosChangeLogAgent::AGENT_TYPE => new DemoHilosChangeLogAgent(),
             SessionsLibraryAgent::AGENT_TYPE => new SessionsLibraryAgent(),
             UsersLibraryAgent::AGENT_TYPE => new UsersLibraryAgent(),
             UserAgent::AGENT_TYPE => new UserAgent($agentIndex ?? throw new LogicException('Person index required')),

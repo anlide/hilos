@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
-use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -96,6 +96,7 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         JournalTriggerFiles::setPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers');
         $this->previousBrowser = Hilos::$browser;
         $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new JournalReceiptSyncRouter();
         $this->previousAgentId = ExecutionContext::currentAgentId();
         $this->originalTriggers = self::triggerCatalog();
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
@@ -322,6 +323,8 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $this->assertSame('cli', $receipt['channel']);
         $this->assertSame(CliCommands::ADMIN_GRANT, $receipt['action']);
         $this->assertSame(CliCommands::ADMIN_GRANT, $receipt['source']);
+        Hilos::$sr->deliverTo($worker);
+        $receipt = $this->receipt($receiptId);
         $this->assertSame(UserAgent::AGENT_TYPE . ':' . $userId, $receipt['agent']);
         $this->assertNull($receipt['actor_user_id']);
         $this->assertNull($receipt['subject_user_id']);
@@ -376,6 +379,8 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $this->assertSame('cli', $receipt['channel']);
         $this->assertSame(CliCommands::SETTINGS_SET, $receipt['action']);
         $this->assertSame('settings:set example_integer', $receipt['source']);
+        Hilos::$sr->deliverTo($worker);
+        $receipt = $this->receipt($receiptId);
         $this->assertSame(SettingsLibraryAgent::AGENT_TYPE, $receipt['agent']);
         $this->assertNull($receipt['actor_user_id']);
         $this->assertNull($receipt['subject_user_id']);
@@ -548,6 +553,8 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         $this->assertSame('cli', $receipt['channel']);
         $this->assertSame(CliCommands::SETTINGS_RESET, $receipt['action']);
         $this->assertSame('settings:reset example_integer', $receipt['source']);
+        Hilos::$sr->deliverTo($worker);
+        $receipt = $this->receipt($receiptId);
         $this->assertSame(SettingsLibraryAgent::AGENT_TYPE, $receipt['agent']);
         $this->assertNull($receipt['actor_user_id']);
         $this->assertNull($receipt['subject_user_id']);
@@ -621,7 +628,7 @@ final class JournalReceiptCommandTestWorker extends WorkerManager
 
     protected function createSignalRouter(): SignalRouter
     {
-        return new ChatSignalRouter();
+        return Hilos::$sr instanceof JournalReceiptSyncRouter ? Hilos::$sr : new JournalReceiptSyncRouter();
     }
 
     protected function createAgentManager(): AgentManager
@@ -652,6 +659,7 @@ final class JournalReceiptCommandTestAgentManager extends AgentManager
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         return match ($agentType) {
+            DemoHilosChangeLogAgent::AGENT_TYPE => new DemoHilosChangeLogAgent(),
             SessionsLibraryAgent::AGENT_TYPE => new SessionsLibraryAgent(),
             SettingsLibraryAgent::AGENT_TYPE => new SettingsLibraryAgent(),
             UserAgent::AGENT_TYPE => new UserAgent($agentIndex ?? throw new LogicException('Person agent needs an index')),

@@ -43,26 +43,6 @@ class ChangeLogReceiptActions extends DbActions
     }
 
     /**
-     * Asks the update right, then applies one part's net delta and optional writer.
-     *
-     * @param int $delta Handovers to add, negative when a hold is released
-     * @param ?int $entriesBefore Journal rows seen before the part, or null when the count failed
-     * @param string $agentId Agent that ran the part
-     * @throws ObjectCollectionNullException When the receipt is detached from its object collection
-     * @throws DatabaseException When the update, the refresh or the announcement fails
-     * @throws ObjectGetIdStringNotImplementedException When the persisted row has no id
-     * @throws WriteNotAllowedException When no truth source in this process may update the row
-     * @throws CreateNotAllowedException When the row is not stored yet and creating it is not allowed
-     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
-     */
-    public function concludePart(int $delta, ?int $entriesBefore, string $agentId): void
-    {
-        $this->ensureCanWrite(TruthSourceOperation::Update);
-        $this->object->concludePart($delta, $entriesBefore, $agentId);
-    }
-
-    /**
      * Asks the remove right, then deletes this receipt when it holds nothing.
      *
      * @throws ObjectCollectionNullException When the receipt is detached from its object collection

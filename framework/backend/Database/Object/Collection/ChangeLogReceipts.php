@@ -6,14 +6,20 @@ namespace Hilos\Database\Object\Collection;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
@@ -360,6 +366,62 @@ class ChangeLogReceipts extends Objects
         $this[$receipt->getIdString()] = $receipt;
 
         return $receipt;
+    }
+
+    /**
+     * Writes only the agent, without reading or retaining a receipt snapshot.
+     * Missing and unchanged rows announce nothing; the previous agent is unknown.
+     *
+     * @param int $receiptId Global receipt row id
+     * @param string $writerAgentId Agent that wrote the journaled business row
+     * @throws DatabaseException When the binding or update fails or a foreign transaction forbids the write
+     * @throws WriteNotAllowedException When no truth source in this process may update receipts
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     */
+    public function recordWriter(int $receiptId, string $writerAgentId): void
+    {
+        $binding = $this->getDatabase() ?? throw new DatabaseException('Journal receipt writer requires a database-backed collection');
+        Database::assertCanWrite($binding->connectionIndex);
+        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY, TruthSourceOperation::Update);
+
+        $entityClass = static::entityClass();
+        $table = $binding->getSqlTableName($entityClass::_table);
+        Database::sql(
+            "UPDATE {$table} SET `" . $entityClass::agent . '` = ? WHERE `' . $entityClass::id . '` = ?'
+            . ' AND NOT (`' . $entityClass::agent . '` <=> ?)',
+            [$writerAgentId, $receiptId, $writerAgentId],
+            tryReconnect: false,
+            index: $binding->connectionIndex,
+        );
+        if (Database::affectedRows($binding->connectionIndex) < 1) {
+            return;
+        }
+
+        $row = [$entityClass::agent => $writerAgentId];
+        $currentReceiptId = JournalReceiptScope::currentId();
+        Hilos::$sr?->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_UPDATED,
+            new DbSyncUpdatedSignalData(
+                static::COLLECTION_KEY,
+                (string)$receiptId,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+                previous: [],
+                receiptId: $currentReceiptId,
+                writerAgentId: $currentReceiptId === null ? null : ExecutionContext::currentAgentId(),
+            ),
+            connectionIndex: $binding->connectionIndex,
+        );
+        SourceChangeBus::publish(SourceChange::dbUpdated(
+            static::COLLECTION_KEY,
+            (string)$receiptId,
+            $row,
+            ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
+            previous: [],
+        ), connectionIndex: $binding->connectionIndex);
     }
 
     /**

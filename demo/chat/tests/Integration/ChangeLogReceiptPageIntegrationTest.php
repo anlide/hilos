@@ -13,6 +13,8 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
@@ -22,11 +24,15 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
@@ -240,22 +246,43 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
 
     public function testCronReceiptKeepsItsSourceAndNamesTheActualInstanceWriter(): void
     {
+        Hilos::$sr = new JournalReceiptSyncRouter();
         $receiptId = JournalReceiptScope::start(JournalReceiptData::cron('sweep_second_factor_remove', '* * * * *', 'usersLibrary'));
         self::assertNotNull($receiptId);
         $writer = 'hilos_user:' . $this->adminId;
+        $key = self::KEY_PREFIX . 'cron-part';
+        TruthSourceRegistry::register(
+            HilosDbContext::settings, TruthSourceKeys::all(), $writer,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
+        );
         try {
-            JournalReceiptScope::runPart($receiptId, $writer, static function (): void {
-                Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
-                    [self::KEY_PREFIX . 'cron-part', 'string', 'first']);
-            });
+            try {
+                ExecutionContext::run(new ExecutionFrame($writer), static fn () => JournalReceiptScope::runPart(
+                    $receiptId,
+                    $writer,
+                    static fn () => Hilos::$db->settings->actions->addOrphan($key, 'string', 'first', []),
+                ));
+            } finally {
+                JournalReceiptScope::finish($receiptId);
+            }
+            self::assertSame('usersLibrary', $this->receipt(self::ADMIN, $receiptId)['receipt']['agent']);
+            Hilos::$sr->deliverTo();
+            $header = $this->receipt(self::ADMIN, $receiptId)['receipt'];
+            self::assertSame('cron', $header['channel']);
+            self::assertSame('sweep_second_factor_remove', $header['action']);
+            self::assertSame($writer, $header['agent']);
+            self::assertSame('sweep_second_factor_remove (* * * * *)', $header['source']);
         } finally {
-            JournalReceiptScope::finish($receiptId);
+            try {
+                ExecutionContext::run(new ExecutionFrame($writer), static function () use ($key): void {
+                    if (isset(Hilos::$db->settings[$key])) {
+                        Hilos::$db->settings[$key]->actions->delete();
+                    }
+                });
+            } finally {
+                TruthSourceRegistry::unregister(HilosDbContext::settings, $writer);
+            }
         }
-        $header = $this->receipt(self::ADMIN, $receiptId)['receipt'];
-        self::assertSame('cron', $header['channel']);
-        self::assertSame('sweep_second_factor_remove', $header['action']);
-        self::assertSame($writer, $header['agent']);
-        self::assertSame('sweep_second_factor_remove (* * * * *)', $header['source']);
     }
 
     public function testLargeReceiptUsesThreeBoundedPortionsWithoutDuplicatesAndRereadsTheHeader(): void

@@ -107,33 +107,6 @@ class ChangeLogReceipt extends Object_
     }
 
     /**
-     * Counts journal rows that name this receipt.
-     *
-     * The count is by receipt id, through the journal entry entity's binding. An unsaved receipt
-     * has no rows.
-     *
-     * @return int Journal rows for this receipt
-     * @throws DatabaseException When the binding or the count query fails
-     */
-    public function countEntries(): int
-    {
-        if ($this->entity->id === null) {
-            return 0;
-        }
-
-        $binding = $this->entity::getDatabase();
-        $entries = $binding->getSqlTableName(EntityChangeLogEntry::_table);
-        $count = Database::sql(
-            'SELECT COUNT(*) AS `entry_count` FROM ' . $entries
-            . ' WHERE `' . EntityChangeLogEntry::receipt_id . '` = ?',
-            [$this->entity->id],
-            index: $binding->connectionIndex,
-        )->field('entry_count');
-
-        return (int)$count;
-    }
-
-    /**
      * Applies a stored insert this collection already wrote, and announces the new row.
      *
      * The snapshot is the row read back after the insert, so created_at is the database clock.
@@ -182,53 +155,6 @@ class ChangeLogReceipt extends Object_
 
         $this->runHandoverUpdate($binding, $this->counterSql($binding), [
             $delta,
-            $this->entity->id,
-            $this->entity->created_at,
-        ]);
-    }
-
-    /**
-     * Applies one part's handover delta and, when the earlier entry count is known, the writer.
-     *
-     * One statement adds the delta. The agent column changes only when the journal gained a row
-     * for this receipt after that count. A null count changes the counter alone. Zero with no
-     * count does nothing.
-     *
-     * @param int $delta Handovers to add, negative when a hold is released
-     * @param ?int $entriesBefore Journal rows seen before the part, or null when the count failed
-     * @param string $agentId Agent that ran the part
-     * @throws DatabaseException When the update, the refresh or the announcement fails
-     * @throws WriteNotAllowedException When no truth source in this process may update the row
-     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
-     * @throws ObjectGetIdStringNotImplementedException When the persisted row has no id
-     */
-    public function concludePart(int $delta, ?int $entriesBefore, string $agentId): void
-    {
-        if ($entriesBefore === null && $delta === 0) {
-            return;
-        }
-
-        $binding = $this->persistedBinding(TruthSourceOperation::Update);
-        if ($binding === null) {
-            return;
-        }
-
-        if ($entriesBefore === null) {
-            $this->runHandoverUpdate($binding, $this->counterSql($binding), [
-                $delta,
-                $this->entity->id,
-                $this->entity->created_at,
-            ]);
-
-            return;
-        }
-
-        $this->runHandoverUpdate($binding, $this->concludeSql($binding), [
-            $delta,
-            $this->entity->id,
-            $entriesBefore,
-            $agentId,
             $this->entity->id,
             $this->entity->created_at,
         ]);
@@ -341,24 +267,6 @@ class ChangeLogReceipt extends Object_
 
         return 'UPDATE ' . $table
             . ' SET `' . $entityClass::open_handovers . '` = `' . $entityClass::open_handovers . '` + ?'
-            . ' WHERE `' . $entityClass::id . '` = ? AND `' . $entityClass::created_at . '` = ?';
-    }
-
-    /**
-     * @param DatabaseBinding $binding Receipt binding the statement runs on
-     * @return string Update of the counter and, when the journal grew, the agent
-     * @throws DatabaseException When a journal table name cannot be resolved
-     */
-    private function concludeSql(DatabaseBinding $binding): string
-    {
-        $entityClass = static::ENTITY_CLASS;
-        $table = $binding->getSqlTableName($entityClass::_table);
-        $entries = $binding->getSqlTableName(EntityChangeLogEntry::_table);
-
-        return 'UPDATE ' . $table
-            . ' SET `' . $entityClass::open_handovers . '` = `' . $entityClass::open_handovers . '` + ?'
-            . ', `' . $entityClass::agent . '` = IF((SELECT COUNT(*) FROM ' . $entries
-            . ' WHERE `' . EntityChangeLogEntry::receipt_id . '` = ?) > ?, ?, `' . $entityClass::agent . '`)'
             . ' WHERE `' . $entityClass::id . '` = ? AND `' . $entityClass::created_at . '` = ?';
     }
 

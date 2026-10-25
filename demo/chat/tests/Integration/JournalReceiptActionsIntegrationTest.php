@@ -9,6 +9,8 @@ use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -144,6 +146,132 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
         parent::tearDown();
     }
 
+    /** The real row connection performs no SELECT, including on the null-to-writer transition. */
+    public function testRecordWriterChangesOnlyAgentWithoutSelectingTheReceipt(): void
+    {
+        $receipt = Hilos::$db->changeLogReceipts->actions->createReceipt(
+            JournalReceiptData::web(17, 23, 31, 'receipt.writer', null),
+            true,
+        );
+        $id = (int)$receipt->id;
+        $before = $this->receiptSnapshot($id);
+        $this->forgetAnnouncements();
+
+        $selects = $this->selectCount();
+        Hilos::$db->changeLogReceipts->actions->recordWriter($id, self::STALE_WRITER);
+        $afterSelects = $this->selectCount();
+
+        $this->assertSame($selects, $afterSelects);
+        $before[EntityChangeLogReceipt::agent] = self::STALE_WRITER;
+        $this->assertSame($before, $this->receiptSnapshot($id));
+        $this->assertNull($receipt->agent);
+        $this->assertSame(1, $receipt->open_handovers);
+        $this->assertWriterAnnounced($id, self::STALE_WRITER);
+    }
+
+    /** Counter snapshots held before attribution cannot replace the new durable writer. */
+    public function testRecordWriterSurvivesStaleHandoverSnapshotsAndDeltas(): void
+    {
+        $created = $this->retainedReceipt('receipt.writer.stale');
+        $id = (int)$created->id;
+        $first = Hilos::$db->changeLogReceipts[(string)$id];
+        $second = Hilos::$db->changeLogReceipts[(string)$id];
+        $this->assertNotSame($first, $second);
+        $this->assertSame(self::OWNER_ID, $first->agent);
+        $this->assertSame(self::OWNER_ID, $second->agent);
+        $this->forgetAnnouncements();
+
+        $selects = $this->selectCount();
+        Hilos::$db->changeLogReceipts->actions->recordWriter($id, 'business-writer');
+        $afterSelects = $this->selectCount();
+
+        $this->assertSame($selects, $afterSelects);
+        $this->assertWriterAnnounced($id, 'business-writer');
+        $this->assertSame(self::OWNER_ID, $created->agent);
+        $this->assertSame(self::OWNER_ID, $first->agent);
+        $this->assertSame(self::OWNER_ID, $second->agent);
+        $first->actions->adjustHandovers(2);
+        $second->actions->adjustHandovers(-1);
+        $this->assertSame([
+            EntityChangeLogReceipt::open_handovers => 2,
+            EntityChangeLogReceipt::agent => 'business-writer',
+        ], $this->storedReceipt($id));
+        $this->assertSame(3, $first->open_handovers);
+        $this->assertSame(2, $second->open_handovers);
+        $this->assertSame(1, $created->open_handovers);
+        $this->assertSame(self::OWNER_ID, $created->agent);
+    }
+
+    /** Missing and equal writers neither read, insert nor announce a receipt. */
+    public function testRecordWriterMissingAndSameWriterAreSilentWithoutSelects(): void
+    {
+        $kept = $this->retainedReceipt('receipt.writer.same');
+        $keptId = (int)$kept->id;
+        $gone = Hilos::$db->changeLogReceipts->actions->createReceipt(
+            JournalReceiptData::agent('receipt.writer.missing', self::OWNER_ID),
+        );
+        $goneId = (int)$gone->id;
+        $gone->actions->deleteIfEmpty();
+        $before = $this->receiptSnapshot($keptId);
+        $this->assertNull($this->storedReceipt($goneId));
+        $newest = $this->newestReceiptId();
+        $this->forgetAnnouncements();
+
+        $selects = $this->selectCount();
+        Hilos::$db->changeLogReceipts->actions->recordWriter($keptId, self::OWNER_ID);
+        Hilos::$db->changeLogReceipts->actions->recordWriter($goneId, self::STALE_WRITER);
+        $afterSelects = $this->selectCount();
+
+        $this->assertSame($selects, $afterSelects);
+        $this->assertSame($before, $this->receiptSnapshot($keptId));
+        $this->assertNull($this->storedReceipt($goneId));
+        $this->assertSame($newest, $this->newestReceiptId());
+        $this->assertAnnounced((string)$keptId, [], []);
+    }
+
+    /** Commit releases one captured update; rollback drops it and restores the stored writer. */
+    public function testRecordWriterCommitReleasesOneUpdateAndRollbackDropsIt(): void
+    {
+        $receipt = $this->retainedReceipt('receipt.writer.transaction');
+        $id = (int)$receipt->id;
+        $before = $this->receiptSnapshot($id);
+        $this->forgetAnnouncements();
+        Database::transactionStart();
+        try {
+            Hilos::$db->changeLogReceipts->actions->recordWriter($id, self::STALE_WRITER);
+            $this->assertSame(self::STALE_WRITER, $this->storedReceipt($id)[EntityChangeLogReceipt::agent]);
+            $this->assertSame([], $this->observer->changes);
+            $this->captureFrames();
+            $this->assertSame([], $this->frames);
+            Database::transactionRollback();
+        } catch (Throwable $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
+        $this->assertSame($before, $this->receiptSnapshot($id));
+        $this->assertSame(self::OWNER_ID, $receipt->agent);
+        $this->assertAnnounced((string)$id, [], []);
+
+        Database::transactionStart();
+        try {
+            ExecutionContext::run(
+                new ExecutionFrame(self::OWNER_ID, 'writer-origin', 'writer-request'),
+                static fn() => Hilos::$db->changeLogReceipts->actions->recordWriter($id, 'committed-writer'),
+            );
+            $this->assertSame([], $this->observer->changes);
+            $this->captureFrames();
+            $this->assertSame([], $this->frames);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
+        $before[EntityChangeLogReceipt::agent] = 'committed-writer';
+        $this->assertSame($before, $this->receiptSnapshot($id));
+        $this->assertSame(self::OWNER_ID, $receipt->agent);
+        $this->assertWriterAnnounced($id, 'committed-writer', 'writer-origin', 'writer-request');
+    }
+
     /**
      * A retained local hold plus one outgoing hold leave the counter at 2.
      * The next two deltas, each from its own snapshot, store 1 and then 0.
@@ -173,7 +301,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
         $this->assertSame(1, $this->storedReceipt($id)[EntityChangeLogReceipt::open_handovers]);
         $this->assertAnnounced((string)$id, [], []);
 
-        $second->actions->concludePart(-1, null, self::STALE_WRITER);
+        $second->actions->adjustHandovers(-1);
         $stored = $this->storedReceipt($id);
         $this->assertNotNull($stored);
         $this->assertSame(0, $stored[EntityChangeLogReceipt::open_handovers]);
@@ -184,7 +312,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
         $this->assertNotSame($first, $fresh);
         $this->assertNotSame($second, $fresh);
         $this->assertSame(0, $fresh->open_handovers);
-        $this->assertSame(0, $fresh->countEntries());
+        $this->assertSame(0, $this->logCount($id));
 
         $this->forgetAnnouncements();
         $first->actions->deleteIfEmpty();
@@ -229,7 +357,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
         $id = (int)$receipt->id;
         $this->assertSame(0, $this->storedReceipt($id)[EntityChangeLogReceipt::open_handovers]);
         $this->writeJournalRow($id, 'occupied');
-        $this->assertSame(1, $receipt->countEntries());
+        $this->assertSame(1, $this->logCount($id));
         $this->assertSame(1, $this->logCount($id));
 
         $this->forgetAnnouncements();
@@ -256,7 +384,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
 
         $this->forgetAnnouncements();
         $held->actions->adjustHandovers(-1);
-        $held->actions->concludePart(-1, 0, self::STALE_WRITER);
+        $held->actions->adjustHandovers(-1);
         $held->actions->deleteIfEmpty();
         $this->assertNull($this->storedReceipt($id));
         $this->assertSame($newest, $this->newestReceiptId());
@@ -282,7 +410,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
 
         $this->forgetAnnouncements();
         $receipt->actions->adjustHandovers(0);
-        $receipt->actions->concludePart(0, null, self::OWNER_ID);
+        $receipt->actions->adjustHandovers(0);
         $receipt->actions->deleteIfEmpty();
         $this->assertSame(2, $this->storedReceipt($id)[EntityChangeLogReceipt::open_handovers]);
         $this->assertAnnounced($idString, [], []);
@@ -415,7 +543,7 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
         );
         $occupiedId = (int)$occupied->id;
         $this->writeJournalRow($occupiedId, 'migration');
-        $this->assertSame(1, $occupied->countEntries());
+        $this->assertSame(1, $this->logCount((int)$occupied->id));
         $this->forgetAnnouncements();
         $occupied->actions->deleteEmptyMigrationReceipt();
         $this->assertNotNull($this->storedReceipt($occupiedId));
@@ -449,6 +577,51 @@ final class JournalReceiptActionsIntegrationTest extends IntegrationTestCase
             JournalReceiptData::agent($action, self::OWNER_ID),
             true,
         );
+    }
+
+    /** @return int SELECT statements executed on the warmed receipt row connection */
+    private function selectCount(): int
+    {
+        return (int)Database::sql(
+            "SHOW SESSION STATUS LIKE 'Com_select'",
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
+        )->field('Value');
+    }
+
+    /**
+     * @param int $id Receipt primary id
+     * @return array<string, mixed> Independent persisted snapshot, outside the no-SELECT measurement
+     */
+    private function receiptSnapshot(int $id): array
+    {
+        $table = $this->journalDatabase() . '.`' . EntityChangeLogReceipt::_table . '`';
+        $rows = Database::sql(
+            "SELECT * FROM {$table} WHERE `" . EntityChangeLogReceipt::id . '` = ?',
+            [$id],
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
+        )->rows();
+        $this->assertCount(1, $rows);
+
+        return $rows[0];
+    }
+
+    /**
+     * @param int $id Receipt primary id
+     * @param string $writer Recorded writer, distinct from the attribution mutation's own metadata
+     * @param ?string $origin Connection that caused the mutation
+     * @param ?string $request Request that caused the mutation
+     */
+    private function assertWriterAnnounced(int $id, string $writer, ?string $origin = null, ?string $request = null): void
+    {
+        $this->assertAnnounced((string)$id, [TableMutationType::Update], [SignalConstants::DB_SYNC_UPDATED]);
+        $this->assertSame([EntityChangeLogReceipt::agent => $writer], $this->frames[0]->data->row);
+        $this->assertSame([], $this->frames[0]->data->previous);
+        $this->assertSame($origin, $this->frames[0]->data->origin);
+        $this->assertSame($request, $this->frames[0]->data->originRequestId);
+        $this->assertSame([EntityChangeLogReceipt::agent => $writer], $this->observer->changes[0]->row);
+        $this->assertSame([], $this->observer->changes[0]->previous);
+        $this->assertSame($origin, $this->observer->changes[0]->origin);
+        $this->assertSame($request, $this->observer->changes[0]->originRequestId);
     }
 
     /**

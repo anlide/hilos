@@ -435,7 +435,7 @@ final class TopologyValidator
     private function validateSetClimb(string $ownerClass, string $collection, string $entityClass, array &$errors): void
     {
         $reachable = [
-            ...$ownerClass::READS_DB,
+            ...$ownerClass::readDbCollections(),
             ...array_keys(OwnershipDeclaration::dbCollectionsOf($ownerClass)),
             ...array_keys(OwnershipDeclaration::dbRowCollectionsOf($ownerClass)),
             ...array_keys(OwnershipDeclaration::dbSetCollectionsOf($ownerClass)),
@@ -1325,7 +1325,7 @@ final class TopologyValidator
         foreach ($ownerClasses as $ownerClass) {
             $this->refuseReadingOwnClaim(
                 $ownerClass,
-                $ownerClass::READS_DB,
+                $ownerClass::readDbCollections(),
                 self::HALF_DB,
                 'READS_DB',
                 [

@@ -28,6 +28,11 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
@@ -104,6 +109,8 @@ final class JournalReceiptMaintenanceIntegrationTest extends IntegrationTestCase
     private string $directory;
     private int $writeCount = 0;
 
+    private ?string $recipientSettingKey = null;
+
     /** Installs existing declared triggers and isolates the maintenance storage and environment. */
     protected function setUp(): void
     {
@@ -168,6 +175,17 @@ PHP);
         }
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
         Database::setJournalReceiptId(null);
+        if ($this->recipientSettingKey !== null) {
+            try {
+                ExecutionContext::run(new ExecutionFrame('receipt-resumed-recipient'), function (): void {
+                    if (isset(Hilos::$db->settings[$this->recipientSettingKey])) {
+                        Hilos::$db->settings[$this->recipientSettingKey]->actions->delete();
+                    }
+                });
+            } finally {
+                TruthSourceRegistry::unregister(HilosDbContext::settings, 'receipt-resumed-recipient');
+            }
+        }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);
         foreach (self::triggerCatalog() as $row) {
             Database::sql('DROP TRIGGER `' . $row['TRIGGER_NAME'] . '`');
@@ -430,7 +448,21 @@ PHP);
         self::assertSame((int)$writeBeforeFailure, $this->logCount($firstId), 'An earlier write must not be replayed');
         $this->assertClear();
         self::assertSame($resumedId, $this->nextFrame('receipt-resumed-backup')->data->receiptId);
-        JournalReceiptScope::join($resumedId, 'receipt-resumed-recipient', fn () => $this->writeSetting());
+        $this->recipientSettingKey = self::KEY_PREFIX . ++$this->writeCount;
+        TruthSourceRegistry::register(
+            HilosDbContext::settings, TruthSourceKeys::all(), 'receipt-resumed-recipient',
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
+        );
+        try {
+            ExecutionContext::run(new ExecutionFrame('receipt-resumed-recipient'), fn () => JournalReceiptScope::join(
+                $resumedId,
+                'receipt-resumed-recipient',
+                fn () => Hilos::$db->settings->actions->addOrphan($this->recipientSettingKey, 'string', 'written', []),
+            ));
+        } finally {
+            TruthSourceRegistry::unregisterCreate(HilosDbContext::settings, 'receipt-resumed-recipient');
+        }
+        $this->router->deliverTo();
         $this->assertCron($resumedId, self::RULE, self::EXPRESSION, 'receipt-resumed-recipient', 1);
         $this->assertClear();
 
@@ -1300,7 +1332,7 @@ final class JournalReceiptMaintenanceClient extends WorkerDaemonClient
 }
 
 /** Observes frames before the production router stamps and queues them. */
-final class JournalReceiptMaintenanceRouter extends SignalRouter
+final class JournalReceiptMaintenanceRouter extends JournalReceiptSyncRouter
 {
     public ?Closure $onSignal = null;
 

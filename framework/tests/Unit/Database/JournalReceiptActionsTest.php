@@ -145,6 +145,55 @@ final class JournalReceiptActionsTest extends TestCase
         self::assertFalse(Database::isConnected(1));
     }
 
+    /** Attribution requires Update alone, before the collection mutation or any row read. */
+    public function testRecordWriterRequiresUpdateAndRefusesBeforeTheMutation(): void
+    {
+        $objects = JournalReceiptSeamObjects::initDB(Objects::LAZY_STRATEGY_KEY);
+        $receipts = $this->receiptsOver($objects);
+
+        try {
+            $receipts->actions->recordWriter(41, self::BUSINESS);
+            self::fail('recordWriter without a grant returned');
+        } catch (WriteNotAllowedException) {
+            self::assertSame([], $objects->writers);
+        }
+
+        foreach ([TruthSourceOperation::Add, TruthSourceOperation::Remove] as $operation) {
+            $this->grant($operation);
+            try {
+                $receipts->actions->recordWriter(41, self::BUSINESS);
+                self::fail('recordWriter without an update grant returned');
+            } catch (WriteNotAllowedException) {
+                self::assertSame([], $objects->writers);
+            }
+        }
+
+        $this->grant(TruthSourceOperation::Update);
+        $receipts->actions->recordWriter(41, self::BUSINESS);
+        self::assertSame([[41, self::BUSINESS]], $objects->writers);
+        self::assertFalse($objects->inserted);
+        self::assertFalse(Database::isConnected(0));
+        self::assertFalse(Database::isConnected(1));
+    }
+
+    /** The object door independently refuses before opening its row connection. */
+    public function testRecordWriterObjectDoorRequiresUpdateBeforeSql(): void
+    {
+        $objects = ObjectChangeLogReceipts::initDB(Objects::LAZY_STRATEGY_KEY);
+        foreach ([null, TruthSourceOperation::Add, TruthSourceOperation::Remove] as $operation) {
+            if ($operation !== null) {
+                $this->grant($operation);
+            }
+            try {
+                $objects->recordWriter(41, self::BUSINESS);
+                self::fail('object recordWriter without an update grant returned');
+            } catch (WriteNotAllowedException) {
+                self::assertFalse(Database::isConnected(0));
+                self::assertFalse(Database::isConnected(1));
+            }
+        }
+    }
+
     public function testHandoverChangesRequireUpdateAndRefuseBeforeTheMutation(): void
     {
         $objects = JournalReceiptSeamObjects::initDB(Objects::LAZY_STRATEGY_KEY);
@@ -162,22 +211,17 @@ final class JournalReceiptActionsTest extends TestCase
 
         $this->grant(TruthSourceOperation::Add);
         try {
-            $item->actions->concludePart(1, 4, 'writer');
-            self::fail('conclude under an add grant returned');
+            $item->actions->adjustHandovers(1);
+            self::fail('adjust under an add grant returned');
         } catch (WriteNotAllowedException) {
             self::assertSame([], $seam->calls);
         }
 
         $this->grant(TruthSourceOperation::Update);
         $item->actions->adjustHandovers(-2);
-        $item->actions->concludePart(1, 4, 'writer');
-        self::assertSame(['adjustHandovers', 'concludePart'], $seam->calls);
-        self::assertSame(-2, $seam->delta);
-        self::assertSame(1, $seam->concludedDelta);
-        self::assertSame(4, $seam->entriesBefore);
-        self::assertSame('writer', $seam->agentId);
-        self::assertSame(7, $item->countEntries());
-        self::assertSame(['adjustHandovers', 'concludePart', 'countEntries'], $seam->calls);
+        $item->actions->adjustHandovers(1);
+        self::assertSame(['adjustHandovers', 'adjustHandovers'], $seam->calls);
+        self::assertSame([-2, 1], $seam->deltas);
         self::assertFalse(Database::isConnected(0));
         self::assertFalse(Database::isConnected(1));
     }
@@ -334,6 +378,45 @@ final class JournalReceiptActionsTest extends TestCase
         self::assertFalse(Database::isConnected(1));
     }
 
+    /** Existing parts publish only their net handover delta under the short-lived runner. */
+    public function testExistingPartsKeepNetDeltasCleanupAndTheBusinessFailure(): void
+    {
+        $objects = $this->mountSeam();
+        $this->underCaller(function () use ($objects): void {
+            $id = JournalReceiptScope::start(JournalReceiptData::agent('parts', self::BUSINESS));
+            self::assertSame(41, $id);
+            $receipt = $objects->created[0];
+            self::assertSame('kept', JournalReceiptScope::runPart($id, self::BUSINESS, function () use ($id): string {
+                self::assertSame(self::BUSINESS, ExecutionContext::currentAgentId());
+                self::assertSame([], $this->scopeConsumers());
+                self::assertSame($id, JournalReceiptScope::stampHandover());
+                self::assertSame($id, JournalReceiptScope::stampHandover());
+
+                return 'kept';
+            }));
+            self::assertSame([2], $receipt->deltas);
+            $failure = new RuntimeException('part failed');
+            try {
+                JournalReceiptScope::join($id, self::BUSINESS, static function () use ($failure): void {
+                    JournalReceiptScope::stampHandover();
+                    throw $failure;
+                });
+                self::fail('The callback failure was lost');
+            } catch (RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+            self::assertSame([2, 0], $receipt->deltas);
+            self::assertSame(['adjustHandovers', 'adjustHandovers', 'deleteIfEmpty'], $receipt->calls);
+            JournalReceiptScope::join($id, self::BUSINESS, static fn (): string => 'empty');
+            self::assertSame([2, 0, -1], $receipt->deltas);
+            self::assertSame(['adjustHandovers', 'adjustHandovers', 'deleteIfEmpty', 'adjustHandovers', 'deleteIfEmpty'], $receipt->calls);
+            $this->assertCallerFrame();
+        });
+        $this->assertOuterFrame();
+        self::assertFalse(Database::isConnected(0));
+        self::assertFalse(Database::isConnected(1));
+    }
+
     private function receiptsOver(JournalReceiptSeamObjects $objects): DbChangeLogReceipts
     {
         $receipts = DbChangeLogReceipts::forMigration();
@@ -460,11 +543,8 @@ final class JournalReceiptSeam extends ObjectChangeLogReceipt
 
     public ?int $delta = null;
 
-    public ?int $concludedDelta = null;
-
-    public ?int $entriesBefore = null;
-
-    public ?string $agentId = null;
+    /** @var list<int> Every net delta passed by the scope */
+    public array $deltas = [];
 
     public ?string $cleanupAgent = null;
 
@@ -482,25 +562,11 @@ final class JournalReceiptSeam extends ObjectChangeLogReceipt
         $this->entity->flushRelated();
     }
 
-    public function countEntries(): int
-    {
-        $this->calls[] = 'countEntries';
-
-        return 7;
-    }
-
     public function adjustHandovers(int $delta): void
     {
         $this->calls[] = 'adjustHandovers';
         $this->delta = $delta;
-    }
-
-    public function concludePart(int $delta, ?int $entriesBefore, string $agentId): void
-    {
-        $this->calls[] = 'concludePart';
-        $this->concludedDelta = $delta;
-        $this->entriesBefore = $entriesBefore;
-        $this->agentId = $agentId;
+        $this->deltas[] = $delta;
     }
 
     public function standInserted(int $id): void
@@ -535,6 +601,9 @@ final class JournalReceiptSeamObjects extends ObjectChangeLogReceipts
 
     public ?bool $retainLocal = null;
 
+    /** @var list<array{int, string}> Receipt ids and writers passed to the mutation */
+    public array $writers = [];
+
     /** @var list<JournalReceiptSeam> Receipts this collection handed to a scope */
     public array $created = [];
 
@@ -546,6 +615,30 @@ final class JournalReceiptSeamObjects extends ObjectChangeLogReceipts
     public ?string $insertRequest = null;
 
     public int $nextId = 41;
+
+    /**
+     * @param mixed $offset Existing receipt key
+     * @return bool Whether this fixture inserted that receipt
+     */
+    public function offsetExists(mixed $offset): bool
+    {
+        return $this->offsetGet($offset) !== null;
+    }
+
+    /**
+     * @param mixed $offset Existing receipt key
+     * @return ?ObjectChangeLogReceipt Recorded inserted receipt, without SQL
+     */
+    public function offsetGet(mixed $offset): ?ObjectChangeLogReceipt
+    {
+        foreach ($this->created as $receipt) {
+            if ((string)$receipt->id === (string)$offset) {
+                return $receipt;
+            }
+        }
+
+        return null;
+    }
 
     public function insertReceipt(JournalReceiptData $data, bool $retainLocal): ObjectChangeLogReceipt
     {
@@ -561,6 +654,17 @@ final class JournalReceiptSeamObjects extends ObjectChangeLogReceipts
         $this->created[] = $receipt;
 
         return $receipt;
+    }
+
+    /**
+     * Records a writer without looking up the receipt or touching SQL.
+     *
+     * @param int $receiptId Global receipt row id
+     * @param string $writerAgentId Agent supplied by the caller
+     */
+    public function recordWriter(int $receiptId, string $writerAgentId): void
+    {
+        $this->writers[] = [$receiptId, $writerAgentId];
     }
 }
 

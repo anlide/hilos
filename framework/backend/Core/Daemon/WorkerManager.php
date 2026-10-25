@@ -3116,7 +3116,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
     {
         $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
 
-        return $workerClass === null ? [] : $workerClass::READS_DB;
+        return $workerClass === null ? [] : $workerClass::readDbCollections();
     }
 
     /**

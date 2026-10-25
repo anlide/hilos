@@ -64,9 +64,12 @@ Five [journal tables](change-log.md#where-the-journal-lives), including both
 dictionaries, are written by triggers; their mounted Entities set that metadata.
 The receipt Entity does not: the framework writes it in the process executing the
 action. All six collection chains mount when `CHANGE_LOG` is enabled. The change-log
-agent declares `READS_DB` interest in the five trigger-written collections; it does
-not list receipts there because its receipt ownership declaration already raises
-reader interest. Any other agent may declare its own read, and none has it by default.
+agent's `READS_DB` names the five trigger-written collections. Its computed
+`readDbCollections()` adds the keys of every mounted journaled business collection
+to the inherited reads, returning a dense unique list through
+`JournaledTables::mounted()` and Entity metadata alone (HIL-1618). Receipts are
+not repeated there: its receipt ownership declaration already raises reader
+interest. Any other agent may declare its own read, and none has it by default.
 The ORM emits no sync frames for trigger inserts, so interest is not a promise that a
 row cache is current. Cacheless journal collections answer bounded reads from the
 database; see [DbCollection](../orm/db-collection.md#collections-in-a-named-database).
@@ -76,20 +79,28 @@ action, before its handler or SQL file. The journal agent is not its creator.
 `JournalReceiptScope` implements `TruthSourceOwner`, declares `Add`, `Update` and
 `Remove` on `changeLogReceipts`, and returns that same operation set from
 `defaultTruthSourceOperations()`. The change-log agent declares `Update` on receipts;
-its handler that attributes rows is HIL-1618. These are scoped operation declarations,
-not a blanket grant in each process or a permission to make the agent the receipt
-creator. Do not widen the agent's claim to `Add` or `Remove` in place of the scoped
+its DB-sync handlers attribute the writer from journaled business-row facts.
+These declarations cover only the named operations; they do not make the agent
+the receipt creator or grant every process standing write rights.
+Do not widen the agent's claim to `Add` or `Remove` in place of the scoped
 framework lifecycle. The scope is connected to that lifecycle and takes the grant
 only for one bookkeeping call, under a runner whose id starts with
 `journal_receipt_scope:`. The business callback keeps the agent it was entered
 with. The grant is not a standing claim on the process. Creation, the handover
 delta and deletion when there are no journal rows or holders are actions on the
 receipt collection.
-The journal agent updates who wrote under its declared operations, using the
-business-row change notifications described in
-[The Receipt](change-log.md#the-receipt). (not in the code yet — HIL-1618)
-The external-writer guard still blocks writes to the five trigger-written
-collections. Attribution and its `COUNT` removal remain HIL-1618.
+
+The journal agent calls
+`Hilos::$db->changeLogReceipts->actions->recordWriter(int $receiptId, string $writerAgentId): void`
+without selecting the receipt or counting journal rows. This agreed exception
+to known-key item actions is only for receipt attribution: a cacheless offset
+would load the row. Both the collection action and Object collection retain the
+`Update` guard, and the one parameterized UPDATE lives in the ORM. It does not
+authorize a general `updateById`, SQL in agents or collection actions in place
+of other entities' known-key item actions. Missing and unchanged receipts are
+no-ops; best-effort delivery and the action's announcements are described in
+[The Receipt](change-log.md#the-receipt). The external-writer guard still blocks
+writes to the five trigger-written collections.
 
 ## Interest And Ownership Are One Fact
 
@@ -482,9 +493,20 @@ hand-over of its own.
 
 The worker reads the declaration off the class, before the instance exists.
 `WorkerManager::agentReadsRt()` and `WorkerManager::agentReadsDb()` resolve the
-agent type to its worker class through the topology (`Hilos::AGENTS`) and take
-`READS_RT` and `READS_DB` from there; the worker raises the interest, waits for
-the master's word that the state has landed, and only then creates the agent.
+agent type to its worker class through the topology (`Hilos::AGENTS`). The RT
+side takes `READS_RT`; the DB side calls the public static
+`AbstractAgent::readDbCollections(): array`, whose contract is `list<string>`
+and whose default returns `static::READS_DB` (HIL-1618). An override may compute
+additional keys from metadata only: no instance, SQL, facade initialization or
+cached result. `InvalidMountedCollectionException` from malformed mounted
+metadata propagates; it is not an empty or default read list.
+
+Both DB readers in `TopologyValidator` use that same hook: the overlap check
+between reads and claims, and the check that a set owner can read its parent
+tables. Computed reads remain subject to both checks. `READS_RT` keeps its
+constant contract. Through `SourceInterestRegistry` the worker raises the
+resulting reader interest, waits for the master's word that the state has landed,
+and only then creates the agent.
 The wait parks the start, with the frames addressed to that agent, and the rest
 of the worker's link is served meanwhile (HIL-1012).
 So `onStart()` opens on a collection and not on the emptiness before one. The
@@ -534,6 +556,9 @@ reads the parent needed are refused at the moment they happen, in whatever
 action reached for them. The rule is the same on every reading constant, the
 agent's `READS_RT` and a page's own two alike: whichever one a subclass
 writes, it replaces rather than adds to.
+The DB hook preserves that default; it does not merge constants. An override
+that extends computed DB reads includes `parent::readDbCollections()` explicitly,
+so metadata-derived reads from a base class survive as well as its constants.
 
 The two rules differ because the two misses cost differently. A lost read is
 refused at the moment of the read, in the action that reached for it, and that
@@ -768,9 +793,9 @@ are mounted: a set claimed in a collection whose Entity declares
 not mounted or that the agent neither reads nor claims.
 See *A Claim Over A Set*.
 
-A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
-in its claims: a claim is the reader interest already, so the second list says
-the same thing in a form that can drift away from it.
+A class that names one collection both in its reads (`readDbCollections()`,
+`READS_RT`) and in its claims: a claim is the reader interest already, so the
+second list says the same thing in a form that can drift away from it.
 
 A pair the project already lives with is written down instead of argued at every
 start. `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` name the owners
@@ -841,6 +866,11 @@ half never moved, and a declared claim is taken back the same way.
   operation `Add`, and the same guard judges it.
 
 ## Validation
+
+`HilosChangeLogAgentTest` covers metadata-derived reads and all three attribution
+handlers; `BorrowedClaimReadinessTest` covers computed DB reads before instance
+creation, readiness, refusal and release; `TopologyValidatorTest` checks those
+reads against claims and set-parent reachability in the same unit suite.
 
 `composer run test:framework:unit` — ownership read off the class and merged up
 the chain, over each half (`DeclaredDbOwnershipTest`,

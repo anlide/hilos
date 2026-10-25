@@ -58,6 +58,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\DataExport\DataExportGroup;
 use Hilos\DaemonSection\DaemonCronRuleReport;
@@ -306,6 +307,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     private ?array $reportedCronRows = null;
 
     private float $cronReportedAt = 0.0;
+
+    /**
+     * Resolves DB read declarations before an instance or its start hook exists.
+     *
+     * Overrides may add metadata-derived keys without SQL, facade initialization or caching.
+     * The default keeps READS_DB replacement semantics for subclasses.
+     *
+     * @return list<string> DB collection keys this agent reads
+     * @throws InvalidMountedCollectionException When a metadata-derived declaration finds an invalid mounted Entity
+     */
+    public static function readDbCollections(): array
+    {
+        return static::READS_DB;
+    }
 
     /**
      * @return string Agent type from AGENT_TYPE constant

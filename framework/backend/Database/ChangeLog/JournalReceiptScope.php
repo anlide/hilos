@@ -200,7 +200,7 @@ final class JournalReceiptScope implements TruthSourceOwner
 
     /**
      * Runs one synchronous part without consuming the attempt's local hold.
-     * Outgoing frames keep this receipt; a journaled write updates its actual writer.
+     * Outgoing frames keep this receipt; attribution follows delivered journaled row facts.
      *
      * @param ?int $receiptId Receipt owned by the caller, or null without a configured journal
      * @param string $agentId Agent performing this part
@@ -301,17 +301,6 @@ final class JournalReceiptScope implements TruthSourceOwner
                 Logger::error("Cannot set journal receipt {$receiptId} for agent {$agentId}: {$failure->getMessage()}");
             }
 
-            $before = null;
-            if ($receipt !== null) {
-                try {
-                    $before = self::underRunner(static fn (): int => $receipt->countEntries());
-                } catch (HilosException $failure) {
-                    Logger::error(
-                        "Cannot count journal rows for receipt {$receiptId} and agent {$agentId}: {$failure->getMessage()}",
-                    );
-                }
-            }
-
             Database::useConnection($previousIndex);
             return $callback();
         } finally {
@@ -329,11 +318,9 @@ final class JournalReceiptScope implements TruthSourceOwner
                 $held = $frame[self::FRAME_RECEIPT] ?? null;
                 if ($held instanceof DbChangeLogReceipt) {
                     try {
-                        self::underRunner(static function () use ($frame, $before, $releaseHandover, $agentId, $held): void {
-                            $held->actions->concludePart(
+                        self::underRunner(static function () use ($frame, $releaseHandover, $held): void {
+                            $held->actions->adjustHandovers(
                                 $frame[self::FRAME_HANDOVERS] - (int) $releaseHandover,
-                                $before,
-                                $agentId,
                             );
                             if ($releaseHandover) {
                                 $held->actions->deleteIfEmpty();

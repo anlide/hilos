@@ -2026,6 +2026,20 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testAComputedDbReadOfTheAgentsOwnClaimIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyComputedReadingItsOwnClaimHilos::validateTopology();
+            },
+            [
+                TopologyComputedReadingItsOwnClaimAgent::class
+                    . " names db collection 'shared_users' in both READS_DB and OWNS_DB;"
+                    . ' a claim is the reader interest already',
+            ],
+        );
+    }
+
     public function testAnAgentReadingTheRowsItOwnsIsRefused(): void
     {
         $this->assertTopologyErrors(
@@ -2048,6 +2062,20 @@ final class TopologyValidatorTest extends TestCase
             },
             [
                 TopologyReadingItsOwnSetAgent::class
+                    . " names db collection 'set_cut_rows' in both READS_DB and OWNS_DB_SET;"
+                    . ' a claim is the reader interest already',
+            ],
+        );
+    }
+
+    public function testAComputedDbReadOfTheAgentsOwnSetIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyComputedReadingItsOwnSetHilos::validateTopology();
+            },
+            [
+                TopologyComputedReadingItsOwnSetAgent::class
                     . " names db collection 'set_cut_rows' in both READS_DB and OWNS_DB_SET;"
                     . ' a claim is the reader interest already',
             ],
@@ -2173,6 +2201,17 @@ final class TopologyValidatorTest extends TestCase
         TopologySetTreeHoldingHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(2);
+    }
+
+    public function testASetClaimClimbingThroughAComputedDbReadIsAccepted(): void
+    {
+        $db = new TopologySetTreeDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+
+        TopologySetTreeComputedReadingHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
     }
 
     /**
@@ -6695,6 +6734,18 @@ final class TopologyReadingItsOwnClaimAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyComputedReadingItsOwnClaimAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = TopologyReadingItsOwnClaimAgent::AGENT_TYPE;
+    public const array OWNS_DB = TopologyReadingItsOwnClaimAgent::OWNS_DB;
+
+    /** @return list<string> Computed read colliding with the whole-collection claim */
+    public static function readDbCollections(): array
+    {
+        return ['shared_users'];
+    }
+}
+
 final class TopologyReadingItsOwnRowsAgent extends TopologyTestAgent
 {
     public const string AGENT_TYPE = 'reading_its_own_rows_agent';
@@ -6719,6 +6770,18 @@ final class TopologyReadingItsOwnSetAgent extends TopologyTestAgent
     public const array READS_DB = [
         'set_cut_rows',
     ];
+}
+
+final class TopologyComputedReadingItsOwnSetAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = TopologyReadingItsOwnSetAgent::AGENT_TYPE;
+    public const array OWNS_DB_SET = TopologyReadingItsOwnSetAgent::OWNS_DB_SET;
+
+    /** @return list<string> Computed read colliding with the set claim */
+    public static function readDbCollections(): array
+    {
+        return ['set_cut_rows'];
+    }
 }
 
 final class TopologySetCutClaimAgent extends TopologyTestAgent
@@ -7300,6 +7363,16 @@ final class TopologyReadingItsOwnClaimHilos extends HilosFacade
     }
 }
 
+abstract class TopologyComputedReadingItsOwnClaimHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyComputedReadingItsOwnClaimAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyComputedReadingItsOwnClaimAgent::class,
+            AgentRegistryKey::DAEMON => TopologyReadingItsOwnClaimAgentDaemon::class,
+        ],
+    ];
+}
+
 final class TopologyReadingItsOwnRowsHilos extends HilosFacade
 {
     public const array AGENTS = [
@@ -7338,6 +7411,16 @@ final class TopologyReadingItsOwnSetHilos extends HilosFacade
     {
         return new TopologyTestDbContext();
     }
+}
+
+abstract class TopologyComputedReadingItsOwnSetHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyComputedReadingItsOwnSetAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyComputedReadingItsOwnSetAgent::class,
+            AgentRegistryKey::DAEMON => TopologyReadingItsOwnSetAgentDaemon::class,
+        ],
+    ];
 }
 
 final class TopologySetCutClaimHilos extends HilosFacade
@@ -7591,6 +7674,18 @@ final class TopologySetTreeReadingAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologySetTreeComputedReadingAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = TopologySetTreeReadingAgent::AGENT_TYPE;
+    public const array OWNS_DB_SET = TopologySetTreeReadingAgent::OWNS_DB_SET;
+
+    /** @return list<string> Computed parent read needed for the set-tree climb */
+    public static function readDbCollections(): array
+    {
+        return ['set_tree_parents'];
+    }
+}
+
 final class TopologySetTreeHoldingAgent extends TopologyTestAgent
 {
     public const string AGENT_TYPE = 'set_tree_holding_agent';
@@ -7643,6 +7738,16 @@ final class TopologySetTreeReadingHilos extends HilosFacade
     {
         return new TopologySetTreeDbContext();
     }
+}
+
+abstract class TopologySetTreeComputedReadingHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetTreeComputedReadingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetTreeComputedReadingAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetTreeReadingAgentDaemon::class,
+        ],
+    ];
 }
 
 final class TopologySetTreeHoldingHilos extends HilosFacade
