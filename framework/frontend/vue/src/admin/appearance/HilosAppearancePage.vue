@@ -172,10 +172,7 @@ function valueLabel(value: boolean | string): string {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.APPEARANCE">
-    <p class="small text-body-secondary">
-      Theme switching and the default theme for this installation.
-    </p>
+  <HilosAdminPage :page="HilosPages.APPEARANCE" head-kind="section">
     <HilosViewportTable :controller="table.controller">
       <template #cell-rowKey="{ row: setting }">
         <strong>{{ settingLabel(setting.rowKey) }}</strong>

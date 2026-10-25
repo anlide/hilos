@@ -9,7 +9,7 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
-/** User and Communications head adoption for the binance-btc-tracker demo. */
+/** User, Communications and Appearance head adoption for the binance-btc-tracker demo. */
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
@@ -32,6 +32,13 @@ final class PageCatalog implements PageCatalogProviderInterface
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_APPEARANCE => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_APPEARANCE],
+                [
+                    PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Appearance',
+                    PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+                ],
             ),
         ];
     }

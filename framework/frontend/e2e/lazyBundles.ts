@@ -574,6 +574,8 @@ export async function expectLazyPageFailure(
     /https?:|TypeError|Error:|import\(|stack|Failed to fetch|dynamically imported/,
   )
   await expect(page.getByTestId('hilos-page-skeleton')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
 }
 
 /**
@@ -603,6 +605,7 @@ export async function expectServerRefusal(
     await expect(page.getByTestId('page-error')).toContainText('Forbidden')
   }
   await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(page.getByTestId('hilos-page-skeleton')).toHaveCount(0)
 }
@@ -619,7 +622,11 @@ export async function expectLazyAdminPage(
   page: Page,
   title: string,
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(title)
+  const heading = page
+    .getByTestId('hilos-admin-title')
+    .or(page.getByTestId('hilos-page-head-title'))
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText(title)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
 
@@ -638,6 +645,7 @@ export async function expectLazyAdminPending(
     'loading',
   )
   await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 }
 

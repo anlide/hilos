@@ -346,6 +346,7 @@ export {
   THEME_DEFAULT_KEY,
   THEME_SWITCHING_KEY,
   appearanceSettingValue,
+  expectAppearancePageHead,
   expectAppearanceRows,
   openAppearanceSetting,
   saveAppearanceDefaultTheme,

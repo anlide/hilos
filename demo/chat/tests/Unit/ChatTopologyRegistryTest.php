@@ -845,7 +845,7 @@ final class ChatTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Catalog overrides retain every framework field for User and both Communications owners. */
+    /** Catalog overrides retain every framework field for User, Appearance and both Communications owners. */
     public function testCatalogAdoptsUserAndBothCommunicationsOwnersWithCompleteEntries(): void
     {
         Hilos::initBrowser();
@@ -872,9 +872,18 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL]);
         self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Appearance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Theme switching and the default theme.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-palette',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Appearance',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
+        self::assertSame([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosPageConstants::HILOS_APPEARANCE,
             PageConstants::ADMIN_BOTS,
         ], array_keys($pages));
         self::assertSame([

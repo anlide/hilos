@@ -11,6 +11,7 @@ import {
   countSentFrames,
   dismissToasts,
   emulateSystemTheme,
+  expectAppearancePageHead,
   expectAppearanceRows,
   expectThemeHeader,
   expectThemeMode,
@@ -51,6 +52,28 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
   await expectPageReady(page)
   expect(new URL(page.url()).pathname).toBe(APPEARANCE_PATH)
   await expectAppearanceRows(expect, page)
+  await expectAppearancePageHead(expect, page)
+  await expect(page).toHaveTitle('Appearance · BTC Tracker')
+  await page.reload()
+  await expectPageReady(page)
+  await expectAppearanceRows(expect, page)
+  await expectAppearancePageHead(expect, page)
+  await expect(page).toHaveTitle('Appearance · BTC Tracker')
+  const hilosCrumb = page.getByTestId('hilos-breadcrumb-hilos')
+  await hilosCrumb.scrollIntoViewIfNeeded()
+  await expect(hilosCrumb).toBeVisible()
+  await hilosCrumb.focus()
+  await expect(hilosCrumb).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expectPageReady(page)
+  expect(new URL(page.url()).pathname).toBe('/hilos')
+  await expect(
+    page.getByTestId('dashboard-card-hilos_appearance'),
+  ).toBeVisible()
+  await page.getByTestId('dashboard-card-hilos_appearance').click()
+  await expectPageReady(page)
+  expect(new URL(page.url()).pathname).toBe(APPEARANCE_PATH)
+  await expectAppearancePageHead(expect, page)
 
   const contexts: BrowserContext[] = []
   try {
@@ -76,6 +99,7 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
     )
     await gotoPage(viewer, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, viewer)
+    await expectAppearancePageHead(expect, viewer)
     await expect(
       viewer.getByTestId(`hilos-settings-edit-${THEME_DEFAULT_KEY}`),
     ).toHaveCount(0)

@@ -11,6 +11,7 @@ import {
   HilosPages,
   ScopeManager,
   type HilosConnection,
+  type HilosPageIdentity,
   type HilosRouter,
   type ProjectSignal,
   type Hideable,
@@ -25,6 +26,26 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosAppearancePage from './HilosAppearancePage.vue'
 
 type SettingValue = Hideable<boolean | string>
+
+/** The catalog identity the Appearance answer carries, one Overview tab and no children. */
+function appearanceIdentity(): HilosPageIdentity {
+  return {
+    label: 'Appearance',
+    lead: 'Theme switching and the default theme.',
+    breadcrumb: [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.APPEARANCE, label: 'Appearance' },
+    ],
+    children: [],
+    pageHeadOwner: {
+      page: HilosPages.APPEARANCE,
+      label: 'Appearance',
+      lead: 'Theme switching and the default theme.',
+      icon: 'bi-palette',
+    },
+    pageTabs: [{ page: HilosPages.APPEARANCE, label: 'Overview' }],
+  }
+}
 
 function harness() {
   const scopes = new ScopeManager()
@@ -81,15 +102,34 @@ function harness() {
     },
   } as unknown as HilosConnection
   const actions = new ActionLifecycle(connection)
-  const router = {
+  const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+  const router: HilosRouter = {
     currentRoute: createSignal({
       page: HilosPages.APPEARANCE,
       params: {},
       admin: true,
     }),
-    pageIdentity: createSignal(undefined),
-    resolvePath: () => undefined,
-  } as unknown as HilosRouter
+    currentPath: createSignal('/hilos/appearance'),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    pageIdentity: identity,
+    dashboardSections: createSignal(undefined),
+    resolvePath: (page) =>
+      page === HilosPages.DASHBOARD
+        ? '/hilos'
+        : page === HilosPages.APPEARANCE
+          ? '/hilos/appearance'
+          : undefined,
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    onLeave: () => () => {},
+    navigate: () => {},
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  }
   bindSessionScope(connection, scopes)
   const releaseAdmin = bindAdminAccess(scopes)
 
@@ -103,6 +143,7 @@ function harness() {
   return {
     context: { connection, scopes, actions } satisfies HilosAppearanceContext,
     router,
+    identity,
     sent,
     focus,
     answer(outcome: 'success' | 'fail', message: string) {
@@ -261,7 +302,7 @@ describe('Appearance page', () => {
     const h = harness()
     h.viewer()
     const view = mountPage(h)
-    expect(view.find('[data-id="hilos-admin-title-skeleton"]').exists()).toBe(
+    expect(view.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
       true,
     )
     expect(view.find('[data-id="hilos-table-loading"]').exists()).toBe(true)
@@ -335,6 +376,85 @@ describe('Appearance page', () => {
         .text(),
     ).toBe('On')
   })
+
+  it.each([false, true])(
+    'draws one catalog section head once identity arrives (viewer=%s)',
+    async (viewer) => {
+      const h = harness()
+      if (viewer) h.viewer()
+      const view = mountPage(h)
+      const skeleton = view.get('[data-id="hilos-page-head-skeleton"]')
+      expect(skeleton.attributes('aria-hidden')).toBe('true')
+      expect(skeleton.find('.rounded-circle').exists()).toBe(true)
+      expect(skeleton.find('.rounded-3').exists()).toBe(false)
+      expect(view.find('h1').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-admin-title"]').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
+      expect(view.find('.bi-palette').exists()).toBe(false)
+      expect(view.text()).not.toContain('Appearance')
+      expect(view.text()).not.toContain(
+        'Theme switching and the default theme for this installation.',
+      )
+
+      h.identity.set(appearanceIdentity())
+      await nextTick()
+      expect(view.findAll('[data-id="hilos-page-head"]')).toHaveLength(1)
+      expect(view.findAll('h1')).toHaveLength(1)
+      const heading = view.get('h1')
+      expect(heading.text()).toBe('Appearance')
+      expect(heading.attributes('data-id')).toBe('hilos-page-head-title')
+      const circle = view.get(
+        '[data-id="hilos-page-head-block"] > .rounded-circle',
+      )
+      expect(circle.attributes('aria-hidden')).toBe('true')
+      expect(circle.get('i').classes()).toEqual(['bi', 'bi-palette'])
+      const block = view.get('[data-id="hilos-page-head-block"]')
+      expect(block.findAll('p')).toHaveLength(1)
+      expect(block.get('p').text()).toBe(
+        'Theme switching and the default theme.',
+      )
+      const crumbs = view.get('[data-id="hilos-breadcrumb"]')
+      expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
+      const items = crumbs.findAll('li')
+      expect(items).toHaveLength(2)
+      expect(items[0]!.text()).toBe('Hilos')
+      expect(items[0]!.get('a').attributes('href')).toBe('/hilos')
+      expect(items[1]!.text()).toBe('Appearance')
+      expect(items[1]!.attributes('aria-current')).toBe('page')
+      expect(items[1]!.find('a').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+        false,
+      )
+      expect(view.find('[data-id="hilos-admin-title"]').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-admin-title-skeleton"]').exists()).toBe(
+        false,
+      )
+      expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
+      expect(view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+      expect(view.text()).not.toContain(
+        'Theme switching and the default theme for this installation.',
+      )
+      expect(
+        view
+          .get('[data-id="hilos-page-head"]')
+          .element.nextElementSibling?.getAttribute('data-id'),
+      ).toBe('hilos-viewport-table')
+
+      h.window()
+      await nextTick()
+      const headingId = heading.attributes('id')
+      expect(headingId).toBeTruthy()
+      expect(document.getElementById(headingId!)).toBe(heading.element)
+      expect(view.get('table').attributes('aria-labelledby')).toBe(headingId)
+      expect(
+        view
+          .get('[data-id="hilos-table-cards"] [role="list"]')
+          .attributes('aria-labelledby'),
+      ).toBe(headingId)
+    },
+  )
 
   it.each([true, false])(
     'opens with the saved value %s, its default, and Save locked',

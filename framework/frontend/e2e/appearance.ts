@@ -13,14 +13,18 @@ export function appearanceSettingValue(page: Page, key: string): Locator {
   return shownByTestId(page, `appearance-setting-value-${key}`)
 }
 
-/** Check the two typed rows, their catalog defaults, editor count and table name. */
+/** Check the one heading, the two typed rows, their catalog defaults, editor count and table name. */
 export async function expectAppearanceRows(
   expect: Expect,
   page: Page,
   switchingEnabled = true,
   defaultTheme: ThemeTestPosition = 'system',
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Appearance')
+  const heading = page
+    .getByTestId('hilos-admin-title')
+    .or(page.getByTestId('hilos-page-head-title'))
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Appearance')
   await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
     switchingEnabled ? 'On' : 'Off',
   )
@@ -39,6 +43,80 @@ export async function expectAppearanceRows(
   await expect(
     table.getByRole('table').or(table.getByRole('list')),
   ).toHaveAccessibleName('Appearance')
+}
+
+/**
+ * The shared Appearance head on a ready screen: one real head and one h1,
+ * the palette mark, the catalog lead, the Hilos trail with the last crumb as
+ * text, no tab row and no child cards, and the table directly under the head.
+ * The browser title stays with the spec.
+ *
+ * @param expect The spec's expect.
+ * @param page A ready Appearance page.
+ */
+export async function expectAppearancePageHead(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toHaveCount(1)
+  await expect(head).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Appearance')
+  await expect(head.getByRole('heading', { level: 1 })).toHaveCount(1)
+
+  const block = head.getByTestId('hilos-page-head-block')
+  const circle = block.locator('.rounded-circle')
+  await expect(circle).toHaveCount(1)
+  await expect(circle).toHaveAttribute('aria-hidden', 'true')
+  await expect(circle.locator('i')).toHaveCount(1)
+  await expect(circle.locator('i')).toHaveClass(/\bbi-palette\b/)
+  await expect(block.locator('p')).toHaveCount(1)
+  await expect(block.locator('p')).toHaveText(
+    'Theme switching and the default theme.',
+  )
+  await expect(
+    page.getByText(
+      'Theme switching and the default theme for this installation.',
+    ),
+  ).toHaveCount(0)
+
+  const crumbs = head.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveCount(1)
+  await expect(crumbs).toHaveRole('navigation')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.getByRole('listitem').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Appearance'])
+  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const lastCrumb = crumbs.locator('[aria-current]')
+  await expect(lastCrumb).toHaveCount(1)
+  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  await expect(lastCrumb.locator('a')).toHaveCount(0)
+  await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
+
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(head.locator('xpath=following-sibling::*[1]')).toHaveAttribute(
+    'data-id',
+    'hilos-viewport-table',
+  )
 }
 
 /** Open one of Appearance's two editors and check the live dialog's name. */

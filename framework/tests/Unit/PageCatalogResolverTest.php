@@ -384,6 +384,54 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
+    /** Chat and Binance adopt Appearance; the framework facade and the other four providers stay legacy. */
+    public function testVueProvidersAdoptTheAppearanceHeadWithOnlyOverviewServed(): void
+    {
+        AppearancePageHeadTestHilos::initBrowser();
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_APPEARANCE, new PageRouteParams([])));
+        foreach ([
+            TasksPageCatalog::class,
+            EcommercePageCatalog::class,
+            PollsPageCatalog::class,
+            OnlineTestingPageCatalog::class,
+        ] as $provider) {
+            self::assertArrayNotHasKey(HilosPageConstants::HILOS_APPEARANCE, $provider::pages());
+        }
+
+        foreach ([ChatAppearancePageHeadTestHilos::class, BinanceAppearancePageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_APPEARANCE],
+                [
+                    PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Appearance',
+                    PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+                ],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_APPEARANCE]);
+            self::assertSame(
+                HilosPageConstants::HILOS_APPEARANCE,
+                PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_APPEARANCE),
+            );
+            $head = PageCatalogResolver::head(HilosPageConstants::HILOS_APPEARANCE, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_APPEARANCE,
+                    'label' => 'Appearance',
+                    'lead' => 'Theme switching and the default theme.',
+                    'icon' => 'bi-palette',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_APPEARANCE, 'label' => 'Appearance'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_APPEARANCE, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_APPEARANCE));
+            self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_APPEARANCE));
+        }
+    }
+
     /** Future children share the user owner and follow catalog order regardless of registration order. */
     public function testServedUserTabsShareTheSameHeadInBothVueProviders(): void
     {
@@ -1100,6 +1148,26 @@ abstract class BinanceUserTabsPageHeadTestHilos extends BinanceUserPageHeadTestH
         HilosPageConstants::HILOS_USER_ACCESS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_USER_ROLES => PageHeadTestPage::class,
     ];
+}
+
+/** A legacy project serves Appearance without adopting its head. */
+abstract class AppearancePageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_APPEARANCE => PageHeadTestPage::class,
+    ];
+}
+
+/** The chat provider supplies the full Appearance row with the shared head enabled. */
+abstract class ChatAppearancePageHeadTestHilos extends AppearancePageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** The Binance provider opts Appearance in independently of the chat provider. */
+abstract class BinanceAppearancePageHeadTestHilos extends AppearancePageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
 }
 
 /** The Analytics overview and People share a row; its two entities never join it. */
