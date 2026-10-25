@@ -42,6 +42,10 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame([], $runtime->circleSessionTokenHashes);
         $this->assertSame(0, $runtime->circleNamedCount);
         $this->assertFalse($runtime->enteredFromBrowser);
+        $this->assertNull($runtime->diagnosticsNodeId);
+        $this->assertNull($runtime->stoppedAgentCount);
+        $this->assertNull($runtime->preservedAgentTypes);
+        $this->assertNull($runtime->agentStartGateClosed);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -64,6 +68,10 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
             ProtectedModeRuntime::enteredFromBrowser => true,
+            ProtectedModeRuntime::diagnosticsNodeId => null,
+            ProtectedModeRuntime::stoppedAgentCount => null,
+            ProtectedModeRuntime::preservedAgentTypes => null,
+            ProtectedModeRuntime::agentStartGateClosed => null,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -93,6 +101,10 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::circleSessionTokenHashes => ['session-hash-circle'],
             ProtectedModeRuntime::circleNamedCount => 3,
             ProtectedModeRuntime::enteredFromBrowser => true,
+            ProtectedModeRuntime::diagnosticsNodeId => null,
+            ProtectedModeRuntime::stoppedAgentCount => null,
+            ProtectedModeRuntime::preservedAgentTypes => null,
+            ProtectedModeRuntime::agentStartGateClosed => null,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -775,5 +787,84 @@ final class ProtectedModeContractTest extends TestCase
         ]);
 
         $this->assertNull($runtime->progressAt);
+    }
+
+    public function testARowThatPredatesDiagnosticsReadsThemAsUnpublished(): void
+    {
+        // Null is "the master has not published yet". An older freeze file simply lacks the
+        // keys, and that must not become zero agents, an open gate, or an empty exception list.
+        $row = ProtectedModeRuntime::create()->toArray();
+        unset(
+            $row[ProtectedModeRuntime::diagnosticsNodeId],
+            $row[ProtectedModeRuntime::stoppedAgentCount],
+            $row[ProtectedModeRuntime::preservedAgentTypes],
+            $row[ProtectedModeRuntime::agentStartGateClosed],
+        );
+
+        $runtime = ProtectedModeRuntime::fromRow($row);
+
+        $this->assertNull($runtime->diagnosticsNodeId);
+        $this->assertNull($runtime->stoppedAgentCount);
+        $this->assertNull($runtime->preservedAgentTypes);
+        $this->assertNull($runtime->agentStartGateClosed);
+    }
+
+    public function testRuntimeDiagnosticsRoundTripAndADiffNamesOnlyWhatItCarries(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        $row[ProtectedModeRuntime::phase] = ProtectedModeRuntime::PHASE_ACTIVE;
+        $row[ProtectedModeRuntime::diagnosticsNodeId] = 'node-a';
+        $row[ProtectedModeRuntime::stoppedAgentCount] = 4;
+        $row[ProtectedModeRuntime::preservedAgentTypes] = ['hilos_mail'];
+        $row[ProtectedModeRuntime::agentStartGateClosed] = true;
+
+        $runtime = ProtectedModeRuntime::fromRow($row);
+
+        $this->assertSame($row, $runtime->toArray());
+        $runtime->applyDiff([ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING]);
+        $this->assertSame('node-a', $runtime->diagnosticsNodeId);
+        $this->assertSame(4, $runtime->stoppedAgentCount);
+        $this->assertSame(['hilos_mail'], $runtime->preservedAgentTypes);
+        $this->assertTrue($runtime->agentStartGateClosed);
+
+        $runtime->applyDiff([ProtectedModeRuntime::preservedAgentTypes => []]);
+        $this->assertSame([], $runtime->preservedAgentTypes);
+        $this->assertSame(4, $runtime->stoppedAgentCount);
+
+        $runtime->applyDiff([
+            ProtectedModeRuntime::diagnosticsNodeId => null,
+            ProtectedModeRuntime::stoppedAgentCount => null,
+            ProtectedModeRuntime::preservedAgentTypes => null,
+            ProtectedModeRuntime::agentStartGateClosed => null,
+        ]);
+        $this->assertNull($runtime->diagnosticsNodeId);
+        $this->assertNull($runtime->stoppedAgentCount);
+        $this->assertNull($runtime->preservedAgentTypes);
+        $this->assertNull($runtime->agentStartGateClosed);
+    }
+
+    public function testRuntimeDiagnosticsRefuseAForeignListWithoutClearingThePublishedOne(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        $row[ProtectedModeRuntime::preservedAgentTypes] = ['hilos_mail'];
+        $runtime = ProtectedModeRuntime::fromRow($row);
+
+        try {
+            $runtime->applyDiff([ProtectedModeRuntime::preservedAgentTypes => ['named' => 'hilos_mail']]);
+            $this->fail('A preserved-type map must be refused');
+        } catch (InvalidFormatException $e) {
+            $this->assertStringContainsString(ProtectedModeRuntime::preservedAgentTypes, $e->getMessage());
+        }
+
+        $this->assertSame(['hilos_mail'], $runtime->preservedAgentTypes);
+    }
+
+    public function testRuntimeDiagnosticsRefuseAForeignGate(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        $row[ProtectedModeRuntime::agentStartGateClosed] = 1;
+
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeRuntime::fromRow($row);
     }
 }

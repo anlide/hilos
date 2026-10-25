@@ -1140,6 +1140,73 @@ file stays open; a master returning with an old freeze file after disable stays
 closed until that file is removed manually. There is no catch-up synchronization
 for either case.
 
+## The Restore Ladder On Maintenance (HIL-1679)
+
+Under operation `restore`, phase `verifying`, and not a manual window, the
+initiating browser on Overview (`/hilos/maintenance`) sees three empty tracked
+actions: `maintenance_restore_pass`, `maintenance_restore_open` and
+`maintenance_restore_close`. Another admitted administrator sees the section's
+state and one line, and those three actions stay off. The right is
+`ProtectedModeRuntime::belongsToInitiator()` on the session hash. The same
+user id is not that right.
+
+The page sends `maintenance_agent_restore_control` to `HILOS_BACKUP`, the agent
+that also answers `protected-mode:pass`, `protected-mode:open` and
+`protected-mode:close`. The reply is `maintenance_restore_control_done`.
+Browser and CLI share one slot on `ProtectedModeOperatorTrait`. The browser
+ask is that agent's `protectedModeOperatorAsk` for the span of the control.
+It is not a field of the runtime row.
+
+A pass is disclosed once, after its own hash stands on the row, and only after
+the page repeats the admission check. Open goes through
+`BackupAgent::requestProtectedModeRelease()` and `RestoreReleaseGate`. Close
+returns the node to a full freeze and withdraws a release the gate is still
+holding; a reopen asked while that close is in flight does not win. A wait
+that runs out refuses the ask. It does not open the system.
+
+A full freeze still stops the page agent. The preserved list and the delivery
+silence were not given an exception so the modal could stay up. Close sends
+the node back into that freeze, and the lockout frame already owed to every
+connection takes the Maintenance page and the modal on it together. Open's
+lift can reload the browser before the action ack, as a manual disable already
+does.
+
+Vue draws the ladder. React is HIL-1681 and Angular is HIL-1682. The older
+`backup_reopen` on Backups remains until HIL-1673.
+
+## This Node's Live Hold (HIL-1679)
+
+The node-local row `hilosProtectedModeRuntime` carries four live fields:
+`diagnosticsNodeId`, `stoppedAgentCount`, `preservedAgentTypes` and
+`agentStartGateClosed`. They are this node's hold. They are not a sum across
+the cluster and not a history of agents that were stopped earlier.
+
+`stoppedAgentCount` is the distinct agents in the stopped set and in the
+resume queue the walk has not asked to start yet. A start already asked for
+has left that count. Agents still only in the stop queue are running, so they
+are not in it.
+
+`preservedAgentTypes` is the one list both the start gate and the stop walk
+already pass. Today that list is the mail agent. The initiator is spared
+because the row names it, and the list does not contain it.
+
+`agentStartGateClosed` is the same phase verdict the inspect snapshot reports
+once the row is mounted: closed unless the phase is `inactive` or `verifying`.
+In the verification window the gate is open. Until the master has published,
+the four fields stay null. That null is not a count of zero and not a gate
+reading false.
+
+The master writes the tuple from `publishProtectedModeAgentDiagnostics()` on
+the pass immediately after `advanceProtectedModeRoster()`, and only when the
+tuple changed, through the item action `updateAgentDiagnostics()`. The freeze
+file does not hold these fields as truth: `restoreFromDisk()` sets all four
+to null.
+
+The Maintenance frame carries the same four fields, the initiator, `activatedAt`
+and `progressAt` as ISO-8601 UTC, and `isInitiator` filled in on each delivery
+from `belongsToInitiator()`. The frame carries no session hash and no code.
+The reader that asks the row for this hold is named in the table below.
+
 ## Reading The Runtime Row, And What Null Means
 
 These places read the row without asking whether the mode is "active for this
@@ -1156,6 +1223,7 @@ project" — activation is not declarative, so there is nothing to ask:
 | `AnalyticsCollector::isHeld()` | must the collector record nothing and throw its batch away? |
 | `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes with its lost events counted? |
 | `AbstractHilosMaintenancePage` / `AbstractHilosIndexAgent` | what state should the Maintenance section show and push after RT sync? |
+| `WorkerServer::getProtectedModeAgentDiagnostics()` | what is this node holding stopped, which types stay running, and is the start gate closed? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and
 `ClusterProtectedMode`, each with its own `runtimeView()`).
@@ -1254,3 +1322,8 @@ Refuse loudly and before any trace of entry, as above.
   existing assertions and parked F-016 cases; circle setup and cleanup use the
   Circle address and return to Overview before manual or document marks. Scenario
   38 is the active manual cluster check; F-016 remains parked and unverified.
+- `demo/binance-btc-tracker` e2e `maintenance-restore.spec.ts` — drives a real
+  backup confirmed by its typed id. The freeze is the backup agent's, not
+  `e2e-freeze`. Teardown lifts with `protected-mode:open` and repeats while the
+  close still holds the operator slot. The test driver's open does not lift a
+  freeze that agent started.

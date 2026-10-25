@@ -335,6 +335,15 @@ function maintenanceState(
     passCount: 0,
     circleNamed: 0,
     circleAdmitted: 0,
+    initiatorAgentType: null,
+    initiatorNodeId: null,
+    activatedAt: null,
+    progressAt: null,
+    isInitiator: false,
+    diagnosticsNodeId: null,
+    stoppedAgentCount: null,
+    preservedAgentTypes: null,
+    agentStartGateClosed: null,
     ...overrides,
   }
 }

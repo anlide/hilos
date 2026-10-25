@@ -18,7 +18,11 @@ import {
   HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
+  hilosMaintenanceOtherBrowserLine,
 } from '@hilos/core/admin/maintenance'
 import type {
   ActionHandle,
@@ -218,6 +222,15 @@ function maintenanceState(
     passCount: 0,
     circleNamed: 0,
     circleAdmitted: 0,
+    initiatorAgentType: null,
+    initiatorNodeId: null,
+    activatedAt: null,
+    progressAt: null,
+    isInitiator: false,
+    diagnosticsNodeId: null,
+    stoppedAgentCount: null,
+    preservedAgentTypes: null,
+    agentStartGateClosed: null,
     ...overrides,
   }
 }
@@ -301,6 +314,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
         expect(timestamp.text()).toBe('Jan 1, 2026, 2:30:05 AM')
       } else {
         expect(card.text()).not.toContain('minutes ago')
+        expect(card.text()).not.toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
         expect(card.find('button').exists()).toBe(false)
       }
     },
@@ -434,6 +448,13 @@ describe('HilosMaintenancePage', () => {
     expect(card.get('[data-id="hilos-maintenance-disable"]').text()).toBe(
       HILOS_MAINTENANCE_DISABLE_COPY.disableTitle,
     )
+    expect(card.text()).not.toContain(HILOS_MAINTENANCE_STATE_COPY.initiator)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-restore-ladder"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-other-browser"]').exists(),
+    ).toBe(false)
     pushState({ ...manual, passCount: 1 })
     await nextTick()
     expect(wrapper.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
@@ -441,7 +462,7 @@ describe('HilosMaintenancePage', () => {
     )
   })
 
-  it('renders only the planned operation lines in the frozen card', async () => {
+  it('renders the operation card from the frame and keeps an unpublished fact as a dash', async () => {
     readerTimeZone()
     const { context, pushState } = seededContext()
     const wrapper = await mountPage(context)
@@ -451,6 +472,8 @@ describe('HilosMaintenancePage', () => {
         operation: 'restore',
         startedAt: '2026-10-10T10:00:00.000000Z',
         passCount: 2,
+        circleNamed: 3,
+        circleAdmitted: 2,
       }),
     )
     await nextTick()
@@ -460,9 +483,60 @@ describe('HilosMaintenancePage', () => {
       HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
     )
     expect(card.text()).toContain('restore')
+    expect(card.text()).toContain(HILOS_MAINTENANCE_STATE_COPY.initiator)
+    expect(card.get('[data-id="hilos-maintenance-initiator"]').text()).toBe(
+      '— · node —',
+    )
     expect(card.text()).toContain('Oct 10, 2026, 10:00:00 AM')
-    expect(card.text()).not.toContain('Initiator')
+    expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
+      '—',
+    )
+    expect(card.get('[data-id="hilos-maintenance-progress-at"]').text()).toBe(
+      '—',
+    )
+    expect(
+      card.find('[data-id="hilos-maintenance-progress-elapsed"]').exists(),
+    ).toBe(false)
+    expect(card.text()).not.toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
+    expect(
+      card.get('[data-id="hilos-maintenance-stopped-agents"]').text(),
+    ).toBe('—')
+    expect(
+      card.get('[data-id="hilos-maintenance-diagnostics-node"]').text(),
+    ).toBe('—')
+    expect(card.get('[data-id="hilos-maintenance-agent-start"]').text()).toBe(
+      '—',
+    )
+    expect(card.text()).not.toContain(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+    )
+    expect(card.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
+      '2',
+    )
+    expect(card.text()).toContain('3 named · 2 let in')
     expect(card.find('button').exists()).toBe(false)
+    expect(card.text()).not.toContain('opaque')
+
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        operation: 'restore',
+        startedAt: '2026-10-10T10:00:00.000000Z',
+        activatedAt: '',
+        progressAt: 'malformed',
+      }),
+    )
+    await nextTick()
+    expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
+      '—',
+    )
+    expect(card.get('[data-id="hilos-maintenance-progress-at"]').text()).toBe(
+      '—',
+    )
+    expect(
+      card.find('[data-id="hilos-maintenance-progress-elapsed"]').exists(),
+    ).toBe(false)
+    expect(card.text()).not.toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
   })
 })
 
@@ -1301,6 +1375,118 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     expect(dispatched).toHaveLength(0)
     expect(passButton('cancel').disabled).toBe(false)
   })
+
+  it('shows restore facts to a viewer and blocks the ladder and its confirm', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { actions, dispatched } = makeActions()
+    const { context, pushState } = seededContext(actions)
+    const wrapper = await mountPage(context)
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        operation: 'restore',
+        isInitiator: true,
+        initiatorAgentType: 'hilos_backup',
+        initiatorNodeId: 'node-1',
+        stoppedAgentCount: 6,
+        diagnosticsNodeId: 'node-1',
+      }),
+    )
+    await settled()
+    const card = wrapper.get('[data-id="hilos-maintenance-state-operation"]')
+    expect(
+      card.get('[data-id="hilos-maintenance-initiator"]').text(),
+    ).toContain('hilos_backup')
+    expect(
+      card.get('[data-id="hilos-maintenance-stopped-agents"]').text(),
+    ).toBe('6')
+    expect(
+      card.get('[data-id="hilos-maintenance-diagnostics-node"]').text(),
+    ).toBe('node-1')
+    expect(card.text()).not.toContain('opaque-secret')
+    const button = wrapper.get<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-restore-pass"]',
+    ).element
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    for (const id of ['restore-open', 'restore-close']) {
+      const opener = wrapper.get<HTMLButtonElement>(
+        `[data-id="hilos-maintenance-${id}"]`,
+      ).element
+      expect(opener.disabled).toBe(true)
+      expect(opener.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+    }
+    button.click()
+    await settled()
+    expect(
+      document.querySelector(
+        '[data-id="hilos-maintenance-restore-pass-modal"]',
+      ),
+    ).toBeNull()
+
+    handshake({ id: 7, admin: true }, true)
+    await settled()
+    expect(button.disabled).toBe(false)
+    button.click()
+    await settled()
+    const confirm = document.querySelector(
+      '[data-id="hilos-maintenance-restore-pass-confirm"]',
+    ) as HTMLButtonElement
+    expect(confirm.disabled).toBe(false)
+    handshake({ id: 7, admin: false }, true)
+    await settled()
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    confirm.click()
+    expect(dispatched).toHaveLength(0)
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-maintenance-restore-pass-cancel"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false)
+    ;(
+      document.querySelector(
+        '[data-id="hilos-maintenance-restore-pass-cancel"]',
+      ) as HTMLButtonElement
+    ).click()
+    await settled()
+
+    handshake({ id: 7, admin: true }, true)
+    await settled()
+    for (const id of ['restore-open', 'restore-close'] as const) {
+      const opener = wrapper.get<HTMLButtonElement>(
+        `[data-id="hilos-maintenance-${id}"]`,
+      ).element
+      opener.click()
+      await settled()
+      const confirmButton = document.querySelector(
+        `[data-id="hilos-maintenance-${id}-confirm"]`,
+      ) as HTMLButtonElement
+      expect(confirmButton.disabled).toBe(false)
+      handshake({ id: 7, admin: false }, true)
+      await settled()
+      expect(confirmButton.disabled).toBe(true)
+      confirmButton.click()
+      expect(dispatched).toHaveLength(0)
+      ;(
+        document.querySelector(
+          `[data-id="hilos-maintenance-${id}-cancel"]`,
+        ) as HTMLButtonElement
+      ).click()
+      await settled()
+      handshake({ id: 7, admin: true }, true)
+      await settled()
+    }
+  })
 })
 
 describe('HilosMaintenancePage code result', () => {
@@ -1415,6 +1601,566 @@ describe('HilosMaintenancePage code result', () => {
     ).toBeNull()
     expect(dispatched).toHaveLength(1)
   })
+})
+
+function restoreFrame(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return maintenanceState({
+    phase: 'verifying',
+    operation: 'restore',
+    isInitiator: true,
+    initiatorAgentType: 'hilos_backup',
+    initiatorNodeId: 'node-1',
+    startedAt: '2026-09-11T03:14:02.000Z',
+    activatedAt: '2026-09-11T03:14:09.000Z',
+    progressAt: '2026-09-11T03:21:44.000Z',
+    diagnosticsNodeId: 'node-1',
+    stoppedAgentCount: 6,
+    preservedAgentTypes: ['hilos_mail'],
+    agentStartGateClosed: false,
+    passCount: 2,
+    circleNamed: 3,
+    circleAdmitted: 2,
+    ...overrides,
+  })
+}
+
+function restoreModal(id: 'pass' | 'open' | 'close'): HTMLElement | null {
+  return document.querySelector(
+    `[data-id="hilos-maintenance-restore-${id}-modal"]`,
+  )
+}
+
+function restoreButton(
+  id: 'pass' | 'open' | 'close',
+  action: 'confirm' | 'cancel',
+): HTMLButtonElement {
+  return document.querySelector(
+    `[data-id="hilos-maintenance-restore-${id}-${action}"]`,
+  ) as HTMLButtonElement
+}
+
+/** Enter activates a focused button; a prevented key does not click. */
+function pressEnter(button: HTMLButtonElement): void {
+  button.focus()
+  const event = new KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
+  })
+  button.dispatchEvent(event)
+  if (!event.defaultPrevented) button.click()
+}
+
+async function openRestore(id: 'pass' | 'open' | 'close') {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = seededContext(actions)
+  const wrapper = await mountPage(context)
+  const state = restoreFrame()
+  pushState(state)
+  await nextTick()
+  const opener = wrapper.get<HTMLButtonElement>(
+    `[data-id="hilos-maintenance-restore-${id}"]`,
+  )
+  opener.element.focus()
+  opener.element.click()
+  await settled()
+
+  return { wrapper, pushState, dispatched, opener, state }
+}
+
+describe('HilosMaintenancePage restore card', () => {
+  it('draws published facts in the reader zone and ages the last movement on the shared clock', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-11T03:24:14.000Z'))
+    const setZone = readerTimeZone()
+    const { context, pushState } = seededContext()
+    const wrapper = await mountPage(context)
+    const state = restoreFrame()
+    pushState(state)
+    await nextTick()
+    const card = wrapper.get('[data-id="hilos-maintenance-state-operation"]')
+    expect(card.get('[data-id="hilos-maintenance-initiator"]').text()).toBe(
+      'hilos_backup · node node-1',
+    )
+    expect(card.get('[data-id="hilos-maintenance-started-at"]').text()).toBe(
+      'Sep 11, 2026, 3:14:02 AM',
+    )
+    expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
+      'Sep 11, 2026, 3:14:09 AM',
+    )
+    const progress = card.get('[data-id="hilos-maintenance-progress-at"]')
+    expect(progress.text()).toBe('Sep 11, 2026, 3:21:44 AM')
+    expect(
+      card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
+    ).toBe('2 minutes ago')
+    expect(
+      card.get('[data-id="hilos-maintenance-stopped-agents"]').text(),
+    ).toBe('6 · hilos_mail left running')
+    expect(
+      card.get('[data-id="hilos-maintenance-diagnostics-node"]').text(),
+    ).toBe('node-1')
+    expect(card.get('[data-id="hilos-maintenance-agent-start"]').text()).toBe(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartOpen,
+    )
+    expect(card.text()).not.toContain(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+    )
+
+    pushState(restoreFrame({ agentStartGateClosed: true }))
+    await nextTick()
+    expect(card.get('[data-id="hilos-maintenance-agent-start"]').text()).toBe(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+    )
+    pushState(restoreFrame({ agentStartGateClosed: null }))
+    await nextTick()
+    expect(card.get('[data-id="hilos-maintenance-agent-start"]').text()).toBe(
+      '—',
+    )
+
+    setZone('America/Los_Angeles')
+    await nextTick()
+    expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
+      'Sep 10, 2026, 8:14:09 PM',
+    )
+    expect(progress.text()).toBe('Sep 10, 2026, 8:21:44 PM')
+    expect(
+      card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
+    ).toBe('2 minutes ago')
+    setZone('Europe/Kyiv')
+    await nextTick()
+    expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
+      'Sep 11, 2026, 6:14:09 AM',
+    )
+    expect(progress.text()).toBe('Sep 11, 2026, 6:21:44 AM')
+    expect(state.activatedAt).toBe('2026-09-11T03:14:09.000Z')
+    expect(state.progressAt).toBe('2026-09-11T03:21:44.000Z')
+
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(
+      card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
+    ).toBe('2 minutes ago')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(
+      card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
+    ).toBe('3 minutes ago')
+    expect(progress.text()).toBe('Sep 11, 2026, 6:21:44 AM')
+    expect(card.get('[data-id="hilos-maintenance-started-at"]').text()).toBe(
+      'Sep 11, 2026, 6:14:02 AM',
+    )
+  })
+
+  it('gives the initiator three live buttons and another browser only the line', async () => {
+    const { context, pushState } = seededContext()
+    const wrapper = await mountPage(context)
+    pushState(restoreFrame({ phase: 'active' }))
+    await nextTick()
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-restore-ladder"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-other-browser"]').exists(),
+    ).toBe(false)
+    for (const id of ['restore-pass', 'restore-open', 'restore-close']) {
+      expect(wrapper.find(`[data-id="hilos-maintenance-${id}"]`).exists()).toBe(
+        false,
+      )
+    }
+
+    const initiator = restoreFrame()
+    pushState(initiator)
+    await nextTick()
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-other-browser"]').exists(),
+    ).toBe(false)
+    const ladder = wrapper.get('[data-id="hilos-maintenance-restore-ladder"]')
+    const buttons = [
+      [
+        'restore-pass',
+        'btn-outline-primary',
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.issue,
+      ],
+      [
+        'restore-open',
+        'btn-warning',
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      ],
+      [
+        'restore-close',
+        'btn-outline-danger',
+        HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.issue,
+      ],
+    ] as const
+    for (const [id, variant, label] of buttons) {
+      const button = ladder.get<HTMLButtonElement>(
+        `[data-id="hilos-maintenance-${id}"]`,
+      )
+      expect(button.text()).toBe(label)
+      expect(button.element.disabled).toBe(false)
+      expect(button.classes()).toContain(variant)
+      expect(button.classes()).not.toContain('btn-secondary')
+      expect(button.classes()).not.toContain('disabled')
+    }
+
+    const other = restoreFrame({ isInitiator: false })
+    pushState(other)
+    await nextTick()
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-restore-ladder"]').exists(),
+    ).toBe(false)
+    for (const id of ['restore-pass', 'restore-open', 'restore-close']) {
+      expect(wrapper.find(`[data-id="hilos-maintenance-${id}"]`).exists()).toBe(
+        false,
+      )
+    }
+    const line = wrapper.get('[data-id="hilos-maintenance-other-browser"]')
+    expect(line.attributes('role')).toBe('status')
+    expect(line.text()).toContain(hilosMaintenanceOtherBrowserLine(other))
+    expect(line.find('button').exists()).toBe(false)
+  })
+})
+
+const restoreClipboardWritten: string[] = []
+const restoreRealClipboard = navigator.clipboard
+
+function setRestoreClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
+describe('HilosMaintenancePage restore code', () => {
+  afterEach(() => {
+    setRestoreClipboard(restoreRealClipboard)
+    restoreClipboardWritten.length = 0
+  })
+
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'explains minting and allows %s before dispatch without sending anything',
+    async (method) => {
+      const { dispatched, opener } = await openRestore('pass')
+      const dialog = restoreModal('pass')?.closest<HTMLElement>(
+        '[role="dialog"]',
+      ) as HTMLElement
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.mintTitle,
+      )
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.querySelector('input, textarea')).toBeNull()
+      for (const text of [
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.lead,
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.reuseNote,
+      ])
+        expect(dialog.textContent).toContain(text)
+      expect(dialog.textContent?.toLowerCase()).not.toContain(
+        'turn maintenance off',
+      )
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+      ).not.toBeNull()
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+      expect(dispatched).toHaveLength(0)
+      expect(restoreModal('pass')).not.toBeNull()
+
+      if (method === 'cancel') restoreButton('pass', 'cancel').click()
+      if (method === 'close')
+        dialog
+          .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+          ?.click()
+      if (method === 'escape')
+        dialog.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+      if (method === 'backdrop') dialog.click()
+      await settled()
+
+      expect(restoreModal('pass')).toBeNull()
+      expect(dispatched).toHaveLength(0)
+      expect(document.activeElement).toBe(opener.element)
+    },
+  )
+
+  it('blocks repeat, Enter and every close while busy, and reveals the code once', async () => {
+    setRestoreClipboard({
+      writeText: async (text: string) => {
+        restoreClipboardWritten.push(text)
+      },
+    } as unknown as Clipboard)
+    const { wrapper, dispatched, opener } = await openRestore('pass')
+    const dialog = restoreModal('pass')?.closest<HTMLElement>(
+      '[role="dialog"]',
+    ) as HTMLElement
+    pressEnter(restoreButton('pass', 'confirm'))
+    pressEnter(restoreButton('pass', 'confirm'))
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      { action: 'maintenance_restore_pass', payload: {} },
+    ])
+    expect(restoreButton('pass', 'confirm').getAttribute('aria-disabled')).toBe(
+      'true',
+    )
+    pressEnter(restoreButton('pass', 'confirm'))
+    restoreButton('pass', 'cancel').click()
+    dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+    dialog.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    dialog.click()
+    await settled()
+    expect(restoreModal('pass')).not.toBeNull()
+    expect(dispatched).toHaveLength(1)
+
+    const secret = '<opaque&code>'
+    dispatched[0]?.settle({ message: 'Code minted', reply: { pass: secret } })
+    await settled()
+    const value = dialog.querySelector<HTMLElement>(
+      '[data-id="hilos-maintenance-restore-pass-value"]',
+    )
+    expect(value?.textContent).toBe(secret)
+    expect(value?.querySelector('opaque')).toBeNull()
+    expect(document.activeElement).toBe(value)
+    expect(dialog.getAttribute('aria-label')).toBe(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.codeTitle,
+    )
+    expect(dialog.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultLead,
+    )
+    expect(dialog.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultNote,
+    )
+    expect(
+      wrapper.get('[data-id="hilos-maintenance-state-operation"]').text(),
+    ).not.toContain(secret)
+    const copy = dialog.querySelector<HTMLButtonElement>(
+      '[data-id="modal-copy"]',
+    )
+    expect(copy?.tagName).toBe('BUTTON')
+    expect(copy?.disabled).toBe(false)
+    expect(copy?.getAttribute('tabindex')).not.toBe('-1')
+    copy?.focus()
+    expect(document.activeElement).toBe(copy)
+    pressEnter(copy as HTMLButtonElement)
+    await settled()
+    expect(restoreClipboardWritten).toEqual([secret])
+    expect(JSON.stringify(hilosToasts.toasts.get())).not.toContain(secret)
+
+    restoreButton('pass', 'cancel').click()
+    await settled()
+    expect(restoreModal('pass')).toBeNull()
+    expect(document.body.textContent).not.toContain(secret)
+    expect(document.activeElement).toBe(opener.element)
+  })
+
+  it.each(['fail', 'timeout', 'disconnected', 'invalid-reply'] as const)(
+    'keeps %s in the mint dialog, with no control that opens the system',
+    async (outcome) => {
+      const { dispatched } = await openRestore('pass')
+      restoreButton('pass', 'confirm').click()
+      await settled()
+      const reason =
+        outcome === 'fail'
+          ? 'Another request is awaiting confirmation.'
+          : 'No reply received.'
+      dispatched[0]?.refuse(
+        new ActionError('maintenance_restore_pass', outcome, reason),
+      )
+      await settled()
+      const message =
+        outcome === 'fail'
+          ? reason
+          : HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote
+      const dialog = restoreModal('pass')?.closest<HTMLElement>(
+        '[role="dialog"]',
+      ) as HTMLElement
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error"]')?.textContent,
+      ).toContain(message)
+      expect(
+        dialog
+          .querySelector('[data-id="hilos-action-error-slot"]')
+          ?.getAttribute('aria-live'),
+      ).toBe('assertive')
+      expect(message.toLowerCase()).not.toContain('turn maintenance off')
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(
+        dialog.querySelector(
+          '[data-id="hilos-maintenance-restore-open-confirm"]',
+        ),
+      ).toBeNull()
+      expect(restoreButton('pass', 'cancel').disabled).toBe(false)
+      expect(restoreButton('pass', 'confirm').disabled).toBe(false)
+      expect(dispatched).toHaveLength(1)
+    },
+  )
+
+  it('blocks an unsent mint when this browser is no longer the initiator', async () => {
+    const { pushState, dispatched } = await openRestore('pass')
+    pushState(restoreFrame({ isInitiator: false }))
+    await settled()
+    expect(restoreButton('pass', 'confirm').disabled).toBe(true)
+    restoreButton('pass', 'confirm').click()
+    expect(dispatched).toHaveLength(0)
+    restoreButton('pass', 'cancel').click()
+    await settled()
+    expect(restoreModal('pass')).toBeNull()
+  })
+
+  it('forgets a shown code on unmount and ignores a late reply', async () => {
+    const { wrapper, dispatched } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled()
+    wrapper.unmount()
+    dispatched[0]?.settle({ reply: { pass: 'late-code' } })
+    await settled()
+    expect(document.body.textContent).not.toContain('late-code')
+    expect(restoreModal('pass')).toBeNull()
+  })
+
+  it('a late success after timeout cannot replace a newly opened confirmation', async () => {
+    const { dispatched, opener } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled()
+    dispatched[0]?.refuse(
+      new ActionError('maintenance_restore_pass', 'timeout', 'Timed out'),
+    )
+    await settled()
+    restoreButton('pass', 'cancel').click()
+    await settled()
+    opener.element.click()
+    await settled()
+    dispatched[0]?.settle({ reply: { pass: 'orphan-code' } })
+    await settled()
+    expect(document.body.textContent).not.toContain('orphan-code')
+    expect(
+      document.querySelector(
+        '[data-id="hilos-maintenance-restore-pass-result"]',
+      ),
+    ).toBeNull()
+    expect(dispatched).toHaveLength(1)
+  })
+})
+
+describe('HilosMaintenancePage restore open and close', () => {
+  it.each(['open', 'close'] as const)(
+    'explains %s, returns focus, and does not send before confirm',
+    async (id) => {
+      const copy =
+        id === 'open'
+          ? HILOS_MAINTENANCE_RESTORE_OPEN_COPY
+          : HILOS_MAINTENANCE_RESTORE_CLOSE_COPY
+      const { dispatched, opener } = await openRestore(id)
+      const dialog = restoreModal(id)?.closest<HTMLElement>(
+        '[role="dialog"]',
+      ) as HTMLElement
+      expect(dialog.getAttribute('aria-label')).toBe(copy.title)
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.textContent).toContain(copy.lead)
+      expect(dialog.textContent?.toLowerCase()).not.toContain('new operation')
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+      ).not.toBeNull()
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+      expect(dispatched).toHaveLength(0)
+      expect(restoreModal(id)).not.toBeNull()
+      restoreButton(id, 'cancel').click()
+      await settled()
+      expect(restoreModal(id)).toBeNull()
+      expect(document.activeElement).toBe(opener.element)
+    },
+  )
+
+  it.each(['open', 'close'] as const)(
+    'blocks %s while busy and closes on its one success',
+    async (id) => {
+      const { dispatched, opener } = await openRestore(id)
+      const dialog = restoreModal(id)?.closest<HTMLElement>(
+        '[role="dialog"]',
+      ) as HTMLElement
+      const action =
+        id === 'open' ? 'maintenance_restore_open' : 'maintenance_restore_close'
+      pressEnter(restoreButton(id, 'confirm'))
+      pressEnter(restoreButton(id, 'confirm'))
+      await settled()
+      expect(dispatched).toMatchObject([{ action, payload: {} }])
+      restoreButton(id, 'cancel').click()
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+      dialog
+        .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+        ?.click()
+      await settled()
+      expect(restoreModal(id)).not.toBeNull()
+      expect(dispatched).toHaveLength(1)
+      dispatched[0]?.settle({ message: 'Done' })
+      await settled()
+      expect(restoreModal(id)).toBeNull()
+      expect(document.activeElement).toBe(opener.element)
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Done', severity: 'success' },
+      ])
+    },
+  )
+
+  it.each(['open', 'close'] as const)(
+    'keeps a %s refusal in the dialog and never retries',
+    async (id) => {
+      const copy =
+        id === 'open'
+          ? HILOS_MAINTENANCE_RESTORE_OPEN_COPY
+          : HILOS_MAINTENANCE_RESTORE_CLOSE_COPY
+      const { dispatched } = await openRestore(id)
+      restoreButton(id, 'confirm').click()
+      await settled()
+      dispatched[0]?.refuse(
+        new ActionError(
+          id === 'open'
+            ? 'maintenance_restore_open'
+            : 'maintenance_restore_close',
+          'timeout',
+          'No reply received.',
+        ),
+      )
+      await settled()
+      expect(restoreModal(id)?.textContent).toContain(copy.unconfirmedNote)
+      expect(
+        restoreModal(id)
+          ?.querySelector('[data-id="hilos-action-error-slot"]')
+          ?.getAttribute('aria-live'),
+      ).toBe('assertive')
+      expect(restoreButton(id, 'confirm').disabled).toBe(false)
+      expect(dispatched).toHaveLength(1)
+    },
+  )
+
+  it.each(['open', 'close'] as const)(
+    'blocks an unsent %s when the restore ladder is gone',
+    async (id) => {
+      const { pushState, dispatched } = await openRestore(id)
+      pushState(restoreFrame({ phase: 'active' }))
+      await settled()
+      expect(restoreButton(id, 'confirm').disabled).toBe(true)
+      restoreButton(id, 'confirm').click()
+      expect(dispatched).toHaveLength(0)
+      restoreButton(id, 'cancel').click()
+      await settled()
+      expect(restoreModal(id)).toBeNull()
+    },
+  )
 })
 
 describe('Maintenance Overview head', () => {

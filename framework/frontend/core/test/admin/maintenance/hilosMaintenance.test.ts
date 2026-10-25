@@ -8,6 +8,9 @@ import {
   HILOS_MAINTENANCE_STATE_COPY,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  MAINTENANCE_RESTORE_CLOSE_ACTION,
+  MAINTENANCE_RESTORE_OPEN_ACTION,
+  MAINTENANCE_RESTORE_PASS_ACTION,
   MAINTENANCE_STATE_SIGNAL,
   MAINTENANCE_STATE_SIGNAL_SCHEMAS,
   maintenancePassReplySchema,
@@ -17,7 +20,9 @@ import {
   type HilosMaintenanceState,
   hilosMaintenanceCard,
   hilosMaintenanceElapsed,
+  hilosMaintenanceOtherBrowserLine,
   hilosMaintenancePosition,
+  hilosMaintenanceRestoreLadder,
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
@@ -562,6 +567,25 @@ describe('createHilosMaintenanceCircleTable', () => {
 })
 
 describe('createHilosMaintenanceActions', () => {
+  it('dispatches restore pass with the code schema and open or close with an empty payload', () => {
+    const sendAction = vi.fn(() => true)
+    const actions = new ActionLifecycle({
+      sendAction,
+      on: () => () => {},
+    })
+    const made = createHilosMaintenanceActions({
+      actions,
+    } as HilosMaintenanceContext)
+    const pass = made.sendMaintenanceRestorePass()
+    const open = made.sendMaintenanceRestoreOpen()
+    const close = made.sendMaintenanceRestoreClose()
+    expect(sendAction.mock.calls).toEqual([
+      [MAINTENANCE_RESTORE_PASS_ACTION, {}, pass.requestId],
+      [MAINTENANCE_RESTORE_OPEN_ACTION, {}, open.requestId],
+      [MAINTENANCE_RESTORE_CLOSE_ACTION, {}, close.requestId],
+    ])
+  })
+
   it.each([
     undefined,
     {},
@@ -791,6 +815,15 @@ function state(
     passCount: 0,
     circleNamed: 0,
     circleAdmitted: 0,
+    initiatorAgentType: null,
+    initiatorNodeId: null,
+    activatedAt: null,
+    progressAt: null,
+    isInitiator: false,
+    diagnosticsNodeId: null,
+    stoppedAgentCount: null,
+    preservedAgentTypes: null,
+    agentStartGateClosed: null,
     ...overrides,
   }
 }
@@ -817,6 +850,37 @@ describe('maintenance state frame', () => {
         state({ passCount: 1.5 }),
       ).success,
     ).toBe(false)
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse({
+        phase: 'inactive',
+        operation: null,
+        manual: false,
+        startedAt: null,
+        enteredFromBrowser: false,
+        passCount: 0,
+        circleNamed: 0,
+        circleAdmitted: 0,
+      }),
+    ).toMatchObject({
+      initiatorAgentType: null,
+      isInitiator: false,
+      stoppedAgentCount: null,
+      preservedAgentTypes: null,
+      agentStartGateClosed: null,
+    })
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse({
+        phase: 'inactive',
+        operation: null,
+        manual: false,
+        startedAt: null,
+        enteredFromBrowser: false,
+        passCount: 0,
+        circleNamed: 0,
+        circleAdmitted: 0,
+        preservedAgentTypes: [],
+      }).preservedAgentTypes,
+    ).toEqual([])
   })
 
   it('stays empty before its frame, then follows each server push and disposes', () => {
@@ -926,5 +990,135 @@ describe('maintenance state selector', () => {
       hilosMaintenanceCard({ ...restore, phase: 'active' }, NOW)?.phaseNote,
     ).toBeNull()
     expect(hilosMaintenanceCard(state(), NOW)).toBeNull()
+  })
+
+  it('keeps unpublished diagnostics null and does not treat a count as zero', () => {
+    const restore = state({
+      phase: 'verifying',
+      operation: 'restore',
+      initiatorAgentType: 'hilos_backup',
+      initiatorNodeId: 'node-1',
+      activatedAt: STARTED_AT,
+      progressAt: STARTED_AT,
+      isInitiator: true,
+    })
+    expect(hilosMaintenanceCard(restore, NOW)).toMatchObject({
+      initiatorAgentType: 'hilos_backup',
+      initiatorNodeId: 'node-1',
+      initiatorCaption: 'hilos_backup · node node-1',
+      activatedAt: STARTED_AT,
+      progressAt: STARTED_AT,
+      stoppedAgentCount: null,
+      preservedAgentTypes: null,
+      stoppedAgentsCaption: '—',
+      diagnosticsNodeId: null,
+      agentStartGateClosed: null,
+      agentStartCaption: '—',
+      isInitiator: true,
+    })
+    expect(
+      hilosMaintenanceCard(
+        {
+          ...restore,
+          phase: 'verifying',
+          stoppedAgentCount: null,
+          agentStartGateClosed: null,
+        },
+        NOW,
+      )?.agentStartCaption,
+    ).toBe('—')
+  })
+
+  it('renders a stopped count with the preserved types and the published gate', () => {
+    const card = hilosMaintenanceCard(
+      state({
+        phase: 'active',
+        operation: 'restore',
+        stoppedAgentCount: 6,
+        preservedAgentTypes: ['hilos_mail'],
+        agentStartGateClosed: true,
+        diagnosticsNodeId: 'node-1',
+      }),
+      NOW,
+    )
+    expect(card).toMatchObject({
+      stoppedAgentCount: 6,
+      preservedAgentTypes: ['hilos_mail'],
+      stoppedAgentsCaption: '6 · hilos_mail left running',
+      diagnosticsNodeId: 'node-1',
+      agentStartGateClosed: true,
+      agentStartCaption: 'closed',
+    })
+    expect(card?.stoppedAgentsCaption).not.toContain('cluster')
+    expect(
+      hilosMaintenanceCard(
+        state({
+          phase: 'verifying',
+          operation: 'restore',
+          stoppedAgentCount: 0,
+          preservedAgentTypes: [],
+          agentStartGateClosed: false,
+        }),
+        NOW,
+      ),
+    ).toMatchObject({
+      stoppedAgentCount: 0,
+      preservedAgentTypes: [],
+      stoppedAgentsCaption: '0',
+      agentStartGateClosed: false,
+      agentStartCaption: 'open',
+    })
+    expect(
+      hilosMaintenanceCard(
+        state({
+          phase: 'active',
+          operation: 'restore',
+          initiatorAgentType: null,
+          initiatorNodeId: null,
+        }),
+        NOW,
+      )?.initiatorCaption,
+    ).toBe('— · node —')
+  })
+})
+
+describe('maintenance restore ladder', () => {
+  const restore = state({
+    phase: 'verifying',
+    operation: 'restore',
+    initiatorAgentType: 'hilos_backup',
+    initiatorNodeId: 'node-1',
+  })
+
+  it('names the initiating browser and anyone else only while restore is verifying', () => {
+    expect(hilosMaintenanceRestoreLadder(null)).toBeNull()
+    expect(
+      hilosMaintenanceRestoreLadder({ ...restore, isInitiator: true }),
+    ).toBe('initiator')
+    expect(hilosMaintenanceRestoreLadder(restore)).toBe('other')
+    expect(
+      hilosMaintenanceRestoreLadder({ ...restore, manual: true }),
+    ).toBeNull()
+    expect(
+      hilosMaintenanceRestoreLadder({ ...restore, phase: 'active' }),
+    ).toBeNull()
+    expect(
+      hilosMaintenanceRestoreLadder({
+        ...restore,
+        operation: 'manual_maintenance',
+      }),
+    ).toBeNull()
+    expect(
+      hilosMaintenanceOtherBrowserLine({
+        ...restore,
+        initiatorAgentType: null,
+        initiatorNodeId: null,
+      }),
+    ).toBe(
+      'The operation is run by — on node —. Only the browser that started it can open the system.',
+    )
+    expect(hilosMaintenanceOtherBrowserLine(restore)).toBe(
+      'The operation is run by hilos_backup on node node-1. Only the browser that started it can open the system.',
+    )
   })
 })

@@ -38,6 +38,10 @@ use Hilos\HilosException;
  * @property-read list<string> $circleSessionTokenHashes Session token hashes of the circle photographed at the freeze; empty otherwise
  * @property-read int $circleNamedCount How many people the circle named at the freeze; zero otherwise
  * @property-read bool $enteredFromBrowser Whether the freeze was opened from a browser session
+ * @property-read ?string $diagnosticsNodeId Node these diagnostics describe; null until the master publishes them
+ * @property-read ?int $stoppedAgentCount Agents this node is holding stopped; null until published
+ * @property-read ?list<string> $preservedAgentTypes Agent types the full-stop policy leaves running; null until published
+ * @property-read ?bool $agentStartGateClosed Whether agent start is actually closed; null until published
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -76,6 +80,10 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::circleSessionTokenHashes => $this->_state->circleSessionTokenHashes,
             StateProtectedModeRuntime::circleNamedCount => $this->_state->circleNamedCount,
             StateProtectedModeRuntime::enteredFromBrowser => $this->_state->enteredFromBrowser,
+            StateProtectedModeRuntime::diagnosticsNodeId => $this->_state->diagnosticsNodeId,
+            StateProtectedModeRuntime::stoppedAgentCount => $this->_state->stoppedAgentCount,
+            StateProtectedModeRuntime::preservedAgentTypes => $this->_state->preservedAgentTypes,
+            StateProtectedModeRuntime::agentStartGateClosed => $this->_state->agentStartGateClosed,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

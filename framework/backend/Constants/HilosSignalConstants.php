@@ -1196,6 +1196,21 @@ final class HilosSignalConstants
     /** Index agent → Maintenance page: an addressed outcome, with a clear code only on success. */
     public const string MAINTENANCE_PASS_DONE = 'maintenance_pass_done';
 
+    /** Tracked browser action: mint one restore code (HIL-1679). */
+    public const string MAINTENANCE_RESTORE_PASS = 'maintenance_restore_pass';
+
+    /** Tracked browser action: open a restore from the maintenance section (HIL-1679). */
+    public const string MAINTENANCE_RESTORE_OPEN = 'maintenance_restore_open';
+
+    /** Tracked browser action: close a restore from the maintenance section (HIL-1679). */
+    public const string MAINTENANCE_RESTORE_CLOSE = 'maintenance_restore_close';
+
+    /** Maintenance page → backup agent: which restore control, with server-resolved identity (HIL-1679). */
+    public const string MAINTENANCE_AGENT_RESTORE_CONTROL = 'maintenance_agent_restore_control';
+
+    /** Backup agent → Maintenance page: addressed outcome; a clear code only on a successful pass (HIL-1679). */
+    public const string MAINTENANCE_RESTORE_CONTROL_DONE = 'maintenance_restore_control_done';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

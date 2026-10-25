@@ -67,10 +67,12 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\DirectoryWatchTrait;
+use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Router\SignalSource;
@@ -89,11 +91,19 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\PageAccountFrozenException;
+use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Process;
+use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -178,9 +188,9 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 
     /**
      * Page → agent routes for the list-page actions (HIL-333, restore HIL-276, reopen HIL-676),
-     * and the two receipts the libraries send back for a deferred restore batch (HIL-846).
-     * All seven are singleton signals (the agent is monopolistic), so each maps straight to its
-     * payload DTO.
+     * the maintenance restore controls (HIL-1679), and the two receipts the libraries send back
+     * for a deferred restore batch (HIL-846). Each is a singleton signal (the agent is
+     * monopolistic), so each maps straight to its payload DTO.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
@@ -188,6 +198,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_REOPEN => BackupReopenSignalData::class,
+        HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL => MaintenanceRestoreControlSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => DeferredSessionsCarriedSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => DeferredNoticesSentSignalData::class,
     ];
@@ -224,14 +235,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         CliCommands::PROTECTED_MODE_CLOSE,
     ];
 
+    /** Protected-mode operation name a restore freeze is requested under. */
+    public const string RESTORE_OPERATION = 'restore';
+
     /** Child interpreter; matches the worker spine's binary ({@see WorkerServer}). */
     private const string PHP_BINARY = 'php';
 
     /** Longest failure detail kept in a user-facing notice ({@see failureNotice()}). */
     private const int NOTICE_DETAIL_LIMIT = 200;
-
-    /** Protected-mode operation name a restore freeze is requested under. */
-    private const string RESTORE_OPERATION = 'restore';
 
     /**
      * How long the test-only synchronous shipping pass sleeps between polls of its transfer.
@@ -770,6 +781,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the handler cannot name its reply to the command
+     * @throws InvalidFormatException When the shared operator reply cannot build a browser outcome frame
      * @throws DatabaseException When reading the initiator's session fails
      * @throws LogicException When the sessions collection class constants are not configured
      */
@@ -1237,6 +1249,91 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     }
 
     /**
+     * Rechecks the live browser and this agent before the shared operator slot accepts the ask.
+     *
+     * The session hash on the ask is not trusted on its own: it has to equal the token the
+     * connection holds now. A recorded initiator that is missing or is another agent is a domain
+     * refusal, and {@see beginProtectedModeRestoreControl()} is not called.
+     *
+     * @param MaintenanceRestoreControlSignalData $ask Server-resolved identity and tracked reply address
+     * @throws InvalidArgumentException When an immediate outcome cannot be sent
+     * @throws InvalidFormatException When the outcome frame cannot be built
+     */
+    private function handleMaintenanceRestoreControl(MaintenanceRestoreControlSignalData $ask): void
+    {
+        try {
+            $this->assertMaintenanceRestoreControl($ask);
+        } catch (WiringRefusal $e) {
+            // The waiting gatekeeper receives the wiring failure as an answer, never an admission verdict.
+            $this->replyProtectedModeRestoreControl($ask, ActionRefusal::fromThrowable($e), null);
+
+            return;
+        } catch (Throwable $e) {
+            $this->replyProtectedModeRestoreControl($ask, ActionRefusal::fromThrowable($e), null);
+
+            return;
+        }
+
+        $this->beginProtectedModeRestoreControl($ask);
+    }
+
+    /**
+     * Admits the ask only when the live row still names this browser and this agent.
+     *
+     * @param MaintenanceRestoreControlSignalData $ask Server-resolved identity and tracked reply address
+     * @throws TableActionException When the live session, the row or the recorded initiator does not admit the ask
+     * @throws PageUnauthorizedException When the connection has no account
+     * @throws PageAccountFrozenException When the person is frozen
+     * @throws PageForbiddenException When the connection is not an administrator
+     * @throws ActionViewModeException When the connection may only look
+     * @throws HilosException When the administrator lookup fails
+     */
+    private function assertMaintenanceRestoreControl(MaintenanceRestoreControlSignalData $ask): void
+    {
+        PageAccessGate::assertAction(
+            AbstractHilosMaintenancePage::class,
+            $ask->acceptKey,
+            $ask->action,
+        );
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($ask->acceptKey)?->sessionToken;
+        if (
+            $sessionToken === null || $sessionToken === ''
+            || !hash_equals($ask->sessionHash, StateProtectedModeRuntime::hashSessionToken($sessionToken))
+        ) {
+            throw new TableActionException('The browser session changed before the restore could be controlled');
+        }
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($row === null) {
+            throw new TableActionException('Protected-mode state is unavailable');
+        }
+
+        if ($row->isManualMaintenanceWindow()) {
+            throw new TableActionException('The current window is manual maintenance');
+        }
+
+        if ($row->operation !== self::RESTORE_OPERATION) {
+            throw new TableActionException('The current window is not a restore');
+        }
+
+        if ($row->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
+            throw new TableActionException('The current window is not verifying');
+        }
+
+        if (!$row->belongsToInitiator($ask->sessionHash)) {
+            throw new TableActionException('This browser session did not start the restore');
+        }
+
+        if ($row->locksOut($ask->acceptKey, $ask->sessionHash)) {
+            throw new TableActionException('This browser session is not admitted to maintenance');
+        }
+
+        if (!$this->isProtectedModeOperatorInitiator($row)) {
+            throw new TableActionException('This agent did not start the restore');
+        }
+    }
+
+    /**
      * Ends the verification window on behalf of the browser that pressed the button (HIL-676).
      *
      * The page already checked the row and told the browser its request was taken, so this is the
@@ -1549,6 +1646,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator or the parked freeze-lift cannot be named
+     * @throws InvalidFormatException When a restore-control outcome frame cannot be built
      * @throws DatabaseException When reading the initiator's session fails
      * @throws LogicException When the sessions collection class constants are not configured
      */
@@ -1587,6 +1685,19 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 if ($data->data instanceof BackupReopenSignalData) {
                     $this->handleReopenRequest($data->data);
                 }
+
+                return;
+
+            case HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL:
+                if (!$data->data instanceof MaintenanceRestoreControlSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        MaintenanceRestoreControlSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->handleMaintenanceRestoreControl($data->data);
 
                 return;
 

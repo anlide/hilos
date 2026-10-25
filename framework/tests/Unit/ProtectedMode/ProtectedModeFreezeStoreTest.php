@@ -298,6 +298,104 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame([], $view->circleSessionTokenHashes);
     }
 
+    public function testAnOldFreezeFileReadsDiagnosticsAsUnpublished(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        unset(
+            $row[StateProtectedModeRuntime::diagnosticsNodeId],
+            $row[StateProtectedModeRuntime::stoppedAgentCount],
+            $row[StateProtectedModeRuntime::preservedAgentTypes],
+            $row[StateProtectedModeRuntime::agentStartGateClosed],
+        );
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => $row]));
+
+        $restored = new ProtectedModeFreezeStore()->load();
+
+        $this->assertNotNull($restored);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $restored->phase);
+        $this->assertNull($restored->diagnosticsNodeId);
+        $this->assertNull($restored->stoppedAgentCount);
+        $this->assertNull($restored->preservedAgentTypes);
+        $this->assertNull($restored->agentStartGateClosed);
+    }
+
+    public function testAFreezeFileWithAForeignDiagnosticListRefusesStartup(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        $row[StateProtectedModeRuntime::preservedAgentTypes] = 'hilos_mail';
+        new ProtectedModeFreezeStore()->save($row);
+
+        $this->expectException(ProtectedModeFreezeUnreadableException::class);
+        new ProtectedModeFreezeStore()->load();
+    }
+
+    public function testRestoreDropsDiagnosticsTheFileStillCarries(): void
+    {
+        $this->mountNode();
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNotNull($view);
+        $loaded = $this->restoredRow();
+        $loaded->diagnosticsNodeId = 'node-a';
+        $loaded->stoppedAgentCount = 4;
+        $loaded->preservedAgentTypes = ['hilos_mail'];
+        $loaded->agentStartGateClosed = true;
+
+        $view->actions->restoreFromDisk($loaded);
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view->phase);
+        $this->assertSame(self::INITIATOR_SESSION_HASH, $view->initiatorSessionTokenHash);
+        $this->assertNull($view->diagnosticsNodeId);
+        $this->assertNull($view->stoppedAgentCount);
+        $this->assertNull($view->preservedAgentTypes);
+        $this->assertNull($view->agentStartGateClosed);
+    }
+
+    public function testPublishingDiagnosticsDoesNotRewriteTheFreezeFile(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterActivating($this->freeze(), 'accept-7');
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNotNull($view);
+        $before = file_get_contents($this->freezeFile());
+
+        $view->actions->updateAgentDiagnostics('node-a', 0, [], false);
+
+        $this->assertSame($before, file_get_contents($this->freezeFile()));
+        $this->assertSame('node-a', $view->diagnosticsNodeId);
+        $this->assertSame(0, $view->stoppedAgentCount);
+        $this->assertSame([], $view->preservedAgentTypes);
+        $this->assertFalse($view->agentStartGateClosed);
+
+        $executor->enterActive();
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $view->phase);
+        $this->assertSame('node-a', $view->diagnosticsNodeId);
+        $this->assertSame(0, $view->stoppedAgentCount);
+        $this->assertSame([], $view->preservedAgentTypes);
+        $this->assertFalse($view->agentStartGateClosed);
+    }
+
+    public function testAForeignPreservedTypeListIsRefusedBeforeItIsPublished(): void
+    {
+        $this->mountNode();
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNotNull($view);
+        $view->actions->updateAgentDiagnostics('node-a', 3, ['hilos_mail'], true);
+
+        try {
+            $view->actions->updateAgentDiagnostics('node-b', 9, ['first' => 'hilos_mail'], false);
+            $this->fail('A preserved-type map must be refused');
+        } catch (InvalidFormatException $e) {
+            $this->assertStringContainsString(StateProtectedModeRuntime::preservedAgentTypes, $e->getMessage());
+        }
+
+        $this->assertSame('node-a', $view->diagnosticsNodeId);
+        $this->assertSame(3, $view->stoppedAgentCount);
+        $this->assertSame(['hilos_mail'], $view->preservedAgentTypes);
+        $this->assertTrue($view->agentStartGateClosed);
+        $this->assertFileDoesNotExist($this->freezeFile());
+    }
+
     /**
      * The hand-over the restored row is only ever seen through (HIL-699).
      *

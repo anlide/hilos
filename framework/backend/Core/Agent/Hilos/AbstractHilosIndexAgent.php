@@ -398,6 +398,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused; the routing is on $data->command)
      * @throws InvalidArgumentException When the command reply carries an empty correlation id
+     * @throws InvalidFormatException When the shared operator reply cannot build a browser outcome frame
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {

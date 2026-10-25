@@ -125,6 +125,9 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreOpenActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestorePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
@@ -543,6 +546,9 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
         ], MaintenancePage::ACTIONS);
         $this->assertSame(
             [TasksTableContext::hilosVerifierCircle => []],
@@ -921,6 +927,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 HilosSignalConstants::BACKUP_AGENT_SET_KEEP => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_RESTORE => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_REOPEN => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
@@ -1383,6 +1390,15 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_PASS],
         );
+        foreach ([
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
+        ] as $action => $dto) {
+            $this->assertSame(HilosPageConstants::HILOS_MAINTENANCE, Hilos::getPageActionRoutes()[$action]);
+            $this->assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            $this->assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+        }
     }
 
     /** Pins the Daemon feature, six page routes and all three agent placements. */

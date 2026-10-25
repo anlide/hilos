@@ -101,6 +101,9 @@ use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreOpenActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestorePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
@@ -495,6 +498,9 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
         ], MaintenancePage::ACTIONS);
         $this->assertSame(
             [PollsTableContext::hilosVerifierCircle => []],
@@ -1304,6 +1310,15 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_PASS],
         );
+        foreach ([
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
+        ] as $action => $dto) {
+            $this->assertSame(HilosPageConstants::HILOS_MAINTENANCE, Hilos::getPageActionRoutes()[$action]);
+            $this->assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            $this->assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+        }
     }
 
     /** Profile sections are bound to the polls agent with their browser lists and data. */

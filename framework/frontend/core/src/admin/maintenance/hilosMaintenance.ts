@@ -118,6 +118,18 @@ export const HILOS_MAINTENANCE_STATE_COPY = {
   minuteAgo: 'minute ago',
   minutesAgo: 'minutes ago',
   justNow: 'just now',
+  initiator: 'Initiator',
+  frozen: 'Frozen',
+  lastMovement: 'Last movement',
+  agentsStopped: 'Agents stopped',
+  agentStart: 'Agent start',
+  agentStartClosed: 'closed',
+  agentStartOpen: 'open',
+  leftRunning: 'left running',
+  node: 'node',
+  diagnosticsNode: 'Diagnostics node',
+  otherBrowser:
+    'The operation is run by {agent} on node {node}. Only the browser that started it can open the system.',
 } as const
 
 /** The protected-mode block's three positions; null leaves its room empty. */
@@ -173,6 +185,105 @@ export interface HilosMaintenanceCard {
   readonly turnedOn: string | null
   readonly passCount: number
   readonly circle: string
+  /** Agent type of the initiator, or null when the row has none. */
+  readonly initiatorAgentType: string | null
+  /** Node hosting the initiator, or null when the row has none. */
+  readonly initiatorNodeId: string | null
+  /** Initiator line; an unknown agent or node is an em dash. */
+  readonly initiatorCaption: string
+  /** ISO-8601 UTC moment the freeze reached active, or null. */
+  readonly activatedAt: string | null
+  /** ISO-8601 UTC moment of the last progress mark, or null. */
+  readonly progressAt: string | null
+  /** Agents this node is holding stopped, or null until published. */
+  readonly stoppedAgentCount: number | null
+  /** Agent types left running, or null until published. An empty list is a value. */
+  readonly preservedAgentTypes: readonly string[] | null
+  /** Stopped-agents line. A null count is an em dash, never zero. */
+  readonly stoppedAgentsCaption: string
+  /** Node the diagnostic tuple describes, or null until published. */
+  readonly diagnosticsNodeId: string | null
+  /** Whether agent start is closed, or null until published. */
+  readonly agentStartGateClosed: boolean | null
+  /** Agent-start line. Null stays an em dash, including while verifying. */
+  readonly agentStartCaption: string
+  /** Whether this viewer belongs to the initiating session. */
+  readonly isInitiator: boolean
+}
+
+/** Which restore ladder row this viewer gets; null leaves that row off the card. */
+export type HilosMaintenanceRestoreLadder = 'initiator' | 'other' | null
+
+const ABSENT = '—'
+
+/**
+ * Choose the restore ladder row from the server's verdict.
+ *
+ * Manual windows and every phase other than verifying keep their own controls
+ * and do not receive this row.
+ *
+ * @param state The newest section frame, or null before it arrives.
+ */
+export function hilosMaintenanceRestoreLadder(
+  state: HilosMaintenanceState | null,
+): HilosMaintenanceRestoreLadder {
+  if (
+    state === null ||
+    state.manual ||
+    state.operation !== 'restore' ||
+    state.phase !== 'verifying'
+  ) {
+    return null
+  }
+
+  return state.isInitiator ? 'initiator' : 'other'
+}
+
+/**
+ * The line shown to a browser that did not start the restore.
+ *
+ * @param state The newest section frame.
+ */
+export function hilosMaintenanceOtherBrowserLine(
+  state: HilosMaintenanceState,
+): string {
+  return HILOS_MAINTENANCE_STATE_COPY.otherBrowser
+    .replace('{agent}', state.initiatorAgentType ?? ABSENT)
+    .replace('{node}', state.initiatorNodeId ?? ABSENT)
+}
+
+/** Initiator line; a missing agent or node is an em dash, as the operation line is. */
+function initiatorCaption(agent: string | null, node: string | null): string {
+  return `${agent ?? ABSENT} · ${HILOS_MAINTENANCE_STATE_COPY.node} ${node ?? ABSENT}`
+}
+
+/**
+ * Stopped-agents line. Null is unpublished, not zero; an empty preserved list
+ * adds no types.
+ */
+function stoppedAgentsCaption(
+  count: number | null,
+  types: readonly string[] | null,
+): string {
+  if (count === null) {
+    return ABSENT
+  }
+  if (types === null || types.length === 0) {
+    return String(count)
+  }
+
+  return `${count} · ${types.join(', ')} ${HILOS_MAINTENANCE_STATE_COPY.leftRunning}`
+}
+
+/** Agent-start line from the published gate, never guessed from the phase. */
+function agentStartCaption(closed: boolean | null): string {
+  if (closed === null) {
+    return ABSENT
+  }
+
+  return closed
+    ? HILOS_MAINTENANCE_STATE_COPY.agentStartClosed
+    : HILOS_MAINTENANCE_STATE_COPY.agentStartOpen
 }
 
 /**
@@ -204,7 +315,7 @@ export function hilosMaintenanceCard(
           ? HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote
           : null,
     operation: state.operation,
-    operationCaption: `${HILOS_MAINTENANCE_STATE_COPY.operationPrefix} ${state.operation ?? '—'}`,
+    operationCaption: `${HILOS_MAINTENANCE_STATE_COPY.operationPrefix} ${state.operation ?? ABSENT}`,
     startedAt: state.startedAt,
     elapsed:
       position === 'manual'
@@ -218,6 +329,24 @@ export function hilosMaintenanceCard(
         : null,
     passCount: state.passCount,
     circle: `${state.circleNamed} ${HILOS_MAINTENANCE_STATE_COPY.circleNamed} · ${state.circleAdmitted} ${HILOS_MAINTENANCE_STATE_COPY.circleAdmitted}`,
+    initiatorAgentType: state.initiatorAgentType,
+    initiatorNodeId: state.initiatorNodeId,
+    initiatorCaption: initiatorCaption(
+      state.initiatorAgentType,
+      state.initiatorNodeId,
+    ),
+    activatedAt: state.activatedAt,
+    progressAt: state.progressAt,
+    stoppedAgentCount: state.stoppedAgentCount,
+    preservedAgentTypes: state.preservedAgentTypes,
+    stoppedAgentsCaption: stoppedAgentsCaption(
+      state.stoppedAgentCount,
+      state.preservedAgentTypes,
+    ),
+    diagnosticsNodeId: state.diagnosticsNodeId,
+    agentStartGateClosed: state.agentStartGateClosed,
+    agentStartCaption: agentStartCaption(state.agentStartGateClosed),
+    isInitiator: state.isInitiator,
   }
 }
 
@@ -229,6 +358,15 @@ export const MAINTENANCE_DISABLE_ACTION = 'maintenance_disable'
 
 /** Tracked browser action returning a code only to its originating submit. */
 export const MAINTENANCE_PASS_ACTION = 'maintenance_pass'
+
+/** Tracked browser action: mint one restore code. The server resolves the window. */
+export const MAINTENANCE_RESTORE_PASS_ACTION = 'maintenance_restore_pass'
+
+/** Tracked browser action: open a restore. The server resolves the window. */
+export const MAINTENANCE_RESTORE_OPEN_ACTION = 'maintenance_restore_open'
+
+/** Tracked browser action: close a restore window again. The server resolves it. */
+export const MAINTENANCE_RESTORE_CLOSE_ACTION = 'maintenance_restore_close'
 
 /** A code is opaque: validate presence without inventing a format. */
 export const maintenancePassReplySchema = z.object({ pass: z.string().min(1) })
@@ -256,6 +394,62 @@ export const HILOS_MAINTENANCE_PASS_COPY = {
   refusalTitle: "Couldn't issue a code",
   unconfirmedNote:
     'The result of issuing a code is unconfirmed. A code may have been issued, but it cannot be recovered. Issue a new code if needed; turn maintenance off and on to invalidate all issued codes.',
+} as const
+
+/**
+ * Words of minting one restore code, shared by every view.
+ *
+ * An unconfirmed mint does not suggest turning maintenance off and on, and the
+ * dialog offers no control that opens the system.
+ */
+export const HILOS_MAINTENANCE_RESTORE_PASS_COPY = {
+  issue: 'Mint code',
+  mintTitle: 'Mint a verification code',
+  mint: 'Mint',
+  cancel: 'Cancel',
+  lead: 'The code is shown once and cannot be retrieved again. Only its SHA-256 hash remains on the node.',
+  reuseNote:
+    'One code can admit several browsers while the verification window is open. Codes stop working after the daemon restarts.',
+  codeTitle: 'Verification code',
+  resultLead:
+    'Give this code to the person who will check the system. This screen will not show it again.',
+  resultNote:
+    'Enter the code on the maintenance screen, and only at an administrative address.',
+  close: 'Close',
+  refusalTitle: "Couldn't mint a code",
+  unconfirmedNote:
+    'The result of minting a code is unconfirmed. A code may have been issued, but it cannot be recovered. Mint a new code if needed.',
+} as const
+
+/**
+ * Words of reopening a restore, shared by every view.
+ *
+ * Close the window again stays on this card, so the dialog does not say the
+ * only way back is a new operation.
+ */
+export const HILOS_MAINTENANCE_RESTORE_OPEN_COPY = {
+  issue: 'Open the system',
+  title: 'Reopen the system',
+  confirm: 'Open the system',
+  cancel: 'Cancel',
+  lead: 'The freeze lifts for everyone. Every open page will reload itself, including this one.',
+  refusalTitle: "Couldn't reopen the system",
+  unconfirmedNote:
+    'The result of opening the system is unconfirmed. Check the state in Maintenance before trying again.',
+} as const
+
+/** Words of closing a restore window again, shared by every view. */
+export const HILOS_MAINTENANCE_RESTORE_CLOSE_COPY = {
+  issue: 'Close the window again',
+  title: 'Close the window again',
+  confirm: 'Close the window again',
+  cancel: 'Cancel',
+  lead: 'The verification window closes and the node is fully frozen again. People let in by a code or by the circle see the maintenance screen.',
+  footer:
+    'Use this when the check finds something wrong: the system stays closed while that is sorted out.',
+  refusalTitle: "Couldn't close the window",
+  unconfirmedNote:
+    'The result of closing the window is unconfirmed. Check the state in Maintenance before trying again.',
 } as const
 
 /** Words of the manual-exit confirmation, shared by every view. */
@@ -334,6 +528,12 @@ export interface HilosMaintenanceActions {
   sendMaintenanceDisable(): ActionHandle
   /** Issue a code, awaiting its confirmed hash without retrying or retaining the reply. */
   sendMaintenancePass(): ActionHandle<HilosMaintenancePassReply>
+  /** Mint one restore code, awaiting the same confirmed reply as a manual code. */
+  sendMaintenanceRestorePass(): ActionHandle<HilosMaintenancePassReply>
+  /** Open the restore. The ack carries the sentence and no domain reply. */
+  sendMaintenanceRestoreOpen(): ActionHandle
+  /** Close the restore window again. The ack carries the sentence and no domain reply. */
+  sendMaintenanceRestoreClose(): ActionHandle
   /**
    * Name one more person to the verifier circle, as a tracked action. The address
    * travels as the operator typed it: which identity proves it, and the form it is
@@ -623,6 +823,21 @@ export function createHilosMaintenanceActions(
           replySchema: maintenancePassReplySchema,
         },
       )
+    },
+    sendMaintenanceRestorePass() {
+      return context.actions.dispatch(
+        MAINTENANCE_RESTORE_PASS_ACTION,
+        {},
+        {
+          replySchema: maintenancePassReplySchema,
+        },
+      )
+    },
+    sendMaintenanceRestoreOpen() {
+      return context.actions.dispatch(MAINTENANCE_RESTORE_OPEN_ACTION, {})
+    },
+    sendMaintenanceRestoreClose() {
+      return context.actions.dispatch(MAINTENANCE_RESTORE_CLOSE_ACTION, {})
     },
     sendMaintenanceCircleAdd(identifier) {
       return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {

@@ -10,7 +10,7 @@ SHELL-PARITY framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 4 # HIL
 SHELL-PARITY framework/frontend/vue/src/admin/daemon/HilosDaemonCronPage.vue 2 # HIL-1595
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue 5 # HIL-1727
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue 1 # HIL-1595
-SHELL-PARITY framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.vue 2 # HIL-1595
+SHELL-PARITY framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.vue 25 # HIL-1681
 SHELL-PARITY framework/frontend/vue/src/admin/users/HilosUserPage.vue 1 # HIL-1595
 SHELL-PARITY framework/frontend/vue/src/profile/HilosProfilePage.vue 3 # HIL-1595
 SHELL-PARITY framework/frontend/vue/src/profile/HilosProfileTimeZone.vue 5 # HIL-1595

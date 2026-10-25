@@ -71,6 +71,10 @@ final class ProtectedModeRuntime extends RtState
     public const string circleSessionTokenHashes = 'circleSessionTokenHashes';
     public const string circleNamedCount = 'circleNamedCount';
     public const string enteredFromBrowser = 'enteredFromBrowser';
+    public const string diagnosticsNodeId = 'diagnosticsNodeId';
+    public const string stoppedAgentCount = 'stoppedAgentCount';
+    public const string preservedAgentTypes = 'preservedAgentTypes';
+    public const string agentStartGateClosed = 'agentStartGateClosed';
 
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
@@ -178,6 +182,37 @@ final class ProtectedModeRuntime extends RtState
     public bool $enteredFromBrowser = false;
 
     /**
+     * Node these diagnostics describe, or null until this node's master publishes them.
+     *
+     * Live only. A restart does not treat a value left in the freeze file as current.
+     */
+    public ?string $diagnosticsNodeId = null;
+
+    /**
+     * Agents this node is holding stopped, or null until this node's master publishes the count.
+     *
+     * Null is unpublished, not zero.
+     */
+    public ?int $stoppedAgentCount = null;
+
+    /**
+     * Agent types the full-stop policy leaves running, besides the initiator already named above.
+     *
+     * Null means this node's master has not published the list. An empty list is the published
+     * fact that the policy names no exception.
+     *
+     * @var ?list<string>
+     */
+    public ?array $preservedAgentTypes = null;
+
+    /**
+     * Whether agent start is actually closed on this node, or null until the master publishes it.
+     *
+     * Null is unpublished, not an open gate.
+     */
+    public ?bool $agentStartGateClosed = null;
+
+    /**
      * Creates the inactive singleton runtime row.
      *
      * @return static Inactive protected mode runtime state
@@ -218,6 +253,10 @@ final class ProtectedModeRuntime extends RtState
         $instance->circleSessionTokenHashes = self::requireStringList($row, self::circleSessionTokenHashes);
         $instance->circleNamedCount = self::requireInt($row, self::circleNamedCount);
         $instance->enteredFromBrowser = self::requireBool($row, self::enteredFromBrowser);
+        $instance->diagnosticsNodeId = self::optionalString($row, self::diagnosticsNodeId);
+        $instance->stoppedAgentCount = self::optionalInt($row, self::stoppedAgentCount);
+        $instance->preservedAgentTypes = self::optionalStringList($row, self::preservedAgentTypes);
+        $instance->agentStartGateClosed = self::optionalBool($row, self::agentStartGateClosed);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -250,6 +289,10 @@ final class ProtectedModeRuntime extends RtState
         $this->circleSessionTokenHashes = self::patchStringList($diff, self::circleSessionTokenHashes, $this->circleSessionTokenHashes);
         $this->circleNamedCount = self::patchInt($diff, self::circleNamedCount, $this->circleNamedCount);
         $this->enteredFromBrowser = self::patchBool($diff, self::enteredFromBrowser, $this->enteredFromBrowser);
+        $this->diagnosticsNodeId = self::patchOptionalString($diff, self::diagnosticsNodeId, $this->diagnosticsNodeId);
+        $this->stoppedAgentCount = self::patchOptionalInt($diff, self::stoppedAgentCount, $this->stoppedAgentCount);
+        $this->preservedAgentTypes = self::patchOptionalStringList($diff, self::preservedAgentTypes, $this->preservedAgentTypes);
+        $this->agentStartGateClosed = self::patchOptionalBool($diff, self::agentStartGateClosed, $this->agentStartGateClosed);
     }
 
     /**
@@ -471,6 +514,10 @@ final class ProtectedModeRuntime extends RtState
             self::circleSessionTokenHashes => $this->circleSessionTokenHashes,
             self::circleNamedCount => $this->circleNamedCount,
             self::enteredFromBrowser => $this->enteredFromBrowser,
+            self::diagnosticsNodeId => $this->diagnosticsNodeId,
+            self::stoppedAgentCount => $this->stoppedAgentCount,
+            self::preservedAgentTypes => $this->preservedAgentTypes,
+            self::agentStartGateClosed => $this->agentStartGateClosed,
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -17,9 +18,12 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -277,6 +281,198 @@ final class WorkerServerProtectedModeGateTest extends TestCase
     }
 
     /**
+     * The count is the agents still held. The stop queue is not in it, the move into the resume
+     * queue does not drop it, and a start the walk has asked for leaves it.
+     */
+    public function testTheHeldCountFollowsTheStopAndTheResumeQueue(): void
+    {
+        $manager = new FreezeGateTestAgentManagerDaemon();
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
+        $manager->registerUnlinked(self::PER_NODE_TYPE, null);
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+
+        $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+
+        $this->assertSame(0, $this->heldCount($server), 'Agents still waiting to be stopped are not held yet.');
+
+        $this->passes($server, 1);
+        $this->assertSame(1, $this->heldCount($server));
+
+        $this->passes($server, 1);
+        $this->assertSame(2, $this->heldCount($server));
+
+        $server->resumeAgentsForProtectedMode();
+        $this->assertSame(2, $this->heldCount($server), 'Moving the held set into the resume queue keeps the count.');
+
+        $this->passes($server, 1);
+        $this->assertSame(1, $this->heldCount($server), 'A start the walk has asked for has left the hold.');
+    }
+
+    /**
+     * One agent remembered in both lists is one hold. The count is the union, not the sum.
+     */
+    public function testAnAgentListedInBothHoldListsIsCountedOnce(): void
+    {
+        $manager = new FreezeGateTestAgentManagerDaemon();
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
+        $manager->registerUnlinked(self::PER_NODE_TYPE, null);
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+        $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+        $this->passes($server, 2);
+
+        $stopped = new ReflectionProperty(WorkerServer::class, 'protectedModeStoppedAgents')->getValue($server);
+        $this->assertIsArray($stopped);
+        $this->assertCount(2, $stopped);
+        new ReflectionProperty(WorkerServer::class, 'protectedModeResumeQueue')->setValue($server, [$stopped[0]]);
+
+        $this->assertSame(2, $this->heldCount($server));
+    }
+
+    /**
+     * The published exception list is the agents both gates already let through.
+     *
+     * Mail stays running and may start. Status is not in those gates, so it is stopped, refused
+     * a start, and absent from the list. The initiator is named on the row, not in the list.
+     */
+    public function testThePreservedListIsWhatBothGatesAlreadyLetThrough(): void
+    {
+        $manager = new FreezeGateTestAgentManagerDaemon();
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
+        $manager->registerUnlinked(HilosAgentType::HILOS_MAIL, null);
+        $manager->registerUnlinked(HilosAgentType::HILOS_STATUS, null);
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+
+        $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+        $this->passes($server, 2);
+
+        $diagnostics = $server->getProtectedModeAgentDiagnostics();
+        $this->assertSame(
+            [HilosAgentType::HILOS_MAIL],
+            $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
+        );
+        $this->assertNotContains(
+            HilosAgentType::HILOS_STATUS,
+            $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
+        );
+        $this->assertNotContains(
+            self::INITIATOR_TYPE,
+            $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
+        );
+        $this->assertSame(2, $diagnostics[StateProtectedModeRuntime::stoppedAgentCount]);
+        $this->assertTrue($diagnostics[StateProtectedModeRuntime::agentStartGateClosed]);
+        $this->assertNotContains(HilosAgentType::HILOS_MAIL, $server->getProtectedModeStoppedAgents());
+        $this->assertContains(HilosAgentType::HILOS_STATUS, $server->getProtectedModeStoppedAgents());
+
+        $manager->askedFor = [];
+        $mailReachedSelection = false;
+        try {
+            $server->startAgentPublic(HilosAgentType::HILOS_MAIL);
+        } catch (NoSuitableWorkerException) {
+            $mailReachedSelection = true;
+        }
+        $this->assertTrue($mailReachedSelection, 'The start gate lets the preserved mail pool through.');
+
+        $manager->askedFor = [];
+        $server->startAgentPublic(HilosAgentType::HILOS_STATUS);
+        $this->assertFalse(
+            $manager->wasAskedFor(HilosAgentType::HILOS_STATUS),
+            'Status is not a preserved type, so the freeze still refuses its start.',
+        );
+    }
+
+    /**
+     * Publishing writes this node's id and an honest zero, then leaves an unchanged tuple alone.
+     *
+     * The open gate of the verification window is false, not null. Active is closed.
+     */
+    public function testPublishNamesThisNodeAndSkipsAnUnchangedTuple(): void
+    {
+        $cluster = Hilos::$cluster;
+        $router = Hilos::$sr;
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        try {
+            Hilos::$cluster = null;
+            Hilos::$sr = null;
+            $server = $this->buildServer(FreezeGateTestWorkerServer::class, new FreezeGateTestAgentManagerDaemon());
+            $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+
+            $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->diagnosticsNodeId);
+            $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount);
+            $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->preservedAgentTypes);
+            $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed);
+
+            $server->publishDiagnosticsPublic();
+
+            $this->assertSame(
+                StateHilosClusterNode::STANDALONE_NODE_ID,
+                Hilos::$rt->hilosProtectedModeRuntime->diagnosticsNodeId,
+            );
+            $this->assertSame(0, Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount);
+            $this->assertSame(
+                [HilosAgentType::HILOS_MAIL],
+                Hilos::$rt->hilosProtectedModeRuntime->preservedAgentTypes,
+            );
+            $this->assertSame(false, Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed);
+
+            $state = Hilos::$rt->hilosProtectedModeRuntime->getState();
+            $this->assertInstanceOf(StateProtectedModeRuntime::class, $state);
+            $baseline = new ReflectionProperty(RtState::class, 'rtSyncBaseline');
+            $stored = $baseline->getValue($state);
+            $this->assertIsArray($stored);
+            $stored[StateProtectedModeRuntime::stoppedAgentCount] = 99;
+            $baseline->setValue($state, $stored);
+
+            $server->publishDiagnosticsPublic();
+
+            $after = $baseline->getValue($state);
+            $this->assertIsArray($after);
+            $this->assertSame(99, $after[StateProtectedModeRuntime::stoppedAgentCount]);
+            $this->assertSame(0, Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount);
+
+            $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+            $server->publishDiagnosticsPublic();
+            $this->assertSame(false, Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed);
+            $this->assertSame(
+                StateHilosClusterNode::STANDALONE_NODE_ID,
+                Hilos::$rt->hilosProtectedModeRuntime->diagnosticsNodeId,
+            );
+
+            $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+            $server->publishDiagnosticsPublic();
+            $this->assertSame(true, Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed);
+        } finally {
+            Hilos::$cluster = $cluster;
+            Hilos::$sr = $router;
+            RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
+        }
+    }
+
+    public function testPublishLeavesTheRowAloneWhileItIsUnmounted(): void
+    {
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, new FreezeGateTestAgentManagerDaemon());
+
+        Hilos::$rt = null;
+        $server->publishDiagnosticsPublic();
+        $this->assertNull(Hilos::$rt);
+
+        Hilos::$rt = new FreezeGateTestRtContext();
+        $server->publishDiagnosticsPublic();
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime);
+    }
+
+    /**
+     * @param FreezeGateTestWorkerServer $server Server whose hold is being read
+     * @return int Agents that server is still holding stopped
+     */
+    private function heldCount(FreezeGateTestWorkerServer $server): int
+    {
+        return $server->getProtectedModeAgentDiagnostics()[StateProtectedModeRuntime::stoppedAgentCount];
+    }
+
+    /**
      * Mounts the freeze row in the phase and initiator identity the case needs.
      *
      * Built through the deserialization path an inbound RT sync uses, which is the only way
@@ -391,6 +587,11 @@ class FreezeGateTestWorkerServer extends WorkerServer
     public function rosterStepPublic(): void
     {
         $this->advanceProtectedModeRoster();
+    }
+
+    public function publishDiagnosticsPublic(): void
+    {
+        $this->publishProtectedModeAgentDiagnostics();
     }
 
     protected function onStart(): void

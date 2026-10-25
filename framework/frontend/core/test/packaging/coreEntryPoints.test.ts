@@ -220,6 +220,24 @@ const statusTypes = [
   'HilosStatusState',
   'HilosStatusSummary',
 ]
+/** Restore-card selectors added on the maintenance frame. The frozen snapshot stays as it was. */
+const maintenanceFrameValues = [
+  'hilosMaintenanceOtherBrowserLine',
+  'hilosMaintenanceRestoreLadder',
+]
+/** Restore controls added beside the manual pass. The frozen snapshot stays as it was. */
+const maintenanceRestoreActionValues = [
+  'MAINTENANCE_RESTORE_CLOSE_ACTION',
+  'MAINTENANCE_RESTORE_OPEN_ACTION',
+  'MAINTENANCE_RESTORE_PASS_ACTION',
+]
+/** Restore dialog words, shared by the compatibility root and the section entry. */
+const maintenanceRestoreCopyValues = [
+  'HILOS_MAINTENANCE_RESTORE_CLOSE_COPY',
+  'HILOS_MAINTENANCE_RESTORE_OPEN_COPY',
+  'HILOS_MAINTENANCE_RESTORE_PASS_COPY',
+]
+const maintenanceFrameTypes = ['HilosMaintenanceRestoreLadder']
 /** The standard self-rename binding, shared by the compatibility root and base. */
 const profileRenameValues = [
   'PROFILE_NAME_SET_ACTION',
@@ -244,6 +262,9 @@ const expectedValues = [
   ...statusValues,
   ...profileRenameValues,
   ...userOverviewValues,
+  ...maintenanceFrameValues,
+  ...maintenanceRestoreActionValues,
+  ...maintenanceRestoreCopyValues,
 ].sort()
 
 /**
@@ -540,6 +561,7 @@ describe('core public entries', () => {
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
         ...statusTypes,
+        ...maintenanceFrameTypes,
       ].sort(),
     )
     const baseExports = exportsOf('base/index.ts')

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Pages\Maintenance;
 
 use DateTimeImmutable;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -17,6 +18,10 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\PageAccountFrozenException;
+use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageAgentInterface;
@@ -37,6 +42,11 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassReplyDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreOpenActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestorePassActionDTO;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlDoneSignalData;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
@@ -74,6 +84,9 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
         HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
         HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -81,6 +94,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::MAINTENANCE_DISABLE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::MAINTENANCE_PASS_DONE => ManualMaintenancePassDoneSignalData::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE => MaintenanceRestoreControlDoneSignalData::class,
         ],
     ];
 
@@ -149,18 +163,23 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
         $data = self::stateFromRow($row);
         self::$stale = false;
-        $fingerprint = hash('sha256', serialize($data->toArray()));
+        $fingerprint = self::broadcastFingerprint($row, $data);
         if ($fingerprint === self::$lastBroadcastFingerprint) {
             return;
         }
         self::$lastBroadcastFingerprint = $fingerprint;
 
         foreach (array_keys(self::$subscribers) as $acceptKey) {
-            if ($row->locksOut($acceptKey, self::subscriberSessionTokenHash($acceptKey))) {
+            $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+            if ($row->locksOut($acceptKey, $sessionHash)) {
                 continue;
             }
 
-            $frame = static::frameForViewer($acceptKey, $data, HilosMaintenanceStateSignalData::wireFields());
+            $frame = static::frameForViewer(
+                $acceptKey,
+                $data->withIsInitiator($row->belongsToInitiator($sessionHash)),
+                HilosMaintenanceStateSignalData::wireFields(),
+            );
             if ($frame === null) {
                 continue;
             }
@@ -186,11 +205,16 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $row = Hilos::$rt?->hilosProtectedModeRuntime;
-        if ($row === null || $row->locksOut($acceptKey, self::subscriberSessionTokenHash($acceptKey))) {
+        $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+        if ($row === null || $row->locksOut($acceptKey, $sessionHash)) {
             return;
         }
 
-        $frame = static::frameForViewer($acceptKey, self::stateFromRow($row), HilosMaintenanceStateSignalData::wireFields());
+        $frame = static::frameForViewer(
+            $acceptKey,
+            self::stateFromRow($row)->withIsInitiator($row->belongsToInitiator($sessionHash)),
+            HilosMaintenanceStateSignalData::wireFields(),
+        );
         if ($frame !== null) {
             $this->sendToUser(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MAINTENANCE, $acceptKey, $frame);
         }
@@ -216,8 +240,11 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     }
 
     /**
+     * Shared frame for every subscriber. The initiator flag stays false here and is
+     * filled in per accept key after the admission check.
+     *
      * @param ProtectedModeRuntime $row Current protected-mode row
-     * @return HilosMaintenanceStateSignalData State shown in the section
+     * @return HilosMaintenanceStateSignalData State shown in the section, before the personal flag
      */
     private static function stateFromRow(ProtectedModeRuntime $row): HilosMaintenanceStateSignalData
     {
@@ -225,12 +252,48 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             phase: $row->phase,
             operation: $row->operation,
             manual: $row->isManualMaintenanceWindow(),
-            startedAt: $row->startedAt === null ? null : UtcMoment::format(new DateTimeImmutable('@' . $row->startedAt)),
+            startedAt: self::formatEpoch($row->startedAt),
             enteredFromBrowser: $row->enteredFromBrowser,
             passCount: count($row->passHashes),
             circleNamed: $row->circleNamedCount,
             circleAdmitted: count($row->circleSessionTokenHashes),
+            initiatorAgentType: $row->initiatorAgentType,
+            initiatorNodeId: $row->initiatorNodeId,
+            activatedAt: self::formatEpoch($row->activatedAt),
+            progressAt: self::formatEpoch($row->progressAt),
+            isInitiator: false,
+            diagnosticsNodeId: $row->diagnosticsNodeId,
+            stoppedAgentCount: $row->stoppedAgentCount,
+            preservedAgentTypes: $row->preservedAgentTypes,
+            agentStartGateClosed: $row->agentStartGateClosed,
         );
+    }
+
+    /**
+     * @param ?int $epochSeconds Epoch seconds on the runtime row, or null when the moment is absent
+     * @return ?string ISO-8601 UTC with Z, or null when the row has no moment
+     */
+    private static function formatEpoch(?int $epochSeconds): ?string
+    {
+        return $epochSeconds === null
+            ? null
+            : UtcMoment::format(new DateTimeImmutable('@' . $epochSeconds));
+    }
+
+    /**
+     * Shared facts, salted by who the initiator is, so a change of that session is broadcast.
+     *
+     * The salt is the row's session hash. It is not a field of the frame.
+     *
+     * @param ProtectedModeRuntime $row Current protected-mode row
+     * @param HilosMaintenanceStateSignalData $state Shared frame, before any viewer's flag
+     * @return string Fingerprint compared with the last broadcast
+     */
+    private static function broadcastFingerprint(
+        ProtectedModeRuntime $row,
+        HilosMaintenanceStateSignalData $state,
+    ): string {
+        return hash('sha256', serialize([$state->toArray(), $row->initiatorSessionTokenHash]));
     }
 
     /**
@@ -274,6 +337,45 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::MAINTENANCE_RESTORE_PASS:
+                if (!$dto instanceof MaintenanceRestorePassActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceRestorePassActionDTO::class, $dto);
+                }
+                $this->handleRestoreControl(
+                    $acceptKey,
+                    $action,
+                    MaintenanceRestoreControlSignalData::CONTROL_PASS,
+                    'Code issued',
+                );
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_RESTORE_OPEN:
+                if (!$dto instanceof MaintenanceRestoreOpenActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceRestoreOpenActionDTO::class, $dto);
+                }
+                $this->handleRestoreControl(
+                    $acceptKey,
+                    $action,
+                    MaintenanceRestoreControlSignalData::CONTROL_OPEN,
+                    'The system is open',
+                );
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE:
+                if (!$dto instanceof MaintenanceRestoreCloseActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceRestoreCloseActionDTO::class, $dto);
+                }
+                $this->handleRestoreControl(
+                    $acceptKey,
+                    $action,
+                    MaintenanceRestoreControlSignalData::CONTROL_CLOSE,
+                    'The window is closed again',
+                );
+
+                break;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -302,6 +404,11 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
             case HilosSignalConstants::MAINTENANCE_PASS_DONE:
                 $this->handlePassDone($data->data);
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE:
+                $this->handleRestoreControlDone($data->data);
 
                 break;
 
@@ -492,6 +599,148 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             $refusal->errorType,
             $refusal->errorDetail,
         ));
+    }
+
+    /**
+     * Hands one restore control to the backup agent after the server has resolved who is asking.
+     *
+     * The browser sends an empty payload. Identity, the restore window and the sentence travel in
+     * the ask. A refusal here is the action's own answer: nothing is deferred and no ask is sent.
+     *
+     * @param string $acceptKey Acting browser connection
+     * @param string $action Browser action being forwarded
+     * @param string $control pass, open or close
+     * @param string $successMessage Sentence spoken only after the control is confirmed
+     * @throws TableActionException When the request is untracked or the browser is outside the restore window
+     * @throws PageUnauthorizedException When the connection has no account
+     * @throws PageAccountFrozenException When the person is frozen
+     * @throws PageForbiddenException When the connection is not an administrator
+     * @throws ActionViewModeException When the connection may only look
+     * @throws HilosException When the administrator lookup fails
+     * @throws InvalidArgumentException When the ask cannot be named or queued
+     * @throws InvalidFormatException When the ask's identity or correlation is empty
+     */
+    private function handleRestoreControl(
+        string $acceptKey,
+        string $action,
+        string $control,
+        string $successMessage,
+    ): void {
+        if ($this->currentActionRequestId() === null || $this->currentActionRequestId() === '') {
+            throw new TableActionException('A restore control requires a tracked request');
+        }
+
+        PageAccessGate::assertAction(static::class, $acceptKey, $action);
+        $sessionHash = $this->assertRestoreAdmission($acceptKey);
+        $this->forward(
+            HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL,
+            new MaintenanceRestoreControlSignalData(
+                control: $control,
+                acceptKey: $acceptKey,
+                sessionHash: $sessionHash,
+                requestId: $this->currentActionRequestId(),
+                action: $action,
+                replySignal: HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE,
+                successMessage: $successMessage,
+            ),
+        );
+    }
+
+    /**
+     * Admits the current browser to drive the restore window it started.
+     *
+     * The same user id is not an admission: the session hash on the row is the initiator, and a
+     * second browser of that person is refused here, before any ask exists.
+     *
+     * @param string $acceptKey Acting browser connection
+     * @return string Current server-resolved session hash
+     * @throws TableActionException When the session, the row or the restore window does not admit this browser
+     */
+    private function assertRestoreAdmission(string $acceptKey): string
+    {
+        $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+        if ($sessionHash === null) {
+            throw new TableActionException('A browser session is required to control a restore');
+        }
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($row === null) {
+            throw new TableActionException('Protected-mode state is unavailable');
+        }
+
+        if ($row->isManualMaintenanceWindow()) {
+            throw new TableActionException('The current window is manual maintenance');
+        }
+
+        if ($row->operation !== BackupAgent::RESTORE_OPERATION) {
+            throw new TableActionException('The current window is not a restore');
+        }
+
+        if ($row->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
+            throw new TableActionException('The current window is not verifying');
+        }
+
+        if (!$row->belongsToInitiator($sessionHash)) {
+            throw new TableActionException('This browser session did not start the restore');
+        }
+
+        if ($row->locksOut($acceptKey, $sessionHash)) {
+            throw new TableActionException('This browser session is not admitted to maintenance');
+        }
+
+        return $sessionHash;
+    }
+
+    /**
+     * Discloses a restore code only after a second look, and answers open or close with no domain reply.
+     *
+     * A pass whose window no longer admits this browser is refused without the code. Open and close
+     * carry nothing to disclose: their success is the handover sentence alone.
+     *
+     * @param MaintenanceRestoreControlDoneSignalData $done Addressed outcome from the backup agent
+     * @throws InvalidArgumentException When the answer cannot be named
+     * @throws InvalidFormatException When a successful pass contains an empty code
+     */
+    private function handleRestoreControlDone(MaintenanceRestoreControlDoneSignalData $done): void
+    {
+        if ($done->answer->error !== null || $done->answer->action !== HilosSignalConstants::MAINTENANCE_RESTORE_PASS) {
+            $this->answerHandover($done->answer);
+
+            return;
+        }
+
+        try {
+            PageAccessGate::assertAction(
+                static::class,
+                $done->answer->acceptKey,
+                HilosSignalConstants::MAINTENANCE_RESTORE_PASS,
+            );
+            $this->assertRestoreAdmission($done->answer->acceptKey);
+        } catch (WiringRefusal $e) {
+            // The waiting browser receives the wiring failure without the code.
+            $this->refusePassDisclosure($done->answer, ActionRefusal::fromThrowable($e));
+
+            return;
+        } catch (Throwable $e) {
+            $this->refusePassDisclosure($done->answer, ActionRefusal::fromThrowable($e));
+
+            return;
+        }
+
+        $pass = $done->pass;
+        if ($pass === null || $pass === '') {
+            throw new InvalidFormatException('A successful restore pass requires a code and a tracked request');
+        }
+
+        if ($done->answer->successMessage !== null) {
+            $this->setActionSuccessMessage($done->answer->successMessage);
+        }
+        $this->sendActionSuccess(
+            $done->answer->acceptKey,
+            $done->answer->action,
+            $done->answer->requestId,
+            new MaintenancePassReplyDTO($pass),
+        );
     }
 
 }

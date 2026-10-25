@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -65,6 +67,7 @@ use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
@@ -115,6 +118,17 @@ abstract class WorkerServer extends AbstractServer implements
      * their own {@see AgentConstants::START_DEADLINE_SECONDS}.
      */
     private const float WORKER_CONNECT_WAIT_SECONDS = 10.0;
+
+    /**
+     * Agent types the full-stop policy leaves running, besides the initiator the row names.
+     *
+     * The start gate, the stop walk and the published list all read this one list, in this order.
+     *
+     * @var list<string>
+     */
+    private const array PROTECTED_MODE_PRESERVED_AGENT_TYPES = [
+        HilosAgentType::HILOS_MAIL,
+    ];
 
     /**
      * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
@@ -725,6 +739,10 @@ abstract class WorkerServer extends AbstractServer implements
         // One step of the protected-mode roster walk, every pass. Above the throttle below, which
         // is for worker processes: a walk that took it would move one agent a second (HIL-1012).
         $this->advanceProtectedModeRoster();
+
+        // This node's hold, after the walk has moved it. An unchanged tuple does not write, and a
+        // missing freeze row stays null rather than becoming a false zero.
+        $this->publishProtectedModeAgentDiagnostics();
 
         // Seat or give up the agents waiting for a worker to connect, every pass and for the same
         // reason: under the throttle a worker that registered would wait up to a second for its agent.
@@ -2067,7 +2085,7 @@ abstract class WorkerServer extends AbstractServer implements
             return false;
         }
 
-        if ($agentType === HilosAgentType::HILOS_MAIL) {
+        if (in_array($agentType, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
             // The one pool the freeze lets through, and it is load-bearing: the alert about a node
             // frozen with nothing happening behind it goes out over this pool, so a freeze that
             // stopped it would kill the only channel out of the node exactly when it is needed
@@ -2533,7 +2551,7 @@ abstract class WorkerServer extends AbstractServer implements
                 continue;
             }
 
-            if ($this->parseAgentId($agentId)->type === HilosAgentType::HILOS_MAIL) {
+            if (in_array($this->parseAgentId($agentId)->type, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
                 // Left running for the same reason the start gate lets it back up: it carries the
                 // alert about this very freeze, and a stopped mail pool would make a stuck node
                 // silent as well as unreachable (HIL-482). Its raw half, that is: the durable half
@@ -2619,6 +2637,35 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
+     * Current hold this node keeps for the freeze, read from this server's memory.
+     *
+     * The count is the distinct agents still held: remembered stops and the resume queue the walk
+     * has not asked to start yet. A start already asked for has left that union, and the stop
+     * queue is not in it — those agents are still running. The preserved types are the one policy
+     * both gates already pass, in that policy's order. The gate flag is the same phase verdict
+     * the inspect snapshot reports once the row is mounted, and false when the row is absent.
+     * Unpublished null stays the row's own contract: publishing refuses to write until the row
+     * is there.
+     *
+     * @return array{stoppedAgentCount: int, preservedAgentTypes: list<string>, agentStartGateClosed: bool} Hold this node would publish
+     */
+    public function getProtectedModeAgentDiagnostics(): array
+    {
+        $heldAgentIds = [];
+        foreach ([...$this->protectedModeStoppedAgents, ...($this->protectedModeResumeQueue ?? [])] as $frozen) {
+            $heldAgentIds[$this->buildAgentId($frozen->agent->type, $frozen->agent->index)] = true;
+        }
+
+        return [
+            StateProtectedModeRuntime::stoppedAgentCount => count($heldAgentIds),
+            StateProtectedModeRuntime::preservedAgentTypes => self::PROTECTED_MODE_PRESERVED_AGENT_TYPES,
+            StateProtectedModeRuntime::agentStartGateClosed => Hilos::$rt?->hilosProtectedModeRuntime !== null
+                && Hilos::$rt->hilosProtectedModeRuntime->phase !== StateProtectedModeRuntime::PHASE_INACTIVE
+                && Hilos::$rt->hilosProtectedModeRuntime->phase !== StateProtectedModeRuntime::PHASE_VERIFYING,
+        ];
+    }
+
+    /**
      * Whether the freeze in flight stopped this agent on this node and the lift has not asked for it back yet.
      *
      * Read off the remembered set and the replay queue, the two places such an agent stands between
@@ -2677,6 +2724,51 @@ abstract class WorkerServer extends AbstractServer implements
         $this->protectedModeStoppedAgents = [];
         $this->protectedModeWalkPasses = 0;
         $this->protectedModeWalkAgents = 0;
+    }
+
+    /**
+     * Writes this node's hold onto the freeze row when the tuple has changed.
+     *
+     * Called from the master pass immediately after the roster walk. The row has to be mounted;
+     * without it the four diagnostic fields stay null. The comparison is the row itself, so an
+     * unchanged tuple never calls the action. The node id is this master's local id, and the
+     * standalone id when the cluster facade is absent — the same rule as the cluster-node roster.
+     * The write does not move the phase or the gate, and it adds no peer frame of its own: the
+     * row's existing sync is what this node's workers already receive.
+     *
+     * @throws InvalidFormatException When the preserved agent types are not a list of strings
+     * @throws RtActionsCollectionNameNullException When the freeze row cannot name its collection
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source of the row
+     * @throws EnvException When the cluster-enabled flag or a cluster env value cannot be read
+     * @throws ClusterConfigurationException When cluster mode is on and the node config is missing or invalid
+     * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
+     */
+    protected function publishProtectedModeAgentDiagnostics(): void
+    {
+        if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
+            return;
+        }
+
+        $diagnostics = $this->getProtectedModeAgentDiagnostics();
+        $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+        if (
+            Hilos::$rt->hilosProtectedModeRuntime->diagnosticsNodeId === $nodeId
+            && Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount
+                === $diagnostics[StateProtectedModeRuntime::stoppedAgentCount]
+            && Hilos::$rt->hilosProtectedModeRuntime->preservedAgentTypes
+                === $diagnostics[StateProtectedModeRuntime::preservedAgentTypes]
+            && Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed
+                === $diagnostics[StateProtectedModeRuntime::agentStartGateClosed]
+        ) {
+            return;
+        }
+
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateAgentDiagnostics(
+            $nodeId,
+            $diagnostics[StateProtectedModeRuntime::stoppedAgentCount],
+            $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
+            $diagnostics[StateProtectedModeRuntime::agentStartGateClosed],
+        );
     }
 
     /**

@@ -465,6 +465,49 @@ abstract class RtState
     }
 
     /**
+     * Reads a boolean field of a runtime row that is allowed to be absent.
+     *
+     * Absence answers `null`, which is what distinguishes it from a flag the sender lowered
+     * on purpose; `false` arrives as `false`.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?bool Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds a non-boolean
+     */
+    final protected static function optionalBool(array $source, string $key): ?bool
+    {
+        $value = $source[$key] ?? null;
+        if ($value !== null && !is_bool($value)) {
+            throw new InvalidFormatException('Runtime row carries a non-boolean under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a list of strings that is allowed to be absent.
+     *
+     * An empty list is a value: a node that has nothing to list writes `[]`. Absence answers
+     * `null`, and an array that is not a list of strings is refused the same way
+     * {@see self::requireStringList()} refuses one.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?list<string> Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds anything but a list of strings
+     */
+    final protected static function optionalStringList(array $source, string $key): ?array
+    {
+        $value = $source[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+
+        return self::requireStringList($source, $key);
+    }
+
+    /**
      * Reads a string field out of a diff, or keeps the value the state already holds.
      *
      * A diff carries the fields that changed, so a key it does not carry means the field did
@@ -625,5 +668,37 @@ abstract class RtState
         }
 
         return self::optionalFloat($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param ?bool $current Value the state holds now
+     * @return ?bool Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-boolean
+     */
+    final protected static function patchOptionalBool(array $diff, string $key, ?bool $current): ?bool
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::optionalBool($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param ?list<string> $current Value the state holds now
+     * @return ?list<string> Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds anything but a list of strings or null
+     */
+    final protected static function patchOptionalStringList(array $diff, string $key, ?array $current): ?array
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::optionalStringList($diff, $key);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -51,6 +52,8 @@ final class ProtectedModeRuntimeActions extends RtActions
      * or opens the node from the console. This exception follows the operation and entry mode,
      * not the phase; a restore verification window still keeps its initiating browser. The
      * separate entered-from-browser fact survives either kind of restart for Maintenance's source label.
+     * The four diagnostic fields do not: whatever the file still carries is dropped, and they stay
+     * null until this node's master publishes them again.
      *
      * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
      * anchors it, HIL-97 enforces it); until it exists this half of the decision is a session
@@ -82,6 +85,45 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
         $this->state->enteredFromBrowser = $row->enteredFromBrowser;
+        $this->state->diagnosticsNodeId = null;
+        $this->state->stoppedAgentCount = null;
+        $this->state->preservedAgentTypes = null;
+        $this->state->agentStartGateClosed = null;
+        $this->sync();
+    }
+
+    /**
+     * Publishes this node's agent-stop diagnostics onto the runtime row.
+     *
+     * The four values are a live fact this node's master holds. The write goes through this
+     * mounted item action and syncs to the node's workers; the freeze file is not touched.
+     * An empty preserved-type list is a published fact that the full-stop policy names no
+     * exception. A list that is not a list of strings is refused by the same row reader the
+     * freeze uses, before any field is written and before the sync.
+     *
+     * @param string $nodeId Node the counts describe
+     * @param int $stoppedAgentCount Agents this node is holding stopped
+     * @param array<mixed> $preservedAgentTypes Agent types the full-stop policy leaves running
+     * @param bool $agentStartGateClosed Whether agent start is actually closed on this node
+     * @throws InvalidFormatException When the preserved agent types are not a list of strings
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function updateAgentDiagnostics(
+        string $nodeId,
+        int $stoppedAgentCount,
+        array $preservedAgentTypes,
+        bool $agentStartGateClosed,
+    ): void {
+        $this->ensureCanWrite();
+
+        $this->state->preservedAgentTypes = StateProtectedModeRuntime::fromRow([
+            ...$this->state->toArray(),
+            StateProtectedModeRuntime::preservedAgentTypes => $preservedAgentTypes,
+        ])->preservedAgentTypes;
+        $this->state->diagnosticsNodeId = $nodeId;
+        $this->state->stoppedAgentCount = $stoppedAgentCount;
+        $this->state->agentStartGateClosed = $agentStartGateClosed;
         $this->sync();
     }
 

@@ -420,8 +420,8 @@
     "outputSha256": "5d33ee4983dab76b2bc75f31a60998f4b0a87215b2ff942b944cdad21b77fcfe"
   },
   "src/protocol/maintenanceSignals.ts": {
-    "sourceSha256": "383096ea7b4ec24e10f89f6a8b998b3e35bf6d6a35996c91ef11182022d59db3",
-    "outputSha256": "9b519a1e6ffbf66bf4b0dcb373b3763f20212de9ca2873012fd6e291199d74ee"
+    "sourceSha256": "5f94a3cc3352ce464ca902826f1ca910405f5558b90add1478d4ba2b26a2bc19",
+    "outputSha256": "7a2cb0b53137c4ad42c4f206f7ed0fafb945499e9561166fadae0975f32ceab1"
   },
   "src/protocol/pageError.ts": {
     "sourceSha256": "3082c6d611abc6ac89e4a08b09f01269df4d9af532e692fdb3b5a4bb1a1c09a0",

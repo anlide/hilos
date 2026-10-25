@@ -8,14 +8,18 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlDoneSignalData;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
@@ -45,6 +49,9 @@ use PHPUnit\Framework\TestCase;
 final class ProtectedModeOperatorTest extends TestCase
 {
     private const string INITIATOR_TYPE = 'operator-test-initiator';
+
+    /** @var string Reply signal the test ask names, distinct from the production constant */
+    private const string REPLY_SIGNAL = 'page_restore_control_done';
 
     /** @var ?EnvAccessor Env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
@@ -471,6 +478,224 @@ final class ProtectedModeOperatorTest extends TestCase
         $this->assertRefused($this->singleReply(), 'still in flight');
     }
 
+    public function testABrowserPassAnswersWithTheCodeOnlyOnceItsHashIsOnTheRow(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+        $ask = $this->ask(MaintenanceRestoreControlSignalData::CONTROL_PASS, 'req-pass');
+
+        $agent->beginRestore($ask);
+
+        $sent = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $sent);
+        $agent->onTick();
+        $quiet = $this->taken();
+        $this->assertSame([], $quiet['outcomes'], 'A pass that has not landed yet is not an answer.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, [$sent->passHash]);
+        $agent->onTick();
+
+        $done = $this->singleOutcome();
+        $this->assertNull($done->answer->error);
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_RESTORE_PASS, $done->answer->action);
+        $this->assertSame('req-pass', $done->answer->requestId);
+        $this->assertIsString($done->pass);
+        $this->assertSame(hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $done->pass), $sent->passHash);
+        $this->assertNotSame($done->pass, $sent->passHash, 'The clear code must never ride the pass signal.');
+    }
+
+    public function testABrowserOpenAnswersOnceTheRowIsInactive(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_OPEN));
+
+        $queued = $this->taken();
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_DISABLE], $queued['exits']);
+        $this->assertSame([], $queued['outcomes']);
+
+        $agent->onTick();
+        $this->assertSame([], $this->taken()['outcomes'], 'Still frozen, so there is nothing to report yet.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
+        $agent->onTick();
+
+        $done = $this->singleOutcome();
+        $this->assertNull($done->answer->error);
+        $this->assertNull($done->pass);
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_RESTORE_OPEN, $done->answer->action);
+    }
+
+    public function testABrowserOpenHeldByTheCarrierAnswersOnlyOnceTheReleaseGoesOut(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new HoldingOperatorTestAgent(null);
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_OPEN));
+
+        $held = $this->taken();
+        $this->assertSame([], $held['exits'], 'A carrier that holds the lift must queue no disable yet.');
+        $this->assertSame([], $held['outcomes']);
+
+        $agent->letReleaseGo();
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_DISABLE], $this->taken()['exits']);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
+        $agent->onTick();
+
+        $done = $this->singleOutcome();
+        $this->assertNull($done->answer->error);
+        $this->assertNull($done->pass);
+    }
+
+    public function testABrowserCloseAnswersOnceTheRowIsActiveAndWithdrawsTheHeldRelease(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new HoldingOperatorTestAgent(null);
+        $agent->reopen();
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_CLOSE));
+
+        $queued = $this->taken();
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_REFREEZE], $queued['exits']);
+        $this->assertSame([], $queued['outcomes']);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+
+        $done = $this->singleOutcome();
+        $this->assertNull($done->answer->error);
+        $this->assertNull($done->pass);
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE, $done->answer->action);
+
+        $agent->letReleaseGo();
+        $this->assertSame([], $this->taken()['exits']);
+    }
+
+    public function testABrowserCloseCountsAsInFlight(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $this->assertFalse($agent->isCloseInFlight());
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_OPEN));
+        $this->assertFalse($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
+        $agent->onTick();
+        $this->assertFalse($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_CLOSE));
+        $this->assertTrue($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+        $this->assertFalse($agent->isCloseInFlight());
+    }
+
+    public function testABrowserAskDoesNotReplaceACliWait(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_PASS));
+        $sent = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $sent);
+
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_OPEN));
+
+        $intruder = $this->taken();
+        $this->assertSame([], $intruder['replies']);
+        $this->assertSame([], $intruder['exits'], 'The browser ask must not start an open of its own.');
+        $this->assertCount(1, $intruder['outcomes']);
+        $this->assertIsString($intruder['outcomes'][0]->answer->error);
+        $this->assertStringContainsString('still in flight', $intruder['outcomes'][0]->answer->error);
+        $this->assertNull($intruder['outcomes'][0]->pass);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, [$sent->passHash]);
+        $agent->onTick();
+
+        $done = $this->taken();
+        $this->assertSame([], $done['outcomes'], 'The late browser ask must not be answered by the CLI pass landing.');
+        $this->assertCount(1, $done['replies']);
+        $this->assertSame(CommandConstants::STATUS_OK, $done['replies'][0]->status);
+        $pass = (string)$done['replies'][0]->payload[ProtectedModeCommandConstants::FIELD_PASS];
+        $this->assertSame($sent->passHash, hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass));
+    }
+
+    public function testACliCommandDoesNotReplaceABrowserWait(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+        $ask = $this->ask(MaintenanceRestoreControlSignalData::CONTROL_PASS, 'req-browser');
+        $agent->beginRestore($ask);
+        $sent = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $sent);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_OPEN));
+
+        $intruder = $this->taken();
+        $this->assertSame([], $intruder['outcomes']);
+        $this->assertSame([], $intruder['exits'], 'The CLI command must not start an open of its own.');
+        $this->assertCount(1, $intruder['replies']);
+        $this->assertRefused($intruder['replies'][0], 'still in flight');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, [$sent->passHash]);
+        $agent->onTick();
+
+        $done = $this->taken();
+        $this->assertSame([], $done['replies'], 'The late CLI command must not be answered by the browser pass landing.');
+        $this->assertCount(1, $done['outcomes']);
+        $this->assertNull($done['outcomes'][0]->answer->error);
+        $this->assertSame('req-browser', $done['outcomes'][0]->answer->requestId);
+        $this->assertIsString($done['outcomes'][0]->pass);
+        $this->assertSame(
+            $sent->passHash,
+            hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $done['outcomes'][0]->pass),
+        );
+    }
+
+    public function testAnExpiredBrowserPassDoesNotAnswerTheNextSlot(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_PASS, 'req-expired'));
+        $first = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $first);
+
+        $agent->ageProtectedModeOperatorWait();
+        $agent->onTick();
+
+        $expired = $this->singleOutcome();
+        $this->assertIsString($expired->answer->error);
+        $this->assertStringContainsString('record the pass', $expired->answer->error);
+        $this->assertNull($expired->pass);
+        $this->assertSame('req-expired', $expired->answer->requestId);
+
+        $agent->beginRestore($this->ask(MaintenanceRestoreControlSignalData::CONTROL_PASS, 'req-next'));
+        $second = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $second);
+        $this->assertNotSame($first->passHash, $second->passHash);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, [$first->passHash]);
+        $agent->onTick();
+        $late = $this->taken();
+        $this->assertSame([], $late['outcomes'], 'The expired pass landing must not close the next slot.');
+        $this->assertSame([], $late['replies']);
+
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            self::INITIATOR_TYPE,
+            null,
+            [$first->passHash, $second->passHash],
+        );
+        $agent->onTick();
+
+        $done = $this->singleOutcome();
+        $this->assertNull($done->answer->error);
+        $this->assertSame('req-next', $done->answer->requestId);
+        $this->assertIsString($done->pass);
+        $this->assertSame($second->passHash, hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $done->pass));
+    }
+
     /**
      * Mounts the freeze row in the phase, initiator identity and pass list the case needs.
      *
@@ -609,6 +834,88 @@ final class ProtectedModeOperatorTest extends TestCase
             (string)$reply->payload[CommandConstants::FIELD_MESSAGE],
         );
     }
+
+    /**
+     * @param string $control pass, open or close
+     * @param string $requestId Tracked submit correlation
+     * @return MaintenanceRestoreControlSignalData Ask addressed back on the test reply signal
+     */
+    private function ask(string $control, string $requestId = 'req-1'): MaintenanceRestoreControlSignalData
+    {
+        return new MaintenanceRestoreControlSignalData(
+            control: $control,
+            acceptKey: 'accept-1',
+            sessionHash: 'session-hash',
+            requestId: $requestId,
+            action: match ($control) {
+                MaintenanceRestoreControlSignalData::CONTROL_PASS => HilosSignalConstants::MAINTENANCE_RESTORE_PASS,
+                MaintenanceRestoreControlSignalData::CONTROL_OPEN => HilosSignalConstants::MAINTENANCE_RESTORE_OPEN,
+                MaintenanceRestoreControlSignalData::CONTROL_CLOSE => HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE,
+            },
+            replySignal: self::REPLY_SIGNAL,
+            successMessage: null,
+        );
+    }
+
+    /**
+     * Drains the queue into the three things an operator control can produce.
+     *
+     * @return array{
+     *     replies: list<CommandReplyDTO>,
+     *     outcomes: list<MaintenanceRestoreControlDoneSignalData>,
+     *     outcomeSignals: list<string>,
+     *     exits: list<string>
+     * } What the agent queued since the last drain
+     */
+    private function taken(): array
+    {
+        $replies = [];
+        $outcomes = [];
+        $outcomeSignals = [];
+        $exits = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+
+                continue;
+            }
+            if (
+                $signal->data instanceof AgentSignalData
+                && $signal->data->data instanceof MaintenanceRestoreControlDoneSignalData
+            ) {
+                $outcomes[] = $signal->data->data;
+                $outcomeSignals[] = $signal->signalName->getName();
+
+                continue;
+            }
+            $type = $signal->signalType->getType();
+            if (
+                $type === SignalTypeConstants::PROTECTED_MODE_DISABLE
+                || $type === SignalTypeConstants::PROTECTED_MODE_REFREEZE
+            ) {
+                $exits[] = $type;
+            }
+        }
+
+        return [
+            'replies' => $replies,
+            'outcomes' => $outcomes,
+            'outcomeSignals' => $outcomeSignals,
+            'exits' => $exits,
+        ];
+    }
+
+    /**
+     * @return MaintenanceRestoreControlDoneSignalData The one browser outcome the agent produced
+     */
+    private function singleOutcome(): MaintenanceRestoreControlDoneSignalData
+    {
+        $taken = $this->taken();
+        $this->assertCount(1, $taken['outcomes'], 'Every browser path answers exactly once.');
+        $this->assertSame([self::REPLY_SIGNAL], $taken['outcomeSignals']);
+
+        return $taken['outcomes'][0];
+    }
 }
 
 /**
@@ -637,6 +944,14 @@ final class OperatorTestAgent extends AbstractAgent
     public function handle(CommandRequestDTO $data): void
     {
         $this->handleProtectedModeOperatorCommand($data);
+    }
+
+    /**
+     * @param MaintenanceRestoreControlSignalData $ask Browser restore control
+     */
+    public function beginRestore(MaintenanceRestoreControlSignalData $ask): void
+    {
+        $this->beginProtectedModeRestoreControl($ask);
     }
 
     public function onTick(): void
@@ -702,6 +1017,14 @@ final class HoldingOperatorTestAgent extends AbstractAgent
     public function handle(CommandRequestDTO $data): void
     {
         $this->handleProtectedModeOperatorCommand($data);
+    }
+
+    /**
+     * @param MaintenanceRestoreControlSignalData $ask Browser restore control
+     */
+    public function beginRestore(MaintenanceRestoreControlSignalData $ask): void
+    {
+        $this->beginProtectedModeRestoreControl($ask);
     }
 
     public function onTick(): void

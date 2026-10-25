@@ -7,6 +7,9 @@ namespace Demo\Chat\Tests\Unit;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreOpenActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceRestorePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
@@ -342,6 +345,7 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
+use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
@@ -787,6 +791,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
             HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => MaintenanceRestorePassActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => MaintenanceRestoreOpenActionDTO::class,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => MaintenanceRestoreCloseActionDTO::class,
         ], MaintenancePage::ACTIONS);
         $this->assertSame(
             [ChatTableContext::hilosVerifierCircle => []],
@@ -1280,6 +1287,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_ENABLE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_DISABLE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_PASS => HilosPageConstants::HILOS_MAINTENANCE,
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => HilosPageConstants::HILOS_MAINTENANCE,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => HilosPageConstants::HILOS_MAINTENANCE,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => HilosPageConstants::HILOS_DAEMON_AGENTS,
@@ -1376,6 +1386,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_ENABLE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_DISABLE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_PASS => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_RESTORE_PASS => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_RESTORE_OPEN => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => AgentType::HILOS_DAEMON,
@@ -1432,6 +1445,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HilosPageConstants::HILOS_MAINTENANCE,
                 HilosSignalConstants::MAINTENANCE_DISABLE_DONE => HilosPageConstants::HILOS_MAINTENANCE,
                 HilosSignalConstants::MAINTENANCE_PASS_DONE => HilosPageConstants::HILOS_MAINTENANCE,
+                HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE => HilosPageConstants::HILOS_MAINTENANCE,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => HilosPageConstants::HILOS_DAEMON_AGENTS,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
                     => HilosPageConstants::HILOS_LOGS_SETTINGS,
@@ -1468,6 +1482,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::MAINTENANCE_ENABLE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_DISABLE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_PASS_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => AgentType::HILOS_DAEMON,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
@@ -1622,6 +1637,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_RESTORE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_REOPEN => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => AgentType::HILOS_BACKUP,
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
@@ -1942,6 +1958,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_REOPEN => BackupReopenSignalData::class,
+            HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL => MaintenanceRestoreControlSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => DeferredSessionsCarriedSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => DeferredNoticesSentSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,

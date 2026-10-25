@@ -6,7 +6,9 @@ export const MAINTENANCE_STATE_SIGNAL = 'subscription_page_hilos_maintenance'
 
 /**
  * The whole non-personal state frame (PHP `HilosMaintenanceStateSignalData`).
- * `startedAt` is an ISO-8601 UTC moment ending in Z, or null when inactive.
+ * `startedAt`, `activatedAt` and `progressAt` are ISO-8601 UTC moments ending in Z,
+ * or null when the row has no such moment. A frame from before those keys existed
+ * still parses: the new fields default to null, and `isInitiator` to false.
  */
 export const maintenanceStateSchema = z.looseObject({
   phase: z.enum([
@@ -23,6 +25,15 @@ export const maintenanceStateSchema = z.looseObject({
   passCount: z.number().int(),
   circleNamed: z.number().int(),
   circleAdmitted: z.number().int(),
+  initiatorAgentType: z.string().nullable().default(null),
+  initiatorNodeId: z.string().nullable().default(null),
+  activatedAt: z.string().nullable().default(null),
+  progressAt: z.string().nullable().default(null),
+  isInitiator: z.boolean().default(false),
+  diagnosticsNodeId: z.string().nullable().default(null),
+  stoppedAgentCount: z.number().int().nullable().default(null),
+  preservedAgentTypes: z.array(z.string()).nullable().default(null),
+  agentStartGateClosed: z.boolean().nullable().default(null),
 })
 
 /** One state frame of the Maintenance section. */

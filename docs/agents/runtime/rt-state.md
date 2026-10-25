@@ -293,7 +293,7 @@ has by which reader it calls.
 
 Full-row readers are `requireString`, `requireInt`, `requireFloat`,
 `requireBool`, `requireArray`, `requireStringList`, `optionalString`,
-`optionalInt` and `optionalFloat`; each has a `patch*` twin
+`optionalInt`, `optionalFloat`, `optionalBool` and `optionalStringList`; each has a `patch*` twin
 (`patchOptionalString` for `optionalString`, and so on). A number is the one
 widening: `requireFloat` and `optionalFloat` take an integer, because
 `json_encode(0.0)` writes `0` and a whole float comes back from the wire an
