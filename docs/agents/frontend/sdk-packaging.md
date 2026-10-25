@@ -33,8 +33,8 @@ layers. Demos and end-projects (including the React / Angular conformance demos,
 members: each lives in its own project and pulls the SDK (a local `file:`
 dependency in dev, the vendored tarball when shipping). The `development`
 dev-link is what lets a Vite consumer's bundler resolve the SDK to `src` for HMR
-while the two are developed together; an Angular consumer reaches the same
-dev-`src` / prod-`dist` split through tsconfig `paths` instead, because
+while the two are developed together; the current Angular demo setup reaches a
+dev-source / prod-dist split through explicit tsconfig `paths`, because
 ng-packagr owns its dist package's export conditions
 ([new-project/frontend-angular.md](../../new-project/frontend-angular.md)).
 
@@ -46,20 +46,24 @@ dispatcher dies on hook calls, Angular's `inject()` dies with NG0203 — while
 `build` output may stay warning-free (a bloated bundle is the tell). Each
 consumer pins its single copy by its own bundler's mechanism: Vite + React =
 `resolve.dedupe: ['react', 'react-dom']`; Vite + Vue = nothing (plugin-vue
-auto-dedupes); Angular CLI = `preserveSymlinks: true` plus tsconfig `paths`
-pins for `@angular/core` and `@angular/common` (the SDK is compiled from `src`
-in dev, which pulls a second copy of each into the app build — NG0203 / NG3004)
-— the full recipe is in
+auto-dedupes); Angular CLI = `preserveSymlinks: true`, tsconfig `paths` pins
+for `@angular/core` and `@angular/common`, and explicit paths for each public
+SDK entry to its real `framework/frontend/{angular,core}/src` root outside
+`node_modules`. The source aliases keep nested lazy imports on one SDK graph;
+the Angular pins collapse the framework copies that cause NG0203 / NG3004.
+Production has no SDK source redirects and keeps consuming APF dist through the
+consumer package path. The full recipe is in
 [docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
 
 **Angular consumers also declare `@vue/reactivity`.** The core's signal engine
 is `@vue/reactivity` (private — app code never imports it). A real tarball
 install hoists it; the monorepo `file:` link satisfies it from the SDK
 workspace copy and leaves it out of the consumer's `node_modules`. The core's
-`@vue/reactivity` is external to the SDK artifact in both Angular modes (dev
-compiles the core `src`, prod consumes its compiled ES modules), so the bare import resolves
-from the consumer root and fails — so an Angular consumer adds `@vue/reactivity`
-as a direct dependency. The Vite-Vue/React demos prebundle it through the
+`@vue/reactivity` is external to the SDK artifact in both Angular modes: dev
+resolves core directly from `framework/frontend/core/src`, while production
+consumes its compiled ES modules. In both cases the bare import resolves from
+the consumer root and fails, so an Angular consumer adds `@vue/reactivity` as a
+direct dependency. The Vite-Vue/React demos prebundle it through the
 symlink's real path and need nothing. The same holds for every runtime
 dependency the core takes — today also `qrcode-generator`, the QR library behind
 `qrMatrix` (HIL-494). Full recipe in

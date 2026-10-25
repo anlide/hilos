@@ -18,7 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:types": "tsc --noEmit -p tsconfig.dev.json",
-    "check:templates": "ng build --configuration development"
+    "check:templates": "ng build --configuration development --stats-json && node ../../../framework/frontend/angular/test/dev-source.smoke.mjs dist"
   },
   "dependencies": {
     "@angular/common": "22.2.3",

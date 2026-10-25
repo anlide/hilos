@@ -228,78 +228,116 @@ network.
 
 ## Dev-source consumption
 
-The demo consumes the SDK from **`src` in dev** and from **`dist` in
-production** — the same split the Vite demos get, so an SDK edit shows up in
-`ng serve` with no ng-packagr rebuild, while e2e and prod test the shipped FESM.
-Angular reaches the split differently because ng-packagr owns its dist package's
-`exports` and the AOT compiler will not emit declarables for a library it treats
-as pre-compiled:
+The current Angular demos resolve the SDK from **the framework source roots in
+dev** and from **APF `dist` in production**. Their `development` build and
+`ng serve` use the explicit source paths below; production builds, e2e and prod
+checks consume the shipped FESM. This documents the implemented demo setup; it
+does not choose a recommended Angular workflow for new projects. HIL-1776 is
+investigating the official Angular build/watch approach.
+
+Angular reaches this split differently from the Vite demos because ng-packagr
+owns its dist package's `exports`, and its AOT compiler must own source
+declarables as program inputs:
 
 - **Production** uses the app/server production tsconfigs without SDK source
   redirects. Local `file:` installs resolve the plain package and secondary-entry
   forwarders to dist FESMs/types; the published APF dist manifest has generated
   `types`/`default` exports. Rebuild the SDK before e2e/prod.
 - **Dev** (`ng serve` and the `development` build it drives) uses
-  `tsconfig.dev.json`, which `paths`-redirects the SDK to `src`:
+  `tsconfig.dev.json`. Every public SDK alias resolves directly to its real
+  framework source root outside `node_modules`. The two Angular pins stay on
+  the consumer's installed packages:
 
   ```jsonc
   "paths": {
     "@angular/core": ["./node_modules/@angular/core"],
     "@angular/common": ["./node_modules/@angular/common"],
-    "@hilos/angular": ["./node_modules/@hilos/angular/src/index.ts"],
-    "@hilos/angular/base": ["./node_modules/@hilos/angular/src/base/index.ts"],
-    "@hilos/angular/admin-views": ["./node_modules/@hilos/angular/src/admin/hilosAdminViews.ts"],
-    "@hilos/angular/admin/analytics": ["./node_modules/@hilos/angular/src/admin/analytics/index.ts"],
-    "@hilos/angular/admin/appearance": ["./node_modules/@hilos/angular/src/admin/appearance/index.ts"],
-    "@hilos/angular/admin/backup": ["./node_modules/@hilos/angular/src/admin/backup/index.ts"],
-    "@hilos/angular/admin/billing": ["./node_modules/@hilos/angular/src/admin/billing/index.ts"],
-    "@hilos/angular/admin/change-log": ["./node_modules/@hilos/angular/src/admin/changeLog/index.ts"],
-    "@hilos/angular/admin/communications": ["./node_modules/@hilos/angular/src/admin/communications/index.ts"],
-    "@hilos/angular/admin/daemon": ["./node_modules/@hilos/angular/src/admin/daemon/index.ts"],
-    "@hilos/angular/admin/dashboard": ["./node_modules/@hilos/angular/src/admin/dashboard/index.ts"],
-    "@hilos/angular/admin/i18n": ["./node_modules/@hilos/angular/src/admin/i18n/index.ts"],
-    "@hilos/angular/admin/legal": ["./node_modules/@hilos/angular/src/admin/legal/index.ts"],
-    "@hilos/angular/admin/logs": ["./node_modules/@hilos/angular/src/admin/logs/index.ts"],
-    "@hilos/angular/admin/maintenance": ["./node_modules/@hilos/angular/src/admin/maintenance/index.ts"],
-    "@hilos/angular/admin/mcp-skills": ["./node_modules/@hilos/angular/src/admin/mcpSkills/index.ts"],
-    "@hilos/angular/admin/roles": ["./node_modules/@hilos/angular/src/admin/roles/index.ts"],
-    "@hilos/angular/admin/security": ["./node_modules/@hilos/angular/src/admin/security/index.ts"],
-    "@hilos/angular/admin/settings": ["./node_modules/@hilos/angular/src/admin/settings/index.ts"],
-    "@hilos/angular/admin/sil": ["./node_modules/@hilos/angular/src/admin/sil/index.ts"],
-    "@hilos/angular/admin/users": ["./node_modules/@hilos/angular/src/admin/users/index.ts"],
-    "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"],
-    "@hilos/core/base": ["./node_modules/@hilos/core/src/base/index.ts"],
-    "@hilos/core/admin/analytics": ["./node_modules/@hilos/core/src/admin/analytics/index.ts"],
-    "@hilos/core/admin/appearance": ["./node_modules/@hilos/core/src/admin/appearance/index.ts"],
-    "@hilos/core/admin/backup": ["./node_modules/@hilos/core/src/admin/backup/index.ts"],
-    "@hilos/core/admin/change-log": ["./node_modules/@hilos/core/src/admin/changeLog/index.ts"],
-    "@hilos/core/admin/communications": ["./node_modules/@hilos/core/src/admin/communications/index.ts"],
-    "@hilos/core/admin/daemon": ["./node_modules/@hilos/core/src/admin/daemon/index.ts"],
-    "@hilos/core/admin/i18n": ["./node_modules/@hilos/core/src/admin/i18n/index.ts"],
-    "@hilos/core/admin/legal": ["./node_modules/@hilos/core/src/admin/legal/index.ts"],
-    "@hilos/core/admin/logs": ["./node_modules/@hilos/core/src/admin/logs/index.ts"],
-    "@hilos/core/admin/maintenance": ["./node_modules/@hilos/core/src/admin/maintenance/index.ts"],
-    "@hilos/core/admin/security": ["./node_modules/@hilos/core/src/admin/security/index.ts"],
-    "@hilos/core/admin/settings": ["./node_modules/@hilos/core/src/admin/settings/index.ts"],
-    "@hilos/core/admin/users": ["./node_modules/@hilos/core/src/admin/users/index.ts"]
+    "@hilos/angular": ["../../../framework/frontend/angular/src/index.ts"],
+    "@hilos/angular/base": ["../../../framework/frontend/angular/src/base/index.ts"],
+    "@hilos/angular/admin-views": ["../../../framework/frontend/angular/src/admin/hilosAdminViews.ts"],
+    "@hilos/angular/admin/analytics": ["../../../framework/frontend/angular/src/admin/analytics/index.ts"],
+    "@hilos/angular/admin/appearance": ["../../../framework/frontend/angular/src/admin/appearance/index.ts"],
+    "@hilos/angular/admin/backup": ["../../../framework/frontend/angular/src/admin/backup/index.ts"],
+    "@hilos/angular/admin/billing": ["../../../framework/frontend/angular/src/admin/billing/index.ts"],
+    "@hilos/angular/admin/change-log": ["../../../framework/frontend/angular/src/admin/changeLog/index.ts"],
+    "@hilos/angular/admin/communications": ["../../../framework/frontend/angular/src/admin/communications/index.ts"],
+    "@hilos/angular/admin/daemon": ["../../../framework/frontend/angular/src/admin/daemon/index.ts"],
+    "@hilos/angular/admin/dashboard": ["../../../framework/frontend/angular/src/admin/dashboard/index.ts"],
+    "@hilos/angular/admin/i18n": ["../../../framework/frontend/angular/src/admin/i18n/index.ts"],
+    "@hilos/angular/admin/legal": ["../../../framework/frontend/angular/src/admin/legal/index.ts"],
+    "@hilos/angular/admin/logs": ["../../../framework/frontend/angular/src/admin/logs/index.ts"],
+    "@hilos/angular/admin/maintenance": ["../../../framework/frontend/angular/src/admin/maintenance/index.ts"],
+    "@hilos/angular/admin/mcp-skills": ["../../../framework/frontend/angular/src/admin/mcpSkills/index.ts"],
+    "@hilos/angular/admin/roles": ["../../../framework/frontend/angular/src/admin/roles/index.ts"],
+    "@hilos/angular/admin/security": ["../../../framework/frontend/angular/src/admin/security/index.ts"],
+    "@hilos/angular/admin/settings": ["../../../framework/frontend/angular/src/admin/settings/index.ts"],
+    "@hilos/angular/admin/sil": ["../../../framework/frontend/angular/src/admin/sil/index.ts"],
+    "@hilos/angular/admin/users": ["../../../framework/frontend/angular/src/admin/users/index.ts"],
+    "@hilos/core": ["../../../framework/frontend/core/src/index.ts"],
+    "@hilos/core/base": ["../../../framework/frontend/core/src/base/index.ts"],
+    "@hilos/core/admin/i18n": ["../../../framework/frontend/core/src/admin/i18n/index.ts"],
+    "@hilos/core/admin/users": ["../../../framework/frontend/core/src/admin/users/index.ts"],
+    "@hilos/core/admin/settings": ["../../../framework/frontend/core/src/admin/settings/index.ts"],
+    "@hilos/core/admin/appearance": ["../../../framework/frontend/core/src/admin/appearance/index.ts"],
+    "@hilos/core/admin/backup": ["../../../framework/frontend/core/src/admin/backup/index.ts"],
+    "@hilos/core/admin/maintenance": ["../../../framework/frontend/core/src/admin/maintenance/index.ts"],
+    "@hilos/core/admin/communications": ["../../../framework/frontend/core/src/admin/communications/index.ts"],
+    "@hilos/core/admin/security": ["../../../framework/frontend/core/src/admin/security/index.ts"],
+    "@hilos/core/admin/logs": ["../../../framework/frontend/core/src/admin/logs/index.ts"],
+    "@hilos/core/admin/daemon": ["../../../framework/frontend/core/src/admin/daemon/index.ts"],
+    "@hilos/core/admin/change-log": ["../../../framework/frontend/core/src/admin/changeLog/index.ts"],
+    "@hilos/core/admin/analytics": ["../../../framework/frontend/core/src/admin/analytics/index.ts"],
+    "@hilos/core/admin/legal": ["../../../framework/frontend/core/src/admin/legal/index.ts"],
+    "@hilos/core/admin/status": ["../../../framework/frontend/core/src/admin/status/index.ts"]
   }
   ```
 
   This is the whole `paths` object, including the Angular pins: a child tsconfig
   replaces it rather than merging it with its parent. Keep public names explicit;
   a wildcard cannot translate `change-log` to `changeLog` or `mcp-skills` to
-  `mcpSkills`. Compare the current reference
-  [tsconfig.dev.json](../../demo/online-testing/frontend/tsconfig.dev.json)
-  when copying the configuration.
+  `mcpSkills`. Compare either demo's `tsconfig.dev.json` when copying it.
 
-  The dev config also lists SDK component sources in `include` (by their node_modules path —
-  the one `preserveSymlinks` resolves to) so the AOT compiler owns them as
-  program inputs (a `*.test.ts` `exclude` keeps `vitest`-importing SDK tests
-  out). `angular.json` points the `development` build configuration at this
-  tsconfig (`"tsConfig": "tsconfig.dev.json"`), and `serve.options.prebundle`
-  excludes `@hilos/angular`/`@hilos/core` so Vite hands them to the compiler
-  rather than pre-bundling a stale copy. `npm run check` runs against this same
-  tsconfig, so type-checking sees the SDK `src` too.
+  The app's `rootDir` is `../../..` so TypeScript can own both SDK source roots
+  outside the demo. The AOT compiler also needs those source files as program
+  inputs. `include` and `exclude` therefore name the external roots explicitly;
+  demo-relative test exclusions do not reach them:
+
+  ```jsonc
+  "include": [
+    "src/**/*.ts",
+    "../../../framework/frontend/angular/src/**/*.ts",
+    "../../../framework/frontend/core/src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/prerender/**",
+    "../../../framework/frontend/angular/src/**/*.test.ts",
+    "../../../framework/frontend/angular/src/**/*.spec.ts",
+    "../../../framework/frontend/core/src/**/*.test.ts",
+    "../../../framework/frontend/core/src/**/*.spec.ts"
+  ]
+  ```
+
+  `angular.json` points the `development` build configuration at this tsconfig
+  (`"tsConfig": "tsconfig.dev.json"`). `serve.options.prebundle` excludes
+  `@hilos/angular` and `@hilos/core`, so Vite does not prebundle a stale package
+  copy. `npm run check:types` also uses this config.
+
+  The source paths deliberately leave `node_modules`: esbuild ignores tsconfig
+  paths for importers inside `node_modules`. If an SDK entry resolves there,
+  nested public imports can stay on dist while another import uses source,
+  creating parallel class and token identities. Explicit aliases keep nested
+  imports on the same real SDK source graph.
+
+  `npm run check:templates` runs the real development build with
+  `--stats-json`, then `dev-source.smoke.mjs` checks that graph. The guard reads
+  Angular's `browser-stats.json`, falling back to `stats.json` only when the
+  former is absent. It rejects malformed stats, SDK dist inputs, duplicate SDK
+  source inputs, missing lazy daemon or communications sources, and a build
+  that emits zero or multiple `HilosRouter` tokens. This Node smoke check proves
+  the emitted development build's source graph and adds no application runtime
+  dependency; it does not exercise a live `ng serve` session or browser HMR.
 
 **Why `paths`, not the package `development` export condition (the Vite demos'
 mechanism):** ng-packagr generates the dist `exports` and warns if the source
@@ -309,20 +347,24 @@ dev-source redirect lives in the consumer's `tsconfig.dev.json`.
 
 ### The duplicate-copy collapse — NG0203 / NG3004
 
-Compiling the SDK from `src` pulls its bare `@angular/core` and `@angular/common`
-imports into the app build, and the `file:` SDK reaches a SECOND copy of each
-through its real path (the SDK-workspace install the adapter unit tests use). Two
-copies and the SDK's `inject()` cannot see the app's injection context —
-bootstrap dies with **NG0203** (`@angular/core`); or the compiler cannot import a
-symbol such as `NgComponentOutlet` and fails with **NG3004** (`@angular/common`).
-Two layers collapse them to one copy each:
+Compiling the SDK from source brings its bare `@angular/core` and
+`@angular/common` imports into the app build. The `file:` SDK can also reach a
+second copy through its real path (the SDK-workspace install used by adapter
+unit tests). Two Angular copies mean the SDK's `inject()` cannot see the app's
+injection context — bootstrap dies with **NG0203** (`@angular/core`); or the
+compiler cannot import a symbol such as `NgComponentOutlet` and fails with
+**NG3004** (`@angular/common`). The source aliases keep SDK imports on one source
+graph, while two layers collapse Angular itself to the consumer's copies:
 
-1. **`preserveSymlinks: true`** (`angular.json` build options) resolves the SDK's
-   bare imports from the consumer's own `node_modules` rather than the symlink's
-   real path — the primary collapse, covering `ng build` and `ng serve`.
+1. **`preserveSymlinks: true`** (`angular.json` build options) keeps package
+   resolution at the consumer's `node_modules` path instead of following the
+   `file:` symlink to its real path. In production this keeps the consumer on
+   the package's APF dist entrypoints; dev source paths are configured
+   separately.
 2. **tsconfig `paths` pins** for `@angular/core` and `@angular/common` onto the
    app's single copy, since the `@angular/build` esbuild pipeline resolves bare
-   imports through tsconfig paths:
+   imports through tsconfig paths. The other `paths` entries point SDK imports
+   at the real framework source roots only in the development config:
 
    ```jsonc
    "paths": {
@@ -342,10 +384,10 @@ monorepo `file:` link instead satisfies it from the SDK workspace's own copy
 and never places it in the consumer's `node_modules`. The Vite-Vue/React demos
 do not notice — they prebundle the whole graph through the symlink's real path,
 where the SDK-workspace copy sits. The Angular consumer does: the core's
-`@vue/reactivity` import is external to the SDK artifact in both modes — dev
-compiles the core `src` (resolved to its node_modules path under
-`preserveSymlinks`) and production consumes the core's compiled ES modules — so the bare import
-resolves from the consumer root, where the link-satisfied dep is absent:
+`@vue/reactivity` import is external to the SDK artifact in both modes. Dev
+resolves core source directly from `framework/frontend/core/src`; production
+consumes its compiled ES modules. In both cases the bare import resolves from
+the consumer root, where the link-satisfied dependency is absent:
 `Failed to resolve import "@vue/reactivity"`.
 
 The fix is one line: declare `@vue/reactivity` as a direct dependency of the
