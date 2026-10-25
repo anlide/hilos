@@ -1,5 +1,6 @@
 import { type ActionHandle } from '../connection/actionLifecycle.js'
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
+import { formatMoment } from '../format/moment.js'
 import {
   readNumber,
   readNumberOrNull,
@@ -19,6 +20,8 @@ export const PROFILE_SESSION_ID_FIELD = 'id'
 export const PROFILE_SESSION_USER_ID_FIELD = 'userId'
 /** Row payload key of the stored device label. */
 export const PROFILE_SESSION_DEVICE_NAME_FIELD = 'deviceName'
+/** Row payload key of the time zone reported by this session's browser. */
+export const PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD = 'browserTimeZone'
 /** Row payload key of the session creation instant. */
 export const PROFILE_SESSION_CREATED_AT_FIELD = 'createdAt'
 /** Row payload key of the session's last activity instant. */
@@ -43,6 +46,7 @@ export interface HilosProfileSelfConnection {
 /** One live tab nested under a durable session. */
 export interface HilosProfileSessionTab {
   readonly acceptKey: string
+  /** UTC epoch milliseconds when the tab connected. */
   readonly connectedAt: number
   readonly current: boolean
 }
@@ -51,9 +55,13 @@ export interface HilosProfileSessionTab {
 export interface HilosProfileSession {
   readonly id: number
   readonly deviceName: string | null
-  readonly createdAt: string
-  readonly lastSeenAt: string
-  readonly expiresAt: string | null
+  readonly browserTimeZone: string | null
+  /** UTC epoch milliseconds. */
+  readonly createdAt: number
+  /** UTC epoch milliseconds. */
+  readonly lastSeenAt: number
+  /** UTC epoch milliseconds, or null for a session without expiry. */
+  readonly expiresAt: number | null
   readonly current: boolean
   readonly impersonated: boolean
   readonly tabs: readonly HilosProfileSessionTab[]
@@ -122,9 +130,13 @@ export function resolveHilosProfileSessions(
           session,
           PROFILE_SESSION_DEVICE_NAME_FIELD,
         ),
-        createdAt: readString(session, PROFILE_SESSION_CREATED_AT_FIELD),
-        lastSeenAt: readString(session, PROFILE_SESSION_LAST_SEEN_AT_FIELD),
-        expiresAt: readStringOrNull(session, PROFILE_SESSION_EXPIRES_AT_FIELD),
+        browserTimeZone: readStringOrNull(
+          session,
+          PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
+        ),
+        createdAt: readNumber(session, PROFILE_SESSION_CREATED_AT_FIELD),
+        lastSeenAt: readNumber(session, PROFILE_SESSION_LAST_SEEN_AT_FIELD),
+        expiresAt: readNumberOrNull(session, PROFILE_SESSION_EXPIRES_AT_FIELD),
         current: selfConnection?.sessionId === id,
         impersonated:
           readNumberOrNull(
@@ -139,7 +151,7 @@ export function resolveHilosProfileSessions(
         return left.current ? -1 : 1
       }
 
-      return right.lastSeenAt.localeCompare(left.lastSeenAt)
+      return right.lastSeenAt - left.lastSeenAt
     })
 }
 
@@ -176,15 +188,22 @@ export function createHilosProfileSessionActions(
 /**
  * Format a backend datetime in the reader's locale, preserving an unreadable value.
  *
- * @param value SQL/ISO datetime, local epoch-ms moment, or null when no instant exists.
+ * @param value UTC epoch milliseconds, ISO UTC datetime, or null when no instant exists.
  */
 export function formatProfileDateTime(value: string | number | null): string {
   if (value === null) {
     return 'never'
   }
-  const parsed = new Date(value)
-
-  return Number.isNaN(parsed.getTime())
-    ? String(value)
-    : parsed.toLocaleString()
+  return (
+    formatMoment(value, {
+      format: {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+      },
+    }) ?? String(value)
+  )
 }

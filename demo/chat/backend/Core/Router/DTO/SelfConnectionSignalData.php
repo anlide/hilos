@@ -14,6 +14,7 @@ final class SelfConnectionSignalData extends BaseDTO
     public const string selfConnection = 'selfConnection';
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
+    /** UTC epoch milliseconds when this socket opened. */
     public const string connectedAt = 'connectedAt';
     public const string sessionId = 'sessionId';
     public const string messageRateLimitSecondsRemaining = 'messageRateLimitSecondsRemaining';

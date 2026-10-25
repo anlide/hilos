@@ -6,6 +6,7 @@ import {
   PROFILE_DEVICE_ID_FIELD,
   PROFILE_DEVICE_NAME_FIELD,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
   type EntityCollection,
@@ -21,8 +22,8 @@ export interface PushSubscription {
   readonly id: number
   readonly deviceName: string | null
   readonly endpointHash: string
-  readonly createdAt: string
-  readonly goneAt: string | null
+  readonly createdAt: number
+  readonly goneAt: number | null
 }
 
 /**
@@ -37,8 +38,8 @@ export function pushSubscriptionFromFields(
     id: readNumber(fields, PROFILE_DEVICE_ID_FIELD),
     deviceName: readStringOrNull(fields, PROFILE_DEVICE_NAME_FIELD),
     endpointHash: readString(fields, PROFILE_DEVICE_ENDPOINT_HASH_FIELD),
-    createdAt: readString(fields, PROFILE_DEVICE_CREATED_AT_FIELD),
-    goneAt: readStringOrNull(fields, PROFILE_DEVICE_GONE_AT_FIELD),
+    createdAt: readNumber(fields, PROFILE_DEVICE_CREATED_AT_FIELD),
+    goneAt: readNumberOrNull(fields, PROFILE_DEVICE_GONE_AT_FIELD),
   }
 }
 

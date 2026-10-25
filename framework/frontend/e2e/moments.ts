@@ -2,6 +2,25 @@ import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
 
+/** Native browser Intl oracle with the caller's display options and reader zone. */
+export function readerMillisecondMoment(
+  page: Page,
+  moment: number,
+  timeZone: string,
+  format: Intl.DateTimeFormatOptions = {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  },
+): Promise<string> {
+  return page.evaluate(
+    ({ moment, timeZone, format }) =>
+      new Intl.DateTimeFormat(undefined, { ...format, timeZone }).format(
+        new Date(moment),
+      ),
+    { moment, timeZone, format },
+  )
+}
+
 /** Independent Intl oracle: never import the product formatter into this check. */
 export function readerMoment(
   moment: string,
@@ -40,15 +59,7 @@ export async function expectReaderMillisecondMoment(
   expect(Number.isSafeInteger(moment)).toBe(true)
   const stamp = moment as number
   expect(Number.isFinite(new Date(stamp).getTime())).toBe(true)
-  const expected = await target.page().evaluate(
-    ({ stamp, timeZone }) =>
-      new Intl.DateTimeFormat(undefined, {
-        timeZone,
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(new Date(stamp)),
-    { stamp, timeZone },
-  )
+  const expected = await readerMillisecondMoment(target.page(), stamp, timeZone)
   await expect(target).toHaveText(`${prefix}${expected}`)
   return expected
 }

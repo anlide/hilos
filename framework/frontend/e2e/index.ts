@@ -412,8 +412,14 @@ export {
   expectReaderMillisecondMoment,
   expectReaderMoment,
   legalAcceptanceMomentRow,
+  readerMillisecondMoment,
   readerMoment,
 } from './moments.js'
+export {
+  expectProfileSessionMoments,
+  profileSessionSnapshot,
+  type ProfileSessionSnapshot,
+} from './profileSessions.js'
 export {
   bundleFiles,
   expectBundleRequests,

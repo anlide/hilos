@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
+use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
@@ -32,9 +33,11 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DataExport\DataExportGroup;
 use Hilos\DataExport\DataExportStateProjector;
 use Hilos\Database\Object\Item\Session;
+use Hilos\Database\Object\Item\PushSubscription;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Legal\LegalAgreementsGroup;
@@ -45,6 +48,7 @@ use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfileSecurityPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for the current user's session list and its first-render page data.
@@ -77,7 +81,12 @@ final class ProfileSessionsListTest extends IntegrationTestCase
 
     public function testSnapshotCarriesOwnSessionsAndTabsWithoutTokens(): void
     {
+        $before = TimeHelper::nowMs();
         [$userId, $selfSessionId, $otherSessionId] = $this->createUserWithTwoSessions();
+        $after = TimeHelper::nowMs();
+        $foreignUserId = (int)Hilos::$db->users->actions->createWithName('Foreign snapshot owner')->id;
+        $foreignSession = Hilos::$db->sessions->actions->createAnonymous($this->sessionToken('foreign'));
+        $foreignSession->actions->bindUser($foreignUserId);
 
         $payload = Hilos::$browser?->buildSubscribeSnapshot(
             ProfileSessionsPage::PAGE,
@@ -97,15 +106,111 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         );
         foreach ($sessions as $session) {
             self::assertArrayNotHasKey(Session::token, $session);
+            self::assertArrayNotHasKey(Session::ipAddress, $session);
+            self::assertSame(1767225600000, $session[Session::createdAt]);
+            self::assertSame(1767227400000, $session[Session::lastSeenAt]);
+            self::assertSame(
+                $session[Session::id] === $selfSessionId ? 1767312000000 : null,
+                $session[Session::expiresAt],
+            );
+            self::assertSame(
+                $session[Session::id] === $selfSessionId ? 'US/Eastern' : null,
+                $session[Session::browserTimeZone],
+            );
+            self::assertSame(
+                $session[Session::id] === $selfSessionId ? 'Current browser' : 'Other browser',
+                $session[Session::deviceName],
+            );
         }
         self::assertEqualsCanonicalizing(
             [self::ACCEPT_KEY, self::OTHER_ACCEPT_KEY],
             array_column($connections, SelfConnectionSignalData::acceptKey),
         );
+        foreach ($connections as $connection) {
+            self::assertGreaterThanOrEqual($before, $connection[SelfConnectionSignalData::connectedAt]);
+            self::assertLessThanOrEqual($after, $connection[SelfConnectionSignalData::connectedAt]);
+        }
 
         $selfConnection = $payload[PagePayload::data][SelfConnectionBrowserData::DATA];
         self::assertSame(self::ACCEPT_KEY, $selfConnection[SelfConnectionSignalData::acceptKey]);
         self::assertSame($selfSessionId, $selfConnection[SelfConnectionSignalData::sessionId]);
+        self::assertSame(
+            Hilos::$rt->connections[self::ACCEPT_KEY]->connectedAt,
+            $selfConnection[SelfConnectionSignalData::connectedAt],
+        );
+    }
+
+    public function testTimeZoneAndActivityChangesReachTheOpenListInMilliseconds(): void
+    {
+        [, $selfSessionId] = $this->createUserWithTwoSessions();
+        $initial = Hilos::$browser?->buildSubscribeSnapshot(
+            ProfileSessionsPage::PAGE,
+            self::ACCEPT_KEY,
+            new PageRouteParams([]),
+        )->toArray();
+        $initialSessions = $initial[PagePayload::lists][ProfileSessionsBrowserList::LIST][PagePayload::items][0]
+            [PagePayload::slots][ChatDbContext::sessions];
+        $initialSession = array_column($initialSessions, null, Session::id)[$selfSessionId];
+        $this->drainSignals();
+
+        foreach (['Europe/Warsaw', null] as $zone) {
+            Hilos::$db->sessions[$selfSessionId]->actions->setBrowserTimeZone($zone);
+            // Fixture-only clock control: the public action stamps now, not a chosen SQL instant.
+            $session = Hilos::$db->getObjectCollection(ChatDbContext::sessions)->get($selfSessionId);
+            $session->lastSeenAt = '2026-01-01 01:30:00';
+            $session->sync();
+            while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof DbSyncUpdatedSignalData && $signal->data->collectionKey === ChatDbContext::sessions) {
+                    Hilos::$browser?->record(SourceChange::dbUpdated(
+                        $signal->data->collectionKey,
+                        $signal->data->idString,
+                        $signal->data->row,
+                        previous: $signal->data->previous,
+                    ));
+                }
+            }
+            Hilos::$browser?->flushToSignalRouter();
+
+            $payload = $this->nextPagePayload(ProfileSessionsPage::PAGE);
+            $sessions = $payload[PagePayload::lists][ProfileSessionsBrowserList::LIST][PagePayload::items][0]
+                [PagePayload::slots][ChatDbContext::sessions];
+            $liveSession = array_column($sessions, null, Session::id)[$selfSessionId];
+            self::assertSame(
+                array_replace($initialSession, [Session::browserTimeZone => $zone, Session::lastSeenAt => 1767231000000]),
+                $liveSession,
+            );
+        }
+    }
+
+    public function testDeviceSqlMomentsAreNumericAndSecretsStayOffTheWire(): void
+    {
+        [$userId] = $this->createUserWithTwoSessions();
+        TruthSourceRegistry::register(ChatDbContext::pushSubscriptions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        // Test fixture boundary: the subscribe action stamps now; these rows need fixed SQL instants.
+        foreach ([null, '2026-01-01 00:30:00'] as $index => $goneAt) {
+            $device = PushSubscription::create();
+            $device->userId = $userId;
+            $device->endpoint = 'https://push.example.test/' . $this->name() . '/' . $index;
+            $device->endpointHash = hash('sha256', $device->endpoint);
+            $device->p256dh = 'private-p256dh';
+            $device->auth = 'private-auth';
+            $device->deviceName = 'Device ' . $index;
+            $device->createdAt = '2026-01-01 00:00:00';
+            $device->goneAt = $goneAt;
+            $device->sync();
+        }
+
+        $snapshot = Hilos::$browser?->buildSubscribeSnapshot(ProfileDevicesPage::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
+        $devices = $snapshot->lists[ProfileDevicesBrowserList::LIST][PagePayload::items][0]
+            [PagePayload::slots][ChatDbContext::pushSubscriptions];
+        self::assertCount(2, $devices);
+        self::assertSame([null, 1767227400000], array_column($devices, PushSubscription::goneAt));
+        foreach ($devices as $device) {
+            self::assertSame(1767225600000, $device[PushSubscription::createdAt]);
+            foreach ([PushSubscription::endpoint, PushSubscription::p256dh, PushSubscription::auth, PushSubscription::lastSeenAt] as $secret) {
+                self::assertArrayNotHasKey($secret, $device);
+            }
+        }
     }
 
     public function testEndingAnotherSessionRemovesItFromTheSubscribersList(): void
@@ -303,9 +408,19 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         $selfSession = Hilos::$db->sessions->actions->createAnonymous($this->sessionToken('self'));
         $selfSession->actions->bindUser($userId);
         $selfSession->actions->setDeviceName('Current browser');
+        $selfSession->actions->setBrowserTimeZone('US/Eastern');
         $otherSession = Hilos::$db->sessions->actions->createAnonymous($this->sessionToken('other'));
         $otherSession->actions->bindUser($userId);
         $otherSession->actions->setDeviceName('Other browser');
+
+        // Fixture-only dates through the mounted ORM; no production write API accepts a chosen clock.
+        foreach ([$selfSession, $otherSession] as $session) {
+            $object = Hilos::$db->getObjectCollection(ChatDbContext::sessions)->get($session->id);
+            $object->createdAt = '2026-01-01 00:00:00';
+            $object->lastSeenAt = '2026-01-01 00:30:00';
+            $object->expiresAt = $session->id === $selfSession->id ? '2026-01-02 00:00:00' : null;
+            $object->sync();
+        }
 
         $selfSessionId = (int)$selfSession->id;
         $otherSessionId = (int)$otherSession->id;

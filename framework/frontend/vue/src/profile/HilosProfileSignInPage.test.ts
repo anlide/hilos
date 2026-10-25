@@ -1,6 +1,7 @@
 import {
   ActionError,
   bindProfileFlows,
+  bindTimeZoneState,
   cancelOAuthTrip,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
@@ -18,7 +19,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import HilosProfileSignInPage from './HilosProfileSignInPage.vue'
 
+let releaseTimeZone: (() => void) | undefined
+
 afterEach(() => {
+  releaseTimeZone?.()
+  releaseTimeZone = undefined
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
   vi.useRealTimers()
@@ -99,9 +104,20 @@ function setMethods(
     })
     return ref
   })
+  const passkeyCredentials = current.flatMap((method) => {
+    if (method.type !== 'passkey' || method.addedAt === null) return []
+    const id = Number(method.key)
+    const ref = { type: 'passkeyCredentials', id }
+    page.entities.upsert(ref, {
+      identityId: id,
+      label: method.deviceName,
+      createdAt: method.addedAt,
+    })
+    return [ref]
+  })
   page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
     identities,
-    passkeyCredentials: [],
+    passkeyCredentials,
   })
 }
 
@@ -278,6 +294,67 @@ function heldReply(action: string) {
 }
 
 describe('profile sign-in page dialogs', () => {
+  it.each(['unlink', 'add'] as const)(
+    'reformats the passkey date without a server frame and keeps the %s dialog',
+    async (dialog) => {
+      let browserZone = 'Asia/Tokyo'
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockImplementation(() => ({ ...resolved, timeZone: browserZone }))
+      releaseTimeZone = bindTimeZoneState({
+        on: () => () => {},
+      } as unknown as HilosConnection)
+      const world = setup(NO_STEP, [
+        {
+          ...passkeyOnly[0]!,
+          deviceName: 'Laptop key',
+          addedAt: 1767227400000,
+          canUnlink: true,
+        },
+        methods[0]!,
+      ])
+      const row = world.wrapper.get('[data-identity-key="3"]')
+      const subtitle = row.get('[data-id="identity-passkey-added"]')
+      expect(row.get('[data-id="identity-type"]').text()).toBe('Laptop key')
+      expect(subtitle.text()).toBe('Passkey · added Jan 1, 2026')
+      if (dialog === 'unlink') {
+        await row.get('[data-id="identity-unlink"]').trigger('click')
+      } else {
+        await world.wrapper
+          .get('[data-id="profile-sign-in-add"]')
+          .trigger('click')
+        await flushPromises()
+        byId('profile-sign-in-choose-phone').click()
+        await flushPromises()
+        await fill('profile-add-sms-phone', '+15557654321')
+      }
+      const modal = byId('modal')
+      const callsBefore = world.dispatch.mock.calls.length
+      const field = dialog === 'add' ? byId('profile-add-sms-phone') : null
+
+      browserZone = 'America/New_York'
+      window.dispatchEvent(new Event('focus'))
+      await nextTick()
+
+      expect(row.get('[data-id="identity-passkey-added"]').element).toBe(
+        subtitle.element,
+      )
+      expect(subtitle.text()).toBe('Passkey · added Dec 31, 2025')
+      expect(byId('modal')).toBe(modal)
+      expect(world.dispatch).toHaveBeenCalledTimes(callsBefore)
+      if (dialog === 'unlink') {
+        expect(byId('profile-unlink-modal').textContent).toContain(
+          'You can still use: Password',
+        )
+      } else {
+        expect(byId('profile-add-sms-phone')).toBe(field)
+        expect((field as HTMLInputElement).value).toBe('+15557654321')
+      }
+    },
+  )
+
   it('announces a refused unlink inside the dialog and closes if another tab removes its method', async () => {
     const world = setup()
     world.dispatch.mockImplementationOnce(() => ({

@@ -9,6 +9,7 @@ use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -25,8 +26,12 @@ final class HilosConnectionStateTest extends TestCase
 {
     public function testCreateRunsBaseThenOwnAndMarksTheBaseline(): void
     {
+        $before = TimeHelper::nowMs();
         $connection = PresenceConnectionFixture::create('ak-1', 42);
+        $after = TimeHelper::nowMs();
 
+        $this->assertGreaterThanOrEqual($before, $connection->connectedAt);
+        $this->assertLessThanOrEqual($after, $connection->connectedAt);
         $this->assertSame('ak-1', $connection->getId());
         $this->assertSame('ak-1', $connection->acceptKey);
         $this->assertSame(42, $connection->userId);
@@ -51,7 +56,7 @@ final class HilosConnectionStateTest extends TestCase
         $connection = PresenceConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-2',
             HilosConnection::userId => null,
-            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::connectedAt => 1710000000123,
             HilosConnection::probablyOffline => false,
             PresenceConnectionFixture::label => 'guest',
         ]);
@@ -59,6 +64,8 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertSame('ak-2', $connection->getId());
         $this->assertNull($connection->userId);
         $this->assertSame('guest', $connection->label);
+        $this->assertSame(1710000000123, $connection->connectedAt);
+        $this->assertSame(1710000000123, $connection->toArray()[HilosConnection::connectedAt]);
         $this->assertSame(1, $connection->baselineMarks);
     }
 
@@ -68,7 +75,7 @@ final class HilosConnectionStateTest extends TestCase
 
         PresenceConnectionFixture::fromRow([
             HilosConnection::userId => 42,
-            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::connectedAt => 1710000000123,
             HilosConnection::probablyOffline => false,
             PresenceConnectionFixture::label => 'guest',
         ]);
@@ -120,7 +127,7 @@ final class HilosConnectionStateTest extends TestCase
         PresenceConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-8',
             HilosConnection::userId => 42,
-            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::connectedAt => 1710000000123,
             PresenceConnectionFixture::label => 'old',
         ]);
     }
@@ -136,7 +143,7 @@ final class HilosConnectionStateTest extends TestCase
         SessionConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-9',
             HilosConnection::userId => 5,
-            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::connectedAt => 1710000000123,
             HilosSessionConnection::sessionToken => 'tok-a',
             HilosSessionConnection::sessionId => 17,
             SessionConnectionFixture::label => 'old',
@@ -163,7 +170,7 @@ final class HilosConnectionStateTest extends TestCase
         PresenceConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-10',
             HilosConnection::userId => 42,
-            HilosConnection::connectedAt => 1710000000,
+            HilosConnection::connectedAt => 1710000000123,
             HilosConnection::probablyOffline => $flag,
             PresenceConnectionFixture::label => 'guest',
         ]);
@@ -241,11 +248,17 @@ final class HilosConnectionStateTest extends TestCase
         $hydrated = SessionConnectionFixture::fromRow($connection->toArray());
         $this->assertSame('tok-a', $hydrated->sessionToken);
         $this->assertSame(17, $hydrated->sessionId);
+        $this->assertSame($connection->connectedAt, $hydrated->connectedAt);
 
         $hydrated->applyDiff([
             HilosSessionConnection::sessionToken => 'tok-b',
             HilosSessionConnection::sessionId => 19,
+            HilosConnection::connectedAt => 1710000000456,
         ]);
+        $this->assertSame(1710000000456, $hydrated->connectedAt);
+        $this->assertSame(1710000000456, SessionConnectionFixture::fromRow($hydrated->toArray())->connectedAt);
+        $hydrated->applyDiff([SessionConnectionFixture::label => 'unchanged moment']);
+        $this->assertSame(1710000000456, $hydrated->connectedAt);
         $this->assertSame('tok-b', $hydrated->sessionToken);
         $this->assertSame(19, $hydrated->sessionId);
     }

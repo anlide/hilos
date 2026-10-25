@@ -300,6 +300,7 @@ const expectedValues = [
   ...maintenanceFrameValues,
   ...maintenanceRestoreActionValues,
   ...maintenanceRestoreCopyValues,
+  'PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD',
 ].sort()
 
 /**
@@ -483,6 +484,9 @@ describe('core public entries', () => {
         true,
       )
     }
+    expect(base.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD).toBe(
+      core.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
+    )
     expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
     expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
     expect(base.createHilosTimeZonePicker).toBe(

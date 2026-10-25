@@ -28,7 +28,7 @@ use Hilos\HilosException;
  *
  * @property-read string $acceptKey WebSocket accept key
  * @property-read ?int $userId Authenticated user id, or null while anonymous
- * @property-read int $connectedAt Unix timestamp when the socket row was created
+ * @property-read int $connectedAt UTC epoch milliseconds when the socket row was created
  * @property-read bool $probablyOffline Whether the socket went silent past its liveness window and is doubted
  * @property-read HilosConnectionActions $actions Write operations for this connection
  */

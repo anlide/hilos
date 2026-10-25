@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   createSignal,
+  formatProfileDateTime,
   type ActionHandle,
   type HilosProfileSession,
   type HilosProfileSessionActions,
@@ -28,9 +29,10 @@ function makeSession(
   return {
     id,
     deviceName: `Device ${id}`,
-    createdAt: '2026-09-30T10:00:00Z',
-    lastSeenAt: '2026-09-30T10:00:00Z',
-    expiresAt: '2026-10-30T10:00:00Z',
+    browserTimeZone: null,
+    createdAt: 1790762400000,
+    lastSeenAt: 1790762400000,
+    expiresAt: 1793354400000,
     current: options.current ?? false,
     impersonated: options.impersonated ?? false,
     tabs: [],
@@ -68,6 +70,23 @@ function setup(
 }
 
 describe('HilosProfileSessions (React)', () => {
+  it('formats a live tab directly from epoch milliseconds', async () => {
+    setup([
+      {
+        ...makeSession(1, { current: true }),
+        tabs: [
+          { acceptKey: 'ak-ms', connectedAt: 1710000000123, current: false },
+        ],
+      },
+    ])
+    await act(async () => {
+      fireEvent.click(byId('profile-session-tabs'))
+    })
+    expect(byId('profile-session-tab').textContent).toBe(
+      `ak-msopened ${formatProfileDateTime(1710000000123)}`,
+    )
+  })
+
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {
     const { endOtherSessions } = setup()
     expect(

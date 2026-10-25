@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { hilosProfileSignInSubtitle } from '../../src/profile/profileSignInMethods.js'
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 import {
   createHilosProfileSignInMethods,
   HILOS_PROFILE_IDENTITIES_LIST,
 } from '../../src/profile/profileIdentities.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { ingest } from '../../src/state/normalizer.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('framework profile identities list', () => {
   it('is empty before a profile list arrives', () => {
@@ -47,7 +51,7 @@ describe('framework profile identities list', () => {
                     userId: 7,
                     identityId: 2,
                     label: 'Laptop',
-                    createdAt: '2026-10-01 12:00:00',
+                    createdAt: 1767227400000,
                   },
                 ],
               },
@@ -64,10 +68,19 @@ describe('framework profile identities list', () => {
         key: '2',
         type: 'passkey',
         deviceName: 'Laptop',
-        addedAt: '2026-10-01 12:00:00',
+        addedAt: 1767227400000,
         canUnlink: true,
       },
     ])
+
+    const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
+    expect(hilosProfileSignInSubtitle(methods.get()[1]!)).toBe(
+      'Passkey · added Jan 1, 2026',
+    )
+    zone.mockReturnValue('America/New_York')
+    expect(hilosProfileSignInSubtitle(methods.get()[1]!)).toBe(
+      'Passkey · added Dec 31, 2025',
+    )
 
     ingest(page, {
       entities: {

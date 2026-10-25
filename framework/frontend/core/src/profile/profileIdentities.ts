@@ -85,7 +85,7 @@ export function createHilosProfileSignInMethods(
               {
                 identityId: readNumber(fields, ProfilePasskeyRowKey.identityId),
                 label: readStringOrNull(fields, ProfilePasskeyRowKey.label),
-                createdAt: readString(fields, ProfilePasskeyRowKey.createdAt),
+                createdAt: readNumber(fields, ProfilePasskeyRowKey.createdAt),
               },
             ]
       }),

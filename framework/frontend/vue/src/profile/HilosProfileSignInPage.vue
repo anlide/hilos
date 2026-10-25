@@ -1,6 +1,7 @@
 <!-- The current account's ways in. Every parameter and confirmation lives in a dialog. -->
 <script setup lang="ts">
 import {
+  computedSignal,
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInMethods,
@@ -42,6 +43,16 @@ const props = defineProps<{
 }>()
 const methodsSignal = createHilosProfileSignInMethods(props.context.scopes)
 const methods = useSignal(methodsSignal)
+const subtitles = useSignal(
+  computedSignal(
+    () =>
+      new Map(
+        methodsSignal
+          .get()
+          .map((method) => [method.key, hilosProfileSignInSubtitle(method)]),
+      ),
+  ),
+)
 const offered = useSignal(sessionAuthMethods(props.context.scopes))
 const passkeySupported = isPasskeySupported()
 /** What the account can still add: the chooser's buttons and the warning's. */
@@ -387,7 +398,7 @@ onUnmounted(() => {
                 : 'identity-identifier'
             "
           >
-            {{ hilosProfileSignInSubtitle(method) }}
+            {{ subtitles.get(method.key) }}
           </div>
           <span
             v-if="method.verified"

@@ -49,6 +49,7 @@ final class ProfileDevicesBrowserList
                     PushSubscription::createdAt,
                     PushSubscription::goneAt,
                 ],
+                BrowserListFieldKey::SQL_MOMENTS => [PushSubscription::createdAt, PushSubscription::goneAt],
             ],
         ],
     ];

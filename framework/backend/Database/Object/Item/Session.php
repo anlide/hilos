@@ -155,8 +155,8 @@ class Session extends Object_
      * second-factor step it waits on and the blocked account it lost (with how it lost it) are surfaced to the frontend
      * through the session state frame and the handshake response, not this row. `ipAddress` is kept off too and
      * reaches the browser by no other road: whether a screen shows the address a session came from is the redraw's
-     * decision (D-166). `browserTimeZone` stays server-side as well: it serves work done for this session without a
-     * browser, and showing it on a session row is a later screen's decision (HIL-1586).
+     * decision (D-166). `browserTimeZone` is excluded from this generic projection; the explicit profile sessions
+     * browser lists select it through the View getter for the session's own row.
      *
      * @return array<string, mixed> Key => value array
      */

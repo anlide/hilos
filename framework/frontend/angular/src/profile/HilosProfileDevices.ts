@@ -128,7 +128,7 @@ export class HilosProfileDevices implements OnInit {
     void this.boundStore.refresh()
   }
 
-  protected date(value: string): string {
+  protected date(value: number): string {
     return formatProfileDateTime(value)
   }
 

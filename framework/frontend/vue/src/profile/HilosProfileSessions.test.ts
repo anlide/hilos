@@ -1,7 +1,9 @@
 import {
   ActionError,
+  bindTimeZoneState,
   createSignal,
   type ActionHandle,
+  type HilosConnection,
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
@@ -11,7 +13,12 @@ import { nextTick, ref } from 'vue'
 
 import HilosProfileSessions from './HilosProfileSessions.vue'
 
+let releaseTimeZone: (() => void) | undefined
+
 afterEach(() => {
+  releaseTimeZone?.()
+  releaseTimeZone = undefined
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -44,9 +51,10 @@ function makeSession(
   return {
     id,
     deviceName: `Device ${id}`,
-    createdAt: '2026-09-30T10:00:00Z',
-    lastSeenAt: '2026-09-30T10:00:00Z',
-    expiresAt: '2026-10-30T10:00:00Z',
+    browserTimeZone: null,
+    createdAt: 1790762400000,
+    lastSeenAt: 1790762400000,
+    expiresAt: 1793354400000,
     current: options.current ?? false,
     impersonated: options.impersonated ?? false,
     tabs: [],
@@ -89,6 +97,114 @@ function setup(
 }
 
 describe('HilosProfileSessions (Vue)', () => {
+  it.each([
+    ['Chrome on macOS', 'Europe/Kyiv', 'Chrome on macOS · Europe/Kyiv'],
+    [null, 'US/Eastern', 'Unknown device · US/Eastern'],
+    ['Firefox on Linux', null, 'Firefox on Linux'],
+    [null, null, 'Unknown device'],
+  ])(
+    'shows device %s with its stored browser zone %s',
+    (deviceName, browserTimeZone, caption) => {
+      const { wrapper } = setup([
+        { ...makeSession(1), deviceName, browserTimeZone },
+      ])
+      const device = wrapper.get('[data-id="profile-session-device"]')
+      expect(device.text()).toBe(caption)
+      expect(device.find('span.text-body-secondary').exists()).toBe(
+        browserTimeZone !== null,
+      )
+    },
+  )
+
+  it.each([
+    ['profile-session-revoke', 'profile-session-end-confirm'],
+    ['profile-sessions-end-others', 'profile-sessions-end-others-confirm'],
+  ])(
+    'reformats numeric moments while keeping tabs and %s pending',
+    async (open, confirm) => {
+      let browserZone = 'Asia/Tokyo'
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockImplementation(() => ({ ...resolved, timeZone: browserZone }))
+      releaseTimeZone = bindTimeZoneState({
+        on: () => () => {},
+      } as unknown as HilosConnection)
+      let resolveAction!: () => void
+      const pending = new Promise<{ reply: null }>((resolve) => {
+        resolveAction = () => resolve({ reply: null })
+      })
+      const sessions = [
+        {
+          ...makeSession(1, { current: true }),
+          browserTimeZone: 'US/Eastern',
+          createdAt: 1767227400000,
+          expiresAt: 1767313800000,
+          tabs: [
+            {
+              acceptKey: 'tab-current',
+              connectedAt: 1767227520000,
+              current: true,
+            },
+          ],
+        },
+        { ...makeSession(2), lastSeenAt: 1767227460000, expiresAt: null },
+      ]
+      const { wrapper, endSession, endOtherSessions } = setup(
+        sessions,
+        () => pending,
+        () => pending,
+      )
+      const originalSessions = wrapper.props('sessions')
+      const rows = wrapper.findAll('[data-id="profile-session-row"]')
+      expect(rows[0]!.text()).toContain('created 1/1/2026, 9:30:00 AM')
+      expect(rows[0]!.text()).toContain('last seen now')
+      expect(rows[0]!.text()).toContain('expires 1/2/2026, 9:30:00 AM')
+      expect(rows[1]!.text()).toContain('last seen 1/1/2026, 9:31:00 AM')
+      expect(rows[1]!.text()).toContain('expires never')
+      await rows[0]!.get('[data-id="profile-session-tabs"]').trigger('click')
+      const tab = byId('profile-session-tab')
+      expect(tab.textContent).toContain('opened 1/1/2026, 9:32:00 AM')
+      byId(open).click()
+      await nextTick()
+      const modal = byId('modal')
+      byId(confirm).click()
+      await nextTick()
+      expect(bodyLock()?.disabled).toBe(true)
+
+      browserZone = 'America/New_York'
+      window.dispatchEvent(new Event('focus'))
+      await nextTick()
+
+      expect(wrapper.props('sessions')).toBe(originalSessions)
+      expect(rows[0]!.text()).toContain('created 12/31/2025, 7:30:00 PM')
+      expect(rows[0]!.text()).toContain('expires 1/1/2026, 7:30:00 PM')
+      expect(rows[1]!.text()).toContain('last seen 12/31/2025, 7:31:00 PM')
+      expect(byId('profile-session-tab')).toBe(tab)
+      expect(tab.textContent).toContain('opened 12/31/2025, 7:32:00 PM')
+      expect(
+        rows[0]!
+          .get('[data-id="profile-session-tabs"]')
+          .attributes('aria-expanded'),
+      ).toBe('true')
+      expect(rows[0]!.get('[data-id="profile-session-device"]').text()).toBe(
+        'Device 1 · US/Eastern',
+      )
+      expect(byId('modal')).toBe(modal)
+      expect(bodyLock()?.disabled).toBe(true)
+      expect(endSession).toHaveBeenCalledTimes(
+        open === 'profile-session-revoke' ? 1 : 0,
+      )
+      expect(endOtherSessions).toHaveBeenCalledTimes(
+        open === 'profile-sessions-end-others' ? 1 : 0,
+      )
+      resolveAction()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    },
+  )
+
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {
     const { endOtherSessions } = setup()
     expect(

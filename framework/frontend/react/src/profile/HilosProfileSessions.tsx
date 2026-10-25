@@ -164,8 +164,7 @@ export function HilosProfileSessions({
                           >
                             <code>{tab.acceptKey.slice(0, 8)}</code>
                             <span className="small text-body-secondary">
-                              opened{' '}
-                              {formatProfileDateTime(tab.connectedAt * 1000)}
+                              opened {formatProfileDateTime(tab.connectedAt)}
                               {tab.current ? (
                                 <span
                                   className="badge text-bg-primary ms-1"

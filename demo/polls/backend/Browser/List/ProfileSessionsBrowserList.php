@@ -47,11 +47,13 @@ final class ProfileSessionsBrowserList
                     Session::id,
                     Session::userId,
                     Session::deviceName,
+                    Session::browserTimeZone,
                     Session::createdAt,
                     Session::lastSeenAt,
                     Session::expiresAt,
                     Session::impersonatorUserId,
                 ],
+                BrowserListFieldKey::SQL_MOMENTS => [Session::createdAt, Session::lastSeenAt, Session::expiresAt],
             ],
             [
                 BrowserListFieldKey::SOURCE => PollsBrowserSource::RT_CONNECTIONS,

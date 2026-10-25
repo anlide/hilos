@@ -565,6 +565,7 @@ export {
   createHilosProfileSessionActions,
   endableProfileSessionCount,
   formatProfileDateTime,
+  PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
   PROFILE_SESSION_CREATED_AT_FIELD,
   PROFILE_SESSION_DEVICE_NAME_FIELD,
   PROFILE_SESSION_END_ACTION,

@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Inheritable runtime row for one WebSocket connection — the presence stage (HIL-361, HIL-509).
@@ -48,7 +49,7 @@ abstract class HilosConnection extends RtState
     /** Authenticated database user id, or null while the connection is anonymous. */
     public ?int $userId = null;
 
-    /** Unix timestamp when this socket row was created. */
+    /** UTC epoch milliseconds when this socket row was created. */
     private(set) int $connectedAt = 0;
 
     /**
@@ -167,7 +168,7 @@ abstract class HilosConnection extends RtState
     {
         $this->acceptKey = $acceptKey;
         $this->userId = $userId;
-        $this->connectedAt = time();
+        $this->connectedAt = TimeHelper::nowMs();
         $this->probablyOffline = false;
     }
 

@@ -23,7 +23,7 @@ final class SelfConnectionSignalDataTest extends TestCase
     {
         $selfConnection = [
             'userId' => 7,
-            'connectedAt' => 1710000000,
+            'connectedAt' => 1710000000000,
             'messageRateLimitSecondsRemaining' => 6,
             'outboundModerationState' => [
                 'phase' => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,

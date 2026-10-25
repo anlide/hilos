@@ -1602,6 +1602,7 @@ final class TopologyValidator
                         $errors[] = "{$rowPath} {$listKey} must be an array";
                     }
                 }
+                $this->validateBrowserSqlMoments($row, $rowPath, $errors);
                 $this->validateBrowserNotPersonal($row, $rowPath, $errors);
 
                 foreach ([BrowserFieldKey::WHERE, BrowserFieldKey::VIA] as $mapKey) {
@@ -1638,6 +1639,54 @@ final class TopologyValidator
                 $errors[] = "{$path} {$sourcesKey} must list exactly the sources {$rowsKey} reference"
                     . ' (missing: ' . $this->browserSourceList($missing)
                     . '; unused: ' . $this->browserSourceList($unused) . ')';
+            }
+        }
+    }
+
+    /**
+     * SQL moments name original DB fields, before any source-to-wire mapping.
+     *
+     * @param array<string, mixed> $row Row declaration
+     * @param string $rowPath Declaration path for diagnostics
+     * @param list<string> $errors Accumulated startup errors
+     */
+    private function validateBrowserSqlMoments(array $row, string $rowPath, array &$errors): void
+    {
+        if (!array_key_exists(BrowserFieldKey::SQL_MOMENTS, $row)) {
+            return;
+        }
+
+        $key = BrowserFieldKey::SQL_MOMENTS;
+        $names = $row[$key];
+        if (!is_array($names) || !array_is_list($names)) {
+            $errors[] = "{$rowPath} {$key} must be a list of unique non-empty source field names";
+
+            return;
+        }
+
+        $source = $row[BrowserFieldKey::SOURCE] ?? null;
+        if (!is_array($source) || ($source[BrowserSourceKey::TYPE] ?? null) !== BrowserSourceType::DB) {
+            $errors[] = "{$rowPath} {$key} requires a db source";
+        }
+
+        $fields = $row[BrowserFieldKey::FIELDS] ?? [];
+        $sourceFields = [];
+        if (is_array($fields)) {
+            foreach ($fields as $sourceField => $targetField) {
+                $sourceFields[] = is_int($sourceField) ? $targetField : $sourceField;
+            }
+        }
+
+        $seen = [];
+        foreach ($names as $field) {
+            if (!is_string($field) || $field === '' || in_array($field, $seen, true)) {
+                $errors[] = "{$rowPath} {$key} must be a list of unique non-empty source field names";
+
+                continue;
+            }
+            $seen[] = $field;
+            if (!in_array($field, $sourceFields, true)) {
+                $errors[] = "{$rowPath} {$key} names {$field}, which is not a source field in fields";
             }
         }
     }

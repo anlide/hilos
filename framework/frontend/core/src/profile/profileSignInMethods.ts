@@ -7,6 +7,7 @@ import {
   SMS_METHOD_KEY,
 } from '../auth/authFlow.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
+import { formatMoment } from '../format/moment.js'
 import { type AuthMethodEntry } from '../session/sessionScope.js'
 import {
   SIGNAL_PROFILE_PASSWORD_UPDATED,
@@ -26,7 +27,7 @@ export interface HilosProfileSignInIdentitySource {
 export interface HilosProfileSignInPasskeySource {
   readonly identityId: number
   readonly label: string | null
-  readonly createdAt: string
+  readonly createdAt: number
 }
 
 /** One way into the current account, with its removal hint. */
@@ -37,7 +38,7 @@ export interface HilosProfileSignInMethod {
   readonly identifier: string
   readonly verified: boolean
   readonly deviceName: string | null
-  readonly addedAt: string | null
+  readonly addedAt: number | null
   readonly canUnlink: boolean
 }
 
@@ -201,7 +202,7 @@ export function hilosProfileSignInTitle(
 }
 
 /**
- * The public identifier, or a passkey's device-registration date as stored.
+ * The public identifier, or a passkey's enrollment date in the reader's zone.
  *
  * @param method The projected method.
  */
@@ -209,9 +210,11 @@ export function hilosProfileSignInSubtitle(
   method: HilosProfileSignInMethod,
 ): string {
   if (method.type !== 'passkey') return method.identifier
-  return method.addedAt === null
-    ? 'Passkey'
-    : `Passkey · added ${method.addedAt.slice(0, 10)}`
+  const addedAt =
+    method.addedAt === null
+      ? null
+      : formatMoment(method.addedAt, { kind: 'date' })
+  return addedAt === null ? 'Passkey' : `Passkey · added ${addedAt}`
 }
 
 /**

@@ -2,6 +2,7 @@
 import {
   formatProfileDateTime,
   hilosPushSubscription,
+  hilosTimeZone,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
@@ -31,6 +32,7 @@ const props = withDefaults(
   { pushStore: () => hilosPushSubscription },
 )
 
+const timeZone = useSignal(hilosTimeZone)
 const supported = useSignal(props.pushStore.supported)
 const permission = useSignal(props.pushStore.permission)
 const refreshed = useSignal(props.pushStore.refreshed)
@@ -51,6 +53,12 @@ const showUnsubscribedCurrent = computed(
 onMounted(() => {
   void props.pushStore.refresh()
 })
+
+/** Format a device moment again when the reader's zone changes. */
+function dateTime(moment: number): string {
+  void timeZone.value
+  return formatProfileDateTime(moment)
+}
 
 async function removeDevice(subscriptionId: number): Promise<void> {
   await removeAction.run(props.actions.removeDevice(subscriptionId))
@@ -89,7 +97,7 @@ async function removeDevice(subscriptionId: number): Promise<void> {
               >Subscription expired</span
             >
             <div v-else class="small text-body-secondary">
-              Subscribed · added {{ formatProfileDateTime(device.createdAt) }}
+              Subscribed · added {{ dateTime(device.createdAt) }}
             </div>
           </div>
           <HilosPushDeviceToggle

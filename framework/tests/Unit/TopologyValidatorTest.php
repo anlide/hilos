@@ -18,6 +18,9 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataFieldKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
@@ -1418,6 +1421,42 @@ final class TopologyValidatorTest extends TestCase
                 "{$tablePath} rows[0] where must be an array",
                 "{$tablePath} rows[1] must be an array",
                 "{$tablePath} sources must be a list of source declarations",
+            ],
+        );
+    }
+
+    public function testSqlMomentsAcceptsSourceNamesAndAliasesForTablesListsAndData(): void
+    {
+        TopologyBrowserSqlMomentsValidHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testSqlMomentsRejectsInvalidDeclarationsWithoutWeakeningOtherSourceChecks(): void
+    {
+        $path = 'BROWSER_TABLES[' . TopologyBrowserSqlMomentsInvalidTable::TABLE . '] class '
+            . TopologyBrowserSqlMomentsInvalidTable::class . '::BROWSER';
+        $shapeError = 'sqlMoments must be a list of unique non-empty source field names';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserSqlMomentsInvalidHilos::validateTopology();
+            },
+            [
+                "{$path} rows[0] {$shapeError}",
+                "{$path} rows[1] {$shapeError}",
+                "{$path} rows[2] {$shapeError}",
+                "{$path} rows[3] {$shapeError}",
+                "{$path} rows[4] {$shapeError}",
+                "{$path} rows[5] {$shapeError}",
+                "{$path} rows[6] sqlMoments names unknown, which is not a source field in fields",
+                "{$path} rows[7] sqlMoments names computedAt, which is not a source field in fields",
+                "{$path} rows[8] sqlMoments names created, which is not a source field in fields",
+                "{$path} rows[9] sqlMoments requires a db source",
+                "{$path} rows[10] fields must be an array",
+                "{$path} rows[10] sqlMoments names createdAt, which is not a source field in fields",
+                "{$path} rows[11] notPersonal names ghost, which is not a field of this row",
+                "{$path} sources must list exactly the sources rows reference (missing: rt:presence; unused: none)",
             ],
         );
     }
@@ -4493,6 +4532,108 @@ final class TopologyBrowserBrokenListHilos extends HilosFacade
      *
      * @return HilosDbContext Test DB context
      */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+abstract class TopologyBrowserSqlMomentsConfig
+{
+    public const array SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => 'owners',
+    ];
+
+    public const array ROW = [
+        BrowserFieldKey::SOURCE => self::SOURCE,
+        BrowserTableFieldKey::ROW_KEY => 'id',
+        BrowserListFieldKey::ITEM_KEY => 'id',
+        BrowserFieldKey::FIELDS => ['id', 'createdAt' => 'created', 'expiresAt'],
+        BrowserFieldKey::COMPUTED => ['computedAt'],
+    ];
+}
+
+final class TopologyBrowserSqlMomentsTable extends TopologyBrowserSqlMomentsConfig
+{
+    public const string TABLE = 'sql_moments_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [self::SOURCE],
+        BrowserTableConfigKey::ROWS => [
+            [BrowserTableFieldKey::SQL_MOMENTS => ['createdAt', 'expiresAt']] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => []] + self::ROW,
+        ],
+    ];
+}
+
+final class TopologyBrowserSqlMomentsList extends TopologyBrowserSqlMomentsConfig
+{
+    public const string LIST = 'sql_moments_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::SOURCE],
+        BrowserListConfigKey::ITEMS => [[BrowserListFieldKey::SQL_MOMENTS => ['createdAt']] + self::ROW],
+    ];
+}
+
+final class TopologyBrowserSqlMomentsData extends TopologyBrowserSqlMomentsConfig
+{
+    public const string DATA = 'sql_moments_data';
+
+    public const array BROWSER = [
+        BrowserDataConfigKey::SOURCES => [self::SOURCE],
+        BrowserDataConfigKey::ROWS => [[BrowserDataFieldKey::SQL_MOMENTS => ['expiresAt']] + self::ROW],
+    ];
+}
+
+final class TopologyBrowserSqlMomentsValidHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [TopologyBrowserSqlMomentsTable::TABLE => TopologyBrowserSqlMomentsTable::class];
+    public const array BROWSER_LISTS = [TopologyBrowserSqlMomentsList::LIST => TopologyBrowserSqlMomentsList::class];
+    public const array BROWSER_DATA = [TopologyBrowserSqlMomentsData::DATA => TopologyBrowserSqlMomentsData::class];
+
+    /** @return HilosDbContext No-op context for startup-only validation */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserSqlMomentsInvalidTable extends TopologyBrowserSqlMomentsConfig
+{
+    public const string TABLE = 'invalid_sql_moments';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [self::SOURCE],
+        BrowserTableConfigKey::ROWS => [
+            [BrowserFieldKey::SQL_MOMENTS => 'createdAt'] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => null] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['createdAt' => true]] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => [7]] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['']] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['createdAt', 'createdAt']] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['unknown']] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['computedAt']] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['created']] + self::ROW,
+            [
+                BrowserFieldKey::SQL_MOMENTS => ['createdAt'],
+                BrowserFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => 'presence',
+                ],
+            ] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['createdAt'], BrowserFieldKey::FIELDS => 'nope'] + self::ROW,
+            [BrowserFieldKey::SQL_MOMENTS => ['createdAt'], BrowserFieldKey::NOT_PERSONAL => ['ghost']] + self::ROW,
+        ],
+    ];
+}
+
+final class TopologyBrowserSqlMomentsInvalidHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [TopologyBrowserSqlMomentsInvalidTable::TABLE => TopologyBrowserSqlMomentsInvalidTable::class];
+
+    /** @return HilosDbContext No-op context for startup-only validation */
     protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();

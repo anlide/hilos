@@ -11,6 +11,7 @@ use Hilos\HilosException;
 
 /**
  * Builds the browser-safe current connection payload for the main chat page.
+ * The connectedAt field carries UTC epoch milliseconds directly from the runtime row.
  */
 final class SelfConnectionBrowserPayload
 {

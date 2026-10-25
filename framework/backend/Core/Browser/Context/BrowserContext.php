@@ -3631,6 +3631,7 @@ abstract class BrowserContext
         bool $viewer,
     ): ?array {
         $sources = [];
+        $joinSources = [];
         $staleSources = [];
         $anchorChecked = false;
         $anchorFound = false;
@@ -3657,13 +3658,15 @@ abstract class BrowserContext
                 acceptKey: $acceptKey,
                 pageParams: $pageParams,
                 browserParams: $browserParams,
-                sources: $sources,
+                sources: $joinSources,
                 browserKey: $browserKey,
                 joinedItems: $joinedItems,
             );
             if ($isMany) {
-                $sources[$sourceKey] = array_map(
-                    fn(mixed $item): array => $this->projectSourceItem(
+                $sourcePayloads = [];
+                $joinPayloads = [];
+                foreach ($items as $item) {
+                    [$sourcePayloads[], $joinPayloads[]] = $this->projectSourceItem(
                         browserKey: $browserKey,
                         rowConfig: $rowConfig,
                         item: $item,
@@ -3672,9 +3675,10 @@ abstract class BrowserContext
                         pageParams: $pageParams,
                         browserParams: $browserParams,
                         sources: $sources,
-                    ),
-                    $items,
-                );
+                    );
+                }
+                $sources[$sourceKey] = $sourcePayloads;
+                $joinSources[$sourceKey] = $joinPayloads;
                 if ($this->itemsAreFrozen($items)) {
                     $staleSources[] = $sourceKey;
                 }
@@ -3697,7 +3701,7 @@ abstract class BrowserContext
                 $anchorFound = true;
             }
 
-            $sources[$sourceKey] = $this->projectSourceItem(
+            [$sources[$sourceKey], $joinSources[$sourceKey]] = $this->projectSourceItem(
                 browserKey: $browserKey,
                 rowConfig: $rowConfig,
                 item: $items[0],
@@ -6541,6 +6545,9 @@ abstract class BrowserContext
     /**
      * Projects configured source and computed fields from one current item.
      *
+     * Join fragments keep source values under the same target keys before SQL moment serialization.
+     * Computed fields still read the earlier serialized fragments and are evaluated once.
+     *
      * @param string $browserKey Browser table key
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param mixed $item Current source item
@@ -6549,8 +6556,8 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
-     * @return array<string, mixed> Projected source fragment
-     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @return array{array<string, mixed>, array<string, mixed>} Browser fragment and pre-serialization join fragment
+     * @throws PageInternalErrorException When a declaration is malformed or a non-null SQL moment is not a string
      */
     private function projectSourceItem(
         string $browserKey,
@@ -6563,7 +6570,9 @@ abstract class BrowserContext
         array $sources,
     ): array {
         $payload = [];
+        $joinPayload = [];
         $fields = $rowConfig[BrowserFieldKey::FIELDS] ?? [];
+        $sqlMoments = $rowConfig[BrowserFieldKey::SQL_MOMENTS] ?? [];
         if (is_array($fields)) {
             foreach ($fields as $sourceField => $targetField) {
                 if (is_int($sourceField)) {
@@ -6572,7 +6581,17 @@ abstract class BrowserContext
                 if (!is_string($sourceField) || !is_string($targetField)) {
                     continue;
                 }
-                $payload[$targetField] = $this->fieldValue($item, $sourceField);
+                $fieldValue = $this->fieldValue($item, $sourceField);
+                $joinPayload[$targetField] = $fieldValue;
+                if ($fieldValue !== null && in_array($sourceField, $sqlMoments, true)) {
+                    if (!is_string($fieldValue)) {
+                        throw new PageInternalErrorException(
+                            "Invalid browser source value: {$browserKey} sqlMoments field {$sourceField} must be a string or null",
+                        );
+                    }
+                    $fieldValue = TimeHelper::sqlToMs($fieldValue);
+                }
+                $payload[$targetField] = $fieldValue;
             }
         }
 
@@ -6591,10 +6610,11 @@ abstract class BrowserContext
                     browserParams: $browserParams,
                     sources: $sources,
                 );
+                $joinPayload[$field] = $payload[$field];
             }
         }
 
-        return $payload;
+        return [$payload, $joinPayload];
     }
 
     /**

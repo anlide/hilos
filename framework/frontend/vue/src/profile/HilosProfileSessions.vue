@@ -2,6 +2,7 @@
 import {
   endableProfileSessionCount,
   formatProfileDateTime,
+  hilosTimeZone,
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
@@ -10,6 +11,7 @@ import { computed, ref } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
 import LoadingButton from '../LoadingButton.vue'
+import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 
 const props = defineProps<{
@@ -19,6 +21,7 @@ const props = defineProps<{
   actions: HilosProfileSessionActions
 }>()
 
+const timeZone = useSignal(hilosTimeZone)
 const expanded = ref<ReadonlySet<number>>(new Set())
 const endingSessionId = ref<number | null>(null)
 const endOthersOpen = ref(false)
@@ -40,6 +43,12 @@ const endOthersError = computed(() =>
     ? 'Your other sessions have already ended'
     : endOthersAction.error.value,
 )
+
+/** Format a session moment again when the reader's zone changes. */
+function dateTime(moment: number | null): string {
+  void timeZone.value
+  return formatProfileDateTime(moment)
+}
 
 function toggleTabs(sessionId: number): void {
   const next = new Set(expanded.value)
@@ -110,6 +119,11 @@ async function confirmEndOthers(): Promise<void> {
               <h3 class="h6 mb-1">Session #{{ session.id }}</h3>
               <div data-id="profile-session-device">
                 {{ session.deviceName ?? 'Unknown device' }}
+                <span
+                  v-if="session.browserTimeZone !== null"
+                  class="text-body-secondary"
+                  >· {{ session.browserTimeZone }}</span
+                >
               </div>
               <span
                 v-if="session.current"
@@ -135,13 +149,9 @@ async function confirmEndOthers(): Promise<void> {
             </button>
           </div>
           <div class="small text-body-secondary mt-2">
-            created {{ formatProfileDateTime(session.createdAt) }} · last seen
-            {{
-              session.tabs.length > 0
-                ? 'now'
-                : formatProfileDateTime(session.lastSeenAt)
-            }}
-            · expires {{ formatProfileDateTime(session.expiresAt) }}
+            created {{ dateTime(session.createdAt) }} · last seen
+            {{ session.tabs.length > 0 ? 'now' : dateTime(session.lastSeenAt) }}
+            · expires {{ dateTime(session.expiresAt) }}
           </div>
           <button
             type="button"
@@ -169,7 +179,7 @@ async function confirmEndOthers(): Promise<void> {
               >
                 <code>{{ tab.acceptKey.slice(0, 8) }}</code>
                 <span class="small text-body-secondary">
-                  opened {{ formatProfileDateTime(tab.connectedAt * 1000) }}
+                  opened {{ dateTime(tab.connectedAt) }}
                   <span
                     v-if="tab.current"
                     class="badge text-bg-primary ms-1"

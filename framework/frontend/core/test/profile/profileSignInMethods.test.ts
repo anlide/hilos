@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 import {
   describeHilosProfileSignInMethods,
   hilosProfileAddableWays,
@@ -26,22 +27,45 @@ const key = {
   verified: true,
 }
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('profile sign-in projection', () => {
   it('joins by identity id and disables removal only for the last method', () => {
     const [single] = resolveHilosProfileSignInMethods(
       [key],
-      [{ identityId: 2, label: 'Laptop', createdAt: '2026-09-26 23:00:00' }],
+      [{ identityId: 2, label: 'Laptop', createdAt: 1790463600000 }],
     )
     expect(single.canUnlink).toBe(false)
     expect(hilosProfileSignInTitle(single, offered)).toBe('Laptop')
+    vi.spyOn(hilosTimeZone, 'get').mockReturnValue('UTC')
     expect(hilosProfileSignInSubtitle(single)).toBe(
-      'Passkey · added 2026-09-26',
+      'Passkey · added Sep 26, 2026',
     )
     expect(
       resolveHilosProfileSignInMethods([password, key], []).every(
         (method) => method.canUnlink,
       ),
     ).toBe(true)
+  })
+  it('formats enrollment across midnight and falls back for an absent or invalid moment', () => {
+    const [method] = resolveHilosProfileSignInMethods(
+      [key],
+      [{ identityId: 2, label: null, createdAt: 1767227400000 }],
+    )
+    const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
+    expect(hilosProfileSignInSubtitle(method)).toBe(
+      'Passkey · added Jan 1, 2026',
+    )
+    zone.mockReturnValue('America/New_York')
+    expect(hilosProfileSignInSubtitle(method)).toBe(
+      'Passkey · added Dec 31, 2025',
+    )
+    expect(hilosProfileSignInSubtitle({ ...method, addedAt: null })).toBe(
+      'Passkey',
+    )
+    expect(hilosProfileSignInSubtitle({ ...method, addedAt: NaN })).toBe(
+      'Passkey',
+    )
   })
   it('uses only a verified email-bearing identity for password addition', () => {
     const methods = resolveHilosProfileSignInMethods(

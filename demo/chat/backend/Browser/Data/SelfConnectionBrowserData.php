@@ -19,6 +19,7 @@ use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 
 /**
  * Browser data source for current WebSocket connection state.
+ * The connectedAt field carries UTC epoch milliseconds directly from the runtime row.
  */
 final class SelfConnectionBrowserData
 {

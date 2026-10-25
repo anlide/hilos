@@ -677,7 +677,7 @@ mixed formats, not a prerequisite for reading or applying this rule.
 
 | Surface | Migration owner and status |
 |---|---|
-| Sessions and devices | (not in the code yet — HIL-1586) |
+| Sessions and devices | `HIL-1586` done: Chat/Polls session lists carry the stored `browserTimeZone` and UTC epoch-ms `createdAt`, `lastSeenAt` and nullable `expiresAt`; Chat device lists carry epoch-ms `createdAt` and nullable `goneAt`; framework passkey credentials carry epoch-ms `createdAt`. RT `connectedAt`, live tabs and self-connection payloads retain milliseconds. Profile dates and passkey subtitles delegate to `formatMoment()`; Vue mirrors the reader-zone signal to refresh dates while keeping open controls and shows the stored browser zone beside the device. |
 | Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; internal SQL row in UTC string; Vue uses the reader zone. |

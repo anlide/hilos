@@ -88,7 +88,7 @@ item, View collection — so a project stands on one stage everywhere.
 
 ```php
 final class Connection extends HilosSessionConnection {
-    protected function initOwn(): void { $this->connectedAt = time(); }
+    protected function initOwn(): void {}
     protected function hydrateOwn(array $row): void { ... }
     protected function ownToArray(): array { return [ ... ]; }
     protected function applyOwnDiff(array $diff): void { ... }

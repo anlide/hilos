@@ -249,12 +249,12 @@ export class HilosProfileSessions {
     () => `End session #${this.endingSessionId() ?? ''}`,
   )
 
-  protected date(value: string | null): string {
+  protected date(value: number | null): string {
     return formatProfileDateTime(value)
   }
 
   protected tabDate(connectedAt: number): string {
-    return formatProfileDateTime(connectedAt * 1000)
+    return formatProfileDateTime(connectedAt)
   }
 
   protected shortKey(acceptKey: string): string {

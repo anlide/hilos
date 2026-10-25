@@ -199,6 +199,25 @@ browser table config classes. Declare every DB/RT source that materially
 changes the browser row so a source fact never has to be bridged by imperative
 agent/page fan-out.
 
+A DB row config may opt specific SQL UTC fields into epoch-millisecond serialization
+with `sqlMoments` (`BrowserFieldKey::SQL_MOMENTS`, also available on the list,
+data and table field-key classes). Declare a list of unique, non-empty **source**
+field names already included in that row's `fields`; for example,
+`fields => ['id', 'createdAt' => 'created']` with `sqlMoments => ['createdAt']`.
+The projector converts the source value once with `TimeHelper::sqlToMs()` and
+writes it under the normal target key (`created` here). Null remains null; a
+non-null value must be a string or the projection raises `PageInternalErrorException`.
+An unreadable string keeps the helper's fallback of `0`. No project or reader
+time-zone offset is applied. Fields without this declaration retain their current
+serialization, regardless of their names.
+
+Startup refuses `sqlMoments` on an RT source, a malformed list, or a name absent
+from the source side of `fields`, including a computed-only name or a wire alias.
+Initial snapshots and source-change rebuilds use the same `projectSourceItem()`
+conversion. WHERE/VIA, row keys, trigger matching and personal-data verdicts
+continue to use the original source fields; `sqlMoments` does not open a DB column
+through `notPersonal` or change source coverage.
+
 A source declaration that names no collection, or names one of an unknown kind,
 is a mistake in the config and is refused with `PageInternalErrorException` — on
 subscribe it reaches the client as a 500 `subscription_page_error`, and in the

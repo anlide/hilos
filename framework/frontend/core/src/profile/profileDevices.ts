@@ -3,6 +3,7 @@ import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosNotificationChannelState } from '../notifications/notificationPreferences.js'
 import {
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../state/fieldReaders.js'
@@ -25,7 +26,7 @@ export const PROFILE_DEVICE_GONE_AT_FIELD = 'goneAt'
 export interface HilosProfileDevice {
   readonly id: number
   readonly deviceName: string | null
-  readonly createdAt: string
+  readonly createdAt: number
   readonly expired: boolean
   readonly current: boolean
 }
@@ -61,8 +62,8 @@ export function resolveHilosProfileDevices(
   return rows.map((row) => ({
     id: readNumber(row, PROFILE_DEVICE_ID_FIELD),
     deviceName: readStringOrNull(row, PROFILE_DEVICE_NAME_FIELD),
-    createdAt: readString(row, PROFILE_DEVICE_CREATED_AT_FIELD),
-    expired: readStringOrNull(row, PROFILE_DEVICE_GONE_AT_FIELD) !== null,
+    createdAt: readNumber(row, PROFILE_DEVICE_CREATED_AT_FIELD),
+    expired: readNumberOrNull(row, PROFILE_DEVICE_GONE_AT_FIELD) !== null,
     current:
       ownEndpointHash !== null &&
       readString(row, PROFILE_DEVICE_ENDPOINT_HASH_FIELD) === ownEndpointHash,
