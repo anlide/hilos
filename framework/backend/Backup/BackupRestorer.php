@@ -28,6 +28,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\MigrationClaimHolder;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -499,7 +500,7 @@ final class BackupRestorer
                 Migration::recordAppliedLevel($level);
             }
             Migration::migrateUp();
-        } catch (DatabaseException | EnvException $failure) {
+        } catch (HilosException $failure) {
             throw new RestoreFailedException(
                 "Failed to migrate connection {$connection->index} after the import: "
                 . $failure->getMessage(),

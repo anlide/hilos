@@ -408,7 +408,7 @@ abstract class Object_
      * @param array<string, mixed> $row Column name => value of the state to put back
      * @param bool $related Whether that state is a row the table holds
      */
-    private function restoreSaved(array $row, bool $related): void
+    protected function restoreSaved(array $row, bool $related): void
     {
         $this->entity->restoreStored($row, $related);
         $this->entitySync = clone $this->entity;
@@ -488,9 +488,10 @@ abstract class Object_
      * @param array<string, mixed> $previous Previous values of updated columns
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
-    private function broadcastDbSyncAfterSync(bool $isCreate, array $result, array $previous): void
+    protected function broadcastDbSyncAfterSync(bool $isCreate, array $result, array $previous): void
     {
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '' || $result === []) {
@@ -576,8 +577,9 @@ abstract class Object_
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Previous row data
      * @throws DatabaseException When the Entity's logical database cannot be resolved
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
-    private function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
+    protected function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
     {
         $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(

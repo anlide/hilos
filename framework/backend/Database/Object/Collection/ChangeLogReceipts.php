@@ -8,8 +8,14 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItem;
@@ -22,11 +28,13 @@ use Hilos\Database\ChangeLog\Section\ChangeLogTouchedRecord;
 use Hilos\Database\ChangeLog\Section\ChangeLogTouchedTable;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\ChangeLogReceipts as EntityChangeLogReceipts;
 use Hilos\Database\Entity\Item\ChangeLogChange as EntityChangeLogChange;
 use Hilos\Database\Entity\Item\ChangeLogEntry as EntityChangeLogEntry;
 use Hilos\Database\Entity\Item\ChangeLogTable as EntityChangeLogTable;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\ChangeLogReceipt as ObjectChangeLogReceipt;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\ChangeLogEntries as ViewChangeLogEntries;
@@ -269,6 +277,118 @@ class ChangeLogReceipts extends Objects
             }
         }
         return ChangeLogReadCollection::fromArray($headers);
+    }
+
+    /**
+     * Inserts one receipt and returns the object built from the stored row.
+     *
+     * The insert is not the generic entity save: a migration receipt omits open_handovers, and an
+     * insert whose outcome is ambiguous is never sent again. The handover column is written only
+     * when the caller retains a local attempt. Membership is the ordinary collection door.
+     *
+     * The mounted changeLogReceipts collection is the door. The statement uses that collection's
+     * entity binding and its row connection, which for the journal is the primary connection.
+     *
+     * @param JournalReceiptData $data Attribution stored on the receipt
+     * @param bool $retainLocal Whether the insert keeps one local handover
+     * @return ObjectChangeLogReceipt Receipt built from the stored row
+     * @throws DatabaseException When the binding, insert, or stored-row read fails
+     * @throws CreateNotAllowedException When no truth source in this process may add a receipt
+     * @throws WriteNotAllowedException When the receipt table is not application-writable
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws ObjectGetIdStringNotImplementedException When the stored row has no id
+     */
+    public function insertReceipt(JournalReceiptData $data, bool $retainLocal): ObjectChangeLogReceipt
+    {
+        $binding = $this->getDatabase() ?? throw new DatabaseException('Journal receipt insert requires a database-backed collection');
+        Database::assertCanWrite($binding->connectionIndex);
+        $objectClass = static::OBJECT_CLASS;
+        DbWriteGuard::guardCreate(static::COLLECTION_KEY, static fn(): array => $objectClass::create()->touchedSetKeys());
+
+        $entityClass = static::entityClass();
+        $table = $binding->getSqlTableName($entityClass::_table);
+        $columns = '`' . $entityClass::actor_user_id . '`, `' . $entityClass::subject_user_id . '`, `'
+            . $entityClass::session_id . '`, `' . $entityClass::channel . '`, `' . $entityClass::action . '`, `'
+            . $entityClass::agent . '`, `' . $entityClass::source . '`, `' . $entityClass::created_at . '`';
+        $values = '?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6)';
+        if ($retainLocal) {
+            $columns .= ', `' . $entityClass::open_handovers . '`';
+            $values .= ', 1';
+        }
+        if (!Database::isConnected($binding->connectionIndex)) {
+            Database::sql('SELECT 1', index: $binding->connectionIndex);
+        }
+        try {
+            Database::sql(
+                "INSERT INTO {$table} ({$columns}) VALUES ({$values})",
+                [
+                    $data->actorUserId,
+                    $data->subjectUserId,
+                    $data->sessionId,
+                    $data->channel,
+                    $data->action,
+                    $data->agent,
+                    $data->source,
+                ],
+                tryReconnect: false,
+                index: $binding->connectionIndex,
+            );
+        } catch (DatabaseException $failure) {
+            try {
+                // A lost INSERT response is ambiguous. Never replay it; drop a dead link
+                // so the next receipt can open a clean one instead of retrying the write.
+                Database::setJournalReceiptId(JournalReceiptScope::currentId());
+            } catch (DatabaseException) {
+                // Keep the INSERT failure; setJournalReceiptId has discarded the link.
+            }
+            throw $failure;
+        }
+
+        $receiptId = Database::lastInsertId($binding->connectionIndex);
+        $row = $this->readInsertedReceipt(
+            $binding,
+            $entityClass,
+            $receiptId,
+            $objectClass::columnProjection($retainLocal),
+        );
+        if (!$retainLocal) {
+            $row[$entityClass::open_handovers] = 0;
+        }
+        $receipt = $objectClass::create();
+        $receipt->acceptStoredInsert($row);
+        $this[$receipt->getIdString()] = $receipt;
+
+        return $receipt;
+    }
+
+    /**
+     * Reads the inserted receipt by id on the same binding connection. Does not repeat the insert.
+     *
+     * @param DatabaseBinding $binding Receipt binding the insert used
+     * @param class-string $entityClass Entity class of this collection
+     * @param int $receiptId Auto-increment id returned for the insert
+     * @param string $projection Quoted core columns, without a column the insert did not write
+     * @return array<string, mixed> Stored core columns
+     * @throws DatabaseException When the stored row is not exactly one
+     */
+    private function readInsertedReceipt(
+        DatabaseBinding $binding,
+        string $entityClass,
+        int $receiptId,
+        string $projection,
+    ): array {
+        $table = $binding->getSqlTableName($entityClass::_table);
+        $rows = Database::sql(
+            'SELECT ' . $projection . ' FROM ' . $table . ' WHERE `' . $entityClass::id . '` = ?',
+            [$receiptId],
+            index: $binding->connectionIndex,
+        )->rows();
+        if (count($rows) !== 1) {
+            throw new DatabaseException('Journal receipt insert did not return the stored row');
+        }
+
+        return $rows[0];
     }
 
     /**

@@ -31,7 +31,6 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
-use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -267,7 +266,7 @@ final class BotAgent extends AbstractLlmChatAgent
      *
      * @param string $text Generated message text
      * @throws InvalidArgumentException When an argument is invalid
-     * @throws DatabaseException When receipt SQL or connection attribution fails
+     * @throws HilosException When the receipt cannot be opened or closed
      */
     protected function handleResult(string $text): void
     {

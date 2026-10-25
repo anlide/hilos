@@ -13,8 +13,11 @@ use Hilos\Core\Feature\Definition\ChangeLogFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Actions\Collection\ChangeLogReceiptsActions;
+use Hilos\Database\Actions\Item\ChangeLogReceiptActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Context\FrameworkExtension;
+use Hilos\Database\Exception\IncompleteFrameworkExtensionException;
 use Hilos\Database\Entity\Collection\ChangeLogReceipts as EntityChangeLogReceipts;
 use Hilos\Database\Object\Item\ChangeLogReceipt as ObjectChangeLogReceipt;
 use Hilos\Database\Object\Collection\ChangeLogReceipts as ObjectChangeLogReceipts;
@@ -87,6 +90,11 @@ final class ChangeLogFeatureActivationTest extends TestCase
                     self::assertSame(DatabaseNames::CHANGE_LOG, $entityClass::getDatabaseName());
                     self::assertSame(1, $entityClass::getDatabase()->schemaIndex);
                     self::assertSame(0, $entityClass::getDatabase()->connectionIndex);
+                    if ($key === HilosDbContext::changeLogReceipts) {
+                        self::assertSame(ChangeLogReceiptsActions::class, $context->frameworkRegistrations()[$key]->actions);
+                        self::assertSame(ChangeLogReceiptActions::class, $context->frameworkRegistrations()[$key]->itemActions);
+                        continue;
+                    }
                     self::assertNull($context->frameworkRegistrations()[$key]->actions);
                     self::assertNull($context->frameworkRegistrations()[$key]->itemActions);
                 }
@@ -96,14 +104,41 @@ final class ChangeLogFeatureActivationTest extends TestCase
             $context = new ChangeLogExtendedMountContext();
             $context->configure();
             HilosFacade::$db = $context;
-            FrameworkExtensionGuard::assertMountedExtensionsWhole();
             self::assertSame(ExtendedJournalReceipt::class, $context->getMountedEntities()[HilosDbContext::changeLogReceipts]);
             self::assertInstanceOf(ExtendedJournalReceipts::class, $context->getDbItemCollection(HilosDbContext::changeLogReceipts));
             self::assertInstanceOf(ExtendedJournalObjectReceipts::class, $context->mountedObjectCollection(HilosDbContext::changeLogReceipts));
             self::assertSame(ExtendedJournalViewReceipt::class, ExtendedJournalReceipts::DB_ITEM_CLASS);
+            self::assertSame(
+                ChangeLogReceiptsActions::class,
+                $context->frameworkRegistrations()[HilosDbContext::changeLogReceipts]->actions,
+            );
+            self::assertSame(
+                ChangeLogReceiptActions::class,
+                $context->frameworkRegistrations()[HilosDbContext::changeLogReceipts]->itemActions,
+            );
+            self::assertSame(
+                ChangeLogReceiptsActions::class,
+                $context->getDbItemCollection(HilosDbContext::changeLogReceipts)->getActionsClass(),
+            );
+            self::assertSame(
+                ChangeLogReceiptActions::class,
+                $context->getDbItemCollection(HilosDbContext::changeLogReceipts)->getItemActionsClass(),
+            );
             self::assertFalse($context->mountedObjectCollection(HilosDbContext::changeLogReceipts)->cachesRows());
             self::assertFalse(Database::isConnected(0));
             self::assertFalse(Database::isConnected(1));
+            // The extension names a view only. Both action layers stay the framework class, and the
+            // guard refuses that half chain. The guard itself is unchanged.
+            $refused = false;
+            try {
+                FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            } catch (IncompleteFrameworkExtensionException $refusal) {
+                $refused = true;
+                self::assertStringContainsString('changeLogReceipts', $refusal->getMessage());
+                self::assertStringContainsString('collection actions', $refusal->getMessage());
+                self::assertStringContainsString('item actions', $refusal->getMessage());
+            }
+            self::assertTrue($refused);
         } finally {
             $appClass->setValue(null, $previous);
             HilosFacade::$db = $previousDb;

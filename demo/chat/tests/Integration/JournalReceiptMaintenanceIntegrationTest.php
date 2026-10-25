@@ -20,6 +20,7 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -43,12 +44,17 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database as FrameworkDatabase;
+use Hilos\Database\Entity\Item\ChangeLogReceipt as EntityChangeLogReceipt;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
@@ -873,13 +879,20 @@ PHP);
         $agent->rotateIfDue(microtime(true));
         $frame = $this->consumeLogIndex();
         self::assertNotNull($frame->data->receiptId);
-        self::assertNull($this->receipt($frame->data->receiptId));
+        $handed = $frame->data->receiptId;
+        self::assertNull($this->receipt($handed));
         self::assertSame(0, $this->newReceiptCount());
+        $this->assertReceiptUpdated($handed, 1, 0);
+        $this->assertReceiptUpdated($handed, 0, 1);
+        $this->assertReceiptStored(SignalConstants::DB_SYNC_DELETED, $handed);
+        self::assertNull($this->router->getNextQueuedSignal());
         self::property($agent, 'cronRule')->lastRun = 0.0;
         $now = microtime(true) + 10;
         $agent->rotateIfDue($now);
         self::assertSame($now, self::property($agent, 'lastRotationAt'), 'An empty attempt still resets the age baseline');
         self::assertSame(0, $this->newReceiptCount());
+        $emptyId = $this->assertReceiptStored(SignalConstants::DB_SYNC_CREATED, null);
+        $this->assertReceiptStored(SignalConstants::DB_SYNC_DELETED, $emptyId);
         self::assertNull($this->router->getNextQueuedSignal());
         $this->assertClear();
     }
@@ -892,7 +905,10 @@ PHP);
         $agent->walkStore(time());
         $id = null;
         $failure = new RuntimeException('index delivery failed');
-        $this->router->onSignal = function () use (&$id, $failure): void {
+        $this->router->onSignal = function (SignalNameInterface $name) use (&$id, $failure): void {
+            if ($name->getName() !== HilosSignalConstants::LOGS_NODE_INDEX_REPORT) {
+                return;
+            }
             $id = JournalReceiptScope::currentId();
             $this->writeSetting();
             throw $failure;
@@ -1070,6 +1086,56 @@ PHP);
         Database::sql("SELECT `receipt_id` FROM {$database}.`hilos_change_log` ORDER BY `id` DESC LIMIT 1");
         $actual = Database::field('receipt_id');
         self::assertSame($id, $actual === null ? null : (int)$actual);
+    }
+
+    /**
+     * @param string $name Created or deleted receipt frame
+     * @param ?int $id Receipt row, or null when the create frame is the one that names it
+     * @return int Receipt row the frame named
+     */
+    private function assertReceiptStored(string $name, ?int $id): int
+    {
+        $frame = $this->router->getNextQueuedSignal();
+        self::assertInstanceOf(SignalDTO::class, $frame);
+        self::assertSame($name, $frame->signalType->getType());
+        self::assertSame($name, $frame->signalName->getName());
+        self::assertInstanceOf(match ($name) {
+            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::class,
+            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::class,
+        }, $frame->data);
+        self::assertSame(HilosDbContext::changeLogReceipts, $frame->data->collectionKey);
+        self::assertNull($frame->data->receiptId);
+        self::assertNull($frame->data->writerAgentId);
+        $rowId = (int) $frame->data->idString;
+        if ($id !== null) {
+            self::assertSame($id, $rowId);
+        }
+        self::assertSame($rowId, $frame->data->row[EntityChangeLogReceipt::id]);
+        self::assertSame('cron', $frame->data->row[EntityChangeLogReceipt::channel]);
+        self::assertSame('log-rotation', $frame->data->row[EntityChangeLogReceipt::action]);
+        self::assertSame(0, $frame->data->row[EntityChangeLogReceipt::open_handovers]);
+
+        return $rowId;
+    }
+
+    /**
+     * @param int $id Receipt row
+     * @param int $holds Counter after the bookkeeping update
+     * @param int $before Counter before that update
+     */
+    private function assertReceiptUpdated(int $id, int $holds, int $before): void
+    {
+        $frame = $this->router->getNextQueuedSignal();
+        self::assertInstanceOf(SignalDTO::class, $frame);
+        self::assertSame(SignalConstants::DB_SYNC_UPDATED, $frame->signalType->getType());
+        self::assertSame(SignalConstants::DB_SYNC_UPDATED, $frame->signalName->getName());
+        self::assertInstanceOf(DbSyncUpdatedSignalData::class, $frame->data);
+        self::assertSame(HilosDbContext::changeLogReceipts, $frame->data->collectionKey);
+        self::assertSame((string) $id, $frame->data->idString);
+        self::assertNull($frame->data->receiptId);
+        self::assertNull($frame->data->writerAgentId);
+        self::assertSame([EntityChangeLogReceipt::open_handovers => $holds], $frame->data->row);
+        self::assertSame([EntityChangeLogReceipt::open_handovers => $before], $frame->data->previous);
     }
 
     /**

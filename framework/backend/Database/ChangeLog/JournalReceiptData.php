@@ -9,6 +9,9 @@ final readonly class JournalReceiptData
 {
     public const int MAX_SOURCE_LENGTH = 512;
 
+    /** Channel stored for a migration run. */
+    public const string CHANNEL_MIGRATION = 'migration';
+
     private function __construct(
         public ?int $actorUserId,
         public ?int $subjectUserId,
@@ -70,7 +73,7 @@ final readonly class JournalReceiptData
      */
     public static function migration(string $direction, int $index, string $file): self
     {
-        return new self(null, null, null, 'migration', "migration.{$direction}.{$index}", null, basename($file));
+        return new self(null, null, null, self::CHANNEL_MIGRATION, "migration.{$direction}.{$index}", null, basename($file));
     }
 
     /**

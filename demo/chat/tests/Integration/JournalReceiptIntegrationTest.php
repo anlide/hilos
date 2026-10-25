@@ -39,8 +39,12 @@ use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database as FrameworkDatabase;
+use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\ChangeLogEntry as EntityChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogReceipt as EntityChangeLogReceipt;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Exception\SqlRuntime\DataTooLongException;
 use Hilos\Database\Migration;
@@ -53,6 +57,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use mysqli;
+use ReflectionProperty;
 use RuntimeException;
 use Throwable;
 
@@ -60,6 +65,28 @@ use Throwable;
 final class JournalReceiptIntegrationTest extends IntegrationTestCase
 {
     private const string KEY_PREFIX = 'journal.receipt.hil1449.';
+
+    /** First file on an empty disposable track. */
+    private const int EARLY_MIGRATION_INDEX = 1;
+
+    private const string EARLY_PROBE_TABLE = 'early_receipt_probe';
+
+    /** @var list<string> Parent connection state with no public snapshot */
+    private const array DATABASE_SNAPSHOT_FIELDS = [
+        'configurations', 'databaseBindings', 'connections', 'resultSets', 'lastSql',
+        'closedByHand', 'transactions', 'transactionIndex', 'currentIndex', 'journalReceiptId', 'unreachable',
+    ];
+
+    /** @var list<string> Track state keyed by connection index, not by schema name */
+    private const array MIGRATION_SNAPSHOT_FIELDS = [
+        'migrationListPath', 'migrationName', 'initialized',
+    ];
+
+    /**
+     * Root password of the chat test MariaDB when the suite is not given one.
+     * demo/chat/docker/docker-compose.test.yml uses it unless MYSQL_ROOT_PASSWORD is set.
+     */
+    private const string STAND_ROOT_PASSWORD = 'hilos_root_pass';
 
     private const string WRITER_AGENT_ID = 'receipt-orm-writer';
 
@@ -77,6 +104,10 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
     private array $originalTriggers = [];
 
     private ?string $migrationRoot = null;
+
+    private ?string $isolatedPrimary = null;
+
+    private ?string $isolatedJournal = null;
 
     /** @var list<int> Test people, removed after their sessions */
     private array $userIds = [];
@@ -261,8 +292,18 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             $this->assertNotNull($rowId);
             $this->assertNull(JournalReceiptScope::currentId());
             $this->assertSame(3, $this->logCount($receiptId));
-            $frames = $this->drainSettingsFrames();
-            $this->assertSettingLifecycleFrames($frames, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+            $frames = $this->drainDbFrames();
+            $this->assertCount(4, $frames);
+            $this->assertReceiptStoredFrame(
+                $frames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $receiptId,
+                'setting.orm-transport',
+                null,
+                null,
+            );
+            $settings = [$frames[1], $frames[2], $frames[3]];
+            $this->assertSettingLifecycleFrames($settings, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
             foreach ($frames as $frame) {
                 $this->assertTransportPreservesFrame($frame);
             }
@@ -306,11 +347,27 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             $this->assertNotNull($rowId);
             $this->assertNotSame($outerId, $innerId);
             $this->assertNull(JournalReceiptScope::currentId());
-            $frames = $this->drainSettingsFrames();
-            $this->assertCount(3, $frames);
-            $this->assertSettingsFrame($frames[0], SignalConstants::DB_SYNC_CREATED, $rowId, $outerId, self::WRITER_AGENT_ID);
-            $this->assertSettingsFrame($frames[1], SignalConstants::DB_SYNC_UPDATED, $rowId, $innerId, self::WRITER_AGENT_ID);
-            $this->assertSettingsFrame($frames[2], SignalConstants::DB_SYNC_DELETED, $rowId, $outerId, self::WRITER_AGENT_ID);
+            $frames = $this->drainDbFrames();
+            $this->assertCount(5, $frames);
+            $this->assertReceiptStoredFrame(
+                $frames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $outerId,
+                'setting.orm-outer',
+                null,
+                null,
+            );
+            $this->assertSettingsFrame($frames[1], SignalConstants::DB_SYNC_CREATED, $rowId, $outerId, self::WRITER_AGENT_ID);
+            $this->assertReceiptStoredFrame(
+                $frames[2],
+                SignalConstants::DB_SYNC_CREATED,
+                $innerId,
+                'setting.orm-inner',
+                $outerId,
+                'journal_receipt_scope:',
+            );
+            $this->assertSettingsFrame($frames[3], SignalConstants::DB_SYNC_UPDATED, $rowId, $innerId, self::WRITER_AGENT_ID);
+            $this->assertSettingsFrame($frames[4], SignalConstants::DB_SYNC_DELETED, $rowId, $outerId, self::WRITER_AGENT_ID);
             $this->assertSame(2, $this->logCount($outerId));
             $this->assertSame(1, $this->logCount($innerId));
         }, [$key]);
@@ -339,7 +396,35 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             });
             $this->assertNull(JournalReceiptScope::currentId());
             $this->assertSame(3, $this->logCount($receiptId));
-            $this->assertSettingLifecycleFrames($this->drainSettingsFrames(), $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+            $frames = $this->drainDbFrames();
+            $this->assertCount(6, $frames);
+            $this->assertReceiptStoredFrame(
+                $frames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $receiptId,
+                'setting.orm-handover',
+                null,
+                null,
+            );
+            $this->assertReceiptUpdatedFrame($frames[1], $receiptId, [
+                EntityChangeLogReceipt::open_handovers => 1,
+            ], [
+                EntityChangeLogReceipt::open_handovers => 0,
+            ]);
+            $this->assertSettingLifecycleFrames(
+                [$frames[2], $frames[3], $frames[4]],
+                $key,
+                $rowId,
+                $receiptId,
+                self::WRITER_AGENT_ID,
+            );
+            $this->assertReceiptUpdatedFrame($frames[5], $receiptId, [
+                EntityChangeLogReceipt::agent => self::WRITER_AGENT_ID,
+                EntityChangeLogReceipt::open_handovers => 0,
+            ], [
+                EntityChangeLogReceipt::agent => self::INITIATOR_AGENT_ID,
+                EntityChangeLogReceipt::open_handovers => 1,
+            ]);
         }, [$key]);
     }
 
@@ -360,7 +445,23 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             $this->assertNotNull($receiptId);
             $this->assertNotNull($rowId);
             $this->assertSame(3, $this->logCount($receiptId));
-            $this->assertSettingLifecycleFrames($this->drainSettingsFrames(), $key, $rowId, $receiptId, null);
+            $frames = $this->drainDbFrames();
+            $this->assertCount(4, $frames);
+            $this->assertReceiptStoredFrame(
+                $frames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $receiptId,
+                'setting.orm-no-agent',
+                null,
+                null,
+            );
+            $this->assertSettingLifecycleFrames(
+                [$frames[1], $frames[2], $frames[3]],
+                $key,
+                $rowId,
+                $receiptId,
+                null,
+            );
         }, [$key]);
     }
 
@@ -391,8 +492,18 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 throw $failure;
             }
 
-            $frames = $this->drainSettingsFrames();
-            $this->assertSettingLifecycleFrames($frames, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
+            $frames = $this->drainDbFrames();
+            $this->assertCount(4, $frames);
+            $this->assertReceiptStoredFrame(
+                $frames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $receiptId,
+                'setting.orm-commit',
+                null,
+                null,
+            );
+            $settings = [$frames[1], $frames[2], $frames[3]];
+            $this->assertSettingLifecycleFrames($settings, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
             foreach ($frames as $frame) {
                 $this->assertTransportPreservesFrame($frame);
             }
@@ -453,7 +564,24 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 },
             );
             $this->assertNotNull($emptyId);
-            $this->assertSame([], $this->drainSettingsFrames());
+            $emptyFrames = $this->drainDbFrames();
+            $this->assertCount(2, $emptyFrames);
+            $this->assertReceiptStoredFrame(
+                $emptyFrames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $emptyId,
+                'setting.orm-noop',
+                null,
+                null,
+            );
+            $this->assertReceiptStoredFrame(
+                $emptyFrames[1],
+                SignalConstants::DB_SYNC_DELETED,
+                $emptyId,
+                'setting.orm-noop',
+                null,
+                null,
+            );
             $this->assertNull($this->receiptFields($emptyId));
             $this->assertSame(0, $this->logCount($emptyId));
 
@@ -471,7 +599,24 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 $this->assertNotNull($failedId);
             }
             $this->assertNull(JournalReceiptScope::currentId());
-            $this->assertSame([], $this->drainSettingsFrames());
+            $failedFrames = $this->drainDbFrames();
+            $this->assertCount(2, $failedFrames);
+            $this->assertReceiptStoredFrame(
+                $failedFrames[0],
+                SignalConstants::DB_SYNC_CREATED,
+                $failedId,
+                'setting.orm-failed',
+                null,
+                null,
+            );
+            $this->assertReceiptStoredFrame(
+                $failedFrames[1],
+                SignalConstants::DB_SYNC_DELETED,
+                $failedId,
+                'setting.orm-failed',
+                null,
+                null,
+            );
             $this->assertArrayNotHasKey($tooLongKey, Hilos::$db->settings);
             $this->assertNull($this->receiptFields($failedId));
             $this->assertSame(0, $this->logCount($failedId));
@@ -697,6 +842,189 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * A migration with no mounted context inserts and deletes a receipt on a schema that has no handover column.
+     */
+    public function testEarlyMigrationWithoutHandoverColumnInsertsAndCleansUp(): void
+    {
+        $agent = ExecutionContext::currentAgentId();
+        $accept = ExecutionContext::currentAcceptKey();
+        $request = ExecutionContext::currentRequestId();
+        $standJournal = ChangeLogDatabase::configuredName();
+        $this->withIsolatedJournal(function () use ($agent, $accept, $request, $standJournal): void {
+            $this->assertNotSame($standJournal, ChangeLogDatabase::configuredName());
+            $this->installLegacyJournalTables();
+            $this->assertFalse($this->columnExists(
+                ChangeLogDatabase::configuredName(),
+                EntityChangeLogReceipt::_table,
+                EntityChangeLogReceipt::open_handovers,
+            ));
+            Database::sql(
+                'CREATE TABLE `' . self::EARLY_PROBE_TABLE . '` (`seen` INT NOT NULL, `channel` VARCHAR(16) NULL) '
+                . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX,
+            );
+            $receipt = EntityChangeLogReceipt::_table;
+            $this->writeEarlyMigration(
+                'INSERT INTO `' . self::EARLY_PROBE_TABLE . '` (`seen`, `channel`) SELECT COUNT(*), MAX(`channel`) FROM '
+                . '{{change_log_database}}.`' . $receipt . "`;\n",
+                "SELECT 1;\n",
+            );
+            $this->assertSame(1, Migration::migrateUp(self::EARLY_MIGRATION_INDEX));
+            Database::sql('SELECT `seen`, `channel` FROM `' . self::EARLY_PROBE_TABLE . '`');
+            $probe = Database::row();
+            $this->assertNotNull($probe);
+            $this->assertSame(1, (int) $probe['seen']);
+            $this->assertSame(JournalReceiptData::CHANNEL_MIGRATION, $probe['channel']);
+            $this->assertSame(0, $this->receiptRowCount());
+            $this->assertIsolatedProcessHeld($agent, $accept, $request);
+        });
+    }
+
+    /**
+     * A failing migration still removes the empty receipt, and the process stamp is clear afterwards.
+     */
+    public function testEarlyMigrationFailureCleansUpWithoutTheHandoverColumn(): void
+    {
+        $agent = ExecutionContext::currentAgentId();
+        $accept = ExecutionContext::currentAcceptKey();
+        $request = ExecutionContext::currentRequestId();
+        $this->withIsolatedJournal(function () use ($agent, $accept, $request): void {
+            $this->installLegacyJournalTables();
+            $this->writeEarlyMigration("SELECT * FROM `hil1616_missing`;\n", "SELECT 1;\n");
+            try {
+                Migration::migrateUp(self::EARLY_MIGRATION_INDEX);
+                $this->fail('The missing table must fail the migration');
+            } catch (DatabaseException) {
+                $this->assertSame(0, $this->receiptRowCount());
+                $this->assertFalse($this->columnExists(
+                    ChangeLogDatabase::configuredName(),
+                    EntityChangeLogReceipt::_table,
+                    EntityChangeLogReceipt::open_handovers,
+                ));
+                Database::sql('SELECT `failed` FROM `migration` WHERE `index` = ?', [self::EARLY_MIGRATION_INDEX]);
+                $this->assertSame(1, (int) Database::field('failed'));
+                $this->assertIsolatedProcessHeld($agent, $accept, $request);
+            }
+        });
+    }
+
+    /**
+     * A file that runs before the receipt table exists does not open a receipt.
+     */
+    public function testEarlyFileBeforeTheReceiptTableRunsWithoutAReceipt(): void
+    {
+        $agent = ExecutionContext::currentAgentId();
+        $accept = ExecutionContext::currentAcceptKey();
+        $request = ExecutionContext::currentRequestId();
+        $this->withIsolatedJournal(function () use ($agent, $accept, $request): void {
+            $schema = ChangeLogDatabase::configuredName();
+            $this->assertFalse($this->tableExists($schema, EntityChangeLogReceipt::_table));
+            $this->writeEarlyMigration("SELECT 1;\n", "SELECT 1;\n");
+            $this->assertSame(1, Migration::migrateUp(self::EARLY_MIGRATION_INDEX));
+            $this->assertFalse($this->tableExists($schema, EntityChangeLogReceipt::_table));
+            $this->assertSame(1, Migration::migrateDown(0));
+            $this->assertIsolatedProcessHeld($agent, $accept, $request);
+        });
+    }
+
+    /**
+     * Creating or dropping the receipt table is the schema boundary and does not open a receipt.
+     */
+    public function testReceiptTableCreateAndDropDoNotOpenAReceipt(): void
+    {
+        $agent = ExecutionContext::currentAgentId();
+        $accept = ExecutionContext::currentAcceptKey();
+        $request = ExecutionContext::currentRequestId();
+        $this->withIsolatedJournal(function () use ($agent, $accept, $request): void {
+            $receipt = EntityChangeLogReceipt::_table;
+            $this->writeEarlyMigration(
+                'CREATE TABLE {{change_log_database}}.`' . $receipt . "` (\n"
+                . "    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
+                . "    `created_at` DATETIME(6) NOT NULL,\n"
+                . "    `channel` VARCHAR(16) NOT NULL,\n"
+                . "    PRIMARY KEY (`id`, `created_at`)\n"
+                . ");\n",
+                'DROP TABLE {{change_log_database}}.`' . $receipt . "`;\n",
+            );
+            $schema = ChangeLogDatabase::configuredName();
+            $this->assertFalse($this->tableExists($schema, $receipt));
+            $this->assertSame(1, Migration::migrateUp(self::EARLY_MIGRATION_INDEX));
+            $this->assertTrue($this->tableExists($schema, $receipt));
+            $this->assertSame(0, $this->receiptRowCount());
+            $this->assertFalse($this->columnExists($schema, $receipt, EntityChangeLogReceipt::open_handovers));
+            $this->assertSame(1, Migration::migrateDown(0));
+            $this->assertFalse($this->tableExists($schema, $receipt));
+            $this->assertIsolatedProcessHeld($agent, $accept, $request);
+        });
+    }
+
+    /**
+     * Retry of a file from before the receipt table exists still does not insert a receipt.
+     */
+    public function testEarlyMigrationRetryBeforeTheReceiptTableDoesNotInsert(): void
+    {
+        $agent = ExecutionContext::currentAgentId();
+        $accept = ExecutionContext::currentAcceptKey();
+        $request = ExecutionContext::currentRequestId();
+        $this->withIsolatedJournal(function () use ($agent, $accept, $request): void {
+            $schema = ChangeLogDatabase::configuredName();
+            $receipt = EntityChangeLogReceipt::_table;
+            $this->writeEarlyMigration("SELECT * FROM `hil1616_missing`;\n", "SELECT 1;\n");
+            try {
+                Migration::migrateUp(self::EARLY_MIGRATION_INDEX);
+                $this->fail('The missing table must fail before a receipt exists');
+            } catch (DatabaseException) {
+                $this->assertFalse($this->tableExists($schema, $receipt));
+                $this->assertIsolatedProcessHeld($agent, $accept, $request);
+            }
+            file_put_contents(
+                $this->migrationRoot . '/Schema/' . self::EARLY_MIGRATION_INDEX . "_early.sql",
+                "SELECT 1;\n",
+            );
+            Migration::retryFailed(self::EARLY_MIGRATION_INDEX);
+            $this->assertFalse($this->tableExists($schema, $receipt));
+            Database::sql('SELECT `failed` FROM `migration` WHERE `index` = ?', [self::EARLY_MIGRATION_INDEX]);
+            $this->assertSame(0, (int) Database::field('failed'));
+            $this->assertIsolatedProcessHeld($agent, $accept, $request);
+        });
+    }
+
+    /**
+     * A business continuation whose receipt row is already gone still runs, and does not insert another row.
+     */
+    public function testMissingReceiptRowRunsTheBusinessCallbackAndRestoresAfterAnError(): void
+    {
+        $markers = $this->captureStandMarkers();
+        $before = $this->newestReceiptId();
+        $missingId = $before + 1000000;
+        $written = JournalReceiptScope::runPart(
+            $missingId,
+            'receipt-missing-row',
+            function (): string {
+                Database::sql('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
+                    [self::KEY_PREFIX . 'missing-row', 'string', 'written']);
+                return 'ran';
+            },
+        );
+        $this->assertSame('ran', $written);
+        Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [self::KEY_PREFIX . 'missing-row']);
+        $this->assertSame('written', Database::field('value'));
+        $this->assertSame($before, $this->newestReceiptId());
+        $this->assertNull(JournalReceiptScope::currentId());
+        $this->assertStandRestored($markers);
+
+        try {
+            JournalReceiptScope::runPart($missingId, 'receipt-missing-row', static function (): void {
+                throw new RuntimeException('business failed');
+            });
+            $this->fail('The business failure must leave the scope');
+        } catch (RuntimeException) {
+            $this->assertSame($before, $this->newestReceiptId());
+            $this->assertNull(JournalReceiptScope::currentId());
+            $this->assertStandRestored($markers);
+        }
+    }
+
+    /**
      * @param callable(): void $body Case run with a real settings claim and a private signal queue
      * @param list<string> $keysToCleanup Only orphan keys this case may have created
      */
@@ -749,16 +1077,89 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
     }
 
     /** @return list<SignalDTO> Actual ORM row frames, in queue order */
-    private function drainSettingsFrames(): array
+    private function drainDbFrames(): array
     {
         $frames = [];
         while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $this->assertSame(SignalSource::DB, $frame->signalSource->getSource());
             $this->assertInstanceOf(DbSyncSignalDataInterface::class, $frame->data);
-            $this->assertSame(HilosDbContext::settings, $frame->data->collectionKey);
             $frames[] = $frame;
         }
         return $frames;
+    }
+
+    /** @return list<SignalDTO> Queued frames, each one a settings row */
+    private function drainSettingsFrames(): array
+    {
+        $frames = $this->drainDbFrames();
+        foreach ($frames as $frame) {
+            $this->assertSame(HilosDbContext::settings, $frame->data->collectionKey);
+        }
+        return $frames;
+    }
+
+    /**
+     * @param SignalDTO $frame Receipt create or delete announced by the bookkeeping actions
+     * @param string $name DB sync signal name
+     * @param int $id Receipt row id
+     * @param string $action Stored receipt action
+     * @param ?int $attributedReceipt Receipt stamped on the frame, null when the scope is not current
+     * @param ?string $writerPrefix Runner prefix when the frame names the bookkeeping runner, null when the writer is null
+     */
+    private function assertReceiptStoredFrame(
+        SignalDTO $frame,
+        string $name,
+        int $id,
+        string $action,
+        ?int $attributedReceipt,
+        ?string $writerPrefix,
+    ): void {
+        $this->assertSame($name, $frame->signalType->getType());
+        $this->assertSame($name, $frame->signalName->getName());
+        $this->assertInstanceOf(match ($name) {
+            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::class,
+            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::class,
+        }, $frame->data);
+        $this->assertSame(HilosDbContext::changeLogReceipts, $frame->data->collectionKey);
+        $this->assertSame((string) $id, $frame->data->idString);
+        $this->assertSame($attributedReceipt, $frame->data->receiptId);
+        if ($writerPrefix === null) {
+            $this->assertNull($frame->data->writerAgentId);
+        } else {
+            $this->assertStringStartsWith($writerPrefix, (string) $frame->data->writerAgentId);
+        }
+        $this->assertSame($id, $frame->data->row[EntityChangeLogReceipt::id]);
+        $this->assertSame('agent', $frame->data->row[EntityChangeLogReceipt::channel]);
+        $this->assertSame($action, $frame->data->row[EntityChangeLogReceipt::action]);
+        $this->assertSame(self::INITIATOR_AGENT_ID, $frame->data->row[EntityChangeLogReceipt::agent]);
+        $this->assertSame(self::INITIATOR_AGENT_ID, $frame->data->row[EntityChangeLogReceipt::source]);
+        $this->assertNull($frame->data->row[EntityChangeLogReceipt::actor_user_id]);
+        $this->assertNull($frame->data->row[EntityChangeLogReceipt::subject_user_id]);
+        $this->assertNull($frame->data->row[EntityChangeLogReceipt::session_id]);
+        $this->assertSame(0, $frame->data->row[EntityChangeLogReceipt::open_handovers]);
+        $this->assertMatchesRegularExpression(
+            '/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\z/',
+            $frame->data->row[EntityChangeLogReceipt::created_at],
+        );
+    }
+
+    /**
+     * @param SignalDTO $frame Receipt update announced by a handover action
+     * @param int $id Receipt row id
+     * @param array<string, int|string|null> $row Changed columns
+     * @param array<string, int|string|null> $previous Previous values of those columns
+     */
+    private function assertReceiptUpdatedFrame(SignalDTO $frame, int $id, array $row, array $previous): void
+    {
+        $this->assertSame(SignalConstants::DB_SYNC_UPDATED, $frame->signalType->getType());
+        $this->assertSame(SignalConstants::DB_SYNC_UPDATED, $frame->signalName->getName());
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $frame->data);
+        $this->assertSame(HilosDbContext::changeLogReceipts, $frame->data->collectionKey);
+        $this->assertSame((string) $id, $frame->data->idString);
+        $this->assertNull($frame->data->receiptId);
+        $this->assertNull($frame->data->writerAgentId);
+        $this->assertSame($row, $frame->data->row);
+        $this->assertSame($previous, $frame->data->previous);
     }
 
     /**
@@ -893,6 +1294,289 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $killer->close();
     }
 
+    /**
+     * Runs one case on a disposable primary and journal pair, with the application context unset.
+     *
+     * The journal name is the one derived from that temporary primary, which is the name the
+     * receipt binding accepts. The stand schema is not altered. Connections, bindings and the
+     * mounted context are put back afterwards, including when the case fails.
+     *
+     * @param callable(): void $case Early-migration case
+     */
+    private function withIsolatedJournal(callable $case): void
+    {
+        $markers = $this->captureStandMarkers();
+        $database = $this->captureStaticState(FrameworkDatabase::class, self::DATABASE_SNAPSHOT_FIELDS);
+        $migration = $this->captureStaticState(Migration::class, self::MIGRATION_SNAPSHOT_FIELDS);
+        $primaryName = 'hil1616-early-' . bin2hex(random_bytes(4));
+        $journalName = ChangeLogDatabase::name($primaryName);
+        try {
+            $this->openIsolatedPair($primaryName, $journalName);
+            Hilos::$db = null;
+            $case();
+        } finally {
+            try {
+                if ($this->isolatedPrimary !== null && $this->isolatedJournal !== null) {
+                    $this->dropIsolatedPair($this->isolatedPrimary, $this->isolatedJournal);
+                }
+            } finally {
+                $this->restoreStaticState(FrameworkDatabase::class, $database);
+                $this->restoreStaticState(Migration::class, $migration);
+                Hilos::$db = $markers->db;
+                $this->isolatedPrimary = null;
+                $this->isolatedJournal = null;
+                $this->drainQueuedSignals();
+            }
+        }
+        $this->assertStandRestored($markers);
+    }
+
+    /**
+     * @param string $primaryName Disposable primary schema
+     * @param string $journalName Derived journal schema
+     */
+    private function openIsolatedPair(string $primaryName, string $journalName): void
+    {
+        $live = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        if ($primaryName === $live->database || $journalName === ChangeLogDatabase::configuredName()) {
+            $this->fail('The disposable schema collided with the stand');
+        }
+        $password = $this->rootPassword();
+        $this->configureIsolated($live, DatabaseConnectionDefaults::PRIMARY_INDEX, $live->database, 'root', $password);
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $charset = DatabaseConnectionDefaults::createDatabaseCharsetClause();
+        Database::sql('CREATE DATABASE ' . ChangeLogDatabase::identifier($primaryName) . ' ' . $charset);
+        Database::sql('CREATE DATABASE ' . ChangeLogDatabase::identifier($journalName) . ' ' . $charset);
+        $this->isolatedPrimary = $primaryName;
+        $this->isolatedJournal = $journalName;
+        $this->configureIsolated($live, DatabaseConnectionDefaults::PRIMARY_INDEX, $primaryName, 'root', $password);
+        $this->configureIsolated($live, ChangeLogDatabase::CONNECTION_INDEX, $journalName, 'root', $password);
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::connect(ChangeLogDatabase::CONNECTION_INDEX);
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $initialized = (new ReflectionProperty(Migration::class, 'initialized'))->getValue();
+        unset($initialized[DatabaseConnectionDefaults::PRIMARY_INDEX]);
+        (new ReflectionProperty(Migration::class, 'initialized'))->setValue(null, $initialized);
+    }
+
+    /**
+     * @param DatabaseConnectionConfig $source Connection settings to copy, apart from the account and schema
+     * @param int $index Connection index to point at the disposable schema
+     * @param string $database Disposable schema name
+     * @param string $user Account that may create and drop schemas
+     * @param string $password Password of that account
+     */
+    private function configureIsolated(
+        DatabaseConnectionConfig $source,
+        int $index,
+        string $database,
+        string $user,
+        string $password,
+    ): void {
+        Database::configure(
+            index: $index,
+            host: $source->host,
+            user: $user,
+            password: $password,
+            database: $database,
+            port: $source->port,
+            charset: $source->charset,
+            socket: $source->socket,
+            reconnectAttempts: $source->reconnectAttempts,
+            reconnectDelay: $source->reconnectDelay,
+        );
+    }
+
+    /** @return string Root password from the environment, or the chat stand's compose default */
+    private function rootPassword(): string
+    {
+        $configured = Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string();
+
+        return $configured !== '' ? $configured : self::STAND_ROOT_PASSWORD;
+    }
+
+    /**
+     * @param string $primaryName Disposable primary schema
+     * @param string $journalName Derived journal schema
+     */
+    private function dropIsolatedPair(string $primaryName, string $journalName): void
+    {
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::sql('DROP DATABASE IF EXISTS ' . ChangeLogDatabase::identifier($journalName));
+        Database::sql('DROP DATABASE IF EXISTS ' . ChangeLogDatabase::identifier($primaryName));
+        Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::close(ChangeLogDatabase::CONNECTION_INDEX);
+    }
+
+    /**
+     * Receipt table as it stood before the handover column, plus the entry table cleanup reads.
+     */
+    private function installLegacyJournalTables(): void
+    {
+        $suffix = DatabaseConnectionDefaults::DDL_TABLE_SUFFIX;
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        Database::sql(
+            'CREATE TABLE `' . EntityChangeLogReceipt::_table . '` ('
+            . '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+            . '`created_at` DATETIME(6) NOT NULL, '
+            . '`actor_user_id` INT UNSIGNED NULL, '
+            . '`subject_user_id` INT UNSIGNED NULL, '
+            . '`session_id` INT UNSIGNED NULL, '
+            . '`channel` VARCHAR(16) NOT NULL, '
+            . '`action` VARCHAR(255) NOT NULL, '
+            . '`agent` VARCHAR(255) NULL, '
+            . '`source` VARCHAR(512) NULL, '
+            . 'PRIMARY KEY (`id`, `created_at`)) ' . $suffix,
+        );
+        Database::sql(
+            'CREATE TABLE `' . EntityChangeLogEntry::_table . '` (`receipt_id` BIGINT UNSIGNED NULL) ' . $suffix,
+        );
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /**
+     * @param string $up SQL applied forward
+     * @param string $down SQL applied backward
+     */
+    private function writeEarlyMigration(string $up, string $down): void
+    {
+        $this->migrationRoot = sys_get_temp_dir() . '/hil-1616-early-' . bin2hex(random_bytes(6));
+        mkdir($this->migrationRoot . '/Schema', recursive: true);
+        $index = self::EARLY_MIGRATION_INDEX;
+        file_put_contents($this->migrationRoot . "/Schema/{$index}_early.sql", $up);
+        file_put_contents($this->migrationRoot . "/Schema/{$index}_early_down.sql", $down);
+        Migration::setMigrationListPath($this->migrationRoot);
+        Migration::setMigrationName('Schema');
+    }
+
+    /**
+     * @param ?string $agent Agent at entry
+     * @param ?string $accept Accept key at entry
+     * @param ?string $request Request id at entry
+     */
+    private function assertIsolatedProcessHeld(?string $agent, ?string $accept, ?string $request): void
+    {
+        $this->assertNull(Hilos::$db);
+        $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
+        $this->assertSame($agent, ExecutionContext::currentAgentId());
+        $this->assertSame($accept, ExecutionContext::currentAcceptKey());
+        $this->assertSame($request, ExecutionContext::currentRequestId());
+        Database::sql('SELECT @hilos_receipt AS `id`');
+        $this->assertNull(Database::field('id'));
+    }
+
+    /** @param JournalReceiptStandMarkers $markers Stand process captured before the disposable pair */
+    private function assertStandRestored(JournalReceiptStandMarkers $markers): void
+    {
+        $this->assertSame($markers->db, Hilos::$db);
+        $this->assertSame($markers->index, Database::getCurrentIndex());
+        $this->assertSame($markers->agent, ExecutionContext::currentAgentId());
+        $this->assertSame($markers->accept, ExecutionContext::currentAcceptKey());
+        $this->assertSame($markers->request, ExecutionContext::currentRequestId());
+        $this->assertSame($markers->journal, ChangeLogDatabase::configuredName());
+        $this->assertSame(
+            $markers->journal,
+            Database::getConnectionConfig(ChangeLogDatabase::CONNECTION_INDEX)->database,
+        );
+        Database::sql('SELECT @hilos_receipt AS `id`');
+        $this->assertSame($markers->stamp, Database::field('id'));
+        $this->assertTrue($this->columnExists(
+            $markers->journal,
+            EntityChangeLogReceipt::_table,
+            EntityChangeLogReceipt::open_handovers,
+        ));
+    }
+
+    /** @return JournalReceiptStandMarkers Stand context, stamp and journal name */
+    private function captureStandMarkers(): JournalReceiptStandMarkers
+    {
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::sql('SELECT @hilos_receipt AS `id`');
+
+        return new JournalReceiptStandMarkers(
+            Hilos::$db,
+            Database::getCurrentIndex(),
+            ExecutionContext::currentAgentId(),
+            ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
+            Database::field('id'),
+            ChangeLogDatabase::configuredName(),
+        );
+    }
+
+    /**
+     * @param class-string $class Class whose private static fields are snapshotted
+     * @param list<string> $fields Field names
+     * @return array<string, mixed> Values keyed by field name
+     */
+    private function captureStaticState(string $class, array $fields): array
+    {
+        $state = [];
+        foreach ($fields as $field) {
+            $state[$field] = (new ReflectionProperty($class, $field))->getValue();
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param class-string $class Class whose private static fields are restored
+     * @param array<string, mixed> $state Values keyed by field name
+     */
+    private function restoreStaticState(string $class, array $state): void
+    {
+        foreach ($state as $field => $value) {
+            (new ReflectionProperty($class, $field))->setValue(null, $value);
+        }
+    }
+
+    /** @return int Rows in the journal receipt table the binding currently names */
+    private function receiptRowCount(): int
+    {
+        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql('SELECT COUNT(*) AS `count` FROM ' . $database . '.`' . EntityChangeLogReceipt::_table . '`');
+
+        return (int) Database::field('count');
+    }
+
+    /**
+     * @param string $schema Schema name
+     * @param string $table Table name
+     * @return bool Whether that table is present
+     */
+    private function tableExists(string $schema, string $table): bool
+    {
+        Database::sql(
+            'SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1',
+            [$schema, $table],
+        );
+
+        return Database::row() !== null;
+    }
+
+    /**
+     * @param string $schema Schema name
+     * @param string $table Table name
+     * @param string $column Column name
+     * @return bool Whether that column is present
+     */
+    private function columnExists(string $schema, string $table, string $column): bool
+    {
+        Database::sql(
+            'SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+            [$schema, $table, $column],
+        );
+
+        return Database::row() !== null;
+    }
+
+    private function drainQueuedSignals(): void
+    {
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+        }
+    }
+
     /** @return list<array<string, mixed>> Primary schema trigger definitions */
     private static function triggerCatalog(): array
     {
@@ -950,5 +1634,29 @@ final class JournalReceiptTestPage extends AbstractPage
                 ['journal.receipt.hil1449.' . $acceptKey, 'string', 'written']);
         }
         return null;
+    }
+}
+
+/** Stand process captured around a disposable journal pair. */
+final class JournalReceiptStandMarkers
+{
+    /**
+     * @param mixed $db Mounted context
+     * @param int $index Active connection index
+     * @param ?string $agent Executing agent
+     * @param ?string $accept Accept key
+     * @param ?string $request Request id
+     * @param mixed $stamp Primary receipt variable
+     * @param string $journal Derived journal schema name
+     */
+    public function __construct(
+        public readonly mixed $db,
+        public readonly int $index,
+        public readonly ?string $agent,
+        public readonly ?string $accept,
+        public readonly ?string $request,
+        public readonly mixed $stamp,
+        public readonly string $journal,
+    ) {
     }
 }

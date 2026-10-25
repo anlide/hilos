@@ -12,6 +12,7 @@ use Hilos\Database\Exception\MigrationNumberTakenTwiceException;
 use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 
 /**
  * Migration Up Command.
@@ -119,6 +120,7 @@ HELP;
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If database connection or migration fails
+     * @throws HilosException When the migration receipt cannot be opened or closed
      * @throws EnvException When the rollout claim's holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
      * @throws MigrationSkippedBelowLevelException When files below the database's level were never applied to it

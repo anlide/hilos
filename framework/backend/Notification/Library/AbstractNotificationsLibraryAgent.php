@@ -304,7 +304,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * and skip-when-unconfigured included: what it does is delete rows from the journal, and
      * the journal is this library's.
      *
-     * @throws DatabaseException When the cron receipt cannot be opened or closed
+     * @throws HilosException When the cron receipt cannot be opened or closed
      * @throws EnvException When the project time zone of the prune schedule cannot be read
      */
     public function onTick(): void

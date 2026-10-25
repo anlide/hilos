@@ -11,6 +11,7 @@ use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -37,6 +38,8 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
@@ -45,7 +48,9 @@ use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\Entity\Item\ChangeLogReceipt as EntityChangeLogReceipt;
 use Hilos\Database\Migration;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
@@ -292,10 +297,13 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         );
         $this->assertNotNull($receiptId);
         $this->assertNull($this->receipt($receiptId));
+        $this->assertReceiptBookkeepingFrame(SignalConstants::DB_SYNC_CREATED, $receiptId);
         $frame = Hilos::$sr->getNextQueuedSignal();
         $this->assertInstanceOf(SignalDTO::class, $frame);
         $this->assertInstanceOf(AgentSignalData::class, $frame->data);
         $this->assertNull($frame->data->receiptId);
+        $this->assertReceiptBookkeepingFrame(SignalConstants::DB_SYNC_DELETED, $receiptId);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testUndeliveredAndUnattributedFramesDoNotBorrowAnotherReceipt(): void
@@ -472,6 +480,30 @@ final class JournalReceiptHandoverIntegrationTest extends IntegrationTestCase
         }
         Hilos::$rt->connections->actions->register($acceptKey, $userId, $token, $id);
         return $id;
+    }
+
+    /**
+     * @param string $name Created or deleted receipt frame
+     * @param int $id Receipt row
+     */
+    private function assertReceiptBookkeepingFrame(string $name, int $id): void
+    {
+        $frame = Hilos::$sr->getNextQueuedSignal();
+        $this->assertInstanceOf(SignalDTO::class, $frame);
+        $this->assertSame($name, $frame->signalType->getType());
+        $this->assertSame($name, $frame->signalName->getName());
+        $this->assertInstanceOf(match ($name) {
+            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::class,
+            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::class,
+        }, $frame->data);
+        $this->assertSame(HilosDbContext::changeLogReceipts, $frame->data->collectionKey);
+        $this->assertSame((string) $id, $frame->data->idString);
+        $this->assertNull($frame->data->receiptId);
+        $this->assertNull($frame->data->writerAgentId);
+        $this->assertSame($id, $frame->data->row[EntityChangeLogReceipt::id]);
+        $this->assertSame('web', $frame->data->row[EntityChangeLogReceipt::channel]);
+        $this->assertSame('receipt.non-agent', $frame->data->row[EntityChangeLogReceipt::action]);
+        $this->assertSame(0, $frame->data->row[EntityChangeLogReceipt::open_handovers]);
     }
 
     /** @return ?array<string, mixed> Receipt row, or null after its deletion */

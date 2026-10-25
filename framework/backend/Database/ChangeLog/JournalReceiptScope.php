@@ -4,18 +4,31 @@ declare(strict_types=1);
 
 namespace Hilos\Database\ChangeLog;
 
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\View\Collection\ChangeLogReceipts as DbChangeLogReceipts;
+use Hilos\Database\View\Item\ChangeLogReceipt as DbChangeLogReceipt;
+use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
  * Creates a receipt around a synchronous write and restores the previous connection attribution
  * ({@see run()}), joins agent frames, and retains one attempt across local parts until finish().
+ *
+ * Bookkeeping runs as a fresh runner that holds this class's claim only for that call. The business
+ * callback keeps the agent, origin and request it was entered with.
  */
 final class JournalReceiptScope implements TruthSourceOwner
 {
@@ -27,8 +40,16 @@ final class JournalReceiptScope implements TruthSourceOwner
 
     private const string FRAME_HANDOVERS = 'handovers';
 
-    /** @var list<array{id: int, handovers: int}> Active receipt scopes, outermost first */
+    private const string FRAME_RECEIPT = 'receipt';
+
+    /** Prefix of a process-local runner that holds the receipt claim for one bookkeeping call. */
+    private const string RUNNER_PREFIX = 'journal_receipt_scope:';
+
+    /** @var list<array{id: int, handovers: int, receipt: ?DbChangeLogReceipt}> Active receipt scopes, outermost first */
     private static array $ids = [];
+
+    /** Process-local suffix so nested scopes do not share a runner id. */
+    private static int $runnerSerial = 0;
 
     /** @return TruthSourceOperations Receipt creation, handover updates and empty-receipt removal */
     public static function defaultTruthSourceOperations(): TruthSourceOperations
@@ -70,50 +91,66 @@ final class JournalReceiptScope implements TruthSourceOwner
      * @param JournalReceiptData $data Attribution for this operation
      * @param callable $callback Work performed under the receipt
      * @return mixed Callback result
-     * @throws DatabaseException When receipt SQL or connection attribution fails
+     * @throws HilosException When opening, stamping or closing the receipt fails
      */
     public static function run(JournalReceiptData $data, callable $callback): mixed
     {
-        if (!in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)) {
+        if (!self::journalConfigured()) {
             return $callback();
         }
 
         $previousIndex = Database::getCurrentIndex();
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $id = null;
+        $opened = null;
+        $pushed = false;
 
         try {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-            $id = self::insertReceipt($data, false);
-            self::$ids[] = [self::FRAME_ID => $id, self::FRAME_HANDOVERS => 0];
+            try {
+                $opened = self::underRunner(
+                    static fn (): DbChangeLogReceipt => self::receiptCollection($data)->actions->createReceipt($data, false),
+                );
+            } catch (HilosException $failure) {
+                self::clearDeadReceiptLink();
+                throw $failure;
+            }
+
+            $id = $opened->id;
+            if (!is_int($id)) {
+                self::clearDeadReceiptLink();
+                throw new DatabaseException('Journal receipt insert did not return an id');
+            }
+
+            self::$ids[] = [
+                self::FRAME_ID => $id,
+                self::FRAME_HANDOVERS => 0,
+                self::FRAME_RECEIPT => $opened,
+            ];
+            $pushed = true;
             Database::setJournalReceiptId($id);
             Database::useConnection($previousIndex);
 
             return $callback();
         } finally {
             try {
-                if ($id !== null) {
+                if ($pushed) {
                     $frame = array_pop(self::$ids);
                     Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
                     try {
                         Database::setJournalReceiptId(self::currentId());
                     } finally {
-                        // A receipt whose work went on in frames to agents lives until the last
-                        // recipient has finished under it (open_handovers); without frames an empty
-                        // one is deleted at once. One left open is hidden until its partition goes.
-                        if ($frame[self::FRAME_HANDOVERS] > 0) {
-                            Database::sql(
-                                "UPDATE {$database}.`hilos_change_log_receipt` "
-                                . 'SET `open_handovers` = `open_handovers` + ? WHERE `id` = ?',
-                                [$frame[self::FRAME_HANDOVERS], $id],
-                                tryReconnect: false,
-                            );
-                        } else {
-                            Database::sqlRun(
-                                "DELETE FROM {$database}.`hilos_change_log_receipt` WHERE `id` = ? "
-                                . "AND NOT EXISTS (SELECT 1 FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ?)",
-                                [$id, $id],
-                            );
+                        $receipt = $frame[self::FRAME_RECEIPT] ?? null;
+                        if ($receipt instanceof DbChangeLogReceipt) {
+                            self::underRunner(static function () use ($frame, $data, $receipt): void {
+                                if ($frame[self::FRAME_HANDOVERS] > 0) {
+                                    $receipt->actions->adjustHandovers($frame[self::FRAME_HANDOVERS]);
+                                    return;
+                                }
+                                if ($data->channel === JournalReceiptData::CHANNEL_MIGRATION) {
+                                    $receipt->actions->deleteEmptyMigrationReceipt();
+                                    return;
+                                }
+                                $receipt->actions->deleteIfEmpty();
+                            });
                         }
                     }
                 }
@@ -129,18 +166,33 @@ final class JournalReceiptScope implements TruthSourceOwner
      *
      * @param JournalReceiptData $data Attribution captured at the beginning of this attempt
      * @return ?int Receipt id, or null when the journal is not configured
-     * @throws DatabaseException When creating the receipt or switching connections fails
+     * @throws HilosException When creating the receipt or switching connections fails
      */
     public static function start(JournalReceiptData $data): ?int
     {
-        if (!in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)) {
+        if (!self::journalConfigured()) {
             return null;
         }
 
         $previousIndex = Database::getCurrentIndex();
         try {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-            return self::insertReceipt($data, true);
+            try {
+                $opened = self::underRunner(
+                    static fn (): DbChangeLogReceipt => self::receiptCollection($data)->actions->createReceipt($data, true),
+                );
+            } catch (HilosException $failure) {
+                self::clearDeadReceiptLink();
+                throw $failure;
+            }
+
+            $id = $opened->id;
+            if (!is_int($id)) {
+                self::clearDeadReceiptLink();
+                throw new DatabaseException('Journal receipt insert did not return an id');
+            }
+
+            return $id;
         } finally {
             Database::useConnection($previousIndex);
         }
@@ -166,26 +218,32 @@ final class JournalReceiptScope implements TruthSourceOwner
      * then clears its id; outstanding agent frames close through join(). Finalization failures are logged.
      *
      * @param ?int $receiptId Receipt owned by the completed attempt, or null without a journal
-     * @throws DatabaseException When switching connections or resolving the journal database fails
+     * @throws DatabaseException When switching connections fails
      */
     public static function finish(?int $receiptId): void
     {
-        if ($receiptId === null || !in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)) {
+        if ($receiptId === null || !self::journalConfigured()) {
             return;
         }
 
         $previousIndex = Database::getCurrentIndex();
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         try {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
             try {
-                Database::sql(
-                    "UPDATE {$database}.`hilos_change_log_receipt` SET `open_handovers` = `open_handovers` - 1 WHERE `id` = ?",
-                    [$receiptId],
-                    tryReconnect: false,
-                );
-                self::deleteEmptyReceipt($database, $receiptId);
-            } catch (DatabaseException $failure) {
+                self::underRunner(static function () use ($receiptId): void {
+                    // The receipt read below reconnects an empty slot. A killed primary link is
+                    // often already dropped by the failed stamp restore, and a fresh link would
+                    // let the decrement stand. This probe refuses that reconnect; a dead link
+                    // leaves the hold where the failed attempt put it.
+                    Database::sql('SELECT 1', tryReconnect: false);
+                    $receipt = self::storedReceipt($receiptId);
+                    if ($receipt === null) {
+                        return;
+                    }
+                    $receipt->actions->adjustHandovers(-1);
+                    $receipt->actions->deleteIfEmpty();
+                });
+            } catch (HilosException $failure) {
                 Logger::error("Cannot finish journal receipt {$receiptId}: {$failure->getMessage()}");
             }
         } finally {
@@ -213,18 +271,28 @@ final class JournalReceiptScope implements TruthSourceOwner
      * @param callable $callback Work under the existing receipt
      * @param bool $releaseHandover Whether this call consumes an incoming agent frame
      * @return mixed Callback result, with bookkeeping failures logged without replacing its exception
-     * @throws DatabaseException When switching to the primary connection fails
      */
     private static function runExistingReceipt(int $receiptId, string $agentId, callable $callback, bool $releaseHandover): mixed
     {
-        if (!in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)) {
+        if (!self::journalConfigured()) {
             return $callback();
         }
 
         $previousIndex = Database::getCurrentIndex();
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-        self::$ids[] = [self::FRAME_ID => $receiptId, self::FRAME_HANDOVERS => 0];
+
+        $receipt = null;
+        try {
+            $receipt = self::underRunner(static fn (): ?DbChangeLogReceipt => self::storedReceipt($receiptId));
+        } catch (HilosException $failure) {
+            Logger::error("Cannot read journal receipt {$receiptId} for agent {$agentId}: {$failure->getMessage()}");
+        }
+
+        self::$ids[] = [
+            self::FRAME_ID => $receiptId,
+            self::FRAME_HANDOVERS => 0,
+            self::FRAME_RECEIPT => $receipt,
+        ];
 
         try {
             try {
@@ -234,11 +302,14 @@ final class JournalReceiptScope implements TruthSourceOwner
             }
 
             $before = null;
-            try {
-                Database::sql("SELECT COUNT(*) AS `count` FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ?", [$receiptId]);
-                $before = (int) Database::field('count');
-            } catch (DatabaseException $failure) {
-                Logger::error("Cannot count journal rows for receipt {$receiptId} and agent {$agentId}: {$failure->getMessage()}");
+            if ($receipt !== null) {
+                try {
+                    $before = self::underRunner(static fn (): int => $receipt->countEntries());
+                } catch (HilosException $failure) {
+                    Logger::error(
+                        "Cannot count journal rows for receipt {$receiptId} and agent {$agentId}: {$failure->getMessage()}",
+                    );
+                }
             }
 
             Database::useConnection($previousIndex);
@@ -250,34 +321,29 @@ final class JournalReceiptScope implements TruthSourceOwner
                 try {
                     Database::setJournalReceiptId(self::currentId());
                 } catch (DatabaseException $failure) {
-                    Logger::error("Cannot restore journal receipt after {$receiptId} for agent {$agentId}: {$failure->getMessage()}");
+                    Logger::error(
+                        "Cannot restore journal receipt after {$receiptId} for agent {$agentId}: {$failure->getMessage()}",
+                    );
                 }
 
-                try {
-                    if ($before === null) {
-                        Database::sql(
-                            "UPDATE {$database}.`hilos_change_log_receipt` "
-                            . 'SET `open_handovers` = `open_handovers` + ? WHERE `id` = ?',
-                            [$frame[self::FRAME_HANDOVERS] - (int) $releaseHandover, $receiptId],
-                            tryReconnect: false,
-                        );
-                    } else {
-                        Database::sql(
-                            "UPDATE {$database}.`hilos_change_log_receipt` "
-                            . "SET `open_handovers` = `open_handovers` + ?, `agent` = "
-                            . "IF((SELECT COUNT(*) FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ?) > ?, ?, `agent`) "
-                            . 'WHERE `id` = ?',
-                            [$frame[self::FRAME_HANDOVERS] - (int) $releaseHandover, $receiptId, $before, $agentId, $receiptId],
-                            tryReconnect: false,
+                $held = $frame[self::FRAME_RECEIPT] ?? null;
+                if ($held instanceof DbChangeLogReceipt) {
+                    try {
+                        self::underRunner(static function () use ($frame, $before, $releaseHandover, $agentId, $held): void {
+                            $held->actions->concludePart(
+                                $frame[self::FRAME_HANDOVERS] - (int) $releaseHandover,
+                                $before,
+                                $agentId,
+                            );
+                            if ($releaseHandover) {
+                                $held->actions->deleteIfEmpty();
+                            }
+                        });
+                    } catch (HilosException $failure) {
+                        Logger::error(
+                            "Cannot conclude journal receipt {$receiptId} for agent {$agentId}: {$failure->getMessage()}",
                         );
                     }
-
-                    // A missing frame or failed conclusion leaves an orphan hidden until its partition expires.
-                    if ($releaseHandover) {
-                        self::deleteEmptyReceipt($database, $receiptId);
-                    }
-                } catch (DatabaseException $failure) {
-                    Logger::error("Cannot conclude journal receipt {$receiptId} for agent {$agentId}: {$failure->getMessage()}");
                 }
             } finally {
                 Database::useConnection($previousIndex);
@@ -286,63 +352,72 @@ final class JournalReceiptScope implements TruthSourceOwner
     }
 
     /**
-     * @param JournalReceiptData $data Captured attribution
-     * @param bool $retainLocal Whether to retain one local attempt between its parts
-     * @return int New receipt on the primary connection
-     * @throws DatabaseException When the receipt insert fails; an ambiguous insert is never replayed
+     * The mounted receipt collection when this process has one. A migration whose collection
+     * is not mounted gets a chain that lives for this call, including when the facade is up
+     * and simply has no receipt view. Any other channel without that mount is refused.
      */
-    private static function insertReceipt(JournalReceiptData $data, bool $retainLocal): int
+    private static function receiptCollection(JournalReceiptData $data): DbChangeLogReceipts
     {
-        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $columns = '`actor_user_id`, `subject_user_id`, `session_id`, `channel`, `action`, `agent`, `source`, `created_at`';
-        $values = '?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6)';
-        // Migration run() also works before the handover column has been introduced.
-        if ($retainLocal) {
-            $columns .= ', `open_handovers`';
-            $values .= ', 1';
-        }
-        if (!Database::isConnected(DatabaseConnectionDefaults::PRIMARY_INDEX)) {
-            Database::sql('SELECT 1');
-        }
-        try {
-            Database::sql(
-                "INSERT INTO {$database}.`hilos_change_log_receipt` ({$columns}) VALUES ({$values})",
-                [
-                    $data->actorUserId,
-                    $data->subjectUserId,
-                    $data->sessionId,
-                    $data->channel,
-                    $data->action,
-                    $data->agent,
-                    $data->source,
-                ],
-                tryReconnect: false,
-            );
-        } catch (DatabaseException $failure) {
-            // A lost INSERT response is ambiguous. Never replay it; drop a dead link
-            // so the next scope can open a clean one instead of retrying the write.
-            try {
-                Database::setJournalReceiptId(self::currentId());
-            } catch (DatabaseException) {
-                // Keep the INSERT failure; setJournalReceiptId has discarded the link.
+        if (Hilos::$db !== null) {
+            $mounted = Hilos::$db->getDbItemCollection(HilosDbContext::changeLogReceipts);
+            if ($mounted instanceof DbChangeLogReceipts) {
+                return $mounted;
             }
-            throw $failure;
         }
-        return Database::lastInsertId();
+        if ($data->channel === JournalReceiptData::CHANNEL_MIGRATION) {
+            return DbChangeLogReceipts::forMigration();
+        }
+
+        throw new DatabaseException('Journal receipt collection is not mounted');
+    }
+
+    /** Fresh key read of one receipt, or null when that row is already gone. */
+    private static function storedReceipt(int $receiptId): ?DbChangeLogReceipt
+    {
+        if (Hilos::$db === null) {
+            throw new DatabaseException('Journal receipt collection is not mounted');
+        }
+
+        return Hilos::$db->changeLogReceipts[$receiptId] ?? null;
     }
 
     /**
-     * @param string $database Quoted journal database identifier
-     * @param int $receiptId Receipt whose last hold has been released
-     * @throws DatabaseException When deleting an empty receipt fails
+     * @template T
+     * @param callable(): T $bookkeeping
+     * @return T
      */
-    private static function deleteEmptyReceipt(string $database, int $receiptId): void
+    private static function underRunner(callable $bookkeeping): mixed
     {
-        Database::sqlRun(
-            "DELETE FROM {$database}.`hilos_change_log_receipt` WHERE `id` = ? "
-            . 'AND `open_handovers` = 0 '
-            . "AND NOT EXISTS (SELECT 1 FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ?)",
-            [$receiptId, $receiptId],
-        );
+        self::$runnerSerial++;
+        $runnerId = self::RUNNER_PREFIX . self::$runnerSerial;
+        try {
+            OwnershipDeclaration::claimDb(self::class, $runnerId);
+
+            return ExecutionContext::run(
+                new ExecutionFrame(
+                    $runnerId,
+                    ExecutionContext::currentAcceptKey(),
+                    ExecutionContext::currentRequestId(),
+                ),
+                $bookkeeping,
+            );
+        } finally {
+            TruthSourceRegistry::unregisterAgent($runnerId);
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($runnerId));
+        }
+    }
+
+    private static function clearDeadReceiptLink(): void
+    {
+        try {
+            Database::setJournalReceiptId(self::currentId());
+        } catch (DatabaseException) {
+            // Keep the insert failure; setJournalReceiptId has discarded the link.
+        }
+    }
+
+    private static function journalConfigured(): bool
+    {
+        return in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true);
     }
 }

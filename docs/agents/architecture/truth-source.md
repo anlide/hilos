@@ -79,16 +79,16 @@ action, before its handler or SQL file. The journal agent is not its creator.
 its handler that attributes rows is HIL-1618. These are scoped operation declarations,
 not a blanket grant in each process or a permission to make the agent the receipt
 creator. Do not widen the agent's claim to `Add` or `Remove` in place of the scoped
-framework lifecycle. The framework receipt scope is not yet connected to this ORM lifecycle.
-Creation, atomic `open_handovers` changes and deletion only when there are no
-journal rows or holders move into the collection layer.
-(not in the code yet — HIL-1616)
+framework lifecycle. The scope is connected to that lifecycle and takes the grant
+only for one bookkeeping call, under a runner whose id starts with
+`journal_receipt_scope:`. The business callback keeps the agent it was entered
+with. The grant is not a standing claim on the process. Creation, the handover
+delta and deletion when there are no journal rows or holders are actions on the
+receipt collection.
 The journal agent updates who wrote under its declared operations, using the
 business-row change notifications described in
 [The Receipt](change-log.md#the-receipt). (not in the code yet — HIL-1618)
-Until HIL-1616 lands, `JournalReceiptScope` keeps its existing SQL lifecycle; the
-declaration does not move receipt creation, handover updates or deletion to ORM
-actions. The external-writer guard still blocks writes to the five trigger-written
+The external-writer guard still blocks writes to the five trigger-written
 collections. Attribution and its `COUNT` removal remain HIL-1618.
 
 ## Interest And Ownership Are One Fact

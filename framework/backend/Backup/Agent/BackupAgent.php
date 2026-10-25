@@ -739,6 +739,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      * @throws DatabaseException When reading the initiator's session fails
+     * @throws HilosException When the scheduled backup receipt cannot be opened
      * @throws LogicException When the sessions collection class constants are not configured
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
@@ -3124,6 +3125,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws FramePopOrderException When the index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When a failure notice cannot be named
      * @throws DatabaseException When a receipt or the initiator lookup fails
+     * @throws HilosException When the scheduled backup receipt cannot be opened
      * @throws LogicException When the sessions collection is not configured
      */
     private function startScheduledBackup(BackupScope $scope, string $ruleName, ?string $expression, bool $fromDispatch = false): void

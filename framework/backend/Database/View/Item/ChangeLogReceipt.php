@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Database\Actions\Item\ChangeLogReceiptActions;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\ChangeLogReceipt as ObjectChangeLogReceipt;
 use Hilos\HilosException;
 
@@ -21,6 +23,7 @@ use Hilos\HilosException;
  * @property-read ?string $agent
  * @property-read ?string $source
  * @property-read int $open_handovers
+ * @property-read ChangeLogReceiptActions $actions Receipt writes
  */
 class ChangeLogReceipt extends DbItem
 {
@@ -44,5 +47,16 @@ class ChangeLogReceipt extends DbItem
             ObjectChangeLogReceipt::open_handovers => $this->_object->open_handovers,
             default => parent::__get($name),
         };
+    }
+
+    /**
+     * Counts journal rows of this receipt through the object item.
+     *
+     * @return int Journal rows for this receipt
+     * @throws DatabaseException When the binding or the count query fails
+     */
+    public function countEntries(): int
+    {
+        return $this->_object->countEntries();
     }
 }

@@ -10,6 +10,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 
 /**
  * Migration Down Command.
@@ -101,6 +102,7 @@ HELP;
      * @param list<string> $args Positional args (target version required)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If the connection cannot be selected or the migrations cannot be rolled back
+     * @throws HilosException When the migration receipt cannot be opened or closed
      * @throws EnvException When the rollout claim's holder name cannot read CLUSTER_NODE_ID
      */
     public function execute(array $options, array $args): int

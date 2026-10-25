@@ -15,6 +15,7 @@ use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
 use Hilos\Database\Exception\SqlRuntime\TableNotFoundException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
+use Hilos\HilosException;
 use Hilos\Fs\FsPath;
 use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
@@ -334,6 +335,7 @@ class Migration
      * @param ?callable(): void $afterRollout Startup work after migrations, before releasing the claim
      * @return int Number of migrations applied
      * @throws DatabaseException When a migration file, SQL or the afterRollout hook fails
+     * @throws HilosException When the migration receipt cannot be opened or closed
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationMarkedFailedException When the next migration is marked failed by an earlier run
      * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
@@ -389,6 +391,7 @@ class Migration
      * @param int $targetIndex Target migration index
      * @return int Number of migrations rolled back
      * @throws DatabaseException When rollback file is missing, unreadable, or SQL fails
+     * @throws HilosException When the migration receipt cannot be opened or closed
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationNumberTakenTwiceException When a number rolled back is taken by more than one down file
      */
@@ -743,6 +746,7 @@ class Migration
      *
      * @param int $index Migration index to retry
      * @throws DatabaseException When migration is missing, not failed, or re-apply fails
+     * @throws HilosException When the migration receipt cannot be opened or closed
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationNumberTakenTwiceException When the number retried has more than one up file
      */

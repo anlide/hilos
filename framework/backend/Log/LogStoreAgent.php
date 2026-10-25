@@ -6,7 +6,6 @@ namespace Hilos\Log;
 
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
-use Hilos\Database\DatabaseException;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -26,6 +25,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
@@ -364,7 +364,7 @@ final class LogStoreAgent extends AbstractAgent
      * second time (HIL-480).
      *
      * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
-     * @throws DatabaseException When scheduled rotation cannot open or close its receipt
+     * @throws HilosException When scheduled rotation cannot open or close its receipt
      * @throws EnvException When the project time zone of the rotation schedule cannot be read
      */
     public function onTick(): void
@@ -436,7 +436,7 @@ final class LogStoreAgent extends AbstractAgent
      *
      * @param float $now Monotonic-enough wall clock of the walk this check rides
      * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
-     * @throws DatabaseException When a cron receipt cannot be opened or closed
+     * @throws HilosException When a cron receipt cannot be opened or closed
      * @throws EnvException When the project time zone of the rotation schedule cannot be read
      */
     public function rotateIfDue(float $now): void

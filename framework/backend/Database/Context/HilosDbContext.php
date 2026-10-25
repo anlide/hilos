@@ -68,6 +68,7 @@ use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifica
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccessLogEntriesActions;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
+use Hilos\Database\Actions\Collection\ChangeLogReceiptsActions;
 use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\Actions\Collection\CountryNamesActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
@@ -100,6 +101,7 @@ use Hilos\Database\Actions\Collection\UserRenamesActions;
 use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
+use Hilos\Database\Actions\Item\ChangeLogReceiptActions;
 use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Actions\Item\CountryNameActions;
 use Hilos\Database\Actions\Item\I18nReflowActions;
@@ -599,7 +601,13 @@ abstract class HilosDbContext extends DbContext
         if (Hilos::hasFeature(HilosFeature::CHANGE_LOG)) {
             $this->mountFramework(self::changeLogTables, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogTables::class);
             $this->mountFramework(self::changeLogFields, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogFields::class);
-            $this->mountFramework(self::changeLogReceipts, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogReceipts::class);
+            $this->mountFramework(
+                self::changeLogReceipts,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionChangeLogReceipts::class,
+                ChangeLogReceiptsActions::class,
+                ChangeLogReceiptActions::class,
+            );
             $this->mountFramework(self::changeLogEntries, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogEntries::class);
             $this->mountFramework(self::changeLogChanges, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogChanges::class);
             $this->mountFramework(self::changeLogValues, Objects::LAZY_STRATEGY_KEY, DbCollectionChangeLogValues::class);

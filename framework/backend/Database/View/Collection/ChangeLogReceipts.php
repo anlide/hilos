@@ -7,6 +7,8 @@ namespace Hilos\Database\View\Collection;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Database\Actions\Collection\ChangeLogReceiptsActions;
+use Hilos\Database\Actions\Item\ChangeLogReceiptActions;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItem;
@@ -14,7 +16,10 @@ use Hilos\Database\ChangeLog\Section\ChangeLogReadCollection;
 use Hilos\Database\ChangeLog\Section\ChangeLogReceipt as SectionChangeLogReceipt;
 use Hilos\Database\ChangeLog\Section\ChangeLogReceiptHeader;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Object\Collection\ChangeLogReceipts as ObjectChangeLogReceipts;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Item\ChangeLogReceipt;
 
 /**
@@ -26,11 +31,32 @@ use Hilos\Database\View\Item\ChangeLogReceipt;
  * @method ChangeLogReceipt|null first()
  * @method ChangeLogReceipt|null last()
  * @method ChangeLogReceipt offsetGet(mixed $offset)
+ * @property-read ChangeLogReceiptsActions $actions Receipt writes
  */
 class ChangeLogReceipts extends DbCollection
 {
     public const string DB_ITEM_CLASS = ChangeLogReceipt::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectChangeLogReceipts::class;
+
+    /**
+     * Builds a separate automatic collection over this view's object chain.
+     *
+     * The journal binding stays the entity's, read when a receipt is inserted. This factory
+     * does not call Hilos::init, does not assign Hilos::$db, and does not issue SQL.
+     *
+     * @return static Automatic receipt collection with the framework receipt actions
+     * @throws UnknownLazyStrategyException When the key strategy is not one initDB knows
+     * @throws UnboundedCollectionReadException When a cacheless collection is opened with a whole-table strategy
+     */
+    public static function forMigration(): static
+    {
+        $receipts = static::init();
+        $receipts->setObjectCollection((static::OBJECT_COLLECTION_CLASS)::initDB(Objects::LAZY_STRATEGY_KEY));
+        $receipts->setActionsClass(ChangeLogReceiptsActions::class);
+        $receipts->setItemActionsClass(ChangeLogReceiptActions::class);
+
+        return $receipts;
+    }
 
     /**
      * @param ChangeLogFeedFilter $filter Receipt and bare-entry filters

@@ -22,6 +22,7 @@ use Hilos\Database\MysqlExceptionMapper;
 use Hilos\Database\Seed;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use mysqli_sql_exception;
 
 /**
@@ -112,6 +113,7 @@ HELP;
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails
      * @throws DatabaseException When migration or seed execution fails
+     * @throws HilosException When the migration receipt cannot be opened or closed
      */
     protected function run(array $options, array $args): int
     {

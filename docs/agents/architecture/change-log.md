@@ -124,10 +124,11 @@ server.
 One action has one receipt: who is at the keyboard, on whose behalf, the session,
 the channel, the action, the agent, the source and the time. The framework
 creates it in the process executing the action, before the handler or migration
-SQL file; creation is not handed to the journal agent. Today the receipt scope
-inserts it on the primary SQL connection with a qualified journal table name.
-Its row operations move to the receipt collection, retaining the same path for
-web, agent, CLI, cron and migration work. (not in the code yet — HIL-1616)
+SQL file; creation is not handed to the journal agent. The receipt collection
+creates the row during that action, on the web, agent, CLI, cron and migration
+channels. `JournalReceiptScope` writes no journal-row SQL of its own. It calls
+the receipt actions `createReceipt`, `adjustHandovers`, `concludePart`,
+`deleteIfEmpty` and `deleteEmptyMigrationReceipt`.
 An INSERT whose response was lost is ambiguous and is never replayed to try to
 recover its number; its failure reaches the caller without running the work.
 
@@ -188,10 +189,12 @@ frame, interrupted attempt or failed conclusion can leave an empty receipt hidde
 from the feed until its partition expires; the feed requires a journal row.
 
 The collection layer owns atomic changes to `open_handovers` and deletion
-conditioned on both no journal rows and no holders; do not write back a counter
-computed from a process's cached receipt. (not in the code yet — HIL-1616)
-This preserves the join, local hold and completion rules while moving their
-current SQL into the ORM; it does not turn a receipt into a transaction.
+conditioned on both no journal rows and no holders. The counter changes by a
+SQL expression on the stored column; do not write back a counter computed from
+a process's cached receipt. An empty receipt is removed by one conditional
+DELETE.
+This preserves the join, local hold and completion rules, and that SQL lives in
+the ORM; it does not turn a receipt into a transaction.
 
 A web scope starts after the action guards and ends before the success or deferred
 ack. It stores the acting administrator and impersonated person separately, and
@@ -201,13 +204,24 @@ that creates or drops that table also runs without one, including a retry of its
 partially applied creation: it cannot create a receipt in a table it is building
 or removing. The migration's failed marker stays outside the scope.
 
+The application uses `Hilos::$db->changeLogReceipts`. Before the facade is
+initialized, a migration takes a separate instance of that same collection,
+`ChangeLogReceipts::forMigration()`, for the one call. The factory does not
+call `Hilos::init` and does not assign `Hilos::$db`. An insert that does not
+keep a local hold does not name the `open_handovers` column. When the journal
+is configured, `Hilos::$db` is null and the channel is not migration,
+bookkeeping throws `DatabaseException`; the migration factory does not stand
+in for a business channel. When the journal is not configured, the scope calls
+the callback at once.
+
 A page action whose write is handed to another agent keeps one receipt with the
 person and the writing agent. Its number travels in `AgentSignalData` as `receipt`;
 the recipient handles the frame inside `JournalReceiptScope::join()`. The journal
 database is shared, so the same number applies when the recipient is on another
 node. Only a write during the handed-over frame belongs to the person's receipt.
-Today the scope counts journal rows before and after the work to record the last
-agent that actually wrote a journaled row. That attribution path is transitional.
+The receipt item counts journal rows before a part and again when that part
+concludes, to record the last agent that actually wrote a journaled row. Both
+counts stay in the ORM until HIL-1618. That attribution path is transitional.
 
 Business-row frames for created, updated and deleted rows carry `receiptId` and
 `writerAgentId`. `receiptId` is the current journal receipt or null outside one;
@@ -266,8 +280,10 @@ it in the scope stack and on the primary connection only while the part runs,
 then restores the previous receipt and active connection index. It accounts for
 outgoing frames without consuming the local hold. The caller keeps the id in
 memory and calls `finish($id)` once on completion, failure or stop, then clears
-its field. Each part's business transaction ends inside its handler; the receipt
-neither extends a transaction across ticks nor makes the whole attempt atomic.
+its field. When `finish()` meets a dead primary link, the hold stays; finish
+does not open a new link to apply the decrement. Each part's business
+transaction ends inside its handler; the receipt neither extends a transaction
+across ticks nor makes the whole attempt atomic.
 
 An accepted scheduled backup CREATE already inside the worker's CRON scope uses
 `retainCurrent()` to hold that same id for its later parts. The hold is published
