@@ -49,6 +49,7 @@ use Hilos\Tables\Legal\HilosLegalRevisionTableRow;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use JsonException;
 
 /**
@@ -304,7 +305,9 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             self::assertSame($this->personId, $acc[HilosLegalAcceptanceTableRow::userId]);
             self::assertSame(self::TERMS_DOCUMENT, $acc[HilosLegalAcceptanceTableRow::document]);
             self::assertSame(self::TEST_REVISION_ID, $acc[HilosLegalAcceptanceTableRow::revisionId]);
-            self::assertSame(self::TEST_TIMESTAMP, $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
+            self::assertIsInt($acc[HilosLegalAcceptanceTableRow::acceptedAt]);
+            self::assertSame(1790856000000, $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
+            self::assertSame(TimeHelper::sqlToMs(self::TEST_TIMESTAMP), $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
             self::assertTrue($acc[HilosLegalAcceptanceTableRow::declared]);
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::name]));
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::email]));

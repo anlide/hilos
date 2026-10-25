@@ -41,6 +41,7 @@ use Hilos\HilosException;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Immutable acceptance history served as SQL windows, with project-owned person names.
@@ -115,9 +116,14 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
      */
     public function browserRow(AbstractTableRow $row): array
     {
+        $sources = $row->toArray();
+        if (isset($sources[HilosLegalAcceptanceTableRow::acceptedAt]) && is_string($sources[HilosLegalAcceptanceTableRow::acceptedAt])) {
+            $sources[HilosLegalAcceptanceTableRow::acceptedAt] = TimeHelper::sqlToMs($sources[HilosLegalAcceptanceTableRow::acceptedAt]);
+        }
+
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
-            BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
+            BrowserPageSignalData::sources => [self::ROW_SLOT => $sources],
         ];
     }
 

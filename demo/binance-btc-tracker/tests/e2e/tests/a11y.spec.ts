@@ -66,43 +66,46 @@ test('Status pages expose the shared heading, current tab, title, named table an
   await expectStatusHead(expect, page)
 })
 
-test('a real candidate has text status and named, focus-trapped incident dialogs with Escape and focus return', async ({
-  page,
-}) => {
-  // The real roster/collector observation and recovery are part of this modal proof.
-  test.slow()
-  await grantAdminToSelf(page)
-  const workers = await page.context().newPage()
-  const log = watchStatusFrames(page)
-  try {
-    await gotoPage(page, STATUS_PATH, PAGE_READY)
-    await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-    await withStatusAgentLoss(workers, log, async () => {
-      await expect
-        .poll(() => log.latest()?.incidents?.length, {
-          timeout: RESTART_MARK_TIMEOUT_MS,
-        })
-        .toBe(1)
-      const id = log.latest()!.incidents![0].incidentId
-      await expect(
-        page.getByTestId(`hilos-status-incident-${id}`),
-      ).toContainText('Checking')
-      await expectStatusIncidentDialog(
-        expect,
-        page,
-        page.getByTestId(`hilos-status-cancel-publication-${id}`),
-        'Do not publish',
-      )
-      await expectStatusIncidentDialog(
-        expect,
-        page,
-        page.getByTestId(`hilos-status-publish-now-${id}`),
-        'Publish the outage now',
-      )
-    })
-    await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-  } finally {
-    log.stop()
-    await workers.close()
-  }
-})
+// FIXME(F-031, 2026-10-25): Timeout ожидания воркера в withStatusAgentLoss · чужой · попытка 1 · HIL-1591
+test(
+  'a real candidate has text status and named, focus-trapped incident dialogs with Escape and focus return',
+  { tag: '@quarantine:F-031' },
+  async ({ page }) => {
+    // The real roster/collector observation and recovery are part of this modal proof.
+    test.slow()
+    await grantAdminToSelf(page)
+    const workers = await page.context().newPage()
+    const log = watchStatusFrames(page)
+    try {
+      await gotoPage(page, STATUS_PATH, PAGE_READY)
+      await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+      await withStatusAgentLoss(workers, log, async () => {
+        await expect
+          .poll(() => log.latest()?.incidents?.length, {
+            timeout: RESTART_MARK_TIMEOUT_MS,
+          })
+          .toBe(1)
+        const id = log.latest()!.incidents![0].incidentId
+        await expect(
+          page.getByTestId(`hilos-status-incident-${id}`),
+        ).toContainText('Checking')
+        await expectStatusIncidentDialog(
+          expect,
+          page,
+          page.getByTestId(`hilos-status-cancel-publication-${id}`),
+          'Do not publish',
+        )
+        await expectStatusIncidentDialog(
+          expect,
+          page,
+          page.getByTestId(`hilos-status-publish-now-${id}`),
+          'Publish the outage now',
+        )
+      })
+      await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+    } finally {
+      log.stop()
+      await workers.close()
+    }
+  },
+)

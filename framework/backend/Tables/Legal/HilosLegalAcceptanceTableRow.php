@@ -8,7 +8,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
- * Legal administration table row and its wire representation.
+ * Legal administration table row and its internal SQL representation.
  */
 final class HilosLegalAcceptanceTableRow extends AbstractTableRow
 {
@@ -71,7 +71,7 @@ final class HilosLegalAcceptanceTableRow extends AbstractTableRow
     }
 
     /**
-     * @param array<string, mixed> $data Wire row payload
+     * @param array<string, mixed> $data Internal SQL row payload
      * @return static Reconstructed row
      * @throws InvalidFormatException When a field is absent or has the wrong type
      */

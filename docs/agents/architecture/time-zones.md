@@ -680,7 +680,7 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Sessions and devices | (not in the code yet — HIL-1586) |
 | Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
-| Acceptances | (not in the code yet — HIL-1591) |
+| Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; internal SQL row in UTC string; Vue uses the reader zone. |
 | React | (not in the code yet — HIL-1594) |
 | Angular | (not in the code yet — HIL-1595) |
 

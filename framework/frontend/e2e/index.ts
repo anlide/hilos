@@ -407,9 +407,11 @@ export {
   backupMomentRow,
   enterCalendarDate,
   expectBackupMoments,
+  expectLegalAcceptanceMoments,
   expectMaintenanceMoment,
   expectReaderMillisecondMoment,
   expectReaderMoment,
+  legalAcceptanceMomentRow,
   readerMoment,
 } from './moments.js'
 export {

@@ -19,9 +19,11 @@ import {
 } from '../../../src/admin/legal/hilosLegal.js'
 import { type HilosLegalContext } from '../../../src/legal/legalAgreements.js'
 import { type TableViewportDescriptor } from '../../../src/connection/HilosConnection.js'
+import { formatMoment } from '../../../src/format/moment.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
+import { bindTimeZoneState } from '../../../src/timeZone/timeZoneState.js'
 
 const revision = {
   revisionId: 'current',
@@ -61,6 +63,7 @@ function harness(early?: HilosLegalAcceptanceFilters) {
   const facets: unknown[] = []
   let latest = early
   const connection = {
+    projectTimeZone: 'UTC',
     on(event: string, listener: (frame: never) => void): () => void {
       const group = listeners.get(event) ?? new Set()
       listeners.set(event, group)
@@ -69,6 +72,14 @@ function harness(early?: HilosLegalAcceptanceFilters) {
         listener({ type: LEGAL_ACCEPTANCES_SIGNAL, data: latest } as never)
       return () => {
         group.delete(listener)
+      }
+    },
+    choose(timeZone: string) {
+      for (const listener of listeners.get('projectSignal') ?? []) {
+        listener({
+          type: 'handshake_response',
+          data: { entities: { currentUser: { id: 1, timeZone } } },
+        } as never)
       }
     },
     registerTableWindow() {},
@@ -81,6 +92,7 @@ function harness(early?: HilosLegalAcceptanceFilters) {
       sent.push({ page, table, descriptor })
     },
     sendTableRendered() {},
+    sendTableRowFocus() {},
     sendTableFacets(_page: string, _table: string, values: unknown) {
       facets.push(values)
     },
@@ -100,6 +112,9 @@ function harness(early?: HilosLegalAcceptanceFilters) {
     sent,
     actions,
     facets,
+    choose(timeZone: string) {
+      connection.choose(timeZone)
+    },
     emit(data: HilosLegalAcceptanceFilters) {
       latest = data
       for (const listener of listeners.get('projectSignal') ?? [])
@@ -186,12 +201,15 @@ describe('legal administration rows and sections', () => {
           document: 'terms',
           revisionId: 'old',
           declared: true,
-          acceptedAt: '2026-09-27 12:00:00',
+          acceptedAt: 1790510400000,
         },
       },
     })
     expect(acceptance.name).toBe(HIDDEN_VALUE)
     expect(acceptance.email).toBe(HIDDEN_VALUE)
+    expect(acceptance.acceptedAt).toBe(
+      formatMoment(1790510400000, { kind: 'dateTime' }),
+    )
 
     const setting = resolveHilosLegalSettingRow({
       rowKey: 'legal.refusal_after_deadline',
@@ -234,7 +252,7 @@ describe('legal administration rows and sections', () => {
             document: 'terms',
             revisionId: 'old',
             declared,
-            acceptedAt: '2026-09-27 12:00:00',
+            acceptedAt: 1790510400000,
           },
         },
       })
@@ -246,10 +264,131 @@ describe('legal administration rows and sections', () => {
         document: 'terms',
         revisionId: 'old',
         declared,
-        acceptedAt: '2026-09-27 12:00:00',
+        acceptedAt: formatMoment(1790510400000, { kind: 'dateTime' })!,
       })
     },
   )
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['old SQL string', '2026-09-27 12:00:00'],
+    ['numeric string', '1790510400000'],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['out of date range', 1e16],
+  ])(
+    'formats invalid or non-numeric acceptedAt (%s) as em-dash',
+    (_, acceptedAt) => {
+      const row = resolveHilosLegalAcceptanceRow({
+        rowKey: '42',
+        slots: {
+          acceptance: {
+            userId: 9,
+            name: 'Reader',
+            email: null,
+            document: 'terms',
+            revisionId: 'old',
+            declared: true,
+            acceptedAt,
+          },
+        },
+      })
+      expect(row.acceptedAt).toBe('—')
+    },
+  )
+
+  it('formats numeric 0 as the valid epoch moment rather than fallback', () => {
+    const row = resolveHilosLegalAcceptanceRow({
+      rowKey: '42',
+      slots: {
+        acceptance: {
+          userId: 9,
+          name: 'Reader',
+          email: null,
+          document: 'terms',
+          revisionId: 'old',
+          declared: true,
+          acceptedAt: 0,
+        },
+      },
+    })
+    expect(row.acceptedAt).toBe(formatMoment(0, { kind: 'dateTime' }))
+    expect(row.acceptedAt).not.toBe('—')
+  })
+
+  it('formats acceptedAt in UTC, Europe/Kyiv, and Asia/Tokyo with calendar day transition and DST', () => {
+    const h = harness()
+    const release = bindTimeZoneState(h.context.connection)
+    try {
+      const lateMoment = 1790548200000 // 2026-09-27 22:30:00 UTC
+      const tableRow = {
+        rowKey: '1',
+        slots: {
+          acceptance: {
+            userId: 1,
+            name: 'Reader',
+            email: null,
+            document: 'terms',
+            revisionId: 'current',
+            declared: true,
+            acceptedAt: lateMoment,
+          },
+        },
+      }
+
+      h.choose('UTC')
+      const utcRow = resolveHilosLegalAcceptanceRow(tableRow)
+      expect(utcRow.acceptedAt).toBe(
+        formatMoment(lateMoment, { kind: 'dateTime' }),
+      )
+      expect(utcRow.acceptedAt).toContain('Sep 27, 2026')
+
+      h.choose('Europe/Kyiv')
+      const kyivRow = resolveHilosLegalAcceptanceRow(tableRow)
+      expect(kyivRow.acceptedAt).toBe(
+        formatMoment(lateMoment, { kind: 'dateTime' }),
+      )
+      expect(kyivRow.acceptedAt).toContain('Sep 28, 2026')
+
+      h.choose('Asia/Tokyo')
+      const tokyoRow = resolveHilosLegalAcceptanceRow(tableRow)
+      expect(tokyoRow.acceptedAt).toBe(
+        formatMoment(lateMoment, { kind: 'dateTime' }),
+      )
+      expect(tokyoRow.acceptedAt).toContain('Sep 28, 2026')
+
+      // DST transition in Europe/Kyiv (2026-10-25)
+      // 2026-10-25 00:30:00 UTC (EEST, UTC+3 -> 03:30)
+      const summerMoment = 1792888200000
+      h.choose('Europe/Kyiv')
+      const summerRow = resolveHilosLegalAcceptanceRow({
+        rowKey: '2',
+        slots: {
+          acceptance: {
+            ...tableRow.slots.acceptance,
+            acceptedAt: summerMoment,
+          },
+        },
+      })
+      expect(summerRow.acceptedAt).toContain('3:30:00')
+
+      // 2026-10-25 02:30:00 UTC (EET, UTC+2 -> 04:30)
+      const winterMoment = 1792895400000
+      const winterRow = resolveHilosLegalAcceptanceRow({
+        rowKey: '3',
+        slots: {
+          acceptance: {
+            ...tableRow.slots.acceptance,
+            acceptedAt: winterMoment,
+          },
+        },
+      })
+      expect(winterRow.acceptedAt).toContain('4:30:00')
+    } finally {
+      release()
+    }
+  })
 
   it('accepts historical page data with no invented text', () => {
     expect(
@@ -466,5 +605,63 @@ describe('legal table controllers', () => {
         payload: { key: 'legal.consent_form', value: 'line' },
       },
     ])
+  })
+
+  it('updates display labels in controller.rows and focusedRow on timezone change without sendViewport', () => {
+    const h = harness(vocabulary)
+    const release = bindTimeZoneState(h.context.connection)
+    try {
+      h.choose('UTC')
+      const table = createHilosLegalAcceptancesTable(h.context)
+      table.start()
+      const rawMoment = 1790548200000 // 2026-09-27 22:30:00 UTC
+      table.controller.ingestWindow(
+        [
+          {
+            rowKey: '100',
+            slots: {
+              acceptance: {
+                userId: 42,
+                name: 'Focused acceptor',
+                email: 'acceptor@example.com',
+                document: 'terms',
+                revisionId: 'current',
+                declared: true,
+                acceptedAt: rawMoment,
+              },
+            },
+          },
+        ],
+        1,
+        true,
+        null,
+        null,
+        25,
+      )
+      table.controller.focusRow('100')
+
+      expect(table.controller.rows.get()[0]?.row?.acceptedAt).toContain(
+        'Sep 27, 2026',
+      )
+      expect(table.controller.focusedRow.get()?.acceptedAt).toContain(
+        'Sep 27, 2026',
+      )
+
+      h.sent.length = 0
+
+      h.choose('Europe/Kyiv')
+
+      expect(h.sent).toHaveLength(0)
+      expect(table.controller.rows.get()[0]?.row?.acceptedAt).toContain(
+        'Sep 28, 2026',
+      )
+      expect(table.controller.focusedRow.get()?.acceptedAt).toContain(
+        'Sep 28, 2026',
+      )
+
+      table.dispose()
+    } finally {
+      release()
+    }
   })
 })

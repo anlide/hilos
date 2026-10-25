@@ -6,6 +6,7 @@ import {
 } from '../../protocol/legalAcceptancesSignals.js'
 import { z } from 'zod'
 import { type ActionHandle } from '../../connection/actionLifecycle.js'
+import { formatMoment } from '../../format/moment.js'
 import {
   legalChangeSchema,
   legalClauseSchema,
@@ -21,6 +22,7 @@ import {
   readHideableString,
   readHideableStringOrNull,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -337,6 +339,7 @@ export function resolveHilosLegalAcceptanceRow(
 ): HilosLegalAcceptanceRow {
   const slot = slotOf(row, 'acceptance')
   const declared = slot[HilosLegalRowKey.declared]
+  const acceptedAtMs = readNumberOrNull(slot, HilosLegalRowKey.acceptedAt)
   return {
     rowKey: Number(row.rowKey),
     userId: readNumber(slot, HilosLegalRowKey.userId),
@@ -345,7 +348,10 @@ export function resolveHilosLegalAcceptanceRow(
     document: readString(slot, HilosLegalRowKey.document),
     revisionId: readString(slot, HilosLegalRowKey.revisionId),
     declared: typeof declared === 'boolean' ? declared : null,
-    acceptedAt: readString(slot, HilosLegalRowKey.acceptedAt),
+    acceptedAt:
+      acceptedAtMs === null
+        ? '—'
+        : (formatMoment(acceptedAtMs, { kind: 'dateTime' }) ?? '—'),
   }
 }
 
@@ -672,6 +678,12 @@ export function createHilosLegalAcceptancesTable(
         HilosPages.LEGAL_ACCEPTANCES,
         HilosLegalTableKey.acceptances,
         facets,
+      ),
+    sendFocus: (rowKey: string) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.LEGAL_ACCEPTANCES,
+        HilosLegalTableKey.acceptances,
+        rowKey,
       ),
     frame: {
       columns: ACCEPTANCE_COLUMNS,

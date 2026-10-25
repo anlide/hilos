@@ -11,20 +11,31 @@ use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\DTO\TableViewportAppendDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Hilos as FrameworkHilos;
 use Hilos\Legal\Exception\UnknownRevisionException;
@@ -34,6 +45,7 @@ use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionMethod;
@@ -106,7 +118,10 @@ final class LegalAdminPagesTest extends IntegrationTestCase
             $this->record((int) $user->id, '2026-09-27');
         }
         $this->record($this->userId, 'removed', '2026-01-01 00:00:00');
-        $frames = $this->subscribe(LegalAcceptancesPage::class);
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLegalAcceptanceTableRow::acceptedAt, TableConstants::ORDER_DESC));
+        $frames = $this->subscribe(LegalAcceptancesPage::class, [], [
+            ChatTableContext::hilosLegalAcceptances => new TableWindowDescriptorDTO(sort: $sort, limit: 25),
+        ]);
         $filtersAt = array_search(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES, array_column($frames, 'name'), true);
         $responseAt = array_search(SignalTypeConstants::PAGE_RESPONSE, array_column($frames, 'name'), true);
         self::assertIsInt($filtersAt);
@@ -115,12 +130,97 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertInstanceOf(HilosLegalAcceptanceFiltersSignalData::class, $frames[$filtersAt]['data']);
         self::assertSame(['2026-09-27', 'removed'], array_column($frames[$filtersAt]['data']->documents[0]['revisions'], 'revisionId'));
         self::assertFalse($frames[$filtersAt]['data']->documents[0]['revisions'][1]['declared']);
+
+        $pageResponse = $frames[$responseAt]['data'];
+        self::assertInstanceOf(PageResponseSignalData::class, $pageResponse);
+        $firstWindow = $pageResponse->payload->windows[ChatTableContext::hilosLegalAcceptances] ?? null;
+        self::assertIsArray($firstWindow);
+        self::assertCount(25, $firstWindow['rows']);
+        $firstRowSlot = reset($firstWindow['rows'][0][PagePayload::slots]);
+        self::assertIsInt($firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(1790510400000, $firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(TimeHelper::sqlToMs('2026-09-27 12:00:00'), $firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+
+        $firstRowKey = $firstWindow['rows'][0]['rowKey'];
+        Database::sqlRun('UPDATE hilos_legal_acceptance SET revision_id = ? WHERE id = ?', ['live-updated', $firstRowKey]);
+        Hilos::$browser?->record(SourceChange::dbUpdated(HilosDbContext::legalAcceptances, (string) $firstRowKey, ['revision_id' => 'live-updated']));
+        Hilos::$browser?->flushToSignalRouter();
+        $updateSignals = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData) {
+                $updateSignals[] = ['name' => $signal->signalName->getName(), 'data' => $signal->data->data];
+            }
+        }
+        $deltaAt = array_search(SignalTypeConstants::TABLE_VIEWPORT_DELTA, array_column($updateSignals, 'name'), true);
+        self::assertIsInt($deltaAt);
+        $delta = $updateSignals[$deltaAt]['data'];
+        self::assertInstanceOf(TableViewportDeltaDTO::class, $delta);
+        self::assertSame((int) $firstRowKey, $delta->rowKey);
+        $deltaSlots = $delta->row[PagePayload::slots];
+        $deltaSlot = reset($deltaSlots);
+        self::assertSame('live-updated', $deltaSlot[HilosLegalAcceptanceTableRow::revisionId]);
+        self::assertIsInt($deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(1790510400000, $deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(TimeHelper::sqlToMs('2026-09-27 12:00:00'), $deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+
+        $nextViewport = new TableViewportSubscription(tableKey: ChatTableContext::hilosLegalAcceptances, sort: $sort, limit: 25, pageIndex: 1);
+        Hilos::$sr->setTableViewport(self::ACCEPT_KEY, $nextViewport);
+        Hilos::$browser?->sendTableWindow(
+            LegalAcceptancesPage::PAGE,
+            self::ACCEPT_KEY,
+            $nextViewport,
+        );
+        $nextWindowSignals = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData) {
+                $nextWindowSignals[] = ['name' => $signal->signalName->getName(), 'data' => $signal->data->data];
+            }
+        }
+        $windowAt = array_search(SignalTypeConstants::TABLE_WINDOW, array_column($nextWindowSignals, 'name'), true);
+        self::assertIsInt($windowAt);
+        $nextWindowData = $nextWindowSignals[$windowAt]['data'];
+        self::assertInstanceOf(TableWindowSignalData::class, $nextWindowData);
+        self::assertCount(2, $nextWindowData->rows);
+        $row1Slots = $nextWindowData->rows[1][PagePayload::slots];
+        $lastRowSlot = reset($row1Slots);
+        self::assertSame('removed', $lastRowSlot[HilosLegalAcceptanceTableRow::revisionId]);
+        self::assertIsInt($lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(1767225600000, $lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(TimeHelper::sqlToMs('2026-01-01 00:00:00'), $lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+
+        $this->record($this->userId, 'live-created', '2025-12-15 10:00:00');
+        $liveId = (int) Database::sql('SELECT LAST_INSERT_ID() AS id')->firstRow()['id'];
+        $createdChange = SourceChange::dbCreated(HilosDbContext::legalAcceptances, (string) $liveId, [
+            'user_id' => $this->userId,
+            'document' => 'terms',
+            'revision_id' => 'live-created',
+            'accepted_at' => '2025-12-15 10:00:00',
+        ]);
+        Hilos::$browser?->record($createdChange);
+        Hilos::$browser?->flushToSignalRouter();
+        $createSignals = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData) {
+                $createSignals[] = ['name' => $signal->signalName->getName(), 'data' => $signal->data->data];
+            }
+        }
+        $appendAt = array_search(SignalTypeConstants::TABLE_VIEWPORT_APPEND, array_column($createSignals, 'name'), true);
+        self::assertIsInt($appendAt);
+        $append = $createSignals[$appendAt]['data'];
+        self::assertInstanceOf(TableViewportAppendDTO::class, $append);
+        $appendSlots = $append->row[PagePayload::slots];
+        $appendSlot = reset($appendSlots);
+        self::assertSame('live-created', $appendSlot[HilosLegalAcceptanceTableRow::revisionId]);
+        self::assertIsInt($appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(1765792800000, $appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+        self::assertSame(TimeHelper::sqlToMs('2025-12-15 10:00:00'), $appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
+
         $snapshot = Hilos::$table->hilosLegalAcceptances->getPage(new TableQueryDTO(limit: 25));
-        self::assertSame(27, $snapshot->totalCount);
+        self::assertSame(28, $snapshot->totalCount);
         self::assertCount(25, $snapshot->rows);
-        self::assertSame(['2026-09-27'], array_values(array_unique(array_column($snapshot->rows, 'revisionId'))));
-        self::assertSame(1, Hilos::$table->hilosLegalAcceptances->getPage(new TableQueryDTO(search: 'administrator', limit: 25))->totalCount);
-        self::assertSame(27, (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance')->firstRow()['total']);
+        self::assertSame(['live-updated', '2026-09-27'], array_values(array_unique(array_column($snapshot->rows, 'revisionId'))));
+        self::assertSame(2, Hilos::$table->hilosLegalAcceptances->getPage(new TableQueryDTO(search: 'administrator', limit: 25))->totalCount);
+        self::assertSame(28, (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance')->firstRow()['total']);
     }
 
     public function testAnUndeclaredRevisionWithRecordsStillOpens(): void
@@ -254,13 +354,18 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     /**
      * @param class-string<AbstractPage> $pageClass Page being opened
      * @param array<string, string> $params Route parameters
+     * @param array<string, TableWindowDescriptorDTO> $tableWindows Windows the tab holds, by table key
      * @return list<array{name: string, data: object}> Queued browser frames in delivery order
      */
-    private function subscribe(string $pageClass, array $params = []): array
+    private function subscribe(string $pageClass, array $params = [], array $tableWindows = []): array
     {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
-        Hilos::$sr->subscribeToPage($pageClass::PAGE, new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $pageClass::PAGE, $params));
+        $subscribeSignal = new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $pageClass::PAGE, $params, $tableWindows);
+        Hilos::$sr->subscribeToPage($pageClass::PAGE, $subscribeSignal);
+        if ($tableWindows !== []) {
+            Hilos::$sr->reportTableWindows(self::ACCEPT_KEY, $tableWindows);
+        }
         ExecutionContext::run(new ExecutionFrame(acceptKey: self::ACCEPT_KEY), static function () use ($pageClass, $params): void {
             new $pageClass(new DemoHilosLegalAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams($params));
         });

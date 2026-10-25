@@ -117,6 +117,79 @@ export async function expectBackupMoments(
   return createdAt
 }
 
+/** Read the latest real initial/replacement window containing this legal acceptance. */
+export function legalAcceptanceMomentRow(
+  log: DeliveryFrameLog,
+  userId: number | string,
+  document?: string,
+) {
+  for (const packet of log.packets.slice().reverse()) {
+    for (const frame of packet.frames.slice().reverse()) {
+      const wire = deliveryObject(frame.wire)
+      const data = deliveryObject(wire.data)
+      const window =
+        wire.type === 'page_response' && data.page === 'hilos_legal_acceptances'
+          ? deliveryObject(
+              deliveryObject(deliveryObject(data.payload).windows)
+                .hilosLegalAcceptances,
+            )
+          : wire.type === 'table_window' &&
+              data.tableKey === 'hilosLegalAcceptances'
+            ? data
+            : {}
+      if (!Array.isArray(window.rows)) continue
+      const row = window.rows.find((value) => {
+        const item = deliveryObject(value)
+        const acceptance = deliveryObject(deliveryObject(item.slots).acceptance)
+        if (
+          document !== undefined &&
+          String(acceptance.document) !== String(document)
+        ) {
+          return false
+        }
+        return (
+          String(acceptance.userId) === String(userId) ||
+          String(item.rowKey) === String(userId)
+        )
+      })
+      if (row) {
+        const item = deliveryObject(row)
+        return {
+          frame,
+          rowKey: String(item.rowKey),
+          acceptance: deliveryObject(deliveryObject(item.slots).acceptance),
+        }
+      }
+    }
+  }
+  return undefined
+}
+
+/** Match the actual legal acceptance payload to the row, checking numeric epoch ms against reader DOM. */
+export async function expectLegalAcceptanceMoments(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  userId: number | string,
+  timeZone: string,
+): Promise<string> {
+  await expect.poll(() => legalAcceptanceMomentRow(log, userId)).toBeDefined()
+  const { frame, rowKey, acceptance } = legalAcceptanceMomentRow(log, userId)!
+  expect(frame.failure).toBeUndefined()
+  expect(frame.raw).toEqual(expect.any(String))
+  expect(acceptance.acceptedAt).toEqual(expect.any(Number))
+  expect(Number.isSafeInteger(acceptance.acceptedAt)).toBe(true)
+  const stamp = acceptance.acceptedAt as number
+  expect(Number.isFinite(new Date(stamp).getTime())).toBe(true)
+  const acceptedIso = new Date(stamp).toISOString()
+  const expected = readerMoment(acceptedIso, timeZone)
+  const row = page.getByTestId(`hilos-table-row-${rowKey}`)
+  await expect(row.getByTestId('legal-acceptance-accepted-at')).toHaveText(
+    expected,
+  )
+  return expected
+}
+
 /** Read an admitted page's actual maintenance state, retaining physical evidence. */
 export async function expectMaintenanceMoment(
   expect: Expect,

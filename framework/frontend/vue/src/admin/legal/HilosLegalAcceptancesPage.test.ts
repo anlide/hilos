@@ -1,10 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import {
   ActionError,
+  bindTimeZoneState,
   createSignal,
   HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
+  type HilosConnection,
   type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
   type ProjectSignal,
@@ -16,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosLegalAcceptancesPage from './HilosLegalAcceptancesPage.vue'
 import { hilosAdminViewModeKey } from '../../hilosAdminViewMode.js'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 /** One acceptance record, with the person's name and email as the server sent them. */
 function acceptance(
@@ -46,13 +49,14 @@ function mountOver(rows: HilosLegalAcceptanceRow[]) {
       unregisterTableWindow: vi.fn(),
       sendTableViewport: vi.fn(),
       sendTableRendered: vi.fn(),
+      sendTableRowFocus: vi.fn(),
       sendTableFacets: vi.fn(),
     },
     actions: {},
   } as unknown as HilosLegalContext
   const table = {
     setup: () => ({ rows }),
-    template: `<div><div v-for="row in rows" :key="row.rowKey"><slot name="cell-name" :row="row" /></div></div>`,
+    template: `<div><div v-for="row in rows" :key="row.rowKey"><slot name="cell-name" :row="row" /><slot name="cell-acceptedAt" :row="row" /></div></div>`,
   }
 
   return mount(HilosLegalAcceptancesPage, {
@@ -94,6 +98,124 @@ describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
     expect(record.text()).toContain('No verified email')
     expect(record.find('[data-id="hilos-hidden"]').exists()).toBe(false)
     view.unmount()
+  })
+
+  it('renders acceptedAt slot and updates DOM signature on session zone event without remount', async () => {
+    const listeners = new Map<string, Set<(frame: never) => void>>()
+    let tableController: TableViewportController<HilosLegalAcceptanceRow> | null =
+      null
+    const connection = {
+      projectTimeZone: 'UTC',
+      on(event: string, listener: (frame: never) => void): () => void {
+        const group = listeners.get(event) ?? new Set()
+        listeners.set(event, group)
+        group.add(listener)
+        return () => {
+          group.delete(listener)
+        }
+      },
+      registerTableWindow: vi.fn(),
+      unregisterTableWindow: vi.fn(),
+      sendTableViewport: vi.fn(),
+      sendTableRendered: vi.fn(),
+      sendTableRowFocus: vi.fn(),
+      sendTableFacets: vi.fn(),
+    }
+    const release = bindTimeZoneState(connection as unknown as HilosConnection)
+    try {
+      const chooseZone = (timeZone: string) => {
+        for (const listener of listeners.get('projectSignal') ?? []) {
+          listener({
+            type: 'handshake_response',
+            data: { entities: { currentUser: { id: 1, timeZone } } },
+          } as never)
+        }
+      }
+      chooseZone('UTC')
+
+      const scopes = new ScopeManager()
+      scopes.openPage('hilos_legal_acceptances')
+      const context = {
+        scopes,
+        connection,
+        actions: {},
+      } as unknown as HilosLegalContext
+
+      const viewportTableStub = {
+        props: ['controller'],
+        setup(props: {
+          controller?: TableViewportController<HilosLegalAcceptanceRow>
+        }) {
+          if (props.controller) {
+            tableController = props.controller
+          }
+          const rows = useSignal(props.controller!.rows)
+          return { rows }
+        },
+        template: `<div><div v-for="item in rows" :key="item.rowKey"><slot name="cell-name" :row="item.row" /><slot name="cell-acceptedAt" :row="item.row" /></div></div>`,
+      }
+
+      const view = mount(HilosLegalAcceptancesPage, {
+        props: { context },
+        global: {
+          provide: {
+            [hilosRouterKey as symbol]: {
+              currentRoute: createSignal({
+                page: 'hilos_legal_acceptances',
+                params: {},
+                admin: true,
+              }),
+            },
+          },
+          stubs: {
+            HilosAdminPage: { template: '<main><slot /></main>' },
+            HilosViewportTable: viewportTableStub,
+            HilosLink: { template: '<a><slot /></a>' },
+          },
+        },
+      })
+
+      expect(tableController).not.toBeNull()
+      const rawMoment = 1790548200000 // 2026-09-27 22:30:00 UTC
+      tableController!.ingestWindow(
+        [
+          {
+            rowKey: '42',
+            slots: {
+              acceptance: {
+                userId: 9,
+                name: 'Reader',
+                email: 'reader@example.com',
+                document: 'terms',
+                revisionId: 'current',
+                declared: true,
+                acceptedAt: rawMoment,
+              },
+            },
+          },
+        ],
+        1,
+        true,
+        null,
+        null,
+        25,
+      )
+      await flushPromises()
+
+      const cell = view.get('[data-id="legal-acceptance-accepted-at"]')
+      expect(cell.text()).toContain('Sep 27, 2026')
+
+      // Emit session zone event
+      chooseZone('Europe/Kyiv')
+      await flushPromises()
+
+      // The DOM signature reformats live in place (+3h -> Sep 28)
+      expect(cell.text()).toContain('Sep 28, 2026')
+
+      view.unmount()
+    } finally {
+      release()
+    }
   })
 })
 
@@ -160,6 +282,7 @@ async function mountExport(
       unregisterTableWindow: vi.fn(),
       sendTableViewport: vi.fn(),
       sendTableRendered: vi.fn(),
+      sendTableRowFocus: vi.fn(),
       sendTableFacets: vi.fn(),
     },
     actions: {

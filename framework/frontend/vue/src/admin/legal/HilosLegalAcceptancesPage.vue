@@ -142,6 +142,11 @@ onUnmounted(() => {
             >Not in code</span
           ></template
         >
+        <template #cell-acceptedAt="{ row }"
+          ><span data-id="legal-acceptance-accepted-at">{{
+            row.acceptedAt
+          }}</span></template
+        >
         <template #cell-actions="{ row }"
           ><HilosLink
             :to="
