@@ -102,6 +102,15 @@
             "@test:e2e",
             "@test:e2e-down @no_additional_args"
         ],
+        "test:e2e-prebuilt": [
+            "@test:down @no_additional_args",
+            "@test:up @no_additional_args",
+            "@test:e2e-install @no_additional_args",
+            "@test:e2e-check @no_additional_args",
+            "@test:e2e-up @no_additional_args",
+            "@test:e2e",
+            "@test:e2e-down @no_additional_args"
+        ],
         "test:all": [
             "@test:db-reset",
             "@test:phpunit",

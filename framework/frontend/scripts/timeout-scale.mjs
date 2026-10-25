@@ -99,8 +99,9 @@ function readAvailableGib() {
 /**
  * The factor every timeout is multiplied by, and the sentence explaining it.
  *
- * Nothing in the repository sets the override: it is a pin made by hand — someone
- * debugging a step, a CI that knows its own box. The runner used to derive it
+ * The override is a pin made by hand — someone debugging a step, a CI that knows
+ * its own box — and one graph step that runs beside the demo e2e steps,
+ * binance-btc-tracker-cluster-e2e (scripts/test-suite.php). The runner used to derive it
  * from its lane count and no longer does (HIL-1227): on the box of the line a
  * factor above 1 rescued no test, and a test that hung cost four of its caps.
  *

@@ -107,12 +107,19 @@ require_once __DIR__ . '/framework-pieces.php';
  * takes that compose project down before it runs (HIL-1232).
  */
 
-/** Demos carrying a tests/e2e suite, with their measured per-step durations. */
+/**
+ * Demos carrying a tests/e2e suite, with their measured per-step durations.
+ *
+ * A demo with a `build` duration builds its frontend in a step of its own, `<demo>-build`,
+ * and its e2e step serves that build instead of making one (`test:e2e-prebuilt`). Only
+ * binance-btc-tracker needs it: its cluster browser serves the same frontend/dist beside
+ * the demo's e2e, and a build empties dist before it writes it (HOTFIX 2026-10-25).
+ */
 $demos = [
     'chat' => ['check' => 11, 'php' => 79, 'e2e' => 600],
     'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 642],
     'polls' => ['check' => 15, 'php' => 17, 'e2e' => 792],
-    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 768],
+    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'build' => 13, 'e2e' => 755],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
 ];
@@ -270,21 +277,33 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // A browser on the cluster stand through its entry (HIL-1232, HIL-1304).
-    // Follows the demo's e2e: both use frontend/dist (also served by the entry),
-    // node_modules and the Playwright output folders. The group keeps the two
-    // cluster steps from taking the same compose project down beneath each other.
+    // Runs beside the demo's e2e, not after it (HOTFIX 2026-10-25): behind the
+    // 27-minute e2e it was the last six minutes of every full run, alone on the box.
+    // The two still share three things, and each has its own keeper. frontend/dist,
+    // which the entry serves: binance-btc-tracker-build makes it, and in this graph
+    // nothing else writes it. tests/e2e/node_modules: binance-btc-tracker-check
+    // installs it, after which every install-if-stale skips. The Playwright output
+    // folders: the demo's main run writes test-results/main and playwright-report/main,
+    // so neither its start nor its report clears the cluster-* and quarantine/* folders.
+    // The group keeps the two cluster steps from taking the same compose project down
+    // beneath each other.
+    //
+    // Both timeout factors are pinned at 2 here, the owner's decision of the same day:
+    // beside four e2e steps the box is loaded when this step reads its factor and may
+    // be more loaded later. A pin silences the load term and keeps the memory floor
+    // (docs/agents/testing.md, "The full run — one graph").
     [
         'id' => 'binance-btc-tracker-cluster-e2e',
-        'command' => 'composer run test:cluster:e2e',
+        'command' => 'HILOS_E2E_TIMEOUT_SCALE=2 CLUSTER_E2E_TIMEOUT_SCALE=2 composer run test:cluster:e2e',
         'cwd' => 'demo/binance-btc-tracker',
         'stand' => 'binance-btc-tracker-cluster',
-        'deps' => ['binance-btc-tracker-e2e'],
+        'deps' => ['binance-btc-tracker-build', 'binance-btc-tracker-check'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // nova-de, 2026-10-19 (HIL-1575): Verify run 1301 at seven lanes, 188.1 s rounded
-        // to 188; daemon phase + 12 live + 2 after-loss passed, 9 live skipped, no retries
-        // or unstable tests.
-        'seconds' => 188,
+        // nova-de, 2026-10-25 (HOTFIX): full run 1590 at seven lanes, beside four demo
+        // e2e steps, 8m04s; daemon phase switched off (F-023), 13 live + 2 after-loss
+        // passed, quarantine tail 10 live with F-011 failed, no retries or unstable tests.
+        'seconds' => 484,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
@@ -397,16 +416,31 @@ foreach ($demos as $demo => $seconds) {
         'tags' => ['backend', 'demo'],
         'seconds' => $seconds['php'],
     ];
+    $ownBuild = isset($seconds['build']);
+    if ($ownBuild) {
+        // The demo's frontend build, made once for its e2e and its cluster browser; in
+        // the demo's group, because `test:e2e-full` next door takes the project down.
+        $steps[] = [
+            'id' => $demo . '-build',
+            'command' => 'composer run test:e2e-build',
+            'cwd' => 'demo/' . $demo,
+            'stand' => $demo,
+            'deps' => ['fe-build'],
+            'group' => $demo,
+            'tags' => ['frontend', 'e2e', 'demo'],
+            'seconds' => $seconds['build'],
+        ];
+    }
     $steps[] = [
         'id' => $demo . '-e2e',
-        'command' => 'composer run test:e2e-full',
+        'command' => $ownBuild ? 'composer run test:e2e-prebuilt' : 'composer run test:e2e-full',
         'cwd' => 'demo/' . $demo,
         'stand' => $demo,
-        'deps' => ['fe-build'],
+        'deps' => [$ownBuild ? $demo . '-build' : 'fe-build'],
         'group' => $demo,
         'tags' => ['frontend', 'e2e', 'demo'],
         'seconds' => $seconds['e2e'],
-        // Every part of `test:e2e-full` but `playwright test` is marked
+        // Every part of either chain but `playwright test` is marked
         // `@no_additional_args`, so the tests a re-run names reach Playwright alone.
         'takesTests' => true,
     ];

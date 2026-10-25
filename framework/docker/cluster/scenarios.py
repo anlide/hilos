@@ -24,7 +24,8 @@ falsely passing:
   * the caps are multiplied by a TIMEOUT_SCALE (>= 1.0) derived from the host's
     load-per-cpu and free memory, the same inside the full run and outside it;
     the runner no longer exports a factor from its lane count (HIL-1227).
-    CLUSTER_E2E_TIMEOUT_SCALE is a pin made by hand, and a FLOOR which little
+    CLUSTER_E2E_TIMEOUT_SCALE is a pin, made by hand or by the one graph step that
+    runs the cluster browser beside the demo e2e steps, and a FLOOR which little
     free memory may raise further. A provisioned host stays at 1.0.
   * a scenario that fails PURELY on a convergence timeout is retried a bounded
     number of times (CLUSTER_E2E_RETRIES, default 1) after re-converging; a hard
@@ -290,8 +291,9 @@ def _free_gib():
 def resolve_timeout_scale():
     """Factor (>= 1.0) that stretches every convergence cap for a loaded/slow host.
 
-    Nothing in the repository sets CLUSTER_E2E_TIMEOUT_SCALE: it is a pin made by
-    hand — someone debugging a scenario, a CI that knows its own box. The runner
+    CLUSTER_E2E_TIMEOUT_SCALE is a pin made by hand — someone debugging a scenario,
+    a CI that knows its own box — and one graph step that runs beside the demo e2e
+    steps, binance-btc-tracker-cluster-e2e (scripts/test-suite.php). The runner
     used to derive it from its lane count and no longer does (HIL-1227): on the
     box of the line a factor above 1 rescued no scenario, and one that hung cost
     four of its caps.

@@ -276,7 +276,11 @@ The lane count is **not a timeout multiplier** (HIL-1227). The runner sets no
 timeout variable at all: every suite — Playwright of each demo, the cluster
 harness — derives its factor from the host it runs on, load per CPU and available
 memory, the same way inside the full run and outside it. `HILOS_E2E_TIMEOUT_SCALE`
-and `CLUSTER_E2E_TIMEOUT_SCALE` remain a pin made by hand. What each suite does
+and `CLUSTER_E2E_TIMEOUT_SCALE` remain a pin made by hand, with one exception in
+the graph: `binance-btc-tracker-cluster-e2e` pins both at 2 in its command, because
+it runs beside the demo e2e steps and reads its factor on a loaded box (the
+owner's decision, 2026-10-25). The pin silences the load term, so a test that
+hangs there costs twice its cap. What each suite does
 with its factor — and what a test longer than its cap owes — is in
 [frontend/testing-strategy.md](frontend/testing-strategy.md).
 
@@ -286,7 +290,11 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   on `fe-build`, because every demo frontend prebuilds the **same**
   `framework/frontend` workspace. Concurrency is safe only because a current SDK
   makes those prebuilds skip. Do not delete that edge to free up a lane.
-  `<demo>-php` is backend-only and waits for nothing.
+  `<demo>-php` is backend-only and waits for nothing. A demo with a `build`
+  duration in `$demos` — binance-btc-tracker alone — builds its frontend in
+  `<demo>-build` (`test:e2e-build`); its `<demo>-e2e` depends on that step and runs
+  `test:e2e-prebuilt`, the full chain without the build, so nothing else in the
+  graph writes `frontend/dist` while its cluster browser serves it.
 - **a group** — the steps of one demo share one compose project, and
   `test:e2e-full` starts by taking that project down. Group members never run at the
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
@@ -833,8 +841,12 @@ one-shot rollout service in front of its nodes any more, and starts them all
 at once on an empty database — which is what scenario 21 reads.
 
 The `binance-btc-tracker-cluster-e2e` step drives the cluster browser suite in
-`demo/binance-btc-tracker/tests/e2e/cluster/`, after the demo's single-node e2e.
-The browser enters through the stand's one nginx entry, where each context's
+`demo/binance-btc-tracker/tests/e2e/cluster/`, beside the demo's single-node e2e
+rather than after it (HOTFIX 2026-10-25): it waits for `binance-btc-tracker-build`,
+whose `frontend/dist` its entry serves, and `binance-btc-tracker-check`, which
+installs `tests/e2e/node_modules`. The demo's main Playwright run keeps its output
+in `test-results/main` and `playwright-report/main`, so it clears neither the
+`cluster-*` folders nor `quarantine/*`. The browser enters through the stand's one nginx entry, where each context's
 `hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
 the protected-mode operator sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks

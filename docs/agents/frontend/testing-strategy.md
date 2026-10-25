@@ -1025,8 +1025,10 @@ is the one path there is: the heuristic runs the same inside the full run and
 under Playwright started by hand.
 
 `HILOS_E2E_TIMEOUT_SCALE` is a **pin made by hand** — someone debugging a step, a
-CI that knows its own box. Nothing in the repository sets it; the demo compose
-files only forward it into the e2e runner. A pinned value is a **floor**, not the
+CI that knows its own box. The demo compose files only forward it into the e2e
+runner, and one graph step sets it: `binance-btc-tracker-cluster-e2e` pins both
+factors at 2, because it runs beside the demo e2e steps (the owner's decision,
+2026-10-25; `../testing.md`, "The full run"). A pinned value is a **floor**, not the
 finished factor: memory may still raise it, while the load-per-CPU term steps
 aside for as long as it is set (HIL-853). A value below 1 is raised to 1: the knob
 can lengthen a timeout and never shorten one.
@@ -1049,8 +1051,8 @@ on a convergence timeout and never one that violated an invariant. Playwright
 gives no cheap way to tell the two apart at retry time, so retrying on timeout
 only cannot be expressed — retries stay at 2 in CI, and only the caps move. The
 cluster scale reads `CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this one:
-nothing but a hand sets it, memory may raise it above the pin, and the loadavg
-term steps aside whenever it is set.
+nothing but a hand and that one cluster browser step sets it, memory may raise it
+above the pin, and the loadavg term steps aside whenever it is set.
 
 ### A test longer than the cap declares its own
 

@@ -14,6 +14,11 @@ const timeouts = scaledTimeouts()
 
 export default defineConfig({
   testDir: './tests',
+  // The cluster browser writes test-results/cluster-* and playwright-report/cluster-*
+  // while this suite runs (scripts/test-suite.php). Playwright clears a project's
+  // output folder at its start and the html report clears its own before writing,
+  // so this suite keeps both one level down, beside the cluster folders.
+  outputDir: 'test-results/main',
   timeout: timeouts.test,
   expect: { timeout: timeouts.expect },
   globalSetup: './global-setup.ts',
@@ -28,7 +33,7 @@ export default defineConfig({
   // run's summary and rc ledger (HIL-560). A clean run prints nothing.
   reporter: [
     ['list'],
-    ['html', { open: 'never' }],
+    ['html', { open: 'never', outputFolder: 'playwright-report/main' }],
     ['../../../../framework/frontend/scripts/unstable-reporter.mjs'],
   ],
   use: {
