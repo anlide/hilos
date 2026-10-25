@@ -472,12 +472,12 @@
     "outputSha256": "b5b3503cd3183484cefb4545510d8e44c2f291645a7c43d159c9c83fa615521a"
   },
   "src/routing/hilosPages.ts": {
-    "sourceSha256": "99cbf050dc8e59bcbb456492520f010af90d33b285854e1b65d8b398169a8614",
-    "outputSha256": "be7af1a9848cbfe97db1504fcad71bc06c4b94074233c22de65d42aac52b478e"
+    "sourceSha256": "af5ef8ca95160474351fb62ba30116d92a9c4939fa7a725da42aadab96ebde6a",
+    "outputSha256": "31ab3274bec1997392714142925e626668736142d6aaec1733638016d06b5091"
   },
   "src/routing/hilosUnbuiltPages.ts": {
-    "sourceSha256": "2d9c214536510ebfb4988030d4059b1e4ef944c1f411092e0475a33a36f9dd1a",
-    "outputSha256": "139075c50274d40ba5e724a0546635d3466b20176461c60c9ae440b6c557752f"
+    "sourceSha256": "599beac48629bcbedab293c81184066067235fa22bce30b6188c62ce82fadad4",
+    "outputSha256": "49bee2af1d00b92baceb81bb4a1149db7df06269bf009fc425416fc818fdd863"
   },
   "src/routing/pageError.ts": {
     "sourceSha256": "a4cb95908d8f3d6beccf005e7f24c0b6ee6aaa570170bf0d4aa1cfe0478dca2d",

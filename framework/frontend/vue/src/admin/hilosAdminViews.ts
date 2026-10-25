@@ -16,9 +16,11 @@
 // HilosLogsViewPage / HilosDaemonPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
 // HilosDaemonCronPage / HilosDaemonHttpServerPage / HilosDaemonEnvPage / HilosDaemonEnvMismatchPage) that require a project-supplied context, so a project
 // mounts them directly rather than through this default map.
-// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage and HilosAnalyticsPersonPage need the
+// HilosAnalyticsPage, HilosAnalyticsPeoplePage, HilosAnalyticsBrowserSessionPage
+// and HilosAnalyticsPersonPage need the
 // project's Analytics context and are mounted explicitly under
-// HilosPages.ANALYTICS, HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON.
+// HilosPages.ANALYTICS, HilosPages.ANALYTICS_PEOPLE,
+// HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core

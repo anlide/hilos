@@ -155,7 +155,10 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
             $data[PageCatalogConstants::WIRE_PAGE_LEAD],
         );
         self::assertSame(
-            [HilosPageConstants::HILOS_DASHBOARD, HilosPageConstants::HILOS_ANALYTICS, HilosPageConstants::HILOS_ANALYTICS_PERSON],
+            [
+                HilosPageConstants::HILOS_DASHBOARD, HilosPageConstants::HILOS_ANALYTICS,
+                HilosPageConstants::HILOS_ANALYTICS_PEOPLE, HilosPageConstants::HILOS_ANALYTICS_PERSON,
+            ],
             array_column($data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB], PageCatalogConstants::WIRE_CRUMB_PAGE),
         );
         self::assertSame([], $data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
@@ -339,6 +342,9 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         $viewerData = $this->cardData('analytics-card-viewer', $personId);
         self::assertTrue($viewerData[UserPage::ANALYTICS_ENABLED]);
         self::assertStringNotContainsString('Card person', json_encode($viewerData, JSON_THROW_ON_ERROR));
+        self::assertSame('Person', $this->subscribe('analytics-card-viewer', $personId)->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertSame('Card person (#' . $personId . ')',
+            $this->subscribe(self::ADMIN, $personId)->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
     }
 
     /** Without the feature, or without the person page among the project's pages, the card has no link. */
@@ -415,6 +421,12 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         self::assertCount(1, $frames);
         self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frames[0]['name']);
         self::assertInstanceOf(PageResponseSignalData::class, $frames[0]['data']);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Person'],
+        ], $frames[0]['data']->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
         return $frames[0]['data'];
     }
 

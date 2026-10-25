@@ -17,6 +17,8 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
+use Demo\Chat\Pages\Hilos\Analytics\PeoplePage;
+use Demo\Chat\Pages\Hilos\AnalyticsPage;
 
 use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
@@ -58,6 +60,7 @@ use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -930,6 +933,17 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([ChatTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The People page binds its own table to the existing Analytics subscription owner. */
+    public function testAnalyticsPeoplePageIsWired(): void
+    {
+        self::assertSame(PeoplePage::class, Hilos::PAGES[PeoplePage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PeoplePage::PAGE]);
+        self::assertSame([ChatTableContext::hilosAnalyticsPeople => []], Hilos::PAGE_TABLES[PeoplePage::PAGE]);
+        self::assertSame(HilosAnalyticsPeopleTable::class, Hilos::TABLES[ChatTableContext::hilosAnalyticsPeople]);
+        self::assertArrayNotHasKey(ChatTableContext::hilosAnalyticsPeople, Hilos::PAGE_TABLES[PersonPage::PAGE]);
+        self::assertArrayNotHasKey(AnalyticsPage::PAGE, Hilos::PAGE_TABLES);
     }
 
     /** The person's sessions page uses the Analytics owner and its existing sessions table. */

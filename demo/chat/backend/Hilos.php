@@ -14,6 +14,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -101,6 +102,7 @@ use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
+use Demo\Chat\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
@@ -406,6 +408,7 @@ final class Hilos extends HilosFacade
         GuardianPage::PAGE => GuardianPage::class,
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
@@ -713,6 +716,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        ChatTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         ChatTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
         ChatTableContext::hilosModerationRules => HilosModerationRulesTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
@@ -859,6 +863,9 @@ final class Hilos extends HilosFacade
         ],
         PersonPage::PAGE => [
             ChatTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
+        PeoplePage::PAGE => [
+            ChatTableContext::hilosAnalyticsPeople => [],
         ],
         AdminBotsPage::PAGE => [
             ChatTableContext::bots => [],

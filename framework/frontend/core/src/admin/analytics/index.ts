@@ -52,3 +52,31 @@ export {
   type HilosAnalyticsBrowserSessionsOptions,
 } from './hilosAnalyticsBrowserSessions.js'
 export { ANALYTICS_PERSON_ROUTE_PARAM } from './hilosAnalyticsPerson.js'
+export {
+  ANALYTICS_PERIOD_FILTER,
+  ANALYTICS_PERIOD_TIME_ZONE_FILTER,
+  ANALYTICS_PERIOD_WEEK_START_TS_FILTER,
+  ANALYTICS_PERIOD_DAY_START_TS_FILTER,
+  ANALYTICS_PERIOD_HOUR_START_TS_FILTER,
+  ANALYTICS_PERIOD_COPY,
+  createHilosAnalyticsPeriod,
+  type AnalyticsPeriod,
+  type AnalyticsPeriodContext,
+  type HilosAnalyticsPeriodOptions,
+  type HilosAnalyticsPeriod,
+} from './hilosAnalyticsPeriod.js'
+export {
+  ANALYTICS_PEOPLE_TABLE,
+  ANALYTICS_PEOPLE_SLOT,
+  ANALYTICS_PERSON_ROW_KEY_FIELD,
+  ANALYTICS_PERSON_NAME_FIELD,
+  ANALYTICS_PERSON_SESSION_COUNT_FIELD,
+  ANALYTICS_PERSON_LAST_SEEN_TS_FIELD,
+  resolveHilosAnalyticsPersonRow,
+  formatAnalyticsPersonName,
+  formatAnalyticsPeopleTime,
+  createHilosAnalyticsPeopleTable,
+  type HilosAnalyticsPersonRow,
+  type HilosAnalyticsPeopleOptions,
+  type HilosAnalyticsPeopleTable,
+} from './hilosAnalyticsPeople.js'

@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Core\Analytics\AnalyticsPeriodFilter;
 use Hilos\Core\Analytics\AnalyticsSectionAction;
 use Hilos\Core\Analytics\AnalyticsSectionBrowserSession;
+use Hilos\Core\Analytics\AnalyticsSectionPerson;
 use Hilos\Core\Analytics\AnalyticsSectionReader;
 use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Core\Analytics\AnalyticsWindowAnchor;
 use Hilos\Core\Analytics\AnalyticsWindowOrder;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
@@ -381,6 +384,275 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
             self::assertSame([], $reader->$method(1, AnalyticsWindowOrder::NUMBER, null,
                 TableAnchorDirection::After, 50, TableConstants::COUNT_CEILING + 1));
         }
+    }
+
+    public function testPeopleGroupOnlySessionsOfTheClosedPeriodWithoutClampingLastSeen(): void
+    {
+        $this->session('before-week', 2, 50, 99);
+        $this->session('ends-at-week', 2, 50, 100);
+        $this->session('ends-at-day', 2, 150, 200);
+        $this->session('ends-at-hour', 2, 250, 300);
+        $this->session('starts-at-asof', 2, 400, 700);
+        $this->session('starts-after-asof', 2, 401, 800);
+        $this->session('any-only', 3, 50, 99);
+        $this->session('week-only', 4, 100, 199);
+        $this->session('day-only', 5, 200, 299);
+        $this->session('hour-only', 6, 300, 399);
+        $shared = $this->session('all-periods', 10, 50, 450);
+        $this->session('hour-also', 10, 350, 380);
+        $this->session('guest', null, 50, 450);
+        $this->action($this->connection('shared-one', $shared), 350, 'one', null);
+        $this->action($this->connection('shared-two', $shared), 350, 'two', null);
+
+        $reader = new AnalyticsSectionReader();
+        foreach ([
+            [null, [[2, 5, 700], [3, 1, 99], [4, 1, 199], [5, 1, 299], [6, 1, 399], [10, 2, 450]]],
+            ['this-week', [[2, 4, 700], [4, 1, 199], [5, 1, 299], [6, 1, 399], [10, 2, 450]]],
+            ['today', [[2, 3, 700], [5, 1, 299], [6, 1, 399], [10, 2, 450]]],
+            ['this-hour', [[2, 2, 700], [6, 1, 399], [10, 2, 450]]],
+        ] as [$period, $expected]) {
+            $filter = $this->personFilter($period);
+            $people = $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400);
+            self::assertSame($expected, array_map(
+                static fn(AnalyticsSectionPerson $person): array => [$person->userId, $person->sessionCount, $person->lastSeenTs], $people,
+            ));
+            self::assertSame(count($expected), $reader->personCount($filter, 400));
+            self::assertSame(['userId', 'sessionCount', 'lastSeenTs'], array_keys(get_object_vars($people[0])));
+        }
+    }
+
+    public function testPeopleAcceptOnlySafePositiveNumericUserIdentitiesAndGroupNumerically(): void
+    {
+        foreach ([
+            ['user_id', '2'], ['user_id', '0002'], ['user_id', '10'], ['user_id', '010'],
+            ['user_id', '9007199254740991'],
+            [null, null], ['email', '7'], ['user_id', null], ['user_id', ''], ['user_id', '0'], ['user_id', '000'],
+            ['user_id', '-7'], ['user_id', '+7'], ['user_id', '7.0'], ['user_id', '7e0'], ['user_id', ' 7'], ['user_id', '7 '],
+            ['user_id', "7\n"], ['user_id', '7x'], ['user_id', 'hashed-identity'], ['user_id', '٧'],
+            ['user_id', '9007199254740992'], ['user_id', '9223372036854775807'],
+            ['user_id', '18446744073709551616'], ['user_id', str_repeat('9', 255)],
+        ] as $index => [$type, $value]) {
+            $id = $this->session('identity-' . $index, null, 100, 350);
+            Database::sql(
+                'UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = ?, `user_identity_value` = ? WHERE `id` = ?',
+                [$type, $value, $id],
+            );
+        }
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('today');
+        $people = $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400);
+        self::assertSame([2, 10, 9007199254740991], array_column($people, 'userId'));
+        self::assertSame([2, 2, 1], array_column($people, 'sessionCount'));
+        self::assertSame(3, $reader->personCount($filter, 400));
+        self::assertSame(2, $reader->personCountBefore($filter, AnalyticsWindowOrder::NUMBER,
+            new AnalyticsWindowAnchor(null, 9007199254740991), 400));
+    }
+
+    public function testPeopleReadTheCurrentLastIdentityAndSourceMomentWithoutHistoricalEvents(): void
+    {
+        $session = $this->session('reassigned', 7, 100, 300);
+        Database::sql(
+            'INSERT INTO `hilos_analytics_person_event` (`user_id`, `browser_session_id`, `event_kind`, `created_ts`)
+             VALUES (7, ?, ?, 200), (99, NULL, ?, 300)',
+            [$session, 'sign_in', 'sign_in'],
+        );
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('today');
+        $first = $reader->personWindow($filter, AnalyticsWindowOrder::TIME_DESC, null, TableAnchorDirection::After, 50, 0, 400);
+        self::assertSame([7], array_column($first, 'userId'));
+        self::assertSame([300], array_column($first, 'lastSeenTs'));
+        Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_value` = ?, `last_seen_ts` = 500 WHERE `id` = ?',
+            ['10', $session]);
+        $next = $reader->personWindow($filter, AnalyticsWindowOrder::TIME_DESC, null, TableAnchorDirection::After, 50, 0, 400);
+        self::assertSame([10], array_column($next, 'userId'));
+        self::assertSame([500], array_column($next, 'lastSeenTs'));
+        self::assertSame(1, $reader->personCount($filter, 400));
+        Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = NULL WHERE `id` = ?', [$session]);
+        self::assertSame(0, $reader->personCount($filter, 400));
+    }
+
+    public function testPeopleAnchorsAndSkipsApplyAfterGroupingInEveryOrderAndDirection(): void
+    {
+        $this->session('two-early', 2, 100, 200);
+        $this->session('two-late', 2, 100, 360);
+        $this->session('ten-early', 10, 100, 100);
+        $this->session('ten-late', 10, 100, 360);
+        $this->session('hundred', 100, 100, 350);
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter();
+        foreach ([
+            [AnalyticsWindowOrder::TIME_ASC, [100, 2, 10]],
+            [AnalyticsWindowOrder::TIME_DESC, [10, 2, 100]],
+            [AnalyticsWindowOrder::NUMBER, [2, 10, 100]],
+        ] as [$order, $expectedIds]) {
+            $all = $reader->personWindow($filter, $order, null, TableAnchorDirection::After, 50, 0, 400);
+            self::assertSame($expectedIds, array_column($all, 'userId'));
+            self::assertSame($order === AnalyticsWindowOrder::TIME_ASC ? [1, 2, 2] : [2, 2, 1], array_column($all, 'sessionCount'));
+            $facts = array_map(get_object_vars(...), $all);
+            foreach ([0, 1, 2, 3, -1] as $skip) {
+                foreach (TableAnchorDirection::cases() as $direction) {
+                    $offset = $direction === TableAnchorDirection::After ? max(0, $skip) : max(0, count($all) - max(0, $skip) - 2);
+                    $take = $direction === TableAnchorDirection::After ? 2 : min(2, count($all) - max(0, $skip));
+                    self::assertSame(array_slice($facts, $offset, $take), array_map(get_object_vars(...),
+                        $reader->personWindow($filter, $order, null, $direction, 2, $skip, 400)));
+                }
+            }
+            foreach ($all as $index => $person) {
+                $anchor = new AnalyticsWindowAnchor($order === AnalyticsWindowOrder::NUMBER ? null : $person->lastSeenTs, $person->userId);
+                self::assertSame(array_slice($facts, $index + 1, 2), array_map(get_object_vars(...),
+                    $reader->personWindow($filter, $order, $anchor, TableAnchorDirection::After, 2, 0, 400)));
+                self::assertSame(array_slice($facts, max(0, $index - 2), min(2, $index)), array_map(get_object_vars(...),
+                    $reader->personWindow($filter, $order, $anchor, TableAnchorDirection::Before, 2, 0, 400)));
+                self::assertSame($index, $reader->personCountBefore($filter, $order, $anchor, 400));
+                self::assertSame(min($index, 1), $reader->personCountBefore($filter, $order, $anchor, 400, 0));
+            }
+        }
+    }
+
+    public function testPersonCountsProbeGroupsWhileSessionCountsRemainExactAboveTheCeiling(): void
+    {
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('today');
+        self::assertSame(0, $reader->personCount($filter, 400));
+        self::assertSame([], $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400));
+        for ($userId = 1; $userId <= TableConstants::COUNT_CEILING; $userId++) {
+            $this->session('person-' . $userId, $userId, 100, 350);
+        }
+        for ($index = 0; $index <= TableConstants::COUNT_CEILING; $index++) {
+            $this->session('extra-' . $index, 1, 100, 600);
+        }
+        self::assertSame(500, $reader->personCount($filter, 400));
+        self::assertSame(500, $reader->personCount($filter, 400, 1000));
+        self::assertSame(500, $reader->personCountBefore($filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 501), 400));
+        $people = $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 1000, 0, 400);
+        self::assertCount(50, $people);
+        self::assertSame(502, $people[0]->sessionCount);
+        self::assertSame(600, $people[0]->lastSeenTs);
+        self::assertSame([500], array_column(
+            $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 499, 400), 'userId',
+        ));
+        $this->session('probe-person', 501, 100, 350);
+        self::assertSame(501, $reader->personCount($filter, 400));
+        $this->session('past-probe-person', 502, 100, 350);
+        self::assertSame(501, $reader->personCount($filter, 400, 1000));
+        self::assertSame(1, $reader->personCount($filter, 400, 0));
+        self::assertSame(2, $reader->personCount($filter, 400, 1));
+        self::assertSame(1, $reader->personCount($filter, 400, -1));
+        self::assertSame([501, 502], array_column(
+            $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 500, 400), 'userId',
+        ));
+        self::assertSame([1, 2], array_column(
+            $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::Before, 50, 500, 400), 'userId',
+        ));
+        foreach ([
+            [AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1000)],
+            [AnalyticsWindowOrder::TIME_ASC, new AnalyticsWindowAnchor(700, 1000)],
+            [AnalyticsWindowOrder::TIME_DESC, new AnalyticsWindowAnchor(0, 1)],
+        ] as [$order, $anchor]) {
+            self::assertSame(501, $reader->personCountBefore($filter, $order, $anchor, 400));
+            self::assertSame(501, $reader->personCountBefore($filter, $order, $anchor, 400, 1000));
+        }
+    }
+
+    public function testColdPersonContextAndOutOfBoundsWindowsDoNotReadSql(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $cold = AnalyticsPeriodFilter::fromArray([], 400);
+        self::assertSame(0, $reader->personCount($cold, 400));
+        self::assertSame(0, $reader->personCountBefore($cold, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400));
+        self::assertSame([], $reader->personWindow($cold, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400));
+        $filter = $this->personFilter();
+        foreach ([
+            [0, 0, TableAnchorDirection::After], [-1, 0, TableAnchorDirection::Before],
+            [50, 501, TableAnchorDirection::After], [50, 501, TableAnchorDirection::Before],
+        ] as [$limit, $skip, $direction]) {
+            self::assertSame([], $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, $direction, $limit, $skip, 400));
+        }
+    }
+
+    public function testPersonSqlFailuresAreNotEmptyWindowsOrCounts(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter();
+        $failures = [];
+        foreach (['window', 'count', 'countBefore'] as $read) {
+            try {
+                match ($read) {
+                    'window' => $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400),
+                    'count' => $reader->personCount($filter, 400),
+                    'countBefore' => $reader->personCountBefore($filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400),
+                };
+                self::fail('A failed person read must throw');
+            } catch (DatabaseException) {
+                $failures[] = $read;
+            }
+        }
+        self::assertSame(['window', 'count', 'countBefore'], $failures);
+    }
+
+    public function testInvalidPersonAnchorsSkipsAndChangedServerBoundsAreRefusedBeforeSql(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter();
+        foreach (AnalyticsWindowOrder::cases() as $order) {
+            foreach ([-1, 1] as $skip) {
+                try {
+                    $reader->personWindow($filter, $order, new AnalyticsWindowAnchor(350, 2), TableAnchorDirection::After, 50, $skip, 400);
+                    self::fail('An anchor cannot accompany a skip');
+                } catch (InvalidArgumentException $exception) {
+                    self::assertStringContainsString('skip', $exception->getMessage());
+                }
+            }
+        }
+        foreach ([AnalyticsWindowOrder::TIME_ASC, AnalyticsWindowOrder::TIME_DESC] as $order) {
+            foreach (['window', 'countBefore'] as $read) {
+                try {
+                    match ($read) {
+                        'window' => $reader->personWindow(
+                            $filter, $order, new AnalyticsWindowAnchor(null, 2), TableAnchorDirection::After, 50, 0, 400,
+                        ),
+                        'countBefore' => $reader->personCountBefore($filter, $order, new AnalyticsWindowAnchor(null, 2), 400),
+                    };
+                    self::fail('A time anchor requires its moment');
+                } catch (InvalidArgumentException $exception) {
+                    self::assertStringContainsString('moment', $exception->getMessage());
+                }
+            }
+        }
+        foreach (['window', 'count', 'countBefore'] as $read) {
+            try {
+                match ($read) {
+                    'window' => $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 299),
+                    'count' => $reader->personCount($filter, 299),
+                    'countBefore' => $reader->personCountBefore($filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 2), 299),
+                };
+                self::fail('Every read must recheck the server upper bound');
+            } catch (ValidationException $exception) {
+                self::assertStringContainsString('server time', $exception->getMessage());
+            }
+        }
+    }
+
+    /**
+     * @param ?string $period Selected period, or any time
+     * @return AnalyticsPeriodFilter Captured calendar starts shared by the person fixtures
+     */
+    private function personFilter(?string $period = null): AnalyticsPeriodFilter
+    {
+        $filter = ['timeZone' => 'US/Eastern', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300];
+        if ($period !== null) {
+            $filter['period'] = $period;
+        }
+        return AnalyticsPeriodFilter::fromArray($filter, 400);
     }
 
     /**

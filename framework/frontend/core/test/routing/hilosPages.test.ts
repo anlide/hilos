@@ -242,6 +242,31 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
+  it('declares People without period route params and serves its Vue view', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const page = HilosPages.ANALYTICS_PEOPLE
+    expect(page).toBe('hilos_analytics_people')
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/analytics/people',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, {})).toBe('/hilos/analytics/people')
+    expect(router.match('/hilos/analytics/people')).toEqual({
+      page,
+      params: {},
+      admin: true,
+    })
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    for (const layer of ['react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    }
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_PERSON)).toBe(
+        false,
+      )
+    }
+  })
+
   it('addresses a person in Analytics by their account id and opens it in every view layer', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const page = HilosPages.ANALYTICS_PERSON
@@ -258,7 +283,9 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { userId: '7' },
       admin: true,
     })
-    expect(router.match('/hilos/analytics/people').page).toBeNull()
+    expect(router.match('/hilos/analytics/people').page).toBe(
+      HilosPages.ANALYTICS_PEOPLE,
+    )
     expect(router.match('/hilos/analytics/browser-sessions/7').page).toBe(
       HilosPages.ANALYTICS_BROWSER_SESSION,
     )

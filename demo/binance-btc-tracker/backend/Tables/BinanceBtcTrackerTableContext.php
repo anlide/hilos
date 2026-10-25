@@ -12,6 +12,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -80,6 +81,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  */
 final class BinanceBtcTrackerTableContext extends TableContext
 {
@@ -113,6 +115,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
 
     /**
      * Registers binance-btc-tracker table definitions from the project topology registry.

@@ -479,7 +479,7 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
-    public function testAnalyticsAdoptsOnlyTheOverviewAndKeepsBothEntityHeadsLegacy(): void
+    public function testAnalyticsSharesItsOverviewAndPeopleHeadAndKeepsBothEntityHeadsLegacy(): void
     {
         AnalyticsPageHeadTestHilos::initBrowser();
         $params = new PageRouteParams([]);
@@ -494,20 +494,32 @@ final class PageCatalogResolverTest extends TestCase
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
             ],
-            'pageTabs' => [['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview']],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+            ],
             'pageChildren' => [],
         ], PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, $params)?->toArray());
+        self::assertSame(
+            PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, $params)?->toArray(),
+            PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS_PEOPLE, $params)?->toArray(),
+        );
         foreach ([
-            HilosPageConstants::HILOS_ANALYTICS_PERSON => 'Person',
-            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => 'Browser session',
-        ] as $page => $label) {
-            self::assertSame($page, PageCatalogResolver::rowOwner($page));
-            self::assertNull(PageCatalogResolver::head($page, $params));
-            self::assertSame([
+            HilosPageConstants::HILOS_ANALYTICS_PERSON => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
-                ['page' => $page, 'label' => $label],
-            ], PageCatalogResolver::breadcrumb($page));
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Person'],
+            ],
+            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
+            ],
+        ] as $page => $breadcrumb) {
+            self::assertSame($page, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, $params));
+            self::assertSame($breadcrumb, PageCatalogResolver::breadcrumb($page));
         }
     }
 
@@ -1090,11 +1102,12 @@ abstract class BinanceUserTabsPageHeadTestHilos extends BinanceUserPageHeadTestH
     ];
 }
 
-/** All three Analytics pages are served; its entities must never join the overview's row. */
+/** The Analytics overview and People share a row; its two entities never join it. */
 abstract class AnalyticsPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
         HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PEOPLE => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
     ];

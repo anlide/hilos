@@ -49,6 +49,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AnalyticsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PersonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PeoplePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonNodePage;
@@ -139,6 +140,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -251,6 +253,7 @@ class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
@@ -467,6 +470,7 @@ class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         BinanceBtcTrackerTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        BinanceBtcTrackerTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
     ];
 
@@ -512,6 +516,9 @@ class Hilos extends HilosFacade
         ],
         PersonPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
+        PeoplePage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosAnalyticsPeople => [],
         ],
         BackupPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosBackups => [],

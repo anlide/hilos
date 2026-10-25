@@ -6,6 +6,7 @@ namespace Demo\BinanceBtcTracker\Tests\Unit;
 
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PersonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PeoplePage;
 
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosChangeLogAgent;
@@ -153,6 +154,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
@@ -364,6 +366,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
+            PeoplePage::PAGE => PeoplePage::class,
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
             PersonPage::PAGE => PersonPage::class,
             BackupPage::PAGE => BackupPage::class,
@@ -554,6 +557,17 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([BinanceBtcTrackerTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The People page binds its own table to the existing Analytics subscription owner. */
+    public function testAnalyticsPeoplePageIsWired(): void
+    {
+        self::assertSame(PeoplePage::class, Hilos::PAGES[PeoplePage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PeoplePage::PAGE]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosAnalyticsPeople => []], Hilos::PAGE_TABLES[PeoplePage::PAGE]);
+        self::assertSame(HilosAnalyticsPeopleTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAnalyticsPeople]);
+        self::assertArrayNotHasKey(BinanceBtcTrackerTableContext::hilosAnalyticsPeople, Hilos::PAGE_TABLES[PersonPage::PAGE]);
+        self::assertArrayNotHasKey(AnalyticsPage::PAGE, Hilos::PAGE_TABLES);
     }
 
     /** The person's sessions page uses the Analytics owner and its existing sessions table. */

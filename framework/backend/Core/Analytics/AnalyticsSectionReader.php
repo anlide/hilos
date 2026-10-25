@@ -27,6 +27,12 @@ final class AnalyticsSectionReader
 
     private const string SESSION_ID_SQL = 'b.`id`';
 
+    private const string PERSON_MOMENT_SQL = 'p.`last_seen_ts`';
+
+    private const string PERSON_ID_SQL = 'p.`user_id`';
+
+    private const int MAX_SAFE_USER_ID = 9007199254740991;
+
     private const int MAX_SAFE_COUNT = 9007199254740991;
 
     /**
@@ -264,6 +270,156 @@ final class AnalyticsSectionReader
         int $ceiling = TableConstants::COUNT_CEILING,
     ): int {
         return $this->boundedBrowserSessionCount($userId, $order, $anchor, $ceiling);
+    }
+
+    /**
+     * Aggregates all matching sessions before applying the numeric account or last-seen anchor.
+     * Each query reads the facts currently loaded; successive windows are not a repeatable snapshot.
+     *
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical grouped last-seen or numeric account order
+     * @param ?AnalyticsWindowAnchor $anchor Account number and, for time order, its grouped last-seen moment
+     * @param TableAnchorDirection $direction Side of the anchor in the chosen order
+     * @param int $limit Requested number of people, capped at MAX_PAGE_ROWS
+     * @param int $skip People to skip from the chosen edge when there is no anchor
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @return list<AnalyticsSectionPerson> Grouped people in canonical order, empty before context arrives
+     * @throws InvalidArgumentException When a skip accompanies an anchor or its required moment is missing
+     * @throws HilosException When the period is invalid, the query fails or a session count is unsafe
+     */
+    public function personWindow(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        int $skip,
+        int $asOfTs,
+    ): array {
+        $filter->validateAsOf($asOfTs);
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Analytics skip requires an edge');
+        }
+        $params = [];
+        $groupedSql = $this->personSetSql($filter, $asOfTs, $params);
+        $cursor = $this->anchorClause(self::PERSON_MOMENT_SQL, self::PERSON_ID_SQL, $order, $anchor, $direction, $params);
+        $limit = $this->boundedLimit($limit);
+        $skip = max(0, $skip);
+        if (!$filter->hasContext() || $limit === 0 || $skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        $sqlOrder = $this->windowOrder(self::PERSON_MOMENT_SQL, self::PERSON_ID_SQL, $order, $direction);
+        Database::sql(
+            'SELECT p.`user_id`, p.`session_count`, p.`last_seen_ts` FROM (' . $groupedSql . ') p
+             WHERE 1' . $cursor . ' ORDER BY ' . $sqlOrder . ' LIMIT ' . $limit . ' OFFSET ' . $skip,
+            $params,
+        );
+
+        $people = [];
+        foreach (Database::rows() as $row) {
+            $sessionCount = filter_var(
+                $row['session_count'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => self::MAX_SAFE_COUNT]],
+            );
+            if ($sessionCount === false) {
+                throw new DatabaseRuntimeException('Analytics session count is outside the exact integer range');
+            }
+            $people[] = new AnalyticsSectionPerson((int)$row['user_id'], $sessionCount, (int)$row['last_seen_ts']);
+        }
+
+        return $direction === TableAnchorDirection::Before ? array_reverse($people) : $people;
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling; one extra person signals overflow
+     * @return int Matching people, at most ceiling plus one, zero before context arrives
+     * @throws HilosException When the period is invalid or the grouped count query fails
+     */
+    public function personCount(AnalyticsPeriodFilter $filter, int $asOfTs, int $ceiling = TableConstants::COUNT_CEILING): int
+    {
+        return $this->boundedPersonCount($filter, AnalyticsWindowOrder::NUMBER, null, $asOfTs, $ceiling);
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical grouped last-seen or numeric account order
+     * @param AnalyticsWindowAnchor $anchor Account number and, for time order, its grouped last-seen moment
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling; one extra person signals overflow
+     * @return int People preceding the anchor, at most ceiling plus one, zero before context arrives
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the period is invalid or the grouped count query fails
+     */
+    public function personCountBefore(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        AnalyticsWindowAnchor $anchor,
+        int $asOfTs,
+        int $ceiling = TableConstants::COUNT_CEILING,
+    ): int {
+        return $this->boundedPersonCount($filter, $order, $anchor, $asOfTs, $ceiling);
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical grouped window order
+     * @param ?AnalyticsWindowAnchor $anchor Key to count before, or null for the whole set
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling
+     * @return int Matching groups, capped at ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the period is invalid or the grouped count query fails
+     */
+    private function boundedPersonCount(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        int $asOfTs,
+        int $ceiling,
+    ): int {
+        $filter->validateAsOf($asOfTs);
+        $params = [];
+        $groupedSql = $this->personSetSql($filter, $asOfTs, $params);
+        $cursor = $this->anchorClause(
+            self::PERSON_MOMENT_SQL, self::PERSON_ID_SQL, $order, $anchor, TableAnchorDirection::Before, $params,
+        );
+        if (!$filter->hasContext()) {
+            return 0;
+        }
+        $limit = max(0, min($ceiling, TableConstants::COUNT_CEILING)) + 1;
+        Database::sql(
+            'SELECT COUNT(*) AS `total_count` FROM (SELECT 1 FROM (' . $groupedSql . ') p
+             WHERE 1' . $cursor . ' LIMIT ' . $limit . ') capped',
+            $params,
+        );
+
+        return (int)Database::field('total_count');
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param list<mixed> $params SQL parameters extended by the period selection
+     * @return string Grouped SQL set without a window limit or anchor predicate
+     */
+    private function personSetSql(AnalyticsPeriodFilter $filter, int $asOfTs, array &$params): string
+    {
+        array_push($params, self::IDENTITY_TYPE_USER_ID, self::MAX_SAFE_USER_ID, $asOfTs);
+        $periodClause = '';
+        if ($filter->startTs() !== null) {
+            $periodClause = ' AND b.`last_seen_ts` >= ?';
+            $params[] = $filter->startTs();
+        }
+
+        // TODO(owner, 2026-10-19): replace this raw-data SQL when the analytics reading model lands.
+        return 'SELECT CAST(b.`user_identity_value` AS UNSIGNED) AS `user_id`,
+                       COUNT(*) AS `session_count`, MAX(b.`last_seen_ts`) AS `last_seen_ts`
+                FROM `hilos_analytics_browser_session` b
+                WHERE b.`user_identity_type` = ? AND b.`user_identity_value` NOT REGEXP \'[^0-9]\'
+                  AND CAST(b.`user_identity_value` AS UNSIGNED) BETWEEN 1 AND ?
+                  AND b.`first_seen_ts` <= ?' . $periodClause . '
+                GROUP BY `user_id`';
     }
 
     /**

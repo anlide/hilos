@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 94;
+    private const int CATALOG_ENTRIES = 95;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -243,17 +243,23 @@ final class HilosPageCatalogTest extends TestCase
         );
     }
 
-    /** The person's sessions page is a child of Analytics and, needing a person, no dashboard card (HIL-1420). */
-    public function testAnalyticsPersonIsAChildOfAnalytics(): void
+    /** People is an Analytics tab; the person's sessions page is its entity child, without a dashboard card. */
+    public function testAnalyticsPeopleTabOwnsThePersonPage(): void
     {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'People',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'People who last signed into browser sessions seen in the selected period.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PEOPLE]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Person',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions where this person signed in last. '
                 . 'Other people may have performed actions in the same browser.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS_PEOPLE,
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PERSON]);
         foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
+            self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_PEOPLE, $section[PageCatalogConstants::SECTION_ITEMS]);
             self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_PERSON, $section[PageCatalogConstants::SECTION_ITEMS]);
         }
     }

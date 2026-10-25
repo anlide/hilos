@@ -6,6 +6,8 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import * as analytics from '../../src/admin/analytics/index.js'
 import * as analyticsOverview from '../../src/admin/analytics/hilosAnalyticsOverview.js'
+import * as analyticsPeople from '../../src/admin/analytics/hilosAnalyticsPeople.js'
+import * as analyticsPeriod from '../../src/admin/analytics/hilosAnalyticsPeriod.js'
 import * as appearance from '../../src/admin/appearance/index.js'
 import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
@@ -129,6 +131,39 @@ const analyticsOverviewTypes = [
   'HilosAnalyticsOverviewSnapshot',
   'HilosAnalyticsOverview',
   'HilosAnalyticsOverviewTile',
+]
+/** Period and People are section-only APIs, beside the Analytics overview. */
+const analyticsPeriodValues = [
+  'ANALYTICS_PERIOD_FILTER',
+  'ANALYTICS_PERIOD_TIME_ZONE_FILTER',
+  'ANALYTICS_PERIOD_WEEK_START_TS_FILTER',
+  'ANALYTICS_PERIOD_DAY_START_TS_FILTER',
+  'ANALYTICS_PERIOD_HOUR_START_TS_FILTER',
+  'ANALYTICS_PERIOD_COPY',
+  'createHilosAnalyticsPeriod',
+]
+const analyticsPeriodTypes = [
+  'AnalyticsPeriod',
+  'AnalyticsPeriodContext',
+  'HilosAnalyticsPeriodOptions',
+  'HilosAnalyticsPeriod',
+]
+const analyticsPeopleValues = [
+  'ANALYTICS_PEOPLE_TABLE',
+  'ANALYTICS_PEOPLE_SLOT',
+  'ANALYTICS_PERSON_ROW_KEY_FIELD',
+  'ANALYTICS_PERSON_NAME_FIELD',
+  'ANALYTICS_PERSON_SESSION_COUNT_FIELD',
+  'ANALYTICS_PERSON_LAST_SEEN_TS_FIELD',
+  'resolveHilosAnalyticsPersonRow',
+  'formatAnalyticsPersonName',
+  'formatAnalyticsPeopleTime',
+  'createHilosAnalyticsPeopleTable',
+]
+const analyticsPeopleTypes = [
+  'HilosAnalyticsPersonRow',
+  'HilosAnalyticsPeopleOptions',
+  'HilosAnalyticsPeopleTable',
 ]
 /** Closed table text policy additions, shared by root and base. */
 const tableTextValues = ['hilosTableRowHeight', 'hilosTableTextClass']
@@ -372,6 +407,32 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (
+          entry === './admin/analytics' &&
+          analyticsPeriodValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              analyticsPeriod[name as keyof typeof analyticsPeriod],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
+          entry === './admin/analytics' &&
+          analyticsPeopleValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              analyticsPeople[name as keyof typeof analyticsPeople],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
           entry === './admin/communications' &&
           channelSummaryValues.includes(name)
         ) {
@@ -393,6 +454,8 @@ describe('core public entries', () => {
       [
         ...expectedValues,
         ...analyticsOverviewValues,
+        ...analyticsPeriodValues,
+        ...analyticsPeopleValues,
         ...channelSummaryValues,
       ].sort(),
     )
@@ -606,6 +669,10 @@ describe('core public entries', () => {
       ...analyticsOverviewValues,
       ...analyticsOverviewTypes,
     ]
+    const periodExports = exportsOf('admin/analytics/hilosAnalyticsPeriod.ts')
+    const periodNames = [...analyticsPeriodValues, ...analyticsPeriodTypes]
+    const peopleExports = exportsOf('admin/analytics/hilosAnalyticsPeople.ts')
+    const peopleNames = [...analyticsPeopleValues, ...analyticsPeopleTypes]
     const names = new Set<string>()
     const summaryExports = exportsOf(
       'admin/communications/hilosCommunicationsChannel.ts',
@@ -620,6 +687,20 @@ describe('core public entries', () => {
           expect(root.get(name), name).toBeUndefined()
           expect(baseExports.get(name), name).toBeUndefined()
           expect(Object.is(symbol, overviewExports.get(name)), name).toBe(true)
+        } else if (
+          entry === 'admin/analytics/index.ts' &&
+          periodNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(periodExports.get(name))
+        } else if (
+          entry === 'admin/analytics/index.ts' &&
+          peopleNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(peopleExports.get(name))
         } else if (
           entry === 'admin/communications/index.ts' &&
           sectionOnly.includes(name)
@@ -636,7 +717,13 @@ describe('core public entries', () => {
       }
     }
     expect([...names].sort()).toEqual(
-      [...root.keys(), ...overviewNames, ...sectionOnly].sort(),
+      [
+        ...root.keys(),
+        ...overviewNames,
+        ...periodNames,
+        ...peopleNames,
+        ...sectionOnly,
+      ].sort(),
     )
   })
 

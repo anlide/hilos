@@ -11,6 +11,9 @@ import {
 } from '../helpers/session'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
+  expectAnalyticsPeopleAccessibility,
+  expectAnalyticsPeopleWindow,
+  watchDeliveryFrames,
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -87,6 +90,54 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   await page.keyboard.press('Enter')
   await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
   await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
+})
+
+test('Analytics People names its table through the heading and sorts Last seen from the keyboard', async ({
+  page,
+}) => {
+  const frames = watchDeliveryFrames(page)
+  try {
+    await signUpAdmin(page)
+    await gotoPage(page, '/hilos/analytics/people')
+    await expectPageReady(page)
+    const today = await expectAnalyticsPeopleWindow(
+      expect,
+      page,
+      frames,
+      'today',
+    )
+    await expectAnalyticsPeopleAccessibility(expect, page, 'descending')
+    const sorting = frames.sent.length
+    const sort = page
+      .getByTestId('hilos-analytics-people-table')
+      .getByTestId('hilos-table-sort-lastSeenTs')
+    await sort.focus()
+    await expect(sort).toBeFocused()
+    await sort.press('Enter')
+    const ascending = await expectAnalyticsPeopleWindow(
+      expect,
+      page,
+      frames,
+      'today',
+      sorting,
+    )
+    expect(ascending.request.sort).toEqual([
+      { field: 'lastSeenTs', direction: 'asc' },
+    ])
+    expect(ascending.request.filter).toEqual(today.request.filter)
+    await expectAnalyticsPeopleAccessibility(expect, page, 'ascending')
+    await expect(sort).toBeFocused()
+  } finally {
+    await test.info().attach('analytics-people-accessibility', {
+      body: JSON.stringify(
+        { sent: frames.sent, packets: frames.packets },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    frames.stop()
+  }
 })
 
 test('the shell exposes a skip link and marks the active nav item', async ({

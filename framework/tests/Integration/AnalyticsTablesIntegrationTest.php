@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Core\Analytics\AnalyticsSectionReader;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -26,10 +29,17 @@ use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionTableRow;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionTableRow;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPersonTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
+use ReflectionMethod;
 
 /** Frozen analytics tables over the shipped schema, including viewer-safe window addresses. */
 final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
+    private const array PEOPLE_CONTEXT = ['timeZone' => 'UTC', 'weekStartTs' => 100, 'dayStartTs' => 200, 'hourStartTs' => 300];
+    private const array PEOPLE_FACETS = ['period' => ['this-hour', 'today', 'this-week']];
+
     private ?DbContext $previousDb = null;
 
     /** @throws HilosException When the account schema or context cannot be prepared */
@@ -61,7 +71,7 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
     public function testColdWindowsWithoutAPresetNeedNoSql(): void
     {
         $this->dropWindowTables();
-        foreach ([new HilosAnalyticsActionsTable(), new HilosAnalyticsBrowserSessionsTable()] as $table) {
+        foreach ([new HilosAnalyticsActionsTable(), new HilosAnalyticsBrowserSessionsTable(), new HilosAnalyticsPeopleTable()] as $table) {
             $snapshot = $table->getPage(new TableQueryDTO(limit: $table->windowSize(), sort: $table->defaultSort()));
             self::assertSame([], $snapshot->rows);
             self::assertSame(0, $snapshot->totalCount);
@@ -73,6 +83,218 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
             self::assertNull($snapshot->frame);
             self::assertSame([], $table->wireFields());
         }
+    }
+
+    public function testColdPeopleFacetsNeedNoSql(): void
+    {
+        $this->dropWindowTables();
+        $facets = new HilosAnalyticsPeopleTable()->facetCounts(new TableQueryDTO(), self::PEOPLE_FACETS);
+        self::assertSame(['period'], array_keys($facets));
+        self::assertSame(['this-hour', 'today', 'this-week'], array_keys($facets['period']['options']));
+        foreach ([$facets['period']['any'], ...array_values($facets['period']['options'])] as $count) {
+            self::assertSame(['count' => 0, 'exact' => true], $count->toArray());
+        }
+    }
+
+    public function testPeopleContextAndUnsafeAnchorsRefuseBeforeSql(): void
+    {
+        $this->dropWindowTables();
+        $table = new HilosAnalyticsPeopleTable();
+        foreach ([['period' => 'today'], ['timeZone' => 'UTC'],
+            ['period' => null] + self::PEOPLE_CONTEXT, ['period' => 'yesterday'] + self::PEOPLE_CONTEXT,
+            ['hourStartTs' => '300'] + self::PEOPLE_CONTEXT,
+            ['timeZone' => 'invalid'] + self::PEOPLE_CONTEXT,
+            ['dayStartTs' => 301] + self::PEOPLE_CONTEXT,
+            ['hourStartTs' => TimeHelper::nowMs() + 60000] + self::PEOPLE_CONTEXT] as $filter) {
+            foreach (['window', 'facets'] as $operation) {
+                try {
+                    $query = new TableQueryDTO(filter: $filter);
+                    if ($operation === 'window') {
+                        $table->getPage($query);
+                    } else {
+                        $table->facetCounts($query, self::PEOPLE_FACETS);
+                    }
+                    self::fail('An invalid calendar context must refuse before SQL');
+                } catch (ValidationException $exception) {
+                    self::assertNotSame('', $exception->getMessage());
+                }
+            }
+        }
+        foreach ([null, $table->defaultSort()] as $sort) {
+            $invalid = [[], ['rowKey' => '1'], ['rowKey' => 1.0], ['rowKey' => true],
+                ['rowKey' => null], ['rowKey' => 0], ['rowKey' => -1], ['rowKey' => 9007199254740992]];
+            if ($sort !== null) {
+                array_push($invalid, ['rowKey' => 1], ['rowKey' => 1, 'lastSeenTs' => '300'],
+                    ['rowKey' => 1, 'lastSeenTs' => -1], ['rowKey' => 1, 'lastSeenTs' => 9007199254740992]);
+            }
+            foreach ($invalid as $anchor) {
+                try {
+                    $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, anchor: new TableAnchorDTO($anchor)));
+                    self::fail('An unsafe anchor must refuse before SQL');
+                } catch (ValidationException $exception) {
+                    self::assertStringContainsString('anchor', $exception->getMessage());
+                }
+            }
+        }
+    }
+
+    public function testPeoplePeriodsNamesAndExactBrowserShape(): void
+    {
+        Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, ?), (8, ?), (9, ?)',
+            ['Current name', 'Second person', 'Deleted private name']);
+        Database::sql('DELETE FROM `hilos_user` WHERE `id` = 9');
+        $this->session('old_7', 7, 0, 199);
+        $this->session('day_7', 7, 0, 200, 'private raw UA');
+        $this->session('hour_7', 7, 250, 350);
+        $this->session('day_8', 8, 200, 250);
+        $this->session('hour_deleted', 9, 300, 300);
+        $this->session('week_10', 10, 100, 199);
+        $this->session('any_11', 11, 0, 99);
+        $this->session('guest', null, 0, 400);
+        $this->session('future', 12, TimeHelper::nowMs() + 60000, TimeHelper::nowMs() + 60000);
+        $table = new HilosAnalyticsPeopleTable();
+        foreach ([[null, [7, 8, 9, 10, 11], 3], ['this-week', [7, 8, 9, 10], 3],
+            ['today', [7, 8, 9], 2], ['this-hour', [7, 9], 1]] as [$period, $expected, $sessions]) {
+            $filter = $period === null ? self::PEOPLE_CONTEXT : ['period' => $period] + self::PEOPLE_CONTEXT;
+            $window = $table->getPage(new TableQueryDTO(filter: $filter));
+            self::assertSame($expected, self::rowKeys($window));
+            self::assertSame(count($expected), $window->totalCount);
+            self::assertSame($sessions, $window->rows[0]->sessionCount);
+            self::assertSame('Current name', $window->rows[0]->name);
+            self::assertSame(350, $window->rows[0]->lastSeenTs);
+            self::assertNull($window->rows[array_search(9, $expected, true)]->name);
+        }
+        $query = new TableQueryDTO(filter: ['period' => 'today'] + self::PEOPLE_CONTEXT, sort: $table->defaultSort());
+        $row = $table->getPage($query)->rows[0];
+        self::assertSame(['rowKey' => 7, 'name' => 'Current name', 'sessionCount' => 2, 'lastSeenTs' => 350], $row->toArray());
+        self::assertSame($row->toArray(), HilosAnalyticsPersonTableRow::fromArray($row->toArray())->toArray());
+        self::assertSame([
+            'rowKey' => 7, 'sources' => ['person' => ['name' => 'Current name', 'sessionCount' => 2, 'lastSeenTs' => 350]],
+        ], json_decode(json_encode($table->browserRow($row), JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
+        Hilos::$db->users[7]->actions->rename('Renamed person');
+        self::assertSame('Renamed person', $table->getPage($query)->rows[0]->name);
+        self::assertSame('Current name', $row->name);
+
+        $expectedCounts = ['any' => 5, 'this-hour' => 2, 'today' => 3, 'this-week' => 4];
+        foreach ([self::PEOPLE_CONTEXT, ['period' => 'this-hour'] + self::PEOPLE_CONTEXT] as $filter) {
+            $facets = $table->facetCounts(new TableQueryDTO(filter: $filter, limit: 1), self::PEOPLE_FACETS);
+            foreach ($expectedCounts as $key => $count) {
+                $actual = $key === 'any' ? $facets['period']['any'] : $facets['period']['options'][$key];
+                self::assertSame(['count' => $count, 'exact' => true], $actual->toArray());
+            }
+        }
+    }
+
+    public function testPeopleFacetsOnlyCountAllowedKeysAndValues(): void
+    {
+        $this->dropWindowTables();
+        $table = new HilosAnalyticsPeopleTable();
+        $query = new TableQueryDTO(filter: self::PEOPLE_CONTEXT);
+        self::assertSame([], $table->facetCounts($query, ['arbitrary' => ['today'], 'timeZone' => ['UTC']]));
+        $cold = $table->facetCounts(new TableQueryDTO(), ['period' => ['today', 'yesterday', 1, true, 'today'], 'name' => ['secret']]);
+        self::assertSame(['period'], array_keys($cold));
+        self::assertSame(['today'], array_keys($cold['period']['options']));
+        self::assertSame(['count' => 0, 'exact' => true], $cold['period']['any']->toArray());
+    }
+
+    public function testPeoplePagingUsesGroupedCountsAndNumericTiesInBothDirections(): void
+    {
+        foreach ([2 => 400, 10 => 100, 100 => 100, 7 => 300, 8 => 200, 50 => 500, 70 => 600] as $userId => $moment) {
+            $this->session('early_' . $userId, $userId, 0, 50);
+            $this->session('late_' . $userId, $userId, 0, $moment);
+        }
+        $table = new HilosAnalyticsPeopleTable();
+        self::assertSame(25, $table->windowSize());
+        self::assertSame('lastSeenTs', $table->defaultSort()->last()->field);
+        self::assertSame(TableConstants::ORDER_DESC, $table->defaultSort()->last()->direction);
+        $ascending = [10, 100, 8, 7, 2, 50, 70];
+        foreach ([[$table->defaultSort(), array_reverse($ascending)],
+            [TableSortOrderDTO::of(new TableSortDTO('lastSeenTs', TableConstants::ORDER_ASC)), $ascending],
+            [null, [2, 7, 8, 10, 50, 70, 100]]] as [$sort, $expected]) {
+            $this->assertWindowSequence($table, self::PEOPLE_CONTEXT, $sort, $expected);
+            $first = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 2));
+            $next = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 2, anchor: $first->lastAnchor));
+            foreach ([...$first->rows, ...$next->rows] as $row) {
+                self::assertSame(2, $row->sessionCount);
+            }
+        }
+        $first = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $table->defaultSort(), limit: 2));
+        self::assertSame(['lastSeenTs' => 600, 'rowKey' => 70], $first->firstAnchor->values);
+    }
+
+    public function testPeopleCountCeilingFacetsAndMaximumWindow(): void
+    {
+        for ($userId = 1; $userId <= 500; $userId++) {
+            $this->session('person_' . $userId, $userId, 100, 300);
+        }
+        $table = new HilosAnalyticsPeopleTable();
+        $query = new TableQueryDTO(filter: self::PEOPLE_CONTEXT, limit: $table->windowSize());
+        $initial = $table->getPage($query);
+        self::assertCount(25, $initial->rows);
+        self::assertSame(500, $initial->totalCount);
+        self::assertTrue($initial->totalExact);
+        foreach ([$table->facetCounts($query, self::PEOPLE_FACETS)['period']['any'],
+            ...array_values($table->facetCounts($query, self::PEOPLE_FACETS)['period']['options'])] as $count) {
+            self::assertSame(['count' => 500, 'exact' => true], $count->toArray());
+        }
+        $this->session('overflow_person', 501, 100, 300);
+        foreach ([TableConstants::NO_LIMIT, 1000] as $limit) {
+            $overflow = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, limit: $limit));
+            self::assertCount(50, $overflow->rows);
+            self::assertSame(50, $overflow->limit);
+            self::assertSame(500, $overflow->totalCount);
+            self::assertFalse($overflow->totalExact);
+            self::assertNull($overflow->rowsBefore);
+        }
+        $facet = $table->facetCounts($query, self::PEOPLE_FACETS)['period'];
+        foreach ([$facet['any'], ...array_values($facet['options'])] as $count) {
+            self::assertSame(['count' => 500, 'exact' => false], $count->toArray());
+        }
+        $last = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, limit: 25, pageIndex: 20));
+        self::assertSame([501], self::rowKeys($last));
+        self::assertNull($last->rowsBefore);
+        $past = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, limit: 25, pageIndex: 21));
+        self::assertSame([], $past->rows);
+        self::assertFalse($past->totalExact);
+    }
+
+    public function testPeopleViewerHidesSlotFieldsAndNeverReturnsOldMoments(): void
+    {
+        Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (2, ?), (10, ?)', ['Private first', 'Private second']);
+        $this->session('private_token_2', 2, 100, 600, 'Private UA');
+        $this->session('private_token_10', 10, 100, 300);
+        $table = new HilosAnalyticsPeopleTable();
+        self::assertSame([], $table->wireFields());
+        $first = $table->getPage(new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT, sort: $table->defaultSort(), limit: 1, shownFields: ['rowKey'],
+        ));
+        self::assertSame([2], self::rowKeys($first));
+        self::assertSame(2, $first->totalCount);
+        self::assertSame(['rowKey' => 2], $first->firstAnchor->values);
+        $next = $table->getPage(new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT, sort: $table->defaultSort(), limit: 1, shownFields: ['rowKey'],
+            anchor: new TableAnchorDTO(['rowKey' => 2, 'lastSeenTs' => 'old private moment']),
+        ));
+        self::assertSame([10], self::rowKeys($next));
+        self::assertSame(['rowKey' => 10], $next->lastAnchor->values);
+        self::assertSame(1, $next->rowsBefore);
+        $previous = $table->getPage(new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT, sort: $table->defaultSort(), limit: 1, shownFields: ['rowKey'],
+            anchor: $next->firstAnchor, anchorDirection: TableAnchorDirection::Before,
+        ));
+        self::assertSame([2], self::rowKeys($previous));
+        $wireMethod = new ReflectionMethod(BrowserContext::class, 'browserRowToWire');
+        $browser = new class extends BrowserContext {
+        };
+        foreach ([$first, $next] as $window) {
+            $wire = $wireMethod->invoke($browser, $table->browserRow($window->rows[0]), $table);
+            self::assertSame(['rowKey' => $window->rows[0]->rowKey, 'slots' => ['person' => [
+                'name' => HiddenValue::mark(), 'sessionCount' => HiddenValue::mark(), 'lastSeenTs' => HiddenValue::mark(),
+            ]]], json_decode(json_encode($wire, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
+        }
+        $facet = $table->facetCounts(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, shownFields: ['rowKey']), self::PEOPLE_FACETS)['period'];
+        self::assertSame(['count' => 2, 'exact' => true], $facet['any']->toArray());
+        self::assertSame(['count' => 2, 'exact' => true], $facet['options']['this-hour']->toArray());
     }
 
     /** @throws HilosException When the schema cannot be removed */
@@ -302,6 +524,7 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
         foreach ([
             [new HilosAnalyticsActionsTable(), [HilosAnalyticsActionsTable::FILTER_BROWSER_SESSION => 1]],
             [new HilosAnalyticsBrowserSessionsTable(), [HilosAnalyticsBrowserSessionsTable::FILTER_USER => 1]],
+            [new HilosAnalyticsPeopleTable(), self::PEOPLE_CONTEXT],
         ] as [$table, $filter]) {
             try {
                 $table->getPage(new TableQueryDTO(filter: $filter));
@@ -312,9 +535,16 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
         }
     }
 
+    public function testPeopleSqlFailureAlsoRefusesFacets(): void
+    {
+        $this->dropWindowTables();
+        $this->expectException(DatabaseException::class);
+        new HilosAnalyticsPeopleTable()->facetCounts(new TableQueryDTO(filter: self::PEOPLE_CONTEXT), self::PEOPLE_FACETS);
+    }
+
     /**
      * @param TableDefinition $table Frozen table under test
-     * @param array<string, int> $filter Valid subject preset
+     * @param array<string, mixed> $filter Valid subject or calendar preset
      * @param ?TableSortOrderDTO $sort Served order
      * @param list<int> $expected Row numbers in the expected order
      * @throws HilosException When a window or count query fails

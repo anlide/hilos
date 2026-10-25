@@ -1,5 +1,6 @@
 import type { Expect, Locator, Page } from '@playwright/test'
-import { deliveryObject } from './deliveryFrames.js'
+import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
+import { expectReaderMillisecondMoment } from './moments.js'
 import { shownByTestId } from './table.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 
@@ -128,6 +129,297 @@ const ANALYTICS_LEAD =
  * folder imports nothing of the core, so the sign is repeated here.
  */
 const ANALYTICS_NO_VALUE_TEXT = '—'
+
+const PEOPLE_PAGE = 'hilos_analytics_people'
+const PEOPLE_TABLE = 'hilosAnalyticsPeople'
+const PEOPLE_HANDLE = 'hilos-analytics-people-table'
+
+/** Wait on the real journal writer, using the existing bounded stand probe. */
+export async function waitAnalyticsBrowserSession(
+  expect: Expect,
+  sendCommand: Parameters<typeof readAnalyticsBrowserSession>[0],
+  userId: number,
+): Promise<AnalyticsBrowserSession> {
+  await expect
+    .poll(
+      async () =>
+        (
+          await readAnalyticsBrowserSession(sendCommand, userId)
+        ).actionNames.includes(ANALYTICS_SIGN_UP_LAST_ACTION),
+      { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
+    )
+    .toBe(true)
+  const session = await readAnalyticsBrowserSession(sendCommand, userId)
+  expect(session.browserSessionId).not.toBeNull()
+  return session
+}
+
+/** Real People viewport requests, in the order the browser sent them. */
+export function analyticsPeopleViewports(log: DeliveryFrameLog) {
+  return log.sent.filter(({ wire }) => {
+    const request = deliveryObject(wire)
+    return (
+      request.type === 'table_viewport' &&
+      request.page === PEOPLE_PAGE &&
+      request.tableKey === PEOPLE_TABLE
+    )
+  })
+}
+
+/**
+ * Settle a new People request on its correlated daemon reply and drawn row keys.
+ * The returned filter is the actual captured context, independent of the core.
+ */
+export async function expectAnalyticsPeopleWindow(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  period: 'today' | 'this-hour' | 'this-week' | undefined,
+  after = 0,
+) {
+  const latest = () => {
+    const sent = log.sent
+      .slice(after)
+      .filter(({ wire }) => {
+        const request = deliveryObject(wire)
+        return (
+          request.type === 'table_viewport' &&
+          request.page === PEOPLE_PAGE &&
+          request.tableKey === PEOPLE_TABLE
+        )
+      })
+      .at(-1)
+    const request = deliveryObject(sent?.wire)
+    if (!sent || typeof request.requestId !== 'string') return undefined
+    const frame = log.packets
+      .filter((packet) => packet.socket === sent.socket && packet.at >= sent.at)
+      .flatMap((packet) => packet.frames)
+      .find(({ wire }) => {
+        const response = deliveryObject(wire)
+        const data = deliveryObject(response.data)
+        return (
+          response.type === 'table_window' &&
+          data.page === PEOPLE_PAGE &&
+          data.tableKey === PEOPLE_TABLE &&
+          data.requestId === request.requestId
+        )
+      })
+    return frame ? { request, frame } : undefined
+  }
+  await expect.poll(latest).toBeDefined()
+  const { request, frame } = latest()!
+  expect(frame.failure).toBeUndefined()
+  const window = deliveryObject(deliveryObject(frame.wire).data)
+  expect(window.rows).toEqual(expect.any(Array))
+  const rows = (window.rows as unknown[]).map(deliveryObject)
+  for (const row of rows) {
+    expect(Number.isSafeInteger(row.rowKey)).toBe(true)
+    expect(row.rowKey).toBeGreaterThan(0)
+  }
+  const filter = deliveryObject(request.filter)
+  const context = {
+    timeZone: filter.timeZone,
+    weekStartTs: filter.weekStartTs,
+    dayStartTs: filter.dayStartTs,
+    hourStartTs: filter.hourStartTs,
+  }
+  expect(filter).toEqual({ ...context, ...(period ? { period } : {}) })
+  expect(context.timeZone).toEqual(expect.any(String))
+  for (const moment of [
+    context.weekStartTs,
+    context.dayStartTs,
+    context.hourStartTs,
+  ]) {
+    expect(Number.isSafeInteger(moment)).toBe(true)
+    expect(moment).toBeGreaterThan(0)
+  }
+  const table = page.getByTestId(PEOPLE_HANDLE)
+  await expect(shownByTestId(table, 'hilos-table-loading')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      shownByTestId(table, 'hilos-analytics-person-link').evaluateAll((links) =>
+        links.map((link) => Number(link.getAttribute('data-record'))),
+      ),
+    )
+    .toEqual(rows.map((row) => row.rowKey))
+  return { request, window, rows, context }
+}
+
+/** The public numeric address of a person in the current People window. */
+export function analyticsPersonLink(page: Page, userId: number): Locator {
+  return analyticsSessionCell(
+    page.getByTestId(PEOPLE_HANDLE),
+    'hilos-analytics-person-link',
+    userId,
+  )
+}
+
+/** One Analytics section heading, its two real page links and section crumbs. */
+export async function expectAnalyticsSectionHead(
+  expect: Expect,
+  page: Page,
+  current: 'overview' | 'people',
+): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveAccessibleName('Analytics pages')
+  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'People'])
+  for (const [key, path, active] of [
+    ['hilos_analytics', '/hilos/analytics', current === 'overview'],
+    [PEOPLE_PAGE, '/hilos/analytics/people', current === 'people'],
+  ] as const) {
+    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(link).toHaveAttribute('href', path)
+    if (active) await expect(link).toHaveAttribute('aria-current', 'page')
+    else await expect(link).not.toHaveAttribute('aria-current')
+  }
+  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
+    'Hilos',
+    'Analytics',
+  ])
+}
+
+/** A real signed-in person's period count and moment agree with the served row. */
+export async function expectAnalyticsPeoplePerson(
+  expect: Expect,
+  page: Page,
+  settled: Awaited<ReturnType<typeof expectAnalyticsPeopleWindow>>,
+  person: { userId: number; name: string },
+): Promise<void> {
+  const row = settled.rows.find((row) => row.rowKey === person.userId)
+  expect(row).toBeDefined()
+  const value = deliveryObject(deliveryObject(row!.slots).person)
+  expect(value.name).toBe(person.name)
+  // This fresh account signed into exactly one real browser session.
+  expect(value.sessionCount).toBe(1)
+  const table = page.getByTestId(PEOPLE_HANDLE)
+  await expect(analyticsPersonLink(page, person.userId)).toHaveText(
+    `${person.name} (#${person.userId})`,
+  )
+  await expect(analyticsPersonLink(page, person.userId)).toHaveAttribute(
+    'href',
+    `/hilos/analytics/people/${person.userId}`,
+  )
+  await expect(
+    analyticsSessionCell(
+      table,
+      'hilos-analytics-person-sessions',
+      person.userId,
+    ),
+  ).toHaveText('1')
+  expect(value.lastSeenTs).toBeGreaterThan(0)
+  await expectReaderMillisecondMoment(
+    expect,
+    analyticsSessionCell(
+      table,
+      'hilos-analytics-person-last-seen',
+      person.userId,
+    ),
+    value.lastSeenTs,
+    String(settled.context.timeZone),
+  )
+}
+
+/** Period choices show the daemon's four facet counts, through standard handles. */
+export async function expectAnalyticsPeopleFacets(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+): Promise<void> {
+  const latest = () =>
+    log.packets
+      .flatMap((packet) => packet.frames)
+      .filter(({ wire }) => {
+        const response = deliveryObject(wire)
+        const data = deliveryObject(response.data)
+        return (
+          response.type === 'table_facet_counts' &&
+          data.page === PEOPLE_PAGE &&
+          data.tableKey === PEOPLE_TABLE
+        )
+      })
+      .at(-1)
+  await expect.poll(latest).toBeDefined()
+  expect(latest()!.failure).toBeUndefined()
+  const data = deliveryObject(deliveryObject(latest()!.wire).data)
+  const facets = deliveryObject(deliveryObject(data.facets).period)
+  const options = deliveryObject(facets.options)
+  const control = page.getByTestId('hilos-table-filter-period')
+  await expect(control.getByRole('listbox')).toHaveAccessibleName('Period')
+  for (const [index, key, label] of [
+    [-1, 'any', 'Any time'],
+    [0, 'this-hour', 'This hour'],
+    [1, 'today', 'Today'],
+    [2, 'this-week', 'This week'],
+  ] as const) {
+    const count = deliveryObject(key === 'any' ? facets.any : options[key])
+    expect(Number.isSafeInteger(count.count)).toBe(true)
+    expect(count.count).toBeGreaterThanOrEqual(1)
+    expect(count.exact).toBe(true)
+    await expect(
+      control.getByTestId(`hilos-dropdown-option-${index}`),
+    ).toContainText(label)
+    await expect(
+      control.getByTestId(`hilos-table-facet-period-${key}`),
+    ).toHaveText(String(count.count))
+  }
+}
+
+/** People uses the one h1 as its table name and exposes its live sort direction. */
+export async function expectAnalyticsPeopleAccessibility(
+  expect: Expect,
+  page: Page,
+  direction: 'ascending' | 'descending',
+): Promise<void> {
+  await expectAnalyticsSectionHead(expect, page, 'people')
+  const table = page
+    .getByTestId(PEOPLE_HANDLE)
+    .getByRole('table', { name: 'Analytics', exact: true })
+  await expect(table).toBeVisible()
+  await expect(table).toHaveAttribute(
+    'aria-labelledby',
+    (await page
+      .getByRole('heading', { level: 1 })
+      .getAttribute('id')) as string,
+  )
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+  await expect(
+    table.getByRole('columnheader', { name: 'Last seen' }),
+  ).toHaveAttribute('aria-sort', direction)
+  await expect(
+    table.getByTestId('hilos-table-sort-lastSeenTs'),
+  ).toHaveAccessibleName('Last seen')
+}
+
+/** Person remains an all-time page, with a real People breadcrumb return link. */
+export async function expectAnalyticsPersonNavigation(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  person: { userId: number; name: string },
+): Promise<void> {
+  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
+    'Hilos',
+    'Analytics',
+    'People',
+    `${person.name} (#${person.userId})`,
+  ])
+  await expect(
+    page.getByTestId('hilos-breadcrumb-hilos_analytics_people'),
+  ).toHaveAttribute('href', '/hilos/analytics/people')
+  const requests = log.sent
+    .map(({ wire }) => deliveryObject(wire))
+    .filter((wire) => wire.page === 'hilos_analytics_person')
+  const subscribe = requests.find((wire) => wire.type === 'page_subscribe')
+  expect(subscribe).toBeDefined()
+  expect(subscribe!.params).toEqual({ userId: String(person.userId) })
+  for (const request of requests) {
+    expect(JSON.stringify(request)).not.toContain('period')
+    if (request.type === 'table_viewport')
+      expect(request.filter).toEqual({ user: person.userId })
+  }
+  await expect(page.getByTestId('hilos-table-filter-period')).toHaveCount(0)
+}
 
 /**
  * Observe the browser-session page only — its answer and the windows of its
@@ -329,11 +621,11 @@ export async function expectAnalyticsOverview(
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Analytics',
     )
+    await expectAnalyticsSectionHead(expect, page, 'overview')
     for (const testId of [
       'hilos-admin-title',
       'hilos-admin-children',
       'hilos-admin-empty',
-      'hilos-page-tabs',
       'hilos-analytics-overview-empty',
       'hilos-analytics-overview-open-users',
       'hilos-analytics-overview-skeleton',

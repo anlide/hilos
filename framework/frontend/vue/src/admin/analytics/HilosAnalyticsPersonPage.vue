@@ -22,7 +22,12 @@ import {
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -37,6 +42,20 @@ const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error('HilosAnalyticsPersonPage requires a provided Hilos router.')
 }
+
+const pageLabel = props.context.scopes.pageDataSignal('pageLabel')
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.ANALYTICS_PERSON,
+  computedSignal(() => {
+    if (props.context.scopes.page()?.key !== HilosPages.ANALYTICS_PERSON) {
+      return undefined
+    }
+    const label = pageLabel.get()
+    return typeof label === 'string' ? label : undefined
+  }),
+)
+onUnmounted(unbindName)
 
 const route = useSignal(router.currentRoute)
 const userId = computed(() =>
