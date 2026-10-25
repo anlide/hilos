@@ -87,7 +87,7 @@ journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
 
 `HilosFeature::CHANGE_LOG` requires the three Change Log pages, their feed,
-tables and history bindings, the `hilos_change_log` reader agent and the
+tables and history bindings, the `hilos_change_log` section agent and the
 `db:change-log:generate` CLI command. It mounts no runtime state and depends
 on no Backup feature. Its derived schema follows the primary migration track;
 the six journal tables are checked against the real second database, rather
@@ -110,8 +110,8 @@ than listed as primary-table migration requirements.
   first leaf that introduces a real journaled bridge table (owner, 2026-10-13;
   HIL-1453 interview). That leaf implements it; HIL-1453 introduces no such table.
 - A write without a receipt is allowed and produces a journal row with a NULL
-  receipt number. The section reader returns one feed row per changed record
-  and includes it in the table history. The feed's core view model labels its
+  receipt number. The feed read returns one row per changed record and table
+  history includes it. The feed's core view model labels its
   actor “Unknown”; the dashboard shows “Changed past the application — no
   receipt” without a channel or an action.
 
@@ -311,8 +311,8 @@ columns and do not make the files, verification, sessions or access-log tables
 journaled: their writes are attributed only if the existing entity policy calls
 for journal rows.
 
-When a person has been erased, the soft reference keeps their number. The
-section reader returns the current name when the row still exists and
+When a person has been erased, the soft reference keeps their number. Receipt
+and history snapshots return the current name when the row still exists and
 `Deleted user #N` when it does not. The screen presents that label with an
 explanation that the receipt keeps the deleted person's number.
 
@@ -471,10 +471,11 @@ reset, dump/import and the primary migration chain remain infrastructure outside
 the Entity/DbCollection row API. Named-database collections do not replace them
 or change the data-plus-journal backup pair and its restore gates.
 
-The `hilos_change_log` agent remains one cluster agent in a monopolistic worker.
-`ChangeLogSectionReader` still serves the overview, table catalog/detail and
-history queries; feed and receipt/entry reads now use the typed collection APIs
-below. The separate database is not a permanent reason to bypass the ORM.
+The `hilos_change_log` section agent remains one cluster agent in a monopolistic
+worker. Change Log pages and tables read through typed collection APIs on
+`Hilos::$db`, including the overview, table catalog/detail, history, feed and
+receipt/entry reads below. The separate database is not a permanent reason to
+bypass the ORM.
 
 **The April placeholder is not the model.** The applied
 `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`
@@ -509,25 +510,33 @@ change scalar Entity offsets or the page/action contract. View methods delegate
 to their typed Object collections; Object SQL uses its Entity binding's
 explicit connection index, leaves the active connection unchanged, and does
 not retain trigger-written rows in the ORM cache or RT.
-The tables, history and overview reads follow, after which
-`ChangeLogSectionReader` is removed. (not in the code yet — HIL-1620)
-`historyWindow()` already hydrates its selected entries and receipt headers
-through `sectionEntriesByIds()` and `sectionHeadersByIds()`; its selection and
-filters remain in the reader.
-Journal collections use bounded database queries without loading the journal
-whole or treating their ORM cache as the source of trigger inserts; their
-freshness and bounded-read contract is in
-[DbCollection](../orm/db-collection.md#collections-in-a-named-database). The ORM
-emits no sync frames for trigger inserts.
 
-`ChangeLogSectionReader` remains responsible for overview, table catalog,
-noisy-column and table-detail queries, and history selection/counts until
-HIL-1620. Those reads use qualified journal table names on primary and restore
-the caller's active connection afterward. Keep this reader for those paths
-while they migrate; its SQL is not the pattern for new collection reads. The
-typed collection APIs use their Entity binding's explicit connection index
-and do not switch the active connection. The section's public actions and
-payloads remain unchanged.
+`Hilos::$db->changeLogTables` exposes `sectionOverview(): ChangeLogOverview`,
+`sectionTables(): ChangeLogReadCollection<ChangeLogTableSummary>`,
+`sectionNoisyColumns(): ChangeLogReadCollection<ChangeLogNoisyColumn>`,
+`sectionTable(string $name): ?ChangeLogTableDetail`, and
+`sectionIdByName(string $name): ?int`. `Hilos::$db->changeLogEntries` exposes
+`oldestCreatedAt(): ?DateTimeImmutable`,
+`historyWindow(string $table, ChangeLogHistoryFilter $filter, bool $newestFirst,
+?ChangeLogHistoryAnchor $anchor, TableAnchorDirection $direction, int $limit,
+int $skip = 0): ChangeLogReadCollection<ChangeLogHistoryRow>`,
+`historyCount(string $table, ChangeLogHistoryFilter $filter,
+int $ceiling = TableConstants::COUNT_CEILING): int`, and
+`historyCountBefore(string $table, ChangeLogHistoryFilter $filter,
+bool $newestFirst, ChangeLogHistoryAnchor $anchor,
+int $ceiling = TableConstants::COUNT_CEILING): int`.
+
+Collection reads return immutable typed snapshots. Journal-row queries are
+fresh bounded database reads, not reads from a warmed ORM cache or RT; history
+windows cap at 50 rows and counts stop at the table ceiling plus one. Metadata
+methods that inspect the live schema restore the caller's active connection
+afterward, including when a read fails. Journal queries use their Entity
+binding's explicit connection index and leave the active connection unchanged.
+The overview's `ChangeLogDatabase::approximateBytes()` value sums the data and
+index bytes of the six physical journal tables. The freshness and bounded-read
+contract is in
+[DbCollection](../orm/db-collection.md#collections-in-a-named-database). The
+ORM emits no sync frames for trigger inserts.
 
 Reads return typed values, not browser frames. The feed is nonempty receipts
 plus one row for each journal entry without a receipt; table history includes
@@ -542,17 +551,22 @@ and the total number of live tables. It is not sent again. The table names
 become the feed's Table filter choices. If the overview cannot be read, the
 subscription is refused with `internal_error`.
 
-For its remaining history reads, `ChangeLogSectionReader` fetches current
-person names for the selected window and keeps the number with each label. It
-exposes live table names and column policies without exposing journal
-dictionary row numbers. A service trigger's valid-from migration comes from
-the header of its project SQL file, never from the SQL body sent to a browser.
+`historyWindow()` selects journal row ids, then hydrates the bounded selection
+and receipt headers through `sectionEntriesByIds()` and
+`sectionHeadersByIds()`. History person-name filters resolve ids through
+`Hilos::$db->users->idsMatchingName()`; receipt headers resolve current names
+through `namesByIds()` and retain the numeric id or `Deleted user #N` fallback.
+These fresh scalar projections do not depend on warmed User wrappers and do
+not join the primary and journal databases. Table metadata comes from
+`sectionTables()`, `sectionNoisyColumns()` and `sectionTable()` without
+exposing journal dictionary row numbers. A service trigger's valid-from
+migration comes from the header of its project SQL file, never from the SQL
+body sent to a browser.
 
 Feed and receipt person search and current names use
 `Hilos::$db->users->idsMatchingName()` and `namesByIds()` without SQL joining
 the primary and journal databases. These fresh scalar projections do not
-depend on warmed User wrappers. History and the remaining reader-backed reads
-keep their current user path until HIL-1620.
+depend on warmed User wrappers.
 The soft person number, `Deleted user #N` fallback, filters and personal-data
 masking in admin view mode remain unchanged.
 
@@ -582,7 +596,8 @@ are read afresh on reopening, independently of the feed filters. There is no
 polling, automatic continuation or live delivery into an open modal.
 
 The framework tables `hilosChangeLogFeed` and `hilosChangeLogHistory` serve
-the feed and one table's history through that reader. They are frozen windows:
+the feed and one table's history from fresh collection snapshots. They are
+frozen windows:
 a filter, search, sort, page change, or reopening the page asks for a fresh one;
 journal writes do not stream into an open window. A period starts at the time
 the server reads the request. Both tables hide person names from an admin-view
@@ -592,8 +607,9 @@ from the start. Their inline row slots have a `rowKey` but no `id` field: an
 `id` would make the frontend normalizer mistake the slot for an entity and
 lose the other row fields.
 
-The framework table `hilosChangeLogTables` serves every live table of the primary
-database from the reader's table list. It holds the complete set in memory and
+The framework table `hilosChangeLogTables` serves every live table of the
+primary database from `changeLogTables->sectionTables()`. It holds the complete
+set in memory and
 reports an exact count, searches by table name, filters the journal label by
 `tracked` or `untracked`, and sorts by name, writes in the last 24 hours, or the
 last change. Non-null ordering keys put untracked tables at the bottom when
@@ -601,8 +617,9 @@ activity or last-change order descends, and at the top when it ascends. This is
 also a frozen window: only a person's window request or reopening reads the list
 again. Its row key is the live table name, which is also the `name` field of its
 inline `table` slot; the slot carries neither `id` nor `rowKey`, and no journal
-dictionary number leaves the reader. The core formats column-mode counts for
-the view, combining personal and binary columns as facts and omitting zero parts.
+dictionary number appears in the browser row. The core formats column-mode
+counts for the view, combining personal and binary columns as facts and
+omitting zero parts.
 
 The Tracked tables page answers in that same opening `page_response` with
 `payload.data.changeLogNoisyColumns`: the complete snapshot of noisy columns on
@@ -854,9 +871,8 @@ those guarantees need their future carriers as well as journal scenarios.
   out of its owner; put it on the Entity.
 - Adding a new journal query directly in a page, table, or agent duplicates the
   ORM's reads and their bounds; use typed `Hilos::$db` collections with declared
-  reading. Feed and receipt/entry reads now use those collections. The overview,
-  table and history queries migrate next, after which `ChangeLogSectionReader`
-  is removed (not in the code yet — HIL-1620).
+  reading. Feed, receipt/entry, overview, table metadata and history reads use
+  those collections.
 - Using the April stub as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and

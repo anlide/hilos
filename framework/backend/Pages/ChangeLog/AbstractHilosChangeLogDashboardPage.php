@@ -18,7 +18,6 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\View\Collection\ChangeLogEntries;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -95,7 +94,7 @@ abstract class AbstractHilosChangeLogDashboardPage extends AbstractHilosPage
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
-        $overview = new ChangeLogSectionReader()->overview();
+        $overview = Hilos::$db->changeLogTables->sectionOverview();
         return new PagePayload(data: [self::OVERVIEW => [
             'journalEntries' => $overview->journalEntries,
             'journalBytes' => $overview->journalBytes,

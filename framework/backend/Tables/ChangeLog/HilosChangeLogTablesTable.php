@@ -19,8 +19,9 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
+use Hilos\Database\ChangeLog\Section\ChangeLogReadCollection;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableSummary;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
 /** Frozen windows over the live tables' declarations, read anew on each request. */
@@ -131,12 +132,12 @@ class HilosChangeLogTablesTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * @return list<ChangeLogTableSummary> Live declarations and activity for this request
+     * @return ChangeLogReadCollection<ChangeLogTableSummary> Live declarations and activity for this request
      * @throws HilosException When journal SQL, live schema, or placement cannot be read
      */
-    protected function summaries(): array
+    protected function summaries(): ChangeLogReadCollection
     {
-        return new ChangeLogSectionReader()->tables();
+        return Hilos::$db->changeLogTables->sectionTables();
     }
 
     /**
@@ -145,10 +146,10 @@ class HilosChangeLogTablesTable extends TableDefinition implements ViewportTable
      */
     private function collectRows(): array
     {
-        $rows = array_map(
-            static fn(ChangeLogTableSummary $summary): array => HilosChangeLogTablesTableRow::fromSummary($summary)->toArray(),
-            $this->summaries(),
-        );
+        $rows = [];
+        foreach ($this->summaries() as $summary) {
+            $rows[] = HilosChangeLogTablesTableRow::fromSummary($summary)->toArray();
+        }
         usort(
             $rows,
             static fn(array $a, array $b): int

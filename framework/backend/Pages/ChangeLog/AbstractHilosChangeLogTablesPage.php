@@ -12,8 +12,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\Section\ChangeLogNoisyColumn;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
 /**
@@ -40,14 +40,15 @@ abstract class AbstractHilosChangeLogTablesPage extends AbstractHilosPage
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
-        return new PagePayload(data: [self::NOISY_COLUMNS => array_map(
-            static fn(ChangeLogNoisyColumn $column): array => [
+        $columns = [];
+        foreach (Hilos::$db->changeLogTables->sectionNoisyColumns() as $column) {
+            $columns[] = [
                 ChangeLogNoisyColumn::table => $column->table,
                 ChangeLogNoisyColumn::column => $column->column,
                 ChangeLogNoisyColumn::reason => $column->reason,
-            ],
-            new ChangeLogSectionReader()->noisyColumns(),
-        )]);
+            ];
+        }
+        return new PagePayload(data: [self::NOISY_COLUMNS => $columns]);
     }
 
     /** @return array<string, WireField> Table names, column names, and declared reasons are schema metadata */

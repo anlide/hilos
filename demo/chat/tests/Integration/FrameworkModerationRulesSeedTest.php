@@ -12,7 +12,6 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -166,19 +165,18 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         ));
 
         $this->assertNotNull($receiptId);
-        $reader = new ChangeLogSectionReader();
-        $history = $reader->historyWindow(self::TABLE, new ChangeLogHistoryFilter(recordKey: [$this->ruleId]),
+        $history = Hilos::$db->changeLogEntries->historyWindow(self::TABLE, new ChangeLogHistoryFilter(recordKey: [$this->ruleId]),
             false, null, TableAnchorDirection::After, 10);
-        $this->assertSame(['create', 'update', 'delete'], array_map(static fn ($row): string => $row->entry->mutation, $history));
+        $this->assertSame(['create', 'update', 'delete'], array_map(static fn ($row): string => $row->entry->mutation, $history->toArray()));
         foreach ($history as $row) {
             $this->assertSame($receiptId, $row->entry->receiptId);
             $this->assertSame('web', $row->receipt->channel);
             $this->assertSame(self::ACTION, $row->receipt->action);
             $this->assertSame([$this->ruleId], $row->entry->recordKey);
         }
-        $this->assertSame([], $history[0]->entry->changes);
+        $this->assertSame([], $history->get(0)->entry->changes);
 
-        $update = Hilos::$db->changeLogEntries->sectionEntry($history[1]->entry->id);
+        $update = Hilos::$db->changeLogEntries->sectionEntry($history->get(1)->entry->id);
         $this->assertNotNull($update);
         $this->assertCount(1, $update->changes);
         $changed = $update->changes[0];
@@ -188,7 +186,7 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         $this->assertSame(self::FIRST_TEXT, $changed->oldValue);
         $this->assertSame(self::SECOND_TEXT, $changed->newValue);
 
-        $delete = Hilos::$db->changeLogEntries->sectionEntry($history[2]->entry->id);
+        $delete = Hilos::$db->changeLogEntries->sectionEntry($history->get(2)->entry->id);
         $this->assertNotNull($delete);
         $snapshot = [];
         foreach ($delete->changes as $change) {

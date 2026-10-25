@@ -14,9 +14,9 @@ use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\Section\ChangeLogColumn;
 use Hilos\Database\ChangeLog\Section\ChangeLogTrigger;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogTablePageSubscribeParams;
 use Hilos\Tables\ChangeLog\HilosChangeLogTableParts;
@@ -70,7 +70,7 @@ abstract class AbstractHilosChangeLogTablePage extends AbstractHilosPage
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
         $route = HilosChangeLogTablePageSubscribeParams::fromPageRouteParams($params);
-        $detail = new ChangeLogSectionReader()->table($route->tableId);
+        $detail = Hilos::$db->changeLogTables->sectionTable($route->tableId);
         if ($detail === null) {
             throw new PageResourceNotFoundException('No such table');
         }

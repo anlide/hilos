@@ -13,6 +13,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Database\ChangeLog\Section\ChangeLogReadCollection;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableOwner;
 use Hilos\Database\ChangeLog\Section\ChangeLogTableSummary;
 use Hilos\Database\Schema\JournalColumnMode;
@@ -223,10 +224,10 @@ final class HilosChangeLogTablesTableTest extends TestCase
     {
         $table = new class extends HilosChangeLogTablesTable {
             /**
-             * @return list<ChangeLogTableSummary> No summaries on a refused read
+             * @return ChangeLogReadCollection<ChangeLogTableSummary> No summaries on a refused read
              * @throws HilosException Always, to reproduce a reader failure
              */
-            protected function summaries(): array
+            protected function summaries(): ChangeLogReadCollection
             {
                 throw new HilosException('Journal unavailable');
             }
@@ -267,9 +268,9 @@ final class ChangeLogTablesFixtureTable extends HilosChangeLogTablesTable
         parent::__construct();
     }
 
-    /** @return list<ChangeLogTableSummary> Fixture declarations without SQL */
-    protected function summaries(): array
+    /** @return ChangeLogReadCollection<ChangeLogTableSummary> Fixture declarations without SQL */
+    protected function summaries(): ChangeLogReadCollection
     {
-        return $this->source;
+        return ChangeLogReadCollection::fromArray($this->source);
     }
 }

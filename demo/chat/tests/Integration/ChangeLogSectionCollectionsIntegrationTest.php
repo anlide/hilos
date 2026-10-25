@@ -12,7 +12,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -29,14 +28,16 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\UnplacedJournalColumnException;
 use Hilos\Database\Migration;
+use Hilos\Database\Object\Collection\ChangeLogEntries as ObjectChangeLogEntries;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\PhpType;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournaledTables;
 use Hilos\Database\View\Collection\ChangeLogEntries;
 use Hilos\Hilos;
 
-/** The section reader sees real chat triggers and the two configured databases. */
-final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
+/** Section collections read real chat triggers across the two configured databases. */
+final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCase
 {
     private const string KEY_PREFIX = 'journal.section.hil1452.';
 
@@ -95,8 +96,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
 
     public function testOverviewAndTablesDescribeLiveJournalCoverage(): void
     {
-        $reader = new ChangeLogSectionReader();
-        $before = $reader->overview();
+        $before = Hilos::$db->changeLogTables->sectionOverview();
         $this->assertGreaterThan(0, $before->journalBytes);
         $this->assertGreaterThan(0, $before->liveTables);
         $this->assertContains('hilos_setting', $before->journaledTables);
@@ -114,13 +114,13 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
                     [self::KEY_PREFIX . 'overview', 'string', 'first']);
             },
         );
-        $after = $reader->overview();
+        $after = Hilos::$db->changeLogTables->sectionOverview();
         $this->assertSame($before->journalEntries + 1, $after->journalEntries);
         $this->assertNotNull($after->oldestAt);
         $this->assertSame($before->liveTables, $after->liveTables);
 
         $tables = [];
-        foreach ($reader->tables() as $summary) {
+        foreach (Hilos::$db->changeLogTables->sectionTables() as $summary) {
             $tables[$summary->name] = $summary;
         }
         $this->assertSame($after->liveTables, count($tables));
@@ -158,9 +158,9 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         ksort($expected, SORT_STRING);
         $this->assertNotEmpty($expected);
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
-        $noisyColumns = new ChangeLogSectionReader()->noisyColumns();
+        $noisyColumns = Hilos::$db->changeLogTables->sectionNoisyColumns();
         $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
-        $this->assertSame(array_values($expected), array_map(get_object_vars(...), $noisyColumns));
+        $this->assertSame(array_values($expected), array_map(get_object_vars(...), $noisyColumns->toArray()));
         foreach ($noisyColumns as $column) {
             $this->assertInstanceOf(ChangeLogNoisyColumn::class, $column);
             $this->assertNotEmpty($column->reason);
@@ -177,19 +177,20 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
     {
         $originalContext = Hilos::$db;
         $context = new ChangeLogNoiseDbContext();
+        $context->configure();
         $context->entities = $originalContext->getMountedEntities();
         $context->entities['noiseProbe'] = ChangeLogNoiseProbeEntity::class;
         Hilos::$db = $context;
         try {
             $this->assertNotContains(ChangeLogNoiseProbeEntity::_table, array_map(
                 static fn(ChangeLogNoisyColumn $column): string => $column->table,
-                new ChangeLogSectionReader()->noisyColumns(),
+                Hilos::$db->changeLogTables->sectionNoisyColumns()->toArray(),
             ));
             Database::sql('CREATE TABLE `' . ChangeLogNoiseProbeEntity::_table . '`'
                 . ' (`id` INT NOT NULL PRIMARY KEY, `noisy_counter` INT NOT NULL) ENGINE=InnoDB');
             Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
             $probeColumns = array_values(array_filter(
-                new ChangeLogSectionReader()->noisyColumns(),
+                Hilos::$db->changeLogTables->sectionNoisyColumns()->toArray(),
                 static fn(ChangeLogNoisyColumn $column): bool => $column->table === ChangeLogNoiseProbeEntity::_table,
             ));
             $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
@@ -203,7 +204,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             Database::sql('ALTER TABLE `' . ChangeLogNoiseProbeEntity::_table . '` DROP COLUMN `noisy_counter`');
             Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
             try {
-                new ChangeLogSectionReader()->noisyColumns();
+                Hilos::$db->changeLogTables->sectionNoisyColumns();
                 $this->fail('An invalid live noise declaration must refuse the read');
             } catch (UnplacedJournalColumnException $exception) {
                 $this->assertStringContainsString(ChangeLogNoiseProbeEntity::_table . '.noisy_counter', $exception->getMessage());
@@ -220,9 +221,10 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
     {
         $originalContext = Hilos::$db;
         Hilos::$db = new ChangeLogNoiseDbContext();
+        Hilos::$db->configure();
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
-            $this->assertSame([], new ChangeLogSectionReader()->noisyColumns());
+            $this->assertSame([], Hilos::$db->changeLogTables->sectionNoisyColumns()->toArray());
             $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
         } finally {
             Hilos::$db = $originalContext;
@@ -232,9 +234,8 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
 
     public function testTableUsesLiveColumnPlacementAndTriggerHeaders(): void
     {
-        $reader = new ChangeLogSectionReader();
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
-        $detail = $reader->table('hilos_user');
+        $detail = Hilos::$db->changeLogTables->sectionTable('hilos_user');
         $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
         $this->assertNotNull($detail);
         $columns = [];
@@ -256,7 +257,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         }
 
         foreach (['bot', 'moderator_prompt_piece'] as $table) {
-            $project = $reader->table($table);
+            $project = Hilos::$db->changeLogTables->sectionTable($table);
             $this->assertNotNull($project);
             $this->assertCount(3, $project->triggers);
             foreach ($project->triggers as $trigger) {
@@ -267,11 +268,11 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
                 $this->assertSame(JournalColumnMode::VALUE, $column->mode);
             }
         }
-        $untracked = $reader->table('event');
+        $untracked = Hilos::$db->changeLogTables->sectionTable('event');
         $this->assertNotNull($untracked);
         $this->assertSame([], $untracked->triggers);
         $this->assertNull($untracked->columns[0]->mode);
-        $this->assertNull($reader->table('no_such_table'));
+        $this->assertNull(Hilos::$db->changeLogTables->sectionTable('no_such_table'));
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 
@@ -515,7 +516,6 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             . " VALUES (?, ?, ?, '[0]', UNHEX(SHA2('[0]', 256)), 'create')",
             [$moment, $receiptId, $tableId]);
 
-        $reader = new ChangeLogSectionReader();
         $filter = new ChangeLogFeedFilter(table: 'hilos_setting', since: $at->modify('-1 second'));
         $first = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 100);
         $this->assertCount(ChangeLogEntries::MAX_WINDOW_ROWS, $first);
@@ -556,32 +556,32 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertSame('long before', Hilos::$db->changeLogEntries->sectionEntry($bare->id)->changes[0]->oldValue);
 
         $historyFilter = new ChangeLogHistoryFilter(since: $at->modify('-1 second'));
-        $historyFirst = $reader->historyWindow('hilos_setting', $historyFilter,
+        $historyFirst = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $historyFilter,
             true, null, TableAnchorDirection::After, 100);
-        $this->assertCount(ChangeLogSectionReader::MAX_WINDOW_ROWS, $historyFirst);
-        $historyLast = $historyFirst[array_key_last($historyFirst)]->entry;
-        $historyNext = $reader->historyWindow('hilos_setting', $historyFilter, true,
+        $this->assertCount(ChangeLogEntries::MAX_WINDOW_ROWS, $historyFirst);
+        $historyLast = $historyFirst->last()->entry;
+        $historyNext = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $historyFilter, true,
             new ChangeLogHistoryAnchor($historyLast->createdAt, $historyLast->id), TableAnchorDirection::After, 50);
         $this->assertCount(3, $historyNext);
         $allIds = array_merge(
-            array_map(static fn($row): int => $row->entry->id, $historyFirst),
-            array_map(static fn($row): int => $row->entry->id, $historyNext),
+            array_map(static fn($row): int => $row->entry->id, $historyFirst->toArray()),
+            array_map(static fn($row): int => $row->entry->id, $historyNext->toArray()),
         );
         $this->assertCount(53, array_unique($allIds));
-        $byRecord = $reader->historyWindow('hilos_setting', new ChangeLogHistoryFilter(
+        $byRecord = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', new ChangeLogHistoryFilter(
             recordKey: [1], since: $at->modify('-1 second'),
         ), true, null, TableAnchorDirection::After, 50);
         $this->assertCount(1, $byRecord);
-        $this->assertTrue($byRecord[0]->entry->changes[0]->bodyOmitted);
-        $this->assertNull($byRecord[0]->entry->changes[0]->oldValue);
+        $this->assertTrue($byRecord->get(0)->entry->changes[0]->bodyOmitted);
+        $this->assertNull($byRecord->get(0)->entry->changes[0]->oldValue);
 
         Database::sql("INSERT INTO {$database}.`hilos_change_log`"
             . ' (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)'
             . " VALUES (?, NULL, ?, '[redacted]', NULL, 'delete')", [$moment, $tableId]);
-        $masked = $reader->historyWindow('hilos_setting', $historyFilter,
-            true, null, TableAnchorDirection::After, 1)[0]->entry;
+        $masked = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $historyFilter,
+            true, null, TableAnchorDirection::After, 1)->first()->entry;
         $this->assertNull($masked->recordKey);
-        $this->assertSame(1, $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(recordKey: [1])));
+        $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('hilos_setting', new ChangeLogHistoryFilter(recordKey: [1])));
     }
 
     public function testHistoryFiltersAndPaginatesRealJournalRows(): void
@@ -604,78 +604,77 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
             [self::KEY_PREFIX . 'history-other', 'string', 'other']);
 
-        $reader = new ChangeLogSectionReader();
         $filter = new ChangeLogHistoryFilter(since: $since);
-        $newest = $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
+        $newest = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
         $this->assertCount(4, $newest);
-        $this->assertSame(4, $reader->historyCount('hilos_setting', $filter));
-        $this->assertSame($newest[0]->entry->id, $reader->historyWindow(
+        $this->assertSame(4, Hilos::$db->changeLogEntries->historyCount('hilos_setting', $filter));
+        $this->assertSame($newest->get(0)->entry->id, Hilos::$db->changeLogEntries->historyWindow(
             'hilos_setting', $filter, true, null, TableAnchorDirection::After, 1, -1,
-        )[0]->entry->id);
-        $this->assertSame([], $reader->historyWindow(
+        )->first()->entry->id);
+        $this->assertSame([], Hilos::$db->changeLogEntries->historyWindow(
             'hilos_setting', $filter, true, null, TableAnchorDirection::After, 1, TableConstants::COUNT_CEILING + 1,
-        ));
-        $this->assertSame([$newest[1]->entry->id, $newest[2]->entry->id], array_map(
+        )->toArray());
+        $this->assertSame([$newest->get(1)->entry->id, $newest->get(2)->entry->id], array_map(
             static fn($row): int => $row->entry->id,
-            $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 2, 1),
+            Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 2, 1)->toArray(),
         ));
-        $this->assertSame([$newest[1]->entry->id, $newest[2]->entry->id], array_map(
+        $this->assertSame([$newest->get(1)->entry->id, $newest->get(2)->entry->id], array_map(
             static fn($row): int => $row->entry->id,
-            $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::Before, 2, 1),
+            Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::Before, 2, 1)->toArray(),
         ));
-        $this->assertSame(3, $reader->historyCount('hilos_setting', $filter, 2));
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('hilos_setting', $filter, 2));
         $this->assertSame(['create', 'delete', 'update', 'create'], array_map(
-            static fn($row): string => $row->entry->mutation, $newest,
+            static fn($row): string => $row->entry->mutation, $newest->toArray(),
         ));
-        $this->assertNull($newest[0]->receipt);
-        $this->assertSame('History Actor 1452', $newest[1]->receipt->actor->label);
-        $this->assertSame('web', $newest[2]->receipt->channel);
-        $this->assertSame(2, $reader->historyCountBefore('hilos_setting', $filter, true,
-            new ChangeLogHistoryAnchor($newest[2]->entry->createdAt, $newest[2]->entry->id)));
+        $this->assertNull($newest->get(0)->receipt);
+        $this->assertSame('History Actor 1452', $newest->get(1)->receipt->actor->label);
+        $this->assertSame('web', $newest->get(2)->receipt->channel);
+        $this->assertSame(2, Hilos::$db->changeLogEntries->historyCountBefore('hilos_setting', $filter, true,
+            new ChangeLogHistoryAnchor($newest->get(2)->entry->createdAt, $newest->get(2)->entry->id)));
 
-        $older = $reader->historyWindow('hilos_setting', $filter, true,
-            new ChangeLogHistoryAnchor($newest[0]->entry->createdAt, $newest[0]->entry->id),
+        $older = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, true,
+            new ChangeLogHistoryAnchor($newest->get(0)->entry->createdAt, $newest->get(0)->entry->id),
             TableAnchorDirection::After, 2);
-        $this->assertSame([$newest[1]->entry->id, $newest[2]->entry->id], array_map(
-            static fn($row): int => $row->entry->id, $older,
+        $this->assertSame([$newest->get(1)->entry->id, $newest->get(2)->entry->id], array_map(
+            static fn($row): int => $row->entry->id, $older->toArray(),
         ));
-        $oldest = $reader->historyWindow('hilos_setting', $filter, false, null, TableAnchorDirection::After, 50);
-        $this->assertSame(array_reverse(array_map(static fn($row): int => $row->entry->id, $newest)),
-            array_map(static fn($row): int => $row->entry->id, $oldest));
-        $this->assertSame(1, $reader->historyCountBefore('hilos_setting', $filter, false,
-            new ChangeLogHistoryAnchor($oldest[1]->entry->createdAt, $oldest[1]->entry->id)));
+        $oldest = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, false, null, TableAnchorDirection::After, 50);
+        $this->assertSame(array_reverse(array_map(static fn($row): int => $row->entry->id, $newest->toArray())),
+            array_map(static fn($row): int => $row->entry->id, $oldest->toArray()));
+        $this->assertSame(1, Hilos::$db->changeLogEntries->historyCountBefore('hilos_setting', $filter, false,
+            new ChangeLogHistoryAnchor($oldest->get(1)->entry->createdAt, $oldest->get(1)->entry->id)));
 
         $byRecord = new ChangeLogHistoryFilter(recordKey: [$settingId], since: $since);
-        $this->assertSame(3, $reader->historyCount('hilos_setting', $byRecord));
-        $this->assertSame(3, $reader->historyCount('hilos_setting',
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('hilos_setting', $byRecord));
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('hilos_setting',
             new ChangeLogHistoryFilter(recordKey: [(string)$settingId], since: $since)));
-        $this->assertSame(3, $reader->historyCount('hilos_setting',
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('hilos_setting',
             new ChangeLogHistoryFilter(recordKey: ['000' . $settingId], since: $since)));
-        $byField = $reader->historyWindow('hilos_setting', new ChangeLogHistoryFilter(
+        $byField = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', new ChangeLogHistoryFilter(
             field: 'type', since: $since,
         ), true, null, TableAnchorDirection::After, 50);
         $this->assertCount(1, $byField);
-        $this->assertSame('update', $byField[0]->entry->mutation);
-        $this->assertSame(2, $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(
+        $this->assertSame('update', $byField->get(0)->entry->mutation);
+        $this->assertSame(2, Hilos::$db->changeLogEntries->historyCount('hilos_setting', new ChangeLogHistoryFilter(
             who: '#' . $actorId, since: $since,
         )));
-        $this->assertSame(2, $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(
+        $this->assertSame(2, Hilos::$db->changeLogEntries->historyCount('hilos_setting', new ChangeLogHistoryFilter(
             who: 'Actor 1452', since: $since,
         )));
-        $this->assertSame(0, $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(
+        $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_setting', new ChangeLogHistoryFilter(
             until: $since,
         )));
-        $this->assertSame(0, $reader->historyCount('event', new ChangeLogHistoryFilter()));
-        $this->assertSame([], $reader->historyWindow('event', new ChangeLogHistoryFilter(),
-            true, null, TableAnchorDirection::After, 50));
+        $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('event', new ChangeLogHistoryFilter()));
+        $this->assertSame([], Hilos::$db->changeLogEntries->historyWindow('event', new ChangeLogHistoryFilter(),
+            true, null, TableAnchorDirection::After, 50)->toArray());
 
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$actorId]);
-        $afterErase = $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
-        $this->assertSame('Deleted user #' . $actorId, $afterErase[1]->receipt->actor->label);
-        $this->assertTrue($afterErase[1]->receipt->actor->deleted);
+        $afterErase = Hilos::$db->changeLogEntries->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
+        $this->assertSame('Deleted user #' . $actorId, $afterErase->get(1)->receipt->actor->label);
+        $this->assertTrue($afterErase->get(1)->receipt->actor->deleted);
 
         $this->expectException(InvalidArgumentException::class);
-        $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(recordKey: []));
+        Hilos::$db->changeLogEntries->historyCount('hilos_setting', new ChangeLogHistoryFilter(recordKey: []));
     }
 
     public function testFeedSkipWithAnAnchorIsRefused(): void
@@ -693,7 +692,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
     public function testHistorySkipWithAnAnchorIsRefused(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new ChangeLogSectionReader()->historyWindow(
+        Hilos::$db->changeLogEntries->historyWindow(
             'hilos_setting',
             new ChangeLogHistoryFilter(),
             true,
@@ -706,35 +705,13 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
 
     public function testMissingJournalSchemaPropagatesSqlFailure(): void
     {
-        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $originalEntries = Hilos::$db->changeLogEntries->getObjectCollection();
+        Hilos::$db->changeLogEntries->setObjectCollection(MissingSectionOverviewEntryObjects::initDB(Objects::LAZY_STRATEGY_KEY));
         try {
-            Database::configure(
-                index: DatabaseConnectionDefaults::PRIMARY_INDEX,
-                host: $config->host,
-                user: $config->user,
-                password: $config->password,
-                database: 'information_schema',
-                port: $config->port,
-                charset: $config->charset,
-                socket: $config->socket,
-                reconnectAttempts: $config->reconnectAttempts,
-                reconnectDelay: $config->reconnectDelay,
-            );
             $this->expectException(DatabaseException::class);
-            (new ChangeLogSectionReader())->overview();
+            Hilos::$db->changeLogTables->sectionOverview();
         } finally {
-            Database::configure(
-                index: DatabaseConnectionDefaults::PRIMARY_INDEX,
-                host: $config->host,
-                user: $config->user,
-                password: $config->password,
-                database: $config->database,
-                port: $config->port,
-                charset: $config->charset,
-                socket: $config->socket,
-                reconnectAttempts: $config->reconnectAttempts,
-                reconnectDelay: $config->reconnectDelay,
-            );
+            Hilos::$db->changeLogEntries->setObjectCollection($originalEntries);
         }
     }
 
@@ -787,4 +764,14 @@ final class ChangeLogNoiseProbeEntity extends Entity
 
     public int $id;
     public int $noisy_counter;
+}
+
+/** Keeps the journal binding while making the overview read a missing entry table without DDL. */
+final class MissingSectionOverviewEntryObjects extends ObjectChangeLogEntries
+{
+    /** @return string Absent journal table for the SQL failure scenario */
+    public function getTableName(): string
+    {
+        return 'hilos_missing_section_overview_entry';
+    }
 }

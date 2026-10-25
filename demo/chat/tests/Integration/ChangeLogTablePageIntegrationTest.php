@@ -27,7 +27,6 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\DatabaseConnectionDefaults;
@@ -132,7 +131,7 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
     {
         Database::sqlRun('INSERT INTO `bot` (`name`) VALUES (?)', [self::BOT_NAME]);
         $this->botIds[] = Database::lastInsertId();
-        $summary = new ChangeLogSectionReader()->table('bot')?->summary;
+        $summary = Hilos::$db->changeLogTables->sectionTable('bot')?->summary;
         self::assertNotNull($summary?->lastChangeAt);
         self::assertGreaterThanOrEqual(1, $summary->changesLast24h);
 

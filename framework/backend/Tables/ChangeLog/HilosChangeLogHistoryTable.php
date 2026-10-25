@@ -20,12 +20,14 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableWindowPlan;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryRow;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\View\Collection\ChangeLogEntries;
+use Hilos\Hilos;
+use Hilos\HilosException;
 
 /** Frozen, server-windowed history of one journaled table. */
 class HilosChangeLogHistoryTable extends TableDefinition implements ViewportTable
@@ -122,11 +124,12 @@ class HilosChangeLogHistoryTable extends TableDefinition implements ViewportTabl
      * @param TableQueryDTO $query Scoped viewport request
      * @return TableSnapshotDTO Frozen journal window
      * @throws InvalidArgumentException When a filter or anchor is invalid
+     * @throws HilosException When journal, dictionary, schema or person reads fail
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $limit = $query->limit === TableConstants::NO_LIMIT
-            ? ChangeLogSectionReader::MAX_WINDOW_ROWS : min($query->limit, ChangeLogSectionReader::MAX_WINDOW_ROWS);
+            ? ChangeLogEntries::MAX_WINDOW_ROWS : min($query->limit, ChangeLogEntries::MAX_WINDOW_ROWS);
         $served = $query->withLimit($limit);
         $record = $query->filter[self::FILTER_RECORD] ?? null;
         if ($record !== null && (!is_array($record) || $record === [] || !array_is_list($record)
@@ -147,8 +150,7 @@ class HilosChangeLogHistoryTable extends TableDefinition implements ViewportTabl
             since: $since,
         );
         $newestFirst = $query->sort === null || $query->sort->last()->direction === TableConstants::ORDER_DESC;
-        $reader = new ChangeLogSectionReader();
-        $count = $reader->historyCount($table, $filter);
+        $count = Hilos::$db->changeLogEntries->historyCount($table, $filter);
         $exact = $count <= TableConstants::COUNT_CEILING;
         $total = min($count, TableConstants::COUNT_CEILING);
 
@@ -167,18 +169,22 @@ class HilosChangeLogHistoryTable extends TableDefinition implements ViewportTabl
             $skip = $plan['skip'];
             $take = $plan['take'];
         }
-        $items = $reader->historyWindow($table, $filter, $newestFirst, $anchor, $direction, $take, $skip);
-        $first = $items === [] ? null : self::anchorFor($items[0]);
-        $last = $items === [] ? null : self::anchorFor($items[count($items) - 1]);
+        $items = Hilos::$db->changeLogEntries->historyWindow($table, $filter, $newestFirst, $anchor, $direction, $take, $skip);
+        $first = $items->isEmpty() ? null : self::anchorFor($items->first());
+        $last = $items->isEmpty() ? null : self::anchorFor($items->last());
         $rowsBefore = null;
         if ($exact) {
             $rowsBefore = TableWindowPlan::knownRowsBefore($served, $first, $total);
             if ($rowsBefore === null && $first !== null) {
-                $rowsBefore = $reader->historyCountBefore($table, $filter, $newestFirst, self::readAnchor($first));
+                $rowsBefore = Hilos::$db->changeLogEntries->historyCountBefore($table, $filter, $newestFirst, self::readAnchor($first));
             }
         }
+        $rows = [];
+        foreach ($items as $item) {
+            $rows[] = HilosChangeLogHistoryTableRow::fromItem($item);
+        }
         return new TableSnapshotDTO(
-            rows: array_map(HilosChangeLogHistoryTableRow::fromItem(...), $items),
+            rows: $rows,
             totalCount: $total,
             totalExact: $exact,
             limit: $limit,

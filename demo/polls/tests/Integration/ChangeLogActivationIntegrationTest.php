@@ -10,7 +10,6 @@ use Demo\Polls\Database\Database;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\ChangeLogPartitions;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -123,7 +122,7 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
             self::assertCount(26, $partitions);
         }
         JournalCoverageGuard::assertMountedTablesPlaced();
-        $overview = new ChangeLogSectionReader()->overview();
+        $overview = Hilos::$db->changeLogTables->sectionOverview();
         self::assertSame(self::JOURNALED_TABLES, $overview->journaledTables);
         self::assertGreaterThan(0, $overview->liveTables);
         self::assertGreaterThan(0, $overview->journalBytes);
@@ -154,7 +153,6 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
     /** @throws HilosException When a receipt, fixture write, rollback or reader operation fails */
     public function testReceiptUnattributedWriteAndRollbackShareTheDataTransaction(): void
     {
-        $reader = new ChangeLogSectionReader();
         $since = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $receiptId = JournalReceiptScope::run(
             JournalReceiptData::web(11, null, 31, 'setting.create', 'activation-test'),
@@ -181,14 +179,14 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
         self::assertSame('web', $feed->get(1)->receipt->channel);
         self::assertSame('setting.create', $feed->get(1)->receipt->action);
 
-        $beforeRollback = $reader->overview()->journalEntries;
+        $beforeRollback = Hilos::$db->changeLogTables->sectionOverview()->journalEntries;
         $rollbackReceipt = JournalReceiptScope::run(
             JournalReceiptData::web(11, null, 31, 'setting.rollback', 'activation-test'),
-            function () use ($reader, $beforeRollback): ?int {
+            function () use ($beforeRollback): ?int {
                 Database::transactionStart();
                 try {
                     self::insertSetting(self::KEY_PREFIX . 'rollback');
-                    self::assertSame($beforeRollback + 1, $reader->overview()->journalEntries);
+                    self::assertSame($beforeRollback + 1, Hilos::$db->changeLogTables->sectionOverview()->journalEntries);
                     self::assertCount(1, Hilos::$db->changeLogEntries->receiptEntries(JournalReceiptScope::currentId(), null, 50));
                     return JournalReceiptScope::currentId();
                 } finally {
@@ -197,7 +195,7 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
             },
         );
         self::assertNotNull($rollbackReceipt);
-        self::assertSame($beforeRollback, $reader->overview()->journalEntries);
+        self::assertSame($beforeRollback, Hilos::$db->changeLogTables->sectionOverview()->journalEntries);
         self::assertSame([], Hilos::$db->changeLogEntries->receiptEntries($rollbackReceipt, null, 50)->toArray());
         Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_setting` WHERE `key` = ?', [self::KEY_PREFIX . 'rollback']);
         self::assertSame(0, (int)Database::field('count'));

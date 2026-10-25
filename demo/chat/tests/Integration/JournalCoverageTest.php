@@ -9,7 +9,6 @@ use Demo\Chat\Database\Entity\Item\Bot;
 use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Hilos\Core\Table\TableAnchorDirection;
-use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -121,25 +120,24 @@ final class JournalCoverageTest extends IntegrationTestCase
                     Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
                 });
             $this->assertNotNull($receiptId);
-            $reader = new ChangeLogSectionReader();
             foreach (['bot' => $botId, 'moderator_prompt_piece' => $pieceId] as $table => $id) {
-                $history = $reader->historyWindow($table, new ChangeLogHistoryFilter(recordKey: [$id]),
+                $history = Hilos::$db->changeLogEntries->historyWindow($table, new ChangeLogHistoryFilter(recordKey: [$id]),
                     false, null, TableAnchorDirection::After, 10);
                 $this->assertCount(3, $history);
-                $this->assertSame(['create', 'update', 'delete'], array_map(static fn($row): string => $row->entry->mutation, $history));
+                $this->assertSame(['create', 'update', 'delete'], array_map(static fn($row): string => $row->entry->mutation, $history->toArray()));
                 foreach ($history as $row) {
                     $this->assertSame($receiptId, $row->entry->receiptId);
                     $this->assertSame('configuration.crud', $row->receipt->action);
                     $this->assertSame([$id], $row->entry->recordKey);
                 }
-                $this->assertSame([], $history[0]->entry->changes);
-                $update = Hilos::$db->changeLogEntries->sectionEntry($history[1]->entry->id);
+                $this->assertSame([], $history->get(0)->entry->changes);
+                $update = Hilos::$db->changeLogEntries->sectionEntry($history->get(1)->entry->id);
                 $this->assertNotNull($update);
                 $this->assertCount(1, $update->changes);
                 $changed = $update->changes[0];
                 $this->assertTrue($changed->oldPresent);
                 $this->assertTrue($changed->newPresent);
-                $delete = Hilos::$db->changeLogEntries->sectionEntry($history[2]->entry->id);
+                $delete = Hilos::$db->changeLogEntries->sectionEntry($history->get(2)->entry->id);
                 $this->assertNotNull($delete);
                 $snapshot = [];
                 foreach ($delete->changes as $change) {
@@ -199,21 +197,20 @@ final class JournalCoverageTest extends IntegrationTestCase
                     Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::FIRST_BROWSER_ZONE);
                 });
             $this->assertNotNull($personId);
-            $reader = new ChangeLogSectionReader();
-            $history = $this->userHistory($reader, $personId);
+            $history = $this->userHistory($personId);
             $this->assertSame(['create', 'update'], array_map(static fn($row): string => $row->entry->mutation, $history));
 
             JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'person.zone.same', 'test-agent'),
                 function () use ($personId): void {
                     Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::FIRST_BROWSER_ZONE);
                 });
-            $this->assertCount(2, $this->userHistory($reader, $personId), 'An equal write must leave no journal record');
+            $this->assertCount(2, $this->userHistory($personId), 'An equal write must leave no journal record');
 
             JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'person.zone.second', 'test-agent'),
                 function () use ($personId): void {
                     Hilos::$db->users[$personId]->actions->setLastBrowserTimeZone(self::SECOND_BROWSER_ZONE);
                 });
-            $history = $this->userHistory($reader, $personId);
+            $history = $this->userHistory($personId);
             $this->assertSame(['create', 'update', 'update'], array_map(static fn($row): string => $row->entry->mutation, $history));
             $this->assertSame([], $history[0]->entry->changes);
             foreach ([1, 2] as $index) {
@@ -341,14 +338,13 @@ final class JournalCoverageTest extends IntegrationTestCase
     }
 
     /**
-     * @param ChangeLogSectionReader $reader Journal reader
      * @param int $personId Primary key of the person
      * @return list<ChangeLogHistoryRow> Journal rows of the person, oldest first
      */
-    private function userHistory(ChangeLogSectionReader $reader, int $personId): array
+    private function userHistory(int $personId): array
     {
-        return $reader->historyWindow('hilos_user', new ChangeLogHistoryFilter(recordKey: [$personId]),
-            false, null, TableAnchorDirection::After, 10);
+        return Hilos::$db->changeLogEntries->historyWindow('hilos_user', new ChangeLogHistoryFilter(recordKey: [$personId]),
+            false, null, TableAnchorDirection::After, 10)->toArray();
     }
 
     /**

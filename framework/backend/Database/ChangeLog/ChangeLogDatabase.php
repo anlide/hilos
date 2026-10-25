@@ -7,6 +7,12 @@ namespace Hilos\Database\ChangeLog;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\ChangeLogChange;
+use Hilos\Database\Entity\Item\ChangeLogEntry;
+use Hilos\Database\Entity\Item\ChangeLogField;
+use Hilos\Database\Entity\Item\ChangeLogReceipt;
+use Hilos\Database\Entity\Item\ChangeLogTable;
+use Hilos\Database\Entity\Item\ChangeLogValue;
 
 /**
  * Names the journal schema on the same server as the primary database.
@@ -18,6 +24,26 @@ final class ChangeLogDatabase
     private const string SUFFIX = '-change-log';
 
     private const int MAX_IDENTIFIER_LENGTH = 64;
+
+    private const array JOURNAL_TABLES = [
+        ChangeLogTable::_table, ChangeLogField::_table, ChangeLogReceipt::_table,
+        ChangeLogEntry::_table, ChangeLogChange::_table, ChangeLogValue::_table,
+    ];
+
+    /**
+     * @return int Approximate data and index bytes of the six physical journal tables
+     * @throws DatabaseException When the configured journal or its size metadata cannot be read
+     */
+    public static function approximateBytes(): int
+    {
+        $placeholders = implode(', ', array_fill(0, count(self::JOURNAL_TABLES), '?'));
+        return (int)Database::sql(
+            'SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS journal_bytes'
+            . ' FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (' . $placeholders . ')',
+            array_merge([self::configuredName()], self::JOURNAL_TABLES),
+            index: self::CONNECTION_INDEX,
+        )->field('journal_bytes');
+    }
 
     /**
      * @param string $primaryName Primary database name

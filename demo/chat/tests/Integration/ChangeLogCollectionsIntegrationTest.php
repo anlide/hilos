@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -31,22 +32,34 @@ use Hilos\Database\ChangeLog\Section\ChangeLogFeedAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItem;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItemKind;
+use Hilos\Database\ChangeLog\Section\ChangeLogOverview;
+use Hilos\Database\ChangeLog\Section\ChangeLogHistoryAnchor;
+use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
+use Hilos\Database\ChangeLog\Section\ChangeLogHistoryRow;
 use Hilos\Database\ChangeLog\Section\ChangeLogReadCollection;
 use Hilos\Database\ChangeLog\Section\ChangeLogReceipt;
+use Hilos\Database\ChangeLog\Section\ChangeLogTableDetail;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Exception\UnboundedCollectionReadException;
-use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\SqlRuntime\TableNotFoundException;
+use Hilos\Database\Exception\UnboundedCollectionReadException;
+use Hilos\Database\Exception\UnplacedJournalColumnException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Migration;
 use Hilos\Database\Object\Collection\ChangeLogEntries as ObjectChangeLogEntries;
 use Hilos\Database\Object\Collection\ChangeLogReceipts as ObjectChangeLogReceipts;
+use Hilos\Database\Object\Collection\ChangeLogTables as ObjectChangeLogTables;
 use Hilos\Database\Object\Collection\Users as ObjectUsers;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\PhpType;
+use Hilos\Database\Schema\EntitySchemaAudit;
+use Hilos\Database\Schema\JournalColumnMode;
+use Hilos\Database\Schema\JournaledTables;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Testing\RollbackIntegrationTestCase;
-use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use ReflectionProperty;
 
 /** Schema and trigger DDL belong outside the managed rollback root; case rows never escape it. */
@@ -123,11 +136,323 @@ abstract class ChangeLogCollectionsEnvironment extends RollbackIntegrationTestCa
     }
 }
 
+/** Keeps metadata fixture DDL outside the managed root, preserving the shared trigger environment. */
+abstract class ChangeLogCollectionsMetadataEnvironment extends ChangeLogCollectionsEnvironment
+{
+    /** Adds finite schema fixtures before the managed rollback transaction starts. */
+    protected function prepareIntegrationEnvironment(): void
+    {
+        parent::prepareIntegrationEnvironment();
+        Database::sql('CREATE TABLE `hilos_collections_metadata_probe`'
+            . ' (`id` INT NOT NULL PRIMARY KEY, `noisy_counter` INT NOT NULL) ENGINE=InnoDB', index: 0);
+        Database::sql('CREATE TABLE `hilos_collections_metadata_dropped`'
+            . ' (`id` INT NOT NULL PRIMARY KEY, `noisy_counter` INT NOT NULL) ENGINE=InnoDB', index: 0);
+        Database::sql('DROP TABLE `hilos_collections_metadata_dropped`', index: 0);
+        Database::sql('CREATE TABLE `hilos_collections_unrelated_bytes` (`body` LONGTEXT) ENGINE=InnoDB',
+            index: ChangeLogDatabase::CONNECTION_INDEX);
+        Database::sql('CREATE TABLE `hilos_collections_history_keys`'
+            . ' (`tiny` TINYINT NOT NULL, `small` SMALLINT NOT NULL, `medium` MEDIUMINT NOT NULL,'
+            . ' `integer` INT NOT NULL, `big` BIGINT NOT NULL, `text` VARCHAR(64) NOT NULL,'
+            . ' PRIMARY KEY (`text`, `tiny`, `small`, `medium`, `integer`, `big`)) ENGINE=InnoDB', index: 0);
+        Database::sql('CREATE TABLE `hilos_collections_history_string` (`code` VARCHAR(64) NOT NULL PRIMARY KEY) ENGINE=InnoDB', index: 0);
+    }
+
+    /** Removes schema fixtures only after the managed root and ORM reset have finished. */
+    protected function releaseIntegrationEnvironment(): void
+    {
+        try {
+            Database::sql('DROP TABLE IF EXISTS `hilos_collections_metadata_probe`', index: 0);
+            Database::sql('DROP TABLE IF EXISTS `hilos_collections_metadata_dropped`', index: 0);
+            Database::sql('DROP TABLE IF EXISTS `hilos_collections_unrelated_bytes`', index: ChangeLogDatabase::CONNECTION_INDEX);
+            Database::sql('DROP TABLE IF EXISTS `hilos_collections_history_keys`', index: 0);
+            Database::sql('DROP TABLE IF EXISTS `hilos_collections_history_string`', index: 0);
+        } finally {
+            parent::releaseIntegrationEnvironment();
+        }
+    }
+
+    /** Uses the real collection bindings while adding only the current case's schema declarations. */
+    protected function mountMetadataDeclarations(): void
+    {
+        $entities = Hilos::$db->getMountedEntities();
+        $context = new CollectionsMetadataDbContext();
+        $context->configure();
+        $context->metadataEntities = $entities;
+        $context->metadataEntities['metadataProbe'] = CollectionsMetadataProbeEntity::class;
+        $context->metadataEntities['metadataDropped'] = CollectionsMetadataDroppedEntity::class;
+        Hilos::$db = $context;
+    }
+}
+
 /** Actual facade reads share the trigger writer's connection, without applying journal DB-sync frames. */
 #[IntegrationTest]
 #[BreaksOrmState]
-final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsEnvironment
+final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMetadataEnvironment
 {
+    private const array JOURNAL_TABLES = [
+        'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
+        'hilos_change_log_receipt', 'hilos_change_log_field', 'hilos_change_log_table',
+    ];
+
+    /** Empty reads become fresh after real writes; earlier typed snapshots and empty ORM maps stay unchanged. */
+    public function testOverviewCatalogAndActivitySeeTriggerWritesWithoutSync(): void
+    {
+        $this->mountMetadataDeclarations();
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        foreach (self::JOURNAL_TABLES as $table) {
+            Database::sql("DELETE FROM {$journal}.`{$table}`", index: 0);
+        }
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $empty = Hilos::$db->changeLogTables->sectionOverview();
+            $tables = Hilos::$db->changeLogTables->sectionTables();
+            $before = array_column($tables->toArray(), null, 'name');
+            $this->assertSame(0, $empty->journalEntries);
+            $this->assertNull($empty->oldestAt);
+            $this->assertNull(Hilos::$db->changeLogEntries->oldestCreatedAt());
+            $this->assertNull(Hilos::$db->changeLogTables->sectionIdByName('hilos_user'));
+            $this->assertSame(0, $before['hilos_user']->changesLast24h);
+            $this->assertNull($before['hilos_user']->lastChangeAt);
+            $this->assertSame(0, $before['hilos_collections_metadata_probe']->changesLast24h);
+            $this->assertNull($before['hilos_collections_metadata_probe']->lastChangeAt);
+            $this->assertNull($before['event']->changesLast24h);
+            $this->assertNull($before['event']->lastChangeAt);
+            $this->assertSame('framework', $before['hilos_user']->owner->value);
+            $this->assertSame('project', $before['moderator_prompt_piece']->owner->value);
+            $this->assertTrue($before['moderator_prompt_piece']->journaled);
+            $this->assertSame(['record_key' => 1, 'value' => 2], $before['moderator_prompt_piece']->modeCounts);
+            $live = EntitySchemaAudit::liveTables(0);
+            $this->assertGreaterThan(50, count($live));
+            $this->assertSame($live, array_keys($before));
+            $this->assertSame(range(0, count($live) - 1), array_keys($tables->toArray()));
+            $this->assertSame(count($live), $empty->liveTables);
+            $expectedJournaled = array_values(array_intersect($live, array_map(
+                static fn (string $entity): string => $entity::_table, JournaledTables::mounted(),
+            )));
+            $this->assertSame($expectedJournaled, $empty->journaledTables);
+            $this->assertNotContains('hilos_collections_metadata_dropped', $empty->journaledTables);
+
+            $receiptId = JournalReceiptScope::run(JournalReceiptData::cli('metadata.fresh', 'metadata-test'), function (): int {
+                $id = JournalReceiptScope::currentId();
+                $emptyEntries = Hilos::$db->changeLogEntries->receiptEntries($id, null, 50);
+                $this->assertTrue($emptyEntries->isEmpty());
+                for ($i = 0; $i < 55; $i++) {
+                    Hilos::$db->users->actions->createWithName('Metadata fresh person ' . $i);
+                }
+                $this->assertCount(50, Hilos::$db->changeLogEntries->receiptEntries($id, null, 50));
+                $this->assertTrue($emptyEntries->isEmpty());
+                return $id;
+            });
+            $after = Hilos::$db->changeLogTables->sectionOverview();
+            $fresh = array_column(Hilos::$db->changeLogTables->sectionTables()->toArray(), null, 'name');
+            $this->assertSame(55, $after->journalEntries);
+            $this->assertSame(55, $fresh['hilos_user']->changesLast24h);
+            $this->assertNotNull($fresh['hilos_user']->lastChangeAt);
+            $this->assertSame('UTC', $after->oldestAt->getTimezone()->getName());
+            $this->assertEquals($after->oldestAt, Hilos::$db->changeLogEntries->oldestCreatedAt());
+            $this->assertSame(0, $empty->journalEntries);
+            $this->assertNull($empty->oldestAt);
+            $this->assertSame(0, $before['hilos_user']->changesLast24h);
+            $this->assertNull($before['hilos_user']->lastChangeAt);
+            $entry = Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 1)->first();
+            $tableId = Hilos::$db->changeLogTables->sectionIdByName('hilos_user');
+            $this->assertSame('hilos_user', Hilos::$db->changeLogTables[$tableId]->name);
+            $this->assertEquals($entry, Hilos::$db->changeLogEntries->sectionEntry($entry->id));
+            foreach ([Hilos::$db->changeLogEntries, Hilos::$db->changeLogTables] as $collection) {
+                $this->assertSame([], new ReflectionProperty(Objects::class, 'objects')->getValue($collection->getObjectCollection()));
+            }
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Oldest follows journal id, activity follows MAX time, and the recent count excludes old rows. */
+    public function testOldestUsesIdOrderAndPreservesUtcMicroseconds(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql("DELETE FROM {$journal}.`hilos_change_log`", index: 0);
+        $tableId = Hilos::$db->changeLogTables->sectionIdByName('hilos_user');
+        if ($tableId === null) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES (?)", ['hilos_user'], index: 0);
+            $tableId = Database::lastInsertId(0);
+        }
+        foreach (['2002-02-02 02:02:02.123456', '2001-01-01 01:01:01.654321'] as $moment) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log`"
+                . ' (`created_at`, `table_id`, `record_key`, `mutation_type`) VALUES (?, ?, ?, ?)',
+                [$moment, $tableId, '[1]', 'create'], index: 0);
+        }
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $oldest = Hilos::$db->changeLogEntries->oldestCreatedAt();
+            $this->assertSame('2002-02-02 02:02:02.123456', $oldest->format('Y-m-d H:i:s.u'));
+            $this->assertSame('UTC', $oldest->getTimezone()->getName());
+            $tables = array_column(Hilos::$db->changeLogTables->sectionTables()->toArray(), null, 'name');
+            $this->assertEquals($oldest, $tables['hilos_user']->lastChangeAt);
+            $this->assertSame(0, $tables['hilos_user']->changesLast24h);
+            $this->assertEquals($oldest, Hilos::$db->changeLogTables->sectionOverview()->oldestAt);
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Live columns keep schema order, policy storage, and migration headers without trigger SQL bodies. */
+    public function testTableDetailAndNoiseUseLiveMetadata(): void
+    {
+        $this->mountMetadataDeclarations();
+        $schemas = LiveSchemaReader::read(0);
+        $expectedNoise = [];
+        foreach (JournaledTables::mounted() as $entity) {
+            if (isset($schemas[$entity::_table])) {
+                foreach ($entity::_journalNoise as $column => $reason) {
+                    $expectedNoise[$entity::_table . '.' . $column] = ['table' => $entity::_table, 'column' => $column, 'reason' => $reason];
+                }
+            }
+        }
+        ksort($expectedNoise, SORT_STRING);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $noise = Hilos::$db->changeLogTables->sectionNoisyColumns();
+            $this->assertSame(array_values($expectedNoise), array_map(get_object_vars(...), $noise->toArray()));
+            $this->assertSame(range(0, count($noise) - 1), array_keys($noise->toArray()));
+            $detail = Hilos::$db->changeLogTables->sectionTable('hilos_user');
+            $this->assertSame(array_keys($schemas['hilos_user']->columns), array_column($detail->columns, 'name'));
+            $columns = array_column($detail->columns, null, 'name');
+            $this->assertSame(JournalColumnMode::RECORD_KEY, $columns['id']->mode);
+            $this->assertNull($columns['id']->storage);
+            $this->assertSame(JournalColumnMode::PERSONAL, $columns['name']->mode);
+            $this->assertSame('fact', $columns['name']->storage);
+            $this->assertSame(JournalColumnMode::NOISE, $columns['last_activity']->mode);
+            $this->assertSame('ignored', $columns['last_activity']->storage);
+            $this->assertNotEmpty($columns['last_activity']->noiseReason);
+            $this->assertSame(['INSERT', 'UPDATE', 'DELETE'], array_column($detail->triggers, 'event'));
+            foreach ($detail->triggers as $trigger) {
+                $this->assertSame(JournalTriggerFiles::validFrom($trigger->name), $trigger->validFromMigration);
+                $this->assertGreaterThan(0, $trigger->validFromMigration);
+                $this->assertSame(['name', 'event', 'table', 'validFromMigration'], array_keys(get_object_vars($trigger)));
+            }
+            $project = Hilos::$db->changeLogTables->sectionTable('moderator_prompt_piece');
+            $this->assertSame('project', $project->summary->owner->value);
+            $this->assertSame('long', array_column($project->columns, null, 'name')['prompt_piece']->storage);
+            $untracked = Hilos::$db->changeLogTables->sectionTable('event');
+            $this->assertFalse($untracked->summary->journaled);
+            $this->assertSame([], $untracked->triggers);
+            foreach ($untracked->columns as $column) {
+                $this->assertNull($column->mode);
+                $this->assertNull($column->storage);
+            }
+            $this->assertNull(Hilos::$db->changeLogTables->sectionTable('hilos_collections_metadata_dropped'));
+            $this->assertNull(Hilos::$db->changeLogTables->sectionTable('unknown metadata table'));
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Declarations absent from the mounted set produce an empty dense snapshot; invalid live policy propagates. */
+    public function testNoNoiseAndPolicyFailuresRestoreTheAmbientConnection(): void
+    {
+        $this->mountMetadataDeclarations();
+        $context = Hilos::$db;
+        $entities = $context->metadataEntities;
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $context->metadataEntities = [];
+            $this->assertTrue(Hilos::$db->changeLogTables->sectionNoisyColumns()->isEmpty());
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            $context->metadataEntities = $entities;
+            $context->metadataEntities['metadataProbe'] = CollectionsInvalidMetadataProbeEntity::class;
+            foreach ([
+                static fn (): ChangeLogReadCollection => Hilos::$db->changeLogTables->sectionNoisyColumns(),
+                static fn (): ChangeLogReadCollection => Hilos::$db->changeLogTables->sectionTables(),
+                static fn (): ?ChangeLogTableDetail => Hilos::$db->changeLogTables->sectionTable('hilos_collections_metadata_probe'),
+            ] as $read) {
+                try {
+                    $read();
+                    $this->fail('Invalid live metadata must propagate a policy failure');
+                } catch (UnplacedJournalColumnException $failure) {
+                    $this->assertStringContainsString('hilos_collections_metadata_probe.absent_column', $failure->getMessage());
+                }
+                $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            }
+        } finally {
+            $context->metadataEntities = $entities;
+            Database::useConnection(0);
+        }
+    }
+
+    /** A formerly journaled name remains a fresh dictionary lookup while disappearing from live metadata. */
+    public function testDroppedDictionaryNamesAndFreshNameLookups(): void
+    {
+        $this->mountMetadataDeclarations();
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $name = 'hilos_collections_metadata_dropped';
+        $this->assertNull(Hilos::$db->changeLogTables->sectionIdByName($name));
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES (?)", [$name], index: 0);
+        $id = Database::lastInsertId(0);
+        $this->assertSame($id, Hilos::$db->changeLogTables->sectionIdByName($name));
+        $this->assertSame($name, Hilos::$db->changeLogTables[$id]->name);
+        $this->assertNotContains($name, array_column(Hilos::$db->changeLogTables->sectionTables()->toArray(), 'name'));
+        $this->assertNotContains($name, Hilos::$db->changeLogTables->sectionOverview()->journaledTables);
+        $this->assertNull(Hilos::$db->changeLogTables->sectionTable($name));
+        Database::sql("DELETE FROM {$journal}.`hilos_change_log_table` WHERE `id` = ?", [$id], index: 0);
+        $this->assertNull(Hilos::$db->changeLogTables->sectionIdByName($name));
+    }
+
+    /** Weight uses only the six physical journal tables and leaves the caller's connection selected. */
+    public function testApproximateBytesMatchesItsSixMetadataTables(): void
+    {
+        foreach ([0, ChangeLogDatabase::CONNECTION_INDEX] as $index) {
+            Database::useConnection($index);
+            $expected = (int)Database::sql(
+                'SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS bytes FROM information_schema.TABLES'
+                . ' WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?, ?, ?, ?, ?, ?)',
+                array_merge([ChangeLogDatabase::configuredName()], self::JOURNAL_TABLES),
+                index: ChangeLogDatabase::CONNECTION_INDEX,
+            )->field('bytes');
+            $this->assertSame($expected, ChangeLogDatabase::approximateBytes());
+            $other = (int)Database::sql(
+                'SELECT DATA_LENGTH + INDEX_LENGTH AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                [ChangeLogDatabase::configuredName(), 'hilos_collections_unrelated_bytes'],
+                index: ChangeLogDatabase::CONNECTION_INDEX,
+            )->field('bytes');
+            $this->assertGreaterThan(0, $other);
+            $all = (int)Database::sql(
+                'SELECT SUM(DATA_LENGTH + INDEX_LENGTH) AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+                [ChangeLogDatabase::configuredName()], index: ChangeLogDatabase::CONNECTION_INDEX,
+            )->field('bytes');
+            $this->assertSame($expected + $other, $all);
+            $this->assertSame($index, Database::getCurrentIndex());
+        }
+    }
+
+    /** Catalog and detail reads refuse real SQL failures instead of manufacturing empty success. */
+    public function testTableSqlFailuresPreserveTheAmbientConnection(): void
+    {
+        $original = Hilos::$db->changeLogTables->getObjectCollection();
+        Hilos::$db->changeLogTables->setObjectCollection(MissingSectionTableObjects::initDB(Objects::LAZY_STRATEGY_KEY));
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            foreach ([
+                static fn (): ChangeLogReadCollection => Hilos::$db->changeLogTables->sectionTables(),
+                static fn (): ?ChangeLogTableDetail => Hilos::$db->changeLogTables->sectionTable('hilos_user'),
+                static fn (): ?int => Hilos::$db->changeLogTables->sectionIdByName('hilos_user'),
+            ] as $read) {
+                try {
+                    $read();
+                    $this->fail('A table read must propagate SQL failure');
+                } catch (TableNotFoundException $failure) {
+                    $this->assertStringContainsString('hilos_missing_section_table', $failure->getMessage());
+                }
+                $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            }
+        } finally {
+            Hilos::$db->changeLogTables->setObjectCollection($original);
+            Database::useConnection(0);
+        }
+    }
+
     /** A fresh bounded read sees trigger inserts after an earlier empty window and a missing key. */
     public function testTriggerWritesAppearWithoutJournalSync(): void
     {
@@ -699,7 +1024,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsEnvi
         $this->assertSame([$personId], $original->recordKey);
     }
 
-    /** All three facade section APIs keep the caller's connection selected when real journal SQL fails. */
+    /** Entry reads and their overview caller keep the ambient connection selected when real journal SQL fails. */
     public function testSectionEntrySqlFailuresPreserveTheAmbientConnection(): void
     {
         $originalEntries = Hilos::$db->changeLogEntries->getObjectCollection();
@@ -711,6 +1036,8 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsEnvi
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->sectionEntriesByIds([1], true),
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->receiptEntries(1, null, 50),
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->receiptEntries(1, 1, 50),
+                static fn (): ?DateTimeImmutable => Hilos::$db->changeLogEntries->oldestCreatedAt(),
+                static fn (): ChangeLogOverview => Hilos::$db->changeLogTables->sectionOverview(),
             ] as $read) {
                 try {
                     $read();
@@ -1160,6 +1487,511 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsEnvi
         }
     }
 
+    /** Fresh bounded reads observe trigger inserts without changing prior snapshots or retaining journal rows. */
+    public function testHistorySnapshotsAndMissingDictionaryValidationOrder(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        foreach (self::JOURNAL_TABLES as $table) {
+            Database::sql("DELETE FROM {$journal}.`{$table}`", index: 0);
+        }
+        $filter = new ChangeLogHistoryFilter();
+        $anchor = new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-01-01T00:00:00.123456Z'), 1);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $empty = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50);
+            $this->assertTrue($empty->isEmpty());
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter));
+            foreach (['hilos_user', 'event', 'absent_history_table'] as $table) {
+                $invalidKey = new ChangeLogHistoryFilter(recordKey: []);
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount($table, $invalidKey));
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCountBefore($table, $invalidKey, true, $anchor));
+                $this->assertTrue(Hilos::$db->changeLogEntries->historyWindow(
+                    $table, $invalidKey, true, null, TableAnchorDirection::After, 50,
+                )->isEmpty());
+            }
+            Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('Fresh history person')", index: 0);
+            $person = Database::lastInsertId(0);
+            $one = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50);
+            $this->assertCount(1, $one);
+            $this->assertSame([0], array_keys($one->toArray()));
+            $this->assertSame([$person], $one->first()->entry->recordKey);
+            $this->assertNull($one->first()->receipt);
+            $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter));
+            $this->assertSame(1, Hilos::$db->changeLogTables->sectionOverview()->journalEntries);
+            $this->assertSame(1, Hilos::$db->changeLogTables->sectionTable('hilos_user')->summary->changesLast24h);
+            Database::sql('UPDATE `hilos_user` SET `block` = 1 WHERE `id` = ?', [$person], index: 0);
+            $two = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50);
+            $this->assertSame(['update', 'create'], array_map(
+                static fn(ChangeLogHistoryRow $row): string => $row->entry->mutation, $two->toArray(),
+            ));
+            $this->assertTrue($empty->isEmpty());
+            $this->assertCount(1, $one);
+            $this->assertSame('create', $one->first()->entry->mutation);
+            foreach (['hilos_user', 'hilos_collections_metadata_dropped'] as $table) {
+                if ($table !== 'hilos_user') {
+                    Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES (?)", [$table], index: 0);
+                }
+                $invalidKey = new ChangeLogHistoryFilter(recordKey: []);
+                $this->assertTrue(Hilos::$db->changeLogEntries->historyWindow(
+                    $table, $invalidKey, true, null, TableAnchorDirection::After, 0,
+                )->isEmpty(), 'A zero window skips record validation after dictionary lookup');
+                foreach ([
+                    static fn () => Hilos::$db->changeLogEntries->historyCount($table, $invalidKey),
+                    static fn () => Hilos::$db->changeLogEntries->historyCountBefore($table, $invalidKey, true, $anchor),
+                    static fn () => Hilos::$db->changeLogEntries->historyWindow(
+                        $table, $invalidKey, true, null, TableAnchorDirection::After, 50,
+                    ),
+                ] as $read) {
+                    try {
+                        $read();
+                        $this->fail('A known dictionary name requires valid live PK metadata for a record filter');
+                    } catch (InvalidArgumentException $failure) {
+                        $this->assertSame("Record key does not match the live primary key of {$table}", $failure->getMessage());
+                    }
+                    $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+                }
+            }
+            foreach ([HilosDbContext::changeLogEntries, HilosDbContext::changeLogTables, HilosDbContext::changeLogReceipts] as $key) {
+                $collection = Hilos::$db->{$key};
+                $this->assertSame([], new ReflectionProperty(Objects::class, 'objects')->getValue($collection->getObjectCollection()));
+                $this->assertSame([], new ReflectionProperty(DbCollection::class, 'items')->getValue($collection));
+                $this->assertFalse(new ReflectionProperty(Objects::class, '_allLoaded')->getValue($collection->getObjectCollection()));
+            }
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Tied microsecond moments retain every id in both directions, both orders and numbered edge pages. */
+    public function testHistoryFullAnchorsBoundedCountsAndNumberedPages(): void
+    {
+        $receipt = self::receiptWithPeople(505);
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $ids = array_map(static fn(array $row): int => (int)$row['id'], Database::sql(
+            "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `id`", [$receipt], index: 0,
+        )->rows());
+        $this->assertCount(505, $ids);
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2030-02-01 00:00:00.123456' WHERE `receipt_id` = ?",
+            [$receipt], index: 0);
+        foreach ([[$ids[0], '2030-02-01 00:00:00.123455'], [$ids[504], '2030-02-01 00:00:00.123457']] as [$id, $time]) {
+            Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = ? WHERE `id` = ?", [$time, $id], index: 0);
+        }
+        $filter = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T02:00:00.123455+02:00'),
+            until: new DateTimeImmutable('2030-02-01T00:00:00.123458Z'));
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            foreach ([[500, 501], [999, 501], [2, 3], [0, 1], [-5, 1]] as [$ceiling, $expected]) {
+                $before = self::selectCount();
+                $this->assertSame($expected, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter, $ceiling));
+                $this->assertSame(5, self::selectCount() - $before, 'Only dictionary and bounded count SQL, with guard probes');
+            }
+            foreach ([true, false] as $newestFirst) {
+                $expected = $newestFirst ? array_reverse($ids) : $ids;
+                foreach ([TableAnchorDirection::After, TableAnchorDirection::Before] as $direction) {
+                    $anchor = null;
+                    $seen = [];
+                    do {
+                        $window = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, $newestFirst, $anchor, $direction, 999);
+                        $this->assertLessThanOrEqual(50, count($window));
+                        if ($window->isEmpty()) {
+                            break;
+                        }
+                        $this->assertSame(range(0, count($window) - 1), array_keys($window->toArray()));
+                        $selected = self::historyIds($window);
+                        $seen = $direction === TableAnchorDirection::After ? [...$seen, ...$selected] : [...$selected, ...$seen];
+                        $edge = ($direction === TableAnchorDirection::After ? $window->last() : $window->first())->entry;
+                        $anchor = new ChangeLogHistoryAnchor($edge->createdAt, $edge->id);
+                    } while (true);
+                    $this->assertSame($expected, $seen, ($newestFirst ? 'DESC' : 'ASC') . ' ' . $direction->value);
+                }
+                foreach ([0, 1, 50, 450, 500] as $skip) {
+                    $this->assertSame(array_slice($expected, $skip, 50), self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                        'hilos_user', $filter, $newestFirst, null, TableAnchorDirection::After, 50, $skip,
+                    )));
+                    $this->assertSame(array_reverse(array_slice(array_reverse($expected), $skip, 50)), self::historyIds(
+                        Hilos::$db->changeLogEntries->historyWindow(
+                            'hilos_user', $filter, $newestFirst, null, TableAnchorDirection::Before, 50, $skip,
+                        ),
+                    ));
+                }
+                foreach ([0, 1, 49, 50, 504] as $position) {
+                    $entry = Hilos::$db->changeLogEntries->sectionEntry($expected[$position]);
+                    $anchor = new ChangeLogHistoryAnchor($entry->createdAt, $entry->id);
+                    foreach ([[500, min($position, 501)], [999, min($position, 501)], [2, min($position, 3)],
+                        [0, min($position, 1)], [-1, min($position, 1)]] as [$ceiling, $count]) {
+                        $this->assertSame($count, Hilos::$db->changeLogEntries->historyCountBefore(
+                            'hilos_user', $filter, $newestFirst, $anchor, $ceiling,
+                        ));
+                    }
+                }
+            }
+            foreach ([0, -1] as $limit) {
+                $this->assertTrue(Hilos::$db->changeLogEntries->historyWindow(
+                    'hilos_user', $filter, true, null, TableAnchorDirection::After, $limit,
+                )->isEmpty());
+            }
+            $this->assertSame([$ids[504]], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', $filter, true, null, TableAnchorDirection::After, 1, -10,
+            )));
+            $this->assertTrue(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', new ChangeLogHistoryFilter(recordKey: []), true, null, TableAnchorDirection::After, 50, 501,
+            )->isEmpty());
+            foreach ([1, -1, 501] as $skip) {
+                try {
+                    Hilos::$db->changeLogEntries->historyWindow('absent_table', $filter, true, $anchor, TableAnchorDirection::After, 0, $skip);
+                    $this->fail('Anchor plus original nonzero skip must refuse before any other validation');
+                } catch (InvalidArgumentException $failure) {
+                    $this->assertSame('Change log skip requires an edge', $failure->getMessage());
+                }
+            }
+            $middle = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T00:00:00.123456Z'),
+                until: new DateTimeImmutable('2030-02-01T00:00:00.123457Z'));
+            $this->assertSame(array_reverse(array_slice($ids, 1, 50)), self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', $middle, true, null, TableAnchorDirection::Before, 50,
+            )));
+            $this->assertSame(501, Hilos::$db->changeLogEntries->historyCount('hilos_user', $middle, 5000),
+                'The 503 matching rows produce the capped 501 count');
+            foreach ([
+                [$ids[0], '2030-02-01T00:00:00.123455Z', '2030-02-01T00:00:00.123456Z'],
+                [$ids[504], '2030-02-01T00:00:00.123457Z', '2030-02-01T00:00:00.123458Z'],
+            ] as [$id, $since, $until]) {
+                $period = new ChangeLogHistoryFilter(since: new DateTimeImmutable($since), until: new DateTimeImmutable($until));
+                $this->assertSame([$id], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                    'hilos_user', $period, true, null, TableAnchorDirection::After, 50,
+                )));
+                $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('hilos_user', $period));
+            }
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(since: $filter->until)));
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(until: $filter->since)));
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            $this->assertSame([], new ReflectionProperty(Objects::class, 'objects')->getValue(Hilos::$db->changeLogEntries->getObjectCollection()));
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Live PK order and types normalize decimal integers, while string bytes and the stored hash remain authoritative. */
+    public function testHistoryRecordKeysUseLiveTypesOrderAndStoredHash(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $integerKey = [-7, -300, 17, -90000, PHP_INT_MIN];
+        $tables = [
+            ['hilos_collections_history_keys', ['0007', ...$integerKey], ['0007', '-0007', '-00300', '00017', '-00090000', (string)PHP_INT_MIN]],
+            ['hilos_collections_history_string', ['0007'], ['0007']],
+        ];
+        foreach ($tables as [$table, $key, $normalized]) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES (?)", [$table], index: 0);
+            $tableId = Database::lastInsertId(0);
+            $placeholders = implode(', ', array_fill(0, count($key), '?'));
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log`"
+                . ' (`created_at`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)'
+                . " VALUES ('2030-02-02 00:00:00.123456', ?, ?, UNHEX(SHA2(JSON_ARRAY({$placeholders}), 256)), 'delete')",
+                [$tableId, json_encode($key), ...$key], index: 0);
+            $entryId = Database::lastInsertId(0);
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            try {
+                foreach ([$key, $normalized] as $candidate) {
+                    $filter = new ChangeLogHistoryFilter(recordKey: $candidate);
+                    $this->assertSame([$entryId], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                        $table, $filter, true, null, TableAnchorDirection::After, 50,
+                    )));
+                    $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount($table, $filter));
+                    $this->assertSame(1, Hilos::$db->changeLogEntries->historyCountBefore($table, $filter, true,
+                        new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-02-02T00:00:00.123455Z'), $entryId)));
+                    $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+                }
+                $differentString = $normalized;
+                $differentString[0] = '7';
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount($table, new ChangeLogHistoryFilter(recordKey: $differentString)));
+                Database::sql("UPDATE {$journal}.`hilos_change_log` SET `record_key` = '[\"decoy stored JSON\"]' WHERE `id` = ?",
+                    [$entryId], index: 0);
+                $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount($table, new ChangeLogHistoryFilter(recordKey: $normalized)));
+                Database::sql("UPDATE {$journal}.`hilos_change_log` SET `record_key_hash` = NULL WHERE `id` = ?", [$entryId], index: 0);
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount($table, new ChangeLogHistoryFilter(recordKey: $normalized)));
+                $this->assertSame([$entryId], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                    $table, new ChangeLogHistoryFilter(), true, null, TableAnchorDirection::After, 50,
+                )), 'No current business row is needed to read its saved history');
+            } finally {
+                Database::useConnection(0);
+            }
+        }
+        $person = Hilos::$db->users->actions->createWithName('History integer PK')->id;
+        foreach ([[$person], [(string)$person], ['000' . $person]] as $key) {
+            $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(recordKey: $key)));
+        }
+        foreach ([[], [1, 2], ['9223372036854775808'], ['-9223372036854775809'], ['+1'], ['1.0'], ['1e0'], [' 1'], ['']] as $key) {
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            try {
+                Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(recordKey: $key));
+                $this->fail('Invalid live integer key must refuse');
+            } catch (InvalidArgumentException $failure) {
+                $this->assertSame(count($key) !== 1 ? 'Record key does not match the live primary key of hilos_user'
+                    : 'Record key hilos_user.id is not an integer', $failure->getMessage());
+                $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            } finally {
+                Database::useConnection(0);
+            }
+        }
+        foreach (['0', '-0000', '-0007', (string)PHP_INT_MAX] as $key) {
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(recordKey: [$key])));
+        }
+    }
+
+    /** Field filters admit updates only, bind literal names and require both parts of the partitioned entry key. */
+    public function testHistoryFieldPredicateAndPresenceValues(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES ('history_field_fixture')", index: 0);
+        $tableId = Database::lastInsertId(0);
+        $ids = [];
+        foreach (['create', 'update', 'delete', 'update'] as $mutation) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log` (`created_at`, `table_id`, `record_key`, `mutation_type`)"
+                . " VALUES ('2030-02-03 00:00:00.123456', ?, '[7]', ?)", [$tableId, $mutation], index: 0);
+            $ids[] = Database::lastInsertId(0);
+        }
+        $field = "literal !%_ ' OR 1=1 --";
+        Database::sql("INSERT INTO {$journal}.`hilos_change_log_field` (`table_id`, `name`) VALUES (?, ?)", [$tableId, $field], index: 0);
+        $fieldId = Database::lastInsertId(0);
+        foreach ($ids as $i => $id) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
+                . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
+                . " VALUES (?, ?, ?, 'inline', 1, 1, NULL, '')",
+                [$i === 3 ? '2030-02-03 00:00:00.123455' : '2030-02-03 00:00:00.123456', $id, $fieldId], index: 0);
+        }
+        $expected = [
+            [$field, 'inline', true, true, null, '', false],
+            ['absent_null', 'inline', false, true, null, null, false],
+            ['empty_absent', 'inline', true, false, '', null, false],
+            ['personal_fact', 'fact', true, true, null, null, false],
+            ['omitted_long', 'long', true, true, null, null, true],
+        ];
+        foreach (array_slice($expected, 1) as [$name, $kind, $oldPresent, $newPresent, $old, $new]) {
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_field` (`table_id`, `name`) VALUES (?, ?)", [$tableId, $name], index: 0);
+            $nextField = Database::lastInsertId(0);
+            Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
+                . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
+                . " VALUES ('2030-02-03 00:00:00.123456', ?, ?, ?, ?, ?, ?, ?)",
+                [$ids[1], $nextField, $kind, (int)$oldPresent, (int)$newPresent, $old, $new], index: 0);
+            if ($kind === 'long') {
+                $change = Database::lastInsertId(0);
+                Database::sql("INSERT INTO {$journal}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)"
+                    . " VALUES ('2030-02-03 00:00:00.123456', ?, ?, ?)", [$change, str_repeat('Old ', 3000), str_repeat('New ', 3000)], index: 0);
+            }
+        }
+        $filter = new ChangeLogHistoryFilter(field: $field);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $window = Hilos::$db->changeLogEntries->historyWindow('history_field_fixture', $filter, true, null, TableAnchorDirection::After, 50);
+            $this->assertSame([$ids[1]], self::historyIds($window));
+            $this->assertSame($expected, array_map(
+                static fn($change): array => array_values(get_object_vars($change)), $window->first()->entry->changes,
+            ));
+            $this->assertNull($window->first()->receipt);
+            $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('history_field_fixture', $filter));
+            $anchor = new ChangeLogHistoryAnchor($window->first()->entry->createdAt, $ids[1]);
+            foreach ([true, false] as $newestFirst) {
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCountBefore('history_field_fixture', $filter, $newestFirst, $anchor));
+            }
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('history_field_fixture', new ChangeLogHistoryFilter(field: 'literal')));
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Actor and subject soft ids survive deletion; literal name search and labels reread warmed people afresh. */
+    public function testHistoryPersonFiltersUseFreshNamesAndAllMatches(): void
+    {
+        $actor = Hilos::$db->users->actions->createWithName('History Élodie !%_ actor')->id;
+        $other = Hilos::$db->users->actions->createWithName('History unrelated person')->id;
+        $warmed = Hilos::$db->users[$actor];
+        $actorReceipt = self::attributedReceipt(JournalReceiptData::web($actor, null, null, 'history.actor', null));
+        $subjectReceipt = self::attributedReceipt(JournalReceiptData::web(null, $actor, null, 'history.subject', null));
+        self::attributedReceipt(JournalReceiptData::web($other, null, null, 'history.other', null));
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $expected = array_map(static fn(array $row): int => (int)$row['id'], Database::sql(
+            "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` IN (?, ?) ORDER BY `created_at` DESC, `id` DESC",
+            [$actorReceipt, $subjectReceipt], index: 0,
+        )->rows());
+        $this->assertCount(2, $expected);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            foreach ([(string)$actor, '#' . $actor, '000' . $actor, '#000' . $actor,
+                'history eLODIE', '!', '%', '_', '!%_'] as $who) {
+                $filter = new ChangeLogHistoryFilter(who: $who);
+                $window = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50);
+                $this->assertSame($expected, self::historyIds($window), $who);
+                $this->assertSame(2, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter), $who);
+                $this->assertSame(1, Hilos::$db->changeLogEntries->historyCountBefore('hilos_user', $filter, true,
+                    new ChangeLogHistoryAnchor($window->last()->entry->createdAt, $window->last()->entry->id)), $who);
+            }
+            foreach (['9223372036854775808', '#999999999999999999999999', 'Absent history person', "' OR 1=1 --"] as $who) {
+                $filter = new ChangeLogHistoryFilter(who: $who);
+                $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter));
+                $this->assertTrue(Hilos::$db->changeLogEntries->historyWindow(
+                    'hilos_user', $filter, true, null, TableAnchorDirection::After, 50,
+                )->isEmpty());
+            }
+            $beforeRename = Hilos::$db->changeLogEntries->historyWindow('hilos_user', new ChangeLogHistoryFilter(who: (string)$actor),
+                true, null, TableAnchorDirection::After, 50);
+            Database::sql("UPDATE `hilos_user` SET `name` = 'History renamed person' WHERE `id` = ?", [$actor], index: 0);
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(who: '!%_')));
+            $renamed = Hilos::$db->changeLogEntries->historyWindow('hilos_user', new ChangeLogHistoryFilter(who: 'History renamed'),
+                true, null, TableAnchorDirection::After, 50);
+            $this->assertSame($expected, self::historyIds($renamed));
+            $this->assertSame('History renamed person', $renamed->last()->receipt->actor->label);
+            $this->assertSame('History Élodie !%_ actor', $beforeRename->last()->receipt->actor->label);
+            $this->assertSame('History Élodie !%_ actor', $warmed->name);
+            Database::sql('DELETE FROM `hilos_user` WHERE `id` = ?', [$actor], index: 0);
+            $deleted = Hilos::$db->changeLogEntries->historyWindow('hilos_user', new ChangeLogHistoryFilter(who: '#000' . $actor),
+                true, null, TableAnchorDirection::After, 50);
+            $this->assertSame($expected, self::historyIds($deleted));
+            $this->assertSame('Deleted user #' . $actor, $deleted->last()->receipt->actor->label);
+            $this->assertTrue($deleted->last()->receipt->actor->deleted);
+            $this->assertSame('Deleted user #' . $actor, $deleted->first()->receipt->subject->label);
+            $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_user', new ChangeLogHistoryFilter(who: 'History renamed')));
+            for ($i = 0; $i <= 500; $i++) {
+                Database::sql('INSERT INTO `hilos_user` (`name`) VALUES (?)', ['History many matches ' . $i], index: 0);
+            }
+            $lastMatch = Database::lastInsertId(0);
+            $lastReceipt = self::attributedReceipt(JournalReceiptData::web(null, $lastMatch, null, 'history.last-match', null));
+            $lastEntry = (int)Database::sql("SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` = ?",
+                [$lastReceipt], index: 0)->field('id');
+            $filter = new ChangeLogHistoryFilter(who: 'History many matches');
+            $this->assertSame([$lastEntry], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', $filter, true, null, TableAnchorDirection::After, 50,
+            )));
+            $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter));
+            $this->assertSame($expected, self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', new ChangeLogHistoryFilter(who: (string)$actor), true, null, TableAnchorDirection::After, 50,
+            )), 'Person filtering precedes the window limit even after more than 500 newer nonmatching rows');
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Database::useConnection(0);
+        }
+    }
+
+    /** Real long-value trigger entries remain readable after business deletion, without retrieving their bodies. */
+    public function testHistoryOmitsLongBodiesAndKeepsBareAndMissingReceiptRows(): void
+    {
+        $old = str_repeat('History old Я ', 1000);
+        $new = str_repeat('History new Ж ', 1000);
+        $receipt = JournalReceiptScope::run(JournalReceiptData::cli('history.long', null), static function () use ($old, $new): int {
+            Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)', ['message_rule', $old], index: 0);
+            $prompt = Database::lastInsertId(0);
+            Database::sql('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `id` = ?', [$new, $prompt], index: 0);
+            Database::sql('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$prompt], index: 0);
+            return JournalReceiptScope::currentId();
+        });
+        $filter = new ChangeLogHistoryFilter();
+        $window = Hilos::$db->changeLogEntries->historyWindow('moderator_prompt_piece', $filter, false, null, TableAnchorDirection::After, 50);
+        $this->assertSame(['create', 'update', 'delete'], array_map(
+            static fn(ChangeLogHistoryRow $row): string => $row->entry->mutation, $window->toArray(),
+        ));
+        $this->assertSame([], $window->first()->entry->changes);
+        $this->assertSame(['prompt_piece', 'long', true, true, null, null, true], array_values(get_object_vars($window->get(1)->entry->changes[0])));
+        $this->assertSame(['prompt_piece', 'long', true, true, $old, $new, false], array_values(get_object_vars(
+            Hilos::$db->changeLogEntries->sectionEntry($window->get(1)->entry->id)->changes[0],
+        )));
+        $fields = array_column($window->last()->entry->changes, null, 'field');
+        $this->assertSame(['section', 'inline', true, false, 'message_rule', null, false], array_values(get_object_vars($fields['section'])));
+        $this->assertSame(['prompt_piece', 'long', true, false, null, null, true], array_values(get_object_vars($fields['prompt_piece'])));
+        foreach ($window as $row) {
+            $this->assertSame($receipt, $row->receipt->id);
+            $this->assertSame('history.long', $row->receipt->action);
+            $this->assertFalse(property_exists($row->receipt, 'entryCount'));
+        }
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `receipt_id` = NULL WHERE `id` = ?", [$window->first()->entry->id], index: 0);
+        Database::sql("DELETE FROM {$journal}.`hilos_change_log_receipt` WHERE `id` = ?", [$receipt], index: 0);
+        $withoutHeaders = Hilos::$db->changeLogEntries->historyWindow(
+            'moderator_prompt_piece', $filter, false, null, TableAnchorDirection::After, 50,
+        );
+        $this->assertSame(self::historyIds($window), self::historyIds($withoutHeaders));
+        foreach ($withoutHeaders as $index => $row) {
+            $this->assertNull($row->receipt);
+            $this->assertSame($index === 0 ? null : $receipt, $row->entry->receiptId);
+        }
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('moderator_prompt_piece', $filter));
+        $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('moderator_prompt_piece', new ChangeLogHistoryFilter(who: '0')));
+    }
+
+    /** A row disappearing after selection leaves a dense snapshot of the remaining selected ids. */
+    public function testHistorySkipsRowsThatVanishBeforeHydration(): void
+    {
+        self::receiptWithPeople(3);
+        $original = Hilos::$db->changeLogEntries->getObjectCollection();
+        $before = Hilos::$db->changeLogEntries->historyWindow(
+            'hilos_user', new ChangeLogHistoryFilter(), true, null, TableAnchorDirection::After, 50,
+        );
+        Hilos::$db->changeLogEntries->setObjectCollection(VanishingHistoryEntryObjects::initDB(Objects::LAZY_STRATEGY_KEY));
+        try {
+            $window = Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', new ChangeLogHistoryFilter(), true, null, TableAnchorDirection::After, 50,
+            );
+            $this->assertSame(array_slice(self::historyIds($before), 1), self::historyIds($window));
+            $this->assertSame(range(0, count($window) - 1), array_keys($window->toArray()));
+            $this->assertCount(count($before) - 1, $window);
+        } finally {
+            Hilos::$db->changeLogEntries->setObjectCollection($original);
+        }
+    }
+
+    /** Selection, dictionary, person filtering and header SQL failures propagate with the ambient index preserved. */
+    public function testHistorySqlFailuresPreserveTheAmbientConnection(): void
+    {
+        $person = Hilos::$db->users->actions->createWithName('History SQL failure person')->id;
+        self::attributedReceipt(JournalReceiptData::web($person, null, null, 'history.failure', null));
+        $anchor = new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-01-01T00:00:00.123456Z'), 1);
+        foreach ([
+            [HilosDbContext::changeLogEntries, MissingSectionEntryObjects::class, 'hilos_missing_section_entry', null],
+            [HilosDbContext::changeLogTables, MissingSectionTableObjects::class, 'hilos_missing_section_table', null],
+            [HilosDbContext::users, MissingUserProjectionObjects::class, 'hilos_missing_users_projection', 'History SQL failure'],
+            [HilosDbContext::users, MissingUserProjectionObjects::class, 'hilos_missing_users_projection', (string)$person],
+            [HilosDbContext::changeLogReceipts, MissingSectionReceiptObjects::class, 'hilos_missing_section_receipt', (string)$person],
+        ] as [$key, $objects, $missingTable, $who]) {
+            $original = Hilos::$db->{$key}->getObjectCollection();
+            Hilos::$db->{$key}->setObjectCollection($objects::initDB(Objects::LAZY_STRATEGY_KEY));
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            try {
+                $filter = new ChangeLogHistoryFilter(who: $who);
+                foreach ([
+                    static fn () => Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50),
+                    static fn () => Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter),
+                    static fn () => Hilos::$db->changeLogEntries->historyCountBefore('hilos_user', $filter, true, $anchor),
+                ] as $index => $read) {
+                    if (($key === HilosDbContext::changeLogReceipts || ($key === HilosDbContext::users && $who === (string)$person))
+                        && $index !== 0) {
+                        continue; // Counts use the binding's receipt table, while hydration uses the receipt collection.
+                    }
+                    try {
+                        $read();
+                        $this->fail('History must expose its real SQL refusal');
+                    } catch (TableNotFoundException $failure) {
+                        $this->assertStringContainsString($missingTable, $failure->getMessage());
+                    }
+                    $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+                }
+            } finally {
+                Hilos::$db->{$key}->setObjectCollection($original);
+                Database::useConnection(0);
+            }
+        }
+    }
+
+    /**
+     * @param ChangeLogReadCollection<ChangeLogHistoryRow> $window Dense history snapshot
+     * @return list<int> Selected entry ids in canonical order
+     */
+    private static function historyIds(ChangeLogReadCollection $window): array
+    {
+        $ids = [];
+        foreach ($window as $row) {
+            $ids[] = $row->entry->id;
+        }
+        return $ids;
+    }
+
     /**
      * @param ChangeLogReadCollection<ChangeLogFeedItem> $window Selected feed snapshot
      * @return list<string> Complete source identities in window order
@@ -1219,6 +2051,24 @@ final class MissingUserProjectionObjects extends ObjectUsers
     }
 }
 
+/** Deletes one selected row at the hydration boundary to exercise concurrent disappearance. */
+final class VanishingHistoryEntryObjects extends ObjectChangeLogEntries
+{
+    /**
+     * @param list<int> $ids Selected entry ids
+     * @param bool $includeLong Whether to include long-value bodies
+     * @return ChangeLogReadCollection<ChangeLogEntry> Remaining entries keyed by id
+     */
+    public function sectionEntriesByIds(array $ids, bool $includeLong): ChangeLogReadCollection
+    {
+        if ($ids !== []) {
+            $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+            Database::sql("DELETE FROM {$journal}.`hilos_change_log` WHERE `id` = ?", [$ids[0]], index: 0);
+        }
+        return parent::sectionEntriesByIds($ids, $includeLong);
+    }
+}
+
 /** Keeps the real journal Entity binding while provoking an inherited section read failure without DDL. */
 final class MissingSectionEntryObjects extends ObjectChangeLogEntries
 {
@@ -1236,5 +2086,56 @@ final class MissingSectionReceiptObjects extends ObjectChangeLogReceipts
     public function getTableName(): string
     {
         return 'hilos_missing_section_receipt';
+    }
+}
+
+/** Uses real mounted collections while substituting only the Entity declarations inspected by metadata readers. */
+final class CollectionsMetadataDbContext extends HilosDbContext
+{
+    /** @var ?array<string, class-string<Entity>> Explicit declarations, or the real mounted registry */
+    public ?array $metadataEntities = null;
+
+    /** @return array<string, class-string<Entity>> The case's schema declarations */
+    public function getMountedEntities(): array
+    {
+        return $this->metadataEntities ?? parent::getMountedEntities();
+    }
+}
+
+/** A live never-written project table whose noise column is fully classified. */
+class CollectionsMetadataProbeEntity extends Entity
+{
+    public const string _table = 'hilos_collections_metadata_probe';
+    public const bool _journaled = true;
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'noisy_counter'];
+    public const array _types = ['id' => PhpType::INTEGER->value, 'noisy_counter' => PhpType::INTEGER->value];
+    public const array _journalNoise = ['noisy_counter' => 'Fixture counter changes automatically'];
+    public const array _pii = [];
+    public const array _piiNotPersonal = ['id', 'noisy_counter'];
+
+    public int $id;
+    public int $noisy_counter;
+}
+
+/** The dropped table still has a mounted declaration and may have a historical dictionary name. */
+final class CollectionsMetadataDroppedEntity extends CollectionsMetadataProbeEntity
+{
+    public const string _table = 'hilos_collections_metadata_dropped';
+}
+
+/** A declaration whose nonexistent noise column must fail after the metadata reader selects primary. */
+final class CollectionsInvalidMetadataProbeEntity extends CollectionsMetadataProbeEntity
+{
+    public const array _journalNoise = ['absent_column' => 'Invalid fixture declaration'];
+}
+
+/** Uses the actual journal binding but directs catalog activity reads to an absent table. */
+final class MissingSectionTableObjects extends ObjectChangeLogTables
+{
+    /** @return string Missing dictionary table used to provoke a real SQL failure */
+    public function getTableName(): string
+    {
+        return 'hilos_missing_section_table';
     }
 }
