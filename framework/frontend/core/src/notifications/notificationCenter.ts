@@ -63,8 +63,8 @@ const notificationRowSchema = z.looseObject({
   title: z.string(),
   body: z.string().nullable().optional(),
   data: z.record(z.string(), z.unknown()).nullable().optional(),
-  readAt: z.string().nullable().optional(),
-  createdAt: z.string().nullable().optional(),
+  readAt: z.number().int().nullable().optional(),
+  createdAt: z.number().int().nullable().optional(),
 })
 
 export type HilosNotification = z.infer<typeof notificationRowSchema>
@@ -135,7 +135,7 @@ export function createHilosNotificationStore(): HilosNotificationStore {
   const unreadCount = createSignal(0)
 
   function markedReadRow(row: HilosNotification): HilosNotification {
-    return { ...row, readAt: new Date().toISOString() }
+    return { ...row, readAt: Date.now() }
   }
 
   return {

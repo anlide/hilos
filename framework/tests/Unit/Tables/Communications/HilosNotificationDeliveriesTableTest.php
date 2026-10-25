@@ -17,6 +17,7 @@ use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -344,10 +345,37 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC),
         ));
 
-        $anchor = $table->anchorForRow(self::deliveryRow(57, '2026-09-23 10:00:00'), $query);
+        $anchor = $table->anchorForRow(self::deliveryRow(57, 1790157600000), $query);
 
         self::assertNotNull($anchor);
-        self::assertSame(['created_at' => '2026-09-23 10:00:00', 'id' => 57], $anchor->values);
+        self::assertSame(['created_at' => 1790157600000, 'id' => 57], $anchor->values);
+
+        // Sorting by deliveredAt (with value and with null)
+        $byDeliveredAt = new TableQueryDTO(sort: $this->resolvedOrder(
+            $table,
+            new TableSortDTO(HilosNotificationDeliveryTableRow::deliveredAt, TableConstants::ORDER_DESC),
+        ));
+        $deliveredAnchor = $table->anchorForRow(
+            self::deliveryRow(57, 1790157600000, deliveredAt: 1790157603000),
+            $byDeliveredAt,
+        );
+        self::assertNotNull($deliveredAnchor);
+        self::assertSame(['delivered_at' => 1790157603000, 'id' => 57], $deliveredAnchor->values);
+
+        $nullDeliveredAnchor = $table->anchorForRow(
+            self::deliveryRow(57, 1790157600000, deliveredAt: null),
+            $byDeliveredAt,
+        );
+        self::assertNotNull($nullDeliveredAnchor);
+        self::assertSame(['delivered_at' => null, 'id' => 57], $nullDeliveredAnchor->values);
+
+        // Zero ms row
+        $zeroRow = self::deliveryRow(1, 0, deliveredAt: 0);
+        self::assertSame(0, $zeroRow->createdAt);
+        self::assertSame(0, $zeroRow->deliveredAt);
+        $zeroAnchor = $table->anchorForRow($zeroRow, $query);
+        self::assertNotNull($zeroAnchor);
+        self::assertSame(['created_at' => 0, 'id' => 1], $zeroAnchor->values);
     }
 
     /**
@@ -355,7 +383,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      */
     public function testARowOfAWindowWithNoOrderHasNoPlace(): void
     {
-        self::assertNull($this->table()->anchorForRow(self::deliveryRow(57, '2026-09-23 10:00:00'), new TableQueryDTO()));
+        self::assertNull($this->table()->anchorForRow(self::deliveryRow(57, 1790157600000), new TableQueryDTO()));
     }
 
     /**
@@ -371,13 +399,55 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         ));
 
         $place = $table->placeRowAgainst(
-            self::deliveryRow(10, '2026-09-23 10:00:00'),
-            new TableAnchorDTO(['created_at' => '2026-09-23 10:00:00', 'id' => '9']),
+            self::deliveryRow(10, 1790157600000),
+            new TableAnchorDTO(['created_at' => 1790157600000, 'id' => '9']),
             $query,
         );
 
         self::assertNotNull($place);
         self::assertLessThan(0, $place);
+
+        // Sibling case: delivery 9 against boundary of 10 stands below in DESC order
+        $placeBelow = $table->placeRowAgainst(
+            self::deliveryRow(9, 1790157600000),
+            new TableAnchorDTO(['created_at' => 1790157600000, 'id' => '10']),
+            $query,
+        );
+        self::assertNotNull($placeBelow);
+        self::assertGreaterThan(0, $placeBelow);
+    }
+
+    /**
+     * Nullable deliveredAt ordering places rows with nulls last in ASC and first in DESC.
+     */
+    public function testRowPlacementWithNullableDeliveredAt(): void
+    {
+        $table = $this->table();
+        $descQuery = new TableQueryDTO(sort: $this->resolvedOrder(
+            $table,
+            new TableSortDTO(HilosNotificationDeliveryTableRow::deliveredAt, TableConstants::ORDER_DESC),
+        ));
+
+        $withValue = self::deliveryRow(10, 1790157600000, deliveredAt: 1790157605000);
+        $withNull = self::deliveryRow(11, 1790157600000, deliveredAt: null);
+
+        // Null against value boundary in DESC: null stands above
+        $placeNullAgainstValue = $table->placeRowAgainst(
+            $withNull,
+            new TableAnchorDTO(['delivered_at' => 1790157605000, 'id' => 10]),
+            $descQuery,
+        );
+        self::assertNotNull($placeNullAgainstValue);
+        self::assertLessThan(0, $placeNullAgainstValue);
+
+        // Two null deliveredAt rows settled by id
+        $placeNullAgainstNull = $table->placeRowAgainst(
+            $withNull, // id 11
+            new TableAnchorDTO(['delivered_at' => null, 'id' => 10]),
+            $descQuery,
+        );
+        self::assertNotNull($placeNullAgainstNull);
+        self::assertLessThan(0, $placeNullAgainstNull);
     }
 
     /**
@@ -387,17 +457,17 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     public function testAPlaceTheTableCannotReadIsNotGuessed(): void
     {
         $table = $this->table();
-        $row = self::deliveryRow(10, '2026-09-23 10:00:00');
+        $row = self::deliveryRow(10, 1790157600000);
         $byCreatedAt = new TableQueryDTO(sort: TableSortOrderDTO::of(
             new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC),
         ));
         $byTitle = new TableQueryDTO(sort: TableSortOrderDTO::of(
             new TableSortDTO(HilosNotificationDeliveryTableRow::notificationTitle, TableConstants::ORDER_ASC),
         ));
-        $boundary = new TableAnchorDTO(['created_at' => '2026-09-23 10:00:00', 'id' => 9]);
+        $boundary = new TableAnchorDTO(['created_at' => 1790157600000, 'id' => 9]);
 
         self::assertNull($table->placeRowAgainst($row, new TableAnchorDTO(['id' => 9]), $byCreatedAt));
-        self::assertNull($table->placeRowAgainst($row, new TableAnchorDTO(['createdAt' => '2026-09-23 10:00:00', 'rowKey' => 9]), $byCreatedAt));
+        self::assertNull($table->placeRowAgainst($row, new TableAnchorDTO(['createdAt' => 1790157600000, 'rowKey' => 9]), $byCreatedAt));
         self::assertNull($table->placeRowAgainst($row, $boundary, $byTitle));
         self::assertNull($table->placeRowAgainst($row, $boundary, new TableQueryDTO()));
     }
@@ -406,19 +476,26 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      * Builds one delivery row of the journal.
      *
      * @param int $id Delivery id
-     * @param string $createdAt Moment the delivery was created
+     * @param int|string $createdAt Moment the delivery was created
      * @param string $status Delivery status
+     * @param ?int $deliveredAt Moment the delivery was sent
      * @return HilosNotificationDeliveryTableRow Delivery row
      */
-    private static function deliveryRow(int $id, string $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
-    {
+    private static function deliveryRow(
+        int $id,
+        int|string $createdAt,
+        string $status = 'pending',
+        ?int $deliveredAt = null,
+    ): HilosNotificationDeliveryTableRow {
+        $createdAtMs = is_int($createdAt) ? $createdAt : TimeHelper::sqlToMs($createdAt);
+
         return new HilosNotificationDeliveryTableRow(
             rowKey: $id,
-            createdAt: $createdAt,
+            createdAt: $createdAtMs,
             channel: 'email',
             status: $status,
             attempts: 0,
-            deliveredAt: null,
+            deliveredAt: $deliveredAt,
             lastError: null,
             userId: 3,
             userLabel: null,

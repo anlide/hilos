@@ -19,6 +19,7 @@ use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationsSnapshotSignalData;
 use Hilos\Notification\NotificationGroup;
 use Hilos\Notification\NotificationSignalName;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Base class for the framework notification group (HIL-721).
@@ -130,7 +131,7 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
      * @param ObjectNotification $notification Persisted notification
      * @return NotificationCreatedSignalData Client row for the snapshot
      */
-    private function rowFor(ObjectNotification $notification): NotificationCreatedSignalData
+    protected function rowFor(ObjectNotification $notification): NotificationCreatedSignalData
     {
         return new NotificationCreatedSignalData(
             id: $notification->id ?? 0,
@@ -140,8 +141,8 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
             title: $notification->title,
             body: $notification->body,
             data: $notification->decodedData(),
-            readAt: $notification->readAt,
-            createdAt: $notification->createdAt,
+            readAt: $notification->readAt !== null ? TimeHelper::sqlToMs($notification->readAt) : null,
+            createdAt: $notification->createdAt !== null ? TimeHelper::sqlToMs($notification->createdAt) : null,
         );
     }
 

@@ -22,11 +22,13 @@ import {
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatMoment } from '../../format/moment.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readHideableString,
   readHideableStringOrNull,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -46,7 +48,7 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 export interface HilosDeliveryRow {
   /** The delivery id; also the table row key. */
   readonly rowKey: string
-  /** ISO-8601 creation timestamp. */
+  /** Creation timestamp formatted as date and time in the reader's time zone. */
   readonly createdAt: string
   /** Delivery channel name (e.g. `mail`). */
   readonly channel: string
@@ -54,7 +56,7 @@ export interface HilosDeliveryRow {
   readonly status: string
   /** Delivery attempts made. */
   readonly attempts: number
-  /** ISO-8601 delivered timestamp, or empty string when not sent. */
+  /** Delivered timestamp formatted as date and time in the reader's time zone, or empty string when not sent. */
   readonly deliveredAt: string
   /**
    * Last failure detail (a domain phrase), or empty string when none; hidden from a
@@ -200,17 +202,25 @@ function readUserId(slot: Record<string, unknown>): number | null {
  */
 export function resolveHilosDeliveryRow(row: TableRow): HilosDeliveryRow {
   const slot = recordSlot(row.slots[DELIVERY_SLOT]) ?? {}
+  const createdAtMs = readNumberOrNull(slot, DELIVERY_CREATED_AT_FIELD)
+  const deliveredAtMs = readNumberOrNull(slot, DELIVERY_DELIVERED_AT_FIELD)
 
   return {
     // Identity is the fragment's row key. It must not travel inside the slot: a slot
     // payload carrying `id` is ingested as an entity fragment and replaced by a
     // reference, which would strip every other field off the row (normalizer.ts).
     rowKey: String(row.rowKey),
-    createdAt: readString(slot, DELIVERY_CREATED_AT_FIELD),
+    createdAt:
+      createdAtMs != null
+        ? (formatMoment(createdAtMs, { kind: 'dateTime' }) ?? '')
+        : '',
     channel: readString(slot, DELIVERY_CHANNEL_FIELD),
     status: readString(slot, DELIVERY_STATUS_FIELD),
     attempts: readNumber(slot, DELIVERY_ATTEMPTS_FIELD),
-    deliveredAt: readString(slot, DELIVERY_DELIVERED_AT_FIELD),
+    deliveredAt:
+      deliveredAtMs != null
+        ? (formatMoment(deliveredAtMs, { kind: 'dateTime' }) ?? '')
+        : '',
     lastError: readHideableString(slot, DELIVERY_LAST_ERROR_FIELD),
     userId: readUserId(slot),
     userLabel: readHideableStringOrNull(slot, DELIVERY_USER_LABEL_FIELD),

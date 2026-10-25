@@ -47,11 +47,11 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
 
     /**
      * @param int $rowKey Delivery id (stable table row key)
-     * @param string $createdAt ISO-8601 row creation timestamp
+     * @param int $createdAt Row creation timestamp in UTC epoch milliseconds
      * @param string $channel Delivery channel name
      * @param string $status Delivery status (pending/sent/failed)
      * @param int $attempts Delivery attempts made
-     * @param ?string $deliveredAt ISO-8601 delivered timestamp, or null when not sent
+     * @param ?int $deliveredAt Delivered timestamp in UTC epoch milliseconds, or null when not sent
      * @param ?string $lastError Last failure detail, or null
      * @param ?int $userId Recipient user id, or null when the notification is gone
      * @param ?string $userLabel Recipient display label; null when the project resolves none
@@ -60,11 +60,11 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
      */
     public function __construct(
         public int $rowKey,
-        public string $createdAt,
+        public int $createdAt,
         public string $channel,
         public string $status,
         public int $attempts,
-        public ?string $deliveredAt,
+        public ?int $deliveredAt,
         public ?string $lastError,
         public ?int $userId,
         public ?string $userLabel,
@@ -126,11 +126,11 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
     {
         return new static(
             rowKey: self::requireInt($data, self::rowKey),
-            createdAt: self::requireString($data, self::createdAt),
+            createdAt: self::requireInt($data, self::createdAt),
             channel: self::requireString($data, self::channel),
             status: self::requireString($data, self::status),
             attempts: self::requireInt($data, self::attempts),
-            deliveredAt: self::optionalString($data, self::deliveredAt),
+            deliveredAt: self::optionalInt($data, self::deliveredAt),
             lastError: self::optionalString($data, self::lastError),
             userId: self::optionalInt($data, self::userId),
             userLabel: self::optionalString($data, self::userLabel),

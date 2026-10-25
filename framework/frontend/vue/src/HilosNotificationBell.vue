@@ -16,7 +16,9 @@ bold and carries a visually-hidden "Unread" marker (styling-rules.md,
 accessibility.md). Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
+  formatMoment,
   hilosNotifications,
+  hilosTimeZone,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
@@ -39,6 +41,7 @@ const props = withDefaults(
 
 const notifications = useSignal(props.store.notifications)
 const unreadCount = useSignal(props.store.unreadCount)
+const timeZone = useSignal(hilosTimeZone)
 // The badge caps its label so a runaway count never breaks the bell's layout.
 const badgeLabel = computed(() =>
   unreadCount.value > 99 ? '99+' : String(unreadCount.value),
@@ -137,9 +140,14 @@ function markAllRead(): void {
 }
 
 // A notification's timestamp, formatted for the reader's locale; the wire value
-// is an ISO string, absent only on a malformed row.
+// is epoch milliseconds, absent only on a malformed row.
 function formatTime(row: HilosNotification): string {
-  return row.createdAt ? new Date(row.createdAt).toLocaleString() : ''
+  void timeZone.value
+  if (row.createdAt == null) {
+    return ''
+  }
+
+  return formatMoment(row.createdAt, { kind: 'dateTime' }) ?? ''
 }
 
 function onDocumentClick(event: MouseEvent): void {
@@ -226,7 +234,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               <div v-if="row.body" class="small text-body-secondary">
                 {{ row.body }}
               </div>
-              <div class="small text-body-tertiary">{{ formatTime(row) }}</div>
+              <div
+                class="small text-body-tertiary"
+                :data-id="`hilos-notification-time-${row.id}`"
+              >
+                {{ formatTime(row) }}
+              </div>
             </div>
             <button
               v-if="row.readAt == null"

@@ -17,6 +17,7 @@ use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration test: the delivery journal reads a changed row again, and places it, against a live database (HIL-1049).
@@ -92,6 +93,7 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         $row = $mutation->row;
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
         $this->assertSame($id, $row->rowKey);
+        $this->assertSame(TimeHelper::sqlToMs(self::EARLIER), $row->createdAt);
         $this->assertSame('pending', $row->status);
         $this->assertSame('Backup is ready', $row->notificationTitle);
         $this->assertSame('backup.completed', $row->notificationType);
@@ -115,7 +117,7 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         $row = $mutation->row;
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
         $this->assertSame('sent', $row->status);
-        $this->assertSame(self::LATER, $row->deliveredAt);
+        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $row->deliveredAt);
     }
 
     public function testADeliveryThatIsNotThereBuildsNoMutation(): void
@@ -143,7 +145,11 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         )?->row;
 
         $this->assertNotNull($snapshot->firstAnchor);
+        $this->assertIsInt($snapshot->firstAnchor->values['created_at']);
+        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $snapshot->firstAnchor->values['created_at']);
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
+        $this->assertIsInt($row->createdAt);
+        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $row->createdAt);
         $place = $table->placeRowAgainst($row, $snapshot->firstAnchor, $query);
         $this->assertNotNull($place);
         $this->assertLessThan(0, $place);

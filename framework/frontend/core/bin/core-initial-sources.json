@@ -276,8 +276,8 @@
     "outputSha256": "a3e4fa22c64ae777d4addad33c45ba9a602c778b03ca5977a13f4d0207d680c6"
   },
   "src/notifications/notificationCenter.ts": {
-    "sourceSha256": "5ab66b001d42bde02af4017b31bd9b67193c1658be4717dad914b5fb7f72092f",
-    "outputSha256": "2b744aa4ea68b875c3c6b67a00bec8e5d8747de835adf63667ac0067a79c14a5"
+    "sourceSha256": "8a35c88d9bbea47cc09fcd8f0deb5c0cd8de0f80da362941119049ad95ec11fe",
+    "outputSha256": "7ad61ff944810946a4c49e8e9be26b8acfcc6ed718e00a164f5f395f2575f926"
   },
   "src/notifications/notificationPreferences.ts": {
     "sourceSha256": "936a780a6f8147eb5b2c4e914c774fd450b7ee394c2c7c13f1fd4ccbb53bf7e3",

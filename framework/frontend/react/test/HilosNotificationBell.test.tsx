@@ -37,7 +37,7 @@ function storeWith(unread: number) {
         title: 'First',
         body: 'Hello',
         readAt: null,
-        createdAt: '2026-07-28T10:00:00.000Z',
+        createdAt: 1785232800000,
       },
     ],
     unreadCount: unread,

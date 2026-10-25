@@ -6,12 +6,15 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  HilosPages,
-  ScopeManager,
+  applyServerTime,
   bindAdminAccess,
   bindSessionScope,
+  bindTimeZoneState,
   createSignal,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  HilosPages,
+  hilosTimeZone,
+  ScopeManager,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
@@ -53,7 +56,7 @@ function router(): HilosRouter {
 
 /** One failed email delivery, the only kind a retry is offered on. */
 const FAILED_DELIVERY = {
-  createdAt: '2026-09-23 10:00:00',
+  createdAt: 1790157600000,
   channel: 'email',
   status: 'failed',
   attempts: 3,
@@ -67,7 +70,14 @@ const FAILED_DELIVERY = {
 
 type Listener = (signal: Record<string, unknown>) => void
 
-function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
+function seededContext(
+  deliveryOrRows:
+    | Record<string, unknown>
+    | Array<{
+        rowKey: string
+        slots: { delivery: Record<string, unknown> }
+      }> = FAILED_DELIVERY,
+): {
   context: HilosDeliveriesContext
   viewportRequests: () => number
   answer: (requestId: string) => void
@@ -76,29 +86,35 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
     payload: Record<string, unknown>
     requestId?: string
   }>
+  connection: HilosConnection
+  setOwnZone: (timeZone: string | null) => void
 } {
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
-  const windowListeners = new Set<Listener>()
+  const listeners = new Map<string, Set<Listener>>()
   let viewportCalls = 0
+  const rows = Array.isArray(deliveryOrRows)
+    ? deliveryOrRows
+    : [{ rowKey: '57', slots: { delivery: deliveryOrRows } }]
   const serveWindow = (): void => {
     const data = {
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
       tableKey: TABLE,
-      rows: [{ rowKey: '57', slots: { delivery } }],
-      totalCount: 1,
+      rows,
+      totalCount: rows.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
       offset: 0,
       limit: 25,
     }
-    for (const listener of windowListeners) {
+    for (const listener of listeners.get('tableWindow') ?? []) {
       listener({ data })
     }
   }
 
   const connection = {
+    projectTimeZone: 'UTC',
     registerTableWindow(): void {
       serveWindow()
     },
@@ -114,15 +130,23 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
       return true
     },
     on(event: string, listener: Listener): () => void {
-      if (event === 'tableWindow') {
-        windowListeners.add(listener)
+      const group = listeners.get(event) ?? new Set()
+      group.add(listener)
+      listeners.set(event, group)
 
-        return () => windowListeners.delete(listener)
-      }
-
-      return () => {}
+      return () => group.delete(listener)
     },
+  } as unknown as HilosConnection
+
+  const setOwnZone = (timeZone: string | null): void => {
+    for (const listener of listeners.get('projectSignal') ?? []) {
+      listener({
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 1, timeZone } } },
+      })
+    }
   }
+
   const successListeners = new Set<Listener>()
   const sent: Array<{
     action: string
@@ -169,12 +193,15 @@ function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
       }
     },
     sent,
+    connection,
+    setOwnZone,
   }
 }
 
 const mounted: ReturnType<typeof mount>[] = []
 
 afterEach(() => {
+  applyServerTime(Date.now())
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
   }
@@ -344,5 +371,115 @@ describe('HilosCommunicationsDeliveriesPage in the admin view mode', () => {
     await nextTick()
     expect(sent[0]?.action).toBe('communications_delivery_retry')
     expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
+  })
+})
+
+describe('HilosCommunicationsDeliveriesPage time zone reactivity', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) {
+      release()
+    }
+  })
+
+  it('renders delivery dates in UTC and Pacific/Honolulu across the day boundary, updates without server frames, handles null/0, ignores clock offset, and cleans up on unmount', async () => {
+    // Known moment: 2026-10-24 03:30:00 UTC (in Honolulu UTC-10 this is 2026-10-23 17:30:00, crossing the day boundary)
+    const at = Date.parse('2026-10-24T03:30:00Z')
+    const deliveredAt = at + 15_000
+
+    const rows = [
+      {
+        rowKey: '57',
+        slots: {
+          delivery: {
+            ...FAILED_DELIVERY,
+            createdAt: at,
+            deliveredAt,
+          },
+        },
+      },
+      {
+        rowKey: '58',
+        slots: {
+          delivery: {
+            ...FAILED_DELIVERY,
+            createdAt: 0,
+            deliveredAt: null,
+          },
+        },
+      },
+    ]
+
+    const { context, viewportRequests, connection, setOwnZone } =
+      seededContext(rows)
+    const releaseTime = bindTimeZoneState(connection)
+    releases.push(releaseTime)
+
+    // 1. Initial render in UTC
+    setOwnZone('UTC')
+    const wrapper = await mountPage(context)
+    expect(hilosTimeZone.get()).toBe('UTC')
+
+    const formatIndependent = (moment: number, timeZone: string): string =>
+      new Intl.DateTimeFormat(undefined, {
+        timeZone,
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      }).format(moment)
+
+    const expectedUtcCreatedAt = formatIndependent(at, 'UTC')
+    const expectedUtcDeliveredAt = formatIndependent(deliveredAt, 'UTC')
+    const expectedUtcEpochZero = formatIndependent(0, 'UTC')
+
+    const row57 = document.querySelector(
+      'table [data-id="hilos-table-row-57"]',
+    )!
+    const row58 = document.querySelector(
+      'table [data-id="hilos-table-row-58"]',
+    )!
+
+    const cells57 = row57.querySelectorAll('td')
+    const cells58 = row58.querySelectorAll('td')
+
+    expect(cells57[0]?.textContent?.trim()).toBe(expectedUtcCreatedAt)
+    expect(cells57[4]?.textContent?.trim()).toBe(expectedUtcDeliveredAt)
+    expect(cells58[0]?.textContent?.trim()).toBe(expectedUtcEpochZero)
+    expect(cells58[4]?.textContent?.trim()).toBe('—')
+
+    const requestsBeforeZoneChange = viewportRequests()
+
+    // 2. Change time zone on already mounted component to Pacific/Honolulu
+    setOwnZone('Pacific/Honolulu')
+    await nextTick()
+    expect(hilosTimeZone.get()).toBe('Pacific/Honolulu')
+
+    // No new server viewport request was made!
+    expect(viewportRequests()).toBe(requestsBeforeZoneChange)
+
+    const expectedHonoluluCreatedAt = formatIndependent(at, 'Pacific/Honolulu')
+    const expectedHonoluluDeliveredAt = formatIndependent(
+      deliveredAt,
+      'Pacific/Honolulu',
+    )
+    const expectedHonoluluEpochZero = formatIndependent(0, 'Pacific/Honolulu')
+
+    expect(cells57[0]?.textContent?.trim()).toBe(expectedHonoluluCreatedAt)
+    expect(cells57[4]?.textContent?.trim()).toBe(expectedHonoluluDeliveredAt)
+    expect(cells58[0]?.textContent?.trim()).toBe(expectedHonoluluEpochZero)
+    expect(cells58[4]?.textContent?.trim()).toBe('—')
+
+    // Confirm day boundary was crossed (UTC date is Oct 24, Honolulu date is Oct 23)
+    expect(expectedHonoluluCreatedAt).not.toBe(expectedUtcCreatedAt)
+
+    // 3. Clock offset does not alter displayed timestamp
+    applyServerTime(Date.now() + 5 * 3_600_000)
+    await nextTick()
+
+    expect(cells57[0]?.textContent?.trim()).toBe(expectedHonoluluCreatedAt)
+    expect(cells57[4]?.textContent?.trim()).toBe(expectedHonoluluDeliveredAt)
+
+    // 4. Cleanup on unmount
+    wrapper.unmount()
   })
 })

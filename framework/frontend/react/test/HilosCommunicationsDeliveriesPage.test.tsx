@@ -53,7 +53,7 @@ function router(): HilosRouter {
 
 /** One failed email delivery, the only kind a retry is offered on. */
 const FAILED_DELIVERY = {
-  createdAt: '2026-09-23 10:00:00',
+  createdAt: 1790157600000,
   channel: 'email',
   status: 'failed',
   attempts: 3,

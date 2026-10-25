@@ -50,6 +50,7 @@ use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
+use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -88,6 +89,7 @@ use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
 
 /**
@@ -523,22 +525,33 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         $this->fan(
             $draft->userId,
             NotificationSignalName::CREATED,
-            new NotificationCreatedSignalData(
-                id: $id,
-                userId: $draft->userId,
-                type: $notification->type,
-                severity: $notification->severity,
-                title: $notification->title,
-                body: $notification->body,
-                data: $notification->decodedData(),
-                readAt: $notification->readAt,
-                createdAt: $notification->createdAt,
-            ),
+            $this->rowFor($notification),
         );
 
         $this->dispatcher->dispatch($notification, $draft->channels);
 
         return $id;
+    }
+
+    /**
+     * Maps a persisted notification to its client row (the CREATED signal shape).
+     *
+     * @param ObjectNotification $notification Persisted notification
+     * @return NotificationCreatedSignalData Client row for the live signal
+     */
+    protected function rowFor(ObjectNotification $notification): NotificationCreatedSignalData
+    {
+        return new NotificationCreatedSignalData(
+            id: $notification->id ?? 0,
+            userId: $notification->userId,
+            type: $notification->type,
+            severity: $notification->severity,
+            title: $notification->title,
+            body: $notification->body,
+            data: $notification->decodedData(),
+            readAt: $notification->readAt !== null ? TimeHelper::sqlToMs($notification->readAt) : null,
+            createdAt: $notification->createdAt !== null ? TimeHelper::sqlToMs($notification->createdAt) : null,
+        );
     }
 
     /**

@@ -46,6 +46,30 @@ HIL-486. Their presence does not mean every payload has been migrated. In
 particular, a conversion helper is not proof that all process and database
 defaults are already explicit UTC.
 
+### Notification And Delivery Moments
+
+[NotificationCreatedSignalData](../../../framework/backend/Notification/DTO/NotificationCreatedSignalData.php)
+carries `createdAt` and nullable `readAt` in UTC epoch milliseconds (integers),
+while [ObjectNotification](../../../framework/backend/Database/Object/Item/Notification.php)
+and [ViewNotification](../../../framework/backend/Database/View/Item/Notification.php)
+keep scalar SQL datetime strings for server-side consumers.
+
+Rows of [HilosNotificationDeliveryTableRow](../../../framework/backend/Tables/Communications/HilosNotificationDeliveryTableRow.php)
+carry `createdAt` (int) and nullable `deliveredAt` (?int) in UTC epoch
+milliseconds.
+
+Keyset pagination boundaries of
+[HilosNotificationDeliveriesTable](../../../framework/backend/Tables/Communications/HilosNotificationDeliveriesTable.php)
+(`firstAnchor` and `lastAnchor` of the `hilosNotificationDeliveries` table)
+return numeric milliseconds when the corresponding columns participate in
+sorting; the table adapts them back to SQL UTC datetime strings before executing
+the keyset window query.
+
+On the client, [HilosNotificationBell](../../../framework/frontend/vue/src/HilosNotificationBell.vue)
+and the [deliveries journal](../../../framework/frontend/vue/src/admin/communications/HilosCommunicationsDeliveriesPage.vue)
+use `formatMoment()` and display moments in the reader's time zone
+(`hilosTimeZone`).
+
 ## Server UTC And The Project Zone
 
 Set the daemon, workers, CLI and database connections explicitly to UTC,
@@ -599,7 +623,7 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Surface | Migration owner and status |
 |---|---|
 | Sessions and devices | (not in the code yet — HIL-1586) |
-| Notifications and deliveries | (not in the code yet — HIL-1587) |
+| Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | (not in the code yet — HIL-1591) |
 | React | (not in the code yet — HIL-1594) |

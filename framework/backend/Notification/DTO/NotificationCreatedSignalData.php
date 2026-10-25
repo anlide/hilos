@@ -54,8 +54,8 @@ final class NotificationCreatedSignalData extends BaseDTO implements SignalDataI
      * @param string $title Rendered title
      * @param ?string $body Rendered body, or null
      * @param ?array<string, mixed> $data Structured data, or null
-     * @param ?string $readAt Read timestamp, or null when unread
-     * @param ?string $createdAt Creation timestamp
+     * @param ?int $readAt Read timestamp in epoch milliseconds, or null when unread
+     * @param ?int $createdAt Creation timestamp in epoch milliseconds
      */
     public function __construct(
         public readonly int $id,
@@ -65,8 +65,8 @@ final class NotificationCreatedSignalData extends BaseDTO implements SignalDataI
         public readonly string $title,
         public readonly ?string $body = null,
         public readonly ?array $data = null,
-        public readonly ?string $readAt = null,
-        public readonly ?string $createdAt = null,
+        public readonly ?int $readAt = null,
+        public readonly ?int $createdAt = null,
     ) {
     }
 
@@ -104,8 +104,8 @@ final class NotificationCreatedSignalData extends BaseDTO implements SignalDataI
             title: self::requireString($data, self::title),
             body: self::optionalString($data, self::body),
             data: self::optionalArray($data, self::data),
-            readAt: self::optionalString($data, self::readAt),
-            createdAt: self::optionalString($data, self::createdAt),
+            readAt: self::optionalInt($data, self::readAt),
+            createdAt: self::optionalInt($data, self::createdAt),
         );
     }
 }

@@ -514,3 +514,181 @@ test('keeps an exact delivery window in place until Show after a live arrival ab
   await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
   await expect(next).toBeDisabled()
 })
+
+test.describe('notifications in Pacific/Honolulu', () => {
+  test.use({ timezoneId: 'Pacific/Honolulu' })
+
+  test('notification and delivery timestamps reflect Pacific/Honolulu timezone', async ({
+    page,
+  }) => {
+    let capturedNotificationCreated: { id: number; createdAt: number } | null =
+      null
+    let capturedSnapshot: { id: number; createdAt: number } | null = null
+    const capturedDeliveries: Array<{
+      rowKey: string
+      createdAt: number
+      deliveredAt: number | null
+    }> = []
+
+    page.on('websocket', (ws) => {
+      ws.on('framereceived', ({ payload }) => {
+        try {
+          const text =
+            typeof payload === 'string' ? payload : payload.toString('utf-8')
+          const parsed = JSON.parse(text) as Record<string, unknown>
+          const frames =
+            parsed?.type === 'signal_batch' &&
+            Array.isArray(
+              (parsed.data as { frames?: unknown[] } | undefined)?.frames,
+            )
+              ? (parsed.data as { frames: unknown[] }).frames
+              : [parsed]
+          for (const item of frames) {
+            const frame = item as {
+              type?: string
+              data?: Record<string, unknown>
+            }
+            if (frame?.type === 'notification_created' && frame.data) {
+              capturedNotificationCreated = {
+                id: Number(frame.data.id),
+                createdAt: Number(frame.data.createdAt),
+              }
+            }
+            if (
+              frame?.type === 'group_response' &&
+              frame.data &&
+              typeof frame.data.payload === 'object' &&
+              frame.data.payload !== null &&
+              Array.isArray(
+                (frame.data.payload as { recent?: unknown[] }).recent,
+              )
+            ) {
+              const recent = (
+                frame.data.payload as {
+                  recent: Array<Record<string, unknown>>
+                }
+              ).recent
+              for (const recentRow of recent) {
+                if (
+                  capturedNotificationCreated &&
+                  Number(recentRow.id) === capturedNotificationCreated.id
+                ) {
+                  capturedSnapshot = {
+                    id: Number(recentRow.id),
+                    createdAt: Number(recentRow.createdAt),
+                  }
+                }
+              }
+            }
+            if (
+              frame?.type === 'table_window' &&
+              frame.data?.tableKey === 'hilosNotificationDeliveries' &&
+              Array.isArray(frame.data.rows)
+            ) {
+              for (const row of frame.data.rows as Array<{
+                rowKey: unknown
+                slots?: { delivery?: Record<string, unknown> }
+              }>) {
+                const slot = row.slots?.delivery
+                if (slot && typeof slot.createdAt === 'number') {
+                  capturedDeliveries.push({
+                    rowKey: String(row.rowKey),
+                    createdAt: slot.createdAt,
+                    deliveredAt:
+                      typeof slot.deliveredAt === 'number'
+                        ? slot.deliveredAt
+                        : null,
+                  })
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignore non-JSON frames
+        }
+      })
+    })
+
+    const { userId } = await signInAddressableAdmin(page)
+    await gotoPage(page, '/hilos/communications')
+    await enableEmailChannel(page)
+    await gotoPage(page, '/')
+
+    const title = `Pacific timezone delivery for user ${userId}`
+    const { notificationId, queuedChannels } = await emitNotification(userId, {
+      type: 'e2e_timezone',
+      title,
+      body: 'Testing Pacific/Honolulu delivery timestamp',
+    })
+    expect(queuedChannels).toContain('email')
+
+    await expect
+      .poll(() => capturedNotificationCreated?.id)
+      .toBe(notificationId)
+    const createdAtMs = capturedNotificationCreated!.createdAt
+    expect(typeof createdAtMs).toBe('number')
+    expect(createdAtMs).toBeGreaterThan(0)
+
+    const formatHonolulu = (moment: number): string =>
+      new Intl.DateTimeFormat(undefined, {
+        timeZone: 'Pacific/Honolulu',
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      }).format(moment)
+
+    const expectedHonoluluTime = formatHonolulu(createdAtMs)
+
+    await openBell(page)
+    const bellRow = page.getByTestId(
+      `hilos-notification-item-${notificationId}`,
+    )
+    await expect(bellRow).toBeVisible()
+    await expect(bellRow).toContainText(title)
+    await expect(
+      page.getByTestId(`hilos-notification-time-${notificationId}`),
+    ).toHaveText(expectedHonoluluTime)
+
+    // F5 reload — group_response snapshot of the same id gives the same moment and text
+    await page.reload()
+    await expect.poll(() => capturedSnapshot?.id).toBe(notificationId)
+    expect(capturedSnapshot!.createdAt).toBe(createdAtMs)
+
+    await openBell(page)
+    await expect(
+      page.getByTestId(`hilos-notification-item-${notificationId}`),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId(`hilos-notification-time-${notificationId}`),
+    ).toHaveText(expectedHonoluluTime)
+
+    // Delivery journal reflects Pacific/Honolulu timezone
+    await expectJournalSent(page, title)
+    const rowId = await page
+      .getByTestId(/^hilos-table-row-/)
+      .getAttribute('data-id')
+    const deliveryKey = String(rowId).replace('hilos-table-row-', '')
+    const deliveryRow = page.getByTestId(`hilos-table-row-${deliveryKey}`)
+    const cells = deliveryRow.locator('td')
+
+    const wireDelivery = capturedDeliveries.find(
+      (delivery) => delivery.rowKey === deliveryKey,
+    )
+    expect(wireDelivery).toBeDefined()
+    expect(typeof wireDelivery!.createdAt).toBe('number')
+    expect(wireDelivery!.createdAt).toBeGreaterThan(0)
+
+    await expect(cells.nth(0)).toHaveText(
+      formatHonolulu(wireDelivery!.createdAt),
+    )
+
+    if (wireDelivery!.deliveredAt === null) {
+      await expect(cells.nth(4)).toHaveText('—')
+    } else {
+      expect(typeof wireDelivery!.deliveredAt).toBe('number')
+      expect(wireDelivery!.deliveredAt).toBeGreaterThan(0)
+      await expect(cells.nth(4)).toHaveText(
+        formatHonolulu(wireDelivery!.deliveredAt),
+      )
+    }
+  })
+})

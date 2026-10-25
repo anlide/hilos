@@ -7,6 +7,7 @@ import {
   bindNotificationsScope,
   createHilosNotificationStore,
   NOTIFICATION_GROUP,
+  NOTIFICATION_SIGNAL_CREATED,
   NOTIFICATION_SIGNAL_SCHEMAS,
   type HilosNotification,
 } from '../../src/notifications/notificationCenter.js'
@@ -81,7 +82,7 @@ function row(overrides: Partial<HilosNotification> = {}): HilosNotification {
     body: null,
     data: null,
     readAt: null,
-    createdAt: '2026-07-28T00:00:00Z',
+    createdAt: 1785196800000,
     ...overrides,
   }
 }
@@ -105,11 +106,72 @@ function welcome(protectedMode: Record<string, unknown>): string {
   return frame('handshake', { build: 'build-a', protectedMode })
 }
 
+describe('notification schema', () => {
+  it('accepts numeric epoch milliseconds and refuses string moments', () => {
+    const schema = NOTIFICATION_SIGNAL_SCHEMAS[NOTIFICATION_SIGNAL_CREATED]
+    const valid = schema.safeParse({
+      id: 1,
+      userId: 42,
+      type: 'info',
+      severity: 'info',
+      title: 'Hello',
+      body: null,
+      data: null,
+      readAt: null,
+      createdAt: 1785196800000,
+    })
+    expect(valid.success).toBe(true)
+
+    const withReadMs = schema.safeParse({
+      id: 1,
+      userId: 42,
+      type: 'info',
+      severity: 'info',
+      title: 'Hello',
+      readAt: 1785200400000,
+      createdAt: 1785196800000,
+    })
+    expect(withReadMs.success).toBe(true)
+
+    const withZero = schema.safeParse({
+      id: 1,
+      userId: 42,
+      type: 'info',
+      severity: 'info',
+      title: 'Hello',
+      readAt: 0,
+      createdAt: 0,
+    })
+    expect(withZero.success).toBe(true)
+
+    const legacyCreatedString = schema.safeParse({
+      id: 1,
+      userId: 42,
+      type: 'info',
+      severity: 'info',
+      title: 'Hello',
+      createdAt: '2026-07-28T00:00:00Z',
+    })
+    expect(legacyCreatedString.success).toBe(false)
+
+    const legacyReadString = schema.safeParse({
+      id: 1,
+      userId: 42,
+      type: 'info',
+      severity: 'info',
+      title: 'Hello',
+      createdAt: 1785196800000,
+      readAt: '2026-07-28T00:00:00Z',
+    })
+    expect(legacyReadString.success).toBe(false)
+  })
+})
+
 describe('notification store', () => {
   it('ingests a snapshot as the recent list and unread count', () => {
     const store = createHilosNotificationStore()
     store.ingestSnapshot({
-      recent: [row({ id: 2 }), row({ id: 1, readAt: '2026-07-28T01:00:00Z' })],
+      recent: [row({ id: 2 }), row({ id: 1, readAt: 1785200400000 })],
       unreadCount: 1,
     })
 
@@ -117,13 +179,18 @@ describe('notification store', () => {
     expect(store.unreadCount.get()).toBe(1)
   })
 
-  it('prepends a created notification and bumps the unread count', () => {
+  it('prepends a created notification and bumps the unread count only when unread', () => {
     const store = createHilosNotificationStore()
     store.ingestSnapshot({ recent: [row({ id: 1 })], unreadCount: 1 })
 
-    store.onCreated(row({ id: 5 }))
-
+    // Unread (readAt == null): increments unreadCount
+    store.onCreated(row({ id: 5, readAt: null }))
     expect(store.notifications.get().map((n) => n.id)).toEqual([5, 1])
+    expect(store.unreadCount.get()).toBe(2)
+
+    // Read with epoch 0: readAt is 0, which is NOT null, so treated as read (no increment)
+    store.onCreated(row({ id: 6, readAt: 0 }))
+    expect(store.notifications.get().map((n) => n.id)).toEqual([6, 5, 1])
     expect(store.unreadCount.get()).toBe(2)
   })
 
@@ -135,7 +202,8 @@ describe('notification store', () => {
     expect(store.notifications.get()).toHaveLength(1)
   })
 
-  it('marks one row read and decrements the count once', () => {
+  it('marks one row read with synthetic numeric readAt and decrements the count once', () => {
+    const beforeMark = Date.now()
     const store = createHilosNotificationStore()
     store.ingestSnapshot({
       recent: [row({ id: 1 }), row({ id: 2 })],
@@ -143,7 +211,9 @@ describe('notification store', () => {
     })
 
     store.onRead(1)
-    expect(store.notifications.get()[0]?.readAt).not.toBeNull()
+    const readRow = store.notifications.get()[0]
+    expect(typeof readRow?.readAt).toBe('number')
+    expect(readRow?.readAt).toBeGreaterThanOrEqual(beforeMark)
     expect(store.unreadCount.get()).toBe(1)
 
     // A re-delivered read for an already-read row does not decrement again.
@@ -160,7 +230,9 @@ describe('notification store', () => {
 
     store.onRead('all')
 
-    expect(store.notifications.get().every((n) => n.readAt != null)).toBe(true)
+    expect(
+      store.notifications.get().every((n) => typeof n.readAt === 'number'),
+    ).toBe(true)
     expect(store.unreadCount.get()).toBe(0)
   })
 })

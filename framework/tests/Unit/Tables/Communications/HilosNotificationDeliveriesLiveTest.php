@@ -31,6 +31,7 @@ use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -155,19 +156,21 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      * Builds one delivery row of the journal.
      *
      * @param int $id Delivery id
-     * @param string $createdAt Moment the delivery was created
+     * @param int|string $createdAt Moment the delivery was created
      * @param string $status Delivery status
      * @return HilosNotificationDeliveryTableRow Delivery row
      */
-    private static function delivery(int $id, string $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
+    private static function delivery(int $id, int|string $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
     {
+        $createdAtMs = is_int($createdAt) ? $createdAt : TimeHelper::sqlToMs($createdAt);
+
         return new HilosNotificationDeliveryTableRow(
             rowKey: $id,
-            createdAt: $createdAt,
+            createdAt: $createdAtMs,
             channel: 'email',
             status: $status,
             attempts: 1,
-            deliveredAt: $status === 'sent' ? $createdAt : null,
+            deliveredAt: $status === 'sent' ? $createdAtMs : null,
             lastError: null,
             userId: 3,
             userLabel: null,
