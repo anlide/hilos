@@ -425,6 +425,23 @@ rebuilds both the current and previous row keys, while a list anchored to the
 subscribing connection considers only its anchor key and emits neither rows nor
 deletes for another subscriber's key.
 
+For `DATA`, the first non-`MANY` row is also the subscription's scope anchor. A
+key produced by a joined `MANY` row is only a candidate: before rebuilding the
+DATA value, `BrowserContext` resolves the anchor by its declared logical browser
+`ROW_KEY` and `WHERE`, with that subscription's params, through the same source
+resolver as the row builder. The logical key need not be the source's storage
+primary id: a connection stored by `acceptKey` can declare `ROW_KEY = userId`
+and `WHERE acceptKey = <subscriber>`. The source id still addresses that stored
+connection; it is not a lookup key for the logical user row. If the change
+deletes or moves the anchor itself, the check can use the `SourceChange` row and
+previous values to recognize the old `WHERE` even when the current anchor row
+is already gone. An owned anchor delete therefore clears that subscription's
+DATA; it does not need the removed row to still be readable. A joined owner move
+rebuilds both current and previous scopes, leaving a third, unrelated anchor
+untouched. `Clear` retains its existing collection-wide meaning. The behavior is
+covered by `BrowserContextDataScopeTest` and the language-card fan-out cases in
+`I18nLanguageCardTest::testSubscribedCardReceivesEnabledLocaleCounts`.
+
 `Clear` is collection-scoped, not row-scoped: it carries the `sourceKey` with an
 empty `sourceId`/`row` and means "every row in this collection was removed". It
 is queued by the framework `Objects::deleteAll()` (signal `DB_SYNC_CLEARED`,

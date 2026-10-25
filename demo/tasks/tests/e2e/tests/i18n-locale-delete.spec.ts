@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectLanguagePageHead,
   shownByTestId,
   watchHeight,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -56,9 +57,12 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
   await gotoPage(other, '/hilos/i18n/languages/pt/locales', PAGE_READY)
   for (const tab of [page, other]) {
     await expect(shownByTestId(tab, 'i18n-locales-code-pt')).toHaveText('pt')
-    await expect(tab.getByTestId('language-card-counts')).toContainText(
-      'Locales: 1',
-    )
+    await expectLanguagePageHead(expect, tab, {
+      code: 'pt',
+      nativeName: 'Português',
+      currentPage: 'hilos_i18n_language_locales',
+      appName: 'Hilos Tasks',
+    })
   }
   let reloads = 0
   for (const tab of [page, other]) {
@@ -99,9 +103,12 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
     for (const control of ['code', 'enabled', 'edit', 'view', 'delete']) {
       await expect(tab.getByTestId(`i18n-locales-${control}-pt`)).toHaveCount(0)
     }
-    await expect(tab.getByTestId('language-card-counts')).toContainText(
-      'Locales: 0',
-    )
+    await expectLanguagePageHead(expect, tab, {
+      code: 'pt',
+      nativeName: 'Português',
+      currentPage: 'hilos_i18n_language_locales',
+      appName: 'Hilos Tasks',
+    })
     await expect(tab).toHaveURL(/\/hilos\/i18n\/languages\/pt\/locales$/)
   }
   expect(reloads).toBe(0)
@@ -154,7 +161,7 @@ test('refuses the default locale of a switched-off country and preserves its sel
     await clickSubmit(edit)
     await page
       .getByTestId('i18n-country-edit-default-locale')
-      .selectOption('en-IE')
+      .selectOption({ label: 'en-IE — switched off' })
     const save = page.getByTestId('i18n-country-save')
     await clickSubmit(save)
     await expect(page.getByTestId('i18n-country-window')).toHaveCount(0)

@@ -613,24 +613,69 @@ final class PageCatalogResolverTest extends TestCase
         ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_COUNTRIES));
     }
 
-    public function testLanguageBoundaryKeepsItsWholeBranchOnTheLegacyHead(): void
+    public function testLanguagePagesShareTheirEntityHeadAndOrderedTabs(): void
     {
         I18nPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['languageId' => '42']);
+        $expected = [
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_I18N_LANGUAGE,
+                'label' => 'Language',
+                'lead' => 'A single language: code, native name, and writing direction.',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
+                ['page' => HilosPageConstants::HILOS_I18N_LANGUAGES, 'label' => 'Languages'],
+                ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE, 'label' => 'Language'],
+            ],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES, 'label' => 'Names'],
+                ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES, 'label' => 'Locales'],
+            ],
+            'pageChildren' => [],
+        ];
+
         foreach ([
             HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES,
             HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES,
         ] as $page) {
             self::assertSame(HilosPageConstants::HILOS_I18N_LANGUAGE, PageCatalogResolver::rowOwner($page));
-            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
+            $head = PageCatalogResolver::head($page, $params);
+            self::assertNotNull($head);
+            self::assertSame($expected, $head->toArray(), $page);
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
         }
         self::assertSame([
-            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
-            ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Internationalization'],
-            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGES, 'label' => 'Languages'],
-            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE, 'label' => 'Language'],
-            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES, 'label' => 'Language names'],
-        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES));
+            'label' => 'Language names',
+            'lead' => 'How this language is named in each of the other languages.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES));
+        self::assertSame([
+            'label' => 'Language locales',
+            'lead' => 'Formats of this language, per country.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES));
+    }
+
+    public function testUnservedLanguageTabIsOmittedFromTheSharedHead(): void
+    {
+        I18nPageHeadTestHilos::initBrowser();
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES,
+        );
+
+        $head = PageCatalogResolver::head(
+            HilosPageConstants::HILOS_I18N_LANGUAGE,
+            new PageRouteParams(['languageId' => '42']),
+        );
+
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES, 'label' => 'Names'],
+        ], $head->pageTabs);
     }
 
     public function testCountryAndNamesShareTheExactHeadWithoutChangingTheirIdentity(): void

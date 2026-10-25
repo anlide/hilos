@@ -376,6 +376,61 @@ Several tier-1 components are part of the contract, so pages never reinvent them
 
 - **`HilosFormError`** keeps a form refusal to one line with a details panel and
   holds its room with an invisible twin before any refusal exists;
+- **`HilosActionReason`** explains why an action is unavailable. It is exported
+  from `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`, and from
+  each package's compatibility root; it adds no entrypoint. Its required
+  `reason: string | null` and optional `label` / `title` props default to
+  `Why this action is unavailable` and `Action unavailable`. A non-null reason
+  gives a native enabled question button whose `title` is the reason and whose
+  accessible name is `label`; the icon is hidden from assistive technology.
+  The button opens `HilosModal` with the reason snapshot, a Close action and
+  `initialFocus="dialog"`. If the source reason becomes null while the modal is
+  open, the opener disappears but the open explanation stays until Close; the
+  next opening reads the current reason. Unmounting releases the modal through
+  its normal focus and scroll cleanup. The primitive does not dispatch an
+  action, confirm a mutation, show a toast or write runtime state.
+
+  Vue and React render a wrapperless native opener beside the modal. Angular's
+  selector is `button[hilosActionReason]`; the caller owns that native button
+  and its static `data-id`. The Angular primitive creates a local embedded view
+  from its declared `TemplateRef` and moves the view's roots to `document.body`
+  through `ViewContainerRef`, preserving Angular DI, change detection and view
+  ownership while keeping modal content outside the button and its action row.
+  `DestroyRef` releases that view on teardown. Angular's shared `HilosModal`
+  itself still renders in place.
+
+  ```vue
+  <script setup lang="ts">
+  import { HilosActionReason } from '@hilos/vue/base'
+  defineProps<{ deleteReason: string | null }>()
+  </script>
+  <template>
+    <HilosActionReason :reason="deleteReason" />
+  </template>
+  ```
+
+  ```tsx
+  import { HilosActionReason } from '@hilos/react/base'
+
+  function Actions({ deleteReason }: { deleteReason: string | null }) {
+    return <HilosActionReason reason={deleteReason} />
+  }
+  ```
+
+  ```ts
+  import { Component } from '@angular/core'
+  import { HilosActionReason } from '@hilos/angular/base'
+
+  @Component({
+    selector: 'hilos-action-reason-example',
+    imports: [HilosActionReason],
+    template: '<button hilosActionReason [reason]="deleteReason" data-id="delete-reason"></button>',
+  })
+  class Actions {
+    readonly deleteReason: string | null = null
+  }
+  ```
+
 - **`HilosSendProgress`** draws one session code-send line and the timed Send again
   control above a profile code field (HIL-1186). Its text and lock rules come from
   `@hilos/core` `primitives/sendProgress`; Vue, React, and Angular only render

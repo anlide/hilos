@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  shownByTestId,
+  expectLanguagePageHead,
+  watchI18nLivePages,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   deleteLanguage,
@@ -11,6 +15,7 @@ import { clickSubmit } from '../helpers/session.js'
 
 test('edits a switched-off language from its card and from the languages table', async ({
   page,
+  context,
 }) => {
   // Card and list saves plus deletion/recreation and a stale-ID refusal cross several owner writes.
   test.slow()
@@ -44,6 +49,7 @@ test('edits a switched-off language from its card and from the languages table',
     })
   })
   await signUpAdmin(page)
+  const observer = await context.newPage()
   try {
     await switchLanguageOn('uk')
     await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
@@ -55,10 +61,18 @@ test('edits a switched-off language from its card and from the languages table',
     await clickSubmit(confirm)
     await expect(confirm).toHaveCount(0)
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
     await expect(page.getByTestId('language-card-view')).toHaveCount(0)
 
+    await gotoPage(observer, '/hilos/i18n/languages/uk/names', PAGE_READY)
+    await expectLanguagePageHead(expect, observer, {
+      code: 'uk',
+      nativeName: 'Українська',
+      currentPage: 'hilos_i18n_language_names',
+      appName: 'BTC Tracker',
+    })
+    const live = await watchI18nLivePages(expect, [page, observer])
     const cardEdit = page.getByTestId('language-card-edit')
     await clickSubmit(cardEdit)
     await expect(page.getByTestId('i18n-language-edit-title')).toContainText(
@@ -85,9 +99,21 @@ test('edits a switched-off language from its card and from the languages table',
         .filter({ hasText: `Language ${cardName} (uk) saved.` }),
     ).toBeVisible()
     await expect(page.getByTestId('language-card-name')).toHaveText(cardName)
-    await expect(page.getByTestId('language-card-native-name')).toHaveText(
-      cardName,
-    )
+    await expectLanguagePageHead(expect, page, {
+      code: 'uk',
+      nativeName: cardName,
+      currentPage: 'hilos_i18n_language',
+      appName: 'BTC Tracker',
+    })
+    await expectLanguagePageHead(expect, observer, {
+      code: 'uk',
+      nativeName: cardName,
+      currentPage: 'hilos_i18n_language_names',
+      appName: 'BTC Tracker',
+    })
+    await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/uk$/)
+    await expect(observer).toHaveURL(/\/hilos\/i18n\/languages\/uk\/names$/)
+    await live.unchanged()
 
     await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
     const row = page
@@ -111,6 +137,12 @@ test('edits a switched-off language from its card and from the languages table',
         .filter({ hasText: `Language ${tableName} (uk) saved.` }),
     ).toBeVisible()
     await expect(row).toContainText(tableName)
+    await expectLanguagePageHead(expect, observer, {
+      code: 'uk',
+      nativeName: tableName,
+      currentPage: 'hilos_i18n_language_names',
+      appName: 'BTC Tracker',
+    })
     expect(writes).toHaveLength(2)
     expect(Number.isInteger(writes[0].languageId)).toBe(true)
     expect(writes[0].languageId).toBeGreaterThan(0)
@@ -129,7 +161,7 @@ test('edits a switched-off language from its card and from the languages table',
     await deleteLanguage('uk')
     await switchLanguageOff('uk')
     await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
-    await expect(page.getByTestId('language-card-native-name')).toHaveText(
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Українська',
     )
     await clickSubmit(cardEdit)
@@ -144,7 +176,7 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(save).toBeEnabled()
     expect(writes).toHaveLength(3)
     expect(writes[2].languageId).not.toBe(staleId)
-    await expect(page.getByTestId('language-card-native-name')).toHaveText(
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Українська',
     )
     await expect(nativeName).toHaveValue('Must not reach replacement')
@@ -152,12 +184,13 @@ test('edits a switched-off language from its card and from the languages table',
     staleId = null
     await clickSubmit(save)
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
-    await expect(page.getByTestId('language-card-native-name')).toHaveText(
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Must not reach replacement',
     )
     expect(writes).toHaveLength(4)
     expect(writes[3].languageId).toBe(writes[2].languageId)
   } finally {
+    await observer.close()
     // This scenario owns uk; leave the following names-table empty-state check intact.
     await deleteLanguage('uk')
     // A live removal waits for Apply; check cleanup against a fresh page snapshot.

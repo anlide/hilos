@@ -9,6 +9,7 @@ import {
   el,
   click,
   change,
+  expectLanguagePageHead,
   settle,
 } from './hilosI18nHarness.js'
 import {
@@ -39,32 +40,47 @@ function setup(viewer = false) {
 }
 
 describe('React language locales page', () => {
-  it('waits for the card, draws live tabs and counts, and distinguishes deletion', () => {
+  it('waits for the card, draws the shared head and named table, and distinguishes deletion', () => {
     const h = setup()
-    expect(el('language-card-header')).toBeNull()
+    expect(el('hilos-page-head-skeleton')).not.toBeNull()
     expect(el('hilos-viewport-table')).toBeNull()
     expect(
       document.querySelector('[aria-label="Loading language"]'),
     ).not.toBeNull()
     act(() => h.card())
-    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES)
+    expect(el('language-head-tile').textContent).toBe('uk')
+    expect(el('language-head-direction').textContent).toBe('Left to right')
+    expect(el('hilos-page-head-title').id).toBe(
+      document.querySelector('table')?.getAttribute('aria-labelledby'),
+    )
     expect(
-      el('language-card-tab-hilos_i18n_language_locales').getAttribute(
+      el('hilos-page-tab-hilos_i18n_language_locales').getAttribute(
         'aria-current',
       ),
     ).toBe('page')
     expect(
-      el('language-card-tab-hilos_i18n_language_names').getAttribute('href'),
+      el('hilos-page-tab-hilos_i18n_language_names').getAttribute('href'),
     ).toBe('/hilos/i18n/languages/uk/names')
     act(() =>
       h.card({
         ...languageCard,
-        summary: { ...languageCard.summary, localeCount: 5 },
+        rtl: true,
+        summary: {
+          ...languageCard.summary,
+          isDefault: true,
+          isOwn: true,
+          localeCount: 5,
+        },
       }),
     )
-    expect(el('language-card-counts').textContent).toBe('Locales: 5 · Names: 3')
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES)
+    expect(el('language-head-default').textContent).toBe('Default language')
+    expect(el('language-head-own').textContent).toBe('Custom language')
+    expect(el('language-head-direction').textContent).toBe('Right to left')
     expect(document.body.textContent).not.toMatch(/Preview|Synchroniz|Flags/)
     act(() => h.card(null))
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES, 'Language')
     expect(el('language-card-unavailable')).not.toBeNull()
     expect(h.calls).toEqual([])
   })
@@ -138,7 +154,6 @@ describe('React language locales page', () => {
     expect(el('i18n-locales-none-uk').textContent).toBe('No locale')
     expect(el('i18n-locales-add-uk')).not.toBeNull()
     expect(el('i18n-locales-delete-uk')).toBeNull()
-    expect(el('language-card-counts').textContent).toBe('Locales: 1 · Names: 3')
     act(() => h.card(null))
     expect(el('i18n-locale-delete-window')).not.toBeNull()
     expect(el('i18n-locale-delete-notice')).toBeNull()
@@ -236,8 +251,14 @@ describe('React language locales page', () => {
         params: { languageCode: 'fr' },
         admin: true,
       })
-      h.card({ ...languageCard, languageId: 13, code: 'fr' })
+      h.card({
+        ...languageCard,
+        languageId: 13,
+        code: 'fr',
+        nativeName: 'Français',
+      })
     })
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES, 'Français')
     expect(el('modal')).toBeNull()
     expect(h.unregister).toHaveBeenCalled()
     expect(h.sendViewport).toHaveBeenLastCalledWith(
@@ -263,7 +284,7 @@ describe('React language locales page', () => {
     next.card()
     next.scope.data.set('localeTemplates', templates)
     h.view.rerender(
-      <HilosRouterContext.Provider value={h.navigation}>
+      <HilosRouterContext.Provider value={next.navigation}>
         <HilosI18nLanguageLocalesPage context={next.context} />
       </HilosRouterContext.Provider>,
     )
@@ -295,12 +316,13 @@ describe('React language locales page', () => {
       }),
     )
     expect(el('hilos-table-unavailable')).not.toBeNull()
-    expect(el('language-card-header')).not.toBeNull()
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES)
   })
 
   it('lets a viewer read each window but blocks creation, updates and deletion', () => {
     const h = setup(true)
     act(() => h.card())
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES)
     click('i18n-locales-delete-uk')
     expect(el<HTMLButtonElement>('i18n-locale-delete-confirm').disabled).toBe(
       true,
@@ -316,5 +338,13 @@ describe('React language locales page', () => {
     click('i18n-locale-submit')
     expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(true)
     expect(h.calls).toEqual([])
+  })
+
+  it('binds the live name before the locales page first paint', () => {
+    const h = harness(HilosPages.I18N_LANGUAGE_LOCALES, [countryless])
+    h.scope.data.set('localeTemplates', templates)
+    h.card()
+    h.mount(<HilosI18nLanguageLocalesPage context={h.context} />)
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_LOCALES)
   })
 })

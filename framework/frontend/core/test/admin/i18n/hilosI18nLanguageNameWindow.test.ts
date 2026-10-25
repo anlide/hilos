@@ -4,7 +4,10 @@ import {
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
 } from '../../../src/admin/i18n/hilosI18nLanguage.js'
-import { createHilosI18nLanguageNameWindow } from '../../../src/admin/i18n/hilosI18nLanguageNameWindow.js'
+import {
+  createHilosI18nLanguageNameWindow,
+  HILOS_I18N_LANGUAGE_NAME_COPY,
+} from '../../../src/admin/i18n/hilosI18nLanguageNameWindow.js'
 import {
   HILOS_I18N_LANGUAGE_NAMES,
   type HilosI18nNameRow,
@@ -46,6 +49,7 @@ const originalCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: true,
     localeCount: 0,
+    enabledLocaleCount: 0,
     nameCount: 1,
     countrylessLocale: 'missing',
     canDelete: false,
@@ -99,6 +103,21 @@ function pending() {
     })
   return { run, finish: (saved: boolean) => finish(saved) }
 }
+
+describe('language name window copy', () => {
+  it('explains base names and optional corrections separately', () => {
+    expect(HILOS_I18N_LANGUAGE_NAME_COPY.notes).toEqual({
+      base: "The base name is shared across the language's locales until a specific locale sets its own correction.",
+      correction:
+        'An optional correction handles small differences between variants of the same language.',
+    })
+    expect(HILOS_I18N_LANGUAGE_NAME_COPY.hints).toEqual({
+      base: 'Empty text is saved as your own value. Delete the name to remove it.',
+      correction:
+        'Empty text is saved as your own correction. Delete the correction to inherit the base name.',
+    })
+  })
+})
 
 /** A known empty base or correction, with independently delivered occupancy. */
 function emptyPlace(correction: boolean) {

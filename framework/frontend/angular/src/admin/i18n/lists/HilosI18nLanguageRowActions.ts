@@ -1,7 +1,7 @@
 // HilosI18nLanguageRowActions — a language row's own buttons: the eye of a
 // switched-on language or the pencil of a switched-off one, both only opening the
 // shared window, and the delete that only opens its confirmation. A refused
-// delete stays disabled with the server's reason as visible text beside it.
+// delete stays disabled, described accessibly and explained by a live question button.
 // Each table and card copy owns its description id: the table draws this cell
 // twice (row and card), so an id built from the language code would join two
 // distinct DOM nodes. Bootstrap classes only (styling-rules.md).
@@ -19,6 +19,8 @@ import {
 } from '@hilos/core/admin/i18n'
 import type { HilosI18nLanguageRow } from '@hilos/core/admin/i18n'
 
+import { HilosActionReason } from '@hilos/angular/base'
+
 // Distinct ids so the row and the card copy of one language never share one.
 let languageRowActionsSeq = 0
 
@@ -26,59 +28,60 @@ let languageRowActionsSeq = 0
 @Component({
   selector: 'hilos-i18n-language-row-actions',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosActionReason],
+  host: { class: 'hilos-button-group d-md-inline-flex gap-1' },
   template: `
-    <span class="d-inline-flex flex-column align-items-end text-end">
-      <span class="d-flex gap-1 justify-content-end">
-        @if (row().enabled) {
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary"
-            [title]="copy.open.view"
-            [attr.aria-label]="copy.open.view"
-            [attr.data-id]="'i18n-languages-view-' + row().code"
-            (click)="edit.emit()"
-          >
-            <i class="bi bi-eye" aria-hidden="true"></i>
-          </button>
-        } @else {
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary"
-            [title]="copy.open.edit"
-            [attr.aria-label]="copy.open.edit"
-            [attr.data-id]="'i18n-languages-edit-' + row().code"
-            (click)="edit.emit()"
-          >
-            <i class="bi bi-pencil" aria-hidden="true"></i>
-          </button>
-        }
-        <button
-          type="button"
-          [class]="
-            'btn btn-sm ' +
-            (verdict().disabled
-              ? 'btn-outline-secondary'
-              : 'btn-outline-danger')
-          "
-          [disabled]="verdict().disabled"
-          [attr.aria-label]="deleteCopy.rowLabel(row().nativeName)"
-          [attr.aria-describedby]="verdict().reason ? reasonId : null"
-          [attr.data-id]="'i18n-languages-delete-' + row().code"
-          (click)="remove.emit()"
-        >
-          <i class="bi bi-trash" aria-hidden="true"></i>
-        </button>
+    @if (row().enabled) {
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        [title]="copy.open.view"
+        [attr.aria-label]="copy.open.view"
+        [attr.data-id]="'i18n-languages-view-' + row().code"
+        (click)="edit.emit()"
+      >
+        <i class="bi bi-eye" aria-hidden="true"></i>
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-primary"
+        [title]="copy.open.edit"
+        [attr.aria-label]="copy.open.edit"
+        [attr.data-id]="'i18n-languages-edit-' + row().code"
+        (click)="edit.emit()"
+      >
+        <i class="bi bi-pencil" aria-hidden="true"></i>
+      </button>
+    }
+    <button
+      hilosActionReason
+      [reason]="verdict().reason"
+      data-id="hilos-action-reason"
+    ></button>
+    <button
+      type="button"
+      [class]="
+        'btn btn-sm ' +
+        (verdict().disabled ? 'btn-outline-secondary' : 'btn-outline-danger')
+      "
+      [disabled]="verdict().disabled"
+      [attr.aria-label]="deleteCopy.rowLabel(row().nativeName)"
+      [attr.aria-describedby]="verdict().reason ? reasonId : null"
+      [attr.data-id]="'i18n-languages-delete-' + row().code"
+      (click)="remove.emit()"
+    >
+      <i class="bi bi-trash" aria-hidden="true"></i>
+    </button>
+    @if (verdict().reason; as reason) {
+      <span
+        [id]="reasonId"
+        class="visually-hidden"
+        [attr.data-id]="'i18n-languages-delete-reason-' + row().code"
+      >
+        {{ reason }}
       </span>
-      @if (verdict().reason; as reason) {
-        <span
-          [id]="reasonId"
-          class="small text-body-secondary text-wrap text-end mt-1 mb-0"
-          [attr.data-id]="'i18n-languages-delete-reason-' + row().code"
-        >
-          {{ reason }}
-        </span>
-      }
-    </span>
+    }
   `,
 })
 export class HilosI18nLanguageRowActions {

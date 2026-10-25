@@ -282,6 +282,97 @@ export async function expectCountryPageHead(
 }
 
 /**
+ * The adopted language owner's single heading, live breadcrumb and browser title,
+ * with code-based addresses and the catalog's ordered Overview, Names, Locales row.
+ * @param expect The spec's expect.
+ * @param page A page on any of the language's three tabs.
+ * @param language The code, permitted native name, active page key and app name.
+ */
+export async function expectLanguagePageHead(
+  expect: Expect,
+  page: Page,
+  language: {
+    code: string
+    nativeName: string
+    currentPage: string
+    appName: string
+  },
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText(language.nativeName)
+  await expect(page).toHaveTitle(`${language.nativeName} · ${language.appName}`)
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('link')).toHaveText([
+    'Hilos',
+    'Internationalization',
+    'Languages',
+  ])
+  for (const [key, href] of [
+    ['hilos', '/hilos'],
+    ['hilos_i18n', '/hilos/i18n'],
+    ['hilos_i18n_languages', '/hilos/i18n/languages'],
+  ])
+    await expect(crumbs.getByTestId(`hilos-breadcrumb-${key}`)).toHaveAttribute(
+      'href',
+      href,
+    )
+  const lastCrumb = crumbs.locator('[aria-current]')
+  await expect(lastCrumb).toHaveCount(1)
+  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
+  await expect(lastCrumb.locator('a')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      lastCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe(language.nativeName)
+  await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveRole('navigation')
+  await expect(tabs).toHaveAccessibleName('Language pages')
+  await expect(tabs.getByRole('link')).toHaveText([
+    'Overview',
+    'Names',
+    'Locales',
+  ])
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  const base = `/hilos/i18n/languages/${language.code}`
+  for (const [key, suffix] of [
+    ['hilos_i18n_language', ''],
+    ['hilos_i18n_language_names', '/names'],
+    ['hilos_i18n_language_locales', '/locales'],
+  ]) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(tab).toHaveAttribute('href', `${base}${suffix}`)
+    if (key === language.currentPage) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(tab).toHaveClass(/\bactive\b/)
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+      await expect(tab).not.toHaveClass(/\bactive\b/)
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+  for (const id of [
+    'language-card-header',
+    'language-card-tabs',
+    'language-card-counts',
+  ])
+    await expect(page.getByTestId(id)).toHaveCount(0)
+}
+
+/**
  * Arm after both subscriptions are ready, then check each saved value arrived on
  * the existing documents and sockets. Child-frame navigation is irrelevant.
  *
@@ -321,27 +412,33 @@ export async function watchI18nLivePages(
 }
 
 /**
- * The shared card header of the default language, as its card, its names and its
- * locales page all draw it: the code tile, the native name, the default mark and
- * the counts line. The stand's default language is English from the environment.
+ * The adopted shared head of the default language: its code tile, one shared
+ * heading and default mark. Full breadcrumbs, tabs and title are checked by
+ * `expectLanguagePageHead`; the former per-page header and its counts are gone.
+ * The stand's default language is English from the environment.
  *
  * @param expect The spec's expect.
- * @param page A page on the default language's card, names or locales.
+ * @param page A page on the default language's Overview, Names or Locales tab.
  */
 export async function expectDefaultLanguageHeader(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  await expect(page.getByTestId('language-card-code-tile')).toHaveText('en')
-  await expect(page.getByTestId('language-card-native-name')).toHaveText(
-    'English',
-  )
-  await expect(page.getByTestId('language-card-default')).toHaveText(
+  await expect(page.getByTestId('language-head-tile')).toHaveText('en')
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('English')
+  await expect(page.getByTestId('language-head-default')).toContainText(
     'Default language',
   )
-  await expect(page.getByTestId('language-card-counts')).toHaveText(
-    /Locales: \d+ · Names: \d+/,
-  )
+  for (const id of [
+    'language-card-header',
+    'language-card-tabs',
+    'language-card-counts',
+  ]) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
 }
 
 /**

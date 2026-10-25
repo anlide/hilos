@@ -542,21 +542,35 @@ A public language or country URL is addressed by code. A code never
 changes; a row number can change on a reload of the data, and a URL can be sent
 by mail. Code addresses and the three new names/locales page keys are registered
 together (HIL-1473). The Vue main language card is built (HIL-1478) and opens by
-direct URL with one subscribed `languageCard` snapshot and live updates; the Vue
-main country card is built the same way with `countryCard` (HIL-1482). The Vue
-names page of a language is built too (HIL-1477): the names table opened on the
-language the address names, standing under the card's shared header and tabs fed
-by the same `languageCard` datum (HIL-1479). So is its Vue locales page
-(HIL-1476): the locales table opened on that language, a row for the language
-alone and one for every country, keyed by `<languageId>:<countryId>` or
-`<languageId>:null`,
-whether the pair has a locale or not, standing under the card's shared header
-and tabs fed by the same `languageCard` datum. The Vue section root (HIL-1474)
+direct URL with one subscribed `languageCard` snapshot and live updates; its
+Names and Locales pages use the same datum (HIL-1479). The Language entity head
+and Overview / Names / Locales row are adopted in Vue, React and Angular. The
+shared breadcrumb passes through Languages and ends at the live native name;
+the row links only pages whose route exists in that project. The Vue language
+Overview has three route-aware summary tiles — Names, Locales, and the locale
+without a country — followed by Main and State. The Locales tile shows total
+and enabled counts. Its Names editor explains base names and locale
+corrections. The React and Angular language page bodies retain
+their previous presentation under HIL-1729 and HIL-1730.
+
+The Vue names page of a language is built (HIL-1477): its table opens on the
+language named by the address, under the shared head and tabs fed by
+`languageCard`. So is its Vue locales page (HIL-1476): the table has a row for
+the language alone and one for every country, keyed by
+`<languageId>:<countryId>` or `<languageId>:null`, whether the pair has a locale
+or not, under the same head and tabs. The Vue main country card is built the
+same way with `countryCard` (HIL-1482). The Vue section root (HIL-1474)
 mounts a context-bound overview with live, read-only Languages and Countries
 tiles; each tile follows the section tabs' route eligibility. The Vue languages
 list is built whole with its table (HIL-1474), the catalog tally callout above it
 (`builtInCatalog`), and the marks legend below it (HIL-112), kept live by the
-table's own fan-out. The Vue names page of a country is built too (HIL-1483):
+table's own fan-out. The language-list marks legend has five entries and no
+preview row. Its row actions in all three kits include a `?` opener that shows
+the current reason from the existing delete verdict; the opener is not added to
+the language card. On the Vue card, State keeps that read-only reason visible
+as words. The language Names pages in all three kits use a primary button to
+add a missing base name or correction and an outline-primary button to edit an
+existing one. The Vue names page of a country is built too (HIL-1483):
 the names table opened on that country, standing under the card's shared header
 and tabs fed by the same `countryCard` datum. The Vue countries list is built
 whole with its table (HIL-1475), the catalog tally callout above it
@@ -595,7 +609,16 @@ Locale ADD carries the parent IDs; UPDATE, DELETE and both switches also carry
 the captured `localeId` and check the parent pair before the item action.
 
 The first page response carries `languageCard.languageId` or
-`countryCard.countryId`. Names and locales windows take their numeric parent
+`countryCard.countryId`. `languageCard.summary.enabledLocaleCount` is a required
+nonnegative integer: the enabled locales of that language, including its
+countryless locale. `localeCount` still counts every locale, enabled or not;
+`nameCount`, `countrylessLocale`, `canDelete` and `deleteReason` remain in the
+summary. `Hilos::$db->languages->cardSummary()` uses the typed
+`Hilos::$db->locales->countEnabledForLanguage()` View API, and the existing
+`languageCard` BrowserData flow carries it. The whole `summary` has the
+nonpersonal verdict. This adds no SQL, cache, RT state or request.
+
+Names and locales windows take their numeric parent
 filters from that card; no invented zero or code is sent before it arrives.
 Lists use decimal ID row keys. Names rows use `String(inLanguageId)` and carry
 `nameId: null` for a missing base. Corrections carry `localeId`, `countryId`
@@ -638,16 +661,15 @@ Tracker and Chat mount thin, lazy Vue wrappers for the section overview and both
 lists outside `hilosAdminViews()`: the overview receives its current page scopes,
 and each list receives its project context. Both lists draw the shared section
 head with `head-kind="section"` and `tabs-label="Internationalization pages"`.
-The language card shows the code, native name, direction, enabled state,
-locale/name counts, and a delete
-control with its verdict. Its summary also carries whether the countryless locale is
-missing, off or on. The main card has Switch off and Switch on controls
+The adopted language head shows the code beside the live native name and keeps
+writing direction in its description; the live name appears in its shared h1,
+breadcrumb and document title. The Vue language Overview has the three summary tiles,
+followed by Main and State. The main card has Switch off and Switch on controls
 (HIL-1486/1487) and the edit or view control of its Main section, which also
 carries the frozen mark (HIL-1485). A row of the languages table carries the
 same edit or view control (HIL-1485), with a trash button beside it. The card
 summary and live table fields `canDelete` / `deleteReason` are hints: the
-opening controls explain default, locales, then manual names with visible
-text, while the server judges again after the window opens.
+server judges again after the window opens.
 Both Vue entries open the same delete modal, fixing the primary ID, code and native name
 on open; the list first takes the fresh row into focus and follows it live.
 A dependency appearing under the open window leaves confirmation available

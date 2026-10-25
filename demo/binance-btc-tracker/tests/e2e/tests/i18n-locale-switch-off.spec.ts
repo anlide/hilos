@@ -109,7 +109,9 @@ test('warns for an enabled language and updates both tabs without reloading', as
   }
   expect(reloads).toBe(0)
   await gotoPage(page, '/hilos/i18n/languages/pt', PAGE_READY)
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched on',
+  )
 })
 
 test('explains the default locale protection without sending a switch-off action', async ({

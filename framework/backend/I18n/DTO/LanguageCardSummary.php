@@ -23,6 +23,7 @@ final readonly class LanguageCardSummary
      * @param bool $isDefault Whether this is the installation default
      * @param bool $isOwn Whether the code is absent from the built-in catalog
      * @param int $localeCount All locales, including disabled ones
+     * @param int $enabledLocaleCount Enabled locales, including the countryless one
      * @param int $nameCount Nonempty base names written in other languages
      * @param ?bool $countrylessLocaleEnabled Whether the language's countryless locale is switched on; null when it has none
      * @param bool $hasManualLanguageName Whether a locked name references this language
@@ -32,6 +33,7 @@ final readonly class LanguageCardSummary
         public bool $isDefault,
         public bool $isOwn,
         public int $localeCount,
+        public int $enabledLocaleCount,
         public int $nameCount,
         ?bool $countrylessLocaleEnabled,
         bool $hasManualLanguageName,
@@ -58,6 +60,7 @@ final readonly class LanguageCardSummary
             'isDefault' => $this->isDefault,
             'isOwn' => $this->isOwn,
             'localeCount' => $this->localeCount,
+            'enabledLocaleCount' => $this->enabledLocaleCount,
             'nameCount' => $this->nameCount,
             'countrylessLocale' => $this->countrylessLocale,
             'canDelete' => $this->canDelete,

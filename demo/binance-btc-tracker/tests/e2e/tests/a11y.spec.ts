@@ -3,6 +3,7 @@ import {
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
   expectStatusHead,
+  expectLanguagePageHead,
   expectStatusIncidentDialog,
   shownByTestId,
   watchStatusFrames,
@@ -109,3 +110,81 @@ test(
     }
   },
 )
+
+test('language pages expose one named head, current link and named table through keyboard navigation', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language',
+    appName: 'BTC Tracker',
+  })
+  await expect(page.getByTestId('language-head-default')).toHaveText(
+    'Default language',
+  )
+  await expect(page.getByTestId('language-head-default')).toHaveAttribute(
+    'title',
+    'Default language',
+  )
+  await expect(
+    page.getByTestId('language-head-default').locator('i'),
+  ).toHaveAttribute('aria-hidden', 'true')
+  for (const key of [
+    'hilos_i18n_language_names',
+    'hilos_i18n_language_locales',
+  ]) {
+    const link = page.getByTestId(`hilos-page-tab-${key}`)
+    await link.focus()
+    await expect(link).toBeFocused()
+    await link.press('Enter')
+    await expectPageReady(page)
+    await expectLanguagePageHead(expect, page, {
+      code: 'en',
+      nativeName: 'English',
+      currentPage: key,
+      appName: 'BTC Tracker',
+    })
+    await expect(page.getByRole('table')).toHaveAccessibleName('English')
+  }
+})
+
+test('the default language deletion explanation is named, keyboard readable and returns focus', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  const row = shownByTestId(page, /^hilos-table-row-/).filter({
+    has: page.getByTestId('i18n-languages-delete-en'),
+  })
+  const trash = row.getByTestId('i18n-languages-delete-en')
+  await expect(trash).toBeDisabled()
+  await expect(trash).toHaveAccessibleDescription(
+    'Cannot delete: this is the default language.',
+  )
+  const why = row.getByTestId('hilos-action-reason')
+  await expect(why).toHaveAccessibleName('Why this action is unavailable')
+  await why.focus()
+  await why.press('Enter')
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toHaveRole('dialog')
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await expect(dialog).toHaveAccessibleName('Action unavailable')
+  await expect(dialog).toBeFocused()
+  await expect(page.getByTestId('hilos-action-reason-body')).toHaveText(
+    'Cannot delete: this is the default language.',
+  )
+  await dialog.press('Tab')
+  await expect(page.getByTestId('modal-close')).toBeFocused()
+  await page.getByTestId('modal-close').press('Tab')
+  await expect(page.getByTestId('hilos-action-reason-close')).toBeFocused()
+  await page.getByTestId('hilos-action-reason-close').press('Tab')
+  await expect(page.getByTestId('modal-close')).toBeFocused()
+  await dialog.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(why).toBeFocused()
+  await expect(trash).toBeDisabled()
+  await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
+})

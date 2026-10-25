@@ -299,6 +299,7 @@ export {
 export {
   expectCountryDeleteDescription,
   expectCountryPageHead,
+  expectLanguagePageHead,
   expectDefaultLanguageHeader,
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,

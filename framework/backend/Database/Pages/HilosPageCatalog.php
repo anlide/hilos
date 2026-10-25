@@ -189,17 +189,21 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single language: code, native name, and writing direction.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGES,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Language',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language names',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How this language is named in each of the other languages.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGE,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Names',
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language locales',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Formats of this language, per country.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGE,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Locales',
         ],
         HilosPageConstants::HILOS_I18N_COUNTRIES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Countries',

@@ -53,6 +53,9 @@ const title = computed(() => {
 const hint = computed(() =>
   target.value?.localeCode === null ? copy.hints.base : copy.hints.correction,
 )
+const note = computed(() =>
+  target.value?.localeCode === null ? copy.notes.base : copy.notes.correction,
+)
 const modalOpen = computed({
   get: () => opened.value,
   set: (next: boolean) => {
@@ -109,12 +112,19 @@ async function submit(): Promise<void> {
           :value="form.name"
           :maxlength="HILOS_I18N_LANGUAGE_NAME_MAX"
           :disabled="saving"
-          aria-describedby="i18n-language-name-hint"
+          aria-describedby="i18n-language-name-hint i18n-language-name-note"
           data-id="i18n-language-name-input"
           data-autofocus
           @input="changeName"
         />
         <div id="i18n-language-name-hint" class="form-text">{{ hint }}</div>
+        <p
+          id="i18n-language-name-note"
+          class="form-text mb-0"
+          data-id="i18n-language-name-note"
+        >
+          {{ note }}
+        </p>
       </form>
       <div data-id="i18n-language-name-error">
         <HilosActionError :action="action" :details-title="copy.refusalTitle" />

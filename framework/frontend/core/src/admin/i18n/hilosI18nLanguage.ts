@@ -19,6 +19,7 @@ export const languageCardSchema = z.strictObject({
     isDefault: z.boolean(),
     isOwn: z.boolean(),
     localeCount: z.number().int().nonnegative(),
+    enabledLocaleCount: z.number().int().nonnegative(),
     nameCount: z.number().int().nonnegative(),
     countrylessLocale: z.enum(['missing', 'off', 'on']),
     canDelete: z.boolean(),

@@ -4,6 +4,7 @@ import {
   bindAdminAccess,
   HilosPages,
   ScopeManager,
+  pageIdentity,
   type ActionLifecycle,
   type HilosConnection,
   type HilosRouter,
@@ -15,7 +16,7 @@ import {
   type HilosI18nLanguageContext,
 } from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosI18nLanguageNamesPage from './HilosI18nLanguageNamesPage.vue'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
@@ -33,6 +34,7 @@ const testCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: true,
     localeCount: 2,
+    enabledLocaleCount: 0,
     nameCount: 4,
     countrylessLocale: 'missing',
     canDelete: true,
@@ -40,7 +42,10 @@ const testCard: HilosI18nLanguageCard = {
   },
 }
 
-function makeRouter(pageLoading = createSignal(false)): HilosRouter {
+function makeRouter(
+  scopes: ScopeManager,
+  pageLoading = createSignal(false),
+): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.I18N_LANGUAGE_NAMES,
@@ -51,7 +56,7 @@ function makeRouter(pageLoading = createSignal(false)): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
       const base = `/hilos/i18n/languages/${params?.languageCode}`
@@ -72,6 +77,7 @@ function makeRouter(pageLoading = createSignal(false)): HilosRouter {
 }
 
 function makeContext(scopes: ScopeManager): HilosI18nLanguageContext {
+  answerAsLanguage(scopes)
   const listeners: Array<(frame: never) => void> = []
   const connection = {
     on(event: string, listener: (frame: never) => void): () => void {
@@ -92,24 +98,49 @@ function makeContext(scopes: ScopeManager): HilosI18nLanguageContext {
   }
 }
 
+/** The single reply carries the owner's identity, ordered tabs and no child cards.
+ * @param scopes The current page scopes.
+ */
+function answerAsLanguage(scopes: ScopeManager): void {
+  const scope = scopes.page()!
+  scope.data.set('pageLabel', 'Language')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.I18N_LANGUAGE,
+    label: 'Language',
+    lead: '',
+    icon: null,
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.I18N, label: 'Internationalization' },
+    { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+    { page: HilosPages.I18N_LANGUAGE, label: 'Language' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+    { page: HilosPages.I18N_LANGUAGE_NAMES, label: 'Names' },
+    { page: HilosPages.I18N_LANGUAGE_LOCALES, label: 'Locales' },
+  ])
+  scope.data.set('pageChildren', [])
+}
+
 describe('HilosI18nLanguageNamesPage', () => {
   it('shows a loading skeleton while the card is loading, with no header or table', async () => {
     const scopes = new ScopeManager()
     scopes.openPage(HilosPages.I18N_LANGUAGE_NAMES)
     const pageLoading = createSignal(true)
     const wrapper = mount(HilosI18nLanguageNamesPage, {
-      props: { context: makeContext(scopes) },
+      props: { context: markRaw(makeContext(scopes)) },
       global: {
-        provide: { [hilosRouterKey as symbol]: makeRouter(pageLoading) },
-        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+        provide: {
+          [hilosRouterKey as symbol]: makeRouter(scopes, pageLoading),
+        },
       },
     })
     await nextTick()
 
     expect(wrapper.find('[aria-label="Loading language"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
-      false,
-    )
+    expect(wrapper.find('[data-id="language-head-tile"]').exists()).toBe(false)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 
@@ -118,29 +149,33 @@ describe('HilosI18nLanguageNamesPage', () => {
     const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_NAMES)
     scope.data.set(LANGUAGE_CARD_DATA, testCard)
     const wrapper = mount(HilosI18nLanguageNamesPage, {
-      props: { context: makeContext(scopes) },
+      props: { context: markRaw(makeContext(scopes)) },
       global: {
-        provide: { [hilosRouterKey as symbol]: makeRouter() },
-        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+        provide: { [hilosRouterKey as symbol]: makeRouter(scopes) },
       },
     })
     await nextTick()
 
-    expect(wrapper.find('[data-id="language-card-native-name"]').text()).toBe(
+    expect(wrapper.find('[data-id="hilos-page-head-title"]').text()).toBe(
       'Test language',
     )
-    expect(wrapper.find('[data-id="language-card-counts"]').text()).toBe(
-      'Locales: 2 · Names: 4',
+    expect(wrapper.find('[data-id="language-card-counts"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id^="language-overview-"]').exists()).toBe(false)
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('table').attributes('aria-labelledby')).toBe(
+      wrapper.get('h1').attributes('id'),
     )
 
     const namesTab = wrapper.find(
-      '[data-id="language-card-tab-hilos_i18n_language_names"]',
+      '[data-id="hilos-page-tab-hilos_i18n_language_names"]',
     )
     expect(namesTab.attributes('aria-current')).toBe('page')
     expect(namesTab.attributes('href')).toBe('/hilos/i18n/languages/qx/names')
 
     const mainTab = wrapper.find(
-      '[data-id="language-card-tab-hilos_i18n_language"]',
+      '[data-id="hilos-page-tab-hilos_i18n_language"]',
     )
     expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/qx')
 
@@ -149,20 +184,71 @@ describe('HilosI18nLanguageNamesPage', () => {
     expect(wrapper.findAll('input')).toHaveLength(0)
   })
 
+  it('updates the shared name in place, ignores another page scope and disposes its producer', async () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_NAMES)
+    scope.data.set(LANGUAGE_CARD_DATA, testCard)
+    const context = makeContext(scopes)
+    const navigation = makeRouter(scopes)
+    const wrapper = mount(HilosI18nLanguageNamesPage, {
+      props: { context: markRaw(context) },
+      global: { provide: { [hilosRouterKey as symbol]: navigation } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    scope.data.set(LANGUAGE_CARD_DATA, {
+      ...testCard,
+      nativeName: 'Live name',
+      rtl: true,
+      summary: { ...testCard.summary, isDefault: true },
+    })
+    await nextTick()
+    expect(wrapper.get('h1').text()).toBe('Live name')
+    expect(
+      wrapper.get('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Live name')
+    expect(wrapper.get('[data-id="language-head-direction"]').text()).toBe(
+      'Right to left',
+    )
+    for (const id of ['default', 'own'])
+      expect(
+        wrapper
+          .get(`[data-id="language-head-${id}"] i`)
+          .attributes('aria-hidden'),
+      ).toBe('true')
+    for (const id of [
+      'language-card-header',
+      'language-card-tabs',
+      'language-card-counts',
+      'hilos-admin-children',
+    ])
+      expect(wrapper.find(`[data-id="${id}"]`).exists()).toBe(false)
+    const foreign = scopes.openPage(HilosPages.I18N_COUNTRY)
+    answerAsLanguage(scopes)
+    foreign.data.set(LANGUAGE_CARD_DATA, { ...testCard, nativeName: 'Foreign' })
+    expect(navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe('Language')
+    wrapper.unmount()
+    scopes
+      .openPage(HilosPages.I18N_LANGUAGE_NAMES)
+      .data.set(LANGUAGE_CARD_DATA, testCard)
+    answerAsLanguage(scopes)
+    expect(navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe('Language')
+  })
+
   it('says language details are no longer available when the card is cleared after deletion', async () => {
     const scopes = new ScopeManager()
     const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_NAMES)
     scope.data.set(LANGUAGE_CARD_DATA, testCard)
     const wrapper = mount(HilosI18nLanguageNamesPage, {
-      props: { context: makeContext(scopes) },
+      props: { context: markRaw(makeContext(scopes)) },
       global: {
-        provide: { [hilosRouterKey as symbol]: makeRouter() },
-        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+        provide: { [hilosRouterKey as symbol]: makeRouter(scopes) },
       },
     })
     await nextTick()
 
-    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="language-head-tile"]').exists()).toBe(true)
 
     scope.data.set(LANGUAGE_CARD_DATA, [])
     await nextTick()
@@ -170,9 +256,7 @@ describe('HilosI18nLanguageNamesPage', () => {
     expect(wrapper.find('[data-id="language-card-unavailable"]').text()).toBe(
       'Language details are no longer available.',
     )
-    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
-      false,
-    )
+    expect(wrapper.find('[data-id="language-head-tile"]').exists()).toBe(false)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 })
@@ -196,9 +280,9 @@ function deletionPage(viewer = false) {
     params: { languageCode: 'qx' },
     admin: true,
   })
-  const router = { ...makeRouter(), currentRoute: route }
+  const router = { ...makeRouter(scopes), currentRoute: route }
   const wrapper = mount(HilosI18nLanguageNamesPage, {
-    props: { context },
+    props: { context: markRaw(context) },
     attachTo: document.body,
     global: { provide: { [hilosRouterKey as symbol]: router } },
   })
@@ -463,6 +547,13 @@ describe('language name add/edit from the page', () => {
             .find(`${surface} [data-id="i18n-language-name-${suffix}"]`)
             .exists(),
         ).toBe(true)
+        expect(
+          s.wrapper
+            .get(`${surface} [data-id="i18n-language-name-${suffix}"]`)
+            .classes(),
+        ).toContain(
+          suffix.includes('add-') ? 'btn-primary' : 'btn-outline-primary',
+        )
       }
       for (const key of ['qw', 'es', 'qw-GB', 'qw-US']) {
         expect(
@@ -482,6 +573,57 @@ describe('language name add/edit from the page', () => {
         .get('tr [data-id="i18n-language-name-locale-add-qw-CA"]')
         .attributes('aria-label'),
     ).toBe('Add locale correction · Test language in Writing · qw-CA')
+    // Live occupancy changes the opener's tone, including a saved empty value.
+    s.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: '47',
+      row: {
+        rowKey: '47',
+        slots: {
+          language: { ...s.slot, name: null, nameId: null, corrections: [] },
+        },
+      },
+    })
+    await settlePage()
+    for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+      expect(
+        s.wrapper
+          .get(`${surface} [data-id="i18n-language-name-add-qw"]`)
+          .classes(),
+      ).toContain('btn-primary')
+    }
+    s.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: '47',
+      row: {
+        rowKey: '47',
+        slots: {
+          language: {
+            ...s.slot,
+            name: '',
+            corrections: s.slot.corrections.map((correction) => ({
+              ...correction,
+              name: '',
+              nameId: 450,
+            })),
+          },
+        },
+      },
+    })
+    s.controller.expandRow('47', true)
+    await settlePage()
+    for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+      expect(
+        s.wrapper
+          .get(`${surface} [data-id="i18n-language-name-edit-qw"]`)
+          .classes(),
+      ).toContain('btn-outline-primary')
+      expect(
+        s.wrapper
+          .get(`${surface} [data-id="i18n-language-name-locale-edit-qw-CA"]`)
+          .classes(),
+      ).toContain('btn-outline-primary')
+    }
     // One actions column, the inherited HIL-1490 slots.
     expect(
       s.wrapper.findAll('th').filter((cell) => cell.text() === 'Actions'),

@@ -1,7 +1,7 @@
 // HilosI18nLanguageNamesPage — the names of one language
 // (HilosPages.I18N_LANGUAGE_NAMES): how the language the address names is called
-// in every other language of the system (HIL-1477). The card's header and tabs,
-// shared with the main page and the locales page, stand above the one names
+// in every other language of the system (HIL-1477). The shared entity head,
+// shared with the main page and the locales page, stands above the one names
 // table, with the three states of the main page: the loading skeleton, the card
 // with its table, and the unavailable alert once it is gone (HIL-1479). The
 // table, the card, the add/edit window and the deletion dispatch are the core's
@@ -32,11 +32,16 @@ import {
   HILOS_I18N_LANGUAGE_NAMES,
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
+  HILOS_I18N_LANGUAGE_MARKS,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
 } from '@hilos/core/admin/i18n'
-import { HilosPages, computedSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+} from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
@@ -51,7 +56,6 @@ import {
   hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLanguageNameDelete } from './HilosI18nLanguageNameDelete.js'
 import { HilosI18nLanguageNameWindow } from './HilosI18nLanguageNameWindow.js'
 import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
@@ -62,17 +66,62 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosI18nLanguageHeader,
     HilosI18nLanguageNameDelete,
     HilosI18nLanguageNameWindow,
     HilosI18nNamesTable,
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="entity"
+      tabsLabel="Language pages"
+    >
       @for (subject of [binding()]; track subject.names) {
         @if (card(); as current) {
-          <hilos-i18n-language-header [card]="current" [activePage]="page" />
+          <ng-template #headVisual>
+            <span
+              class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+              aria-hidden="true"
+              data-id="language-head-tile"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          @if (current.summary.isDefault || current.summary.isOwn) {
+            <ng-template #headBadges>
+              @if (current.summary.isDefault) {
+                <span
+                  [class]="'badge ' + marks.default.tone"
+                  [title]="marks.default.label"
+                  data-id="language-head-default"
+                >
+                  <i
+                    [class]="'bi ' + marks.default.icon"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{ marks.default.label }}</span>
+                </span>
+              }
+              @if (current.summary.isOwn) {
+                <span
+                  [class]="'badge ' + marks.own.tone"
+                  [title]="marks.own.label"
+                  data-id="language-head-own"
+                >
+                  <i [class]="'bi ' + marks.own.icon" aria-hidden="true"></i>
+                  <span class="visually-hidden">{{ marks.own.label }}</span>
+                </span>
+              }
+            </ng-template>
+          }
+          <ng-template #headDescription>
+            <p
+              class="text-body-secondary mb-0"
+              data-id="language-head-direction"
+            >
+              {{ current.rtl ? 'Right to left' : 'Left to right' }}
+            </p>
+          </ng-template>
           <hilos-i18n-names-table
             [controller]="subject.names.controller"
             [nameActions]="nameActions"
@@ -81,7 +130,10 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
           <ng-template #nameActions let-row>
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary"
+              [class]="
+                'btn btn-sm ' +
+                (row.name === null ? 'btn-primary' : 'btn-outline-primary')
+              "
               [attr.aria-label]="
                 nameCopy.open(
                   row.name === null,
@@ -120,7 +172,12 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
             @if (row.name !== null) {
               <button
                 type="button"
-                class="btn btn-sm btn-outline-secondary"
+                [class]="
+                  'btn btn-sm ' +
+                  (correction.name === null
+                    ? 'btn-primary'
+                    : 'btn-outline-primary')
+                "
                 [attr.aria-label]="
                   nameCopy.open(
                     correction.name === null,
@@ -197,6 +254,7 @@ export class HilosI18nLanguageNamesPage {
   protected readonly page = HilosPages.I18N_LANGUAGE_NAMES
   protected readonly nameCopy = HILOS_I18N_LANGUAGE_NAME_COPY
   protected readonly copy = HILOS_I18N_LANGUAGE_NAME_DELETE_COPY
+  protected readonly marks = HILOS_I18N_LANGUAGE_MARKS
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
@@ -269,12 +327,28 @@ export class HilosI18nLanguageNamesPage {
     // a new binding, or the end of this page, unbinds it and lets its row go.
     effect((onCleanup) => {
       const binding = this.binding()
+      const unbindName = bindPageInstanceName(
+        binding.context.scopes,
+        HilosPages.I18N_LANGUAGE,
+        computedSignal(() => {
+          const page = binding.context.scopes.page()?.key
+          if (
+            page !== HilosPages.I18N_LANGUAGE &&
+            page !== HilosPages.I18N_LANGUAGE_NAMES &&
+            page !== HilosPages.I18N_LANGUAGE_LOCALES
+          ) {
+            return undefined
+          }
+          return binding.card.get()?.nativeName
+        }),
+      )
       const stops = [
         mirrorHilosSignal(binding.card, this.card),
         mirrorHilosSignal(binding.names.controller.focusedRow, this.focusedRow),
       ]
       binding.names.start()
       onCleanup(() => {
+        unbindName()
         for (const stop of stops) stop()
         binding.names.controller.releaseFocus()
         binding.names.dispose()

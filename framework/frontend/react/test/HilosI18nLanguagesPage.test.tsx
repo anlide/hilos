@@ -70,7 +70,7 @@ describe('React languages list', () => {
     (deleteReason) => {
       const h = setup([{ ...own, canDelete: false, deleteReason }])
       const controls = [
-        ...document.querySelectorAll<HTMLButtonElement>(
+        ...h.view.container.querySelectorAll<HTMLButtonElement>(
           '[data-id="i18n-languages-delete-qx"]',
         ),
       ]
@@ -78,14 +78,61 @@ describe('React languages list', () => {
         control.getAttribute('aria-describedby'),
       )
       expect(new Set(ids).size).toBe(2)
+      expect(ids.every((id) => id !== null && id !== '')).toBe(true)
+      const descriptions = [
+        ...h.view.container.querySelectorAll<HTMLElement>(
+          '[data-id="i18n-languages-delete-reason-qx"]',
+        ),
+      ]
+      expect(descriptions).toHaveLength(2)
       for (const control of controls) {
         expect(control.disabled).toBe(true)
         expect(control.hasAttribute('title')).toBe(false)
-        expect(
-          document.getElementById(control.getAttribute('aria-describedby')!)
-            ?.textContent,
-        ).toBe(HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason])
       }
+      descriptions.forEach((description, index) => {
+        expect(description.id).toBe(ids[index])
+        expect(description.className).toBe('visually-hidden')
+        expect(description.hasAttribute('hidden')).toBe(false)
+        expect(description.hasAttribute('aria-hidden')).toBe(false)
+        expect(description.textContent).toBe(
+          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+        )
+      })
+      const whyButtons = [
+        ...h.view.container.querySelectorAll<HTMLButtonElement>(
+          '[data-id="hilos-action-reason"]',
+        ),
+      ]
+      expect(whyButtons).toHaveLength(2)
+      for (const why of whyButtons) {
+        expect(why.type).toBe('button')
+        expect(why.getAttribute('aria-label')).toBe(
+          'Why this action is unavailable',
+        )
+        expect(why.title).toBe(
+          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+        )
+        expect(why.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+      }
+      const cardRows = [
+        ...h.view.container.querySelectorAll<HTMLElement>('.hilos-button-row'),
+      ]
+      expect(cardRows).toHaveLength(1)
+      const cardRow = cardRows[0]!
+      const groups = cardRow.querySelectorAll('.hilos-button-group')
+      expect(groups).toHaveLength(1)
+      const group = groups[0]!
+      expect(group.parentElement).toBe(cardRow)
+      expect(group.querySelector('.hilos-button-group')).toBeNull()
+      expect(group.className).toBe('hilos-button-group d-md-inline-flex gap-1')
+      expect(
+        [...group.children].map((child) => child.getAttribute('data-id')),
+      ).toEqual([
+        'i18n-languages-edit-qx',
+        'hilos-action-reason',
+        'i18n-languages-delete-qx',
+        'i18n-languages-delete-reason-qx',
+      ])
       click('i18n-languages-delete-qx')
       expect(h.focuses).toEqual([])
       expect(el('modal')).toBeNull()

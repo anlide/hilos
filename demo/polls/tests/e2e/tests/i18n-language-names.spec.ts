@@ -1,10 +1,14 @@
 import { expect, test } from '@playwright/test'
 import {
-  expectDefaultLanguageHeader,
+  expectLanguagePageHead,
   expectNoOtherLanguageNames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+
+const APP_NAME = 'Hilos Polls'
+const OVERVIEW = 'hilos_i18n_language'
+const NAMES = 'hilos_i18n_language_names'
 
 test('opens the names of the default language directly as a table that says no other language is added', async ({
   page,
@@ -20,29 +24,44 @@ test('opens the names of the default language directly as a table that says no o
     'A name in another language can be written once that language is added.',
   )
   await expect(table.locator('button, input')).toHaveCount(0)
+  await expect(table).toHaveAccessibleName('English')
 
-  // Card header and tabs (HIL-1479).
-  await expectDefaultLanguageHeader(expect, page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: NAMES,
+    appName: APP_NAME,
+  })
 
-  const namesTab = page.getByTestId(
-    'language-card-tab-hilos_i18n_language_names',
-  )
+  const namesTab = page.getByTestId(`hilos-page-tab-${NAMES}`)
   await expect(namesTab).toHaveAttribute('aria-current', 'page')
   await expect(namesTab).toHaveAttribute(
     'href',
     '/hilos/i18n/languages/en/names',
   )
 
-  const mainTab = page.getByTestId('language-card-tab-hilos_i18n_language')
+  const mainTab = page.getByTestId(`hilos-page-tab-${OVERVIEW}`)
   await expect(mainTab).toHaveAttribute('href', '/hilos/i18n/languages/en')
 
   await mainTab.click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
   await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: OVERVIEW,
+    appName: APP_NAME,
+  })
   await expect(page.getByTestId('language-card-main')).toBeVisible()
 
-  await page.getByTestId('language-card-tab-hilos_i18n_language_names').click()
+  await page.getByTestId(`hilos-page-tab-${NAMES}`).click()
   await expect(page).toHaveURL(/\/names$/)
   await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: NAMES,
+    appName: APP_NAME,
+  })
   await expectNoOtherLanguageNames(expect, page)
 })

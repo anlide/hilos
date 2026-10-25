@@ -178,14 +178,14 @@ test('updates the whole overview in its existing window after language and custo
   try {
     await gotoPage(editor, `${ROOT_PATH}/languages/de`, PAGE_READY)
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
     await submit(editor.getByTestId('language-card-switch-on'))
     const on = editor.getByTestId('language-card-switch-on-confirm')
     await submit(on)
     await expect(on).toHaveCount(0)
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
-      'Enabled',
+      'Language switched on',
     )
     const enabled = {
       ...initial,
@@ -205,7 +205,7 @@ test('updates the whole overview in its existing window after language and custo
     await submit(off)
     await expect(off).toHaveCount(0)
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
     await expectOverview(page, initial)
     expect(frames.read().at(-1)).toEqual(initial)

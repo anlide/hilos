@@ -48,6 +48,7 @@ const originalCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: true,
     localeCount: 0,
+    enabledLocaleCount: 0,
     nameCount: 1,
     countrylessLocale: 'missing',
     canDelete: false,
@@ -196,8 +197,14 @@ describe('language name modal', () => {
       expect(
         document.querySelector(`label[for="${input().id}"]`)?.textContent,
       ).toBe('Name')
-      const hint = document.getElementById(
-        input().getAttribute('aria-describedby')!,
+      expect(input().getAttribute('aria-describedby')).toBe(
+        'i18n-language-name-hint i18n-language-name-note',
+      )
+      const hint = document.getElementById('i18n-language-name-hint')
+      expect(el('i18n-language-name-note')?.textContent).toBe(
+        kind === 'value'
+          ? "The base name is shared across the language's locales until a specific locale sets its own correction."
+          : 'An optional correction handles small differences between variants of the same language.',
       )
       expect(hint?.textContent).toBe(
         kind === 'value'

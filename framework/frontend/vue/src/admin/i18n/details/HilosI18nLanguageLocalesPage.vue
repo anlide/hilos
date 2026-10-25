@@ -8,14 +8,19 @@ card's language, "— no country" on the language's own row; the locale's code o
 the "No locale" plate — a plate, not a dash, because a dash reads like a value; and
 the locale's switch as a disabled tick. A switched-off locale's text is muted with
 the secondary text color, which keeps its contrast, never with opacity. HIL-1491
-adds the row's add/edit/view button and one locale window; the card's header and tabs (shared
-with the main language page and language names page) stand above the locales table,
+adds the row's add/edit/view button and one locale window; the shared entity head
+and its Overview, Names and Locales links stand above the locales table,
 with three states matching the main page. Bootstrap classes only, painted with classes
 that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+} from '@hilos/core/base'
 import {
   createHilosI18nLanguageCard,
+  HILOS_I18N_LANGUAGE_MARKS,
   createHilosI18nLanguageLocalesTable,
   createHilosI18nLocaleDelete,
   createHilosI18nLocaleTemplates,
@@ -32,12 +37,27 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
-import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLocaleDelete from './HilosI18nLocaleDelete.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
 const liveCard = createHilosI18nLanguageCard(props.context)
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.I18N_LANGUAGE,
+  computedSignal(() => {
+    const page = props.context.scopes.page()?.key
+    if (
+      page !== HilosPages.I18N_LANGUAGE &&
+      page !== HilosPages.I18N_LANGUAGE_NAMES &&
+      page !== HilosPages.I18N_LANGUAGE_LOCALES
+    ) {
+      return undefined
+    }
+    return liveCard.get()?.nativeName
+  }),
+)
+onUnmounted(unbindName)
 const card = useSignal(liveCard)
 const templates = useSignal(createHilosI18nLocaleTemplates(props.context))
 const opened = ref<{ rowKey: string; mode: HilosI18nLocaleWindowMode } | null>(
@@ -148,12 +168,59 @@ function closeDelete(open: boolean): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_LANGUAGE_LOCALES">
+  <HilosAdminPage
+    :page="HilosPages.I18N_LANGUAGE_LOCALES"
+    head-kind="entity"
+    tabs-label="Language pages"
+  >
+    <template v-if="card" #head-visual>
+      <span
+        class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+        aria-hidden="true"
+        data-id="language-head-tile"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card" #head-badges>
+      <span
+        v-if="card.summary.isDefault"
+        class="badge"
+        :class="HILOS_I18N_LANGUAGE_MARKS.default.tone"
+        :title="HILOS_I18N_LANGUAGE_MARKS.default.label"
+        data-id="language-head-default"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_LANGUAGE_MARKS.default.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden">{{
+          HILOS_I18N_LANGUAGE_MARKS.default.label
+        }}</span>
+      </span>
+      <span
+        v-if="card.summary.isOwn"
+        class="badge"
+        :class="HILOS_I18N_LANGUAGE_MARKS.own.tone"
+        :title="HILOS_I18N_LANGUAGE_MARKS.own.label"
+        data-id="language-head-own"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_LANGUAGE_MARKS.own.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden">{{
+          HILOS_I18N_LANGUAGE_MARKS.own.label
+        }}</span>
+      </span>
+    </template>
+    <template v-if="card" #head-description>
+      <p class="text-body-secondary mb-0" data-id="language-head-direction">
+        {{ card.rtl ? 'Right to left' : 'Left to right' }}
+      </p>
+    </template>
     <template v-if="card">
-      <HilosI18nLanguageHeader
-        :card="card"
-        :active-page="HilosPages.I18N_LANGUAGE_LOCALES"
-      />
       <HilosViewportTable :controller="locales.controller">
         <template #cell-countryCode="{ row }">
           <span

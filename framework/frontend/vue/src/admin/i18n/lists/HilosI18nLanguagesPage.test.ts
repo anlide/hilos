@@ -241,31 +241,69 @@ describe('HilosI18nLanguagesPage', () => {
   })
 
   it.each(['default', 'locales', 'names'] as const)(
-    'shows the accessible %s refusal without hover',
+    'keeps the accessible %s refusal in distinct table and card action groups',
     async (deleteReason) => {
       const c = context([{ ...OWN, canDelete: false, deleteReason }])
       const view = mount(HilosI18nLanguagesPage, {
         props: { context: c.context },
         global: {
           provide: { [hilosRouterKey as symbol]: router() },
-          stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
         },
       })
       await nextTick()
-      const opener = view.get('[data-id="i18n-languages-delete-qx"]')
-      expect((opener.element as HTMLButtonElement).disabled).toBe(true)
-      expect(opener.attributes('aria-label')).toBe(
-        'Delete language Qx own tongue',
-      )
-      expect(opener.attributes('aria-describedby')).toBe(
-        view
-          .get('[data-id="i18n-languages-delete-reason-qx"]')
-          .attributes('id'),
-      )
+      const tableRow = view.get('[data-id="hilos-table-row-46"]')
+      const card = view.get('[data-id="hilos-table-card-46"]')
+      const reasonIds: string[] = []
+      for (const projection of [tableRow, card]) {
+        const opener = projection.get(
+          'button[data-id="i18n-languages-delete-qx"]',
+        )
+        const reason = projection.get(
+          '[data-id="i18n-languages-delete-reason-qx"]',
+        )
+        const reasonId = reason.element.id
+        expect(reasonId).toBeTruthy()
+        reasonIds.push(reasonId)
+        expect((opener.element as HTMLButtonElement).disabled).toBe(true)
+        expect(opener.attributes('aria-label')).toBe(
+          'Delete language Qx own tongue',
+        )
+        expect(opener.attributes('aria-describedby')).toBe(reasonId)
+        expect(reason.text()).toBe(
+          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+        )
+        expect(reason.classes()).toEqual(['visually-hidden'])
+        expect(reason.attributes('hidden')).toBeUndefined()
+        expect(reason.attributes('aria-hidden')).toBeUndefined()
+        await opener.trigger('click')
+      }
+      expect(new Set(reasonIds).size).toBe(2)
+
+      // The real page/table mount proves the card's DOM contract only.
+      // Equal widths and no overflow at 375px require manual acceptance
+      // under testing-strategy.md's E2E-LIGHT-DESKTOP rule.
+      expect(card.findAll('.hilos-button-row')).toHaveLength(1)
+      const actionRow = card.get('.hilos-button-row')
+      const groups = actionRow.findAll('.hilos-button-group')
+      expect(groups).toHaveLength(1)
+      const group = groups[0]!
+      expect([...actionRow.element.children]).toEqual([group.element])
       expect(
-        view.get('[data-id="i18n-languages-delete-reason-qx"]').text(),
-      ).toBe(HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason])
-      await opener.trigger('click')
+        [...group.element.children].map((child) => [
+          child.tagName,
+          child.getAttribute('data-id'),
+        ]),
+      ).toEqual([
+        ['BUTTON', 'i18n-languages-edit-qx'],
+        ['BUTTON', 'hilos-action-reason'],
+        ['BUTTON', 'i18n-languages-delete-qx'],
+        ['SPAN', 'i18n-languages-delete-reason-qx'],
+      ])
+      const why = group.get('button[data-id="hilos-action-reason"]')
+      expect((why.element as HTMLButtonElement).disabled).toBe(false)
+      expect(why.attributes('title')).toBe(
+        HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+      )
       expect(c.focused).toEqual([])
       expect(
         document.querySelector('[data-id="i18n-language-delete-confirm"]'),
@@ -584,6 +622,28 @@ describe('HilosI18nLanguagesPage', () => {
       'the language from the environment; it can be neither switched off nor deleted',
     )
 
+    expect(legend.findAll('dt')).toHaveLength(5)
+    for (const [key, label, meaning] of [
+      [
+        'frozen',
+        'Frozen language',
+        'the language is enabled and frozen: nobody changes its live row',
+      ],
+      [
+        'editable',
+        'Editable language',
+        'the language is switched off: edit it freely',
+      ],
+      [
+        'deleteUnavailable',
+        'Deletion unavailable',
+        'deletion is unavailable: the language can still be switched off',
+      ],
+    ]) {
+      const row = view.get(`[data-id="i18n-languages-legend-${key}"]`)
+      expect(row.get('dt').text()).toBe(label)
+      expect(row.get('dd').text()).toBe(meaning)
+    }
     const ownRow = view.get('[data-id="i18n-languages-legend-own"]')
     expect(ownRow.get('dt').text()).toContain('Custom language')
     expect(ownRow.get('dd').text()).toBe(

@@ -85,7 +85,7 @@ test(
       await switchLanguageOff('uk')
       for (const page of [first, second]) {
         await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
-        await expect(page.getByTestId('language-card-native-name')).toHaveText(
+        await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
           'Українська',
         )
       }
@@ -108,12 +108,10 @@ test(
           writer.getByTestId('i18n-language-edit-window'),
         ).toHaveCount(0)
         for (const page of [first, second]) {
-          await expect(
-            page.getByTestId('language-card-native-name'),
-          ).toHaveText(value)
-          await expect(page.getByTestId('language-card-code-tile')).toHaveText(
-            'uk',
+          await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+            value,
           )
+          await expect(page.getByTestId('language-head-tile')).toHaveText('uk')
         }
         await live.unchanged()
       }

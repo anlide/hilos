@@ -5,15 +5,16 @@ import {
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
+  HILOS_I18N_LANGUAGE_MARKS,
   hilosI18nLanguageDelete,
   type HilosI18nLanguageContext,
 } from '@hilos/core/admin/i18n'
-import { HilosPages } from '@hilos/core/base'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'
+import { usePageInstanceName } from '../../../usePageInstanceName.js'
 import { useSignal } from '../../../useSignal.js'
 import { HilosI18nLanguageDelete } from './HilosI18nLanguageDelete.js'
-import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLanguageSwitchOff } from './HilosI18nLanguageSwitchOff.js'
 import { HilosI18nLanguageSwitchOn } from './HilosI18nLanguageSwitchOn.js'
 import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
@@ -33,12 +34,10 @@ export function HilosI18nLanguagePage({ context }: HilosI18nLanguagePageProps) {
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
   return (
-    <HilosAdminPage page={HilosPages.I18N_LANGUAGE}>
-      <LanguageCard
-        key={`${binding.revision}:${route.params.languageCode}`}
-        context={context}
-      />
-    </HilosAdminPage>
+    <LanguageCard
+      key={`${binding.revision}:${route.params.languageCode}`}
+      context={context}
+    />
   )
 }
 
@@ -49,6 +48,21 @@ function LanguageCard({ context }: HilosI18nLanguagePageProps) {
     () => createHilosI18nLanguageCard(context),
     [context],
   )
+  const name = useMemo(
+    () =>
+      computedSignal(() => {
+        const page = context.scopes.page()?.key
+        if (
+          page !== HilosPages.I18N_LANGUAGE &&
+          page !== HilosPages.I18N_LANGUAGE_NAMES &&
+          page !== HilosPages.I18N_LANGUAGE_LOCALES
+        )
+          return undefined
+        return cardSignal.get()?.nativeName
+      }),
+    [context, cardSignal],
+  )
+  usePageInstanceName(context.scopes, HilosPages.I18N_LANGUAGE, name)
   const card = useSignal(cardSignal)
   const languageWindow = useMemo(
     () => createHilosI18nLanguageCardWindow(cardSignal, context),
@@ -70,13 +84,70 @@ function LanguageCard({ context }: HilosI18nLanguagePageProps) {
         }
   const loading = useSignal(router.pageLoading)
   return (
-    <>
+    <HilosAdminPage
+      page={HilosPages.I18N_LANGUAGE}
+      headKind="entity"
+      tabsLabel="Language pages"
+      headVisual={
+        card ? (
+          <span
+            className="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+            aria-hidden="true"
+            data-id="language-head-tile"
+          >
+            {card.code}
+          </span>
+        ) : undefined
+      }
+      headBadges={
+        card ? (
+          <>
+            {card.summary.isDefault && (
+              <span
+                className={`badge ${HILOS_I18N_LANGUAGE_MARKS.default.tone}`}
+                title={HILOS_I18N_LANGUAGE_MARKS.default.label}
+                data-id="language-head-default"
+              >
+                <i
+                  className={`bi ${HILOS_I18N_LANGUAGE_MARKS.default.icon}`}
+                  aria-hidden="true"
+                />
+                <span className="visually-hidden">
+                  {HILOS_I18N_LANGUAGE_MARKS.default.label}
+                </span>
+              </span>
+            )}
+            {card.summary.isOwn && (
+              <span
+                className={`badge ${HILOS_I18N_LANGUAGE_MARKS.own.tone}`}
+                title={HILOS_I18N_LANGUAGE_MARKS.own.label}
+                data-id="language-head-own"
+              >
+                <i
+                  className={`bi ${HILOS_I18N_LANGUAGE_MARKS.own.icon}`}
+                  aria-hidden="true"
+                />
+                <span className="visually-hidden">
+                  {HILOS_I18N_LANGUAGE_MARKS.own.label}
+                </span>
+              </span>
+            )}
+          </>
+        ) : undefined
+      }
+      headDescription={
+        card ? (
+          <p
+            className="text-body-secondary mb-0"
+            data-id="language-head-direction"
+          >
+            {card.rtl ? 'Right to left' : 'Left to right'}
+          </p>
+        ) : undefined
+      }
+    >
       {card ? (
         <>
-          <HilosI18nLanguageHeader
-            card={card}
-            activePage={HilosPages.I18N_LANGUAGE}
-          />
           <section className="mb-4" data-id="language-card-main">
             <div className="d-flex align-items-center gap-2 mb-2">
               <h2 className="h5 mb-0 flex-grow-1">Main</h2>
@@ -204,6 +275,6 @@ function LanguageCard({ context }: HilosI18nLanguagePageProps) {
           if (path) router.navigate(path)
         }}
       />
-    </>
+    </HilosAdminPage>
   )
 }

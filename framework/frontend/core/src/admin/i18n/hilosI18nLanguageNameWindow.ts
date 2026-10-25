@@ -51,6 +51,11 @@ export const HILOS_I18N_LANGUAGE_NAME_COPY = {
     locale: 'Locale',
     name: 'Name',
   },
+  notes: {
+    base: "The base name is shared across the language's locales until a specific locale sets its own correction.",
+    correction:
+      'An optional correction handles small differences between variants of the same language.',
+  },
   hints: {
     base: 'Empty text is saved as your own value. Delete the name to remove it.',
     correction:

@@ -12,7 +12,7 @@
 // opacity. The row's one button opens the locale window in the mode its pair
 // stands in — add, edit or view (HIL-1491) — and a stored locale has a delete
 // beside it, opened over the row the table takes into focus. One row is in focus
-// at a time, let go when its window closes. The card's header and tabs, shared
+// at a time, let go when its window closes. The shared entity head, shared
 // with the main page and the names page, stand above the table, with the three
 // states of the main page. The table, the card and the closed format lists are
 // bound to one project context; the windows to that context and to the language
@@ -31,6 +31,7 @@ import {
   signal,
 } from '@angular/core'
 import {
+  HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LOCALE_COPY,
   HilosI18nLocaleRowKey,
   createHilosI18nLanguageCard,
@@ -43,6 +44,7 @@ import {
 import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  bindPageInstanceName,
   computedSignal,
 } from '@hilos/core/base'
 import type {
@@ -61,7 +63,6 @@ import {
   hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLocaleDelete } from './HilosI18nLocaleDelete.js'
 import { HilosI18nLocaleWindow } from './HilosI18nLocaleWindow.js'
 import type { HilosI18nLocaleWindowOpening } from './HilosI18nLocaleWindow.js'
@@ -75,17 +76,62 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosI18nLanguageHeader,
     HilosI18nLocaleDelete,
     HilosI18nLocaleWindow,
     HilosTableCell,
     HilosViewportTable,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="entity"
+      tabsLabel="Language pages"
+    >
       @for (subject of [binding()]; track subject.locales) {
         @if (card(); as current) {
-          <hilos-i18n-language-header [card]="current" [activePage]="page" />
+          <ng-template #headVisual>
+            <span
+              class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+              aria-hidden="true"
+              data-id="language-head-tile"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          @if (current.summary.isDefault || current.summary.isOwn) {
+            <ng-template #headBadges>
+              @if (current.summary.isDefault) {
+                <span
+                  [class]="'badge ' + marks.default.tone"
+                  [title]="marks.default.label"
+                  data-id="language-head-default"
+                >
+                  <i
+                    [class]="'bi ' + marks.default.icon"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{ marks.default.label }}</span>
+                </span>
+              }
+              @if (current.summary.isOwn) {
+                <span
+                  [class]="'badge ' + marks.own.tone"
+                  [title]="marks.own.label"
+                  data-id="language-head-own"
+                >
+                  <i [class]="'bi ' + marks.own.icon" aria-hidden="true"></i>
+                  <span class="visually-hidden">{{ marks.own.label }}</span>
+                </span>
+              }
+            </ng-template>
+          }
+          <ng-template #headDescription>
+            <p
+              class="text-body-secondary mb-0"
+              data-id="language-head-direction"
+            >
+              {{ current.rtl ? 'Right to left' : 'Left to right' }}
+            </p>
+          </ng-template>
           <hilos-viewport-table [controller]="subject.locales.controller">
             <ng-template [hilosTableCell]="keys.countryCode" let-row>
               @if (row.countryCode === null) {
@@ -237,6 +283,7 @@ export class HilosI18nLanguageLocalesPage {
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   protected readonly plate = PLATE
   protected readonly modeOf = hilosI18nLocaleWindowMode
+  protected readonly marks = HILOS_I18N_LANGUAGE_MARKS
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
@@ -321,6 +368,21 @@ export class HilosI18nLanguageLocalesPage {
     // and lets its row go.
     effect((onCleanup) => {
       const binding = this.binding()
+      const unbindName = bindPageInstanceName(
+        binding.context.scopes,
+        HilosPages.I18N_LANGUAGE,
+        computedSignal(() => {
+          const page = binding.context.scopes.page()?.key
+          if (
+            page !== HilosPages.I18N_LANGUAGE &&
+            page !== HilosPages.I18N_LANGUAGE_NAMES &&
+            page !== HilosPages.I18N_LANGUAGE_LOCALES
+          ) {
+            return undefined
+          }
+          return binding.card.get()?.nativeName
+        }),
+      )
       const stops = [
         mirrorHilosSignal(binding.card, this.card),
         mirrorHilosSignal(binding.templates, this.templates),
@@ -331,6 +393,7 @@ export class HilosI18nLanguageLocalesPage {
       ]
       binding.locales.start()
       onCleanup(() => {
+        unbindName()
         for (const stop of stops) stop()
         binding.locales.controller.releaseFocus()
         binding.locales.dispose()

@@ -10,7 +10,9 @@ test('switches on a language without a countryless locale', async ({
   await signUpAdmin(page)
   await switchLanguageOff('de')
   await gotoPage(page, '/hilos/i18n/languages/de', PAGE_READY)
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Disabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched off',
+  )
 
   const opener = page.getByTestId('language-card-switch-on')
   await clickSubmit(opener)
@@ -29,7 +31,9 @@ test('switches on a language without a countryless locale', async ({
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Language Deutsch (de) switched on.',
   )
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched on',
+  )
   await expect(page.getByTestId('language-card-frozen')).toBeVisible()
   await expect(opener).toHaveCount(0)
 })
@@ -41,7 +45,9 @@ test('switches on a language with its countryless locale on', async ({
   await switchLanguageOff('es')
   await switchLocaleOn('es')
   await gotoPage(page, '/hilos/i18n/languages/es', PAGE_READY)
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Disabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched off',
+  )
 
   const opener = page.getByTestId('language-card-switch-on')
   await clickSubmit(opener)
@@ -57,5 +63,7 @@ test('switches on a language with its countryless locale on', async ({
   await clickSubmit(confirm)
   await expect(confirm).toHaveCount(0)
 
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched on',
+  )
 })

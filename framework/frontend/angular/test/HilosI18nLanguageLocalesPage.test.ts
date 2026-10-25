@@ -1,5 +1,5 @@
 // The Angular locales page of a language over the real table binder and action
-// lifecycle: the three states with the shared header, the pair rows — the
+// lifecycle: the shared head's three states, the pair rows — the
 // language alone and one per country, with or without a locale — the opener by
 // the pair's state and the delete beside a stored locale, the format lists taken
 // from the page answer, the delete confirmation over the row in focus through its
@@ -13,6 +13,8 @@ import { HilosI18nLanguageLocalesPage } from '../src/admin/i18n/details/HilosI18
 import {
   countrylessLocale,
   i18nBench,
+  languageName,
+  lastCrumb,
   localeTemplates,
   mountOver,
   polandPair,
@@ -38,7 +40,7 @@ function setup(viewer = false) {
 }
 
 describe('HilosI18nLanguageLocalesPage', () => {
-  it('tells loading from a card that is gone and draws the header and tabs above the locales table', () => {
+  it('tells loading from a card that is gone and draws the shared head above the locales table', () => {
     const bench = i18nBench(HilosPages.I18N_LANGUAGE_LOCALES, [
       countrylessLocale,
     ])
@@ -48,19 +50,38 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(
       document.querySelector('[aria-label="Loading language"]'),
     ).not.toBeNull()
+    expect(h.el('hilos-page-head-skeleton')).not.toBeNull()
     expect(document.querySelector('table')).toBeNull()
     h.act(() => bench.card())
     expect(document.querySelectorAll('h1')).toHaveLength(1)
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe(
+      'Українська',
+    )
+    expect(lastCrumb()).toBe('Українська')
+    expect(languageName(bench)).toEqual(['Українська', 'Українська'])
+    expect(h.el('language-head-tile')?.textContent?.trim()).toBe('uk')
+    expect(h.el('language-head-direction')?.textContent?.trim()).toBe(
+      'Left to right',
+    )
+    expect(h.el('language-card-header')).toBeNull()
+    expect(h.el('language-card-tabs')).toBeNull()
+    expect(h.el('language-card-counts')).toBeNull()
     expect(
       h
-        .el(`language-card-tab-${HilosPages.I18N_LANGUAGE_LOCALES}`)
+        .el(`hilos-page-tab-${HilosPages.I18N_LANGUAGE_LOCALES}`)
         ?.classList.contains('active'),
     ).toBe(true)
-    expect(document.querySelector('table')).not.toBeNull()
+    const heading = h.el('hilos-page-head-title')!
+    const table = document.querySelector('table')!
+    expect(heading.id).not.toBe('')
+    expect(table.getAttribute('aria-labelledby')).toBe(heading.id)
     h.act(() => bench.card([]))
     expect(h.el('language-card-unavailable')?.textContent).toContain(
       'no longer available',
     )
+    expect(h.el('language-head-tile')).toBeNull()
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('Language')
+    expect(languageName(bench)).toEqual(['Language', 'Language'])
   })
 
   it('draws the language alone and every country pair, with the opener by the pair and a delete beside a stored locale', () => {
@@ -218,13 +239,16 @@ describe('HilosI18nLanguageLocalesPage', () => {
   it('binds a new context once and lets the table go when the page ends', () => {
     const h = setup()
     const bound = h.listenerCount()
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.click('i18n-locales-edit-uk-UA')
     h.act(() => h.fixture.componentRef.setInput('context', { ...h.context }))
     expect(h.el('modal')).toBeNull()
     expect(h.listenerCount()).toBe(bound)
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.fixture.destroy()
     expect(h.focuses.at(-1)).toBe('')
     expect(h.unregister).toHaveBeenCalled()
     expect(h.listenerCount()).toBe(h.unmounted)
+    expect(languageName(h)).toEqual(['Language', 'Language'])
   })
 })

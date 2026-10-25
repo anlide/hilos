@@ -343,7 +343,7 @@ final class HilosPageCatalogTest extends TestCase
         ], $children);
     }
 
-    public function testI18nCountryAndMaintenanceAdoptTheSharedHead(): void
+    public function testI18nLanguageCountryAndMaintenanceAdoptTheSharedHead(): void
     {
         $adopted = [];
         $entities = [];
@@ -359,6 +359,7 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame([
             HilosPageConstants::HILOS_MODERATION,
             HilosPageConstants::HILOS_I18N,
+            HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_MAINTENANCE,
@@ -385,6 +386,18 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame(
             'Countries',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_COUNTRIES][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
+        );
+        self::assertSame(
+            'Language',
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_LANGUAGE][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
+        );
+        self::assertSame(
+            'Names',
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
+        );
+        self::assertSame(
+            'Locales',
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
         );
         self::assertSame(
             'Country',

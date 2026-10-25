@@ -126,6 +126,10 @@ export {
   type HilosProfileDevicesProps,
 } from '../profile/HilosProfileDevices.js'
 export { HilosModal, type HilosModalProps } from '../HilosModal.js'
+export {
+  HilosActionReason,
+  type HilosActionReasonProps,
+} from '../HilosActionReason.js'
 export { HilosLongText, type HilosLongTextProps } from '../HilosLongText.js'
 export {
   HilosActionError,

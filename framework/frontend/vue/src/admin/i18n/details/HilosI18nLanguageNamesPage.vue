@@ -1,14 +1,19 @@
 <!-- HilosI18nLanguageNamesPage — the names of one language
 (HilosPages.I18N_LANGUAGE_NAMES): how the language the address names is called in
-every other language of the system (HIL-1477). The card's header and tabs (shared
-with the main language page and locales page) stand above the names table, with
+every other language of the system (HIL-1477). The shared entity head and its
+Overview, Names and Locales links stand above the names table, with
 three states matching the main page: loading skeleton, card with table, and
 unavailable alert when deleted (HIL-1479). Bootstrap classes only, painted with
 classes that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+} from '@hilos/core/base'
 import {
   createHilosI18nLanguageCard,
+  HILOS_I18N_LANGUAGE_MARKS,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_LANGUAGE_NAMES,
@@ -32,13 +37,28 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import LoadingButton from '../../../LoadingButton.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
-import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
 import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
 const liveCard = createHilosI18nLanguageCard(props.context)
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.I18N_LANGUAGE,
+  computedSignal(() => {
+    const page = props.context.scopes.page()?.key
+    if (
+      page !== HilosPages.I18N_LANGUAGE &&
+      page !== HilosPages.I18N_LANGUAGE_NAMES &&
+      page !== HilosPages.I18N_LANGUAGE_LOCALES
+    ) {
+      return undefined
+    }
+    return liveCard.get()?.nativeName
+  }),
+)
+onUnmounted(unbindName)
 const card = useSignal(liveCard)
 const router = inject(hilosRouterKey)
 if (!router) {
@@ -163,17 +183,65 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.I18N_LANGUAGE_NAMES">
+  <HilosAdminPage
+    :page="HilosPages.I18N_LANGUAGE_NAMES"
+    head-kind="entity"
+    tabs-label="Language pages"
+  >
+    <template v-if="card" #head-visual>
+      <span
+        class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+        aria-hidden="true"
+        data-id="language-head-tile"
+        >{{ card.code }}</span
+      >
+    </template>
+    <template v-if="card" #head-badges>
+      <span
+        v-if="card.summary.isDefault"
+        class="badge"
+        :class="HILOS_I18N_LANGUAGE_MARKS.default.tone"
+        :title="HILOS_I18N_LANGUAGE_MARKS.default.label"
+        data-id="language-head-default"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_LANGUAGE_MARKS.default.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden">{{
+          HILOS_I18N_LANGUAGE_MARKS.default.label
+        }}</span>
+      </span>
+      <span
+        v-if="card.summary.isOwn"
+        class="badge"
+        :class="HILOS_I18N_LANGUAGE_MARKS.own.tone"
+        :title="HILOS_I18N_LANGUAGE_MARKS.own.label"
+        data-id="language-head-own"
+      >
+        <i
+          class="bi"
+          :class="HILOS_I18N_LANGUAGE_MARKS.own.icon"
+          aria-hidden="true"
+        ></i>
+        <span class="visually-hidden">{{
+          HILOS_I18N_LANGUAGE_MARKS.own.label
+        }}</span>
+      </span>
+    </template>
+    <template v-if="card" #head-description>
+      <p class="text-body-secondary mb-0" data-id="language-head-direction">
+        {{ card.rtl ? 'Right to left' : 'Left to right' }}
+      </p>
+    </template>
     <template v-if="card">
-      <HilosI18nLanguageHeader
-        :card="card"
-        :active-page="HilosPages.I18N_LANGUAGE_NAMES"
-      />
       <HilosI18nNamesTable :controller="names.controller">
         <template #name-actions="{ row }">
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-sm"
+            :class="row.name === null ? 'btn-primary' : 'btn-outline-primary'"
             :aria-label="
               nameCopy.open(row.name === null, card.nativeName, row.nativeName)
             "
@@ -199,7 +267,10 @@ onUnmounted(() => {
           <button
             v-if="row.name !== null"
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-sm"
+            :class="
+              correction.name === null ? 'btn-primary' : 'btn-outline-primary'
+            "
             :aria-label="
               nameCopy.open(
                 correction.name === null,

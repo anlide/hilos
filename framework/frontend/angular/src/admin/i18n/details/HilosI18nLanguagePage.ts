@@ -1,5 +1,5 @@
 // HilosI18nLanguagePage — the main card of one language (HilosPages.I18N_LANGUAGE):
-// the shared header and tabs, the main fields with the view/edit window, and the
+// the shared entity head, the main fields with the view/edit window, and the
 // state — switching on and off, and deleting. The card is one page-scoped datum
 // the page answer brings and its live updates refresh
 // (createHilosI18nLanguageCard); the switches and the delete read their verdicts
@@ -24,12 +24,17 @@ import {
 import {
   HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
+  HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageCardWindow,
   hilosI18nLanguageDelete,
 } from '@hilos/core/admin/i18n'
-import { HilosPages, computedSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+} from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLanguageContext,
@@ -43,7 +48,6 @@ import {
 } from '@hilos/angular/base'
 import { HilosI18nLanguageDelete } from './HilosI18nLanguageDelete.js'
 import type { HilosI18nLanguageDeleteSource } from './HilosI18nLanguageDelete.js'
-import { HilosI18nLanguageHeader } from './HilosI18nLanguageHeader.js'
 import { HilosI18nLanguageSwitchOff } from './HilosI18nLanguageSwitchOff.js'
 import { HilosI18nLanguageSwitchOn } from './HilosI18nLanguageSwitchOn.js'
 import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
@@ -55,16 +59,61 @@ import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
   imports: [
     HilosAdminPage,
     HilosI18nLanguageDelete,
-    HilosI18nLanguageHeader,
     HilosI18nLanguageSwitchOff,
     HilosI18nLanguageSwitchOn,
     HilosI18nLanguageWindow,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="entity"
+      tabsLabel="Language pages"
+    >
       @for (subject of [binding()]; track subject.window) {
         @if (card(); as current) {
-          <hilos-i18n-language-header [card]="current" [activePage]="page" />
+          <ng-template #headVisual>
+            <span
+              class="hilos-avatar-md rounded-3 bg-secondary-subtle text-body-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0 fw-semibold text-uppercase"
+              aria-hidden="true"
+              data-id="language-head-tile"
+              >{{ current.code }}</span
+            >
+          </ng-template>
+          @if (current.summary.isDefault || current.summary.isOwn) {
+            <ng-template #headBadges>
+              @if (current.summary.isDefault) {
+                <span
+                  [class]="'badge ' + marks.default.tone"
+                  [title]="marks.default.label"
+                  data-id="language-head-default"
+                >
+                  <i
+                    [class]="'bi ' + marks.default.icon"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{ marks.default.label }}</span>
+                </span>
+              }
+              @if (current.summary.isOwn) {
+                <span
+                  [class]="'badge ' + marks.own.tone"
+                  [title]="marks.own.label"
+                  data-id="language-head-own"
+                >
+                  <i [class]="'bi ' + marks.own.icon" aria-hidden="true"></i>
+                  <span class="visually-hidden">{{ marks.own.label }}</span>
+                </span>
+              }
+            </ng-template>
+          }
+          <ng-template #headDescription>
+            <p
+              class="text-body-secondary mb-0"
+              data-id="language-head-direction"
+            >
+              {{ current.rtl ? 'Right to left' : 'Left to right' }}
+            </p>
+          </ng-template>
 
           <section class="mb-4" data-id="language-card-main">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -203,6 +252,7 @@ export class HilosI18nLanguagePage {
   protected readonly copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
   protected readonly deleteCopy = HILOS_I18N_LANGUAGE_DELETE_COPY
   protected readonly deleteAction = HILOS_I18N_LANGUAGE_DELETE_ACTION
+  protected readonly marks = HILOS_I18N_LANGUAGE_MARKS
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
@@ -248,10 +298,28 @@ export class HilosI18nLanguagePage {
   )
 
   constructor() {
-    // Mirror the bound card; a new binding starts with its delete closed.
+    // Mirror the bound card and name it in the shared head from that same core
+    // card while a language tab stands. A new binding starts with delete closed.
     effect((onCleanup) => {
-      const stop = mirrorHilosSignal(this.binding().card, this.card)
+      const { context, card } = this.binding()
+      const stop = mirrorHilosSignal(card, this.card)
+      const unbindName = bindPageInstanceName(
+        context.scopes,
+        HilosPages.I18N_LANGUAGE,
+        computedSignal(() => {
+          const page = context.scopes.page()?.key
+          if (
+            page !== HilosPages.I18N_LANGUAGE &&
+            page !== HilosPages.I18N_LANGUAGE_NAMES &&
+            page !== HilosPages.I18N_LANGUAGE_LOCALES
+          ) {
+            return undefined
+          }
+          return card.get()?.nativeName
+        }),
+      )
       onCleanup(() => {
+        unbindName()
         stop()
         this.deleteOpen.set(false)
       })

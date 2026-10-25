@@ -1,15 +1,38 @@
 import { expect, test } from '@playwright/test'
-import { expectDefaultLanguageHeader } from '../../../../../framework/frontend/e2e/index.js'
+import { expectLanguagePageHead } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
-test('opens the default language card directly with read-only details and staged tabs', async ({
+const APP_NAME = 'Hilos Polls'
+const OVERVIEW = 'hilos_i18n_language'
+const NAMES = 'hilos_i18n_language_names'
+const LOCALES = 'hilos_i18n_language_locales'
+const LANGUAGE_PATH = '/hilos/i18n/languages/en'
+
+test('opens the default language directly with read-only details and its shared head tabs', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await gotoPage(page, LANGUAGE_PATH, PAGE_READY)
 
-  await expectDefaultLanguageHeader(expect, page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: OVERVIEW,
+    appName: APP_NAME,
+  })
+  await expect(page.getByTestId('language-head-tile')).toHaveText('en')
+  await expect(page.getByTestId('language-head-tile')).toHaveAttribute(
+    'aria-hidden',
+    'true',
+  )
+  await expect(page.getByTestId('language-head-default')).toContainText(
+    'Default language',
+  )
+  await expect(page.getByTestId('language-head-own')).toHaveCount(0)
+  await expect(page.getByTestId('language-head-direction')).toHaveText(
+    'Left to right',
+  )
   await expect(page.getByTestId('language-card-direction')).toHaveText(
     'Left to right',
   )
@@ -21,26 +44,9 @@ test('opens the default language card directly with read-only details and staged
     'Language enabled — frozen',
   )
 
-  const tabs = page.getByTestId('language-card-tabs')
-  await expect(tabs).toContainText('Main')
-  await expect(tabs).toContainText('Names')
-  await expect(tabs).toContainText('Locales')
-  // The names and locales pages are built in Angular too (HIL-1503): every tab is a link.
-  await expect(tabs.locator('a')).toHaveCount(3)
-  await expect(tabs.locator('a').first()).toHaveAttribute(
-    'href',
-    '/hilos/i18n/languages/en',
-  )
-  await expect(tabs.locator('a').first()).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
   await expect(
-    page.getByTestId('language-card-tab-hilos_i18n_language_names'),
-  ).toHaveAttribute('href', '/hilos/i18n/languages/en/names')
-  await expect(
-    page.getByTestId('language-card-tab-hilos_i18n_language_locales'),
-  ).toHaveAttribute('href', '/hilos/i18n/languages/en/locales')
+    page.getByTestId('hilos-page-tabs').getByRole('link'),
+  ).toHaveText(['Overview', 'Names', 'Locales'])
   await expect(
     page.getByTestId('language-card-main').locator('button, input'),
   ).toHaveCount(1)
@@ -80,6 +86,38 @@ test('opens the default language card directly with read-only details and staged
   await expect(
     page.getByTestId('language-card-state').locator('input'),
   ).toHaveCount(0)
+
+  await page.getByTestId(`hilos-page-tab-${NAMES}`).click()
+  await expect(page).toHaveURL(`${LANGUAGE_PATH}/names`)
+  await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: NAMES,
+    appName: APP_NAME,
+  })
+
+  await page.goBack()
+  await expect(page).toHaveURL(`${LANGUAGE_PATH}`)
+  await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: OVERVIEW,
+    appName: APP_NAME,
+  })
+
+  await page.getByTestId(`hilos-page-tab-${LOCALES}`).click()
+  await expect(page).toHaveURL(`${LANGUAGE_PATH}/locales`)
+  await expectPageReady(page)
+  await page.reload()
+  await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: LOCALES,
+    appName: APP_NAME,
+  })
 
   await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)

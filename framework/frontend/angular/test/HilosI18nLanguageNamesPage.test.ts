@@ -1,5 +1,5 @@
 // The Angular names page of a language over the real table binder and action
-// lifecycle: the three states with the shared header, the plus and the pencil by
+// lifecycle: the shared head's three states, the plus and the pencil by
 // null against '' in the row and the correction alike, corrections under an empty
 // base, the delete confirmation opened over the fresh row in focus with its value
 // fixed, one row in focus shared by both windows, a route change, a card that
@@ -14,6 +14,8 @@ import {
   englishName,
   frenchName,
   i18nBench,
+  languageName,
+  lastCrumb,
   mountOver,
   spanishName,
 } from './helpers/hilosI18n.js'
@@ -44,7 +46,7 @@ function deleteInputs(h: ReturnType<typeof setup>) {
 }
 
 describe('HilosI18nLanguageNamesPage', () => {
-  it('tells loading from a card that is gone and draws the header and tabs above one names table', () => {
+  it('tells loading from a card that is gone and draws the shared head above one names table', () => {
     const bench = i18nBench(HilosPages.I18N_LANGUAGE_NAMES, [englishName])
     const h = mountOver(HilosI18nLanguageNamesPage, bench, {
       context: bench.context,
@@ -52,21 +54,39 @@ describe('HilosI18nLanguageNamesPage', () => {
     expect(
       document.querySelector('[aria-label="Loading language"]'),
     ).not.toBeNull()
-    expect(h.el('language-card-header')).toBeNull()
+    expect(h.el('hilos-page-head-skeleton')).not.toBeNull()
     expect(document.querySelector('table')).toBeNull()
     h.act(() => bench.card())
     expect(document.querySelectorAll('h1')).toHaveLength(1)
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe(
+      'Українська',
+    )
+    expect(lastCrumb()).toBe('Українська')
+    expect(languageName(bench)).toEqual(['Українська', 'Українська'])
+    expect(h.el('language-head-tile')?.textContent?.trim()).toBe('uk')
+    expect(h.el('language-head-direction')?.textContent?.trim()).toBe(
+      'Left to right',
+    )
+    expect(h.el('language-card-header')).toBeNull()
+    expect(h.el('language-card-tabs')).toBeNull()
+    expect(h.el('language-card-counts')).toBeNull()
     expect(
       h
-        .el(`language-card-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)
+        .el(`hilos-page-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)
         ?.classList.contains('active'),
     ).toBe(true)
-    expect(document.querySelector('table')).not.toBeNull()
+    const heading = h.el('hilos-page-head-title')!
+    const table = document.querySelector('table')!
+    expect(heading.id).not.toBe('')
+    expect(table.getAttribute('aria-labelledby')).toBe(heading.id)
     h.act(() => bench.card([]))
     expect(document.querySelector('table')).toBeNull()
     expect(h.el('language-card-unavailable')?.textContent).toContain(
       'no longer available',
     )
+    expect(h.el('language-head-tile')).toBeNull()
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('Language')
+    expect(languageName(bench)).toEqual(['Language', 'Language'])
   })
 
   it('draws the plus by null and the pencil by "" in rows, corrections and cards, with a trash on every stored value', () => {
@@ -99,6 +119,24 @@ describe('HilosI18nLanguageNamesPage', () => {
     expect(
       h.el('i18n-language-name-locale-add-en-CA')?.getAttribute('aria-label'),
     ).toBe('Add locale correction · Українська in English · en-CA')
+    expect(
+      h.el('i18n-language-name-add-fr')?.classList.contains('btn-primary'),
+    ).toBe(true)
+    expect(
+      h
+        .el('i18n-language-name-edit-en')
+        ?.classList.contains('btn-outline-primary'),
+    ).toBe(true)
+    expect(
+      h
+        .el('i18n-language-name-locale-add-en-CA')
+        ?.classList.contains('btn-primary'),
+    ).toBe(true)
+    expect(
+      h
+        .el('i18n-language-name-locale-edit-en-GB')
+        ?.classList.contains('btn-outline-primary'),
+    ).toBe(true)
     expect(h.el('i18n-names-delete-en-US')?.getAttribute('aria-label')).toBe(
       'Remove locale correction en-US',
     )
@@ -243,13 +281,16 @@ describe('HilosI18nLanguageNamesPage', () => {
   it('binds a new context once and lets the table go when the page ends', () => {
     const h = setup()
     const bound = h.listenerCount()
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.click('i18n-language-name-edit-en')
     h.act(() => h.fixture.componentRef.setInput('context', { ...h.context }))
     expect(h.el('modal')).toBeNull()
     expect(h.listenerCount()).toBe(bound)
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.fixture.destroy()
     expect(h.focuses.at(-1)).toBe('')
     expect(h.unregister).toHaveBeenCalled()
     expect(h.listenerCount()).toBe(h.unmounted)
+    expect(languageName(h)).toEqual(['Language', 'Language'])
   })
 })

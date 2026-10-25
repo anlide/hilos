@@ -38,6 +38,7 @@ use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Collection\CountryNames as ObjectCountryNames;
 use Hilos\Database\Object\Collection\LanguageNames as ObjectLanguageNames;
+use Hilos\Database\Object\Collection\Locales as ObjectLocales;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
@@ -227,6 +228,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             [HilosDbContext::countries, static fn () => Hilos::$db->countries->getObjectCollection()->findByCode('qx')],
             [HilosDbContext::locales, static fn () => Hilos::$db->locales->getObjectCollection()->findByCode('en')],
             [HilosDbContext::locales, static fn () => Hilos::$db->locales->countForLanguage($en->id)],
+            [HilosDbContext::locales, static fn () => Hilos::$db->locales->countEnabledForLanguage($en->id)],
             [HilosDbContext::locales, static fn () => Hilos::$db->locales->countrylessEnabled($en->id)],
             [HilosDbContext::countryNames, static fn () => Hilos::$db->countryNames->findBase($country->id, $en->id)],
             [HilosDbContext::countryNames, static fn () => Hilos::$db->countryNames->hasForCountry($country->id)],
@@ -279,6 +281,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             self::assertNull(Hilos::$db->locales->countrylessEnabled(-1));
             $card = Hilos::$db->languages->cardSummary($language->id);
             self::assertSame(2, $card->localeCount);
+            self::assertSame(0, $card->enabledLocaleCount);
             self::assertSame(0, $card->nameCount);
             self::assertSame(LanguageCardSummary::COUNTRYLESS_OFF, $card->countrylessLocale);
             self::assertSame(LanguageCardSummary::DELETE_LOCALES, $card->deleteReason);
@@ -294,6 +297,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             self::assertSame('Renamed', Hilos::$db->languages['qk']->nativeName);
             self::assertTrue(Hilos::$db->locales->countrylessEnabled($language->id));
             self::assertSame(LanguageCardSummary::COUNTRYLESS_ON, Hilos::$db->languages->cardSummary($language->id)->countrylessLocale);
+            self::assertSame(1, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
         });
         $locale->actions->switchOff();
         $locale->actions->delete();
@@ -301,6 +305,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertQuietReads(function () use ($language, $country): void {
             self::assertSame(0, Hilos::$db->locales->countForLanguage($language->id));
             self::assertNull(Hilos::$db->locales->countrylessEnabled($language->id));
+            self::assertSame(0, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
             self::assertTrue(Hilos::$db->languages->cardSummary($language->id)->canDelete);
             self::assertNull($country->deleteReason());
         });
@@ -314,6 +319,50 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             self::assertArrayNotHasKey('qk', Hilos::$db->locales);
             self::assertArrayNotHasKey('qk-QX', Hilos::$db->locales);
         });
+    }
+
+    /** The scoped count includes countryless and regional rows, even from a partial store. */
+    public function testEnabledLocaleCountTracksOnlyItsLanguagesCompleteSet(): void
+    {
+        $language = Hilos::$db->languages->actions->create('qk', 'Own', false);
+        $other = Hilos::$db->languages->actions->create('ql', 'Other', false);
+        $country = Hilos::$db->countries->actions->create('qx', '$', 'USD');
+        $secondCountry = Hilos::$db->countries->actions->create('qy', '$', 'USD');
+        self::assertSame(0, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        self::assertSame(0, Hilos::$db->locales->countEnabledForLanguage(-1));
+
+        $countryless = self::createLocale($language, null);
+        self::assertSame(0, Hilos::$db->locales->countEnabledForLanguage($language->id));
+        $countryless->actions->switchOn();
+        self::assertSame(1, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $regional = self::createLocale($language, $country);
+        $secondRegional = self::createLocale($language, $secondCountry);
+        $otherLocale = self::createLocale($other, $country);
+        $regional->actions->switchOn();
+        $otherLocale->actions->switchOn();
+        self::assertSame(2, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        self::assertSame(1, Hilos::$db->languages->cardSummary($other->id)->enabledLocaleCount);
+
+        $partial = ObjectLocales::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::assertNotNull($partial[$otherLocale->id]);
+        self::assertFalse($partial->isAllLoaded());
+        self::assertSame(2, $partial->countEnabledForLanguage($language->id));
+        self::assertFalse($partial->isAllLoaded(), 'A scoped count must not load the whole table');
+
+        $secondRegional->actions->switchOn();
+        self::assertSame(3, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $countryless->actions->switchOff();
+        self::assertSame(2, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $countryless->actions->delete();
+        self::assertSame(2, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $regional->actions->switchOff();
+        self::assertSame(1, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $regional->actions->delete();
+        self::assertSame(1, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        $secondRegional->actions->switchOff();
+        $secondRegional->actions->delete();
+        self::assertSame(0, Hilos::$db->languages->cardSummary($language->id)->enabledLocaleCount);
+        self::assertSame(1, Hilos::$db->languages->cardSummary($other->id)->enabledLocaleCount);
     }
 
     /** Base and override predicates retain their independent empty, locked and language conditions. */

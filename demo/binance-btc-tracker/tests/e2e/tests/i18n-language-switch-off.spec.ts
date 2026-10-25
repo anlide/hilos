@@ -8,7 +8,9 @@ test('switches off a known language from its card', async ({ page }) => {
   await signUpAdmin(page)
   await switchLanguageOn('fr')
   await gotoPage(page, '/hilos/i18n/languages/fr', PAGE_READY)
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched on',
+  )
 
   const opener = page.getByTestId('language-card-switch-off')
   await clickSubmit(opener)
@@ -20,7 +22,9 @@ test('switches off a known language from its card', async ({ page }) => {
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Language Français (fr) switched off.',
   )
-  await expect(page.getByTestId('language-card-enabled')).toHaveText('Disabled')
+  await expect(page.getByTestId('language-card-enabled')).toHaveText(
+    'Language switched off',
+  )
   await expect(page.getByTestId('language-card-frozen')).toHaveCount(0)
   await expect(opener).toHaveCount(0)
 })

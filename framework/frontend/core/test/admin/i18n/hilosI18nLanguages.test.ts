@@ -214,20 +214,64 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
 })
 
 describe('HILOS_I18N_LANGUAGES_LEGEND', () => {
-  it('references default and own marks and maps their meanings', () => {
+  it('lists every language mark in order with its meaning', () => {
     expect(HILOS_I18N_LANGUAGES_LEGEND).toEqual([
       {
         key: 'default',
-        mark: HILOS_I18N_LANGUAGE_MARKS.default,
+        mark: {
+          icon: 'bi-star-fill',
+          tone: 'text-bg-primary-subtle text-primary-emphasis',
+          label: 'Default language',
+        },
         meaning:
           'the language from the environment; it can be neither switched off nor deleted',
       },
       {
         key: 'own',
-        mark: HILOS_I18N_LANGUAGE_MARKS.own,
+        mark: {
+          icon: 'bi-question-circle',
+          tone: 'text-bg-warning-subtle text-warning-emphasis',
+          label: 'Custom language',
+        },
         meaning:
           'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
       },
+      {
+        key: 'frozen',
+        mark: {
+          icon: 'bi-eye',
+          tone: 'border border-secondary text-body-secondary',
+          label: 'Frozen language',
+        },
+        meaning:
+          'the language is enabled and frozen: nobody changes its live row',
+      },
+      {
+        key: 'editable',
+        mark: {
+          icon: 'bi-pencil',
+          tone: 'border border-primary text-primary',
+          label: 'Editable language',
+        },
+        meaning: 'the language is switched off: edit it freely',
+      },
+      {
+        key: 'deleteUnavailable',
+        mark: {
+          icon: 'bi-trash',
+          tone: 'border border-secondary text-body-secondary',
+          label: 'Deletion unavailable',
+        },
+        meaning:
+          'deletion is unavailable: the language can still be switched off',
+      },
+    ])
+    expect(Object.keys(HILOS_I18N_LANGUAGE_MARKS)).toEqual([
+      'default',
+      'own',
+      'frozen',
+      'editable',
+      'deleteUnavailable',
     ])
   })
 })

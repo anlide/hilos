@@ -1,9 +1,18 @@
-import { mount } from '@vue/test-utils'
+// @vitest-environment jsdom
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { type HilosI18nLanguageRow } from '@hilos/core/admin/i18n'
-import { describe, expect, it } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { afterEach, describe, expect, it } from 'vitest'
+import { defineComponent, h, ref } from 'vue'
+
+import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 
 import HilosI18nLanguageRowActions from './HilosI18nLanguageRowActions.vue'
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
+})
+enableAutoUnmount(afterEach)
 
 const row: HilosI18nLanguageRow = {
   languageId: 15,
@@ -19,7 +28,7 @@ const row: HilosI18nLanguageRow = {
 }
 
 describe('HilosI18nLanguageRowActions', () => {
-  it('gives the table and card copies distinct description ids with the same visible explanation', () => {
+  it('gives table and card copies unique accessible descriptions and one direct button group', () => {
     const view = mount(
       defineComponent({
         setup: () => () =>
@@ -36,12 +45,39 @@ describe('HilosI18nLanguageRowActions', () => {
     expect(new Set(ids).size).toBe(2)
     reasons.forEach((reason, index) => {
       expect(reason.text()).toBe('Cannot delete: the language has locales.')
+      expect(reason.classes()).toEqual(['visually-hidden'])
+      expect(reason.attributes('hidden')).toBeUndefined()
+      expect(reason.attributes('aria-hidden')).toBeUndefined()
       expect(buttons[index]!.attributes('aria-describedby')).toBe(ids[index])
       expect(buttons[index]!.attributes('aria-label')).toBe(
         'Delete language Español',
       )
       expect((buttons[index]!.element as HTMLButtonElement).disabled).toBe(true)
     })
+    const groups = view.findAll('.hilos-button-group')
+    expect(groups).toHaveLength(2)
+    for (const group of groups) {
+      expect(group.classes()).toEqual([
+        'hilos-button-group',
+        'd-md-inline-flex',
+        'gap-1',
+      ])
+      expect(group.find('.hilos-button-group').exists()).toBe(false)
+      expect(
+        [...group.element.children].map((child) => [
+          child.tagName,
+          child.getAttribute('data-id'),
+        ]),
+      ).toEqual([
+        ['BUTTON', 'i18n-languages-edit-es'],
+        ['BUTTON', 'hilos-action-reason'],
+        ['BUTTON', 'i18n-languages-delete-es'],
+        ['SPAN', 'i18n-languages-delete-reason-es'],
+      ])
+      expect(
+        group.get('[data-id="hilos-action-reason"]').attributes('title'),
+      ).toBe('Cannot delete: the language has locales.')
+    }
     view.unmount()
   })
 
@@ -61,10 +97,84 @@ describe('HilosI18nLanguageRowActions', () => {
     expect(
       view.find('[data-id="i18n-languages-delete-reason-es"]').exists(),
     ).toBe(false)
+    expect(view.find('[data-id="hilos-action-reason"]').exists()).toBe(false)
     await view.setProps({ row: { ...row, enabled: true } })
     expect(view.find('[data-id="i18n-languages-edit-es"]').exists()).toBe(false)
     await view.get('[data-id="i18n-languages-view-es"]').trigger('click')
     expect(view.emitted('edit')).toHaveLength(2)
     view.unmount()
+  })
+
+  it('keeps an open explanation when the live verdict clears, without emitting an action', async () => {
+    const view = mount(HilosI18nLanguageRowActions, {
+      props: { row },
+      attachTo: document.body,
+    })
+    const opener = view.get('[data-id="hilos-action-reason"]')
+    const button = opener.element as HTMLButtonElement
+    button.focus()
+    await opener.trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog).not.toBeNull()
+    await view.setProps({ row: { ...row, deleteReason: 'names' } })
+    expect(view.get('[data-id="i18n-languages-delete-reason-es"]').text()).toBe(
+      'Cannot delete: names written by a person reference the language.',
+    )
+    await view.setProps({
+      row: { ...row, canDelete: true, deleteReason: null },
+    })
+    expect(view.find('[data-id="hilos-action-reason"]').exists()).toBe(false)
+    expect(
+      view.find('[data-id="i18n-languages-delete-reason-es"]').exists(),
+    ).toBe(false)
+    expect(
+      view.get('[data-id="i18n-languages-delete-es"]').attributes('disabled'),
+    ).toBeUndefined()
+    expect(document.querySelector('[data-id="modal"]')).toBe(dialog)
+    expect(document.activeElement).toBe(dialog)
+    expect(
+      dialog
+        ?.querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent?.trim(),
+    ).toBe('Cannot delete: the language has locales.')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(view.emitted('edit')).toBeUndefined()
+    expect(view.emitted('delete')).toBeUndefined()
+    await view.setProps({ row: { ...row, deleteReason: 'names' } })
+    await view.get('[data-id="hilos-action-reason"]').trigger('click')
+    await flushPromises()
+    expect(
+      document
+        .querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent?.trim(),
+    ).toBe('Cannot delete: names written by a person reference the language.')
+  })
+
+  it('lets a view-mode reader open the explanation without dispatching an edit or delete', async () => {
+    const view = mount(HilosI18nLanguageRowActions, {
+      props: { row },
+      attachTo: document.body,
+      global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
+    })
+    const opener = view.get('[data-id="hilos-action-reason"]')
+    expect((opener.element as HTMLButtonElement).disabled).toBe(false)
+    await opener.trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(view.emitted('edit')).toBeUndefined()
+    expect(view.emitted('delete')).toBeUndefined()
+    expect(
+      (
+        view.get('[data-id="i18n-languages-delete-es"]')
+          .element as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
   })
 })

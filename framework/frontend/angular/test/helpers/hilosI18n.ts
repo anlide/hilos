@@ -69,6 +69,7 @@ export const languageCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: false,
     localeCount: 2,
+    enabledLocaleCount: 0,
     nameCount: 3,
     countrylessLocale: 'missing',
     canDelete: true,
@@ -344,6 +345,13 @@ const COUNTRY_PAGES: readonly string[] = [
   HilosPages.I18N_COUNTRY_NAMES,
 ]
 
+/** The language's three tabs, which share one entity head. */
+const LANGUAGE_PAGES: readonly string[] = [
+  HilosPages.I18N_LANGUAGE,
+  HilosPages.I18N_LANGUAGE_NAMES,
+  HilosPages.I18N_LANGUAGE_LOCALES,
+]
+
 /** The country's catalog lead: the owner's, and the main tab's own. */
 const COUNTRY_OWNER_LEAD =
   'A single country: currency, default locale, and state.'
@@ -399,6 +407,60 @@ function countryTabAnswer(page: string): Record<string, unknown> {
  */
 export function answerAsCountryTab(scope: Scope, page: string): void {
   for (const [key, value] of Object.entries(countryTabAnswer(page))) {
+    scope.data.set(key, value)
+  }
+}
+
+/** The language's catalog lead: the owner's, and the Overview tab's own. */
+const LANGUAGE_OWNER_LEAD =
+  'A single language: code, native name, and writing direction.'
+
+/** Each language tab's catalog identity. */
+const LANGUAGE_TAB_IDENTITY: Record<string, { label: string; lead: string }> = {
+  [HilosPages.I18N_LANGUAGE]: {
+    label: 'Language',
+    lead: LANGUAGE_OWNER_LEAD,
+  },
+  [HilosPages.I18N_LANGUAGE_NAMES]: {
+    label: 'Language names',
+    lead: 'How this language is named in each of the other languages.',
+  },
+  [HilosPages.I18N_LANGUAGE_LOCALES]: {
+    label: 'Language locales',
+    lead: 'Formats of this language, per country.',
+  },
+}
+
+/** The page reply metadata of the language catalog owner and its tabs. */
+function languageTabAnswer(page: string): Record<string, unknown> {
+  const tab = LANGUAGE_TAB_IDENTITY[page]!
+
+  return {
+    pageLabel: tab.label,
+    pageLead: tab.lead,
+    pageHeadOwner: {
+      page: HilosPages.I18N_LANGUAGE,
+      label: 'Language',
+      lead: LANGUAGE_OWNER_LEAD,
+    },
+    pageBreadcrumb: [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+      { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+      { page: HilosPages.I18N_LANGUAGE, label: 'Language' },
+    ],
+    pageTabs: [
+      { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+      { page: HilosPages.I18N_LANGUAGE_NAMES, label: 'Names' },
+      { page: HilosPages.I18N_LANGUAGE_LOCALES, label: 'Locales' },
+    ],
+    pageChildren: [],
+  }
+}
+
+/** Answer as the backend language catalog does beside its card. */
+export function answerAsLanguageTab(scope: Scope, page: string): void {
+  for (const [key, value] of Object.entries(languageTabAnswer(page))) {
     scope.data.set(key, value)
   }
 }
@@ -566,10 +628,14 @@ export function i18nBench(
       [...listeners.values()].reduce((sum, group) => sum + group.size, 0),
     /** Set the main card the page answer carries; null or junk clears it. */
     card(value: unknown = languageCard): void {
-      scope.data.set('pageLabel', 'Language')
-      scope.data.set('pageLead', '')
-      scope.data.set('pageBreadcrumb', [])
-      scope.data.set('pageChildren', [])
+      if (LANGUAGE_PAGES.includes(page)) {
+        answerAsLanguageTab(scope, page)
+      } else {
+        scope.data.set('pageLabel', 'Language')
+        scope.data.set('pageLead', '')
+        scope.data.set('pageBreadcrumb', [])
+        scope.data.set('pageChildren', [])
+      }
       scope.data.set('languageCard', value)
       loading.set(false)
     },
@@ -642,6 +708,13 @@ export type I18nBench = ReturnType<typeof i18nBench>
  * @param bench The bench whose navigator projects the identity.
  */
 export function countryName(bench: I18nBench): (string | undefined)[] {
+  const identity = bench.router.pageIdentity.get()
+
+  return [identity?.pageHeadOwner?.label, identity?.breadcrumb.at(-1)?.label]
+}
+
+/** The language's name as projected onto its owner and final breadcrumb. */
+export function languageName(bench: I18nBench): (string | undefined)[] {
   const identity = bench.router.pageIdentity.get()
 
   return [identity?.pageHeadOwner?.label, identity?.breadcrumb.at(-1)?.label]

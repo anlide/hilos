@@ -1,18 +1,25 @@
 // The Angular language card over the real action lifecycle and page scope: the
-// header and tabs, loading against a card that is gone, the deletion hints, the
+// shared entity head, loading against a card that is gone, the deletion hints, the
 // card window, the two switches with their live verdicts and their own echo,
 // the deletion that returns to the list only after its ack, a viewer of the
 // admin view mode, and a new language or context under open windows. The
 // verdicts themselves are the core's and are tested there.
 import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
+  HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGE_SWITCH_ON_COPY,
   HilosPages,
 } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguagePage } from '../src/admin/i18n/details/HilosI18nLanguagePage.js'
-import { i18nBench, languageCard, mountOver } from './helpers/hilosI18n.js'
+import {
+  i18nBench,
+  languageCard,
+  languageName,
+  lastCrumb,
+  mountOver,
+} from './helpers/hilosI18n.js'
 
 function setup(viewer = false) {
   const bench = i18nBench(HilosPages.I18N_LANGUAGE, [], viewer)
@@ -46,29 +53,40 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.calls).toHaveLength(0)
   })
 
-  it('tells loading from a card that is gone and draws the live fields, marks, counts and tabs', () => {
+  it('tells loading from a card that is gone and draws the live fields under the shared head', () => {
     const h = setup()
     expect(
       document.querySelector('[aria-label="Loading language"]'),
     ).not.toBeNull()
-    expect(h.el('language-card-header')).toBeNull()
+    expect(h.el('hilos-page-head-skeleton')).not.toBeNull()
     h.act(() => h.card())
     expect(document.querySelectorAll('h1')).toHaveLength(1)
-    expect(h.el('language-card-counts')?.textContent?.trim()).toBe(
-      'Locales: 2 · Names: 3',
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe(
+      'Українська',
     )
+    expect(lastCrumb()).toBe('Українська')
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
+    expect(h.el('language-head-tile')?.textContent?.trim()).toBe('uk')
+    expect(h.el('language-head-default')).toBeNull()
+    expect(h.el('language-head-own')).toBeNull()
+    expect(h.el('language-head-direction')?.textContent?.trim()).toBe(
+      'Left to right',
+    )
+    expect(h.el('language-card-header')).toBeNull()
+    expect(h.el('language-card-tabs')).toBeNull()
+    expect(h.el('language-card-counts')).toBeNull()
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('uk')
     expect(h.el('language-card-direction')?.textContent?.trim()).toBe(
       'Left to right',
     )
     expect(
       h
-        .el(`language-card-tab-${HilosPages.I18N_LANGUAGE}`)
+        .el(`hilos-page-tab-${HilosPages.I18N_LANGUAGE}`)
         ?.getAttribute('aria-current'),
     ).toBe('page')
     expect(
       h
-        .el(`language-card-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)
+        .el(`hilos-page-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)
         ?.getAttribute('href'),
     ).toBe('/hilos/i18n/languages/uk/names')
     expect(h.el('language-card-edit')).not.toBeNull()
@@ -87,15 +105,34 @@ describe('HilosI18nLanguagePage', () => {
         },
       }),
     )
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('Changed')
+    expect(lastCrumb()).toBe('Changed')
+    expect(languageName(h)).toEqual(['Changed', 'Changed'])
     expect(h.el('language-card-name')?.textContent?.trim()).toBe('Changed')
     expect(h.el('language-card-direction')?.textContent?.trim()).toBe(
       'Right to left',
     )
-    expect(h.el('language-card-counts')?.textContent?.trim()).toBe(
-      'Locales: 4 · Names: 5',
+    expect(h.el('language-head-direction')?.textContent?.trim()).toBe(
+      'Right to left',
     )
-    expect(h.el('language-card-default')).not.toBeNull()
-    expect(h.el('language-card-own')).not.toBeNull()
+    const defaultMark = h.el('language-head-default')!
+    const ownMark = h.el('language-head-own')!
+    expect(defaultMark.getAttribute('title')).toBe(
+      HILOS_I18N_LANGUAGE_MARKS.default.label,
+    )
+    expect(defaultMark.querySelector('.visually-hidden')?.textContent).toBe(
+      HILOS_I18N_LANGUAGE_MARKS.default.label,
+    )
+    expect(defaultMark.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    expect(ownMark.getAttribute('title')).toBe(
+      HILOS_I18N_LANGUAGE_MARKS.own.label,
+    )
+    expect(ownMark.querySelector('.visually-hidden')?.textContent).toBe(
+      HILOS_I18N_LANGUAGE_MARKS.own.label,
+    )
+    expect(ownMark.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
     expect(h.el('language-card-frozen')).not.toBeNull()
     expect(h.el('language-card-edit')).toBeNull()
     expect(h.el('language-card-view')).not.toBeNull()
@@ -104,6 +141,9 @@ describe('HilosI18nLanguagePage', () => {
       'no longer available',
     )
     expect(document.querySelector('[aria-label="Loading language"]')).toBeNull()
+    expect(h.el('language-head-tile')).toBeNull()
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('Language')
+    expect(languageName(h)).toEqual(['Language', 'Language'])
   })
 
   it.each(['default', 'locales', 'names'] as const)(
@@ -163,9 +203,8 @@ describe('HilosI18nLanguagePage', () => {
     const h = setup()
     h.paths.resolvePath = () => undefined
     h.act(() => h.card(enabledCard))
-    expect(
-      h.el(`language-card-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)?.tagName,
-    ).toBe('SPAN')
+    expect(h.el('hilos-page-tabs')).toBeNull()
+    expect(document.querySelector('[data-id^="hilos-page-tab-"]')).toBeNull()
     h.click('language-card-view')
     expect(
       h.el<HTMLInputElement>('i18n-language-edit-native-name')?.disabled,
@@ -342,6 +381,7 @@ describe('HilosI18nLanguagePage', () => {
   it('releases the windows of a former language and lets its deletion ack reach nothing', async () => {
     const h = setup()
     h.act(() => h.card())
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.click('language-card-edit')
     h.type('i18n-language-edit-native-name', 'Old draft')
     h.act(() => {
@@ -358,6 +398,9 @@ describe('HilosI18nLanguagePage', () => {
       })
     })
     expect(h.el('i18n-language-edit-window')).toBeNull()
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('Français')
+    expect(lastCrumb()).toBe('Français')
+    expect(languageName(h)).toEqual(['Français', 'Français'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
     h.click('language-card-delete')
     h.click('i18n-language-delete-confirm')
@@ -374,6 +417,9 @@ describe('HilosI18nLanguagePage', () => {
         nativeName: 'العربية',
       })
     })
+    expect(h.el('hilos-page-head-title')?.textContent?.trim()).toBe('العربية')
+    expect(lastCrumb()).toBe('العربية')
+    expect(languageName(h)).toEqual(['العربية', 'العربية'])
     expect(h.el('modal')).toBeNull()
     h.click('language-card-delete')
     await h.settle(() => h.succeed())
@@ -387,6 +433,7 @@ describe('HilosI18nLanguagePage', () => {
   it('closes the windows of a former context and releases every subscription on destroy', () => {
     const h = setup()
     h.act(() => h.card())
+    expect(languageName(h)).toEqual(['Українська', 'Українська'])
     h.click('language-card-edit')
     const next = i18nBench()
     next.card({
@@ -398,8 +445,10 @@ describe('HilosI18nLanguagePage', () => {
     h.fixture.componentRef.setInput('context', next.context)
     h.detect()
     expect(h.el('i18n-language-edit-window')).toBeNull()
+    expect(languageName(h)).toEqual(['Language', 'Language'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
     h.fixture.destroy()
     expect(h.listenerCount()).toBe(h.unmounted)
+    expect(languageName(h)).toEqual(['Language', 'Language'])
   })
 })

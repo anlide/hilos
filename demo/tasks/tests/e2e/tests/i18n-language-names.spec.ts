@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
-  expectDefaultLanguageHeader,
+  expectLanguagePageHead,
   expectNoOtherLanguageNames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -21,28 +21,43 @@ test('opens the names of the default language directly as a table that says no o
   )
   await expect(table.locator('button, input')).toHaveCount(0)
 
-  // Card header and tabs (HIL-1479).
-  await expectDefaultLanguageHeader(expect, page)
+  // Shared owner head and current catalog tab.
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language_names',
+    appName: 'Hilos Tasks',
+  })
 
-  const namesTab = page.getByTestId(
-    'language-card-tab-hilos_i18n_language_names',
-  )
+  const namesTab = page.getByTestId('hilos-page-tab-hilos_i18n_language_names')
   await expect(namesTab).toHaveAttribute('aria-current', 'page')
   await expect(namesTab).toHaveAttribute(
     'href',
     '/hilos/i18n/languages/en/names',
   )
 
-  const mainTab = page.getByTestId('language-card-tab-hilos_i18n_language')
+  const mainTab = page.getByTestId('hilos-page-tab-hilos_i18n_language')
   await expect(mainTab).toHaveAttribute('href', '/hilos/i18n/languages/en')
 
   await mainTab.click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
   await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language',
+    appName: 'Hilos Tasks',
+  })
   await expect(page.getByTestId('language-card-main')).toBeVisible()
 
-  await page.getByTestId('language-card-tab-hilos_i18n_language_names').click()
+  await page.getByTestId('hilos-page-tab-hilos_i18n_language_names').click()
   await expect(page).toHaveURL(/\/names$/)
   await expectPageReady(page)
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language_names',
+    appName: 'Hilos Tasks',
+  })
   await expectNoOtherLanguageNames(expect, page)
 })

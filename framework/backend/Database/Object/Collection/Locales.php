@@ -42,6 +42,24 @@ class Locales extends Objects
 
     /**
      * @param int $languageId Language primary id
+     * @return int Number of enabled locales, including its countryless locale
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function countEnabledForLanguage(int $languageId): int
+    {
+        $count = 0;
+        foreach ($this->loadByColumn(EntityLocale::language_id, $languageId) as $id) {
+            if ($this->objects[$id]->enabled) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * @param int $languageId Language primary id
      * @return ?bool Whether its countryless locale is enabled; null when absent
      * @throws DatabaseException When the query fails
      * @throws InvalidArgumentException When the entity column is invalid

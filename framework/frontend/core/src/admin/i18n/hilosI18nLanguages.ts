@@ -222,6 +222,9 @@ export function createHilosI18nLanguagesTable(
 export const HILOS_I18N_LANGUAGE_MARKS: Readonly<{
   readonly default: HilosI18nMark
   readonly own: HilosI18nMark
+  readonly frozen: HilosI18nMark
+  readonly editable: HilosI18nMark
+  readonly deleteUnavailable: HilosI18nMark
 }> = {
   default: {
     icon: 'bi-star-fill',
@@ -232,6 +235,21 @@ export const HILOS_I18N_LANGUAGE_MARKS: Readonly<{
     icon: 'bi-question-circle',
     tone: 'text-bg-warning-subtle text-warning-emphasis',
     label: 'Custom language',
+  },
+  frozen: {
+    icon: 'bi-eye',
+    tone: 'border border-secondary text-body-secondary',
+    label: 'Frozen language',
+  },
+  editable: {
+    icon: 'bi-pencil',
+    tone: 'border border-primary text-primary',
+    label: 'Editable language',
+  },
+  deleteUnavailable: {
+    icon: 'bi-trash',
+    tone: 'border border-secondary text-body-secondary',
+    label: 'Deletion unavailable',
   },
 }
 
@@ -248,5 +266,20 @@ export const HILOS_I18N_LANGUAGES_LEGEND: ReadonlyArray<HilosI18nLegendRow> = [
     mark: HILOS_I18N_LANGUAGE_MARKS.own,
     meaning:
       'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+  },
+  {
+    key: 'frozen',
+    mark: HILOS_I18N_LANGUAGE_MARKS.frozen,
+    meaning: 'the language is enabled and frozen: nobody changes its live row',
+  },
+  {
+    key: 'editable',
+    mark: HILOS_I18N_LANGUAGE_MARKS.editable,
+    meaning: 'the language is switched off: edit it freely',
+  },
+  {
+    key: 'deleteUnavailable',
+    mark: HILOS_I18N_LANGUAGE_MARKS.deleteUnavailable,
+    meaning: 'deletion is unavailable: the language can still be switched off',
   },
 ]

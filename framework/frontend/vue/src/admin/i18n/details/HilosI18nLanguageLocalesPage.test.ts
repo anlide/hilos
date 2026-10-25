@@ -3,6 +3,7 @@ import {
   createSignal,
   HilosPages,
   ScopeManager,
+  pageIdentity,
   hilosToasts,
   type ActionLifecycle,
   type ActionResult,
@@ -17,7 +18,7 @@ import {
   type HilosI18nLanguageCard,
 } from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosI18nLanguageLocalesPage from './HilosI18nLanguageLocalesPage.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
@@ -40,6 +41,7 @@ const russianCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: false,
     localeCount: 3,
+    enabledLocaleCount: 0,
     nameCount: 5,
     countrylessLocale: 'missing',
     canDelete: true,
@@ -77,15 +79,17 @@ function localesRoute() {
 
 function router(
   route: ReturnType<typeof localesRoute>,
+  scopes: ScopeManager,
   pageLoading = createSignal(false),
 ): HilosRouter {
+  answerAsLanguage(scopes)
   return {
     currentRoute: route,
     currentPath: createSignal('/hilos/i18n/languages/ru/locales'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
       const base = `/hilos/i18n/languages/${params?.languageCode}`
@@ -217,11 +221,10 @@ async function mountPage(actions = {} as ActionLifecycle) {
   scope.data.set(LANGUAGE_CARD_DATA, russianCard)
   scope.data.set(LOCALE_TEMPLATES_DATA, templates)
   const wrapper = mount(HilosI18nLanguageLocalesPage, {
-    props: { context: { connection, scopes, actions } },
+    props: { context: markRaw({ connection, scopes, actions }) },
     attachTo: document.body,
     global: {
-      provide: { [hilosRouterKey as symbol]: router(route) },
-      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      provide: { [hilosRouterKey as symbol]: router(route, scopes) },
     },
   })
   mounted.push(wrapper)
@@ -233,7 +236,33 @@ async function mountPage(actions = {} as ActionLifecycle) {
   ])
   await nextTick()
 
-  return { wrapper, filters, route, scope, focused, delta }
+  return { wrapper, filters, route, scope, scopes, focused, delta }
+}
+
+/** The single reply carries the owner's identity, ordered tabs and no child cards.
+ * @param scopes The current page scopes.
+ */
+function answerAsLanguage(scopes: ScopeManager): void {
+  const scope = scopes.page()!
+  scope.data.set('pageLabel', 'Language')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.I18N_LANGUAGE,
+    label: 'Language',
+    lead: '',
+    icon: null,
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.I18N, label: 'Internationalization' },
+    { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+    { page: HilosPages.I18N_LANGUAGE, label: 'Language' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+    { page: HilosPages.I18N_LANGUAGE_NAMES, label: 'Names' },
+    { page: HilosPages.I18N_LANGUAGE_LOCALES, label: 'Locales' },
+  ])
+  scope.data.set('pageChildren', [])
 }
 
 describe('HilosI18nLanguageLocalesPage', () => {
@@ -248,32 +277,31 @@ describe('HilosI18nLanguageLocalesPage', () => {
         context: { connection, scopes, actions: {} as ActionLifecycle },
       },
       global: {
-        provide: { [hilosRouterKey as symbol]: router(route, pageLoading) },
-        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+        provide: {
+          [hilosRouterKey as symbol]: router(route, scopes, pageLoading),
+        },
       },
     })
     mounted.push(wrapper)
     await nextTick()
 
     expect(wrapper.find('[aria-label="Loading language"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
-      false,
-    )
+    expect(wrapper.find('[data-id="language-head-tile"]').exists()).toBe(false)
     expect(wrapper.find('[data-id^="i18n-locales-"]').exists()).toBe(false)
   })
 
   it('renders the header and tabs above the locales table once the card arrives', async () => {
     const { wrapper } = await mountPage()
 
-    expect(wrapper.find('[data-id="language-card-native-name"]').text()).toBe(
+    expect(wrapper.find('[data-id="hilos-page-head-title"]').text()).toBe(
       'Русский',
     )
-    expect(wrapper.find('[data-id="language-card-counts"]').text()).toBe(
-      'Locales: 3 · Names: 5',
+    expect(wrapper.find('[data-id="language-card-counts"]').exists()).toBe(
+      false,
     )
 
     const localesTab = wrapper.find(
-      '[data-id="language-card-tab-hilos_i18n_language_locales"]',
+      '[data-id="hilos-page-tab-hilos_i18n_language_locales"]',
     )
     expect(localesTab.attributes('aria-current')).toBe('page')
     expect(localesTab.attributes('href')).toBe(
@@ -281,7 +309,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
     )
 
     const mainTab = wrapper.find(
-      '[data-id="language-card-tab-hilos_i18n_language"]',
+      '[data-id="hilos-page-tab-hilos_i18n_language"]',
     )
     expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/ru')
 
@@ -307,6 +335,57 @@ describe('HilosI18nLanguageLocalesPage', () => {
     }
   })
 
+  it('keeps one named head and table, live direction and badges, and disposes its scoped name', async () => {
+    const s = await mountPage()
+    expect(s.wrapper.findAll('h1')).toHaveLength(1)
+    expect(s.wrapper.get('table').attributes('aria-labelledby')).toBe(
+      s.wrapper.get('h1').attributes('id'),
+    )
+    s.scope.data.set(LANGUAGE_CARD_DATA, {
+      ...russianCard,
+      nativeName: 'Live name',
+      rtl: true,
+      summary: { ...russianCard.summary, isDefault: true, isOwn: true },
+    })
+    await nextTick()
+    expect(s.wrapper.get('h1').text()).toBe('Live name')
+    expect(
+      s.wrapper
+        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text(),
+    ).toBe('Live name')
+    expect(s.wrapper.get('[data-id="language-head-direction"]').text()).toBe(
+      'Right to left',
+    )
+    for (const id of ['default', 'own'])
+      expect(
+        s.wrapper
+          .get(`[data-id="language-head-${id}"] i`)
+          .attributes('aria-hidden'),
+      ).toBe('true')
+    for (const id of [
+      'language-card-header',
+      'language-card-tabs',
+      'language-card-counts',
+      'hilos-admin-children',
+    ])
+      expect(s.wrapper.find(`[data-id="${id}"]`).exists()).toBe(false)
+    const identity = pageIdentity(s.scopes)
+    const foreign = s.scopes.openPage(HilosPages.I18N_COUNTRY)
+    answerAsLanguage(s.scopes)
+    foreign.data.set(LANGUAGE_CARD_DATA, {
+      ...russianCard,
+      nativeName: 'Foreign',
+    })
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Language')
+    s.wrapper.unmount()
+    s.scopes
+      .openPage(HilosPages.I18N_LANGUAGE_LOCALES)
+      .data.set(LANGUAGE_CARD_DATA, russianCard)
+    answerAsLanguage(s.scopes)
+    expect(identity.get()?.pageHeadOwner?.label).toBe('Language')
+  })
+
   it('says language details are no longer available when the card is cleared after deletion', async () => {
     const { wrapper, scope } = await mountPage()
 
@@ -316,9 +395,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(wrapper.find('[data-id="language-card-unavailable"]').text()).toBe(
       'Language details are no longer available.',
     )
-    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
-      false,
-    )
+    expect(wrapper.find('[data-id="language-head-tile"]').exists()).toBe(false)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 
@@ -572,8 +649,13 @@ describe('HilosI18nLanguageLocalesPage', () => {
       summary: { ...russianCard.summary, localeCount: 2 },
     })
     await nextTick()
-    expect(s.wrapper.get('[data-id="language-card-counts"]').text()).toBe(
-      'Locales: 2 · Names: 5',
+    expect(
+      s.wrapper.getComponent(HilosI18nLocaleWindow).props('card'),
+    ).toMatchObject({
+      summary: { localeCount: 2, nameCount: 5 },
+    })
+    expect(s.wrapper.find('[data-id="language-card-counts"]').exists()).toBe(
+      false,
     )
     expect(s.wrapper.get('[data-id="i18n-locales-none-ru"]').text()).toBe(
       'No locale',

@@ -53,6 +53,7 @@ const card: HilosI18nLanguageCard = {
     isDefault: true,
     isOwn: false,
     localeCount: 1,
+    enabledLocaleCount: 0,
     nameCount: 0,
     countrylessLocale: 'missing',
     canDelete: false,

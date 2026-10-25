@@ -55,6 +55,7 @@ class Languages extends Objects
             isDefault: $language->code === DefaultLanguage::code(),
             isOwn: BuiltInI18nCatalog::language($language->code) === null,
             localeCount: $localeCount,
+            enabledLocaleCount: Hilos::$db->locales->countEnabledForLanguage($languageId),
             nameCount: Hilos::$db->languageNames->countBaseNamesForLanguage($languageId),
             countrylessLocaleEnabled: Hilos::$db->locales->countrylessEnabled($languageId),
             hasManualLanguageName: Hilos::$db->languageNames->hasManualNameForLanguage($languageId),

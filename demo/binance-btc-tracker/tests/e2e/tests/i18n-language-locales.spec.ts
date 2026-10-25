@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectDefaultLanguageHeader } from '../../../../../framework/frontend/e2e/index.js'
+import { expectLanguagePageHead } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
@@ -23,11 +23,16 @@ test('opens the locales of the default language directly with its own locale on 
   await expect(table.getByTestId('i18n-locales-view-en')).toBeVisible()
   await expect(table.getByTestId('i18n-locales-add-en-GB')).toBeVisible()
 
-  // Card header and tabs (HIL-1480).
-  await expectDefaultLanguageHeader(expect, page)
+  // The adopted owner carries the same live head on every tab.
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language_locales',
+    appName: 'BTC Tracker',
+  })
 
   const localesTab = page.getByTestId(
-    'language-card-tab-hilos_i18n_language_locales',
+    'hilos-page-tab-hilos_i18n_language_locales',
   )
   await expect(localesTab).toHaveAttribute('aria-current', 'page')
   await expect(localesTab).toHaveAttribute(
@@ -35,7 +40,7 @@ test('opens the locales of the default language directly with its own locale on 
     '/hilos/i18n/languages/en/locales',
   )
 
-  const mainTab = page.getByTestId('language-card-tab-hilos_i18n_language')
+  const mainTab = page.getByTestId('hilos-page-tab-hilos_i18n_language')
   await expect(mainTab).toHaveAttribute('href', '/hilos/i18n/languages/en')
 
   await mainTab.click()
@@ -43,9 +48,7 @@ test('opens the locales of the default language directly with its own locale on 
   await expectPageReady(page)
   await expect(page.getByTestId('language-card-main')).toBeVisible()
 
-  await page
-    .getByTestId('language-card-tab-hilos_i18n_language_locales')
-    .click()
+  await page.getByTestId('hilos-page-tab-hilos_i18n_language_locales').click()
   await expect(page).toHaveURL(/\/locales$/)
   await expectPageReady(page)
   await expect(table.getByTestId('i18n-locales-country-en')).toHaveText(

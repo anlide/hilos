@@ -26,6 +26,13 @@ test('opens the languages list with the default language and searches it', async
     legend.getByTestId('i18n-languages-legend-default'),
   ).toBeVisible()
   await expect(legend.getByTestId('i18n-languages-legend-own')).toBeVisible()
+  await expect(legend.locator('dt')).toHaveText([
+    'Default language',
+    'Custom language',
+    'Frozen language',
+    'Editable language',
+    'Deletion unavailable',
+  ])
 
   // The same cells are also drawn in the narrow-screen card, which stays in the
   // document. The wide table is the one this viewport shows.
@@ -39,6 +46,24 @@ test('opens the languages list with the default language and searches it', async
     'Default language',
   )
   await expect(row.getByTestId('i18n-languages-enabled-en')).toBeChecked()
+
+  const actions = row.getByTestId('i18n-languages-delete-en').locator('..')
+  await expect(actions).toHaveClass('hilos-button-group d-md-inline-flex gap-1')
+  expect(
+    await actions
+      .locator(':scope > button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('data-id')),
+      ),
+  ).toEqual([
+    'i18n-languages-view-en',
+    'hilos-action-reason',
+    'i18n-languages-delete-en',
+  ])
+  await expect(row.getByTestId('i18n-languages-delete-reason-en')).toHaveClass(
+    'visually-hidden',
+  )
+  await expect(row.getByTestId('i18n-languages-delete-en')).toBeDisabled()
 
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')

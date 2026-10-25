@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectLanguagePageHead,
+  watchI18nLivePages,
   expectNoOtherLanguageNames,
   i18nNameRow,
   shownByTestId,
@@ -21,9 +23,12 @@ const CANCEL = 'i18n-language-name-delete-cancel'
 /** Open the fixture's names and its corrections using the native row chevron. */
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
-  await expect(page.getByTestId('language-card-counts')).toHaveText(
-    'Locales: 1 · Names: 1',
-  )
+  await expectLanguagePageHead(expect, page, {
+    code: 'qv',
+    nativeName: 'HIL-1490 target',
+    currentPage: 'hilos_i18n_language_names',
+    appName: 'BTC Tracker',
+  })
   await expect(i18nNameRow(page, 'language', 'qw')).toContainText(
     'Fixture base',
   )
@@ -59,10 +64,19 @@ test('cancels then deletes a base name and all corrections live in both windows'
   await clearLanguageNamesFixture()
   await seedLanguageNamesFixture()
   const observer = await context.newPage()
+  const overview = await context.newPage()
   try {
     await signUpAdmin(page)
     await openNames(page)
     await openNames(observer)
+    await gotoPage(overview, '/hilos/i18n/languages/qv', PAGE_READY)
+    await expect(
+      overview.getByTestId('language-overview-name-count'),
+    ).toHaveText('1')
+    await expect(
+      overview.getByTestId('language-overview-locale-count'),
+    ).toHaveText('1')
+    const live = await watchI18nLivePages(expect, [page, observer, overview])
     const trash = shownByTestId(page, 'i18n-names-delete-qw')
     await expect(trash).toHaveAccessibleName(
       'Delete language name in HIL-1490 writing',
@@ -95,9 +109,13 @@ test('cancels then deletes a base name and all corrections live in both windows'
         'No name',
       )
       await expect(i18nNameRow(tab, 'language', 'qw')).toBeVisible()
-      await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 1 · Names: 0',
-      )
+      await expect(
+        overview.getByTestId('language-overview-name-count'),
+      ).toHaveText('0')
+      await expect(
+        overview.getByTestId('language-overview-locale-count'),
+      ).toHaveText('1')
+      await live.unchanged()
       await expect(tab.getByTestId('i18n-names-correction-qw-GB')).toHaveCount(
         0,
       )
@@ -113,6 +131,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
     ).toContainText('The name no longer exists.')
     await clickSubmit(observer.getByTestId(CANCEL))
   } finally {
+    await overview.close()
     await observer.close()
     await clearNames(page)
   }
@@ -127,10 +146,19 @@ test('removes one correction and then the saved empty correction, with a live mi
   await clearLanguageNamesFixture()
   await seedLanguageNamesFixture()
   const observer = await context.newPage()
+  const overview = await context.newPage()
   try {
     await signUpAdmin(page)
     await openNames(page)
     await openNames(observer)
+    await gotoPage(overview, '/hilos/i18n/languages/qv', PAGE_READY)
+    await expect(
+      overview.getByTestId('language-overview-name-count'),
+    ).toHaveText('1')
+    await expect(
+      overview.getByTestId('language-overview-locale-count'),
+    ).toHaveText('1')
+    const live = await watchI18nLivePages(expect, [page, observer, overview])
     const trash = shownByTestId(page, 'i18n-names-delete-qw-GB')
     await expect(trash).toHaveAccessibleName('Remove locale correction qw-GB')
     await clickSubmit(trash)
@@ -153,9 +181,13 @@ test('removes one correction and then the saved empty correction, with a live mi
       )
       await expect(shownByTestId(tab, 'i18n-names-delete-qw-US')).toBeVisible()
       await expect(shownByTestId(tab, 'i18n-names-delete-qw')).toBeVisible()
-      await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 1 · Names: 1',
-      )
+      await expect(
+        overview.getByTestId('language-overview-name-count'),
+      ).toHaveText('1')
+      await expect(
+        overview.getByTestId('language-overview-locale-count'),
+      ).toHaveText('1')
+      await live.unchanged()
     }
     await dismissToasts(page)
     await clickSubmit(shownByTestId(page, 'i18n-names-delete-qw-US'))
@@ -190,13 +222,18 @@ test('removes one correction and then the saved empty correction, with a live mi
       await expect(shownByTestId(tab, 'i18n-names-inherit-qw-US')).toHaveText(
         'as in “HIL-1490 writing”',
       )
-      await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 1 · Names: 1',
-      )
+      await expect(
+        overview.getByTestId('language-overview-name-count'),
+      ).toHaveText('1')
+      await expect(
+        overview.getByTestId('language-overview-locale-count'),
+      ).toHaveText('1')
+      await live.unchanged()
       await expect(shownByTestId(tab, 'i18n-names-delete-qw')).toBeVisible()
       await expect(tab.getByTestId('hilos-table-apply')).toHaveCount(0)
     }
   } finally {
+    await overview.close()
     await observer.close()
     await clearNames(page)
   }

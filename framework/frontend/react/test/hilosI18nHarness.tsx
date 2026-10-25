@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { StrictMode, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, expect, vi } from 'vitest'
 import {
   ActionLifecycle,
   bindAdminAccess,
@@ -51,6 +51,7 @@ export const languageCard: HilosI18nLanguageCard = {
     isDefault: false,
     isOwn: false,
     localeCount: 2,
+    enabledLocaleCount: 0,
     nameCount: 3,
     countrylessLocale: 'missing',
     canDelete: true,
@@ -134,6 +135,47 @@ function countryTabShell(page: string): Record<string, unknown> | null {
         pageTabs: [
           { page: HilosPages.I18N_COUNTRY, label: 'Overview' },
           { page: HilosPages.I18N_COUNTRY_NAMES, label: 'Names' },
+        ],
+        pageChildren: [],
+      }
+}
+
+/** The language's three tabs answer the shared owner, trail, and ordered row. */
+function languageTabShell(page: string): Record<string, unknown> | null {
+  const tab =
+    page === HilosPages.I18N_LANGUAGE
+      ? { label: 'Language', lead: 'One language and its state.' }
+      : page === HilosPages.I18N_LANGUAGE_NAMES
+        ? {
+            label: 'Language names',
+            lead: 'How this language is named in each language.',
+          }
+        : page === HilosPages.I18N_LANGUAGE_LOCALES
+          ? {
+              label: 'Language locales',
+              lead: 'The locale formats this language uses.',
+            }
+          : null
+  return tab === null
+    ? null
+    : {
+        pageLabel: tab.label,
+        pageLead: tab.lead,
+        pageHeadOwner: {
+          page: HilosPages.I18N_LANGUAGE,
+          label: 'Language',
+          lead: 'One language and its state.',
+        },
+        pageBreadcrumb: [
+          { page: HilosPages.DASHBOARD, label: 'Hilos' },
+          { page: HilosPages.I18N, label: 'Internationalization' },
+          { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+          { page: HilosPages.I18N_LANGUAGE, label: 'Language' },
+        ],
+        pageTabs: [
+          { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+          { page: HilosPages.I18N_LANGUAGE_NAMES, label: 'Names' },
+          { page: HilosPages.I18N_LANGUAGE_LOCALES, label: 'Locales' },
         ],
         pageChildren: [],
       }
@@ -301,12 +343,13 @@ export function harness(
       )
     },
     card(value: unknown = isCountry ? countryCard : languageCard) {
-      const shell = countryTabShell(page) ?? {
-        pageLabel: 'Language details',
-        pageLead: '',
-        pageBreadcrumb: [],
-        pageChildren: [],
-      }
+      const shell = countryTabShell(page) ??
+        languageTabShell(page) ?? {
+          pageLabel: 'Language details',
+          pageLead: '',
+          pageBreadcrumb: [],
+          pageChildren: [],
+        }
       for (const [key, field] of Object.entries(shell))
         scope.data.set(key, field)
       scope.data.set(isCountry ? 'countryCard' : 'languageCard', value)
@@ -433,6 +476,34 @@ export function liveCountryTab(
 export function el<T extends HTMLElement = HTMLElement>(id: string): T {
   return document.querySelector<T>(`[data-id="${id}"]`)!
 }
+
+/** Assert the language owner head, its current catalog tab, and retired nodes. */
+export function expectLanguagePageHead(
+  currentPage: string,
+  nativeName = languageCard.nativeName,
+): void {
+  const title = el('hilos-page-head-title')
+  expect(title.tagName).toBe('H1')
+  expect(title.textContent).toBe(nativeName)
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(lastCrumb()).toBe(nativeName)
+  const tabs = el('hilos-page-tabs')
+  expect(tabs.getAttribute('aria-label')).toBe('Language pages')
+  expect([...tabs.querySelectorAll('a')].map((tab) => tab.textContent)).toEqual(
+    ['Overview', 'Names', 'Locales'],
+  )
+  const activeTab = el(`hilos-page-tab-${currentPage}`)
+  expect(activeTab.getAttribute('aria-current')).toBe('page')
+  expect(activeTab.classList.contains('active')).toBe(true)
+  for (const id of [
+    'language-card-header',
+    'language-card-tabs',
+    'language-card-counts',
+    'language-card-native-name',
+  ])
+    expect(el(id)).toBeNull()
+}
+
 export function click(id: string): void {
   fireEvent.click(el(id))
 }
@@ -442,8 +513,14 @@ export function change(id: string, value: string): void {
 
 /** The last breadcrumb entry's own text, without its silent separator. */
 export function lastCrumb(): string | null | undefined {
-  return document.querySelector('[data-id="hilos-breadcrumb"] li:last-child')
-    ?.lastChild?.textContent
+  const current = document.querySelector(
+    '[data-id="hilos-breadcrumb"] [aria-current="page"]',
+  )
+  if (current === null) return undefined
+  const text = current.cloneNode(true) as Element
+  for (const hidden of text.querySelectorAll('[aria-hidden="true"]'))
+    hidden.remove()
+  return text.textContent
 }
 
 /** The data-ids the manual country header carried; none of them stays. */

@@ -15,9 +15,11 @@ import {
   expectDesktopShell,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
+  expectLanguagePageHead,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
   expectPasswordVisibility,
+  shownByTestId,
   watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -51,6 +53,23 @@ test('the viewport table has an accessible name and a labelled search', async ({
   await expect(
     page.getByRole('searchbox', { name: 'Search users…' }),
   ).toBeVisible()
+})
+
+test('the language Names table takes its name from the shared head', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/i18n/languages/en/names')
+  await expectPageReady(page)
+
+  await expectLanguagePageHead(expect, page, {
+    code: 'en',
+    nativeName: 'English',
+    currentPage: 'hilos_i18n_language_names',
+    appName: 'Hilos Polls',
+  })
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(page.getByRole('table', { name: 'English' })).toBeVisible()
 })
 
 test('a sortable header reports aria-sort and sorts from the keyboard', async ({
@@ -380,6 +399,45 @@ test('Communications exposes one named head and keyboard links between channel p
     'Enable Email',
   )
   await expect(page).toHaveURL(/\/hilos\/communications\/email$/)
+})
+
+test('the default language deletion explanation is named, keyboard readable and returns focus', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/i18n/languages')
+  await expectPageReady(page)
+  const row = shownByTestId(page, /^hilos-table-row-/).filter({
+    has: page.getByTestId('i18n-languages-delete-en'),
+  })
+  const trash = row.getByTestId('i18n-languages-delete-en')
+  await expect(trash).toBeDisabled()
+  await expect(trash).toHaveAccessibleDescription(
+    'Cannot delete: this is the default language.',
+  )
+  const why = row.getByTestId('hilos-action-reason')
+  await expect(why).toHaveAccessibleName('Why this action is unavailable')
+  await why.focus()
+  await why.press('Enter')
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toHaveRole('dialog')
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await expect(dialog).toHaveAccessibleName('Action unavailable')
+  await expect(dialog).toBeFocused()
+  await expect(page.getByTestId('hilos-action-reason-body')).toHaveText(
+    'Cannot delete: this is the default language.',
+  )
+  await dialog.press('Tab')
+  await expect(page.getByTestId('modal-close')).toBeFocused()
+  await page.getByTestId('modal-close').press('Tab')
+  await expect(page.getByTestId('hilos-action-reason-close')).toBeFocused()
+  await page.getByTestId('hilos-action-reason-close').press('Tab')
+  await expect(page.getByTestId('modal-close')).toBeFocused()
+  await dialog.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(why).toBeFocused()
+  await expect(trash).toBeDisabled()
+  await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

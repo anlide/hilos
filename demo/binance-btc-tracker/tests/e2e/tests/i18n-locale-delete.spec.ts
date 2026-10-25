@@ -3,6 +3,7 @@ import {
   dismissToasts,
   shownByTestId,
   watchHeight,
+  watchI18nLivePages,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
@@ -54,11 +55,14 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
   await addLocale(page, 'pt')
   const other = await context.newPage()
   await gotoPage(other, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+  const overview = await context.newPage()
+  await gotoPage(overview, '/hilos/i18n/languages/pt', PAGE_READY)
+  const live = await watchI18nLivePages(expect, [page, other, overview])
   for (const tab of [page, other]) {
     await expect(shownByTestId(tab, 'i18n-locales-code-pt')).toHaveText('pt')
-    await expect(tab.getByTestId('language-card-counts')).toContainText(
-      'Locales: 1',
-    )
+    await expect(
+      overview.getByTestId('language-overview-locale-count'),
+    ).toHaveText('1')
   }
   let reloads = 0
   for (const tab of [page, other]) {
@@ -99,12 +103,14 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
     for (const control of ['code', 'enabled', 'edit', 'view', 'delete']) {
       await expect(tab.getByTestId(`i18n-locales-${control}-pt`)).toHaveCount(0)
     }
-    await expect(tab.getByTestId('language-card-counts')).toContainText(
-      'Locales: 0',
-    )
+    await expect(
+      overview.getByTestId('language-overview-locale-count'),
+    ).toHaveText('0')
     await expect(tab).toHaveURL(/\/hilos\/i18n\/languages\/pt\/locales$/)
   }
   expect(reloads).toBe(0)
+  await live.unchanged()
+  await overview.close()
   await other.close()
 })
 
@@ -154,7 +160,7 @@ test('refuses the default locale of a switched-off country and preserves its sel
     await clickSubmit(edit)
     await page
       .getByTestId('i18n-country-edit-default-locale')
-      .selectOption('en-IE')
+      .selectOption({ label: 'en-IE — switched off' })
     const save = page.getByTestId('i18n-country-save')
     await clickSubmit(save)
     await expect(page.getByTestId('i18n-country-window')).toHaveCount(0)

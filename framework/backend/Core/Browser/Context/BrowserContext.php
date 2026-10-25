@@ -2403,6 +2403,8 @@ abstract class BrowserContext
      * @param string $acceptKey Subscriber accept key
      * @param array<string, mixed> $subscription Page subscription mirror entry
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DbCollectionNotReadableException When a database anchor is not readable here
+     * @throws RtCollectionNotReadableException When a runtime anchor is not readable here
      * @throws DatabaseException When reading a joined database source fails
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
@@ -2539,6 +2541,15 @@ abstract class BrowserContext
             }
 
             foreach ($rowKeys as $rowKey) {
+                if (
+                    $this->browserKind($browserKey) === BrowserSourceKind::DATA
+                    && !$this->dataRowKeyMatchesScope(
+                        $browserKey, $browserConfig, $change, $rowKey, $acceptKey, $pageParams, $browserParams,
+                    )
+                ) {
+                    continue;
+                }
+
                 $row = $this->buildBrowserRow(
                     browserKey: $browserKey,
                     browserConfig: $browserConfig,
@@ -3502,6 +3513,86 @@ abstract class BrowserContext
         }
 
         return $rowKeys;
+    }
+
+    /**
+     * A joined key is only a rebuild candidate; the DATA anchor owns its subscription scope.
+     * A removed or moved anchor is also matched against its previous WHERE values.
+     *
+     * @param string $browserKey Browser DATA key for the declared source resolver
+     * @param BrowserSourceConfig $browserConfig Browser source declaration
+     * @param SourceChange $change Current source fact, including previous values
+     * @param int|string $rowKey Candidate logical browser row key, distinct from source storage id
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $browserParams Resolved source params
+     * @return bool Whether this subscription owns the current or previous anchor row
+     * @throws PageInternalErrorException When the anchor source declaration is malformed
+     * @throws DbCollectionNotReadableException When the database anchor is not readable here
+     * @throws RtCollectionNotReadableException When the runtime anchor is not readable here
+     * @throws DatabaseException When the anchor collection or item cannot be read
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     */
+    private function dataRowKeyMatchesScope(
+        string $browserKey,
+        BrowserSourceConfig $browserConfig,
+        SourceChange $change,
+        int|string $rowKey,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+    ): bool {
+        $anchorConfig = $this->anchorRowConfigs($browserConfig)[0] ?? null;
+        $where = $anchorConfig[BrowserFieldKey::WHERE] ?? [];
+        if (!is_array($anchorConfig) || !is_array($where) || $where === []) {
+            return true;
+        }
+
+        $source = $anchorConfig[BrowserFieldKey::SOURCE] ?? [];
+        if (!is_array($source)) {
+            return false;
+        }
+
+        if ($this->sourceItemsForRow(
+            rowConfig: $anchorConfig,
+            rowKey: $rowKey,
+            acceptKey: $acceptKey,
+            pageParams: $pageParams,
+            browserParams: $browserParams,
+            sources: [],
+            browserKey: $browserKey,
+            joinedItems: [],
+        ) !== []) {
+            return true;
+        }
+
+        if (!$this->rowConfigMatchesChange($anchorConfig, $change)) {
+            return false;
+        }
+        if (!$this->sameValue(
+            $this->rowKeyValue($anchorConfig, $change, $browserParams, array_replace($change->row, $change->previous)),
+            $rowKey,
+        )) {
+            return false;
+        }
+
+        $previousAnchor = [];
+        $changedAnchor = $this->sourceItemById($source, $change->sourceId);
+        foreach ($where as $field => $expected) {
+            if (!is_string($field)) {
+                continue;
+            }
+            $previousKey = $this->changeValueKey($anchorConfig, $change, $change->previous, $field);
+            $currentKey = $this->changeValueKey($anchorConfig, $change, $change->row, $field);
+            $previousAnchor[$field] = $previousKey !== null
+                ? $change->previous[$previousKey]
+                : ($currentKey !== null
+                    ? $change->row[$currentKey]
+                    : ($changedAnchor === null ? null : $this->fieldValue($changedAnchor, $field)));
+        }
+
+        return $this->sourceItemMatchesWhere($anchorConfig, $previousAnchor, $acceptKey, $pageParams, $browserParams);
     }
 
     /**

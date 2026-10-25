@@ -9,6 +9,7 @@ import {
   el,
   click,
   change,
+  expectLanguagePageHead,
   settle,
 } from './hilosI18nHarness.js'
 import { nameRow } from './hilosI18nDetailsHarness.js'
@@ -41,33 +42,49 @@ function setup(viewer = false) {
 }
 
 describe('React language names page', () => {
-  it('waits for the card, draws live counts and tabs, then distinguishes its deletion', () => {
+  it('waits for the card, draws the shared head and named table, then distinguishes deletion', () => {
     const h = setup()
-    expect(el('language-card-header')).toBeNull()
+    expect(el('hilos-page-head-skeleton')).not.toBeNull()
     expect(el('hilos-viewport-table')).toBeNull()
     expect(
       document.querySelector('[aria-label="Loading language"]'),
     ).not.toBeNull()
     act(() => h.card())
-    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES)
+    expect(el('language-head-tile').textContent).toBe('uk')
+    expect(el('language-head-direction').textContent).toBe('Left to right')
+    expect(el('hilos-page-head-title').id).toBe(
+      document.querySelector('table')?.getAttribute('aria-labelledby'),
+    )
     expect(
-      el('language-card-tab-hilos_i18n_language_names').getAttribute(
+      el('hilos-page-tab-hilos_i18n_language_names').getAttribute(
         'aria-current',
       ),
     ).toBe('page')
     expect(
-      el('language-card-tab-hilos_i18n_language_locales').getAttribute('href'),
+      el('hilos-page-tab-hilos_i18n_language_locales').getAttribute('href'),
     ).toBe('/hilos/i18n/languages/uk/locales')
     act(() =>
       h.card({
         ...languageCard,
         enabled: true,
-        summary: { ...languageCard.summary, nameCount: 5 },
+        rtl: true,
+        summary: {
+          ...languageCard.summary,
+          isDefault: true,
+          isOwn: true,
+          nameCount: 5,
+        },
       }),
     )
-    expect(el('language-card-counts').textContent).toBe('Locales: 2 · Names: 5')
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES)
+    expect(el('language-head-default').textContent).toBe('Default language')
+    expect(el('language-head-own').textContent).toBe('Custom language')
+    expect(el('language-head-direction').textContent).toBe('Right to left')
+    expect(el('language-card-counts')).toBeNull()
     expect(document.body.textContent).not.toMatch(/Preview|Synchroniz|Flags/)
     act(() => h.card(null))
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES, 'Language')
     expect(el('language-card-unavailable')).not.toBeNull()
     expect(el('hilos-viewport-table')).toBeNull()
     expect(h.calls).toEqual([])
@@ -91,6 +108,24 @@ describe('React language names page', () => {
         'i18n-names-delete-en-US',
       ])
         expect(projection.querySelector(`[data-id="${id}"]`)).not.toBeNull()
+      for (const id of [
+        'i18n-language-name-add-fr',
+        'i18n-language-name-locale-add-en-CA',
+      ])
+        expect(
+          projection
+            .querySelector(`[data-id="${id}"]`)
+            ?.classList.contains('btn-primary'),
+        ).toBe(true)
+      for (const id of [
+        'i18n-language-name-edit-en',
+        'i18n-language-name-locale-edit-en-GB',
+      ])
+        expect(
+          projection
+            .querySelector(`[data-id="${id}"]`)
+            ?.classList.contains('btn-outline-primary'),
+        ).toBe(true)
       expect(
         projection.querySelector('[data-id="i18n-names-delete-fr"]'),
       ).toBeNull()
@@ -230,8 +265,14 @@ describe('React language names page', () => {
         params: { languageCode: 'fr' },
         admin: true,
       })
-      h.card({ ...languageCard, languageId: 13, code: 'fr' })
+      h.card({
+        ...languageCard,
+        languageId: 13,
+        code: 'fr',
+        nativeName: 'Français',
+      })
     })
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES, 'Français')
     expect(el('i18n-language-name-delete-window')).toBeNull()
     click('i18n-language-name-edit-en')
     change('i18n-language-name-input', 'New subject')
@@ -254,10 +295,11 @@ describe('React language names page', () => {
     const next = harness(HilosPages.I18N_LANGUAGE_NAMES, [nameRow])
     next.card()
     h.view.rerender(
-      <HilosRouterContext.Provider value={h.navigation}>
+      <HilosRouterContext.Provider value={next.navigation}>
         <HilosI18nLanguageNamesPage context={next.context} />
       </HilosRouterContext.Provider>,
     )
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES)
     click('i18n-language-name-edit-en')
     change('i18n-language-name-input', 'New')
     await settle(() => h.refuse(0, 'Old failure'))
@@ -270,6 +312,7 @@ describe('React language names page', () => {
   it('lets a viewer read the form and correction while every write remains disabled', () => {
     const h = setup(true)
     act(() => h.card())
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES)
     expect(el<HTMLButtonElement>('i18n-names-delete-en').disabled).toBe(true)
     click('hilos-table-expand-11')
     click('i18n-language-name-locale-edit-en-US')
@@ -298,5 +341,12 @@ describe('React language names page', () => {
       }),
     )
     expect(el('hilos-table-unavailable')).not.toBeNull()
+  })
+
+  it('binds the live name before the names page first paint', () => {
+    const h = harness(HilosPages.I18N_LANGUAGE_NAMES, [nameRow])
+    h.card()
+    h.mount(<HilosI18nLanguageNamesPage context={h.context} />)
+    expectLanguagePageHead(HilosPages.I18N_LANGUAGE_NAMES)
   })
 })

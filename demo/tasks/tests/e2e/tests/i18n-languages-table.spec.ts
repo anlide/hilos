@@ -39,6 +39,27 @@ test('opens the languages list with the default language and searches it', async
   )
   await expect(row.getByTestId('i18n-languages-enabled-en')).toBeChecked()
 
+  const actions = row.getByTestId('i18n-languages-delete-en').locator('..')
+  await expect(actions).toHaveClass('hilos-button-group d-md-inline-flex gap-1')
+  expect(
+    await actions
+      .locator(':scope > button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('data-id')),
+      ),
+  ).toEqual([
+    'i18n-languages-view-en',
+    'hilos-action-reason',
+    'i18n-languages-delete-en',
+  ])
+  const deleteReason = row.getByTestId('i18n-languages-delete-reason-en')
+  await expect(deleteReason).toHaveClass('visually-hidden')
+  await expect(deleteReason).not.toHaveAttribute('aria-hidden')
+  await expect(deleteReason).toHaveText(
+    'Cannot delete: this is the default language.',
+  )
+  await expect(row.getByTestId('i18n-languages-delete-en')).toBeDisabled()
+
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('en', { delay: 10 })

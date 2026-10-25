@@ -9,7 +9,7 @@ import {
   HilosPages,
   hilosToasts,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nLanguagesPage } from '../src/admin/i18n/lists/HilosI18nLanguagesPage.js'
 import { i18nBench, language, mountOver } from './helpers/hilosI18n.js'
@@ -84,7 +84,7 @@ describe('HilosI18nLanguagesPage', () => {
   })
 
   it.each(['default', 'locales', 'names'] as const)(
-    'refuses a %s deletion in both projections with its own visible reason',
+    'refuses a %s deletion with distinct descriptions and native reason buttons in both projections',
     (deleteReason) => {
       const h = setup([{ ...own, canDelete: false, deleteReason }])
       const controls = h.all('i18n-languages-delete-qx') as HTMLButtonElement[]
@@ -102,11 +102,127 @@ describe('HilosI18nLanguagesPage', () => {
             ?.textContent?.trim(),
         ).toBe(HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason])
       }
+      const descriptions = h.all('i18n-languages-delete-reason-qx')
+      expect(descriptions).toHaveLength(2)
+      descriptions.forEach((description, index) => {
+        expect(description.id).toBe(ids[index])
+        expect(description.className).toBe('visually-hidden')
+        expect(description.hasAttribute('hidden')).toBe(false)
+        expect(description.hasAttribute('aria-hidden')).toBe(false)
+      })
+      const whyButtons = h.all('hilos-action-reason') as HTMLButtonElement[]
+      expect(whyButtons).toHaveLength(2)
+      const groups = h.fixture.nativeElement.querySelectorAll(
+        '.hilos-button-group',
+      ) as NodeListOf<HTMLElement>
+      expect(groups).toHaveLength(2)
+      for (const group of groups) {
+        expect(group.tagName).toBe('HILOS-I18N-LANGUAGE-ROW-ACTIONS')
+        expect(group.className).toBe(
+          'hilos-button-group d-md-inline-flex gap-1',
+        )
+        expect(group.querySelector('.hilos-button-group')).toBeNull()
+        expect(
+          [...group.children].map((child) => child.getAttribute('data-id')),
+        ).toEqual([
+          'i18n-languages-edit-qx',
+          'hilos-action-reason',
+          'i18n-languages-delete-qx',
+          'i18n-languages-delete-reason-qx',
+        ])
+        expect(
+          [...group.querySelectorAll('button')].every(
+            (button) => button.parentElement === group,
+          ),
+        ).toBe(true)
+      }
+      const cardRows = h.fixture.nativeElement.querySelectorAll(
+        '.hilos-button-row',
+      ) as NodeListOf<HTMLElement>
+      expect(cardRows).toHaveLength(1)
+      expect(cardRows[0]!.firstElementChild).toBe(groups[1])
+      expect(cardRows[0]!.children).toHaveLength(1)
       h.click('i18n-languages-delete-qx')
       expect(h.focuses).toEqual([])
       expect(h.el('modal')).toBeNull()
+      for (const why of whyButtons) {
+        expect(why.type).toBe('button')
+        expect(why.hidden).toBe(false)
+        expect(why.getAttribute('aria-label')).toBe(
+          'Why this action is unavailable',
+        )
+        expect(why.title).toBe(
+          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+        )
+        expect(why.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+        why.focus()
+        why.click()
+        h.detect()
+        const dialog = h.el('modal')!
+        expect(why.contains(dialog)).toBe(false)
+        expect(why.parentElement!.contains(dialog)).toBe(false)
+        expect(document.activeElement).toBe(dialog)
+        expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
+          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+        )
+        h.click('hilos-action-reason-close')
+        expect(h.el('modal')).toBeNull()
+        expect(document.activeElement).toBe(why)
+      }
+      expect(h.focuses).toEqual([])
+      expect(h.calls).toEqual([])
+      expect(hilosToasts.toasts.get()).toEqual([])
     },
   )
+
+  it('lets a viewer read a refusal without sending an action or holding row focus', () => {
+    const h = setup([english], true)
+    h.click('hilos-action-reason')
+    expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      HILOS_I18N_LANGUAGE_DELETE_COPY.reasons.default,
+    )
+    expect(h.calls).toEqual([])
+    expect(h.focuses).toEqual([])
+    h.escape()
+    expect(h.el('modal')).toBeNull()
+    expect(h.el<HTMLButtonElement>('i18n-languages-delete-en')?.disabled).toBe(
+      true,
+    )
+  })
+
+  it('keeps a live row reason open after delete becomes available and returns to the table fallback', () => {
+    const h = setup([{ ...own, canDelete: false, deleteReason: 'locales' }])
+    // jsdom has no layout; the standard table fallback requires visible boxes.
+    const rootBox = vi
+      .spyOn(h.el('hilos-viewport-table')!, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 800, 300))
+    const searchBox = vi
+      .spyOn(h.el('hilos-table-search')!, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 200, 30))
+    h.el('hilos-action-reason')!.focus()
+    h.click('hilos-action-reason')
+    const dialog = h.el('modal')!
+    h.act(() => h.delta(own))
+    expect(h.el('modal')).toBe(dialog)
+    expect(document.activeElement).toBe(dialog)
+    expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      HILOS_I18N_LANGUAGE_DELETE_COPY.reasons.locales,
+    )
+    expect(h.all('hilos-action-reason').every((button) => button.hidden)).toBe(
+      true,
+    )
+    expect(h.all('i18n-languages-delete-reason-qx')).toHaveLength(0)
+    expect(h.el<HTMLButtonElement>('i18n-languages-delete-qx')?.disabled).toBe(
+      false,
+    )
+    h.click('hilos-action-reason-close')
+    expect(h.el('modal')).toBeNull()
+    expect(document.activeElement).toBe(h.el('hilos-table-search'))
+    expect(h.focuses).toEqual([])
+    expect(h.calls).toEqual([])
+    rootBox.mockRestore()
+    searchBox.mockRestore()
+  })
 
   it('shows the live catalog and legend, and adds a catalog language from the main action without another request', async () => {
     const h = setup([])
