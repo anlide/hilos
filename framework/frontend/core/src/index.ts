@@ -2683,3 +2683,8 @@ export {
 export { bindInteractionBlock } from './base/index.js'
 // Status remains behind its section entry; base imports no Status implementation.
 export * from './admin/status/index.js'
+export {
+  createHilosTimeZonePicker,
+  type HilosTimeZonePicker,
+  type HilosTimeZonePickerRow,
+} from './timeZone/timeZonePicker.js'

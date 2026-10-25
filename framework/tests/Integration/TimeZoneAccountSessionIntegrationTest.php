@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -14,14 +15,18 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -42,6 +47,7 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
@@ -52,7 +58,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 /**
  * Personal time zones cross the real owner, sessions library and stamped handshake (HIL-1580).
  *
- * Internal handover asks use the production declarative router and serialize at every agent hop.
+ * Browser actions and internal handover asks use the production router and serialize at every agent hop.
  * Two tokens of one person have three sockets beside a stranger. The fixture host builds identity
  * from the database and uses the real handshake stamps; peer delivery belongs to HIL-1597.
  */
@@ -167,6 +173,156 @@ final class TimeZoneAccountSessionIntegrationTest extends HilosSessionIntegratio
         $this->assertHandshakeTimeZones($this->carryFrames(), $timeZone, [self::TAB_C, 'time-zone-after-write']);
     }
 
+    /**
+     * @param ?string $previous Stored personal choice
+     * @param ?string $timeZone Browser choice, reset or repeat
+     */
+    #[DataProvider('timeZoneWrites')]
+    public function testBrowserChoicesUseOnlyTheLiveSessionAndCompleteAfterTheOwner(?string $previous, ?string $timeZone): void
+    {
+        $this->asPerson(self::PERSON, static fn () => Hilos::$db->users[self::PERSON]->actions->setTimeZone($previous));
+        $this->asPerson(self::STRANGER, static fn () => Hilos::$db->users[self::STRANGER]->actions->setTimeZone('Pacific/Auckland'));
+        $this->carryFrames();
+        $this->submitPick(self::TAB_A, $timeZone, 'browser-pick', [
+            'userId' => self::STRANGER, 'acceptKey' => self::TAB_STRANGER, 'sessionToken' => self::TOKEN_STRANGER,
+        ]);
+        $this->assertStoredTimeZone($previous);
+
+        $frames = $this->carryFrames();
+
+        $asks = $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE);
+        self::assertCount(1, $asks);
+        self::assertInstanceOf(UserTimeZoneWriteSignalData::class, $asks[0]->data->data);
+        $ask = $asks[0]->data->data;
+        self::assertSame(self::PERSON, $ask->userId);
+        self::assertSame($timeZone, $ask->timeZone);
+        self::assertSame(self::TAB_A, $ask->acceptKey);
+        self::assertSame('browser-pick', $ask->requestId);
+        self::assertSame(HilosSignalConstants::HILOS_TIME_ZONE_PICK, $ask->action);
+        self::assertSame(HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE, $ask->replySignal);
+        self::assertNull($ask->successMessage);
+        self::assertCount(1, $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+        self::assertCount(2, $this->framesNamed($frames, HilosSignalConstants::HILOS_SESSION_STATE));
+        $this->assertHandshakeTimeZones($frames, $timeZone);
+        $answers = $this->framesNamed($frames, SignalConstants::ACTION_SUCCESS);
+        self::assertCount(1, $answers);
+        self::assertSame(self::TAB_A, $answers[0]->data->targetAcceptKey);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $answers[0]->data->data);
+        self::assertSame('success', $answers[0]->data->data->getEnvelopeOutcome());
+        self::assertSame('browser-pick', $answers[0]->data->data->getEnvelopeRequestId());
+        self::assertSame(HilosSignalConstants::HILOS_TIME_ZONE_PICK, $answers[0]->data->data->action);
+        self::assertSame('browser-pick', $answers[0]->data->data->requestId);
+        self::assertNull($answers[0]->data->data->message);
+        self::assertNull($answers[0]->data->data->reply);
+        $done = $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE);
+        self::assertCount(1, $done);
+        self::assertNull($done[0]->data->data->error);
+        self::assertEquals($ask, $done[0]->data->data->ask);
+        self::assertLessThan(array_search($answers[0], $frames, true), array_search($done[0], $frames, true));
+        self::assertSame([], $this->framesNamed($frames, SignalConstants::ACTION_ERROR));
+        self::assertSame([], $this->framesNamed($frames, HilosSignalConstants::HILOS_SESSION_TOASTS));
+        $this->assertStoredTimeZone($timeZone);
+        Database::sql('SELECT `time_zone` FROM `hilos_user` WHERE `id` = ?', [self::STRANGER]);
+        self::assertSame('Pacific/Auckland', Database::row()['time_zone']);
+        foreach ($frames as $signal) {
+            if ($signal->data instanceof WebSocketSignalData) {
+                self::assertNotSame(self::TAB_STRANGER, $signal->data->targetAcceptKey);
+            }
+        }
+    }
+
+    public function testAnUnknownBrowserChoiceReturnsTheOwnersCorrelatedFailureWithoutRestating(): void
+    {
+        $this->asPerson(self::PERSON, static fn () => Hilos::$db->users[self::PERSON]->actions->setTimeZone('Europe/Warsaw'));
+        $this->submitPick(self::TAB_C, 'Unknown/Zone', 'bad-zone');
+        $this->assertStoredTimeZone('Europe/Warsaw');
+
+        $frames = $this->carryFrames();
+
+        $done = $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE);
+        self::assertCount(1, $done);
+        self::assertSame('Choose a valid IANA time zone or Automatic.', $done[0]->data->data->error);
+        $failures = $this->framesNamed($frames, SignalConstants::ACTION_ERROR);
+        self::assertCount(1, $failures);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $failures[0]->data->data);
+        self::assertSame('fail', $failures[0]->data->data->getEnvelopeOutcome());
+        self::assertSame('bad-zone', $failures[0]->data->data->getEnvelopeRequestId());
+        self::assertSame(self::TAB_C, $failures[0]->data->targetAcceptKey);
+        self::assertSame(HilosSignalConstants::HILOS_TIME_ZONE_PICK, $failures[0]->data->data->action);
+        self::assertSame('bad-zone', $failures[0]->data->data->requestId);
+        self::assertSame('Choose a valid IANA time zone or Automatic.', $failures[0]->data->data->reason);
+        self::assertLessThan(array_search($failures[0], $frames, true), array_search($done[0], $frames, true));
+        self::assertSame([], $this->framesNamed($frames, SignalConstants::ACTION_SUCCESS));
+        self::assertSame([], $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+        self::assertSame([], $this->handshakeFrames($frames));
+        $this->assertStoredTimeZone('Europe/Warsaw');
+    }
+
+    /** @return iterable<string, array{string}> Session and connection defects */
+    public static function refusedSessions(): iterable
+    {
+        foreach (['anonymous', 'signed-out-session', 'expired', 'deleted', 'impersonated', 'changed-session-person',
+            'changed-connection-person', 'no-session-token', 'closed'] as $kind
+        ) {
+            yield $kind => [$kind];
+        }
+    }
+
+    /** @param string $kind Session or connection defect */
+    #[DataProvider('refusedSessions')]
+    public function testBrowserChoicesRequireTheLiveOrdinarySessionOfTheConnection(string $kind): void
+    {
+        switch ($kind) {
+            case 'anonymous':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->unbindUser();
+                ExecutionContext::run(new ExecutionFrame(agentId: $this->host->getId()),
+                    static fn () => Hilos::$rt->timeZoneConnections[self::TAB_A]->actions->bindUser(null));
+                break;
+            case 'signed-out-session':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->unbindUser();
+                break;
+            case 'expired':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->expire();
+                break;
+            case 'deleted':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->delete();
+                break;
+            case 'impersonated':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->setImpersonator(self::STRANGER);
+                break;
+            case 'changed-session-person':
+                Hilos::$db->sessions->findByToken(self::TOKEN_A)->actions->bindUser(self::STRANGER);
+                break;
+            case 'changed-connection-person':
+                ExecutionContext::run(new ExecutionFrame(agentId: $this->host->getId()),
+                    static fn () => Hilos::$rt->timeZoneConnections[self::TAB_A]->actions->bindUser(self::STRANGER));
+                break;
+            case 'no-session-token':
+                ExecutionContext::run(new ExecutionFrame(agentId: $this->host->getId()), static function (): void {
+                    Hilos::$rt->timeZoneConnections[self::TAB_A]->actions->unregister();
+                    Hilos::$rt->timeZoneConnections->actions->register(self::TAB_A, self::PERSON);
+                });
+                break;
+            case 'closed':
+                ExecutionContext::run(new ExecutionFrame(agentId: $this->host->getId()),
+                    static fn () => Hilos::$rt->timeZoneConnections[self::TAB_A]->actions->unregister());
+                break;
+        }
+        $this->carryFrames();
+
+        try {
+            $this->submitPick(self::TAB_A, 'Asia/Tokyo', 'refused');
+            self::fail('A time zone choice requires the live ordinary session of this accept key');
+        } catch (ValidationException $refusal) {
+            self::assertSame('Time zone choice requires your current signed-in session', $refusal->getMessage());
+        }
+
+        self::assertSame([], $this->carryFrames(), 'A refusal must neither ask the writer nor announce success');
+        $this->assertStoredTimeZone(null);
+        Database::sql('SELECT `time_zone` FROM `hilos_user` WHERE `id` = ?', [self::STRANGER]);
+        self::assertNull(Database::row()['time_zone']);
+    }
+
     public function testQueuedWritesLeaveTheLastProcessedChoiceInEveryRestatement(): void
     {
         $this->submitWrite('Europe/Warsaw');
@@ -241,6 +397,7 @@ final class TimeZoneAccountSessionIntegrationTest extends HilosSessionIntegratio
         Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$rt->configure();
         Hilos::$rt->bindStateCollectionNames();
+        Hilos::$rt->declareProcessWideReads();
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         $this->users = new TimeZoneAccountSessionTestUsersLibrary();
@@ -358,6 +515,35 @@ final class TimeZoneAccountSessionIntegrationTest extends HilosSessionIntegratio
         }
 
         return $handshakes;
+    }
+
+    /**
+     * @param string $acceptKey Initiating socket
+     * @param ?string $timeZone Browser choice or Automatic
+     * @param string $requestId Browser correlation key
+     * @param array<string, mixed> $extra Untrusted payload fields
+     */
+    private function submitPick(string $acceptKey, ?string $timeZone, string $requestId, array $extra = []): void
+    {
+        $action = WebSocketActionSignalDTO::fromArray(new WebSocketActionSignalDTO(
+            $acceptKey, HilosSignalConstants::HILOS_TIME_ZONE_PICK, [TimeZonePickActionDTO::timeZone => $timeZone, ...$extra], $requestId,
+        )->toArray());
+        $signal = new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($action->action), $action);
+        $destination = $this->agentDestination($signal);
+        self::assertSame($this->users::AGENT_TYPE, $destination->agentType);
+        $dto = Hilos::$sr->createAgentActionPayloadDTO($action->action, $action->data, $destination->agentType);
+        self::assertInstanceOf(TimeZonePickActionDTO::class, $dto);
+        self::assertSame([TimeZonePickActionDTO::timeZone => $timeZone], $dto->toArray());
+        ExecutionContext::run(new ExecutionFrame(agentId: $this->users->getId(), acceptKey: $acceptKey), function () use ($action, $dto): void {
+            $this->users->beginActionDispatch($action->requestId);
+            try {
+                self::assertNull($this->users->onAgentAction($action->acceptKey, $action->action, $dto));
+                self::assertTrue($this->users->actionReplyDeferred(), 'The owner must answer before the browser receives success');
+            } finally {
+                $this->users->endActionDispatch();
+            }
+        });
     }
 
     /** @param ?string $timeZone Internal handover choice, without a browser action */

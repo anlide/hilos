@@ -24,6 +24,7 @@ import * as base from '../../src/base/index.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
+import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
 const sourceRoot = join(packageRoot, 'src')
@@ -113,6 +114,9 @@ const publicLegalTypes = [
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
+/** The profile picker is one shared base/root implementation and type owner. */
+const timeZonePickerValues = ['createHilosTimeZonePicker']
+const timeZonePickerTypes = ['HilosTimeZonePicker', 'HilosTimeZonePickerRow']
 /** The overview's new API belongs only to the lazy Analytics section. */
 const analyticsOverviewValues = [
   'ANALYTICS_OVERVIEW_SECTION',
@@ -232,6 +236,7 @@ const expectedValues = [
   ...pageHeadValues,
   ...publicLegalValues,
   ...momentValues,
+  ...timeZonePickerValues,
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
@@ -382,6 +387,7 @@ describe('core public entries', () => {
       ...pageHeadValues,
       ...publicLegalValues,
       ...momentValues,
+      ...timeZonePickerValues,
       ...tableTextValues,
       ...tableFocusReturnValues,
       ...moderationValues,
@@ -395,6 +401,13 @@ describe('core public entries', () => {
     }
     expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
     expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
+    expect(base.createHilosTimeZonePicker).toBe(
+      timeZonePicker.createHilosTimeZonePicker,
+    )
+    for (const api of [core, base]) {
+      expect(api).not.toHaveProperty('formatTimeZoneChoiceMoment')
+      expect(api).not.toHaveProperty('formatSnapshotMoment')
+    }
     expect(base.captureTableFocusReturnTarget).toBe(
       tableFocusReturn.captureTableFocusReturnTarget,
     )
@@ -522,6 +535,7 @@ describe('core public entries', () => {
         ...pageHeadTypes,
         ...publicLegalTypes,
         ...momentTypes,
+        ...timeZonePickerTypes,
         ...tableTextTypes,
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
@@ -534,6 +548,8 @@ describe('core public entries', () => {
       ...publicLegalTypes,
       ...momentTypes,
       ...momentValues,
+      ...timeZonePickerTypes,
+      ...timeZonePickerValues,
       ...tableTextTypes,
       ...tableTextValues,
       ...tableFocusReturnTypes,
@@ -547,6 +563,15 @@ describe('core public entries', () => {
     const momentExports = exportsOf('format/moment.ts')
     for (const name of [...momentValues, ...momentTypes]) {
       expect(root.get(name), name).toBe(momentExports.get(name))
+    }
+    const pickerExports = exportsOf('timeZone/timeZonePicker.ts')
+    for (const name of [...timeZonePickerValues, ...timeZonePickerTypes]) {
+      expect(root.get(name), name).toBe(pickerExports.get(name))
+    }
+    for (const name of ['formatTimeZoneChoiceMoment', 'formatSnapshotMoment']) {
+      expect(momentExports.has(name), name).toBe(true)
+      expect(root.has(name), name).toBe(false)
+      expect(baseExports.has(name), name).toBe(false)
     }
     const focusReturnExports = exportsOf('dom/tableFocusReturn.ts')
     for (const name of [...tableFocusReturnValues, ...tableFocusReturnTypes]) {
@@ -606,6 +631,7 @@ describe('core public entries', () => {
     ])
     expect(closure).toContain('connection/restoreProgress.ts')
     expect(closure).toContain('format/moment.ts')
+    expect(closure).toContain('timeZone/timeZonePicker.ts')
     expect(closure).toContain('table/tableTextExpansion.ts')
     expect(runtimeClosure('table/tableTextExpansion.ts')).toEqual([
       'state/signal.ts',
@@ -642,6 +668,7 @@ describe('core public entries', () => {
     'dom/tableFocusReturn.ts',
     'format/moment.ts',
     'timeZone/timeZoneState.ts',
+    'timeZone/timeZonePicker.ts',
     'subscription/PageSubscription.ts',
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',

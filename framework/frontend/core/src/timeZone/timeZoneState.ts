@@ -61,8 +61,8 @@ export const hilosTimeZone: ReadonlySignal<string> = computedSignal(() => {
  * this engine cannot use.
  *
  * The profile's Time zone row (HilosProfileRootStore.timeZone) reads this to
- * project the account row; the Time zone window (HIL-1593) will read it as the
- * initial selection.
+ * project the account row; createHilosTimeZonePicker reads it for the live
+ * confirmed selection.
  */
 export const hilosOwnTimeZone: ReadonlySignal<string | null> = computedSignal(
   () => snapshotSignal.get().ownTimeZone,
@@ -72,8 +72,8 @@ export const hilosOwnTimeZone: ReadonlySignal<string | null> = computedSignal(
  * The zone this browser reported at its latest read, or null when it cannot say.
  *
  * The profile's Time zone row (HilosProfileRootStore.timeZone) reads this when
- * projecting the Automatic label; the Time zone window (HIL-1593) will read it
- * for the automatic option.
+ * projecting the Automatic label; createHilosTimeZonePicker reads it for the
+ * automatic option.
  */
 export const hilosBrowserTimeZone: ReadonlySignal<string | null> =
   computedSignal(() => snapshotSignal.get().browserTimeZone)

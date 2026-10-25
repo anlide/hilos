@@ -40,6 +40,7 @@ use Hilos\Auth\Library\Command\StepUpCommands;
 use Hilos\Auth\Library\Command\UserRenameCommands;
 use Hilos\Auth\Library\DTO\ThemeAdoptActionDTO;
 use Hilos\Auth\Library\DTO\ThemePickActionDTO;
+use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -231,6 +232,7 @@ use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
@@ -440,6 +442,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
         HilosSignalConstants::HILOS_THEME_ADOPT => ThemeAdoptActionDTO::class,
         HilosSignalConstants::HILOS_THEME_PICK => ThemePickActionDTO::class,
+        HilosSignalConstants::HILOS_TIME_ZONE_PICK => TimeZonePickActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_RECONSENT => LegalReconsentActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_ACCEPT => LegalAcceptActionDTO::class,
@@ -605,6 +608,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
         HilosSignalConstants::HILOS_THEME_ADOPT,
         HilosSignalConstants::HILOS_THEME_PICK,
+        HilosSignalConstants::HILOS_TIME_ZONE_PICK,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
@@ -702,6 +706,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** Refusal of a theme choice without the caller's current signed-in session. */
     private const string THEME_PICK_SESSION_REFUSAL = 'Theme choice requires your current signed-in session';
+
+    /** Refusal of a time zone choice without the caller's current signed-in session. */
+    private const string TIME_ZONE_PICK_SESSION_REFUSAL = 'Time zone choice requires your current signed-in session';
 
     /**
      * Action name of the dispatch running right now, or null outside one.
@@ -2379,6 +2386,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return null;
 
+            case HilosSignalConstants::HILOS_TIME_ZONE_PICK:
+                if (!$dto instanceof TimeZonePickActionDTO) {
+                    throw new InvalidActionPayloadException($action, TimeZonePickActionDTO::class, $dto);
+                }
+                $this->pickTimeZone($acceptKey, $dto);
+
+                return null;
+
             case HilosSignalConstants::HILOS_DETECT_IDENTIFIER:
                 if (!$dto instanceof DetectIdentifierActionDTO) {
                     throw new InvalidActionPayloadException($action, DetectIdentifierActionDTO::class, $dto);
@@ -3211,6 +3226,40 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             action: HilosSignalConstants::HILOS_THEME_PICK,
             successMessage: null,
             adoptOnly: false,
+        ));
+    }
+
+    /**
+     * @param string $acceptKey Live connection submitting an explicit choice
+     * @param TimeZonePickActionDTO $dto Time zone choice, with no client-supplied identity
+     * @throws ValidationException When the connection has no ordinary current session, or the person is gone or merged
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a loaded row has the wrong type, or the ask cannot be queued
+     * @throws DatabaseException When the session, person or merge cannot be read
+     */
+    private function pickTimeZone(string $acceptKey, TimeZonePickActionDTO $dto): void
+    {
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        if ($connection?->sessionToken === null || $connection->userId === null) {
+            throw new ValidationException(self::TIME_ZONE_PICK_SESSION_REFUSAL);
+        }
+
+        $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
+        if ($session?->userId === null || $session->userId !== $connection->userId
+            || $session->impersonatorUserId !== null
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())
+        ) {
+            throw new ValidationException(self::TIME_ZONE_PICK_SESSION_REFUSAL);
+        }
+
+        $this->askPersonAgent($session->userId, HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE, new UserTimeZoneWriteSignalData(
+            userId: $session->userId,
+            timeZone: $dto->timeZone,
+            replySignal: HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: HilosSignalConstants::HILOS_TIME_ZONE_PICK,
+            successMessage: null,
         ));
     }
 

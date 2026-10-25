@@ -34,6 +34,7 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
@@ -1684,6 +1685,13 @@ final class HilosSignalConstants
      * Requires an ordinary current session; its person owns the write even when a previous choice exists.
      */
     public const string HILOS_THEME_PICK = 'hilos_theme_pick';
+
+    /**
+     * Client → users library: save the current signed-in person's time zone, or reset to Automatic.
+     *
+     * @see TimeZonePickActionDTO Browser choice without identity fields
+     */
+    public const string HILOS_TIME_ZONE_PICK = 'hilos_time_zone_pick';
 
     /** Client → sessions library: end one other session owned by the acting user. */
     public const string HILOS_SESSION_END = 'hilos_session_end';

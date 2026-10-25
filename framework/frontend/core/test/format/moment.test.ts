@@ -4,6 +4,7 @@ import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import {
   formatMoment,
   formatSnapshotMoment,
+  formatTimeZoneChoiceMoment,
   type MomentFormatOptions,
 } from '../../src/format/moment.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
@@ -64,6 +65,73 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   applyServerTime(Date.now())
+})
+
+describe('Time zone choice preview', () => {
+  it('reads explicit zones without changing the live reader or correcting the moment', () => {
+    connection.choose('Europe/Warsaw')
+    applyServerTime(Date.now() + 300000)
+    const moment = '2026-01-01T00:00:00Z'
+    expect(formatTimeZoneChoiceMoment(moment, 'UTC')).toBe('00:00')
+    expect(
+      formatTimeZoneChoiceMoment(Date.parse(moment), 'Asia/Kathmandu'),
+    ).toBe('05:45')
+    expect(formatTimeZoneChoiceMoment(moment, 'America/New_York')).toBe('19:00')
+    expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
+    expect(formatMoment(moment, explicit)).toBe('01/01/2026, 01:00:00')
+  })
+
+  it.each([
+    ['2026-03-08T06:59:59Z', '01:59'],
+    ['2026-03-08T07:00:00Z', '03:00'],
+    ['2026-11-01T05:59:59Z', '01:59'],
+    ['2026-11-01T06:00:00Z', '01:00'],
+  ])('keeps New York DST at %s', (moment, expected) => {
+    expect(formatTimeZoneChoiceMoment(moment, 'America/New_York')).toBe(
+      expected,
+    )
+  })
+
+  it.each(['Unknown/Zone', '+02:00', '', ' UTC '])(
+    'refuses an unusable explicit zone %s',
+    (zone) => {
+      expect(formatTimeZoneChoiceMoment(0, zone)).toBeNull()
+    },
+  )
+
+  it.each([
+    NaN,
+    Infinity,
+    8.64e15 + 1,
+    '2026-02-30T00:00:00Z',
+    '2026-01-01',
+    '2026-01-01T00:00:00+01:00',
+  ])('uses the shared strict parser for %s', (moment) => {
+    expect(formatTimeZoneChoiceMoment(moment, 'UTC')).toBeNull()
+  })
+
+  it('returns null without Intl or DateTimeFormat', () => {
+    vi.stubGlobal('Intl', undefined)
+    expect(formatTimeZoneChoiceMoment(0, 'UTC')).toBeNull()
+    vi.stubGlobal('Intl', {})
+    expect(formatTimeZoneChoiceMoment(0, 'UTC')).toBeNull()
+  })
+
+  it('returns null when Intl cannot format after accepting the zone', () => {
+    const prototype = Intl.DateTimeFormat.prototype
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'format')!
+    Object.defineProperty(prototype, 'format', {
+      configurable: true,
+      get: () => () => {
+        throw new RangeError('unavailable formatter')
+      },
+    })
+    try {
+      expect(formatTimeZoneChoiceMoment(0, 'UTC')).toBeNull()
+    } finally {
+      Object.defineProperty(prototype, 'format', descriptor)
+    }
+  })
 })
 
 describe('absolute moments', () => {

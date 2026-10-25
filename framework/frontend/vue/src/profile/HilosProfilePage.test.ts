@@ -11,9 +11,11 @@ import {
   bindThemeState,
   bindTimeZoneState,
   createSignal,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_IDENTITIES_LIST,
   HILOS_PROFILE_ROOT_COPY,
   HilosPages,
+  ingest,
   resolveHilosProfileSignInMethods,
   ScopeManager,
   setHilosThemePick,
@@ -33,6 +35,7 @@ import { nextTick } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfilePage from './HilosProfilePage.vue'
+import HilosProfileTimeZone from './HilosProfileTimeZone.vue'
 
 const themeActions = new ActionLifecycle({
   sendAction: () => true,
@@ -543,7 +546,7 @@ describe('HilosProfilePage', () => {
     )
   })
 
-  it('renders the Time zone row with label, bi-clock, and no Change button or modal before Theme', () => {
+  it('renders Time zone before Theme and opens its real picker with Change', async () => {
     mockBrowserTimeZone('Europe/Warsaw')
     const { wrapper } = accountThemePage()
 
@@ -571,13 +574,33 @@ describe('HilosProfilePage', () => {
     expect(row.get('[data-id="profile-time-zone"]').text()).toBe(
       'Europe/Warsaw · automatic',
     )
-    expect(row.find('button').exists()).toBe(false)
-    expect(wrapper.find('[data-id="profile-time-zone-change"]').exists()).toBe(
-      false,
-    )
+    const change = row.get('[data-id="profile-time-zone-change"]')
+    expect(change.text()).toBe(HILOS_PROFILE_ROOT_COPY.change)
+    expect((change.element as HTMLButtonElement).disabled).toBe(false)
     expect(
       document.querySelector('[data-id="profile-time-zone-modal"]'),
     ).toBeNull()
+
+    ;(change.element as HTMLButtonElement).focus()
+    await change.trigger('click')
+    await nextTick()
+    const modal = document.querySelector('[data-id="profile-time-zone-modal"]')
+    expect(modal).not.toBeNull()
+    expect(
+      modal?.querySelector('[data-id="profile-time-zone-automatic"]')
+        ?.textContent,
+    ).toContain('Europe/Warsaw — from this browser')
+    expect(document.activeElement).toBe(
+      modal?.querySelector('[data-id="profile-time-zone-search"]'),
+    )
+    document
+      .querySelector<HTMLButtonElement>('[data-id="profile-time-zone-close"]')
+      ?.click()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).toBeNull()
+    expect(document.activeElement).toBe(change.element)
 
     const detailRows = wrapper
       .find('[data-id="profile-detail"]')
@@ -591,10 +614,14 @@ describe('HilosProfilePage', () => {
     expect(timeZoneIndex).toBe(themeIndex - 1)
   })
 
-  it('keeps the Time zone row when theme switching is off', () => {
+  it('keeps Time zone Change and the real picker available when theme switching is off', async () => {
     mockBrowserTimeZone('Europe/Warsaw')
-    bindTheme({ switchingEnabled: false, defaultTheme: 'system' }, null)
-    const wrapper = mountPage(nameOnly())
+    const { wrapper, connection } = accountThemePage()
+    connection.emit('hilos_theme_settings', {
+      switchingEnabled: false,
+      defaultTheme: 'system',
+    })
+    await nextTick()
 
     expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(false)
     const row = wrapper.find('[data-id="profile-time-zone-row"]')
@@ -602,7 +629,59 @@ describe('HilosProfilePage', () => {
     expect(row.find('[data-id="profile-time-zone"]').text()).toBe(
       'Europe/Warsaw · automatic',
     )
+    await row.get('[data-id="profile-time-zone-change"]').trigger('click')
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).not.toBeNull()
   })
+
+  it.each(['signout', 'impersonation'] as const)(
+    'closes the time zone picker on %s, guards stale open and stays closed when admission returns',
+    async (change) => {
+      const { wrapper, connection, scopes, dispatch } = accountThemePage()
+      const opener = wrapper.get('[data-id="profile-time-zone-change"]')
+      await opener.trigger('click')
+      expect(
+        document.querySelector('[data-id="profile-time-zone-modal"]'),
+      ).not.toBeNull()
+      const staleChoice = document.querySelector<HTMLButtonElement>(
+        '[data-id="profile-time-zone-automatic"]',
+      )
+      if (change === 'signout')
+        connection.emit('handshake_response', {
+          entities: { currentUser: null },
+        })
+      else scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 })
+      ;(opener.element as HTMLButtonElement).click()
+      staleChoice?.click()
+      await nextTick()
+      expect(
+        document.querySelector('[data-id="profile-time-zone-modal"]'),
+      ).toBeNull()
+      expect(dispatch).not.toHaveBeenCalled()
+      if (change === 'impersonation') {
+        expect((opener.element as HTMLButtonElement).disabled).toBe(true)
+        expect(opener.attributes('aria-describedby')).toBe(
+          HILOS_IMPERSONATION_STRIP_TEXT_ID,
+        )
+      } else
+        expect(wrapper.find('[data-id="profile-view"]').exists()).toBe(false)
+      scopes.session.data.set('impersonatedBy', null)
+      connection.emit('handshake_response', {
+        entities: { currentUser: { id: 1, name: 'Ann Lee', timeZone: null } },
+      })
+      await nextTick()
+      expect(
+        (
+          wrapper.get('[data-id="profile-time-zone-change"]')
+            .element as HTMLButtonElement
+        ).disabled,
+      ).toBe(false)
+      expect(
+        document.querySelector('[data-id="profile-time-zone-modal"]'),
+      ).toBeNull()
+    },
+  )
 
   it('updates own time zone and resets to browser via session response without remounting', async () => {
     mockBrowserTimeZone('Europe/Warsaw')
@@ -714,6 +793,49 @@ describe('HilosProfilePage', () => {
         ?.value,
     ).toBe('Ann Draft')
     expect(wrapper.get('[data-id="profile-name"]').text()).toBe('Ann Lee')
+  })
+
+  it('settles the neighboring theme window without evaluating the closed picker during a catalog replacement', async () => {
+    const { wrapper, connection, scopes } = accountThemePage()
+    const picker = wrapper.getComponent(HilosProfileTimeZone).props('picker')
+    const readRows = vi.spyOn(picker.rows, 'get')
+    const readAutomatic = vi.spyOn(picker.automatic, 'get')
+    await wrapper.get('[data-id="profile-theme-change"]').trigger('click')
+    const choice = document.querySelector<HTMLButtonElement>(
+      '[data-id="profile-theme-option-dark"]',
+    )
+    expect(choice).not.toBeNull()
+    choice?.click()
+    const page = scopes.openPage(HilosPages.PROFILE)
+    ingest(page, {
+      lists: {
+        profileTimeZones: {
+          cleared: true,
+          items: ['UTC', 'Europe/Warsaw', 'Asia/Tokyo'].map((timeZone) => ({
+            itemKey: timeZone,
+            slots: { timeZone },
+          })),
+        },
+      },
+    })
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: {
+          id: 1,
+          name: 'Ann Lee',
+          themePick: 'dark',
+          themePickInitialized: true,
+        },
+      },
+      data: {
+        themeSettings: { switchingEnabled: true, defaultTheme: 'system' },
+      },
+    })
+    await flushPromises()
+    expect(document.querySelector('[data-id="profile-theme-modal"]')).toBeNull()
+    expect(wrapper.get('[data-id="profile-theme"]').text()).toBe('Dark')
+    expect(readRows).not.toHaveBeenCalled()
+    expect(readAutomatic).not.toHaveBeenCalled()
   })
 
   it('keeps the placeholder and draws no Time zone row for a guest or while awaiting the name', () => {

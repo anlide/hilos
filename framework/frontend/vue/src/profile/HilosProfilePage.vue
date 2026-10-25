@@ -6,9 +6,11 @@ import {
   createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
+  createHilosTimeZonePicker,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosChildLinks,
   hilosImpersonation,
+  hilosSignedIn,
   HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
   HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
@@ -29,6 +31,7 @@ import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
 import HilosProfileRename from './HilosProfileRename.vue'
 import HilosProfilePhoto from './HilosProfilePhoto.vue'
 import HilosProfileTheme from './HilosProfileTheme.vue'
+import HilosProfileTimeZone from './HilosProfileTimeZone.vue'
 
 const props = defineProps<{
   context: HilosProfilePageContext
@@ -60,6 +63,8 @@ const theme = useSignal(root.theme)
 const timeZone = useSignal(root.timeZone)
 const impersonation = useSignal(hilosImpersonation)
 const themeOpen = ref(false)
+const timeZoneOpen = ref(false)
+const timeZonePicker = createHilosTimeZonePicker(props.context)
 const name = useSignal(props.binding.name)
 const rename =
   props.binding.rename === null
@@ -83,7 +88,14 @@ onUnmounted(() => {
   rename?.dispose()
   email.dispose()
   photoFlow.dispose()
+  timeZonePicker.dispose()
 })
+
+function openTimeZone(): void {
+  if (hilosSignedIn.get() && hilosImpersonation.get() === null) {
+    timeZoneOpen.value = true
+  }
+}
 </script>
 
 <template>
@@ -176,6 +188,18 @@ onUnmounted(() => {
             {{ timeZone }}
           </div>
         </div>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          :disabled="impersonation !== null"
+          :aria-describedby="
+            impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+          "
+          data-id="profile-time-zone-change"
+          @click="openTimeZone"
+        >
+          {{ COPY.change }}
+        </button>
       </div>
       <div
         v-if="theme !== null"
@@ -256,6 +280,7 @@ onUnmounted(() => {
     <HilosProfilePhoto v-if="photoEnabled" :flow="photoFlow" />
     <HilosProfileEmailChange :flow="email" />
     <HilosProfileTheme v-model="themeOpen" />
+    <HilosProfileTimeZone v-model="timeZoneOpen" :picker="timeZonePicker" />
   </section>
   <!-- Nobody signed in, or the session is not known yet: a placeholder, never
   page content. The shell's auth gate mounts the sign-in surface in place once

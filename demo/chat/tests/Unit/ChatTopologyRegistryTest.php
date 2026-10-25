@@ -164,6 +164,7 @@ use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\ThemeAdoptActionDTO;
 use Hilos\Auth\Library\DTO\ThemePickActionDTO;
+use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
 use Hilos\Auth\Library\DTO\LegalAcceptActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
 use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
@@ -1989,6 +1990,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_THEME_ADOPT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_THEME_PICK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_TIME_ZONE_PICK => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2095,6 +2097,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
             HilosSignalConstants::HILOS_THEME_ADOPT => ThemeAdoptActionDTO::class,
             HilosSignalConstants::HILOS_THEME_PICK => ThemePickActionDTO::class,
+            HilosSignalConstants::HILOS_TIME_ZONE_PICK => TimeZonePickActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => LegalReconsentActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT => LegalAcceptActionDTO::class,
@@ -2395,6 +2398,13 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (Hilos::TABLES as $table => $tableClass) {
             $this->assertInstanceOf($tableClass, $context->get($table));
         }
+    }
+
+    public function testTimeZoneChoiceRequiresAuthentication(): void
+    {
+        $agentClass = AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY]);
+        self::assertNotNull($agentClass);
+        self::assertContains(HilosSignalConstants::HILOS_TIME_ZONE_PICK, $agentClass::AUTH_ACTIONS);
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

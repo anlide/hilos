@@ -119,7 +119,29 @@ export function formatSnapshotMoment(
   return formatInTimeZone(moment, timeZone, options)
 }
 
-/** Shared strict parser and presentation engine for live and snapshot entries. */
+/**
+ * Internal HH:mm preview of a Time zone choice, independent of the live reader.
+ * Deliberately absent from the base and root package barrels.
+ *
+ * @param moment Epoch milliseconds or a complete ISO UTC timestamp ending in Z.
+ * @param timeZone The exact named zone whose clock the picker previews.
+ */
+export function formatTimeZoneChoiceMoment(
+  moment: number | string,
+  timeZone: string,
+): string | null {
+  if (usableTimeZone(timeZone) === null) return null
+  try {
+    return formatInTimeZone(moment, timeZone, {
+      locale: 'en-GB',
+      format: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+    })
+  } catch {
+    return null
+  }
+}
+
+/** Shared strict parser and presentation engine for live, snapshot and picker entries. */
 function formatInTimeZone(
   moment: number | string,
   timeZone: string,

@@ -326,6 +326,13 @@ export {
 } from './theme.js'
 export { watchThemeFrames, type ThemeFrameLog } from './themeFrames.js'
 export {
+  chooseProfileTimeZone,
+  expectProfileTimeZone,
+  expectProfileTimeZoneCatalog,
+  expectProfileTimeZoneSearch,
+  openProfileTimeZone,
+} from './timeZone.js'
+export {
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,
   THEME_SWITCHING_KEY,

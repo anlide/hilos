@@ -28,6 +28,7 @@ use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalStandingResolver;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Profile\HilosProfileTimeZones;
 
 /**
  * The framework current-user profile root, served by the project's agent.
@@ -106,7 +107,7 @@ abstract class AbstractHilosProfilePage extends AbstractPage
                 ->toArray(),
             AccountDeletionStateProjector::SECTION => AccountDeletionStateProjector::stateFor($userId)->toArray(),
             AbstractHilosProfileSecurityPage::SECOND_FACTOR_SECTION => SecondFactorStateProjector::stateFor($userId)->toArray(),
-        ]);
+        ], lists: [HilosProfileTimeZones::LIST => HilosProfileTimeZones::toArray()]);
     }
 
     /**

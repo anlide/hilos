@@ -153,6 +153,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Auth\Library\DTO\ThemePickActionDTO;
+use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
@@ -1042,6 +1043,7 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_THEME_ADOPT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_THEME_PICK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_TIME_ZONE_PICK => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1112,6 +1114,8 @@ final class TasksTopologyRegistryTest extends TestCase
         ], Hilos::getAgentActionRoutes());
         $this->assertSame(ThemePickActionDTO::class,
             Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_THEME_PICK]);
+        $this->assertSame(TimeZonePickActionDTO::class,
+            Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_TIME_ZONE_PICK]);
         $this->assertSame(UserThemePickWriteDoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_THEME_PICK_DONE]);
         $this->assertSame(UserTimeZoneWriteSignalData::class,
@@ -1519,6 +1523,13 @@ final class TasksTopologyRegistryTest extends TestCase
             AgentType::HILOS_INDEX,
             Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT],
         );
+    }
+
+    public function testTimeZoneChoiceRequiresAuthentication(): void
+    {
+        $agentClass = AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY]);
+        self::assertNotNull($agentClass);
+        self::assertContains(HilosSignalConstants::HILOS_TIME_ZONE_PICK, $agentClass::AUTH_ACTIONS);
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

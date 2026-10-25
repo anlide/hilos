@@ -1472,3 +1472,8 @@ export {
 } from '../connection/restoreProgress.js'
 
 export { bindInteractionBlock } from '../dom/interactionBlock.js'
+export {
+  createHilosTimeZonePicker,
+  type HilosTimeZonePicker,
+  type HilosTimeZonePickerRow,
+} from '../timeZone/timeZonePicker.js'

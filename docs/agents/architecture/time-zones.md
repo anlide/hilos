@@ -166,7 +166,7 @@ The profile's Time zone row reads `hilosOwnTimeZone` and `hilosBrowserTimeZone`:
 it shows the account's choice when set, or the browser's zone marked as
 automatic (`<zone> · automatic`), falling back to the project zone and
 ultimately UTC when the browser supplies none. The selection window reads them
-as well (not in the code yet — HIL-1593).
+as well.
 
 **Automatic** means the person has no choice of their own, so the current
 browser supplies the zone; it is not a zone name. The nullable account column
@@ -192,9 +192,9 @@ carries the stored value as
 [HandshakeResponseSignalData](../../../framework/backend/Socket/WebSocket/DTO/HandshakeResponseSignalData.php);
 a guest has `currentUser: null`, and an older payload without `timeZone` reads
 as null. This value is on `currentUser`, not `impersonatedBy` or `data`. The
-core applies it as the person's own zone, as described above; the window where a
-person chooses a zone is not part of that mechanism.
-(not in the code yet — HIL-1593)
+core applies it as the person's own zone, as described above. The profile's
+choice window is described in
+[Profile Time Zone Choice And Preview](#profile-time-zone-choice-and-preview).
 
 ### Backup History Period
 
@@ -505,6 +505,61 @@ returns `null`. An unavailable `Intl.DateTimeFormat` also returns `null`; if
 `Intl.RelativeTimeFormat` is unavailable, `calendar` returns the ordinary date
 instead. Errors in the caller's `locale` or `format` options remain visible.
 Callers keep their own fallback text when the formatter returns `null`.
+
+### Profile Time Zone Choice And Preview
+
+The signed-in profile's ordinary `page_response` carries a cleared
+`data.payload.lists.profileTimeZones` snapshot.
+[`AbstractHilosProfilePage`](../../../framework/backend/Pages/AbstractHilosProfilePage.php)
+adds [`HilosProfileTimeZones`](../../../framework/backend/Pages/Profile/HilosProfileTimeZones.php),
+which sorts and deduplicates `DateTimeZone::ALL` plus UTC into scalar `itemKey`
+and `slots.timeZone` rows. Core reads the normalized list through
+`context.scopes.pageListSignal('profileTimeZones')`; it adds no catalog request,
+companion signal, separate subscription or DB/RT object. It unions in the
+confirmed account zone so an alias already saved but absent from an older
+catalog remains selectable. The catalog does not fall back to a generated
+`Intl` list. The writer continues to validate exact `ALL_WITH_BC` identifiers
+as described above.
+
+The profile action [`hilos_time_zone_pick`](../../../framework/backend/Constants/HilosSignalConstants.php)
+carries only the required `timeZone` string or `null` in
+[`TimeZonePickActionDTO`](../../../framework/backend/Auth/Library/DTO/TimeZonePickActionDTO.php);
+`null` means Automatic. The [users library](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
+admits a live ordinary session only when its user matches the connection and it
+is not impersonated, then hands the choice to the existing person-owned writer
+and completes it only from the correlated done response. It reports no early
+success or new fan-out; the existing session echo supplies the selected mark
+across tabs.
+
+Core's [`createHilosTimeZonePicker()`](../../../framework/frontend/core/src/timeZone/timeZonePicker.ts)
+and its types are exported from the
+[core root](../../../framework/frontend/core/src/index.ts) and
+[base](../../../framework/frontend/core/src/base/index.ts) barrels. Search
+normalizes a copy, ignoring case and treating underscores as spaces; saved names
+remain exact. Selection follows the confirmed account value. Automatic is a separate
+`null` choice, labeled from the browser zone, then the project zone, then UTC;
+it remains available when the browser cannot preview a clock. A named zone that
+`Intl` cannot format stays listed, displays `—` and `Unavailable in this
+browser`, and is disabled. A missing or old catalog does not produce a
+substitute list. The [Vue profile](../../../framework/frontend/vue/src/profile/HilosProfilePage.vue)
+puts Change before Theme and opens a [search modal](../../../framework/frontend/vue/src/profile/HilosProfileTimeZone.vue)
+with Automatic, All time zones/Found and empty states. A choice applies
+immediately. The modal locks its search, choices and every close path while an
+action is pending. A session echo moves the selected mark without closing the
+modal or clearing the query; a successful reply closes only the opening that
+sent it.
+
+The picker previews every row from one shared `Date.now() + offsetMs()` sample,
+refreshed on minute boundaries, focus and when the document becomes visible
+while its window is open. Its internal
+[`formatTimeZoneChoiceMoment()`](../../../framework/frontend/core/src/format/moment.ts)
+uses the same strict parser and `Intl` engine as the live formatter, with an
+`en-GB` two-digit hour and minute with `hourCycle: 'h23'`, and returns `null`
+for an unusable zone, moment or `Intl` formatter. It is not exported from the
+core root or base barrels: [`formatMoment()`](../../../framework/frontend/core/src/format/moment.ts)
+remains the live reader entry, while `formatSnapshotMoment()` keeps an accepted
+snapshot's captured zone. The preview does not add a public time-zone override
+or shift the moment with `toLocal()`.
 
 ### Analytics Calendar Period Starts
 
