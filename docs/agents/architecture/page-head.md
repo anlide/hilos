@@ -250,12 +250,14 @@ how the shared Vue, React and Angular presentations meet each rule:
 The admin dashboard keeps its section cards, without breadcrumb or tab row.
 A guest on an admin address gets no admin head or identity data. Error surfaces
 have no page head, breadcrumb or row. The shared Vue head preserves these
-boundaries: only `HilosAdminPage` draws it, for an answer that names
-`pageHeadOwner`; `HilosDashboardPage` does not use that shell; and the routed
-outlet's error page or auth surface replaces the whole page view — or, for a
-page that opts in to [Deleted While Open](#deleted-while-open), the shell's own
-error page replaces its head and body. React's and Angular's heads keep the
-same three.
+boundaries: catalog-adopted admin owners draw it through `HilosAdminPage`, for
+an answer that names `pageHeadOwner`; `HilosDashboardPage` directly uses
+`HilosPageHead` with a local presentation from its answered label, lead and
+fixed `bi-gear-fill` icon, without breadcrumb or tab row, keeping its section
+cards; and the routed outlet's error page or auth surface replaces the whole
+page view — or, for a page that opts in to [Deleted While Open](#deleted-while-open),
+the shell's own error page replaces its head and body. React's and Angular's
+heads keep the same three.
 
 ## Deleted While Open
 

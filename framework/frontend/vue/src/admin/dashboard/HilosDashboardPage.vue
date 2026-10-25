@@ -13,9 +13,14 @@ the layout on every visit.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, inject } from 'vue'
-import { hilosDashboardLinks } from '@hilos/core/base'
+import {
+  HilosPages,
+  hilosDashboardLinks,
+  type HilosPageIdentity,
+} from '@hilos/core/base'
 
 import HilosLink from '../../HilosLink.vue'
+import HilosPageHead from '../../HilosPageHead.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -31,22 +36,37 @@ const answered = useSignal(router.dashboardSections)
 const sections = computed(() =>
   hilosDashboardLinks(answered.value ?? [], router.resolvePath),
 )
+
+const headIdentity = computed<HilosPageIdentity | undefined>(() => {
+  const current = identity.value
+  if (!current) {
+    return undefined
+  }
+  return {
+    label: current.label,
+    lead: current.lead,
+    breadcrumb: [],
+    children: [],
+    pageHeadOwner: {
+      page: HilosPages.DASHBOARD,
+      label: current.label,
+      lead: current.lead,
+      icon: 'bi-gear-fill',
+    },
+    pageTabs: [],
+  }
+})
 </script>
 
 <template>
   <section data-id="dashboard-view">
-    <div class="d-flex flex-column gap-1 mb-4">
-      <template v-if="identity">
-        <h1 class="h4 mb-0" data-id="dashboard-title">{{ identity.label }}</h1>
-        <p v-if="identity.lead" class="mb-0 text-body-secondary">
-          {{ identity.lead }}
-        </p>
-      </template>
-      <div v-else class="placeholder-glow" data-id="dashboard-title-skeleton">
-        <span class="placeholder col-3 d-block mb-2 rounded"></span>
-        <span class="placeholder col-6 d-block rounded"></span>
-      </div>
-    </div>
+    <HilosPageHead
+      :identity="headIdentity"
+      :page="HilosPages.DASHBOARD"
+      :params="{}"
+      :resolve-path="router.resolvePath"
+      kind="section"
+    />
 
     <!-- Project-supplied admin areas above the framework sections; empty by
     default. A project's own cards ride its page catalog on the backend, so this

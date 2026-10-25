@@ -11,11 +11,16 @@
 // why no literal is left. Until it does the heading and the cards are placeholders —
 // an empty grid would jump the layout on every visit. Bootstrap classes only
 // (styling-rules.md).
-import { hilosDashboardLinks } from '@hilos/core/base'
+import {
+  HilosPages,
+  hilosDashboardLinks,
+  type HilosPageIdentity,
+} from '@hilos/core/base'
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from '../../HilosLink.js'
+import { HilosPageHead } from '../../HilosPageHead.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -45,25 +50,32 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
   const answered = useSignal(router.dashboardSections)
   const sections = hilosDashboardLinks(answered ?? [], router.resolvePath)
 
+  const headIdentity: HilosPageIdentity | undefined =
+    identity === undefined
+      ? undefined
+      : {
+          label: identity.label,
+          lead: identity.lead,
+          breadcrumb: [],
+          children: [],
+          pageHeadOwner: {
+            page: HilosPages.DASHBOARD,
+            label: identity.label,
+            lead: identity.lead,
+            icon: 'bi-gear-fill',
+          },
+          pageTabs: [],
+        }
+
   return (
     <section data-id="dashboard-view">
-      <div className="d-flex flex-column gap-1 mb-4">
-        {identity === undefined ? (
-          <div className="placeholder-glow" data-id="dashboard-title-skeleton">
-            <span className="placeholder col-3 d-block mb-2 rounded" />
-            <span className="placeholder col-6 d-block rounded" />
-          </div>
-        ) : (
-          <>
-            <h1 className="h4 mb-0" data-id="dashboard-title">
-              {identity.label}
-            </h1>
-            {identity.lead ? (
-              <p className="mb-0 text-body-secondary">{identity.lead}</p>
-            ) : null}
-          </>
-        )}
-      </div>
+      <HilosPageHead
+        identity={headIdentity}
+        page={HilosPages.DASHBOARD}
+        params={{}}
+        resolvePath={router.resolvePath}
+        kind="section"
+      />
 
       {/* Project-supplied admin areas above the framework sections; empty by
       default. A project's own cards ride its page catalog on the backend, so this

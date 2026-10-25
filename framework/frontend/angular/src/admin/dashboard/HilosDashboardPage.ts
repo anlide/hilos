@@ -13,8 +13,10 @@
 // every visit.
 // Bootstrap classes only (styling-rules.md).
 import {
+  HilosPages,
   hilosDashboardLinks,
   type HilosDashboardLinkSection,
+  type HilosPageIdentity,
 } from '@hilos/core/base'
 import {
   ChangeDetectionStrategy,
@@ -23,7 +25,12 @@ import {
   inject,
 } from '@angular/core'
 
-import { HilosLink, HILOS_ROUTER, hilosSignal } from '@hilos/angular/base'
+import {
+  HILOS_ROUTER,
+  HilosLink,
+  HilosPageHead,
+  hilosSignal,
+} from '@hilos/angular/base'
 
 /** Placeholder cards drawn while the sections are still on the wire. */
 const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]
@@ -32,24 +39,16 @@ const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]
 @Component({
   selector: 'hilos-dashboard-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosLink],
+  imports: [HilosLink, HilosPageHead],
   template: `
     <section data-id="dashboard-view">
-      <div class="d-flex flex-column gap-1 mb-4">
-        @if (identity(); as pageIdentity) {
-          <h1 class="h4 mb-0" data-id="dashboard-title">
-            {{ pageIdentity.label }}
-          </h1>
-          @if (pageIdentity.lead) {
-            <p class="mb-0 text-body-secondary">{{ pageIdentity.lead }}</p>
-          }
-        } @else {
-          <div class="placeholder-glow" data-id="dashboard-title-skeleton">
-            <span class="placeholder col-3 d-block mb-2 rounded"></span>
-            <span class="placeholder col-6 d-block rounded"></span>
-          </div>
-        }
-      </div>
+      <hilos-page-head
+        [identity]="headIdentity()"
+        [page]="page"
+        [params]="emptyParams"
+        [resolvePath]="resolvePath"
+        kind="section"
+      />
 
       <!-- Project-supplied admin areas above the framework sections; empty by
       default. A project's own cards ride its page catalog on the backend, so this
@@ -116,6 +115,12 @@ const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]
 export class HilosDashboardPage {
   private readonly router = inject(HILOS_ROUTER)
 
+  protected readonly page = HilosPages.DASHBOARD
+
+  protected readonly emptyParams: Record<string, string> = {}
+
+  protected readonly resolvePath = this.router.resolvePath
+
   protected readonly skeletonCards = SKELETON_CARDS
 
   protected readonly identity = hilosSignal(this.router.pageIdentity)
@@ -125,5 +130,27 @@ export class HilosDashboardPage {
   /** Section cards grouped for display, resolved against the app's route map. */
   protected readonly sections = computed<HilosDashboardLinkSection[]>(() =>
     hilosDashboardLinks(this.answered() ?? [], this.router.resolvePath),
+  )
+
+  protected readonly headIdentity = computed<HilosPageIdentity | undefined>(
+    () => {
+      const current = this.identity()
+      if (!current) {
+        return undefined
+      }
+      return {
+        label: current.label,
+        lead: current.lead,
+        breadcrumb: [],
+        children: [],
+        pageHeadOwner: {
+          page: HilosPages.DASHBOARD,
+          label: current.label,
+          lead: current.lead,
+          icon: 'bi-gear-fill',
+        },
+        pageTabs: [],
+      }
+    },
   )
 }
