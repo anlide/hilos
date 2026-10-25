@@ -26,6 +26,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\EcommerceShop\Database\Pages\PageCatalog;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Environment\EcommerceShopEnvCatalog;
@@ -36,6 +37,7 @@ use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsPage;
@@ -187,6 +189,8 @@ final class Hilos extends HilosFacade
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
+    protected const string PAGE_CATALOG = PageCatalog::class;
+
     protected const string SETTINGS_CATALOG = EcommerceShopSettingsCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = EcommerceShopDeliveryChannelRegistry::class;
@@ -236,6 +240,7 @@ final class Hilos extends HilosFacade
         AppearancePage::PAGE => AppearancePage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         I18nPage::PAGE => I18nPage::class,
@@ -521,7 +526,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             EcommerceShopTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             EcommerceShopTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

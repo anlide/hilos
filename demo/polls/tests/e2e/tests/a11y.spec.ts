@@ -11,6 +11,7 @@ import {
   signUp,
 } from '../helpers/session'
 import {
+  expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
@@ -320,6 +321,65 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
     // Browser erase leaves the account and its held acceptance intact.
     await holdLegalRevision(person.userId, 'privacy', '2026-10-09')
   }
+})
+
+test('Communications exposes one named head and keyboard links between channel pages', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/communications/email')
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'overview',
+    'Enable Email',
+  )
+  await expect(page).toHaveURL(/\/hilos\/communications\/email$/)
+
+  const configuration = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel_configuration',
+  )
+  await configuration.focus()
+  await expect(configuration).toBeFocused()
+  await configuration.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'configuration',
+    'Enable Email',
+  )
+  await expect(page).toHaveURL(/\/hilos\/communications\/email\/configuration$/)
+
+  const deliveries = page.getByTestId(
+    'hilos-page-tab-hilos_communications_deliveries',
+  )
+  await deliveries.focus()
+  await expect(deliveries).toBeFocused()
+  await deliveries.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'deliveries',
+    'Enable Email',
+  )
+  await expect(page).toHaveURL(/\/hilos\/communications\/email\/deliveries$/)
+
+  const overview = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel',
+  )
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await overview.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'overview',
+    'Enable Email',
+  )
+  await expect(page).toHaveURL(/\/hilos\/communications\/email$/)
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

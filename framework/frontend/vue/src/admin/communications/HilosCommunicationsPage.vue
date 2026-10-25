@@ -51,7 +51,7 @@ const pendingChannel = ref<string | null>(null)
 
 /** The channel's configuration page path (its {channelId} route param is the name). */
 function channelPath(row: HilosChannelRow): string {
-  return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
+  return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION, {
     channelId: row.channel,
   })
 }
@@ -72,7 +72,7 @@ async function toggleEnabled(
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.COMMUNICATIONS">
+  <HilosAdminPage :page="HilosPages.COMMUNICATIONS" head-kind="section">
     <HilosViewportTable :controller="channelsTable">
       <template #cell-channel="{ row }">
         <div class="fw-semibold">{{ row.label }}</div>

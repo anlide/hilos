@@ -1,9 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  expectCommunicationsChannelHead,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
-import { gotoPage, PAGE_READY } from '../helpers/page'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 
 test('draws no pager under a single-page declared table', async ({ page }) => {
@@ -27,8 +30,8 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
 }) => {
   await grantAdminToSelf(page)
   const tabB = await page.context().newPage()
-  await gotoPage(page, '/hilos/communications/sms')
-  await gotoPage(tabB, '/hilos/communications/sms')
+  await gotoPage(page, '/hilos/communications/sms/configuration')
+  await gotoPage(tabB, '/hilos/communications/sms/configuration')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   const row = 'hilos-table-row-notifications.channel.sms.from'
@@ -120,8 +123,29 @@ test.describe('the communications section in the admin view mode', () => {
     ).toHaveCount(0)
 
     await shownByTestId(page, 'hilos-channel-configure-sms').click()
-    await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')
-    expect(new URL(page.url()).pathname).toBe('/hilos/communications/sms')
+    await expectCommunicationsChannelHead(
+      expect,
+      page,
+      'configuration',
+      'sms',
+      'Sms',
+    )
+    expect(new URL(page.url()).pathname).toBe(
+      '/hilos/communications/sms/configuration',
+    )
+
+    await page
+      .getByTestId('hilos-page-tab-hilos_communications_channel')
+      .click()
+    await expectPageReady(page)
+    await expectCommunicationsChannelHead(
+      expect,
+      page,
+      'overview',
+      'sms',
+      'Sms',
+    )
+    await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 
     const send = page.getByTestId('hilos-channel-test')
     await expect(send).toBeDisabled()

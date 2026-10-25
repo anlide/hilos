@@ -9,6 +9,7 @@ import {
   signUp,
 } from '../helpers/session'
 import {
+  expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
@@ -163,6 +164,61 @@ test('password visibility toggle operates from keyboard on sign-in', async ({
   )
   // Ensure the surface remains open: toggling password visibility does not submit the form.
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+})
+
+test('Communications exposes one named head and keyboard links between channel pages', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/communications/email')
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'overview',
+    'Enable Email',
+  )
+
+  const configuration = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel_configuration',
+  )
+  await configuration.focus()
+  await expect(configuration).toBeFocused()
+  await configuration.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'configuration',
+    'Enable Email',
+  )
+
+  const deliveries = page.getByTestId(
+    'hilos-page-tab-hilos_communications_deliveries',
+  )
+  await deliveries.focus()
+  await expect(deliveries).toBeFocused()
+  await deliveries.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'deliveries',
+    'Enable Email',
+  )
+
+  const overview = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel',
+  )
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await overview.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'overview',
+    'Enable Email',
+  )
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

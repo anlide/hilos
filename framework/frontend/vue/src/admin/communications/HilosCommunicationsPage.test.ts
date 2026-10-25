@@ -8,7 +8,10 @@ import {
   ActionLifecycle,
   HilosPages,
   ScopeManager,
+  createAppPageRouter,
   createSignal,
+  ingest,
+  pageIdentity,
 } from '@hilos/core/base'
 import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
@@ -22,7 +25,9 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const TABLE = 'hilosCommunicationsChannels'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const routes = createAppPageRouter({})
+
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.COMMUNICATIONS,
@@ -33,9 +38,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => routes.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -76,7 +81,24 @@ function seededContext(channel: ChannelSlot): {
   }>
 } {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.COMMUNICATIONS)
+  const scope = scopes.openPage(HilosPages.COMMUNICATIONS)
+  ingest(scope, {
+    data: {
+      pageLabel: 'Communications',
+      pageHeadOwner: {
+        page: HilosPages.COMMUNICATIONS,
+        label: 'Communications',
+        lead: 'Email, SMS, push, and chat delivery channels.',
+        icon: 'bi-envelope-paper',
+      },
+      pageBreadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
+      ],
+      pageTabs: [{ page: HilosPages.COMMUNICATIONS, label: 'Overview' }],
+      pageChildren: [],
+    },
+  })
   const windowListeners = new Set<Listener>()
   const serveWindow = (): void => {
     const data = {
@@ -169,7 +191,9 @@ describe('HilosCommunicationsPage', () => {
     const wrapper = mount(HilosCommunicationsPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -201,7 +225,9 @@ describe('HilosCommunicationsPage', () => {
     const wrapper = mount(HilosCommunicationsPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -210,6 +236,47 @@ describe('HilosCommunicationsPage', () => {
       wrapper.find('input[data-id="hilos-channel-enabled-sms"]').exists(),
     ).toBe(false)
     expect(wrapper.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+    expect(sent).toEqual([])
+  })
+
+  it('uses the catalog section head without a tab row and links Configure to Configuration', async () => {
+    const { context, sent } = seededContext(SMS_CHANNEL)
+    const wrapper = mount(HilosCommunicationsPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('h1').text()).toBe('Communications')
+    expect(
+      wrapper
+        .get('[data-id="hilos-page-head-block"] .rounded-circle i')
+        .classes(),
+    ).toContain('bi-envelope-paper')
+    expect(wrapper.get('[data-id="hilos-page-head-block"]').text()).toContain(
+      'Email, SMS, push, and chat delivery channels.',
+    )
+    expect(
+      wrapper
+        .get('nav[aria-label="Breadcrumb"]')
+        .findAll('li')
+        .map((crumb) => crumb.text()),
+    ).toEqual(['Hilos', 'Communications'])
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.findAll('table')).toHaveLength(1)
+    expect(
+      wrapper
+        .get('table [data-id="hilos-channel-configure-sms"]')
+        .attributes('href'),
+    ).toBe('/hilos/communications/sms/configuration')
     expect(sent).toEqual([])
   })
 })

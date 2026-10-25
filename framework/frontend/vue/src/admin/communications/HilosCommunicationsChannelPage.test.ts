@@ -1,978 +1,520 @@
-// The channel field's edit modal on the shared row-edit helper (HIL-1050): a
-// live row update reloads a pristine modal and says so, a dirty one shows the
-// conflict chrome without Merge and answers Keep mine / Take theirs, a row gone
-// under the modal locks save as "Deleted", and the modal asks before discarding
-// a changed draft. The merge itself is the core helper's; this covers the view.
-// The ↺ resets only through a confirm dialog (HIL-1147).
+// The channel Overview consumes the same answer as the real shared head. The
+// controls use the action lifecycle; neither acknowledgement nor a press is a
+// settings echo, and no table is mounted on this tab.
 import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
-  bindSessionScope,
+  computedSignal,
+  createAppPageRouter,
   createSignal,
+  hilosToasts,
+  ingest,
+  pageIdentity,
+  resolvePageTitle,
+  type HilosConnection,
+  type HilosRouter,
+  type PageRouteMatch,
+  type Scope,
 } from '@hilos/core/base'
-import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
-import type {
-  Hideable,
-  HilosConnection,
-  HilosPageIdentity,
-  HilosRouter,
-  PageRouteMatch,
-  ProjectSignal,
-} from '@hilos/core/base'
+import {
+  CHANNEL_SUMMARY_DATA,
+  type HilosChannelSummary,
+  type HilosCommunicationsContext,
+} from '@hilos/core/admin/communications'
 
 import HilosCommunicationsChannelPage from './HilosCommunicationsChannelPage.vue'
+import HilosSwitch from '../../HilosSwitch.vue'
+import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
-const TABLE = 'hilosCommunicationsChannelFields'
-
-/**
- * The identity the channel page answers with: the card to its delivery journal
- * is its one child.
- */
-const CHANNEL_IDENTITY: HilosPageIdentity = {
-  label: 'Channel',
-  lead: 'A single communication channel and its configuration.',
-  breadcrumb: [
-    { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
-    { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Channel' },
-  ],
-  children: [
-    {
-      page: HilosPages.COMMUNICATIONS_DELIVERIES,
-      label: 'Deliveries',
-      lead: 'Delivery log for one channel.',
-      icon: null,
-    },
-  ],
+const PAGE = HilosPages.COMMUNICATIONS_CHANNEL
+const SMS: HilosChannelSummary = {
+  channel: 'sms',
+  label: 'SMS',
+  enabled: true,
+  configured: false,
+  driver: 'twilio',
+  missingFields: 1,
+  fieldCount: 8,
+  secretFieldCount: 3,
+  overriddenFieldCount: 2,
 }
 
-/** Resolves the delivery journal from the channel's own route params. */
-const resolveDeliveries: HilosRouter['resolvePath'] = (page, params) =>
-  page === HilosPages.COMMUNICATIONS_DELIVERIES
-    ? `/hilos/communications/${params?.channelId}/deliveries`
-    : undefined
+/** The approved complete identity, alongside the summary in the page answer. */
+function answer(scope: Scope, summary: HilosChannelSummary): void {
+  ingest(scope, {
+    data: {
+      pageLabel: 'Channel',
+      pageLead: 'A single communication channel: its summary and its switch.',
+      pageHeadOwner: {
+        page: PAGE,
+        label: 'Channel',
+        lead: 'A single communication channel: its summary and its switch.',
+        icon: null,
+      },
+      pageBreadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
+        { page: PAGE, label: 'Channel' },
+      ],
+      pageTabs: [
+        { page: PAGE, label: 'Overview' },
+        {
+          page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+          label: 'Configuration',
+        },
+        { page: HilosPages.COMMUNICATIONS_DELIVERIES, label: 'Deliveries' },
+      ],
+      pageChildren: [],
+      [CHANNEL_SUMMARY_DATA]: summary,
+    },
+  })
+}
 
-function router(
-  identity?: HilosPageIdentity,
-  resolvePath: HilosRouter['resolvePath'] = () => undefined,
-): HilosRouter {
-  return {
-    currentRoute: createSignal<PageRouteMatch>({
-      page: HilosPages.COMMUNICATIONS_CHANNEL,
-      params: { channelId: 'sms' },
-      admin: true,
+const mounted: ReturnType<typeof mount>[] = []
+const releases: (() => void)[] = []
+afterEach(() => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  for (const release of releases.splice(0)) release()
+  hilosToasts.clear()
+  vi.useRealTimers()
+})
+
+function harness(
+  initial: HilosChannelSummary | null = SMS,
+  viewer = false,
+  viewMode = viewer,
+) {
+  const scopes = new ScopeManager()
+  ingest(scopes.session, {
+    entities: { currentUser: { id: 1, admin: !viewer, name: 'Olena' } },
+    data: { adminViewMode: viewMode },
+  })
+  releases.push(bindAdminAccess(scopes))
+  const scope = scopes.openPage(PAGE)
+  if (initial) answer(scope, initial)
+  const identity = pageIdentity(scopes)
+  const routes = createAppPageRouter({})
+  const route = createSignal<PageRouteMatch>({
+    page: PAGE,
+    params: { channelId: initial?.channel ?? 'sms' },
+    admin: true,
+  })
+  const navigation: HilosRouter = {
+    currentRoute: route,
+    currentPath: createSignal(
+      `/hilos/communications/${initial?.channel ?? 'sms'}`,
+    ),
+    currentTitle: computedSignal(() => {
+      const current = identity.get()
+
+      return resolvePageTitle(
+        PAGE,
+        {},
+        'Demo',
+        current?.label,
+        current !== undefined,
+        current?.pageHeadOwner?.label,
+      )
     }),
-    currentPath: createSignal(''),
-    currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(identity),
+    pageIdentity: identity,
     dashboardSections: createSignal(undefined),
-    resolvePath,
+    resolvePath: (page, params) => routes.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: () => {},
+    navigate: vi.fn(),
     replacePath: () => {},
     start: () => {},
     stop: () => {},
   }
-}
-
-interface FieldSlot {
-  channel: string
-  field: string
-  label: string
-  type: string
-  value: boolean | number | string | null
-  valueSource: string
-  defaultValue: Hideable<boolean | number | string | null>
-  defaultValueSource: 'env' | 'default'
-  secret: boolean
-  editable: boolean
-}
-
-/** The `from` field of the sms channel, with the given effective value and source. */
-function fromField(value: string, valueSource = 'settings'): FieldSlot {
-  return {
-    channel: 'sms',
-    field: 'from',
-    label: 'From (sender id)',
-    type: 'string',
-    value,
-    valueSource,
-    defaultValue: 'Hilos',
-    defaultValueSource: 'default',
-    secret: false,
-    editable: true,
-  }
-}
-
-const ROW_KEY = 'notifications.channel.sms.from'
-
-function seededContext(initial: FieldSlot[]): {
-  context: HilosCommunicationsContext
-  pushUpdate: (next: FieldSlot) => void
-  pushRemove: () => void
-  pushLeave: (next: FieldSlot) => void
-  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
-  sent: Array<{
-    action: string
-    payload: Record<string, unknown>
-    requestId?: string
-  }>
-  focus: string[]
-} {
-  let rows = initial.slice()
-  const focus: string[] = []
-  const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.COMMUNICATIONS_CHANNEL)
-  const windowListeners = new Set<(signal: { data: unknown }) => void>()
-  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
-  const serveWindow = (): void => {
-    const data = {
-      page: HilosPages.COMMUNICATIONS_CHANNEL,
-      tableKey: TABLE,
-      rows: rows.map((field) => ({ rowKey: ROW_KEY, slots: { field } })),
-      totalCount: rows.length,
-      totalExact: true,
-      firstAnchor: null,
-      lastAnchor: null,
-      offset: 0,
-      limit: 10,
-    }
-    for (const listener of windowListeners) {
-      listener({ data })
-    }
-  }
-
-  const connection = {
-    registerTableWindow(): void {
-      serveWindow()
-    },
-    unregisterTableWindow(): void {},
-    tableWindowDescriptors: () => ({}),
-    sendTableViewport(): boolean {
-      serveWindow()
-
-      return true
-    },
-    sendTableRendered(): boolean {
-      return true
-    },
-    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
-      focus.push(rowKey)
-
-      return true
-    },
-    on(
-      event: string,
-      listener: (signal: { data: unknown }) => void,
-    ): () => void {
-      if (event === 'tableWindow') {
-        windowListeners.add(listener)
-
-        return () => windowListeners.delete(listener)
-      }
-      if (event === 'tableViewportDelta') {
-        deltaListeners.add(listener)
-
-        return () => deltaListeners.delete(listener)
-      }
-
-      return () => {}
-    },
-  }
-  const sent: Array<{
-    action: string
-    payload: Record<string, unknown>
-    requestId?: string
-  }> = []
-  const replyListeners = new Map<
+  const listeners = new Map<
     string,
     Set<(signal: Record<string, unknown>) => void>
   >()
-  const actions = new ActionLifecycle({
-    sendAction: (
-      action: string,
-      payload: Record<string, unknown>,
-      requestId?: string,
-    ) => {
+  const sent: Array<{ action: string; payload: unknown; requestId?: string }> =
+    []
+  const connection = {
+    registerTableWindow: vi.fn(),
+    unregisterTableWindow: vi.fn(),
+    sendTableViewport: vi.fn(),
+    sendTableRendered: vi.fn(),
+    sendTableRowFocus: vi.fn(),
+    sendAction(action: string, payload: unknown, requestId?: string): boolean {
       sent.push({ action, payload, requestId })
 
       return true
     },
-    on: (
-      event: string,
-      listener: (signal: Record<string, unknown>) => void,
-    ) => {
-      const listeners = replyListeners.get(event) ?? new Set()
-      listeners.add(listener)
-      replyListeners.set(event, listeners)
+    on(event: string, listener: (signal: Record<string, unknown>) => void) {
+      const set = listeners.get(event) ?? new Set()
+      set.add(listener)
+      listeners.set(event, set)
 
-      return () => listeners.delete(listener)
+      return () => set.delete(listener)
     },
-  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
+  }
+  const actions = new ActionLifecycle(connection as unknown as HilosConnection)
+  const context: HilosCommunicationsContext = {
+    connection: connection as unknown as HilosConnection,
+    scopes,
+    actions,
+  }
 
   return {
-    context: {
-      connection:
-        connection as unknown as HilosCommunicationsContext['connection'],
-      scopes,
-      actions,
-    },
-    pushUpdate(next: FieldSlot): void {
-      rows = [next]
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.COMMUNICATIONS_CHANNEL,
-            tableKey: TABLE,
-            kind: 'row_updated',
-            rowKey: ROW_KEY,
-            row: { rowKey: ROW_KEY, slots: { field: next } },
-          },
-        })
-      }
-    },
-    pushRemove(): void {
-      rows = []
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.COMMUNICATIONS_CHANNEL,
-            tableKey: TABLE,
-            kind: 'row_removed',
-            rowKey: ROW_KEY,
-            reason: 'deleted',
-          },
-        })
-      }
-    },
-    // The row left this tab's window alive, and the frame that takes it off the screen
-    // carries the row for the dialog holding it in focus.
-    pushLeave(next: FieldSlot): void {
-      rows = []
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.COMMUNICATIONS_CHANNEL,
-            tableKey: TABLE,
-            kind: 'row_removed',
-            rowKey: ROW_KEY,
-            reason: 'left_set',
-            row: { rowKey: ROW_KEY, slots: { field: next } },
-          },
-        })
-      }
-    },
-    // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail', errorCode?: string): void {
-      const last = sent[sent.length - 1]
-      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
-      for (const listener of replyListeners.get(event) ?? []) {
-        listener({
-          kind: event,
-          action: last?.action,
-          requestId: last?.requestId,
-          reason: 'The channel refused the reset.',
-          ...(errorCode !== undefined ? { errorCode } : {}),
-        })
-      }
-    },
+    context,
+    scope,
+    navigation,
+    route,
     sent,
-    focus,
-  }
-}
-
-const mounted: ReturnType<typeof mount>[] = []
-
-afterEach(() => {
-  for (const wrapper of mounted.splice(0)) {
-    wrapper.unmount()
-  }
-  document.body.classList.remove('modal-open')
-})
-
-async function mountPage(
-  context: HilosCommunicationsContext,
-  navigator: HilosRouter = router(),
-) {
-  const wrapper = mount(HilosCommunicationsChannelPage, {
-    props: { context: markRaw(context) },
-    attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: navigator } },
-  })
-  mounted.push(wrapper)
-  await nextTick()
-
-  return wrapper
-}
-
-// The row's controls stand in the document twice — once in the table and once
-// in the card the same row becomes on a narrow screen — so the button is looked
-// up through the table, which says which of the two is clicked.
-function editButton(): HTMLElement {
-  return document.querySelector(
-    'table [data-id="hilos-channel-field-edit-from"]',
-  ) as HTMLElement
-}
-
-function modalEl(id: string): HTMLElement | null {
-  return document.querySelector(`[data-id="${id}"]`)
-}
-
-function valueInput(): HTMLInputElement {
-  return modalEl('hilos-channel-edit-value') as HTMLInputElement
-}
-
-function saveButton(): HTMLButtonElement {
-  return modalEl('hilos-channel-edit-save') as HTMLButtonElement
-}
-
-function cancelButton(): HTMLButtonElement {
-  return Array.from(
-    document.querySelectorAll<HTMLButtonElement>(
-      '[data-id="modal"] .modal-footer button',
-    ),
-  ).find((button) => button.textContent?.trim() === 'Cancel')!
-}
-
-// The fieldset the modal stands its body in; a save in flight disables it.
-function bodyLock(): HTMLFieldSetElement | null {
-  return document.querySelector('[data-id="modal"] .modal-body > fieldset')
-}
-
-// Every way a person closes the dialog: the ×, Cancel, Escape and the backdrop.
-function tryClosing(): void {
-  modalEl('modal-close')?.click()
-  cancelButton().click()
-  modalEl('modal')?.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-  )
-  modalEl('modal')?.click()
-}
-
-async function typeDraft(text: string): Promise<void> {
-  const input = valueInput()
-  input.value = text
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  await nextTick()
-}
-
-/** Open the modal on the seeded row and wait for it to draw. */
-async function openModal(context: HilosCommunicationsContext): Promise<void> {
-  await mountPage(context)
-  editButton().click()
-  await nextTick()
-}
-
-describe('HilosCommunicationsChannelPage edit modal', () => {
-  it('opens on the committed value with save locked and the message line empty', async () => {
-    const { context } = seededContext([fromField('+1000')])
-    await openModal(context)
-
-    expect(valueInput().value).toBe('+1000')
-    expect(saveButton().disabled).toBe(true)
-    expect(modalEl('hilos-channel-edit-notice')).toBeNull()
-    expect(modalEl('hilos-channel-edit-notice-idle')).not.toBeNull()
-  })
-
-  it('reloads a pristine edit when the live row changes elsewhere and says so', async () => {
-    const { context, pushUpdate } = seededContext([fromField('+1000')])
-    await openModal(context)
-
-    pushUpdate(fromField('+2000'))
-    await nextTick()
-    await nextTick()
-
-    expect(valueInput().value).toBe('+2000')
-    expect(modalEl('conflict-badge')).toBeNull()
-    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
-      'Updated just now',
-    )
-    expect(saveButton().disabled).toBe(true)
-
-    // The person types over the taken value: the note about it goes out.
-    await typeDraft('+3000')
-    expect(modalEl('hilos-channel-edit-notice')).toBeNull()
-    expect(saveButton().disabled).toBe(false)
-  })
-
-  it('sends nothing on Enter while a conflict stands', async () => {
-    const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-    pushUpdate(fromField('+theirs'))
-    await nextTick()
-    await nextTick()
-
-    valueInput().form?.dispatchEvent(new Event('submit', { cancelable: true }))
-    await nextTick()
-
-    expect(sent).toHaveLength(0)
-    expect(modalEl('conflict-badge')).not.toBeNull()
-  })
-
-  it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', async () => {
-    const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-
-    pushUpdate(fromField('+theirs'))
-    await nextTick()
-    await nextTick()
-
-    expect(modalEl('conflict-badge')).not.toBeNull()
-    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
-      'Changed elsewhere to "+theirs"',
-    )
-    expect(modalEl('conflict-merge')).toBeNull()
-    expect(saveButton().disabled).toBe(true)
-    expect(valueInput().value).toBe('+mine')
-
-    modalEl('conflict-accept-mine')?.click()
-    await nextTick()
-    expect(modalEl('conflict-badge')).toBeNull()
-    expect(modalEl('hilos-channel-edit-notice')).toBeNull()
-    expect(saveButton().disabled).toBe(false)
-
-    saveButton().click()
-    await nextTick()
-    expect(sent).toHaveLength(1)
-    expect(sent[0]?.action).toBe('communications_channel_set')
-    expect(sent[0]?.payload).toMatchObject({
-      channel: 'sms',
-      field: 'from',
-      value: '+mine',
-    })
-  })
-
-  it('Take theirs sets the field to the live value, says so, and locks save', async () => {
-    const { context, pushUpdate } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-    pushUpdate(fromField('+theirs'))
-    await nextTick()
-    await nextTick()
-
-    modalEl('conflict-accept-theirs')?.click()
-    await nextTick()
-
-    expect(valueInput().value).toBe('+theirs')
-    expect(modalEl('conflict-badge')).toBeNull()
-    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
-      'Updated just now',
-    )
-    expect(saveButton().disabled).toBe(true)
-  })
-
-  it('locks save as Deleted and keeps the draft when the row goes under the modal', async () => {
-    const { context, pushRemove } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-    pushRemove()
-    await nextTick()
-    await nextTick()
-
-    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
-      'Deleted elsewhere',
-    )
-    expect(saveButton().disabled).toBe(true)
-    expect(saveButton().textContent?.trim()).toBe('Deleted')
-    expect(valueInput().value).toBe('+mine')
-    expect(modalEl('modal')).not.toBeNull()
-  })
-
-  it('follows a row that left the window under the modal: Updated just now, not Deleted', async () => {
-    const { context, pushLeave } = seededContext([fromField('+1000')])
-    await openModal(context)
-    // The other tab's save moved the row under the order or out of the filter: the screen
-    // gates the departure, the dialog holding the row in focus reads the body off the frame.
-    pushLeave(fromField('+2000'))
-    await nextTick()
-    await nextTick()
-
-    expect(valueInput().value).toBe('+2000')
-    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
-      'Updated just now',
-    )
-    expect(saveButton().textContent?.trim()).toBe('Save')
-  })
-
-  it('takes the row into focus on open and lets it go on close', async () => {
-    const { context, focus } = seededContext([fromField('+1000')])
-    await openModal(context)
-    expect(focus).toEqual([ROW_KEY])
-
-    modalEl('modal-close')?.click()
-    await nextTick()
-    expect(focus).toEqual([ROW_KEY, ''])
-  })
-
-  it('asks before discarding a changed draft, and closes a pristine one at once', async () => {
-    const { context } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-
-    modalEl('modal-close')?.click()
-    await nextTick()
-    // The discard question is the modal's own confirm step: the dialog stays.
-    expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('modal-confirm-discard')).not.toBeNull()
-
-    modalEl('modal-confirm-discard')?.click()
-    await nextTick()
-    expect(modalEl('modal')).toBeNull()
-  })
-
-  it('holds the dialog and locks its body while the save is in flight, and frees the same field after a refusal', async () => {
-    const { context, sent, answer, focus } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-    const field = valueInput()
-    const body = bodyLock()
-    const cancel = cancelButton()
-    const close = modalEl('modal-close') as HTMLButtonElement
-    expect(body?.contains(field)).toBe(true)
-    expect(body?.disabled).toBe(false)
-
-    saveButton().click()
-    await nextTick()
-    expect(sent.map((entry) => entry.action)).toEqual([
-      'communications_channel_set',
-    ])
-    expect(body?.disabled).toBe(true)
-    expect(cancel.disabled).toBe(true)
-    expect(close.disabled).toBe(true)
-    tryClosing()
-    await nextTick()
-    expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('modal-confirm')).toBeNull()
-    expect(focus).toEqual([ROW_KEY])
-
-    answer('fail')
-    await flushPromises()
-    expect(modalEl('modal')).not.toBeNull()
-    expect(bodyLock()).toBe(body)
-    expect(valueInput()).toBe(field)
-    expect(field.value).toBe('+mine')
-    expect(body?.disabled).toBe(false)
-    expect(cancel.disabled).toBe(false)
-    expect(close.disabled).toBe(false)
-
-    await typeDraft('+mine again')
-    saveButton().click()
-    await nextTick()
-    expect(sent[1]?.payload).toMatchObject({
-      channel: 'sms',
-      field: 'from',
-      value: '+mine again',
-    })
-    answer('success')
-    await flushPromises()
-    expect(modalEl('modal')).toBeNull()
-    expect(focus).toEqual([ROW_KEY, ''])
-  })
-})
-
-describe('HilosCommunicationsChannelPage door', () => {
-  it('shows the card to its delivery journal above the fields', async () => {
-    // The rest of this file mounts the page with no identity, where the card is
-    // absent from sound and broken code alike — which is how the page went
-    // without a door to its journal.
-    const { context } = seededContext([fromField('+1000')])
-    await mountPage(context, router(CHANNEL_IDENTITY, resolveDeliveries))
-
-    const card = document.querySelector(
-      `[data-id="hilos-admin-child-${HilosPages.COMMUNICATIONS_DELIVERIES}"]`,
-    )
-    const test = document.querySelector('[data-id="hilos-channel-test"]')
-    expect(card?.getAttribute('href')).toBe(
-      '/hilos/communications/sms/deliveries',
-    )
-    expect(test).not.toBeNull()
-    // The way on stands above what the admin came for.
-    expect(
-      (card as Element).compareDocumentPosition(test as Element) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-  })
-})
-
-describe('HilosCommunicationsChannelPage reset dialog', () => {
-  function resetButton(): HTMLButtonElement {
-    return document.querySelector(
-      'table [data-id="hilos-channel-field-reset-from"]',
-    ) as HTMLButtonElement
-  }
-
-  function confirmButton(): HTMLButtonElement {
-    return modalEl('hilos-channel-reset-confirm') as HTMLButtonElement
-  }
-
-  async function settle(): Promise<void> {
-    await nextTick()
-    await nextTick()
-    await nextTick()
-  }
-
-  async function openReset(context: HilosCommunicationsContext): Promise<void> {
-    await mountPage(context)
-    resetButton().click()
-    await nextTick()
-  }
-
-  it('opens on ↺ with the row in focus and sends nothing', async () => {
-    const { context, sent, focus } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    expect(modalEl('modal')?.textContent).toContain('Reset · From (sender id)')
-    expect(focus).toEqual([ROW_KEY])
-    expect(sent).toEqual([])
-    expect(resetButton().title).toBe('Reset to default')
-    expect(resetButton().getAttribute('aria-label')).toBe('Reset to default')
-  })
-
-  it('shows the value now and where it goes back to', async () => {
-    const { context } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe(
-      '+1000',
-    )
-    expect(
-      modalEl('hilos-channel-reset-default')
-        ?.textContent?.replace(/\s+/g, ' ')
-        .trim(),
-    ).toBe('Hilos Default')
-    expect(
-      modalEl('hilos-channel-reset-default')?.classList.contains('text-break'),
-    ).toBe(true)
-  })
-
-  it.each([
-    { value: '+env', source: 'env' as const, expected: '+env From env' },
-    { value: null, source: 'default' as const, expected: '— Default' },
-    { value: '', source: 'env' as const, expected: '— From env' },
-    { value: 0, source: 'default' as const, expected: '0 Default' },
-    { value: false, source: 'env' as const, expected: 'Off From env' },
-  ])(
-    'renders fallback $value from $source without losing falsy values',
-    async ({ value, source, expected }) => {
-      const { context } = seededContext([
-        {
-          ...fromField('+1000'),
-          defaultValue: value,
-          defaultValueSource: source,
-        },
-      ])
-      await openReset(context)
-
-      expect(
-        modalEl('hilos-channel-reset-default')
-          ?.textContent?.replace(/\s+/g, ' ')
-          .trim(),
-      ).toBe(expected)
+    connection,
+    update(summary: unknown): void {
+      ingest(scopes.page()!, { data: { [CHANNEL_SUMMARY_DATA]: summary } })
     },
-  )
+    reply(outcome: 'success' | 'fail', text?: string): void {
+      const last = sent.at(-1)!
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of listeners.get(event) ?? []) {
+        listener({
+          action: last.action,
+          requestId: last.requestId,
+          ...(outcome === 'success' ? { message: text } : { reason: text }),
+        })
+      }
+    },
+  }
+}
 
-  it('updates the fallback value and source in the open dialog', async () => {
-    const { context, pushUpdate, focus, sent } = seededContext([
-      fromField('+1000'),
+async function mountPage(h: ReturnType<typeof harness>) {
+  const view = mount(HilosCommunicationsChannelPage, {
+    props: { context: markRaw(h.context) },
+    attachTo: document.body,
+    global: { provide: { [hilosRouterKey as symbol]: h.navigation } },
+  })
+  mounted.push(view)
+  await nextTick()
+
+  return view
+}
+
+function enabled(view: ReturnType<typeof mount>) {
+  return view.get<HTMLInputElement>('[data-id="hilos-channel-enabled"]')
+}
+
+describe('HilosCommunicationsChannelPage Overview', () => {
+  it('draws one real head, owner breadcrumb, row and summary tiles without fields or tables', async () => {
+    const h = harness()
+    const view = await mountPage(h)
+    expect(view.findAll('h1')).toHaveLength(1)
+    expect(view.get('h1').text()).toBe('SMS')
+    expect(view.get('[data-id="channel-head-icon"] i').classes()).toContain(
+      'bi-envelope-paper',
+    )
+    const crumbs = view.get('nav[aria-label="Breadcrumb"]')
+    expect(crumbs.findAll('li').map((item) => item.text())).toEqual([
+      'Hilos',
+      'Communications',
+      'SMS',
     ])
-    await openReset(context)
-
-    pushUpdate({
-      ...fromField('+2000'),
-      defaultValue: '+env',
-      defaultValueSource: 'env',
-    })
-    await settle()
-
-    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe(
-      '+2000',
+    expect(crumbs.get('[aria-current="page"]').find('a').exists()).toBe(false)
+    const row = view.get('nav[aria-label="Channel pages"]')
+    expect(
+      row.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+    ).toEqual([
+      ['Overview', '/hilos/communications/sms'],
+      ['Configuration', '/hilos/communications/sms/configuration'],
+      ['Deliveries', '/hilos/communications/sms/deliveries'],
+    ])
+    expect(
+      row.findAll('[aria-current="page"]').map((link) => link.text()),
+    ).toEqual(['Overview'])
+    expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Enabled')
+    expect(view.get('[data-id="channel-head-configured"]').text()).toBe(
+      '1 missing',
     )
     expect(
-      modalEl('hilos-channel-reset-default')
-        ?.textContent?.replace(/\s+/g, ' ')
-        .trim(),
-    ).toBe('+env From env')
-    expect(focus).toEqual([ROW_KEY])
-    expect(sent).toEqual([])
-  })
-
-  it('keeps a hidden fallback hidden in the open dialog', async () => {
-    const { context, pushUpdate } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    pushUpdate({ ...fromField('+1000'), defaultValue: { _hidden: true } })
-    await settle()
-
-    const fallback = modalEl('hilos-channel-reset-default')
-    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
-    expect(fallback?.querySelector('.badge.ms-2')?.textContent?.trim()).toBe(
-      'Default',
+      view.get('[data-id="channel-head-configured"]').attributes('title'),
+    ).toBe('1 field(s) not set')
+    expect(view.get('[data-id="channel-head-description"]').text()).toBe(
+      'Channel sms · driver twilio',
     )
-    expect(fallback?.textContent).not.toContain('Hilos')
-    expect(fallback?.textContent).not.toContain('[object Object]')
-    expect(fallback?.textContent).not.toContain('—')
-  })
-
-  it('Reset sends the reset and closes on success, letting the row go', async () => {
-    const { context, sent, focus, answer } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    confirmButton().click()
-    await nextTick()
-    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
-      {
-        action: 'communications_channel_reset',
-        payload: { channel: 'sms', field: 'from' },
-      },
-    ])
-
-    answer('success')
-    await settle()
-    expect(modalEl('modal')).toBeNull()
-    expect(focus).toEqual([ROW_KEY, ''])
-  })
-
-  it('Cancel sends nothing and lets the row go', async () => {
-    const { context, sent, focus } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    const cancel = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
-    ).find((button) => button.textContent?.trim() === 'Cancel')
-    cancel?.click()
-    await nextTick()
-
-    expect(modalEl('modal')).toBeNull()
-    expect(sent).toEqual([])
-    expect(focus).toEqual([ROW_KEY, ''])
-  })
-
-  it('keeps the dialog open with the refusal on a failed reset', async () => {
-    const { context, answer } = seededContext([fromField('+1000')])
-    await openReset(context)
-
-    confirmButton().click()
-    await nextTick()
-    answer('fail')
-    await settle()
-
-    expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('hilos-action-error')?.textContent).toContain(
-      'The channel refused the reset.',
+    expect(
+      view.get('[data-id="channel-summary-configuration"]').text(),
+    ).toContain('fields hold a bare default')
+    expect(view.get('[data-id="channel-summary-fields"]').text()).toContain('8')
+    expect(view.get('[data-id="channel-summary-fields"]').text()).toContain(
+      '3 secret, set in env only',
     )
-  })
-
-  it('says a reset elsewhere and locks Reset', async () => {
-    const { context, pushUpdate } = seededContext([fromField('+1000')])
-    await openReset(context)
-    expect(modalEl('hilos-channel-reset-gone')).toBeNull()
-
-    pushUpdate(fromField('+env', 'env'))
-    await nextTick()
-
-    expect(modalEl('hilos-channel-reset-gone')?.textContent?.trim()).toBe(
-      'Already reset elsewhere.',
+    expect(view.get('[data-id="channel-summary-overridden"]').text()).toContain(
+      '2',
     )
-    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe('+env')
-    expect(confirmButton().disabled).toBe(true)
+    expect(view.get('[data-id="channel-summary-overridden"]').text()).toContain(
+      'reset returns them to env or the default',
+    )
+    expect(view.get('[data-id="channel-controls"]').text()).toContain(
+      'When off, no new deliveries go out through it; queued ones still do.',
+    )
+    expect(view.get('[data-id="channel-controls"]').text()).toContain(
+      'One notification to you, through this channel only.',
+    )
+    expect(view.findAll('table')).toHaveLength(0)
+    expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
+    expect(view.find('[data-id^="hilos-channel-field-"]').exists()).toBe(false)
+    expect(view.find('[data-id="modal"]').exists()).toBe(false)
+    for (const call of [
+      h.connection.registerTableWindow,
+      h.connection.sendTableViewport,
+      h.connection.sendTableRendered,
+      h.connection.sendTableRowFocus,
+    ]) {
+      expect(call).not.toHaveBeenCalled()
+    }
+    expect(h.sent).toEqual([])
   })
 
-  it('locks ↺ while the value is not the admin one', async () => {
-    const { context } = seededContext([fromField('+env', 'env')])
-    await mountPage(context)
+  it('updates counts, status, name and navigator title from summary-only data', async () => {
+    const h = harness()
+    const view = await mountPage(h)
+    h.update({
+      ...SMS,
+      label: 'Text messages',
+      configured: true,
+      missingFields: 0,
+      enabled: false,
+      driver: null,
+      fieldCount: 0,
+      secretFieldCount: 0,
+      overriddenFieldCount: 0,
+    })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Text messages')
+    expect(
+      view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Text messages')
+    expect(h.navigation.currentTitle.get()).toBe('Text messages · Demo')
+    expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Disabled')
+    expect(view.get('[data-id="channel-head-configured"]').text()).toBe(
+      'Configured',
+    )
+    expect(
+      view.get('[data-id="channel-head-configured"]').attributes('title'),
+    ).toBe('0 field(s) not set')
+    expect(view.get('[data-id="channel-head-description"]').text()).toBe(
+      'Channel sms · driver —',
+    )
+    expect(
+      view.get('[data-id="channel-summary-configuration"]').text(),
+    ).toContain('every field has a value')
+    expect(view.get('[data-id="channel-summary-fields"] .fs-4').text()).toBe(
+      '0',
+    )
+    expect(view.get('[data-id="channel-summary-fields"] p').text()).toBe(
+      'no secrets',
+    )
+    expect(
+      view.get('[data-id="channel-summary-overridden"] .fs-4').text(),
+    ).toBe('0')
+    expect(view.get('[data-id="channel-summary-overridden"] p').text()).toBe(
+      'every value comes from env or the default',
+    )
+    expect(h.sent).toEqual([])
+  })
 
-    expect(resetButton().disabled).toBe(true)
+  it('shows no assumed data before the answer and clears invalid summaries', async () => {
+    const h = harness(null)
+    const view = await mountPage(h)
+    expect(view.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+      true,
+    )
+    expect(view.find('h1').exists()).toBe(false)
+    expect(view.find('[data-id="channel-controls"]').exists()).toBe(false)
+    answer(h.scope, SMS)
+    await nextTick()
+    expect(view.get('h1').text()).toBe('SMS')
+    h.update({ ...SMS, fieldCount: -1 })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Channel')
+    expect(view.find('[data-id="channel-controls"]').exists()).toBe(false)
+    expect(view.find('[data-id="channel-head-enabled"]').exists()).toBe(false)
+  })
+
+  it('never carries a channel summary across route changes, cleared or unrelated scopes, and disposes its name binding', async () => {
+    const h = harness()
+    const view = await mountPage(h)
+    h.route.set({
+      page: PAGE,
+      params: { channelId: 'email' },
+      admin: true,
+    })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Channel')
+    expect(view.find('[data-id="channel-head-description"]').exists()).toBe(
+      false,
+    )
+    expect(view.find('[data-id="channel-controls"]').exists()).toBe(false)
+    h.context.scopes.dropPage()
+    await nextTick()
+    expect(view.find('h1').exists()).toBe(false)
+    expect(h.navigation.currentTitle.get()).toBe('')
+    const fresh = h.context.scopes.openPage(PAGE)
+    answer(fresh, { ...SMS, channel: 'email', label: 'Email' })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Email')
+    expect(h.navigation.currentTitle.get()).toBe('Email · Demo')
+    h.scope.data.set(CHANNEL_SUMMARY_DATA, { ...SMS, label: 'Old scope' })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Email')
+    const other = h.context.scopes.openPage(
+      HilosPages.COMMUNICATIONS_DELIVERIES,
+    )
+    answer(other, { ...SMS, channel: 'email', label: 'Other tab' })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Channel')
+    expect(view.find('[data-id="channel-controls"]').exists()).toBe(false)
+    const back = h.context.scopes.openPage(PAGE)
+    answer(back, { ...SMS, channel: 'email', label: 'Email again' })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Email again')
+    view.unmount()
+    mounted.splice(mounted.indexOf(view), 1)
+    expect(h.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'Channel',
+    )
   })
 })
 
-describe('HilosCommunicationsChannelPage in the admin view mode', () => {
-  const releases: (() => void)[] = []
-
-  afterEach(() => {
-    for (const release of releases.splice(0)) release()
-  })
-
-  /**
-   * Bind the session scope and the admin access the way bootHilos does, over
-   * handshakes this harness emits.
-   */
-  function bindSession() {
-    const listeners: ((signal: ProjectSignal) => void)[] = []
-    const connection = {
-      on(event: string, listener: (payload: never) => void): () => void {
-        if (event === 'projectSignal') {
-          listeners.push(listener as (signal: ProjectSignal) => void)
-        }
-
-        return () => {}
-      },
-    } as unknown as HilosConnection
-    const scopes = new ScopeManager()
-    bindSessionScope(connection, scopes)
-    releases.push(bindAdminAccess(scopes))
-
-    return {
-      /**
-       * One handshake: who is behind the session, if anybody, and the node's
-       * admin view mode, both as the backend stamps them (HIL-1253).
-       *
-       * @param user The person behind the session, or null for a guest.
-       * @param viewMode The node's admin view mode.
-       */
-      handshake(
-        user: { id: number; admin: boolean } | null,
-        viewMode: boolean,
-      ): void {
-        const signal = {
-          kind: 'project',
-          type: 'handshake_response',
-          data: {
-            entities: {
-              currentUser: user === null ? null : { ...user, name: 'Olena' },
-            },
-            data: { adminViewMode: viewMode },
-          },
-          envelope: {},
-        } as unknown as ProjectSignal
-        for (const listener of listeners) {
-          listener(signal)
-        }
-      },
-    }
-  }
-
-  function resetButton(): HTMLButtonElement {
-    return document.querySelector(
-      'table [data-id="hilos-channel-field-reset-from"]',
-    ) as HTMLButtonElement
-  }
-
-  function confirmButton(): HTMLButtonElement {
-    return modalEl('hilos-channel-reset-confirm') as HTMLButtonElement
-  }
-
-  it('a viewer finds the test send standing in view mode', async () => {
-    const { handshake } = bindSession()
-    handshake(null, true)
-    const { context, sent } = seededContext([fromField('+1000')])
-    await mountPage(context)
-
-    const testButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-channel-test"]',
-    )
-    expect(testButton?.disabled).toBe(true)
-    expect(testButton?.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-    testButton?.click()
+describe('HilosCommunicationsChannelPage actions', () => {
+  it('guards repeats immediately, delays the spinner 300 ms and accepts only a server summary as the new value', async () => {
+    const h = harness()
+    const view = await mountPage(h)
+    vi.useFakeTimers()
+    const toggle = view.getComponent(HilosSwitch)
+    toggle.vm.$emit('toggle', false)
+    toggle.vm.$emit('toggle', false)
     await nextTick()
-    expect(sent).toEqual([])
-  })
-
-  it('a viewer opens a field edit, sees the hidden mark instead of an input, and closes via Cancel', async () => {
-    const { handshake } = bindSession()
-    handshake(null, true)
-    const { context, sent, focus } = seededContext([
+    expect(h.sent).toEqual([
       {
-        ...fromField('+1000'),
-        value: { _hidden: true } as unknown as string,
+        action: 'communications_channel_set',
+        payload: { channel: 'sms', field: 'enabled', value: false },
+        requestId: expect.any(String),
       },
     ])
-    await mountPage(context)
-
-    expect((editButton() as HTMLButtonElement).disabled).toBe(false)
-    editButton().click()
+    expect(enabled(view).element.disabled).toBe(true)
+    expect(enabled(view).attributes('aria-busy')).toBe('true')
+    expect(enabled(view).element.checked).toBe(true)
+    expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Enabled')
+    await vi.advanceTimersByTimeAsync(299)
+    expect(toggle.find('.spinner-border').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(toggle.find('.spinner-border').exists()).toBe(true)
+    h.reply('success')
+    await vi.advanceTimersByTimeAsync(0)
     await nextTick()
-
-    expect(modalEl('hilos-channel-edit-value')).toBeNull()
-    expect(modalEl('hilos-hidden')).not.toBeNull()
-
-    expect(saveButton().disabled).toBe(true)
-    saveButton().click()
+    expect(enabled(view).element.disabled).toBe(false)
+    expect(enabled(view).element.checked).toBe(true)
+    expect(toggle.find('.spinner-border').exists()).toBe(false)
+    expect(hilosToasts.toasts.get()).toEqual([])
+    h.update({ ...SMS, enabled: false })
     await nextTick()
-    expect(sent).toEqual([])
-
-    const cancel = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
-    ).find((button) => button.textContent?.trim() === 'Cancel')
-    expect(cancel?.disabled).toBe(false)
-    cancel?.click()
-    await nextTick()
-
-    expect(modalEl('modal-confirm-discard')).toBeNull()
-    expect(modalEl('modal')).toBeNull()
-    expect(focus).toEqual([ROW_KEY, ''])
+    expect(enabled(view).element.checked).toBe(false)
+    expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Disabled')
   })
 
-  it('a viewer opens the reset of an overridden field with a hidden value and has nothing to reset with', async () => {
-    const { handshake } = bindSession()
-    handshake(null, true)
-    const { context, sent, focus } = seededContext([
+  it('preserves the old value and server refusal, then permits another toggle', async () => {
+    const h = harness()
+    const view = await mountPage(h)
+    await enabled(view).trigger('click')
+    h.reply('fail', 'This channel is locked.')
+    await flushPromises()
+    expect(enabled(view).element.checked).toBe(true)
+    expect(enabled(view).element.disabled).toBe(false)
+    expect(hilosToasts.toasts.get()).toMatchObject([
+      { severity: 'error', message: 'This channel is locked.' },
+    ])
+    await enabled(view).trigger('click')
+    expect(h.sent).toHaveLength(2)
+    h.reply('success')
+    await flushPromises()
+  })
+
+  it('lets an admin on a node in view mode track test sending without changing settings and keeps backend toast/refusal words', async () => {
+    const h = harness(SMS, false, true)
+    const view = await mountPage(h)
+    vi.useFakeTimers()
+    const test = view.get('[data-id="hilos-channel-test"]')
+    const runner = view.getComponent(LoadingButton)
+    runner.vm.$emit('click', new MouseEvent('click'))
+    runner.vm.$emit('click', new MouseEvent('click'))
+    await nextTick()
+    expect(h.sent).toEqual([
       {
-        ...fromField('+1000', 'settings'),
-        value: { _hidden: true } as unknown as string,
+        action: 'communications_channel_test',
+        payload: { channel: 'sms' },
+        requestId: expect.any(String),
       },
     ])
-    await mountPage(context)
-
-    expect(resetButton().disabled).toBe(false)
-    resetButton().click()
+    expect(test.attributes('aria-busy')).toBe('true')
+    expect(test.attributes('aria-disabled')).toBe('true')
+    await test.trigger('click')
+    expect(h.sent).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(299)
+    expect(test.find('.spinner-border').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(test.find('.spinner-border').exists()).toBe(true)
+    h.reply('success', 'Test notification queued.')
+    await vi.advanceTimersByTimeAsync(0)
     await nextTick()
-
-    expect(focus).toEqual([ROW_KEY])
-    expect(
-      modalEl('hilos-channel-reset-now')?.querySelector(
-        '[data-id="hilos-hidden"]',
-      ),
-    ).not.toBeNull()
-    expect(confirmButton().disabled).toBe(true)
-    expect(confirmButton().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    confirmButton().click()
+    expect(hilosToasts.toasts.get()).toMatchObject([
+      { severity: 'success', message: 'Test notification queued.' },
+    ])
+    expect(h.scope.data.signal(CHANNEL_SUMMARY_DATA).get()).toEqual(SMS)
+    await test.trigger('click')
+    h.reply('fail', 'No phone number is set.')
+    await vi.advanceTimersByTimeAsync(0)
     await nextTick()
-    expect(sent).toEqual([])
-
-    const cancel = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
-    ).find((button) => button.textContent?.trim() === 'Cancel')
-    expect(cancel?.disabled).toBe(false)
-    cancel?.click()
-    await nextTick()
-
-    expect(modalEl('modal')).toBeNull()
-    expect(focus).toEqual([ROW_KEY, ''])
+    expect(hilosToasts.toasts.get().at(-1)).toMatchObject({
+      severity: 'error',
+      message: 'No phone number is set.',
+    })
+    expect(h.sent.map((sent) => sent.action)).toEqual([
+      'communications_channel_test',
+      'communications_channel_test',
+    ])
   })
 
-  it('an admin on a node in the mode sends a test as today', async () => {
-    const { handshake } = bindSession()
-    handshake({ id: 1, admin: true }, true)
-    const { context, sent } = seededContext([fromField('+1000')])
-    await mountPage(context)
-
-    const testButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-channel-test"]',
+  it('keeps hidden enabled hidden and viewer mutations disabled through the standard controls', async () => {
+    const h = harness({ ...SMS, enabled: { _hidden: true } }, true)
+    const view = await mountPage(h)
+    expect(view.find('[data-id="channel-head-enabled"]').exists()).toBe(false)
+    expect(view.find('[data-id="hilos-channel-enabled"]').exists()).toBe(false)
+    expect(view.findAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    expect(view.text()).not.toContain('Disabled')
+    expect(view.get('[data-id="channel-summary-fields"]').text()).toContain(
+      '3 secret, set in env only',
     )
-    expect(testButton?.disabled).toBe(false)
-    expect(testButton?.getAttribute('aria-describedby')).toBeNull()
-    testButton?.click()
+    const test = view.get<HTMLButtonElement>('[data-id="hilos-channel-test"]')
+    expect(test.element.disabled).toBe(true)
+    expect(test.attributes('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    test.element.click()
+    h.update({ ...SMS, enabled: false })
     await nextTick()
-
-    expect(sent[0]?.action).toBe('communications_channel_test')
-    expect(sent[0]?.payload).toEqual({ channel: 'sms' })
+    expect(enabled(view).element.disabled).toBe(true)
+    expect(enabled(view).element.checked).toBe(false)
+    expect(enabled(view).attributes('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    enabled(view).element.click()
+    await nextTick()
+    expect(h.sent).toEqual([])
   })
 })

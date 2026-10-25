@@ -521,6 +521,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos communications channel page. */
     public const string SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL = 'subscription_page_hilos_communications_channel';
 
+    /** Subscription signal for Hilos communications channel configuration. */
+    public const string SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION = 'subscription_page_hilos_communications_channel_configuration';
+
     /** Subscription signal for Hilos communications deliveries page. */
     public const string SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_DELIVERIES = 'subscription_page_hilos_communications_deliveries';
 

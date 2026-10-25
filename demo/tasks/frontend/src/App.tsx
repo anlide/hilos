@@ -171,6 +171,11 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.COMMUNICATIONS_CHANNEL]: lazyPage(() =>
     import('./views/Hilos/Communications/Channel.js').then((m) => m.default),
   ),
+  [HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION]: lazyPage(() =>
+    import('./views/Hilos/Communications/Configuration.js').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
     import('./views/Hilos/Communications/Deliveries.js').then((m) => m.default),
   ),

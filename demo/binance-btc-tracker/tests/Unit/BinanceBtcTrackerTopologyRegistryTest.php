@@ -43,6 +43,7 @@ use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
+use Demo\BinanceBtcTracker\Database\Pages\PageCatalog;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
 use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Hilos;
@@ -62,6 +63,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
@@ -128,6 +130,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
@@ -208,7 +211,7 @@ use Hilos\Status\StatusSettingsCatalog;
  * the archive table and the backup agent (HIL-1220), Maintenance, its page and the verifier
  * circle table (HIL-1221), Settings, its page, table and library, Logs, the six section pages,
  * the section agent and the three per-node and cluster agents behind it (HIL-1222),
- * Communications, its three pages and tables (HIL-1224), and Users, the people list and a
+ * Communications, its four pages and three tables (HIL-1224, HIL-1667), and Users, the people list and a
  * person's card with their two tables (HIL-1219) - sign-in activated on the framework
  * libraries, and notifications with delivery by email and SMS: the notifications library, its
  * group, the SMS channel agent and the one profile page, the person's channel switches
@@ -394,6 +397,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             LogsSettingsPage::PAGE => LogsSettingsPage::class,
             CommunicationsPage::PAGE => CommunicationsPage::class,
             CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+            CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             AboutPage::PAGE => AboutPage::class,
@@ -424,6 +428,79 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
+    /** Configuration owns only the field-table subscription; the existing channel page keeps mutation routing. */
+    public function testCommunicationsConfigurationUsesTheIndexAgentAndOwnsOnlyTheFieldsBinding(): void
+    {
+        self::assertSame(CommunicationsChannelConfigurationPage::class, Hilos::PAGES[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+        ], CommunicationsChannelConfigurationPage::BROWSER);
+        self::assertSame([], CommunicationsChannelConfigurationPage::ACTIONS);
+        self::assertSame([], CommunicationsChannelConfigurationPage::SIGNALS);
+        self::assertSame([
+            BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => [],
+        ], Hilos::PAGE_TABLES[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertArrayNotHasKey(CommunicationsChannelPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([
+            BinanceBtcTrackerTableContext::hilosCommunicationsChannels => [],
+        ], Hilos::PAGE_TABLES[CommunicationsPage::PAGE]);
+        self::assertSame([
+            BinanceBtcTrackerTableContext::hilosNotificationDeliveries => [],
+        ], Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE]);
+
+        foreach ([
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST,
+        ] as $action) {
+            self::assertSame(CommunicationsChannelPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+        }
+        self::assertSame(
+            CommunicationsChannelPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        self::assertSame(
+            CommunicationsDeliveriesPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+    }
+
+    /** Catalog overrides retain every framework field for User and both Communications owners. */
+    public function testCatalogAdoptsUserAndBothCommunicationsOwnersWithCompleteEntries(): void
+    {
+        Hilos::initBrowser();
+        try {
+            self::assertSame(PageCatalog::class, Hilos::getPageCatalogClass());
+        } finally {
+            Hilos::resetBrowser();
+        }
+        $pages = PageCatalog::pages();
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS]);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Channel',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single communication channel and its configuration.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Channel',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL]);
+        self::assertSame([
+            HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_COMMUNICATIONS,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+        ], array_keys($pages));
+        self::assertSame([], PageCatalog::dashboardSections());
     }
 
     /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */
@@ -674,6 +751,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             UserPage::class,
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
+            CommunicationsChannelConfigurationPage::class,
             CommunicationsDeliveriesPage::class,
             AboutPage::class,
             TermsPage::class,
@@ -1023,7 +1101,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => []],
-            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+            Hilos::PAGE_TABLES[CommunicationsChannelConfigurationPage::PAGE],
         );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosNotificationDeliveries => []],

@@ -11,7 +11,7 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
 /**
- * PageCatalog - The chat demo's own admin pages and the dashboard group they are shown in.
+ * PageCatalog - Chat admin pages, dashboard group, and User and Communications head adoption.
  *
  * One screen the framework does not know about: the library bots. It hangs off the
  * dashboard, so it reaches the panel as a card of its own group rather than as a
@@ -28,13 +28,21 @@ final class PageCatalog implements PageCatalogProviderInterface
      * @return array<string, array{
      *     label: string, lead: string, parent?: string, icon?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
-     * }> The chat demo's admin pages
+     * }> The chat demo's admin pages and adopted framework owners
      */
     public static function pages(): array
     {
         return [
             HilosPageConstants::HILOS_USER => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_COMMUNICATIONS => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
             PageConstants::ADMIN_BOTS => [

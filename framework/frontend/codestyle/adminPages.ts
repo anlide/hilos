@@ -9,6 +9,7 @@ import { join, relative, sep } from 'node:path'
 import ts from 'typescript'
 import {
   importedValue,
+  moduleSource,
   namedDynamicImport,
   resolveReference,
   type ModuleReference,
@@ -208,7 +209,9 @@ export function readViews(
     const file = source(root, path)
     files.set(path, file)
     const bindings =
-      layer === 'react' ? reactBindings(file) : templateBindings(file, layer)
+      layer === 'react'
+        ? reactBindings(file)
+        : templateBindings(file, layer, file, root)
     for (const binding of bindings) {
       const key = pages.find((page) => page.name === binding.name)?.key
       if (key && (views.get(key)?.bare ?? true))
@@ -264,6 +267,7 @@ export function readViews(
                   target.node?.getSourceFile() ?? file,
                   layer,
                   target.node,
+                  root,
                 )
           const matching = bindings.filter(
             (binding) =>
@@ -331,11 +335,52 @@ function reactBindings(file: ts.SourceFile, scope: ts.Node = file): Binding[] {
   return bindings
 }
 
+/**
+ * Prove a local Vue wrapper forwards its page to the real admin shell and
+ * projects the caller's default content inside it. Unresolved imports, renamed
+ * page props, conditional shells and wrappers without a slot fail closed.
+ */
+function isVuePageShell(
+  root: string,
+  file: ts.SourceFile,
+  name: string,
+): boolean {
+  const reference = importedValue(moduleSource(root, file.fileName), name)
+  if (!reference) return false
+  const target = resolveReference(root, file.fileName, reference)
+  if (!target?.path.endsWith('.vue')) return false
+  const wrapper = moduleSource(root, target.path)
+  const shell = importedValue(wrapper, 'HilosAdminPage')
+  if (
+    !shell ||
+    resolveReference(root, target.path, shell)?.path !==
+      'framework/frontend/vue/src/HilosAdminPage.vue'
+  ) {
+    return false
+  }
+  const text = readFileSync(join(root, target.path), 'utf8').replace(
+    /<!--[\s\S]*?-->/g,
+    '',
+  )
+  const template =
+    /^<template[^>]*>\s*(<HilosAdminPage\b[^>]*>)([\s\S]*)<\/HilosAdminPage>\s*<\/template>\s*$/m.exec(
+      text,
+    )
+
+  return (
+    template !== null &&
+    /:page\s*=\s*["'](?:props\.)?page["']/.test(template[1]) &&
+    !/\bv-(?:if|else|for)\b/.test(template[1]) &&
+    /<slot\s*\/>/.test(template[2])
+  )
+}
+
 /** Vue SFC templates and Angular Component templates bind the shell by page. */
 function templateBindings(
   file: ts.SourceFile,
   layer: 'vue' | 'angular',
   scope: ts.Node = file,
+  root?: string,
 ): Binding[] {
   const templates: Array<{
     text: string
@@ -394,7 +439,7 @@ function templateBindings(
     const bindings: Binding[] = []
     const tag =
       layer === 'vue'
-        ? /<(?:HilosAdminPage|HilosSettingPresetsPage|HilosDaemonNodeShell|HilosUserPageShell)\b[^>]*>/g
+        ? /<([A-Z]\w*)\b[^>]*>/g
         : /<(?:hilos-(?:admin|setting-presets)-page\b|hilos-daemon-node-shell(?=[\s/>]))[^>]*>/g
     for (const match of clean.matchAll(tag)) {
       const attribute =
@@ -404,13 +449,23 @@ function templateBindings(
       const name =
         attribute && (layer === 'vue' ? attribute[1] : fields.get(attribute[1]))
       if (!name) continue
+      const wrapper =
+        layer === 'vue' &&
+        ![
+          'HilosAdminPage',
+          'HilosSettingPresetsPage',
+          'HilosUserPageShell',
+          'HilosDaemonNodeShell',
+        ].includes(match[1])
+      if (wrapper && (!root || !isVuePageShell(root, file, match[1]))) continue
       bindings.push({
         name,
         line: file.getLineAndCharacterOfPosition(offset + match.index).line + 1,
         bare:
-          /^<(HilosAdminPage|HilosUserPageShell|hilos-admin-page)\b/.test(
-            match[0],
-          ) &&
+          (wrapper ||
+            /^<(HilosAdminPage|HilosUserPageShell|hilos-admin-page)\b/.test(
+              match[0],
+            )) &&
           match[0].endsWith('/>') &&
           clean.trim() === match[0],
       })

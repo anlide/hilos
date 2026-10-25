@@ -23,6 +23,11 @@ import type {
 
 import { HilosCommunicationsDeliveriesPage } from '../src/admin/communications/HilosCommunicationsDeliveriesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import {
+  communicationsHarness,
+  channelEl,
+  channelSummary,
+} from './hilosCommunicationsHarness.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
@@ -380,4 +385,20 @@ describe('HilosCommunicationsDeliveriesPage in the admin view mode', () => {
     expect(sent[0]?.action).toBe('communications_delivery_retry')
     expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
   })
+})
+
+it('draws the channel shared head and journal without a duplicate channel plaque', () => {
+  const h = communicationsHarness(HilosPages.COMMUNICATIONS_DELIVERIES)
+  h.mount(<HilosCommunicationsDeliveriesPage context={h.context} />)
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(channelEl('hilos-page-head-title')?.textContent).toBe('Email')
+  expect(channelEl('hilos-page-tabs')).not.toBeNull()
+  expect(channelEl('hilos-viewport-table')).not.toBeNull()
+  expect(
+    document.querySelectorAll('[data-id="channel-head-description"]'),
+  ).toHaveLength(1)
+  expect(document.querySelector('span.form-label.d-block')).toBeNull()
+  act(() => h.putSummary({ ...channelSummary, label: 'Live mail' }))
+  expect(channelEl('hilos-page-head-title')?.textContent).toBe('Live mail')
+  expect(h.sent).toEqual([])
 })

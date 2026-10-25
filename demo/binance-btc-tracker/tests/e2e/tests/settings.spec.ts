@@ -47,43 +47,48 @@ async function isolate(page: Page, key: string): Promise<void> {
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
 
-test('lists settings in the server window and filters from the search box', async ({
-  page,
-}) => {
-  await signUpAdmin(page)
-  await openSettings(page)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
+// FIXME(F-029, 2026-10-24): registration modal disappears after address entry · чужой · попытка 2 · HIL-1667
+test(
+  'lists settings in the server window and filters from the search box',
+  { tag: '@quarantine:F-029' },
+  async ({ page }) => {
+    await signUpAdmin(page)
+    await openSettings(page)
+    await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
 
-  // A cataloged table has no free "add a setting" entry point.
-  await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
+    // A cataloged table has no free "add a setting" entry point.
+    await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
 
-  // A key query narrows the window to its row; a query nothing matches empties
-  // it into "Nothing found", which names the query and offers the reset (the
-  // framework's own state since HIL-808, distinct from the skeleton of a late
-  // window); the reset restores the window and clears the box.
-  const search = page.getByTestId('hilos-table-search')
-  await typeInto(search, 'example_string')
-  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
-  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
+    // A key query narrows the window to its row; a query nothing matches empties
+    // it into "Nothing found", which names the query and offers the reset (the
+    // framework's own state since HIL-808, distinct from the skeleton of a late
+    // window); the reset restores the window and clears the box.
+    const search = page.getByTestId('hilos-table-search')
+    await typeInto(search, 'example_string')
+    await expect(
+      page.getByTestId('hilos-table-row-example_string'),
+    ).toBeVisible()
+    await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
 
-  await typeInto(search, 'zzz-no-such-setting-zzz')
-  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-  // The words stand in both branches of the table, so they are read off the copy
-  // on screen; that they are gone is asserted of both.
-  const noMatches = page.getByTestId('hilos-table-no-matches')
-  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
-  await expect(
-    shownByTestId(page, 'hilos-table-no-matches-terms'),
-  ).toContainText('“zzz-no-such-setting-zzz”')
+    await typeInto(search, 'zzz-no-such-setting-zzz')
+    await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+    // The words stand in both branches of the table, so they are read off the copy
+    // on screen; that they are gone is asserted of both.
+    const noMatches = page.getByTestId('hilos-table-no-matches')
+    await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+    await expect(
+      shownByTestId(page, 'hilos-table-no-matches-terms'),
+    ).toContainText('“zzz-no-such-setting-zzz”')
 
-  await shownByTestId(page, 'hilos-table-no-matches-reset').click()
-  await expect(
-    page.locator('[data-id^="hilos-table-row-"]').first(),
-  ).toBeVisible()
-  await expect(noMatches).toHaveCount(0)
-  await expect(search).toHaveValue('')
-})
+    await shownByTestId(page, 'hilos-table-no-matches-reset').click()
+    await expect(
+      page.locator('[data-id^="hilos-table-row-"]').first(),
+    ).toBeVisible()
+    await expect(noMatches).toHaveCount(0)
+    await expect(search).toHaveValue('')
+  },
+)
 
 test('paginates the server window by its page numbers and its neighbors', async ({
   page,

@@ -12,10 +12,13 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  pageIdentity,
+  resolveHilosPath,
 } from '@hilos/core'
 import type {
   HilosConnection,
   HilosDeliveriesContext,
+  HilosPageKey,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
@@ -27,20 +30,21 @@ import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
-      params: {},
+      params: { channelId: 'email' },
       admin: true,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) =>
+      resolveHilosPath(page as HilosPageKey, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -87,7 +91,44 @@ function seededContext(
   answer: (requestId: string) => void
 } {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
+  const pageScope = scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
+  for (const [key, value] of Object.entries({
+    pageLabel: 'Delivery log',
+    pageLead: 'Delivery log for one channel.',
+    pageHeadOwner: {
+      page: HilosPages.COMMUNICATIONS_CHANNEL,
+      label: 'Channel',
+      lead: 'A single communication channel and its configuration.',
+      icon: 'bi-envelope-paper',
+    },
+    pageBreadcrumb: [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
+      { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Channel' },
+    ],
+    pageTabs: [
+      { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Overview' },
+      {
+        page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+        label: 'Configuration',
+      },
+      { page: HilosPages.COMMUNICATIONS_DELIVERIES, label: 'Deliveries' },
+    ],
+    pageChildren: [],
+    channelSummary: {
+      channel: 'email',
+      label: 'Email',
+      enabled: true,
+      configured: true,
+      driver: 'smtp',
+      missingFields: 0,
+      fieldCount: 6,
+      secretFieldCount: 1,
+      overriddenFieldCount: 2,
+    },
+  })) {
+    pageScope.data.set(key, value)
+  }
   const windowListeners = new Set<Listener>()
   const serveWindow = (): void => {
     const data = {
@@ -184,7 +225,7 @@ function mountPage(
   context: HilosDeliveriesContext,
 ): ComponentFixture<HilosCommunicationsDeliveriesPage> {
   TestBed.configureTestingModule({
-    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    providers: [{ provide: HILOS_ROUTER, useValue: router(context.scopes) }],
   })
   const fixture = TestBed.createComponent(HilosCommunicationsDeliveriesPage)
   fixture.componentRef.setInput('context', context)
@@ -226,6 +267,42 @@ const RESTING = {
 }
 const OFF = { ...RESTING, nativeDisabled: true, ariaDisabled: 'true' }
 const LOCKED = { ...RESTING, ariaBusy: 'true', ariaDisabled: 'true' }
+
+describe('HilosCommunicationsDeliveriesPage shared head', () => {
+  it('uses the channel head and keeps the journal under its Deliveries tab', () => {
+    const { context } = seededContext()
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(root.querySelectorAll('h1')).toHaveLength(1)
+    expect(
+      root
+        .querySelector('[data-id="hilos-page-head-title"]')
+        ?.textContent?.trim(),
+    ).toBe('Email')
+    expect(
+      root.querySelector('[data-id="channel-head-description"]')?.textContent,
+    ).toContain('Channel email · driver smtp')
+    expect(
+      root
+        .querySelector(
+          `[data-id="hilos-page-tab-${HilosPages.COMMUNICATIONS_DELIVERIES}"]`,
+        )
+        ?.getAttribute('aria-current'),
+    ).toBe('page')
+    expect(
+      root
+        .querySelector(
+          `[data-id="hilos-page-tab-${HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION}"]`,
+        )
+        ?.getAttribute('href'),
+    ).toBe('/hilos/communications/email/configuration')
+    expect(root.querySelector('span.form-label')).toBeNull()
+    expect(
+      root.querySelector('[data-id="hilos-viewport-table"]'),
+    ).not.toBeNull()
+  })
+})
 
 // One retry flies at a time: the row it was pressed on carries it — locked at
 // once, its spinner at 300 ms — and every other row's Retry is off natively

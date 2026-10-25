@@ -53,6 +53,9 @@ final class HilosPageRouteParams
     /** Route param for country detail pages. */
     public const string HILOS_I18N_COUNTRY_CODE = 'countryCode';
 
+    /** Route param shared by the communications channel's pages. */
+    public const string HILOS_COMMUNICATIONS_CHANNEL_ID = 'channelId';
+
     /** Legal document and revision route parameters. */
     public const string HILOS_LEGAL_DOCUMENT_KEY = 'documentKey';
     public const string HILOS_LEGAL_REVISION_ID = 'revisionId';

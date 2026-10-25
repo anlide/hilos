@@ -134,9 +134,9 @@ export class HilosCommunicationsPage {
     })
   }
 
-  /** The channel's configuration page path (its {channelId} route param is the name). */
+  /** The channel's Configuration tab path (its {channelId} is the channel key). */
   protected channelPath(row: HilosChannelRow): string {
-    return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
+    return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION, {
       channelId: row.channel,
     })
   }

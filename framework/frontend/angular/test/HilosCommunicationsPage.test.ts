@@ -8,11 +8,13 @@ import {
   HilosPages,
   ScopeManager,
   createSignal,
+  resolveHilosPath,
 } from '@hilos/core'
 import type {
   HilosCommunicationsContext,
   HilosConnection,
   HilosRouter,
+  HilosPageKey,
   PageRouteMatch,
 } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
@@ -35,7 +37,8 @@ function router(): HilosRouter {
     pageLoading: createSignal(false),
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) =>
+      resolveHilosPath(page as HilosPageKey, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -180,6 +183,11 @@ describe('HilosCommunicationsPage', () => {
     expect(switchEl).not.toBeNull()
     expect(switchEl?.checked).toBe(true)
     expect(root.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+    expect(
+      root
+        .querySelector('[data-id="hilos-channel-configure-sms"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/communications/sms/configuration')
 
     switchEl?.click()
     fixture.detectChanges()

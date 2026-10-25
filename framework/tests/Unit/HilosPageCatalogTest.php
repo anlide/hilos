@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 93;
+    private const int CATALOG_ENTRIES = 94;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -119,6 +119,36 @@ final class HilosPageCatalogTest extends TestCase
     {
         self::assertCount(self::CATALOG_ENTRIES, HilosPageCatalog::CATALOG);
         self::assertCount(self::TRANSFERRED_SECTIONS, HilosPageCatalog::DASHBOARD_SECTIONS);
+    }
+
+    public function testCommunicationsChannelIsAnEntityWithConfigurationBeforeDeliveries(): void
+    {
+        $channel = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL];
+        self::assertSame(HilosPageConstants::HILOS_COMMUNICATIONS, $channel[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+        self::assertTrue($channel[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
+        self::assertSame('Channel', $channel[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        self::assertSame('bi-envelope-paper', $channel[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $channel);
+        self::assertArrayNotHasKey(
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS],
+        );
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Configuration',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Configuration',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The fields of one channel.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION]);
+        $children = [];
+        foreach (HilosPageCatalog::CATALOG as $page => $entry) {
+            if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) === HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL) {
+                $children[] = $page;
+            }
+        }
+        self::assertSame([
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+        ], $children);
     }
 
     /**
@@ -319,6 +349,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,

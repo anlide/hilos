@@ -479,31 +479,21 @@ export interface HilosChannelFields {
  *
  * @param context The project context (connection and scope stores).
  * @param channel The route channel to show fields for (a signal — it changes on navigation).
+ * @param page The page owning the fields table; defaults to the legacy channel page.
  */
 export function createHilosChannelFields(
   context: HilosCommunicationsContext,
   channel: ReadonlySignal<string>,
+  page: string = HilosPages.COMMUNICATIONS_CHANNEL,
 ): HilosChannelFields {
   const controller = new TableViewportController<HilosChannelFieldRow>({
     resolve: resolveHilosChannelFieldRow,
     sendViewport: (descriptor) =>
-      context.connection.sendTableViewport(
-        HilosPages.COMMUNICATIONS_CHANNEL,
-        FIELDS_TABLE,
-        descriptor,
-      ),
+      context.connection.sendTableViewport(page, FIELDS_TABLE, descriptor),
     sendRendered: (rendered) =>
-      context.connection.sendTableRendered(
-        HilosPages.COMMUNICATIONS_CHANNEL,
-        FIELDS_TABLE,
-        rendered,
-      ),
+      context.connection.sendTableRendered(page, FIELDS_TABLE, rendered),
     sendFocus: (rowKey) =>
-      context.connection.sendTableRowFocus(
-        HilosPages.COMMUNICATIONS_CHANNEL,
-        FIELDS_TABLE,
-        rowKey,
-      ),
+      context.connection.sendTableRowFocus(page, FIELDS_TABLE, rowKey),
     initialFilter: { [FIELDS_FILTER_CHANNEL]: channel.get() },
     frame: FIELDS_FRAME,
   })
@@ -513,12 +503,7 @@ export function createHilosChannelFields(
     controller,
     start() {
       teardown = [
-        ...bindTable(
-          context,
-          HilosPages.COMMUNICATIONS_CHANNEL,
-          FIELDS_TABLE,
-          controller,
-        ),
+        ...bindTable(context, page, FIELDS_TABLE, controller),
         subscribeSignal(channel, (value) =>
           controller.setFilter(FIELDS_FILTER_CHANNEL, value),
         ),

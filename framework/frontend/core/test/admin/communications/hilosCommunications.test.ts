@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosChannelFields,
@@ -9,8 +9,10 @@ import {
 } from '../../../src/admin/communications/hilosCommunications.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
+import { Emitter } from '../../../src/connection/events.js'
 import {
   type HilosConnection,
+  type HilosConnectionEventMap,
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -270,6 +272,138 @@ describe('createHilosCommunicationsActions', () => {
 })
 
 describe('createHilosChannelFields', () => {
+  it.each([
+    undefined,
+    'hilos_communications_channel_configuration',
+    'project_channel_configuration',
+  ])(
+    'uses page %s for viewport, rendered fields, focus and incoming windows',
+    (page) => {
+      const expectedPage = page ?? 'hilos_communications_channel'
+      const tableKey = 'hilosCommunicationsChannelFields'
+      const emitter = new Emitter<HilosConnectionEventMap>()
+      const sendTableViewport = vi.fn(() => true)
+      const sendTableRendered = vi.fn(() => true)
+      const sendTableRowFocus = vi.fn(() => true)
+      const registerTableWindow = vi.fn()
+      const unregisterTableWindow = vi.fn()
+      const scopes = new ScopeManager()
+      const context = {
+        connection: {
+          on: emitter.on.bind(emitter),
+          sendTableViewport,
+          sendTableRendered,
+          sendTableRowFocus,
+          registerTableWindow,
+          unregisterTableWindow,
+        },
+        scopes,
+      } as unknown as HilosCommunicationsContext
+      // With no route preset yet, the first subscription window can be drawn immediately.
+      const channel = createSignal('')
+      const fields =
+        page === undefined
+          ? createHilosChannelFields(context, channel)
+          : createHilosChannelFields(context, channel, page)
+      const rowKey = 'notifications.channel.email.smtp_port'
+      const row = fieldRow(rowKey, {
+        channel: 'email',
+        field: 'smtp_port',
+        type: 'integer',
+        value: 587,
+      })
+      const emitWindow = (addressedPage: string): void => {
+        const data = {
+          page: addressedPage,
+          payload: {
+            windows: {
+              [tableKey]: {
+                rows: [row],
+                sort: [],
+                totalCount: 1,
+                totalExact: true,
+                firstAnchor: { key: rowKey },
+                lastAnchor: { key: rowKey },
+                limit: 10,
+              },
+            },
+          },
+        }
+        emitter.emit('projectSignal', {
+          kind: 'project',
+          type: 'page_response',
+          data,
+          envelope: { type: 'page_response', data },
+        })
+      }
+
+      fields.start()
+      expect(registerTableWindow).toHaveBeenCalledWith(
+        tableKey,
+        fields.controller,
+      )
+      scopes.openPage('other_page')
+      emitWindow(expectedPage)
+      expect(fields.controller.loaded.get()).toBe(false)
+      scopes.openPage(expectedPage)
+      emitWindow('other_page')
+      expect(fields.controller.loaded.get()).toBe(false)
+
+      emitWindow(expectedPage)
+      expect(fields.controller.rows.get().map((entry) => entry.rowKey)).toEqual(
+        [rowKey],
+      )
+      expect(sendTableRendered).toHaveBeenCalledOnce()
+      expect(sendTableRendered).toHaveBeenCalledWith(
+        expectedPage,
+        tableKey,
+        expect.arrayContaining([
+          'field',
+          'value',
+          'valueSource',
+          'defaultValue',
+        ]),
+      )
+      expect(fields.controller.focusRow(rowKey)?.key).toBe(rowKey)
+      fields.controller.releaseFocus()
+      expect(sendTableRowFocus.mock.calls).toEqual([
+        [expectedPage, tableKey, rowKey],
+        [expectedPage, tableKey, ''],
+      ])
+
+      const rows = fields.controller.rows.get()
+      const data = {
+        page: expectedPage,
+        payload: { data: { channelSummary: { channel: 'email' } } },
+      }
+      emitter.emit('projectSignal', {
+        kind: 'project',
+        type: 'page_response',
+        data,
+        envelope: { type: 'page_response', data },
+      })
+      expect(fields.controller.rows.get()).toBe(rows)
+      expect(fields.controller.loaded.get()).toBe(true)
+      expect(sendTableViewport).not.toHaveBeenCalled()
+      expect(sendTableRendered).toHaveBeenCalledOnce()
+
+      channel.set('sms')
+      expect(sendTableViewport).toHaveBeenCalledOnce()
+      expect(sendTableViewport).toHaveBeenCalledWith(
+        expectedPage,
+        tableKey,
+        expect.objectContaining({ filter: { channel: 'sms' } }),
+      )
+      fields.dispose()
+      expect(unregisterTableWindow).toHaveBeenCalledWith(
+        tableKey,
+        fields.controller,
+      )
+      channel.set('push')
+      expect(sendTableViewport).toHaveBeenCalledOnce()
+    },
+  )
+
   it('declares a bare frame: no title under the page heading, no search over a handful of fields', () => {
     const fields = createHilosChannelFields(
       {

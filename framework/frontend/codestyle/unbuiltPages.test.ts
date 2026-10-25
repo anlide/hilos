@@ -60,6 +60,109 @@ function withHonestCopy<T>(check: (root: string) => T): T {
   }
 }
 
+it.each([
+  {
+    shell: '<HilosAdminPage :page="page"><slot /></HilosAdminPage>',
+    built: true,
+  },
+  {
+    shell: '<HilosAdminPage :page="props.page"><slot /></HilosAdminPage>',
+    built: true,
+  },
+  {
+    shell: '<HilosAdminPage :page="other"><slot /></HilosAdminPage>',
+    built: false,
+  },
+  {
+    shell:
+      '<HilosAdminPage :page="page"><p>No content slot</p></HilosAdminPage>',
+    built: false,
+  },
+  {
+    shell:
+      '<HilosAdminPage v-if="ready" :page="page"><slot /></HilosAdminPage>',
+    built: false,
+  },
+  { shell: '<section><slot /></section>', built: false },
+  {
+    shell:
+      '<!-- <HilosAdminPage :page="page"><slot /></HilosAdminPage> --><section />',
+    built: false,
+  },
+])(
+  'proves the Vue wrapper shell before recognizing its caller: $shell',
+  ({ shell, built }) => {
+    withHonestCopy((root) => {
+      const directory = join(root, 'framework/frontend/vue/src')
+      const map = join(directory, 'admin/hilosAdminViews.ts')
+      writeFileSync(
+        map,
+        readFileSync(map, 'utf8').replace(
+          "    [HilosPages.BUILT]: lazyPage(() =>\n      import('@hilos/vue/admin/change-log').then((m) => m.Built),\n    ),\n",
+          '',
+        ),
+      )
+      writeFileSync(
+        join(directory, 'HilosAdminPage.vue'),
+        '<template><slot /></template>',
+      )
+      writeFileSync(
+        join(directory, 'admin/ChannelHead.vue'),
+        `
+<script setup lang="ts">
+import HilosAdminPage from '../HilosAdminPage.vue'
+defineProps<{ page: string }>()
+</script>
+<template>${shell}</template>
+`,
+      )
+      const caller = (body: string): void =>
+        writeFileSync(
+          join(directory, 'admin/Built.vue'),
+          `
+<script setup lang="ts">
+import ChannelHead from './ChannelHead.vue'
+</script>
+<template>${body}</template>
+`,
+        )
+      caller(
+        '<ChannelHead :page="HilosPages.BUILT"><p>Fields</p></ChannelHead>',
+      )
+      const views = readViews(root, 'vue', readPages(source(root, KEYS_PATH)))
+      expect(views.get('hilos_built')?.bare).toBe(built ? false : undefined)
+      expect(
+        checkTree(root).some((line) =>
+          line.includes("'hilos_built' is unbuilt in vue"),
+        ),
+      ).toBe(!built)
+      if (built) {
+        caller('<ChannelHead :page="HilosPages.BUILT" />')
+        expect(checkTree(root)).toContain(
+          `UNBUILT-PAGE framework/frontend/vue/src/admin/Built.vue:5 — 'hilos_built' is unbuilt in vue; list it in HILOS_UNBUILT_PAGES ${DOC}`,
+        )
+        caller(
+          '<ChannelHead :page="HilosPages.BUILT"><p>Fields</p></ChannelHead>',
+        )
+        writeFileSync(
+          join(directory, 'admin/ChannelHead.vue'),
+          `
+<script setup lang="ts">
+import HilosAdminPage from './Missing.vue'
+</script>
+<template>${shell}</template>
+`,
+        )
+        expect(
+          checkTree(root).some((line) =>
+            line.includes("'hilos_built' is unbuilt in vue"),
+          ),
+        ).toBe(true)
+      }
+    })
+  },
+)
+
 /** Replace only the eager dashboard binding; the other fixture entries stay. */
 function dashboard(root: string, layer: Layer, expression: string): void {
   const path = join(

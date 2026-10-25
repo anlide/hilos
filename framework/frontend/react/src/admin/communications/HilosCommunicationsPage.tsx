@@ -44,7 +44,7 @@ export interface HilosCommunicationsPageProps {
 
 /** The channel's configuration page path (its {channelId} route param is the name). */
 function channelPath(row: HilosChannelRow): string {
-  return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
+  return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION, {
     channelId: row.channel,
   })
 }
@@ -95,7 +95,7 @@ export function HilosCommunicationsPage({
   }
 
   return (
-    <HilosAdminPage page={HilosPages.COMMUNICATIONS}>
+    <HilosAdminPage page={HilosPages.COMMUNICATIONS} headKind="section">
       <HilosViewportTable
         controller={channels.controller}
         cells={{

@@ -1,4 +1,8 @@
 export {
+  type HilosCommunicationsChannelConfigurationPageProps,
+  HilosCommunicationsChannelConfigurationPage,
+} from './HilosCommunicationsChannelConfigurationPage.js'
+export {
   type HilosCommunicationsChannelPageProps,
   HilosCommunicationsChannelPage,
 } from './HilosCommunicationsChannelPage.js'

@@ -3,6 +3,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   enableEmailChannel,
+  expectCommunicationsChannelHead,
   openBell,
   setCustomSetting,
   shownByTestId,
@@ -410,22 +411,23 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
 test("an operator reaches a channel's delivery journal by clicks alone", async ({
   page,
 }) => {
-  // The journal is the channel page's child: the shell draws its card above the
-  // channel's own fields, so no address is typed past the hub. The channel stays
-  // as it is — the door does not depend on whether it is switched on.
+  // Configure opens the fields tab; Deliveries is reached through the same
+  // channel head without typing an address past the hub.
   await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/communications')
 
   // The hub is a table drawn both as rows and as cards, so the button
   // is aimed at through the copy on screen.
   await shownByTestId(page, 'hilos-channel-configure-email').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')
-  expect(new URL(page.url()).pathname).toBe('/hilos/communications/email')
+  await expectCommunicationsChannelHead(expect, page, 'configuration')
+  expect(new URL(page.url()).pathname).toBe(
+    '/hilos/communications/email/configuration',
+  )
 
   await page
-    .getByTestId('hilos-admin-child-hilos_communications_deliveries')
+    .getByTestId('hilos-page-tab-hilos_communications_deliveries')
     .click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Deliveries')
+  await expectCommunicationsChannelHead(expect, page, 'deliveries')
   expect(new URL(page.url()).pathname).toBe(
     '/hilos/communications/email/deliveries',
   )

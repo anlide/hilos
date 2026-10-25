@@ -46,6 +46,7 @@ import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import { useHilosCommunicationsChannelHead } from './hilosCommunicationsChannelHead.js'
 
 /** Props for {@link HilosCommunicationsDeliveriesPage}. */
 export interface HilosCommunicationsDeliveriesPageProps {
@@ -86,6 +87,7 @@ export function HilosCommunicationsDeliveriesPage({
   context,
 }: HilosCommunicationsDeliveriesPageProps) {
   const router = useContext(HilosRouterContext)
+  const { headProps } = useHilosCommunicationsChannelHead(context)
 
   // The per-channel route ({channelId}) opens the journal with a channel preset; a
   // router-less mount (none in practice) shows the cross-cutting journal instead.
@@ -136,19 +138,7 @@ export function HilosCommunicationsDeliveriesPage({
   }
 
   return (
-    <HilosAdminPage page={HilosPages.COMMUNICATIONS_DELIVERIES}>
-      {/* The channel the route opened the journal on is the table's preset, not a
-          filter of its bar: it is named here, above the table, and nothing on the
-          page offers to take it off. */}
-      {channel ? (
-        <div className="mb-3">
-          <span className="form-label d-block">Channel</span>
-          <span className="badge text-bg-secondary-subtle text-secondary-emphasis fs-6">
-            <code>{channel}</code>
-          </span>
-        </div>
-      ) : null}
-
+    <HilosAdminPage page={HilosPages.COMMUNICATIONS_DELIVERIES} {...headProps}>
       <HilosViewportTable
         controller={deliveries.controller}
         cells={{

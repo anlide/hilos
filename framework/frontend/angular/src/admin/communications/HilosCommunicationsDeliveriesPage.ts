@@ -22,13 +22,20 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HilosPages, computedSignal, isHiddenValue } from '@hilos/core/base'
 import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+  isHiddenValue,
+} from '@hilos/core/base'
+import {
+  createHilosChannelSummary,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
   isDeliveryRetryable,
 } from '@hilos/core/admin/communications'
 import type {
+  HilosChannelSummary,
   HilosDeliveriesContext,
   HilosDeliveryRow,
 } from '@hilos/core/admin/communications'
@@ -43,8 +50,10 @@ import {
   LoadingButton,
   HILOS_ROUTER,
   hilosSignal,
+  mirrorHilosSignal,
   createHilosTrackedAction,
 } from '@hilos/angular/base'
+import { HilosCommunicationsChannelHead } from './HilosCommunicationsChannelHead.js'
 
 // The status contextual badge: failed is danger, sent is success, the rest neutral.
 const STATUS_CLASS: Record<string, string> = {
@@ -59,6 +68,7 @@ const STATUS_CLASS: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosCommunicationsChannelHead,
     HilosHiddenMark,
     HilosHideable,
     HilosTableCell,
@@ -67,21 +77,25 @@ const STATUS_CLASS: Record<string, string> = {
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page">
-      <!-- The channel the route opened the journal on is the table's preset, not a
-      filter of its bar: it is named here, above the table, and nothing on the page
-      offers to take it off. -->
-      @if (channel()) {
-        <div class="mb-3">
-          <span class="form-label d-block">Channel</span>
-          <span
-            class="badge text-bg-secondary-subtle text-secondary-emphasis fs-6"
-          >
-            <code>{{ channel() }}</code>
-          </span>
-        </div>
-      }
-
+    <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Channel pages">
+      <ng-template #headVisual>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="visual"
+        />
+      </ng-template>
+      <ng-template #headBadges>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="badges"
+        />
+      </ng-template>
+      <ng-template #headDescription>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="description"
+        />
+      </ng-template>
       <hilos-viewport-table [controller]="deliveries().controller">
         <ng-template hilosTableCell="createdAt" let-row>{{
           row.createdAt || '—'
@@ -152,20 +166,21 @@ export class HilosCommunicationsDeliveriesPage {
   readonly context = input.required<HilosDeliveriesContext>()
 
   protected readonly page = HilosPages.COMMUNICATIONS_DELIVERIES
+  protected readonly summary = signal<HilosChannelSummary | null>(null)
   protected readonly isHidden = isHiddenValue
   protected readonly isRetryable = isDeliveryRetryable
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
+  private readonly channelSignal = computedSignal(
+    () =>
+      (this.router?.currentRoute.get().params['channelId'] as
+        string | undefined) ?? '',
+  )
+
   // The per-channel route ({channelId}) opens the journal with a channel preset; a
   // router-less mount (none in practice) shows the cross-cutting journal instead.
-  protected readonly channel = hilosSignal(
-    computedSignal(
-      () =>
-        (this.router?.currentRoute.get().params['channelId'] as
-          string | undefined) ?? '',
-    ),
-  )
+  protected readonly channel = hilosSignal(this.channelSignal)
 
   protected readonly deliveries = computed(() =>
     createHilosDeliveriesTable(
@@ -185,9 +200,36 @@ export class HilosCommunicationsDeliveriesPage {
     // Bind the server-windowed table to the connection and request the first window
     // once the context input is bound; unbind on destroy, context swap, or channel change.
     effect((onCleanup) => {
+      const context = this.context()
       const deliveries = this.deliveries()
+      const channelSummary = createHilosChannelSummary(context)
+      const currentSummary = computedSignal(() => {
+        const page = context.scopes.page()?.key
+        if (
+          page !== HilosPages.COMMUNICATIONS_CHANNEL &&
+          page !== HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION &&
+          page !== HilosPages.COMMUNICATIONS_DELIVERIES
+        ) {
+          return null
+        }
+
+        const summary = channelSummary.get()
+
+        return summary?.channel === this.channelSignal.get() ? summary : null
+      })
+      const stopSummary = mirrorHilosSignal(currentSummary, this.summary)
+      const unbindName = bindPageInstanceName(
+        context.scopes,
+        HilosPages.COMMUNICATIONS_CHANNEL,
+        computedSignal(() => currentSummary.get()?.label),
+      )
       deliveries.start()
-      onCleanup(() => deliveries.dispose())
+      onCleanup(() => {
+        unbindName()
+        stopSummary()
+        this.summary.set(null)
+        deliveries.dispose()
+      })
     })
   }
 

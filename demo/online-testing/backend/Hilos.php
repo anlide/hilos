@@ -26,6 +26,7 @@ use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\OnlineTesting\Database\OnlineTestingDbContext;
+use Demo\OnlineTesting\Database\Pages\PageCatalog;
 use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
 use Demo\OnlineTesting\Environment\OnlineTestingEnvCatalog;
 use Demo\OnlineTesting\Fs\OnlineTestingFsContext;
@@ -34,6 +35,7 @@ use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
@@ -189,6 +191,8 @@ final class Hilos extends HilosFacade
 
     protected const string SETTINGS_CATALOG = OnlineTestingSettingsCatalog::class;
 
+    protected const string PAGE_CATALOG = PageCatalog::class;
+
     protected const string NOTIFICATION_CHANNEL_REGISTRY = OnlineTestingDeliveryChannelRegistry::class;
 
     protected const ?string LEGAL_CATALOG = OnlineTestingLegalCatalog::class;
@@ -249,6 +253,7 @@ final class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
@@ -513,7 +518,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             OnlineTestingTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             OnlineTestingTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

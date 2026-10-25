@@ -7,7 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityImpersonationPage;
@@ -251,7 +251,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 self::assertIsBool($slot[HilosCommunicationsChannelsTableRow::enabled]);
             }
 
-            $channelFieldsFrames = $this->subscribe(CommunicationsChannelPage::class, [], $acceptKey, [
+            $channelFieldsFrames = $this->subscribe(CommunicationsChannelConfigurationPage::class, ['channelId' => 'email'], $acceptKey, [
                 ChatTableContext::hilosCommunicationsChannelFields => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]);
             $fieldRows = $this->window($channelFieldsFrames, ChatTableContext::hilosCommunicationsChannelFields)[TableWindowSignalData::rows];
@@ -406,7 +406,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             ...$this->subscribe(CommunicationsPage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::hilosCommunicationsChannels => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
-            ...$this->subscribe(CommunicationsChannelPage::class, [], self::ADMIN_KEY, [
+            ...$this->subscribe(CommunicationsChannelConfigurationPage::class, ['channelId' => 'email'], self::ADMIN_KEY, [
                 ChatTableContext::hilosCommunicationsChannelFields => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
             ...$this->subscribe(SecuritySignInMethodsPage::class, [], self::ADMIN_KEY, [

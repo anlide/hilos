@@ -300,6 +300,15 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Channel',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single communication channel and its configuration.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Channel',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
+        ],
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Configuration',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Configuration',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The fields of one channel.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
         ],
         HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Deliveries',

@@ -1,23 +1,6 @@
-// HilosCommunicationsChannelPage — the framework Hilos channel-config page
-// (HilosPages.COMMUNICATIONS_CHANNEL): one delivery channel's config fields inside
-// the admin shell. The route {channelId} names the channel; the fields table is
-// global (one row per field of every channel), so the core headless presets the
-// channel in the table's filter map and the server narrows the window to it — no
-// filter is applied on the client (createHilosChannelFields). The table is the
-// shared server-windowed one, drawn from what it declares about its frame (its
-// columns and empty words); this view owns only the cells of a row. Each editable
-// field shows its effective value and source and can be overridden (edit, in a
-// modal) or reset to its env/default — the ↺ asks first, in a confirm dialog
-// built like the settings orphan delete; a secret is shown as set/not-set and never
-// editable. A "Send test notification" button above the table exercises the real
-// delivery path (HIL-201). Writes are tracked actions (createHilosCommunicationsActions):
-// the value redraws from the reactive table's snapshot signal after the backend
-// echo, never optimistically, and a validation failure surfaces as a toast with the
-// backend's domain phrase. Editing happens in a modal — inline forms are forbidden
-// (rules-and-violations.md section E) — and the modal merges against the live row
-// through the shared row-edit helper (rowEdit.ts, conflict-resolution.md), saying
-// what happened elsewhere on one line of room held in advance (HilosEditNotice).
-// Bootstrap classes only (styling-rules.md).
+// HilosCommunicationsChannelPage — the channel Overview: permitted summary,
+// enablement and test actions under the shared entity head. Configuration owns
+// the fields table and its edit/reset sessions.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -27,298 +10,171 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HilosPages, computedSignal, hilosRowEditIdle } from '@hilos/core/base'
 import {
-  createHilosChannelFields,
+  CHANNEL_ENABLED_FIELD,
+  createHilosChannelSummary,
   createHilosCommunicationsActions,
-  createHilosChannelFieldEdit,
-  hilosChannelDisplayValue,
 } from '@hilos/core/admin/communications'
 import type {
-  HilosChannelFieldEditFields,
-  HilosChannelFieldEditForm,
-  ChannelValueSource,
-  HilosChannelFieldRow,
+  HilosChannelSummary,
   HilosCommunicationsContext,
 } from '@hilos/core/admin/communications'
+import {
+  HilosPages,
+  bindPageInstanceName,
+  computedSignal,
+} from '@hilos/core/base'
 
 import {
-  ConflictActions,
-  ConflictHeader,
-  HilosActionError,
   HilosAdminPage,
-  HilosEditNotice,
-  HilosHiddenMark,
-  HilosHideable,
-  HilosModal,
-  HilosTableCell,
-  HilosViewportTable,
-  LoadingButton,
   HILOS_ROUTER,
-  hilosSignal,
-  mirrorHilosSignal,
+  HilosHideable,
+  HilosSwitch,
+  LoadingButton,
   createHilosTrackedAction,
+  mirrorHilosSignal,
 } from '@hilos/angular/base'
+import { HilosCommunicationsChannelHead } from './HilosCommunicationsChannelHead.js'
 
-/** Map a field type to the value input it edits with. */
-function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
-  if (type === 'boolean') {
-    return 'checkbox'
-  }
-  if (type === 'integer' || type === 'float') {
-    return 'number'
-  }
-
-  return 'text'
-}
-
-/** The source badge label: where the effective value comes from. */
-const SOURCE_LABEL: Record<ChannelValueSource, string> = {
-  settings: 'Override',
-  env: 'From env',
-  default: 'Default',
-}
-
-/** The framework channel-config page: one channel's config-fields table. */
+/** The framework channel Overview: aggregate counts and channel controls. */
 @Component({
   selector: 'hilos-communications-channel-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosModal,
-    HilosActionError,
-    HilosEditNotice,
-    HilosHiddenMark,
+    HilosCommunicationsChannelHead,
     HilosHideable,
-    HilosTableCell,
-    HilosViewportTable,
+    HilosSwitch,
     LoadingButton,
-    ConflictActions,
-    ConflictHeader,
   ],
   template: `
-    <hilos-admin-page [page]="page">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <p class="mb-0 text-body-secondary">
-          Channel <code>{{ channel() }}</code>
-        </p>
-        <button
-          hilosLoadingButton
-          class="btn-outline-primary btn-sm"
-          [loading]="test.busy()"
-          data-id="hilos-channel-test"
-          (click)="sendTest()"
-        >
-          Send test notification
-        </button>
-      </div>
+    <hilos-admin-page [page]="page" headKind="entity" tabsLabel="Channel pages">
+      <ng-template #headVisual>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="visual"
+        />
+      </ng-template>
+      <ng-template #headBadges>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="badges"
+        />
+      </ng-template>
+      <ng-template #headDescription>
+        <hilos-communications-channel-head
+          [summary]="summary()"
+          part="description"
+        />
+      </ng-template>
 
-      <hilos-viewport-table [controller]="fields().controller">
-        <ng-template hilosTableCell="field" let-row>
-          <div class="fw-semibold">{{ row.label }}</div>
-          <code class="small text-body-secondary">{{ row.field }}</code>
-        </ng-template>
-        <ng-template hilosTableCell="value" let-row>
-          @if (row.secret) {
-            <span class="text-body-secondary fst-italic">
-              {{ row.valueSource === 'env' ? 'Set in env' : 'Not set' }}
-            </span>
-          } @else {
-            <hilos-hideable [value]="row.value">
-              <ng-template let-value>
-                <span>{{ displayValue(value) }}</span>
+      @if (summary(); as channel) {
+        <div class="row row-cols-1 row-cols-sm-3 g-3 mb-4">
+          <div class="col" data-id="channel-summary-configuration">
+            <div class="border rounded-3 p-3 h-100">
+              <h2 class="small text-body-secondary mb-1">Configuration</h2>
+              <div class="fs-4 fw-semibold lh-sm my-1">
+                {{
+                  channel.configured
+                    ? 'Configured'
+                    : channel.missingFields + ' missing'
+                }}
+              </div>
+              <div class="small text-body-secondary">
+                {{
+                  channel.configured
+                    ? 'every field has a value'
+                    : 'fields hold a bare default'
+                }}
+              </div>
+            </div>
+          </div>
+          <div class="col" data-id="channel-summary-fields">
+            <div class="border rounded-3 p-3 h-100">
+              <h2 class="small text-body-secondary mb-1">Fields</h2>
+              <div class="fs-4 fw-semibold lh-sm my-1">
+                {{ channel.fieldCount }}
+              </div>
+              <div class="small text-body-secondary">
+                {{
+                  channel.secretFieldCount
+                    ? channel.secretFieldCount + ' secret, set in env only'
+                    : 'no secrets'
+                }}
+              </div>
+            </div>
+          </div>
+          <div class="col" data-id="channel-summary-overridden">
+            <div class="border rounded-3 p-3 h-100">
+              <h2 class="small text-body-secondary mb-1">Overridden here</h2>
+              <div class="fs-4 fw-semibold lh-sm my-1">
+                {{ channel.overriddenFieldCount }}
+              </div>
+              <div class="small text-body-secondary">
+                {{
+                  channel.overriddenFieldCount
+                    ? 'reset returns them to env or the default'
+                    : 'every value comes from env or the default'
+                }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section
+          class="border rounded-3 mb-4"
+          data-id="channel-controls"
+          aria-labelledby="hilos-channel-controls-title"
+        >
+          <h2
+            class="h6 px-3 py-2 mb-0 border-bottom bg-body-tertiary rounded-top-3"
+            id="hilos-channel-controls-title"
+          >
+            Channel
+          </h2>
+          <div
+            class="d-flex align-items-center justify-content-between gap-3 p-3 border-bottom"
+          >
+            <div>
+              <h3 class="h6 mb-1">Enabled</h3>
+              <div class="small text-body-secondary">
+                When off, no new deliveries go out through it; queued ones still
+                do.
+              </div>
+            </div>
+            <hilos-hideable [value]="channel.enabled">
+              <ng-template let-enabled>
+                <hilos-switch
+                  [checked]="enabled"
+                  [busy]="toggle.busy()"
+                  [aria-label]="'Enable ' + channel.label"
+                  dataId="hilos-channel-enabled"
+                  (toggle)="onToggle($event)"
+                />
               </ng-template>
             </hilos-hideable>
-          }
-        </ng-template>
-        <ng-template hilosTableCell="valueSource" let-row>
-          <span class="badge text-bg-secondary-subtle text-secondary-emphasis">
-            {{ sourceLabel(row) }}
-          </span>
-        </ng-template>
-        <ng-template hilosTableCell="actions" let-row>
-          @if (row.editable) {
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              title="Edit"
-              aria-label="Edit"
-              [attr.data-id]="'hilos-channel-field-edit-' + row.field"
-              (click)="openEdit(row)"
-            >
-              <i class="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              title="Reset to default"
-              aria-label="Reset to default"
-              [disabled]="row.valueSource !== 'settings'"
-              [attr.data-id]="'hilos-channel-field-reset-' + row.field"
-              (click)="openReset(row)"
-            >
-              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-            </button>
-          }
-        </ng-template>
-      </hilos-viewport-table>
-
-      <hilos-modal
-        [open]="editOpen()"
-        (openChange)="$event ? undefined : closeEdit()"
-        [confirmOnClose]="live().dirty"
-      >
-        <h5
-          hilosConflictHeader
-          modalHeader
-          [title]="editTitle()"
-          [conflict]="live().conflict"
-        ></h5>
-        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
-        @if (editRow(); as row) {
-          <form (submit)="submitEdit($event)">
-            @if (editHidden()) {
-              <div class="form-label">{{ row.label }}</div>
-              <hilos-hidden-mark />
-            } @else if (editInputType() === 'checkbox') {
-              <div class="form-check form-switch">
-                <input
-                  id="hilos-channel-edit-value"
-                  type="checkbox"
-                  class="form-check-input"
-                  role="switch"
-                  data-id="hilos-channel-edit-value"
-                  data-autofocus
-                  [checked]="editValue() === '1'"
-                  (change)="onValueCheckbox($event)"
-                />
-                <label class="form-check-label" for="hilos-channel-edit-value">
-                  {{ row.label }}
-                </label>
-              </div>
-            } @else {
-              <label class="form-label" for="hilos-channel-edit-value">{{
-                row.label
-              }}</label>
-              <input
-                id="hilos-channel-edit-value"
-                [type]="editInputType()"
-                [attr.step]="editStep()"
-                class="form-control"
-                data-id="hilos-channel-edit-value"
-                data-autofocus
-                [value]="editValue()"
-                (input)="onValueInput($event)"
-              />
-            }
-            <hilos-edit-notice
-              [kind]="editNotice()"
-              [text]="editNoticeText()"
-              dataId="hilos-channel-edit-notice"
-            />
-          </form>
-        }
-        <ng-template #modalActions let-requestClose="requestClose">
-          <div
-            hilosConflictActions
-            [conflict]="live().conflict"
-            [disableSave]="!saveAvailable()"
-            [saveLabel]="editSaveLabel()"
-            (save)="submitEdit()"
-            (acceptMine)="acceptMine()"
-            (acceptTheirs)="acceptTheirs()"
-          >
-            <ng-template #cancelButton>
-              <button
-                type="button"
-                class="btn btn-secondary"
-                [disabled]="edit.busy()"
-                (click)="requestClose()"
-              >
-                Cancel
-              </button>
-            </ng-template>
-            <ng-template
-              #saveButton
-              let-disabled="disabled"
-              let-onSave="onSave"
-            >
-              <button
-                hilosLoadingButton
-                class="btn-primary"
-                [loading]="edit.busy()"
-                [disabled]="disabled"
-                data-id="hilos-channel-edit-save"
-                (click)="onSave()"
-              >
-                {{ editSaveLabel() }}
-              </button>
-            </ng-template>
           </div>
-        </ng-template>
-      </hilos-modal>
-
-      <hilos-modal
-        [open]="resetOpen()"
-        (openChange)="$event ? resetOpen.set(true) : closeReset()"
-        [title]="resetTitle()"
-        [busy]="reset.busy()"
-        initialFocus="dialog"
-      >
-        <hilos-action-error
-          [action]="reset"
-          detailsTitle="Couldn't reset the field"
-        />
-        @if (resetShown(); as row) {
-          <dl class="row mb-0">
-            <dt class="col-4">Now</dt>
-            <dd class="col-8" data-id="hilos-channel-reset-now">
-              <hilos-hideable [value]="row.value">
-                <ng-template let-value>{{ displayValue(value) }}</ng-template>
-              </hilos-hideable>
-            </dd>
-            <dt class="col-4">Back to</dt>
-            <dd class="col-8 text-break" data-id="hilos-channel-reset-default">
-              <hilos-hideable [value]="row.defaultValue">
-                <ng-template let-value>{{ displayValue(value) }}</ng-template>
-              </hilos-hideable>
-              <span
-                class="badge text-bg-secondary-subtle text-secondary-emphasis ms-2"
-              >
-                {{ defaultSourceLabel(row.defaultValueSource) }}
-              </span>
-            </dd>
-          </dl>
-        }
-        @if (resetGone()) {
-          <p
-            class="mb-0 mt-2 text-body-secondary"
-            data-id="hilos-channel-reset-gone"
+          <div
+            class="d-flex align-items-center justify-content-between gap-3 p-3"
           >
-            Already reset elsewhere.
-          </p>
-        }
-        <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="reset.busy()"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
-          <button
-            hilosLoadingButton
-            class="btn-danger"
-            [loading]="reset.busy()"
-            [disabled]="resetGone()"
-            data-id="hilos-channel-reset-confirm"
-            (click)="submitReset()"
-          >
-            Reset
-          </button>
-        </ng-template>
-      </hilos-modal>
+            <div>
+              <h3 class="h6 mb-1">Test notification</h3>
+              <div class="small text-body-secondary">
+                One notification to you, through this channel only.
+              </div>
+            </div>
+            <button
+              hilosLoadingButton
+              class="btn-outline-primary btn-sm"
+              [loading]="test.busy()"
+              data-id="hilos-channel-test"
+              (click)="sendTest()"
+            >
+              Send test notification
+            </button>
+          </div>
+        </section>
+      }
     </hilos-admin-page>
   `,
 })
@@ -327,219 +183,76 @@ export class HilosCommunicationsChannelPage {
   readonly context = input.required<HilosCommunicationsContext>()
 
   protected readonly page = HilosPages.COMMUNICATIONS_CHANNEL
-
-  private readonly router = inject(HILOS_ROUTER, { optional: true })
-
-  // The route channel, as a core signal the fields table follows: navigating to
-  // another channel sets the table's channel filter again and asks for its window.
-  private readonly channelSignal = computedSignal(() => {
-    if (!this.router) {
-      throw new Error(
-        'HilosCommunicationsChannelPage requires a provided router: { provide: HILOS_ROUTER, useValue: router }.',
-      )
-    }
-
-    return (
+  protected readonly summary = signal<HilosChannelSummary | null>(null)
+  private readonly router = inject(HILOS_ROUTER)
+  private readonly channelSignal = computedSignal(
+    () =>
       (this.router.currentRoute.get().params['channelId'] as
-        string | undefined) ?? ''
-    )
-  })
-  protected readonly channel = hilosSignal(this.channelSignal)
-
-  protected readonly fields = computed(() =>
-    createHilosChannelFields(this.context(), this.channelSignal),
+        string | undefined) ?? '',
   )
   private readonly actions = computed(() =>
     createHilosCommunicationsActions(this.context()),
   )
-
-  // Showing the backend's own phrase on a rejected write is the driver's default
-  // since HIL-779; this page used to be the one screen that asked for it.
+  protected readonly toggle = createHilosTrackedAction()
   protected readonly test = createHilosTrackedAction()
-  protected readonly edit = createHilosTrackedAction()
-
-  // Edit dialog: one field's override value, as the core window has it; this
-  // view binds the input through mirrors of the session's signals.
-  protected readonly editor = computed(() =>
-    createHilosChannelFieldEdit(this.fields().controller, this.actions()),
-  )
-  protected readonly editOpen = signal(false)
-  protected readonly editRow = signal<HilosChannelFieldRow | null>(null)
-  protected readonly editForm = signal<HilosChannelFieldEditForm>({
-    hidden: false,
-    text: '',
-  })
-  protected readonly live = signal(
-    hilosRowEditIdle<HilosChannelFieldEditFields>({ value: null }),
-  )
-  protected readonly editNoticeText = signal('')
-  protected readonly editSaveLabel = signal('Save')
-  protected readonly saveAvailable = signal(false)
-  protected readonly editHidden = computed(() => this.editForm().hidden)
-  protected readonly editValue = computed(() => this.editForm().text)
-  // The live row the open reset dialog is about: the row the table holds in
-  // focus, which the server follows wherever it goes; undefined once the row is
-  // gone. Mirrored the way the viewport table mirrors its rows.
-  protected readonly liveRow = signal<HilosChannelFieldRow | undefined>(
-    undefined,
-  )
-  protected readonly editInputType = computed(() =>
-    inputType(this.editRow()?.type),
-  )
-  protected readonly editStep = computed(() =>
-    this.editRow()?.type === 'float' ? 'any' : undefined,
-  )
-  protected readonly editTitle = computed(() => {
-    const row = this.editRow()
-
-    return row ? `Edit · ${row.label}` : 'Edit field'
-  })
-  protected readonly editNotice = computed(
-    () => this.live().notice?.kind ?? null,
-  )
-
-  // Reset dialog: back to env/default, only on confirm. It reads the same live
-  // row the edit dialog does — one dialog is open at a time, and the focus is one.
-  protected readonly resetOpen = signal(false)
-  protected readonly resetRow = signal<HilosChannelFieldRow | null>(null)
-  protected readonly reset = createHilosTrackedAction()
-  protected readonly resetShown = computed(
-    () => this.liveRow() ?? this.resetRow(),
-  )
-  protected readonly resetGone = computed(() => {
-    const row = this.liveRow()
-
-    return row === undefined || row.valueSource !== 'settings'
-  })
-  protected readonly resetTitle = computed(() => {
-    const row = this.resetRow()
-
-    return row ? `Reset · ${row.label}` : 'Reset field'
-  })
 
   constructor() {
-    // Bind the fields table to the connection and request its window once the
-    // context input is bound; unbind on destroy / swap. Mirror the row in focus
-    // the same way the viewport table mirrors its rows: the controller arrives
-    // through a computed, so hilosSignal cannot take it at field init.
+    // Read only the current channel page's server summary; the same core signal
+    // supplies its live name to the shared head and is released with the view.
     effect((onCleanup) => {
-      const fields = this.fields()
-      const editor = this.editor()
-      fields.start()
-      editor.start()
-      const off = [
-        mirrorHilosSignal(fields.controller.focusedRow, this.liveRow),
-        mirrorHilosSignal(editor.opened, this.editOpen),
-        mirrorHilosSignal(editor.row, this.editRow),
-        mirrorHilosSignal(editor.form, this.editForm),
-        mirrorHilosSignal(editor.state, this.live),
-        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
-        mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
-        mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
-      ]
+      const context = this.context()
+      const channelSummary = createHilosChannelSummary(context)
+      const currentSummary = computedSignal(() => {
+        const page = context.scopes.page()?.key
+        if (
+          page !== HilosPages.COMMUNICATIONS_CHANNEL &&
+          page !== HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION &&
+          page !== HilosPages.COMMUNICATIONS_DELIVERIES
+        ) {
+          return null
+        }
+
+        const summary = channelSummary.get()
+
+        return summary?.channel === this.channelSignal.get() ? summary : null
+      })
+      const stopSummary = mirrorHilosSignal(currentSummary, this.summary)
+      const unbindName = bindPageInstanceName(
+        context.scopes,
+        HilosPages.COMMUNICATIONS_CHANNEL,
+        computedSignal(() => currentSummary.get()?.label),
+      )
       onCleanup(() => {
-        for (const stop of off) stop()
-        editor.dispose()
-        fields.dispose()
+        unbindName()
+        stopSummary()
+        this.summary.set(null)
       })
     })
   }
 
+  /** Send the server-confirmed channel's enablement change once. */
+  protected onToggle(next: boolean): void {
+    const channel = this.summary()
+    if (channel === null || this.toggle.busy()) {
+      return
+    }
+
+    void this.toggle.run(
+      this.actions().sendChannelSet(
+        channel.channel,
+        CHANNEL_ENABLED_FIELD,
+        next,
+      ),
+    )
+  }
+
+  /** Send one test through the current channel's real delivery path. */
   protected sendTest(): void {
-    void this.test.run(this.actions().sendChannelTest(this.channel()))
-  }
-
-  protected openEdit(row: HilosChannelFieldRow): void {
-    // The window takes the row into focus, so the dialog edits the latest
-    // committed row and follows it from here; a row that is gone declines to open.
-    this.edit.clearError()
-    this.editor().open(row.key)
-  }
-
-  protected closeEdit(): void {
-    this.editor().close()
-  }
-
-  protected acceptMine(): void {
-    this.editor().keepMine()
-  }
-
-  protected acceptTheirs(): void {
-    this.editor().takeTheirs()
-  }
-
-  // Save and Enter go through the window's one door: it refuses, closes an
-  // unchanged draft, or dispatches the tracked action and closes on its
-  // `::success` reply; a failure stays open with the entered value.
-  protected submitEdit(event?: Event): void {
-    event?.preventDefault()
-    void this.editor().save(this.edit.run)
-  }
-
-  protected openReset(row: HilosChannelFieldRow): void {
-    // Flush pending and take the row into focus; a row already removed by someone
-    // else does not open a reset.
-    const fresh = this.fields().controller.focusRow(row.key)
-    if (!fresh) {
+    const channel = this.summary()
+    if (channel === null || this.test.busy()) {
       return
     }
-    this.reset.clearError()
-    this.resetRow.set(fresh)
-    this.resetOpen.set(true)
-  }
 
-  protected closeReset(): void {
-    this.resetOpen.set(false)
-    this.fields().controller.releaseFocus()
-  }
-
-  protected async submitReset(): Promise<void> {
-    const row = this.resetRow()
-    if (!row || this.reset.busy() || this.resetGone()) {
-      return
-    }
-    if (
-      await this.reset.run(
-        this.actions().sendChannelReset(row.channel, row.field),
-      )
-    ) {
-      this.closeReset()
-    }
-  }
-
-  protected onValueCheckbox(event: Event): void {
-    this.editor().patchForm({
-      text: (event.target as HTMLInputElement).checked ? '1' : '0',
-    })
-  }
-
-  protected onValueInput(event: Event): void {
-    this.editor().patchForm({ text: (event.target as HTMLInputElement).value })
-  }
-
-  /**
-   * The words for where a field's value comes from, read through a typed method
-   * because the row a projected template hands over carries no type of its own.
-   *
-   * @param row The field row.
-   * @returns The source label.
-   */
-  protected sourceLabel(row: HilosChannelFieldRow): string {
-    return SOURCE_LABEL[row.valueSource]
-  }
-
-  /** The words for where the field's fallback comes from. */
-  protected defaultSourceLabel(source: 'env' | 'default'): string {
-    return SOURCE_LABEL[source]
-  }
-
-  /**
-   * Human-readable effective value of a non-secret field that is not hidden.
-   *
-   * @param value The field's effective value.
-   * @returns The text the screen shows for it.
-   */
-  protected displayValue(value: boolean | number | string | null): string {
-    return hilosChannelDisplayValue(value)
+    void this.test.run(this.actions().sendChannelTest(channel.channel))
   }
 }

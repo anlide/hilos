@@ -188,6 +188,11 @@ export class App {
         (module) => module.Channel,
       ),
     ),
+    [HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION]: lazyPage(() =>
+      import('./views/hilos/communications/configuration.js').then(
+        (module) => module.Configuration,
+      ),
+    ),
     [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
       import('./views/hilos/communications/deliveries.js').then(
         (module) => module.Deliveries,

@@ -53,6 +53,7 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
+use Demo\Tasks\Database\Pages\PageCatalog;
 use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Environment\TasksEnvCatalog;
@@ -62,6 +63,7 @@ use Demo\Tasks\Notification\TasksDeliveryChannelRegistry;
 use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\AppearancePage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
@@ -228,6 +230,8 @@ final class Hilos extends HilosFacade
 {
     protected const string ENV_CATALOG = TasksEnvCatalog::class;
 
+    protected const string PAGE_CATALOG = PageCatalog::class;
+
     protected const string SETTINGS_CATALOG = TasksSettingsCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = TasksDeliveryChannelRegistry::class;
@@ -307,6 +311,7 @@ final class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
@@ -646,7 +651,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             TasksTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             TasksTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

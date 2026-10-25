@@ -103,6 +103,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
@@ -1207,7 +1208,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
                 CommunicationsPage::PAGE,
-                CommunicationsChannelPage::PAGE,
+                CommunicationsChannelConfigurationPage::PAGE,
                 CommunicationsDeliveriesPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
@@ -1676,10 +1677,18 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
         $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
         $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsChannelConfigurationPage::class, Hilos::PAGES[CommunicationsChannelConfigurationPage::PAGE]);
+        $this->assertArrayNotHasKey(CommunicationsChannelPage::PAGE, Hilos::PAGE_TABLES);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[CommunicationsChannelConfigurationPage::PAGE]);
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            CommunicationsChannelConfigurationPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        $this->assertSame([], CommunicationsChannelConfigurationPage::ACTIONS);
+        $this->assertSame([], CommunicationsChannelConfigurationPage::SIGNALS);
         $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
 
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelConfigurationPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
 
         $this->assertSame(
@@ -1688,7 +1697,7 @@ final class TasksTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [TasksTableContext::hilosCommunicationsChannelFields => []],
-            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+            Hilos::PAGE_TABLES[CommunicationsChannelConfigurationPage::PAGE],
         );
         $this->assertSame(
             [TasksTableContext::hilosNotificationDeliveries => []],
@@ -1722,6 +1731,17 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
         );
+
+        foreach ([
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST,
+        ] as $action) {
+            $this->assertSame(CommunicationsChannelPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            $this->assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+        }
+        $this->assertSame(CommunicationsChannelPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE]);
 
         $catalog = TasksSettingsCatalog::getCatalog();
         $emailKey = DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME);

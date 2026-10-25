@@ -91,6 +91,7 @@ use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Pages\PageCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Status\StatusPage;
 use Demo\Chat\Pages\Hilos\Status\StatusComponentsPage;
@@ -101,8 +102,14 @@ use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Moderation\ChatModerationKindKey;
+use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
@@ -785,6 +792,90 @@ final class ChatTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
+    /** Configuration owns only the field-table subscription; the existing channel page keeps mutation routing. */
+    public function testCommunicationsConfigurationUsesTheIndexAgentAndOwnsOnlyTheFieldsBinding(): void
+    {
+        self::assertSame(CommunicationsChannelConfigurationPage::class, Hilos::PAGES[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+        ], CommunicationsChannelConfigurationPage::BROWSER);
+        self::assertSame([], CommunicationsChannelConfigurationPage::ACTIONS);
+        self::assertSame([], CommunicationsChannelConfigurationPage::SIGNALS);
+        self::assertSame([
+            ChatTableContext::hilosCommunicationsChannelFields => [],
+        ], Hilos::PAGE_TABLES[CommunicationsChannelConfigurationPage::PAGE]);
+        self::assertArrayNotHasKey(CommunicationsChannelPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([
+            ChatTableContext::hilosCommunicationsChannels => [],
+        ], Hilos::PAGE_TABLES[CommunicationsPage::PAGE]);
+        self::assertSame([
+            ChatTableContext::hilosNotificationDeliveries => [],
+        ], Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE]);
+
+        foreach ([
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST,
+        ] as $action) {
+            self::assertSame(CommunicationsChannelPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+        }
+        self::assertSame(
+            CommunicationsChannelPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
+        );
+        self::assertSame(
+            CommunicationsDeliveriesPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY],
+        );
+    }
+
+    /** Catalog overrides retain every framework field for User and both Communications owners. */
+    public function testCatalogAdoptsUserAndBothCommunicationsOwnersWithCompleteEntries(): void
+    {
+        Hilos::initBrowser();
+        try {
+            self::assertSame(PageCatalog::class, Hilos::getPageCatalogClass());
+        } finally {
+            Hilos::resetBrowser();
+        }
+        $pages = PageCatalog::pages();
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS]);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Channel',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single communication channel and its configuration.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Channel',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL]);
+        self::assertSame([
+            HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_COMMUNICATIONS,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            PageConstants::ADMIN_BOTS,
+        ], array_keys($pages));
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
+        ], $pages[PageConstants::ADMIN_BOTS]);
+        self::assertSame([[
+            PageCatalogConstants::SECTION_TITLE => 'Chat administration',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'Application-specific admin areas for the chat demo.',
+            PageCatalogConstants::SECTION_ITEMS => [PageConstants::ADMIN_BOTS],
+        ]], PageCatalog::dashboardSections());
     }
 
     /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */

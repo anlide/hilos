@@ -6,6 +6,10 @@ namespace Hilos\Tests\Unit;
 
 use Demo\BinanceBtcTracker\Database\Pages\PageCatalog as BinancePageCatalog;
 use Demo\Chat\Database\Pages\PageCatalog as ChatPageCatalog;
+use Demo\Tasks\Database\Pages\PageCatalog as TasksPageCatalog;
+use Demo\EcommerceShop\Database\Pages\PageCatalog as EcommercePageCatalog;
+use Demo\Polls\Database\Pages\PageCatalog as PollsPageCatalog;
+use Demo\OnlineTesting\Database\Pages\PageCatalog as OnlineTestingPageCatalog;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAgentInterface;
@@ -25,6 +29,10 @@ use PHPUnit\Framework\TestCase;
 require_once __DIR__ . '/../../../demo/chat/backend/Constants/PageConstants.php';
 require_once __DIR__ . '/../../../demo/chat/backend/Database/Pages/PageCatalog.php';
 require_once __DIR__ . '/../../../demo/binance-btc-tracker/backend/Database/Pages/PageCatalog.php';
+require_once __DIR__ . '/../../../demo/tasks/backend/Database/Pages/PageCatalog.php';
+require_once __DIR__ . '/../../../demo/ecommerce-shop/backend/Database/Pages/PageCatalog.php';
+require_once __DIR__ . '/../../../demo/polls/backend/Database/Pages/PageCatalog.php';
+require_once __DIR__ . '/../../../demo/online-testing/backend/Database/Pages/PageCatalog.php';
 
 /**
  * Unit tests for the page catalog reader: the merge, a page's identity, its breadcrumb, its children.
@@ -612,6 +620,113 @@ final class PageCatalogResolverTest extends TestCase
         );
     }
 
+    public function testCommunicationsTabsResolveToTheirEntityWithoutEnablingTheFrameworkHead(): void
+    {
+        Hilos::initBrowser();
+        $params = new PageRouteParams(['channelId' => 'email']);
+
+        foreach ([
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+        ] as $page) {
+            self::assertSame(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, $params));
+        }
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_COMMUNICATIONS, $params));
+        self::assertSame([
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+        ], array_column(PageCatalogResolver::children(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL), 'page'));
+    }
+
+    /** Adopted providers give the channel one row and leave the hub without child tabs. */
+    public function testCommunicationsOptInSharesTheChannelHeadAcrossAllThreeTabs(): void
+    {
+        foreach ([
+            CommunicationsPageHeadTestHilos::class,
+            ChatCommunicationsPageHeadTestHilos::class,
+            BinanceCommunicationsPageHeadTestHilos::class,
+            TasksCommunicationsPageHeadTestHilos::class,
+            EcommerceCommunicationsPageHeadTestHilos::class,
+            PollsCommunicationsPageHeadTestHilos::class,
+            OnlineTestingCommunicationsPageHeadTestHilos::class,
+        ] as $hilos) {
+            $hilos::initBrowser();
+            $params = new PageRouteParams(['channelId' => 'email']);
+
+            foreach ([
+                HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+                HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+                HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            ] as $page) {
+                $head = PageCatalogResolver::head($page, $params);
+                self::assertNotNull($head);
+                self::assertSame([
+                    'pageHeadOwner' => [
+                        'page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+                        'label' => 'Channel',
+                        'lead' => 'A single communication channel and its configuration.',
+                        'icon' => 'bi-envelope-paper',
+                    ],
+                    'pageBreadcrumb' => [
+                        ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS, 'label' => 'Communications'],
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Channel'],
+                    ],
+                    'pageTabs' => [
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Overview'],
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, 'label' => 'Configuration'],
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES, 'label' => 'Deliveries'],
+                    ],
+                    'pageChildren' => [],
+                ], $head->toArray());
+            }
+
+            $section = PageCatalogResolver::head(HilosPageConstants::HILOS_COMMUNICATIONS, $params);
+            self::assertNotNull($section);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_COMMUNICATIONS,
+                    'label' => 'Communications',
+                    'lead' => 'Email, SMS, push, and chat delivery channels.',
+                    'icon' => 'bi-envelope-paper',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_COMMUNICATIONS, 'label' => 'Communications'],
+                ],
+                'pageTabs' => [
+                    ['page' => HilosPageConstants::HILOS_COMMUNICATIONS, 'label' => 'Overview'],
+                ],
+                'pageChildren' => [],
+            ], $section->toArray());
+        }
+    }
+
+    /** A provider that did not adopt Communications keeps its legacy breadcrumb and child cards. */
+    public function testRegisteredCommunicationsPagesKeepTheLegacyHeadWithoutOptIn(): void
+    {
+        LegacyCommunicationsPageHeadTestHilos::initBrowser();
+
+        self::assertNull(PageCatalogResolver::head(
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            new PageRouteParams(['channelId' => 'email']),
+        ));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS, 'label' => 'Communications'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Channel'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, 'label' => 'Configuration'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+                'label' => 'Configuration', 'lead' => 'The fields of one channel.'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+                'label' => 'Deliveries', 'lead' => 'Delivery log for one channel.'],
+        ], PageCatalogResolver::children(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL));
+    }
+
     public function testOwnerLookupUsesTheNamedProviderBeforeBindingIt(): void
     {
         Hilos::initBrowser();
@@ -884,6 +999,53 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** All Communications routes registered against the unadopted framework catalog. */
+abstract class LegacyCommunicationsPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_COMMUNICATIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => PageHeadTestPage::class,
+    ];
+}
+
+/** The Vue adoption changes catalog metadata without changing registration or subscription ownership. */
+abstract class CommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = CommunicationsPageHeadTestCatalog::class;
+}
+
+/** Full framework rows are required because the resolver replaces catalog entries as a whole. */
+final class CommunicationsPageHeadTestCatalog implements PageCatalogProviderInterface
+{
+    /**
+     * @return array<string, array{
+     *     label: string, lead: string, parent?: string, icon?: string,
+     *     breadcrumb?: string, entity?: bool, pageHead?: bool
+     * }> Both Communications owners opted in
+     */
+    public static function pages(): array
+    {
+        return [
+            HilosPageConstants::HILOS_COMMUNICATIONS => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+        ];
+    }
+
+    /** @return list<array{title: string, description: string, items: list<string>}> No additional sections */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
 }
 
 /** A legacy project serves the user overview without adopting its head. */
@@ -1177,4 +1339,40 @@ final class StatusPageCatalogPage extends AbstractHilosStatusPage
 final class StatusPageCatalogComponentsPage extends AbstractHilosStatusComponentsPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+/** Communications head adoption from the Chat project's full provider. */
+abstract class ChatCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** Communications head adoption from the Binance project's full provider. */
+abstract class BinanceCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Communications head adoption from the Tasks project's full provider. */
+abstract class TasksCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = TasksPageCatalog::class;
+}
+
+/** Communications head adoption from the Ecommerce project's full provider. */
+abstract class EcommerceCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = EcommercePageCatalog::class;
+}
+
+/** Communications head adoption from the Polls project's full provider. */
+abstract class PollsCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = PollsPageCatalog::class;
+}
+
+/** Communications head adoption from the Online Testing project's full provider. */
+abstract class OnlineTestingCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = OnlineTestingPageCatalog::class;
 }

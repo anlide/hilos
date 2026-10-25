@@ -14,7 +14,6 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
@@ -64,7 +63,7 @@ use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
  * inherited default. Projects add a concrete subclass with a
  * `SUBSCRIPTION_AGENT_TYPE`; they add no action code of their own.
  */
-abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
+abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosCommunicationsChannelContextPage
 {
     use HandoverGatekeeperTrait;
 

@@ -41,6 +41,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
@@ -287,6 +288,7 @@ class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -564,7 +566,7 @@ class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

@@ -314,7 +314,7 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
      */
     public function testAViewerSeesCommunicationsDeliveriesWithHiddenTitleErrorAndRecipient(): void
     {
-        $adminFrames = $this->subscribe(CommunicationsDeliveriesPage::class, [], self::ADMIN_KEY, [
+        $adminFrames = $this->subscribe(CommunicationsDeliveriesPage::class, ['channelId' => 'email'], self::ADMIN_KEY, [
             ChatTableContext::hilosNotificationDeliveries => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
         ]);
         $adminRows = $this->window($adminFrames, ChatTableContext::hilosNotificationDeliveries)[TableWindowSignalData::rows];
@@ -329,7 +329,7 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
         self::assertNotNull($adminDelivery);
 
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(CommunicationsDeliveriesPage::class, [], $acceptKey, [
+            $frames = $this->subscribe(CommunicationsDeliveriesPage::class, ['channelId' => 'email'], $acceptKey, [
                 ChatTableContext::hilosNotificationDeliveries => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]);
             $rows = $this->window($frames, ChatTableContext::hilosNotificationDeliveries)[TableWindowSignalData::rows];
@@ -480,7 +480,7 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
             ...$this->subscribe(MaintenanceCirclePage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::hilosVerifierCircle => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
-            ...$this->subscribe(CommunicationsDeliveriesPage::class, [], self::ADMIN_KEY, [
+            ...$this->subscribe(CommunicationsDeliveriesPage::class, ['channelId' => 'email'], self::ADMIN_KEY, [
                 ChatTableContext::hilosNotificationDeliveries => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
             ...$this->subscribe(BackupPage::class, [], self::ADMIN_KEY, [

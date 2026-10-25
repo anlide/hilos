@@ -112,6 +112,7 @@ use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
@@ -437,6 +438,7 @@ final class Hilos extends HilosFacade
         SilUserHistoryPage::PAGE => SilUserHistoryPage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
@@ -876,7 +878,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             ChatTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             ChatTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

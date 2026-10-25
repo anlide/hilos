@@ -434,3 +434,13 @@ export {
   submitStatusIncident,
   expectStatusIncidentDialog,
 } from './status.js'
+
+export {
+  communicationsChannelReplies,
+  expectCommunicationsAccessibility,
+  expectCommunicationsChannelHead,
+  expectCommunicationsOverviewSummary,
+  expectCommunicationsSummaryUpdate,
+  resetCommunicationsField,
+  saveCommunicationsField,
+} from './communications.js'

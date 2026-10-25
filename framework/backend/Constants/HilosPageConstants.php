@@ -237,6 +237,9 @@ final class HilosPageConstants
     /** @var string Hilos — single communication channel (detail) */
     public const string HILOS_COMMUNICATIONS_CHANNEL = 'hilos_communications_channel';
 
+    /** @var string Hilos — communication channel configuration fields */
+    public const string HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION = 'hilos_communications_channel_configuration';
+
     /** @var string Hilos — channel deliveries log */
     public const string HILOS_COMMUNICATIONS_DELIVERIES = 'hilos_communications_deliveries';
 

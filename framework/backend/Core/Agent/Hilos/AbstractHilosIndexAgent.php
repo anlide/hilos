@@ -28,6 +28,7 @@ use Hilos\HilosException;
 use LogicException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Pages\Communications\CommunicationsChannelSummaryAudience;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
@@ -297,8 +298,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     /**
-     * Finishes any protected-mode drive in flight, and keeps the open people surfaces in step with
-     * the standing of the people they show (HIL-945).
+     * Finishes protected-mode work, follows account standing and publishes changed channel summaries.
      *
      * @throws HilosException Whatever the concrete agent's tick raises
      * @throws LogicException When a project runtime item factory rejects a row
@@ -312,6 +312,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         $this->tickManualMaintenance();
         AbstractHilosMaintenancePage::onAgentTick($this);
         AccountStandingAudience::onAgentTick($this);
+        CommunicationsChannelSummaryAudience::onAgentTick($this);
     }
 
     /**
@@ -374,7 +375,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     /**
-     * Forgets the people surfaces before another instance uses this worker.
+     * Forgets the people surfaces, Maintenance picture and deferred channel summary notification.
      *
      * @throws HilosException When parent cleanup fails
      */
@@ -384,6 +385,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         parent::onStop();
         AccountStandingAudience::reset();
         AbstractHilosMaintenancePage::reset();
+        CommunicationsChannelSummaryAudience::reset();
     }
 
     /**

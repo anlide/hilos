@@ -399,6 +399,49 @@ function mountShell(
   return fixture
 }
 
+describe('HilosLayout skip link', () => {
+  it('focuses the existing main and cancels navigation against a root document base', () => {
+    const originalUrl = window.location.href
+    const base = document.createElement('base')
+    base.href = '/'
+    document.head.prepend(base)
+    window.history.replaceState(null, '', '/hilos/communications/email')
+    const currentUrl = window.location.href
+    const fixture = mountShell()
+
+    try {
+      const root = fixture.nativeElement as HTMLElement
+      const skip = root.querySelector<HTMLAnchorElement>(
+        '[data-id="skip-to-content"]',
+      )!
+      const main = root.querySelector<HTMLElement>('main#hilos-main-content')!
+      expect(skip.href).toBe(new URL('/#hilos-main-content', currentUrl).href)
+      expect(main.tabIndex).toBe(-1)
+      let activation: MouseEvent | undefined
+      skip.addEventListener(
+        'click',
+        (event) => {
+          activation = event
+        },
+        { once: true },
+      )
+
+      skip.focus()
+      expect(document.activeElement).toBe(skip)
+      skip.click()
+
+      expect(activation?.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(main)
+      expect(root.querySelector('main')).toBe(main)
+      expect(window.location.href).toBe(currentUrl)
+    } finally {
+      fixture.destroy()
+      base.remove()
+      window.history.replaceState(null, '', originalUrl)
+    }
+  })
+})
+
 /**
  * Let the tracked driver settle on the reply it was just given.
  *

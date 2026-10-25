@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   armSocketDrop,
   dropSocket,
+  expectCommunicationsChannelHead,
   watchSocketFrames,
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -86,21 +87,28 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/communications/email/deliveries')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Deliveries')
+  await expectCommunicationsChannelHead(expect, page, 'deliveries')
 
-  // The framework breadcrumb keeps channelId in the channel's own address.
-  const channel = page.getByTestId(
-    'hilos-breadcrumb-hilos_communications_channel',
-  )
-  await expect(channel).toHaveAttribute('href', '/hilos/communications/email')
+  // The current entity breadcrumb is Email; Overview keeps the parametrized address.
+  const currentBreadcrumb = page
+    .getByTestId('hilos-breadcrumb')
+    .locator('[aria-current="page"]')
+  await expect(currentBreadcrumb).toHaveText('Email')
+  await expect(currentBreadcrumb.locator('a')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_communications_channel'),
+  ).toHaveAttribute('href', '/hilos/communications/email')
   const communications = page.getByTestId(
     'hilos-breadcrumb-hilos_communications',
   )
   await expect(communications).toHaveText('Communications')
+  await expect(communications).toHaveAttribute('href', '/hilos/communications')
   await communications.click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+  await expect(page.getByTestId('hilos-page-head')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'Communications',
   )
+  await expect(page.locator('h1')).toHaveCount(1)
   expect(new URL(page.url()).pathname).toBe('/hilos/communications')
 })
 

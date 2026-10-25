@@ -16,6 +16,7 @@ classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computedSignal, HilosPages, isHiddenValue } from '@hilos/core/base'
 import {
+  createHilosChannelSummary,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
   isDeliveryRetryable,
@@ -24,7 +25,6 @@ import {
 } from '@hilos/core/admin/communications'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -32,6 +32,7 @@ import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import HilosCommunicationsChannelHead from './HilosCommunicationsChannelHead.vue'
 
 const props = defineProps<{
   /** The project context: scope stores, the connection, and the action lifecycle. */
@@ -48,6 +49,7 @@ const channel = useSignal(
   ),
 )
 
+const summary = createHilosChannelSummary(props.context)
 const deliveries = createHilosDeliveriesTable(
   props.context,
   channel.value ? { channel: channel.value } : undefined,
@@ -101,17 +103,11 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.COMMUNICATIONS_DELIVERIES">
-    <!-- The channel the route opened the journal on is the table's preset, not
-    a filter of its bar: it is named here, above the table, and nothing on the
-    page offers to take it off. -->
-    <div v-if="channel" class="mb-3">
-      <span class="form-label d-block">Channel</span>
-      <span class="badge text-bg-secondary-subtle text-secondary-emphasis fs-6">
-        <code>{{ channel }}</code>
-      </span>
-    </div>
-
+  <HilosCommunicationsChannelHead
+    :page="HilosPages.COMMUNICATIONS_DELIVERIES"
+    :scopes="context.scopes"
+    :summary="summary"
+  >
     <HilosViewportTable :controller="deliveriesTable">
       <template #cell-createdAt="{ row }">{{ row.createdAt || '—' }}</template>
       <template #cell-channel="{ row }">
@@ -162,5 +158,5 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
         }}</HilosHideable>
       </template>
     </HilosViewportTable>
-  </HilosAdminPage>
+  </HilosCommunicationsChannelHead>
 </template>

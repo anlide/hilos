@@ -68,6 +68,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
@@ -380,6 +381,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             LogsSettingsPage::PAGE => LogsSettingsPage::class,
             CommunicationsPage::PAGE => CommunicationsPage::class,
             CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+            CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
@@ -640,6 +642,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             SettingsPage::class,
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
+            CommunicationsChannelConfigurationPage::class,
             CommunicationsDeliveriesPage::class,
             MaintenancePage::class,
             MaintenanceCirclePage::class,
@@ -1041,7 +1044,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonEnvMismatchPage::PAGE,
             DaemonHttpServerPage::PAGE,
             CommunicationsPage::PAGE,
-            CommunicationsChannelPage::PAGE,
+            CommunicationsChannelConfigurationPage::PAGE,
             CommunicationsDeliveriesPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
@@ -1266,11 +1269,19 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
         $this->assertSame(CommunicationsPage::class, Hilos::PAGES[CommunicationsPage::PAGE]);
         $this->assertSame(CommunicationsChannelPage::class, Hilos::PAGES[CommunicationsChannelPage::PAGE]);
+        $this->assertSame(CommunicationsChannelConfigurationPage::class, Hilos::PAGES[CommunicationsChannelConfigurationPage::PAGE]);
         $this->assertSame(CommunicationsDeliveriesPage::class, Hilos::PAGES[CommunicationsDeliveriesPage::PAGE]);
+        $this->assertArrayNotHasKey(CommunicationsChannelPage::PAGE, Hilos::PAGE_TABLES);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[CommunicationsChannelConfigurationPage::PAGE]);
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            CommunicationsChannelConfigurationPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        $this->assertSame([], CommunicationsChannelConfigurationPage::ACTIONS);
+        $this->assertSame([], CommunicationsChannelConfigurationPage::SIGNALS);
         $this->assertSame(ProfileNotificationsPage::class, Hilos::PAGES[ProfileNotificationsPage::PAGE]);
 
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, CommunicationsChannelConfigurationPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(AgentType::HILOS_INDEX, CommunicationsDeliveriesPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(AgentType::ONLINE_TESTING, ProfileNotificationsPage::SUBSCRIPTION_AGENT_TYPE);
 
@@ -1280,7 +1291,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [OnlineTestingTableContext::hilosCommunicationsChannelFields => []],
-            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+            Hilos::PAGE_TABLES[CommunicationsChannelConfigurationPage::PAGE],
         );
         $this->assertSame(
             [OnlineTestingTableContext::hilosNotificationDeliveries => []],
@@ -1313,6 +1324,20 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HandoverAnswerSignalData::class,
             Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE],
+        );
+
+        foreach ([
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST,
+        ] as $action) {
+            $this->assertSame(CommunicationsChannelPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            $this->assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+        }
+        $this->assertSame(
+            CommunicationsChannelPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE],
         );
 
         $catalog = OnlineTestingSettingsCatalog::getCatalog();

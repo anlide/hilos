@@ -13,7 +13,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
@@ -49,7 +48,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  * library judges the row and resets it, and the answer comes back here to be acked - the
  * admin's submit is answered by the surface it was submitted to.
  */
-abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPage
+abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosCommunicationsChannelContextPage
 {
     use HandoverGatekeeperTrait;
 

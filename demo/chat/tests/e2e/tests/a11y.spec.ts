@@ -11,6 +11,7 @@ import {
 } from '../helpers/session'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
+  expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
@@ -427,6 +428,46 @@ test.describe('SDK reading accessibility, synthetic fixture ingress', () => {
       await expect(page.getByTestId('geometry-actions')).toHaveText('')
     })
   })
+})
+
+test('Communications exposes one named head and keyboard links between channel pages', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/communications/email')
+  await expectCommunicationsAccessibility(expect, page, 'overview', 'Enabled')
+
+  const configuration = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel_configuration',
+  )
+  await configuration.focus()
+  await expect(configuration).toBeFocused()
+  await configuration.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(
+    expect,
+    page,
+    'configuration',
+    'Enabled',
+  )
+
+  const deliveries = page.getByTestId(
+    'hilos-page-tab-hilos_communications_deliveries',
+  )
+  await deliveries.focus()
+  await expect(deliveries).toBeFocused()
+  await deliveries.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(expect, page, 'deliveries', 'Enabled')
+
+  const overview = page.getByTestId(
+    'hilos-page-tab-hilos_communications_channel',
+  )
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await overview.press('Enter')
+  await expectPageReady(page)
+  await expectCommunicationsAccessibility(expect, page, 'overview', 'Enabled')
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

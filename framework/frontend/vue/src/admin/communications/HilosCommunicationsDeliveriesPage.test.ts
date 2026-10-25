@@ -10,10 +10,13 @@ import {
   bindAdminAccess,
   bindSessionScope,
   bindTimeZoneState,
+  createAppPageRouter,
   createSignal,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   hilosTimeZone,
+  ingest,
+  pageIdentity,
   ScopeManager,
 } from '@hilos/core/base'
 import type {
@@ -21,28 +24,35 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportDescriptor,
 } from '@hilos/core/base'
-import type { HilosDeliveriesContext } from '@hilos/core/admin/communications'
+import {
+  CHANNEL_SUMMARY_DATA,
+  type HilosChannelSummary,
+  type HilosDeliveriesContext,
+} from '@hilos/core/admin/communications'
 
 import HilosCommunicationsDeliveriesPage from './HilosCommunicationsDeliveriesPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const routes = createAppPageRouter({})
+
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
-      params: {},
+      params: { channelId: 'email' },
       admin: true,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => routes.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -52,6 +62,18 @@ function router(): HilosRouter {
     start: () => {},
     stop: () => {},
   }
+}
+
+const EMAIL_SUMMARY: HilosChannelSummary = {
+  channel: 'email',
+  label: 'Email',
+  enabled: true,
+  configured: true,
+  driver: 'smtp',
+  missingFields: 0,
+  fieldCount: 7,
+  secretFieldCount: 1,
+  overriddenFieldCount: 2,
 }
 
 /** One failed email delivery, the only kind a retry is offered on. */
@@ -80,6 +102,8 @@ function seededContext(
 ): {
   context: HilosDeliveriesContext
   viewportRequests: () => number
+  requests: TableViewportDescriptor[]
+  updateSummary: (summary: HilosChannelSummary) => void
   answer: (requestId: string) => void
   sent: Array<{
     action: string
@@ -90,7 +114,34 @@ function seededContext(
   setOwnZone: (timeZone: string | null) => void
 } {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
+  const scope = scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
+  ingest(scope, {
+    data: {
+      pageLabel: 'Deliveries',
+      pageHeadOwner: {
+        page: HilosPages.COMMUNICATIONS_CHANNEL,
+        label: 'Channel',
+        lead: 'A single communication channel: its summary and its switch.',
+        icon: null,
+      },
+      pageBreadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
+        { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Channel' },
+      ],
+      pageTabs: [
+        { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Overview' },
+        {
+          page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+          label: 'Configuration',
+        },
+        { page: HilosPages.COMMUNICATIONS_DELIVERIES, label: 'Deliveries' },
+      ],
+      pageChildren: [],
+      [CHANNEL_SUMMARY_DATA]: EMAIL_SUMMARY,
+    },
+  })
+  const requests: TableViewportDescriptor[] = []
   const listeners = new Map<string, Set<Listener>>()
   let viewportCalls = 0
   const rows = Array.isArray(deliveryOrRows)
@@ -115,13 +166,23 @@ function seededContext(
 
   const connection = {
     projectTimeZone: 'UTC',
-    registerTableWindow(): void {
+    registerTableWindow(
+      _table: string,
+      source: Parameters<HilosConnection['registerTableWindow']>[1],
+    ): void {
       serveWindow()
+      const descriptor = source.descriptor()
+      if (descriptor) requests.push(descriptor)
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): boolean {
+    sendTableViewport(
+      _page: string,
+      _table: string,
+      descriptor: TableViewportDescriptor,
+    ): boolean {
       viewportCalls += 1
+      requests.push(descriptor)
       serveWindow()
 
       return true
@@ -181,6 +242,10 @@ function seededContext(
       actions,
     },
     viewportRequests: () => viewportCalls,
+    requests,
+    updateSummary(summary: HilosChannelSummary): void {
+      ingest(scope, { data: { [CHANNEL_SUMMARY_DATA]: summary } })
+    },
     answer(requestId: string): void {
       for (const listener of successListeners) {
         listener({
@@ -211,7 +276,7 @@ async function mountPage(context: HilosDeliveriesContext) {
   const wrapper = mount(HilosCommunicationsDeliveriesPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -227,6 +292,114 @@ function retryButton(): HTMLElement {
     'table [data-id="hilos-delivery-retry-57"]',
   ) as HTMLElement
 }
+
+describe('HilosCommunicationsDeliveriesPage shared head', () => {
+  it('uses the channel head and current Deliveries tab without a second Channel plaque', async () => {
+    const { context, requests } = seededContext()
+    const view = await mountPage(context)
+    expect(view.findAll('h1')).toHaveLength(1)
+    expect(view.get('h1').text()).toBe('Email')
+    expect(view.get('[data-id="channel-head-icon"] i').classes()).toContain(
+      'bi-envelope-paper',
+    )
+    expect(view.get('[data-id="channel-head-description"]').text()).toBe(
+      'Channel email · driver smtp',
+    )
+    expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Enabled')
+    expect(view.get('[data-id="channel-head-configured"]').text()).toBe(
+      'Configured',
+    )
+    expect(
+      view
+        .get('nav[aria-label="Breadcrumb"]')
+        .findAll('li')
+        .map((crumb) => crumb.text()),
+    ).toEqual(['Hilos', 'Communications', 'Email'])
+    const row = view.get('nav[aria-label="Channel pages"]')
+    expect(
+      row.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+    ).toEqual([
+      ['Overview', '/hilos/communications/email'],
+      ['Configuration', '/hilos/communications/email/configuration'],
+      ['Deliveries', '/hilos/communications/email/deliveries'],
+    ])
+    expect(
+      row.findAll('[aria-current="page"]').map((link) => link.text()),
+    ).toEqual(['Deliveries'])
+    expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
+    expect(view.find('.form-label.d-block').exists()).toBe(false)
+    expect(view.findAll('table')).toHaveLength(1)
+    expect(view.get('table').attributes('aria-labelledby')).toBe(
+      view.get('h1').attributes('id'),
+    )
+    expect(
+      view.get('[data-id="hilos-table-search"]').attributes('placeholder'),
+    ).toBe('Search type or recipient…')
+    expect(view.find('[data-id="hilos-table-filter-status"]').exists()).toBe(
+      true,
+    )
+    expect(view.find('[data-id="hilos-table-filter-from"]').exists()).toBe(true)
+    expect(requests.at(-1)?.filter).toEqual({ channel: 'email' })
+  })
+
+  it('applies summary-only data without replacing the window, expanded row or period filter', async () => {
+    const { context, requests, viewportRequests, updateSummary } =
+      seededContext()
+    const view = await mountPage(context)
+    await view
+      .get('[data-id="hilos-table-filter-from-from"]')
+      .setValue('2026-09-01')
+    await view
+      .get('[data-id="hilos-table-filter-from-to"]')
+      .setValue('2026-09-30')
+    expect(requests.at(-1)?.filter).toEqual({
+      channel: 'email',
+      from: '2026-09-01',
+      to: '2026-09-30',
+    })
+    await view.get('table [data-id="hilos-table-expand-57"]').trigger('click')
+    const table = view.get('table').element
+    const row = view.get('table [data-id="hilos-table-row-57"]').element
+    const before = viewportRequests()
+
+    updateSummary({
+      ...EMAIL_SUMMARY,
+      label: 'Outgoing mail',
+      configured: false,
+      missingFields: 2,
+      enabled: { _hidden: true },
+    })
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Outgoing mail')
+    expect(
+      view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Outgoing mail')
+    expect(view.find('[data-id="channel-head-enabled"]').exists()).toBe(false)
+    expect(view.get('[data-id="channel-head-configured"]').text()).toBe(
+      '2 missing',
+    )
+    expect(
+      view.get('[data-id="channel-head-configured"]').attributes('title'),
+    ).toBe('2 field(s) not set')
+    expect(view.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+    expect(view.get('table').element).toBe(table)
+    expect(view.get('table [data-id="hilos-table-row-57"]').element).toBe(row)
+    expect(view.get('table dd').text()).toContain('Backup is ready')
+    expect(view.get('table').text()).toContain('mailbox unavailable')
+    expect(
+      view.get<HTMLInputElement>('[data-id="hilos-table-filter-from-from"]')
+        .element.value,
+    ).toBe('2026-09-01')
+    expect(
+      view.get<HTMLInputElement>('[data-id="hilos-table-filter-from-to"]')
+        .element.value,
+    ).toBe('2026-09-30')
+    expect(
+      view.get('nav[aria-label="Channel pages"] [aria-current="page"]').text(),
+    ).toBe('Deliveries')
+    expect(viewportRequests()).toBe(before)
+  })
+})
 
 describe('HilosCommunicationsDeliveriesPage retry', () => {
   it('sends the retry and does not ask for the window again once it is answered', async () => {

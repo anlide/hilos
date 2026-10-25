@@ -17,6 +17,12 @@ export {
   type HilosChannelFields,
 } from './hilosCommunications.js'
 export {
+  CHANNEL_SUMMARY_DATA,
+  channelSummarySchema,
+  createHilosChannelSummary,
+  type HilosChannelSummary,
+} from './hilosCommunicationsChannel.js'
+export {
   createHilosChannelFieldEdit,
   hilosChannelDisplayValue,
   hilosChannelEditedValue,

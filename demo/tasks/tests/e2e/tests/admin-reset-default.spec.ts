@@ -12,7 +12,7 @@ test('channel reset applies the env value shown in Back to', async ({
   page,
 }) => {
   await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications/email')
+  await gotoPage(page, '/hilos/communications/email/configuration')
 
   const row = shownByTestId(
     page,

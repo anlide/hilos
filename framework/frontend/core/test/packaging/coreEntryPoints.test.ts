@@ -10,6 +10,7 @@ import * as appearance from '../../src/admin/appearance/index.js'
 import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
 import * as communications from '../../src/admin/communications/index.js'
+import * as channelSummary from '../../src/admin/communications/hilosCommunicationsChannel.js'
 import * as daemon from '../../src/admin/daemon/index.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
@@ -135,6 +136,13 @@ const tableTextTypes = [
 /** Explicit table focus return additions, with one DOM owner for root and base. */
 const tableFocusReturnValues = ['captureTableFocusReturnTarget']
 const tableFocusReturnTypes = ['TableFocusReturnRow']
+/** New communications APIs stay on their lazy section, outside root and base. */
+const channelSummaryValues = [
+  'CHANNEL_SUMMARY_DATA',
+  'channelSummarySchema',
+  'createHilosChannelSummary',
+]
+const channelSummaryTypes = ['HilosChannelSummary']
 /** Connection interaction APIs added to the shared shell's core surface. */
 const connectionInteractionValues = [
   'bindInteractionBlock',
@@ -337,13 +345,30 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/communications' &&
+          channelSummaryValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              channelSummary[name as keyof typeof channelSummary],
+            ),
+            name,
+          ).toBe(true)
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
       }
     }
     expect([...names].sort()).toEqual(
-      [...expectedValues, ...analyticsOverviewValues].sort(),
+      [
+        ...expectedValues,
+        ...analyticsOverviewValues,
+        ...channelSummaryValues,
+      ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
@@ -535,6 +560,10 @@ describe('core public entries', () => {
       ...analyticsOverviewTypes,
     ]
     const names = new Set<string>()
+    const summaryExports = exportsOf(
+      'admin/communications/hilosCommunicationsChannel.ts',
+    )
+    const sectionOnly = [...channelSummaryValues, ...channelSummaryTypes]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (
@@ -544,6 +573,13 @@ describe('core public entries', () => {
           expect(root.get(name), name).toBeUndefined()
           expect(baseExports.get(name), name).toBeUndefined()
           expect(Object.is(symbol, overviewExports.get(name)), name).toBe(true)
+        } else if (
+          entry === 'admin/communications/index.ts' &&
+          sectionOnly.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(summaryExports.get(name))
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -552,7 +588,9 @@ describe('core public entries', () => {
         names.add(name)
       }
     }
-    expect([...names].sort()).toEqual([...root.keys(), ...overviewNames].sort())
+    expect([...names].sort()).toEqual(
+      [...root.keys(), ...overviewNames, ...sectionOnly].sort(),
+    )
   })
 
   it('keeps the entire base runtime closure free of admin implementations', () => {

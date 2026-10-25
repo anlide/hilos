@@ -201,6 +201,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           href="#hilos-main-content"
           class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
           data-id="skip-to-content"
+          (click)="onSkipToContent($event, mainContent)"
           >Skip to main content</a
         >
         <div
@@ -462,6 +463,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           <ng-content select="[banner]" />
         </div>
         <main
+          #mainContent
           id="hilos-main-content"
           #pageRoot
           tabindex="-1"
@@ -1056,6 +1058,12 @@ export class HilosLayout {
         document.title = title
       }
     })
+  }
+
+  /** Focus this shell's main without resolving the fragment against the document base. */
+  protected onSkipToContent(event: MouseEvent, main: HTMLElement): void {
+    event.preventDefault()
+    main.focus()
   }
 
   /** First available project link; the CSS answers which entries are displayed. */

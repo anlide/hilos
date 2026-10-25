@@ -52,6 +52,7 @@ use Demo\Polls\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
 use Demo\Polls\Database\PollsDbContext;
+use Demo\Polls\Database\Pages\PageCatalog;
 use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Environment\PollsEnvCatalog;
 use Demo\Polls\Fs\PollsFsContext;
@@ -59,6 +60,7 @@ use Demo\Polls\Legal\PollsLegalCatalog;
 use Demo\Polls\Notification\PollsDeliveryChannelRegistry;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
@@ -233,6 +235,8 @@ final class Hilos extends HilosFacade
 
     protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
 
+    protected const string PAGE_CATALOG = PageCatalog::class;
+
     protected const string NOTIFICATION_CHANNEL_REGISTRY = PollsDeliveryChannelRegistry::class;
 
     protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
@@ -306,6 +310,7 @@ final class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
@@ -669,7 +674,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => [
             PollsTableContext::hilosCommunicationsChannels => [],
         ],
-        CommunicationsChannelPage::PAGE => [
+        CommunicationsChannelConfigurationPage::PAGE => [
             PollsTableContext::hilosCommunicationsChannelFields => [],
         ],
         CommunicationsDeliveriesPage::PAGE => [

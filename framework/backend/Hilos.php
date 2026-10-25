@@ -91,6 +91,7 @@ use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
+use Hilos\Pages\Communications\CommunicationsChannelSummaryAudience;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -1305,6 +1306,7 @@ abstract class Hilos implements TruthSourceOwner
         SourceChangeBus::subscribe(new SettingPresetChangeSubscriber());
         SourceChangeBus::subscribe(new LegalAcceptanceChangeSubscriber());
         SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
+        SourceChangeBus::subscribe(new CommunicationsChannelSummaryAudience());
 
         static::validateTopologyReferences();
     }

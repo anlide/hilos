@@ -11,6 +11,51 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('addresses channel Configuration beside the unchanged Overview and Deliveries', () => {
+    const page = HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_communications_channel_configuration')
+    expect(php).toContain(
+      `HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION = '${page}';`,
+    )
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/communications/{channelId}/configuration',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, { channelId: 'email' })).toBe(
+      '/hilos/communications/email/configuration',
+    )
+    expect(router.match('/hilos/communications/email/configuration')).toEqual({
+      page,
+      params: { channelId: 'email' },
+      admin: true,
+    })
+    expect(
+      resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
+        channelId: 'email',
+      }),
+    ).toBe('/hilos/communications/email')
+    expect(router.match('/hilos/communications/email')).toEqual({
+      page: HilosPages.COMMUNICATIONS_CHANNEL,
+      params: { channelId: 'email' },
+      admin: true,
+    })
+    expect(router.match('/hilos/communications/email/deliveries').page).toBe(
+      HilosPages.COMMUNICATIONS_DELIVERIES,
+    )
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
+  })
+
   it('addresses both Status admin pages without parameters and keeps their unbuilt views honest', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     for (const [page, path] of [

@@ -1,0 +1,867 @@
+// The Configuration tab retains the channel field edit/reset regression matrix.
+// (HIL-1050), under the same case names: the channel field's edit modal on the
+// shared row-edit helper — reload and "Updated just now", conflict with Keep mine
+// / Take theirs and no Merge, "Deleted" under a gone row, the discard question;
+// and the ↺ that resets only through a confirm dialog (HIL-1147).
+import { afterEach, describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import {
+  ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  HilosPages,
+  ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
+  createSignal,
+} from '@hilos/core'
+import type {
+  HilosCommunicationsContext,
+  HilosConnection,
+  HilosRouter,
+  PageRouteMatch,
+  ProjectSignal,
+} from '@hilos/core'
+
+import { HilosCommunicationsChannelConfigurationPage } from '../src/admin/communications/HilosCommunicationsChannelConfigurationPage.js'
+import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import {
+  communicationsHarness,
+  channelSummary,
+} from './hilosCommunicationsHarness.js'
+
+const TABLE = 'hilosCommunicationsChannelFields'
+const ROW_KEY = 'notifications.channel.sms.from'
+
+function router(): HilosRouter {
+  return {
+    currentRoute: createSignal<PageRouteMatch>({
+      page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+      params: { channelId: 'sms' },
+      admin: true,
+    }),
+    currentPath: createSignal(''),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    resolvePath: () => undefined,
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    onLeave: () => () => {},
+    navigate: () => {},
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  }
+}
+
+interface FieldSlot {
+  channel: string
+  field: string
+  label: string
+  type: string
+  value: unknown
+  valueSource: string
+  defaultValue: unknown
+  defaultValueSource: 'env' | 'default'
+  secret: boolean
+  editable: boolean
+}
+
+/** The `from` field of the sms channel, with the given effective value and source. */
+function fromField(
+  value: string,
+  valueSource = 'settings',
+  defaults: Partial<
+    Pick<FieldSlot, 'defaultValue' | 'defaultValueSource'>
+  > = {},
+): FieldSlot {
+  return {
+    channel: 'sms',
+    field: 'from',
+    label: 'From (sender id)',
+    type: 'string',
+    value,
+    valueSource,
+    defaultValue:
+      defaults.defaultValue === undefined && !('defaultValue' in defaults)
+        ? 'Hilos'
+        : defaults.defaultValue,
+    defaultValueSource: defaults.defaultValueSource ?? 'default',
+    secret: false,
+    editable: true,
+  }
+}
+
+function seededContext(initial: FieldSlot[]): {
+  context: HilosCommunicationsContext
+  pushUpdate: (next: FieldSlot) => void
+  pushRemove: () => void
+  pushLeave: (next: FieldSlot) => void
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
+  focus: string[]
+} {
+  let rows = initial.slice()
+  const focus: string[] = []
+  const scopes = new ScopeManager()
+  scopes.openPage(HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION)
+  const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const serveWindow = (): void => {
+    const data = {
+      page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+      tableKey: TABLE,
+      rows: rows.map((field) => ({ rowKey: ROW_KEY, slots: { field } })),
+      totalCount: rows.length,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+      offset: 0,
+      limit: 10,
+    }
+    for (const listener of windowListeners) {
+      listener({ data })
+    }
+  }
+
+  const connection = {
+    registerTableWindow(): void {
+      serveWindow()
+    },
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
+    sendTableViewport(): boolean {
+      serveWindow()
+
+      return true
+    },
+    sendTableRendered(): boolean {
+      return true
+    },
+    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
+      focus.push(rowKey)
+
+      return true
+    },
+    on(
+      event: string,
+      listener: (signal: { data: unknown }) => void,
+    ): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.add(listener)
+
+        return () => windowListeners.delete(listener)
+      }
+      if (event === 'tableViewportDelta') {
+        deltaListeners.add(listener)
+
+        return () => deltaListeners.delete(listener)
+      }
+
+      return () => {}
+    },
+  }
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
+  const actions = new ActionLifecycle({
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
+
+      return true
+    },
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
+
+  return {
+    context: {
+      connection:
+        connection as unknown as HilosCommunicationsContext['connection'],
+      scopes,
+      actions,
+    },
+    pushUpdate(next: FieldSlot): void {
+      rows = [next]
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            tableKey: TABLE,
+            kind: 'row_updated',
+            rowKey: ROW_KEY,
+            row: { rowKey: ROW_KEY, slots: { field: next } },
+          },
+        })
+      }
+    },
+    pushRemove(): void {
+      rows = []
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            tableKey: TABLE,
+            kind: 'row_removed',
+            rowKey: ROW_KEY,
+            reason: 'deleted',
+          },
+        })
+      }
+    },
+    // The row left this tab's window alive, and the frame that takes it off the screen
+    // carries the row for the dialog holding it in focus.
+    pushLeave(next: FieldSlot): void {
+      rows = []
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+            tableKey: TABLE,
+            kind: 'row_removed',
+            rowKey: ROW_KEY,
+            reason: 'left_set',
+            row: { rowKey: ROW_KEY, slots: { field: next } },
+          },
+        })
+      }
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The channel refused the reset.',
+        })
+      }
+    },
+    sent,
+    focus,
+  }
+}
+
+function byId(id: string): HTMLElement | null {
+  return document.querySelector(`[data-id="${id}"]`)
+}
+
+function valueInput(): HTMLInputElement {
+  return byId('hilos-channel-edit-value') as HTMLInputElement
+}
+
+function saveButton(): HTMLButtonElement {
+  return byId('hilos-channel-edit-save') as HTMLButtonElement
+}
+
+/** Settle the correlated action and its React updates before DOM teardown. */
+async function reply(
+  answer: (outcome: 'success' | 'fail') => void,
+  outcome: 'success' | 'fail',
+): Promise<void> {
+  await act(async () => {
+    answer(outcome)
+    await Promise.resolve()
+  })
+}
+
+/** Render the page and open the modal on the seeded row. */
+function openModal(context: HilosCommunicationsContext): void {
+  const { container } = render(
+    <HilosRouterContext.Provider value={router()}>
+      <HilosCommunicationsChannelConfigurationPage context={context} />
+    </HilosRouterContext.Provider>,
+  )
+  fireEvent.click(
+    container.querySelector(
+      'table [data-id="hilos-channel-field-edit-from"]',
+    ) as Element,
+  )
+}
+
+describe('HilosCommunicationsChannelConfigurationPage edit modal', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  it('opens on the committed value with save locked and the message line empty', () => {
+    const { context } = seededContext([fromField('+1000')])
+    openModal(context)
+
+    expect(valueInput().value).toBe('+1000')
+    expect(saveButton().disabled).toBe(true)
+    expect(byId('hilos-channel-edit-notice')).toBeNull()
+    expect(byId('hilos-channel-edit-notice-idle')).not.toBeNull()
+  })
+
+  it('reloads a pristine edit when the live row changes elsewhere and says so', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openModal(context)
+
+    act(() => {
+      pushUpdate(fromField('+2000'))
+    })
+
+    expect(valueInput().value).toBe('+2000')
+    expect(byId('conflict-badge')).toBeNull()
+    expect(byId('hilos-channel-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(saveButton().disabled).toBe(true)
+
+    // The person types over the taken value: the note about it goes out.
+    fireEvent.change(valueInput(), { target: { value: '+3000' } })
+    expect(byId('hilos-channel-edit-notice')).toBeNull()
+    expect(saveButton().disabled).toBe(false)
+  })
+
+  it('sends nothing on Enter while a conflict stands', () => {
+    const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
+    openModal(context)
+    fireEvent.change(valueInput(), { target: { value: '+mine' } })
+    act(() => {
+      pushUpdate(fromField('+theirs'))
+    })
+
+    fireEvent.submit(valueInput().form as HTMLFormElement)
+
+    expect(sent).toHaveLength(0)
+    expect(byId('conflict-badge')).not.toBeNull()
+  })
+
+  it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', async () => {
+    const { context, pushUpdate, sent, answer } = seededContext([
+      fromField('+1000'),
+    ])
+    openModal(context)
+    fireEvent.change(valueInput(), { target: { value: '+mine' } })
+
+    act(() => {
+      pushUpdate(fromField('+theirs'))
+    })
+
+    expect(byId('conflict-badge')).not.toBeNull()
+    expect(byId('hilos-channel-edit-notice')?.textContent).toContain(
+      'Changed elsewhere to "+theirs"',
+    )
+    expect(byId('conflict-merge')).toBeNull()
+    expect(saveButton().disabled).toBe(true)
+    expect(valueInput().value).toBe('+mine')
+
+    fireEvent.click(byId('conflict-accept-mine') as Element)
+    expect(byId('conflict-badge')).toBeNull()
+    expect(byId('hilos-channel-edit-notice')).toBeNull()
+    expect(saveButton().disabled).toBe(false)
+
+    fireEvent.click(saveButton())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('communications_channel_set')
+    expect(sent[0]?.payload).toMatchObject({
+      channel: 'sms',
+      field: 'from',
+      value: '+mine',
+    })
+
+    await reply(answer, 'success')
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('Take theirs sets the field to the live value, says so, and locks save', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openModal(context)
+    fireEvent.change(valueInput(), { target: { value: '+mine' } })
+    act(() => {
+      pushUpdate(fromField('+theirs'))
+    })
+
+    fireEvent.click(byId('conflict-accept-theirs') as Element)
+
+    expect(valueInput().value).toBe('+theirs')
+    expect(byId('conflict-badge')).toBeNull()
+    expect(byId('hilos-channel-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('locks save as Deleted and keeps the draft when the row goes under the modal', () => {
+    const { context, pushRemove } = seededContext([fromField('+1000')])
+    openModal(context)
+    fireEvent.change(valueInput(), { target: { value: '+mine' } })
+    act(() => {
+      pushRemove()
+    })
+
+    expect(byId('hilos-channel-edit-notice')?.textContent).toContain(
+      'Deleted elsewhere',
+    )
+    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().textContent?.trim()).toBe('Deleted')
+    expect(valueInput().value).toBe('+mine')
+    expect(byId('modal')).not.toBeNull()
+  })
+
+  it('follows a row that left the window under the modal: Updated just now, not Deleted', () => {
+    const { context, pushLeave } = seededContext([fromField('+1000')])
+    openModal(context)
+    // The other tab's save moved the row under the order or out of the filter: the screen
+    // gates the departure, the dialog holding the row in focus reads the body off the frame.
+    act(() => {
+      pushLeave(fromField('+2000'))
+    })
+
+    expect(valueInput().value).toBe('+2000')
+    expect(byId('hilos-channel-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(saveButton().textContent?.trim()).toBe('Save')
+  })
+
+  it('takes the row into focus on open and lets it go on close', () => {
+    const { context, focus } = seededContext([fromField('+1000')])
+    openModal(context)
+    expect(focus).toEqual([ROW_KEY])
+
+    fireEvent.click(byId('modal-close') as Element)
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('asks before discarding a changed draft, and closes a pristine one at once', () => {
+    const { context } = seededContext([fromField('+1000')])
+    openModal(context)
+    fireEvent.change(valueInput(), { target: { value: '+mine' } })
+
+    fireEvent.click(byId('modal-close') as Element)
+    // The discard question is the modal's own confirm step: the dialog stays.
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('modal-confirm-discard')).not.toBeNull()
+
+    fireEvent.click(byId('modal-confirm-discard') as Element)
+    expect(byId('modal')).toBeNull()
+  })
+})
+
+describe('HilosCommunicationsChannelConfigurationPage reset dialog', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  function renderPage(context: HilosCommunicationsContext): void {
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelConfigurationPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return document.querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return byId('hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  function cancelButton(): HTMLButtonElement {
+    return Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+  }
+
+  function openReset(context: HilosCommunicationsContext): void {
+    renderPage(context)
+    fireEvent.click(resetButton())
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    openReset(context)
+
+    expect(byId('modal')?.textContent).toContain('Reset · From (sender id)')
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the value now and where it goes back to', () => {
+    const { context } = seededContext([fromField('+1000')])
+    openReset(context)
+
+    expect(byId('hilos-channel-reset-now')?.textContent?.trim()).toBe('+1000')
+    expect(byId('hilos-channel-reset-default')?.textContent?.trim()).toBe(
+      'Hilos Default',
+    )
+    const reset = document.querySelector(
+      '[data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+    expect(reset.title).toBe('Reset to default')
+    expect(reset.getAttribute('aria-label')).toBe('Reset to default')
+  })
+
+  it.each([
+    { value: null, source: 'env', expected: '— From env' },
+    { value: '', source: 'default', expected: '— Default' },
+    { value: 0, source: 'env', expected: '0 From env' },
+    { value: false, source: 'default', expected: 'Off Default' },
+  ])('renders fallback $value from $source', ({ value, source, expected }) => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openReset(context)
+    act(() => {
+      pushUpdate(
+        fromField('+1000', 'settings', {
+          defaultValue: value,
+          defaultValueSource: source as 'env' | 'default',
+        }),
+      )
+    })
+
+    expect(byId('hilos-channel-reset-default')?.textContent?.trim()).toBe(
+      expected,
+    )
+  })
+
+  it('updates fallback value and source in the open dialog', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openReset(context)
+    act(() => {
+      pushUpdate(
+        fromField('+2000', 'settings', {
+          defaultValue: '+env',
+          defaultValueSource: 'env',
+        }),
+      )
+    })
+    expect(byId('hilos-channel-reset-now')?.textContent?.trim()).toBe('+2000')
+    expect(byId('hilos-channel-reset-default')?.textContent?.trim()).toBe(
+      '+env From env',
+    )
+    expect(byId('hilos-channel-reset-gone')).toBeNull()
+  })
+
+  it('keeps a hidden fallback hidden', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openReset(context)
+    act(() => {
+      pushUpdate(
+        fromField('+1000', 'settings', {
+          defaultValue: { _hidden: true },
+          defaultValueSource: 'env',
+        }),
+      )
+    })
+    const fallback = byId('hilos-channel-reset-default')
+    expect(fallback?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(fallback?.textContent).not.toContain('[object Object]')
+    expect(fallback?.textContent).not.toContain('—')
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext([fromField('+1000')])
+    openReset(context)
+
+    fireEvent.click(confirmButton())
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      {
+        action: 'communications_channel_reset',
+        payload: { channel: 'sms', field: 'from' },
+      },
+    ])
+
+    await reply(answer, 'success')
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    openReset(context)
+
+    fireEvent.click(cancelButton())
+
+    expect(byId('modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext([fromField('+1000')])
+    openReset(context)
+
+    fireEvent.click(confirmButton())
+    await reply(answer, 'fail')
+
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The channel refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    openReset(context)
+    expect(byId('hilos-channel-reset-gone')).toBeNull()
+
+    act(() => {
+      pushUpdate(fromField('+env', 'env'))
+    })
+
+    expect(byId('hilos-channel-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(byId('hilos-channel-reset-now')?.textContent?.trim()).toBe('+env')
+    expect(confirmButton().disabled).toBe(true)
+  })
+
+  it('locks ↺ while the value is not the admin one', () => {
+    const { context } = seededContext([fromField('+env', 'env')])
+    renderPage(context)
+
+    expect(resetButton().disabled).toBe(true)
+  })
+})
+
+describe('HilosCommunicationsChannelConfigurationPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return document.querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return byId('hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  it('a viewer opens a field edit, sees the hidden mark instead of an input, and closes via Cancel', () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000'), value: { _hidden: true } },
+    ])
+    bindSession(context.scopes).handshake(null, true)
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelConfigurationPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+    fireEvent.click(
+      container.querySelector(
+        'table [data-id="hilos-channel-field-edit-from"]',
+      ) as Element,
+    )
+
+    expect(byId('hilos-channel-edit-value')).toBeNull()
+    expect(byId('hilos-hidden')).not.toBeNull()
+
+    expect(saveButton().disabled).toBe(true)
+    fireEvent.click(saveButton())
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    fireEvent.click(cancel as HTMLElement)
+
+    expect(byId('modal-confirm-discard')).toBeNull()
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('a viewer opens the reset of an overridden field with a hidden value and has nothing to reset with', () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000', 'settings'), value: { _hidden: true } },
+    ])
+    bindSession(context.scopes).handshake(null, true)
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelConfigurationPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(resetButton().disabled).toBe(false)
+    fireEvent.click(resetButton())
+
+    expect(focus).toEqual([ROW_KEY])
+    expect(
+      byId('hilos-channel-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirmButton())
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    fireEvent.click(cancel as HTMLElement)
+
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+})
+
+describe('Configuration head and resource lifetime', () => {
+  it('draws its own head and field table, without the test send, and disposes on context replacement', () => {
+    const h = communicationsHarness(
+      HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+    )
+    const view = h.mount(
+      <HilosCommunicationsChannelConfigurationPage context={h.context} />,
+    )
+    expect(byId('hilos-page-head-title')?.textContent).toBe('Email')
+    expect(byId('hilos-viewport-table')).not.toBeNull()
+    expect(byId('hilos-channel-test')).toBeNull()
+    const next = communicationsHarness(
+      HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+    )
+    next.putSummary({ ...channelSummary, label: 'SMS', channel: 'sms' })
+    view.rerender(
+      next.wrap(
+        <HilosCommunicationsChannelConfigurationPage context={next.context} />,
+      ),
+    )
+    expect(h.unregister).toHaveBeenCalledWith(TABLE, expect.anything())
+    expect(byId('hilos-page-head-title')?.textContent).toBe('SMS')
+    view.unmount()
+    expect(next.unregister).toHaveBeenCalledWith(TABLE, expect.anything())
+  })
+
+  it('drops the open edit and its focus when the route changes channel', () => {
+    const h = seededContext([fromField('+1000')])
+    const navigation = router()
+    const view = render(
+      <HilosRouterContext.Provider value={navigation}>
+        <HilosCommunicationsChannelConfigurationPage context={h.context} />
+      </HilosRouterContext.Provider>,
+    )
+    fireEvent.click(
+      document.querySelector(
+        'table [data-id="hilos-channel-field-edit-from"]',
+      )!,
+    )
+    fireEvent.change(valueInput(), { target: { value: 'old draft' } })
+    expect(byId('modal')).not.toBeNull()
+    act(() =>
+      (
+        navigation.currentRoute as ReturnType<
+          typeof createSignal<PageRouteMatch>
+        >
+      ).set({
+        page: HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+        params: { channelId: 'email' },
+        admin: true,
+      }),
+    )
+    expect(byId('modal')).toBeNull()
+    expect(h.focus).toEqual([ROW_KEY, ROW_KEY, ''])
+    expect(h.sent).toEqual([])
+    view.unmount()
+  })
+
+  it('holds the edit open and Cancel locked while the session is saving, then keeps a refused draft', async () => {
+    const h = seededContext([fromField('+1000')])
+    openModal(h.context)
+    fireEvent.change(valueInput(), { target: { value: 'pending draft' } })
+    fireEvent.click(saveButton())
+    fireEvent.click(saveButton())
+    expect(h.sent).toHaveLength(1)
+    expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    expect(cancel.disabled).toBe(true)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(byId('modal')).not.toBeNull()
+    expect(valueInput().value).toBe('pending draft')
+    await act(async () => {
+      h.answer('fail')
+      await Promise.resolve()
+    })
+    expect(valueInput().value).toBe('pending draft')
+    expect(cancel.disabled).toBe(false)
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The channel refused the reset.',
+    )
+  })
+})
