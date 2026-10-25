@@ -92,7 +92,10 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 
 17. When parking an identified flake, keep its reason, date and body and declare
     `@quarantine:F-NNN` statically on the affected variant; follow the linked
-    quarantine section instead of adding a runtime `test.fixme`.
+    quarantine section instead of adding a runtime `test.fixme`. A test that
+    failed on its own test timeout is not quarantined: switch it off with a
+    static `test.fixme`, and its cluster phase in `FLAKY_SKIP`, per the same
+    section.
 
 ## Hard Rules
 

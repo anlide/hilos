@@ -61,6 +61,8 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1")
                               for node in self.stand.masters + self.stand.slaves}
         (self.stand.demo_dir / "data").mkdir(parents=True)
+        # The protocol is exercised with no phase switched off; parking has its own cases.
+        stack.enter_context(patch.dict(browser.FLAKY_SKIP, clear=True))
         self.plan = [planned("live"), planned("after-loss"), planned("live", "F-016"),
                      planned("daemon", "F-023")]
         self.events = []
@@ -212,6 +214,24 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertEqual(0, browser.run(self.stand, []))
         self.assertEqual([("main", "daemon"), ("main", "live"), ("main", "after-loss"),
                           ("quarantine", "live")], [(p, t) for p, t, _, _ in self.calls])
+
+    def test_switched_off_daemon_runs_in_neither_main_nor_quarantine(self):
+        browser.FLAKY_SKIP["daemon"] = "F-023: switched off"
+        self.plan[3] = planned("daemon")
+        self.assertEqual(0, browser.run(self.stand, []))
+        self.assertEqual([("main", "live"), ("main", "after-loss"), ("quarantine", "live")],
+                         [(p, t) for p, t, _, _ in self.calls])
+        self.daemon_factory.assert_not_called()
+        self.assertIn("cluster e2e: phase daemon SKIP (F-023: switched off)", self.output.getvalue())
+        self.assertEqual(["F-016"], [row["flake"] for row in self.lines()])
+
+    def test_switched_off_daemon_only_run_skips_before_any_runner_call(self):
+        browser.FLAKY_SKIP["daemon"] = "F-023: switched off"
+        self.assertEqual(0, browser.run(self.stand, ["--daemon"]))
+        self.gateway.assert_not_called()
+        self.daemon_factory.assert_not_called()
+        self.assertIn("browser suite skipped: phase daemon", self.output.getvalue())
+        self.assertEqual([], self.lines())
 
     def test_main_daemon_native_rc_survives_cleanup_failure(self):
         self.plan = [planned("daemon")]

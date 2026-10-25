@@ -897,6 +897,12 @@ last. There is no database reset or stand teardown between main and the tail.
 pointed live run does not add daemon. Each selected quarantine project runs
 at most once.
 
+A phase listed in `FLAKY_SKIP` of `framework/docker/cluster/browser.py` is
+switched off whole, the host-side twin of a static `test.fixme`: the host prints
+`cluster e2e: phase <project> SKIP (<reason>)` and prepares it in neither main
+nor quarantine. `-- --daemon` with daemon switched off prints
+`browser suite skipped: phase daemon` and succeeds without collecting.
+
 The daemon scenario checks foreign Workers/Agents/Cron/HTTP/Env, a remote UI
 restart proved by fresh node journals, mismatch privacy, then loss of the
 original leader. Two original follower contexts retain scheme, placement,

@@ -953,6 +953,15 @@ For a parameterized test, tag only the affected variant at declaration time:
 in main. A runtime `test.fixme(!viewer)` cannot supply the static plan; replace
 it with that details argument. Do not use `test.fail()` to mask a refusal.
 
+A test whose failure is its own test timeout (`Test timeout of … exceeded`,
+status `timedOut`) is not quarantined: quarantine would spend its whole cap, and
+for a cluster phase the host setup as well, on every full run. Switch it off
+instead with a static `test.fixme(title, body)` under the same `FIXME(F-NNN, …)`
+comment, keeping its F record; when the cluster host prepares its phase, also
+list the phase in `FLAKY_SKIP` of `framework/docker/cluster/browser.py`. An
+`expect`, locator or navigation timeout inside the test is an ordinary failure
+and may be quarantined.
+
 The shared entry collects the original selectors and project filters first,
 then runs main with its configured retries. Once every selected main phase
 finishes, even when main is red, it runs each selected quarantined test once,

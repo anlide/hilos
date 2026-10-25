@@ -17,6 +17,15 @@ from stand import StandRefused
 PLAYWRIGHT_ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
 QUARANTINE_STATUSES = frozenset(("passed", "failed", "timedOut", "skipped", "interrupted", "notRun"))
 
+# A phase switched off whole, the host-side twin of a static `test.fixme`: the host
+# prepares neither its main nor its quarantine run. A test that fails on its own test
+# timeout is switched off rather than quarantined, because quarantine would spend the
+# whole cap and the phase setup on every full run.
+FLAKY_SKIP = {
+    # FIXME(F-023, 2026-10-25): timed out in all 14 quarantine runs · чужой · попытка 1 · HIL-1641
+    "daemon": "F-023: the daemon journey times out after leader loss",
+}
+
 
 @dataclass
 class _PhaseResult:
@@ -487,6 +496,10 @@ def run(stand, extra_args):
     run_daemon = daemon_phase_selected(stand, extra_args)
     scenarios.bind(stand)
     daemon_only = "--daemon" in extra_args
+    if daemon_only and "daemon" in FLAKY_SKIP:
+        print(f"cluster e2e: phase daemon SKIP ({FLAKY_SKIP['daemon']})")
+        print("=== summary ===\n  browser suite skipped: phase daemon")
+        return 0
     extra_args = [arg for arg in extra_args if arg != "--daemon"]
     diagnostic = any(arg == "--repeat-each" or arg.startswith("--repeat-each=") for arg in extra_args)
     directory = stand.demo_dir / "data" / "cluster-quarantine" / uuid.uuid4().hex
@@ -529,7 +542,9 @@ def run(stand, extra_args):
             raise RuntimeError(f"test collection exited {code}")
         tests = _read_tests(plan_file, plan=True)
         allowed = {"daemon"} if daemon_only else {"live", "after-loss"} | ({"daemon"} if run_daemon else set())
-        tests = [test for test in tests if test["project"] in allowed]
+        for project in sorted(allowed & FLAKY_SKIP.keys()):
+            print(f"cluster e2e: phase {project} SKIP ({FLAKY_SKIP[project]})")
+        tests = [test for test in tests if test["project"] in allowed - FLAKY_SKIP.keys()]
         if not tests:
             raise RuntimeError("No tests found in the selected cluster projects")
         _atomic_json(plan_file, {"version": 1, "tests": tests})
