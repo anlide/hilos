@@ -367,6 +367,7 @@ const expectedValues = [
   ...maintenanceFrameValues,
   ...maintenanceRestoreActionValues,
   ...maintenanceRestoreCopyValues,
+  'hilosAnalyticsPerson',
   'PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD',
   'hilosProfileDeviceKind',
 ].sort()
@@ -718,6 +719,7 @@ describe('core public entries', () => {
     ).toEqual(
       [
         ...legacy.type,
+        'HilosAnalyticsPerson',
         'HilosDaemonNodeOverviewData',
         'HilosProfileDeviceKind',
         ...i18nOverviewTypes,

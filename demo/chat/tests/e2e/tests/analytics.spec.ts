@@ -22,7 +22,7 @@ import {
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
+import { nameFromEmail, register, uniqueEmail } from '../helpers/session.js'
 
 const sendCommand = createCommandChannel({
   host: process.env.COMMAND_HOST ?? 'chat-test',
@@ -70,7 +70,19 @@ test('opens a real person from Analytics People and returns through People crumb
 }) => {
   // Two registrations and the real journal-writer wait exceed the base cap.
   test.slow()
-  const user = await signUp(page)
+  // Give the target initials distinct from the administrator's e2e- name.
+  const email = `person-${uniqueEmail()}`
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('message-signin').click()
+  await register(page, email)
+  const name = nameFromEmail(email)
+  await expect(page.getByTestId('self-user')).toHaveText(name)
+  const user = {
+    userId: Number(await page.getByTestId('self-user-id').textContent()),
+    name,
+  }
+  expect(user.userId).toBeGreaterThan(0)
   const browserMajor = await page.evaluate(
     () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
   )
@@ -79,12 +91,105 @@ test('opens a real person from Analytics People and returns through People crumb
   const admin = await adminContext.newPage()
   const frames = watchDeliveryFrames(admin)
   try {
-    await signUpAdmin(admin)
+    const adminId = await signUpAdmin(admin)
+    expect(adminId).not.toBe(user.userId)
+    const adminName = await admin.getByTestId('self-user').innerText()
+    expect(adminName).toMatch(/^e2e-/)
+    expect(adminName).not.toBe(user.name)
     const session = await waitAnalyticsBrowserSession(
       expect,
       sendCommand,
       user.userId,
     )
+    const personPath = `/hilos/analytics/people/${user.userId}`
+    const label = `${user.name} (#${user.userId})`
+    const lead =
+      'Browser sessions where this person signed in last. Other people may have performed actions in the same browser.'
+    const bookmark = () => ({
+      sent: frames.sent.length,
+      packets: frames.packets.length,
+      sockets: frames.sockets(),
+    })
+    const expectPersonBlock = async (opening: ReturnType<typeof bookmark>) => {
+      await expect(admin).toHaveURL(personPath)
+      await expectPageReady(admin)
+      await expectAnalyticsPersonSession(
+        expect,
+        admin,
+        user,
+        session,
+        browserMajor!,
+      )
+      await expectAnalyticsPersonNavigation(expect, admin, frames, user)
+      const head = admin.getByTestId('hilos-page-head')
+      const avatar = head.getByTestId('analytics-person-head-avatar')
+      await expect(avatar).toHaveText('P')
+      await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
+      await expect(
+        head.getByTestId('analytics-person-head-description'),
+      ).toHaveText(lead)
+      await expect(admin).toHaveTitle(`${label} · Hilos Chat`)
+
+      // The completed head and session row bound the observation interval.
+      // Read fresh frames on every entry, including new document sockets.
+      const incoming = frames.packets
+        .slice(opening.packets)
+        .flatMap((packet) => packet.frames)
+      const replies = incoming.filter(({ wire }) => {
+        const response = deliveryObject(wire)
+        return (
+          response.type === 'page_response' &&
+          deliveryObject(response.data).page === 'hilos_analytics_person'
+        )
+      })
+      expect(replies).toHaveLength(1)
+      expect(replies[0].failure).toBeUndefined()
+      expect(replies[0].socket).toBe(frames.sockets())
+      const data = deliveryObject(
+        deliveryObject(deliveryObject(replies[0].wire).data).payload,
+      ).data
+      expect(data).toMatchObject({
+        pageLabel: label,
+        name: user.name,
+        photo: null,
+        pageLead: lead,
+        pageHeadOwner: {
+          page: 'hilos_analytics_person',
+          label: 'Person',
+          lead,
+        },
+        pageBreadcrumb: [
+          { page: 'hilos', label: 'Hilos' },
+          { page: 'hilos_analytics', label: 'Analytics' },
+          { page: 'hilos_analytics_people', label: 'People' },
+          { page: 'hilos_analytics_person', label: 'Person' },
+        ],
+        pageChildren: [],
+        pageTabs: [{ page: 'hilos_analytics_person', label: 'Overview' }],
+      })
+      const requests = frames.sent
+        .slice(opening.sent)
+        .map(({ wire }) => deliveryObject(wire))
+      expect(
+        requests
+          .filter((wire) => wire.type === 'page_subscribe')
+          .map((wire) => wire.page),
+      ).toEqual(['hilos_analytics_person'])
+      // Neither a User/card subscription nor a catalog/name/photo action is needed.
+      expect(requests.filter((wire) => wire.type === 'action')).toEqual([])
+      const viewports = requests.filter(
+        (wire) => wire.type === 'table_viewport',
+      )
+      expect(viewports.length).toBeGreaterThan(0)
+      for (const viewport of viewports) {
+        expect(viewport).toMatchObject({
+          page: 'hilos_analytics_person',
+          tableKey: 'hilosAnalyticsBrowserSessions',
+          filter: { user: user.userId },
+        })
+        expect(JSON.stringify(viewport)).not.toContain('period')
+      }
+    }
     await gotoPage(admin, '/hilos/analytics')
     await expectAnalyticsSectionHead(expect, admin, 'overview')
     await admin.getByTestId('hilos-page-tab-hilos_analytics_people').click()
@@ -99,17 +204,19 @@ test('opens a real person from Analytics People and returns through People crumb
     )
     await expectAnalyticsPeoplePerson(expect, admin, today, user)
 
+    let opening = bookmark()
     await analyticsPersonLink(admin, user.userId).click()
-    await expect(admin).toHaveURL(`/hilos/analytics/people/${user.userId}`)
-    await expectPageReady(admin)
-    await expectAnalyticsPersonSession(
-      expect,
-      admin,
-      user,
-      session,
-      browserMajor!,
-    )
-    await expectAnalyticsPersonNavigation(expect, admin, frames, user)
+    await expectPersonBlock(opening)
+
+    opening = bookmark()
+    await gotoPage(admin, personPath)
+    await expect.poll(() => frames.sockets()).toBeGreaterThan(opening.sockets)
+    await expectPersonBlock(opening)
+
+    opening = bookmark()
+    await admin.reload()
+    await expect.poll(() => frames.sockets()).toBeGreaterThan(opening.sockets)
+    await expectPersonBlock(opening)
 
     const returning = frames.sent.length
     await admin.getByTestId('hilos-breadcrumb-hilos_analytics_people').click()
@@ -124,10 +231,18 @@ test('opens a real person from Analytics People and returns through People crumb
       returning,
     )
     await expectAnalyticsPeoplePerson(expect, admin, returned, user)
+
+    opening = bookmark()
+    await admin.goBack()
+    await expectPersonBlock(opening)
   } finally {
     await test.info().attach('analytics-people-navigation', {
       body: JSON.stringify(
-        { sent: frames.sent, packets: frames.packets },
+        {
+          connections: frames.connections,
+          sent: frames.sent,
+          packets: frames.packets,
+        },
         null,
         2,
       ),

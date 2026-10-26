@@ -66,7 +66,7 @@ final class HilosAnalyticsPersonPageSubscribeParamsTest extends TestCase
             BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_PERSON,
         ], AbstractHilosAnalyticsPersonPage::BROWSER);
         self::assertSame('subscription_page_hilos_analytics_person', HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_PERSON);
-        self::assertSame([HilosDbContext::users], AbstractHilosAnalyticsPersonPage::READS_DB);
+        self::assertSame([HilosDbContext::users, HilosDbContext::userPhotos], AbstractHilosAnalyticsPersonPage::READS_DB);
         self::assertSame([], AbstractHilosAnalyticsPersonPage::ACTIONS);
         self::assertSame([], AbstractHilosAnalyticsPersonPage::SIGNALS);
         self::assertTrue(new HilosPageFactory($this->createStub(PageAgentInterface::class), Hilos::class)

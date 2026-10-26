@@ -18,7 +18,7 @@ import type {
   PageSubscriptionError,
   ProjectSignal,
 } from '@hilos/core/base'
-import { defineComponent, h, inject, nextTick } from 'vue'
+import { defineComponent, h, inject, nextTick, type VNode } from 'vue'
 
 import ErrorPage from './ErrorPage.vue'
 import HilosAdminPage from './HilosAdminPage.vue'
@@ -105,7 +105,7 @@ function router(identity: HilosPageIdentity | undefined): HilosRouter {
 function mountPage(
   page: string,
   identity: HilosPageIdentity | undefined,
-  slots: Record<string, string> = {},
+  slots: Record<string, string | (() => VNode[])> = {},
 ) {
   return mount(HilosAdminPage, {
     props: { page },
@@ -340,10 +340,33 @@ describe('HilosAdminPage with the shared head', () => {
     ).toBe(true)
   })
 
-  it('stands on the shared skeleton before the answer only for a page that names its head kind', async () => {
-    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+  it('keeps the default entity skeleton visual when no page slot is supplied', () => {
     const wrapper = mount(HilosAdminPage, {
       props: { page: HilosPages.I18N, headKind: 'entity' },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(undefined) },
+      },
+    })
+    const skeleton = wrapper.get('[data-id="hilos-page-head-skeleton"]')
+
+    expect(skeleton.attributes('aria-hidden')).toBe('true')
+    expect(skeleton.find('.rounded-3').exists()).toBe(true)
+    expect(skeleton.find('.rounded-circle').exists()).toBe(false)
+    expect(skeleton.findAll('.placeholder')).toHaveLength(2)
+  })
+
+  it('stands on the shared skeleton before the answer only for a page that names its head kind', async () => {
+    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+    const skeletonVisual = vi.fn(() => [
+      h('span', { 'data-id': 'probe-skeleton-visual' }),
+    ])
+    const visual = vi.fn(() => [h('span', { 'data-id': 'probe-real-visual' })])
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.I18N, headKind: 'entity' },
+      slots: {
+        'head-skeleton-visual': skeletonVisual,
+        'head-visual': visual,
+      },
       global: {
         provide: {
           [hilosRouterKey as symbol]: {
@@ -354,14 +377,24 @@ describe('HilosAdminPage with the shared head', () => {
       },
     })
 
-    expect(wrapper.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+    const skeleton = wrapper.get('[data-id="hilos-page-head-skeleton"]')
+    expect(skeleton.attributes('aria-hidden')).toBe('true')
+    expect(skeleton.find('[data-id="probe-skeleton-visual"]').exists()).toBe(
       true,
     )
+    expect(skeleton.findAll('.placeholder')).toHaveLength(2)
+    expect(skeleton.find('.rounded-3').exists()).toBe(false)
+    expect(skeletonVisual).toHaveBeenCalledOnce()
+    expect(visual).not.toHaveBeenCalled()
     expect(
       wrapper.find('[data-id="hilos-admin-title-skeleton"]').exists(),
     ).toBe(false)
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.find('[data-id="hilos-admin-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="probe-real-visual"]').exists()).toBe(false)
+    expect(wrapper.text()).toBe('')
 
     identity.set(OWNER_IDENTITY)
     await nextTick()
@@ -371,6 +404,12 @@ describe('HilosAdminPage with the shared head', () => {
     expect(wrapper.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
       false,
     )
+    expect(wrapper.find('[data-id="probe-skeleton-visual"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="probe-real-visual"]').exists()).toBe(true)
+    expect(skeletonVisual).toHaveBeenCalledOnce()
+    expect(visual).toHaveBeenCalledOnce()
 
     // The kind never opts the page in: an answer without an owner is legacy.
     identity.set(SECTION_IDENTITY)

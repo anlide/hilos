@@ -848,8 +848,8 @@ final class ChatTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Catalog overrides retain every framework field for User, Appearance and both Communications owners. */
-    public function testCatalogAdoptsUserAndBothCommunicationsOwnersWithCompleteEntries(): void
+    /** Catalog overrides retain every framework field for User, Person, Appearance and both Communications owners. */
+    public function testCatalogAdoptsUserPersonAndBothCommunicationsOwnersWithCompleteEntries(): void
     {
         Hilos::initBrowser();
         try {
@@ -884,6 +884,7 @@ final class ChatTopologyRegistryTest extends TestCase
         ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
         self::assertSame([
             HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_ANALYTICS_PERSON,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_APPEARANCE,

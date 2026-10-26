@@ -7,7 +7,7 @@ import type {
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core/base'
-import { nextTick } from 'vue'
+import { h, nextTick, type VNode } from 'vue'
 
 import HilosPageHead from './HilosPageHead.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
@@ -96,7 +96,7 @@ const mounted = new Set<VueWrapper>()
 function mountHead(
   props: Partial<HeadProps> = {},
   options: {
-    slots?: Record<string, string>
+    slots?: Record<string, string | (() => VNode[])>
     router?: HilosRouter
     attach?: boolean
   } = {},
@@ -466,7 +466,11 @@ describe('HilosPageHead', () => {
     ).toBe(false)
   })
 
-  it('shows only a silent skeleton until the answer arrives', () => {
+  it('shows only a silent skeleton until the answer arrives', async () => {
+    const skeletonVisual = vi.fn(() => [
+      h('span', { 'data-id': 'probe-skeleton-visual' }),
+    ])
+    const visual = vi.fn(() => [h('span', { 'data-id': 'probe-real-visual' })])
     const head = mountHead(
       {
         identity: undefined,
@@ -475,7 +479,8 @@ describe('HilosPageHead', () => {
       },
       {
         slots: {
-          visual: '<span data-id="probe-tile">US</span>',
+          'skeleton-visual': skeletonVisual,
+          visual,
           meta: '<span data-id="probe-code">us</span>',
           badges: '<span data-id="probe-badge">Custom</span>',
           description: '<p data-id="probe-description">Currency</p>',
@@ -485,17 +490,34 @@ describe('HilosPageHead', () => {
 
     const skeleton = head.get('[data-id="hilos-page-head-skeleton"]')
     expect(skeleton.attributes('aria-hidden')).toBe('true')
-    expect(skeleton.find('.rounded-3').exists()).toBe(true)
+    expect(skeleton.findAll('.placeholder')).toHaveLength(2)
+    expect(skeleton.find('[data-id="probe-skeleton-visual"]').exists()).toBe(
+      true,
+    )
     expect(head.find('h1').exists()).toBe(false)
     expect(head.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
     expect(head.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
     expect(head.find('[data-id="hilos-page-head-block"]').exists()).toBe(false)
     expect(head.find('[data-id="hilos-page-head-action"]').exists()).toBe(false)
-    expect(head.find('[data-id^="probe-"]').exists()).toBe(false)
+    expect(head.find('[data-id="probe-real-visual"]').exists()).toBe(false)
+    expect(head.find('[data-id="probe-code"]').exists()).toBe(false)
+    expect(head.find('[data-id="probe-badge"]').exists()).toBe(false)
+    expect(head.find('[data-id="probe-description"]').exists()).toBe(false)
+    expect(skeletonVisual).toHaveBeenCalledOnce()
+    expect(visual).not.toHaveBeenCalled()
     // The outlet announces the wait once; the head adds no second voice.
     expect(head.find('[role="status"]').exists()).toBe(false)
     expect(head.find('[aria-live]').exists()).toBe(false)
     expect(head.text()).toBe('')
+
+    await head.setProps({ identity: SECTION })
+    expect(head.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+      false,
+    )
+    expect(head.find('[data-id="probe-skeleton-visual"]').exists()).toBe(false)
+    expect(head.find('[data-id="probe-real-visual"]').exists()).toBe(true)
+    expect(skeletonVisual).toHaveBeenCalledOnce()
+    expect(visual).toHaveBeenCalledOnce()
   })
 
   it("draws a section's skeleton tile round", () => {
@@ -507,6 +529,14 @@ describe('HilosPageHead', () => {
         .find('.rounded-circle')
         .exists(),
     ).toBe(true)
+  })
+
+  it("draws an entity's skeleton tile square", () => {
+    const head = mountHead({ identity: undefined, kind: 'entity' })
+    const skeleton = head.get('[data-id="hilos-page-head-skeleton"]')
+
+    expect(skeleton.find('.rounded-3').exists()).toBe(true)
+    expect(skeleton.find('.rounded-circle').exists()).toBe(false)
   })
 
   it('stays on the skeleton for an identity without an owner', () => {

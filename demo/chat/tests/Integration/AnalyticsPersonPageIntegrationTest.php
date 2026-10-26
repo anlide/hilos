@@ -6,7 +6,9 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
+use Demo\Chat\Database\Pages\PageCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
@@ -29,14 +31,16 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -46,6 +50,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountStandingResolver;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 
 /** Real person-page subscriptions and session windows over a bounded analytics fixture, and the card's link to them. */
@@ -77,13 +82,16 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
     /** @var list<int> Authentication sessions created by this case */
     private array $sessionIds = [];
 
+    /** @var array<int, int> Published fixture files, keyed by registry id with their person's id */
+    private array $photoFiles = [];
+
     /** Prepares a real browser context, both subscription dispatchers and one admin connection. */
     protected function setUp(): void
     {
         parent::setUp();
         Hilos::initBrowser();
         $this->boundAppClass = HilosFacade::appClass();
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new ChatSignalRouter();
         $this->store = new AnalyticsStore();
         $this->analyticsRouter = new PageSignalRouter(
             new HilosPageFactory(new DemoHilosAnalyticsAgent(), Hilos::class), new ActionRouteConfig(),
@@ -112,6 +120,15 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
         RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterAgent(self::OWNER);
+        foreach ($this->photoFiles as $fileId => $userId) {
+            $this->underAgent(
+                $this->personAgent($userId),
+                static fn(): ?int => Hilos::$db->userPhotos->actions->deleteForUser($userId),
+            );
+            $storedName = Hilos::$db->files[$fileId]->storedName;
+            Hilos::$db->files[$fileId]->actions->delete();
+            Hilos::$fs->files[$storedName]->unlink();
+        }
         foreach ($this->sessionIds as $id) {
             if (isset(Hilos::$db->sessions[$id])) {
                 Hilos::$db->sessions[$id]->actions->delete();
@@ -150,6 +167,10 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         $response = $this->subscribe(self::ADMIN, $personId);
         $data = $response->payload->data;
         self::assertSame('Olena Kovalenko (#' . $personId . ')', $data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertSame('Olena Kovalenko', $data[PersonPage::NAME]);
+        self::assertNull($data[PersonPage::PHOTO]);
+        self::assertContains(HilosDbContext::users, PersonPage::READS_DB);
+        self::assertContains(HilosDbContext::userPhotos, PersonPage::READS_DB);
         self::assertSame(
             'Browser sessions where this person signed in last. Other people may have performed actions in the same browser.',
             $data[PageCatalogConstants::WIRE_PAGE_LEAD],
@@ -163,9 +184,11 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         );
         self::assertSame([], $data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
         self::assertSame([
-            PageCatalogConstants::WIRE_PAGE_LABEL, PageCatalogConstants::WIRE_PAGE_LEAD,
+            PageCatalogConstants::WIRE_PAGE_LABEL, PersonPage::NAME, PersonPage::PHOTO, PageCatalogConstants::WIRE_PAGE_LEAD,
             PageCatalogConstants::WIRE_PAGE_BREADCRUMB, PageCatalogConstants::WIRE_PAGE_CHILDREN,
+            PageCatalogConstants::WIRE_PAGE_HEAD_OWNER, PageCatalogConstants::WIRE_PAGE_TABS,
         ], array_keys($data));
+        $this->assertPersonHead($data);
         self::assertSame([], $response->payload->toArray()[PagePayload::windows][ChatTableContext::hilosAnalyticsBrowserSessions]['rows']);
         $this->assertNoSecrets($response);
 
@@ -202,17 +225,56 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         self::assertSame([], $window->rows);
     }
 
-    /** The name is read afresh on every subscription, so a rename shows on the next one. */
-    public function testRenameShowsOnTheNextSubscription(): void
+    /** Every subscription captures the current raw name and published avatar, without changing an earlier answer. */
+    public function testRenameAndPhotoChangesShowOnTheNextSubscription(): void
     {
-        $personId = $this->user('Name before rename');
-        self::assertSame('Name before rename (#' . $personId . ')',
-            $this->subscribe(self::ADMIN, $personId)->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        $personId = $this->user('Name  before <rename>');
+        $withoutPhoto = $this->subscribe(self::ADMIN, $personId);
+        self::assertSame('Name  before <rename>', $withoutPhoto->payload->data[PersonPage::NAME]);
+        self::assertNull($withoutPhoto->payload->data[PersonPage::PHOTO]);
 
+        $firstFileId = $this->putPhoto($personId);
+        $before = $this->subscribe(self::ADMIN, $personId);
+        self::assertSame('Name  before <rename> (#' . $personId . ')', $before->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertSame('Name  before <rename>', $before->payload->data[PersonPage::NAME]);
+        self::assertSame(HilosFiles::downloadPath($firstFileId, ProfilePhotoUploadTarget::VARIANT), $before->payload->data[PersonPage::PHOTO]);
+        $this->assertPersonHead($before->payload->data);
         Hilos::$db->users[$personId]->actions->rename('Name after rename');
+        $secondFileId = $this->putPhoto($personId);
 
-        self::assertSame('Name after rename (#' . $personId . ')',
-            $this->subscribe(self::ADMIN, $personId)->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        $after = $this->subscribe(self::ADMIN, $personId);
+        self::assertSame('Name after rename (#' . $personId . ')', $after->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertSame('Name after rename', $after->payload->data[PersonPage::NAME]);
+        self::assertSame(HilosFiles::downloadPath($secondFileId, ProfilePhotoUploadTarget::VARIANT), $after->payload->data[PersonPage::PHOTO]);
+        $this->assertPersonHead($after->payload->data);
+        self::assertSame('Name  before <rename>', $before->payload->data[PersonPage::NAME]);
+        self::assertSame(HilosFiles::downloadPath($firstFileId, ProfilePhotoUploadTarget::VARIANT), $before->payload->data[PersonPage::PHOTO]);
+        self::assertNull($withoutPhoto->payload->data[PersonPage::PHOTO]);
+
+        $this->underAgent(
+            $this->personAgent($personId),
+            static fn(): ?int => Hilos::$db->userPhotos->actions->deleteForUser($personId),
+        );
+        self::assertNull($this->subscribe(self::ADMIN, $personId)->payload->data[PersonPage::PHOTO]);
+    }
+
+    /** An existing published photo stays absent from the answer when the project disables profile photos. */
+    public function testProfilePhotoFeatureOffReturnsNull(): void
+    {
+        $personId = $this->user('Photo feature off');
+        $fileId = $this->putPhoto($personId);
+        self::assertSame(HilosFiles::downloadPath($fileId, ProfilePhotoUploadTarget::VARIANT),
+            $this->subscribe(self::ADMIN, $personId)->payload->data[PersonPage::PHOTO]);
+
+        $this->bindAppClass(AnalyticsPersonPageWithoutPhotoHilos::class);
+        try {
+            $response = $this->subscribe(self::ADMIN, $personId);
+            self::assertSame('Photo feature off', $response->payload->data[PersonPage::NAME]);
+            self::assertNull($response->payload->data[PersonPage::PHOTO]);
+            self::assertStringNotContainsString(HilosFiles::DOWNLOAD_PATH, json_encode($response->toArray(), JSON_THROW_ON_ERROR));
+        } finally {
+            $this->bindAppClass($this->boundAppClass);
+        }
     }
 
     /** A deleted account keeps a page while analytics names it, under its number only and never its old name. */
@@ -220,10 +282,21 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
     {
         $personId = $this->user('Name before deletion');
         $id = $this->browserSession('deleted-person-token', $personId, 100, 200);
+        $fileId = $this->putPhoto($personId);
+        self::assertSame(HilosFiles::downloadPath($fileId, ProfilePhotoUploadTarget::VARIANT),
+            $this->subscribe(self::ADMIN, $personId)->payload->data[PersonPage::PHOTO]);
+        $this->underAgent(
+            $this->personAgent($personId),
+            static fn(): ?int => Hilos::$db->userPhotos->actions->deleteForUser($personId),
+        );
         Hilos::$db->users[$personId]->actions->delete();
 
         $response = $this->subscribe(self::ADMIN, $personId);
         self::assertSame('Deleted user #' . $personId, $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        self::assertNull($response->payload->data[PersonPage::NAME]);
+        self::assertNull($response->payload->data[PersonPage::PHOTO]);
+        $this->assertPersonHead($response->payload->data);
+        self::assertStringNotContainsString(HilosFiles::DOWNLOAD_PATH, json_encode($response->toArray(), JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('Name before deletion', json_encode($response->toArray(), JSON_THROW_ON_ERROR));
         self::assertSame([$id], array_column($this->window(self::ADMIN, $personId)->rows, 'rowKey'));
     }
@@ -270,10 +343,46 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         self::assertSame([], $this->drain());
     }
 
-    /** Anonymous and signed-in viewers receive the catalog label and only hidden session values. */
-    public function testViewersReceiveNoPersonalValues(): void
+    /** A photo-source SQL failure cannot become a successful no-photo response for a live person. */
+    public function testPhotoDatabaseFailureIsNotNoPhoto(): void
+    {
+        $personId = $this->user('Unreadable photo');
+        $this->drain();
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $failure = null;
+        try {
+            $this->pointPrimaryAt('information_schema', $config);
+            ExecutionContext::run(new ExecutionFrame(acceptKey: self::ADMIN), static function () use ($personId): void {
+                new PersonPage(new DemoHilosAnalyticsAgent())->onSubscribe(
+                    self::ADMIN, new PageRouteParams([HilosPageRouteParams::HILOS_ANALYTICS_PERSON_USER_ID => (string)$personId]),
+                );
+            });
+        } catch (DatabaseException $e) {
+            $failure = $e;
+        } finally {
+            $this->pointPrimaryAt($config->database, $config);
+        }
+        self::assertInstanceOf(DatabaseException::class, $failure);
+        self::assertStringContainsString("Unknown table 'hilos_user_photo'", $failure->getMessage());
+        self::assertSame([], $this->drain());
+    }
+
+    /** @return array<string, array{bool}> Cases where a personal photo is present or absent */
+    public static function photoPresence(): array
+    {
+        return ['without photo' => [false], 'with photo' => [true]];
+    }
+
+    /**
+     * Anonymous and signed-in viewers receive the catalog label and hidden name, photo and session values.
+     *
+     * @param bool $withPhoto Whether the person has a published photo
+     */
+    #[DataProvider('photoPresence')]
+    public function testViewersReceiveNoPersonalValues(bool $withPhoto): void
     {
         $personId = $this->user('Private person');
+        $fileId = $withPhoto ? $this->putPhoto($personId) : null;
         $first = $this->browserSession('private-person-token-a', $personId, 100, 300, self::USER_AGENT);
         $second = $this->browserSession('private-person-token-b', $personId, 100, 400);
         $this->connect('analytics-person-viewer', $this->user('Viewer'));
@@ -283,6 +392,9 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
         foreach (['analytics-person-viewer', 'analytics-person-anonymous'] as $acceptKey) {
             $response = $this->subscribe($acceptKey, $personId);
             self::assertSame('Person', $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+            self::assertSame(['_hidden' => true], $response->payload->data[PersonPage::NAME]);
+            self::assertSame(['_hidden' => true], $response->payload->data[PersonPage::PHOTO]);
+            $this->assertPersonHead($response->payload->data);
             self::assertSame([], $response->payload->toArray()[PagePayload::windows][ChatTableContext::hilosAnalyticsBrowserSessions]['rows']);
             $window = $this->window($acceptKey, $personId);
             self::assertSame([$first, $second], array_column($window->rows, 'rowKey'));
@@ -308,6 +420,10 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
             self::assertStringNotContainsString('Private person', $wire);
             self::assertStringNotContainsString('(#' . $personId . ')', $wire);
             self::assertStringNotContainsString('Chrome', $wire);
+            self::assertStringNotContainsString(HilosFiles::DOWNLOAD_PATH, $wire);
+            if ($fileId !== null) {
+                self::assertStringNotContainsString(HilosFiles::downloadPath($fileId, ProfilePhotoUploadTarget::VARIANT), $wire);
+            }
         }
     }
 
@@ -360,6 +476,50 @@ final class AnalyticsPersonPageIntegrationTest extends IntegrationTestCase
             }
         }
         self::assertTrue($this->cardData(self::ADMIN, $personId)[UserPage::ANALYTICS_ENABLED]);
+    }
+
+    /**
+     * The shared catalog identity stays public; the client binds the permitted pageLabel to its owner and last crumb.
+     *
+     * @param array<string, mixed> $data Person page's routed response data
+     */
+    private function assertPersonHead(array $data): void
+    {
+        self::assertSame([
+            'page' => HilosPageConstants::HILOS_ANALYTICS_PERSON,
+            'label' => 'Person',
+            'lead' => 'Browser sessions where this person signed in last. '
+                . 'Other people may have performed actions in the same browser.',
+        ], $data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Person'],
+        ], $data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Overview'],
+        ], $data[PageCatalogConstants::WIRE_PAGE_TABS]);
+        self::assertSame([], $data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
+    }
+
+    /**
+     * Publishes a photo fixture through the registry and the owner of that person's photo row.
+     *
+     * @param int $userId Person whose photo is set
+     * @return int Published registry file key
+     */
+    private function putPhoto(int $userId): int
+    {
+        $fileId = (int)$this->keepRegistryFile($userId, 'face.jpg', 'analytics person face')->id;
+        $this->photoFiles[$fileId] = $userId;
+        $this->underAgent(
+            $this->personAgent($userId),
+            static fn(): ?int => Hilos::$db->userPhotos->actions->put($userId, $fileId),
+        );
+        $this->drain();
+
+        return $fileId;
     }
 
     /**
@@ -579,5 +739,16 @@ abstract class AnalyticsPersonPageNotRegisteredHilos extends HilosFacade
         UserPage::PAGE => UserPage::class,
     ];
 
+    protected const array FEATURES = [HilosFeature::ANALYTICS];
+}
+
+/** A project that serves the same Person page and catalog with profile photos disabled. */
+abstract class AnalyticsPersonPageWithoutPhotoHilos extends HilosFacade
+{
+    public const array PAGES = [
+        PersonPage::PAGE => PersonPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = PageCatalog::class;
     protected const array FEATURES = [HilosFeature::ANALYTICS];
 }

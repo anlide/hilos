@@ -571,6 +571,47 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
+    /** Vue opts in only Person; the neighboring BrowserSession stays on its legacy head. */
+    public function testVueProvidersAdoptTheAnalyticsPersonHeadWithOnlyOverview(): void
+    {
+        foreach ([ChatAnalyticsPageHeadTestHilos::class, BinanceAnalyticsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            $page = HilosPageConstants::HILOS_ANALYTICS_PERSON;
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[$page],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[$page]);
+            self::assertSame($page, PageCatalogResolver::rowOwner($page));
+            $head = PageCatalogResolver::head($page, new PageRouteParams(['userId' => '42']));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_ANALYTICS_PERSON,
+                    'label' => 'Person',
+                    'lead' => 'Browser sessions where this person signed in last. '
+                        . 'Other people may have performed actions in the same browser.',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Person'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
+            self::assertNull(PageCatalogResolver::head(
+                HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, new PageRouteParams(['browserSessionId' => '58']),
+            ));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
+            ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION));
+        }
+    }
+
     public function testI18nRootAndListsShareTheHeadAndKeepServedFutureTabs(): void
     {
         I18nPageHeadTestHilos::initBrowser();
@@ -1259,6 +1300,18 @@ abstract class AnalyticsPageHeadTestHilos extends Hilos
         HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
     ];
+}
+
+/** Chat's real catalog supplies the Vue Analytics Person opt-in. */
+abstract class ChatAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** Binance's real catalog supplies the Vue Analytics Person opt-in. */
+abstract class BinanceAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
 }
 
 /** The Maintenance owner is registered without its optional Circle view. */

@@ -76,6 +76,8 @@ const props = withDefaults(
 defineSlots<{
   /** The block's picture: an entity's tile or avatar; a section's icon by default. */
   visual?(): unknown
+  /** The loading picture shown before the page answers with its owner. */
+  'skeleton-visual'?(): unknown
   /** A short mark beside the title, such as the entity's code. */
   meta?(): unknown
   /** Status badges beside the title. */
@@ -242,10 +244,12 @@ watch(row, (container, _previous, onCleanup) => {
       aria-hidden="true"
       data-id="hilos-page-head-skeleton"
     >
-      <span
-        class="hilos-avatar-md bg-secondary-subtle flex-shrink-0"
-        :class="kind === 'entity' ? 'rounded-3' : 'rounded-circle'"
-      ></span>
+      <slot name="skeleton-visual">
+        <span
+          class="hilos-avatar-md bg-secondary-subtle flex-shrink-0"
+          :class="kind === 'entity' ? 'rounded-3' : 'rounded-circle'"
+        ></span>
+      </slot>
       <div class="flex-grow-1 min-w-0">
         <span
           class="placeholder placeholder-lg col-4 d-block mb-2 rounded"

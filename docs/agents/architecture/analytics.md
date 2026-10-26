@@ -460,8 +460,24 @@ layer that has built the section, which all three layers have.
   its SDK view is `HilosAnalyticsPersonPage` in Vue, React and Angular. The entry is the admin user
   card: its `analyticsEnabled` is true while the feature is on and the project
   registers the person page, and the card then links here, on a merged card
-  too. The opening `page_response` carries only `data.pageLabel`, the person's
-  current name and number; the heading and the table are a snapshot of the
+  too. The opening `page_response` keeps `data.pageLabel` and adds top-level
+  `data.name` and `data.photo`, each `string | null`; `pageLabel` remains
+  `Name (#N)` or `Deleted user #<id>`. For an administrator, `name` is the
+  current raw `users.name`, or null after deletion, and `photo` is the published
+  avatar URL when `HilosFeature::PROFILE_PHOTO` is enabled and a photo is
+  published, otherwise null. Both use `WireField::column` for `users.name` and
+  `userPhotos.fileId`. A viewer gets Hidden for both fields, even when no photo
+  is published. A user or photo source failure remains a page failure; this
+  adds no request or live fan-out.
+  In Chat and Binance, Vue opts this page into the entity head and uses the
+  permitted `pageLabel` for its name, with `name` and `photo` for the avatar.
+  The avatar shows initials/name and the published photo, falls back to
+  initials when the image fails, and shows `bi-person` for a deleted or hidden
+  name; a hidden photo is not used as an image source. A live empty name remains
+  distinct from a deleted person and may have a published photo. Its description
+  is the current catalog lead about browser sessions, not visit-based copy.
+  React and Angular retain their legacy Person presentation for their own
+  adoption leaves. The heading and the table remain a snapshot of the
   subscription, without live updates. It remains an all-time page and does not
   inherit the People period. In the shared head it is a child of People; direct
   opens and list links resolve `Hilos › Analytics › People › Name (#N)` with

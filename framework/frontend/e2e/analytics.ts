@@ -391,13 +391,22 @@ export async function expectAnalyticsPeopleAccessibility(
   ).toHaveAccessibleName('Last seen')
 }
 
-/** Person remains an all-time page, with a real People breadcrumb return link. */
+/** Person has one entity head, no tab row, and an all-time People return link. */
 export async function expectAnalyticsPersonNavigation(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
   person: { userId: number; name: string },
 ): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(head.getByRole('heading', { level: 1 })).toHaveText(
+    `${person.name} (#${person.userId})`,
+  )
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
   await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
     'Hilos',
     'Analytics',
@@ -738,7 +747,7 @@ export async function expectAnalyticsPersonSession(
   if (browserSessionId === null) {
     throw new Error('The probe has loaded no browser session of this person')
   }
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     `${person.name} (#${person.userId})`,
   )
   const sessions = page.getByTestId(SESSIONS_TABLE)

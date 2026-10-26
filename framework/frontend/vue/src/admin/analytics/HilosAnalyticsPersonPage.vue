@@ -18,6 +18,7 @@ import {
   createHilosAnalyticsBrowserSessionsTable,
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
+  hilosAnalyticsPerson,
   readAnalyticsRouteId,
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsContext,
@@ -27,10 +28,12 @@ import {
   computedSignal,
   HilosPages,
   hilosTimeZone,
+  isHiddenValue,
 } from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosAvatar from '../../HilosAvatar.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -56,6 +59,20 @@ const unbindName = bindPageInstanceName(
   }),
 )
 onUnmounted(unbindName)
+
+const person = useSignal(hilosAnalyticsPerson(props.context.scopes))
+const identity = useSignal(router.pageIdentity)
+const avatar = computed(() => {
+  const current = person.value
+  if (!current || current.name === null || isHiddenValue(current.name)) {
+    return { name: '', photo: null, icon: 'bi-person' }
+  }
+  return {
+    name: current.name,
+    photo: isHiddenValue(current.photo) ? null : current.photo,
+    icon: null,
+  }
+})
 
 const route = useSignal(router.currentRoute)
 const userId = computed(() =>
@@ -95,7 +112,29 @@ onUnmounted(() => sessions.value?.dispose())
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.ANALYTICS_PERSON">
+  <HilosAdminPage :page="HilosPages.ANALYTICS_PERSON" head-kind="entity">
+    <template #head-visual>
+      <HilosAvatar
+        :name="avatar.name"
+        :photo="avatar.photo"
+        :icon="avatar.icon"
+        size="md"
+        data-id="analytics-person-head-avatar"
+      />
+    </template>
+    <template #head-description>
+      <p
+        class="text-body-secondary mb-0"
+        data-id="analytics-person-head-description"
+      >
+        {{ identity?.pageHeadOwner?.lead }}
+      </p>
+    </template>
+    <template #head-skeleton-visual>
+      <span
+        class="hilos-avatar-md rounded-circle bg-secondary-subtle flex-shrink-0"
+      ></span>
+    </template>
     <HilosViewportTable
       v-if="sessions"
       :key="userId ?? undefined"

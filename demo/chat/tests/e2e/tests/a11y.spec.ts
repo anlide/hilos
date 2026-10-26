@@ -140,6 +140,52 @@ test('Analytics People names its table through the heading and sorts Last seen f
   }
 })
 
+test('Analytics Person has one entity heading naming its table and a decorative avatar without tabs', async ({
+  page,
+}) => {
+  const userId = await signUpAdmin(page)
+  const name = await page.getByTestId('self-user').innerText()
+  const label = `${name} (#${userId})`
+  await gotoPage(page, `/hilos/analytics/people/${userId}`)
+  await expectPageReady(page)
+
+  const carrier = page.getByTestId('hilos-admin-page')
+  await expect(carrier).toHaveAttribute('data-page', 'hilos_analytics_person')
+  const head = carrier.getByTestId('hilos-page-head')
+  const heading = head.getByRole('heading', { level: 1 })
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(heading).toHaveText(label)
+  await expect(heading).toHaveAttribute('id', /\S+/)
+  const headingId = (await heading.getAttribute('id'))!
+  const table = carrier
+    .getByTestId('hilos-analytics-browser-sessions-table')
+    .getByRole('table')
+  await expect(table).toBeVisible()
+  await expect(table).toHaveAttribute('aria-labelledby', headingId)
+  await expect(table).toHaveAccessibleName(label)
+  await expect(carrier.getByTestId('hilos-table-title')).toHaveCount(0)
+
+  const avatar = head.getByTestId('analytics-person-head-avatar')
+  await expect(avatar).toBeVisible()
+  await expect(avatar).toHaveAttribute('aria-hidden', 'true')
+  await expect(avatar.locator('img:not([alt=""])')).toHaveCount(0)
+  await expect(head.getByRole('img')).toHaveCount(0)
+  const breadcrumb = head.getByTestId('hilos-breadcrumb')
+  await expect(breadcrumb).toHaveRole('navigation')
+  await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
+  await expect(breadcrumb.locator('li')).toHaveText([
+    'Hilos',
+    'Analytics',
+    'People',
+    label,
+  ])
+  const current = breadcrumb.locator('li').last()
+  await expect(current).toHaveAttribute('aria-current', 'page')
+  await expect(current.getByRole('link')).toHaveCount(0)
+  await expect(head.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+})
+
 test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {

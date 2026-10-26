@@ -2461,7 +2461,11 @@ export {
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsBrowserSessionsOptions,
 } from './admin/analytics/hilosAnalyticsBrowserSessions.js'
-export { ANALYTICS_PERSON_ROUTE_PARAM } from './admin/analytics/hilosAnalyticsPerson.js'
+export {
+  ANALYTICS_PERSON_ROUTE_PARAM,
+  hilosAnalyticsPerson,
+  type HilosAnalyticsPerson,
+} from './admin/analytics/hilosAnalyticsPerson.js'
 export {
   hilosLogSettingsVocabulary,
   formatLogWriteLevel,

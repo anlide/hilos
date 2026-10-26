@@ -102,6 +102,8 @@ defineSlots<{
   default?(): unknown
   /** The shared head's block picture: an entity's tile or avatar. */
   'head-visual'?(): unknown
+  /** The shared head's loading picture before the page answers with its owner. */
+  'head-skeleton-visual'?(): unknown
   /** A short mark beside the shared head's title, such as the entity's code. */
   'head-meta'?(): unknown
   /** Status badges beside the shared head's title. */
@@ -203,6 +205,9 @@ onUnmounted(() => {
         :breadcrumb-label="breadcrumbLabel"
         :tabs-label="tabsLabel"
       >
+        <template v-if="$slots['head-skeleton-visual']" #skeleton-visual>
+          <slot name="head-skeleton-visual" />
+        </template>
         <template v-if="$slots['head-visual']" #visual>
           <slot name="head-visual" />
         </template>

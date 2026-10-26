@@ -51,7 +51,11 @@ export {
   type HilosAnalyticsBrowserSessionsTable,
   type HilosAnalyticsBrowserSessionsOptions,
 } from './hilosAnalyticsBrowserSessions.js'
-export { ANALYTICS_PERSON_ROUTE_PARAM } from './hilosAnalyticsPerson.js'
+export {
+  ANALYTICS_PERSON_ROUTE_PARAM,
+  hilosAnalyticsPerson,
+  type HilosAnalyticsPerson,
+} from './hilosAnalyticsPerson.js'
 export {
   ANALYTICS_PERIOD_FILTER,
   ANALYTICS_PERIOD_TIME_ZONE_FILTER,
