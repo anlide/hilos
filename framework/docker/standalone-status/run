@@ -24,7 +24,8 @@ docker --host "$endpoint" build --iidfile "$state/image" \
     -f "$repo/framework/docker/Dockerfile.cluster-harness" "$repo/framework/docker" >&2
 image=$(cat "$state/image")
 set -- "$image" python3 "$here/runner.py" "$@"
-for name in HILOS_STAND_SUFFIX HILOS_STAND_CPU_SHARES HILOS_STAND_NET_BINANCE_BTC_TRACKER HILOS_E2E_TIMEOUT_SCALE; do
+port_vars=$(php -r 'require $argv[1]; echo implode(" ", STAND_INSTANCE_PORT_VARS);' "$repo/scripts/stand-instance.php")
+for name in HILOS_STAND_SUFFIX HILOS_STAND_CPU_SHARES HILOS_STAND_NET_BINANCE_BTC_TRACKER HILOS_E2E_TIMEOUT_SCALE $port_vars; do
     value=$(printenv "$name" || true)
     [ -z "$value" ] || set -- --env "$name=$value" "$@"
 done
