@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -23,9 +24,14 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProtectedModeRuntimeMountTest extends TestCase
 {
+    private ?EnvAccessor $previousEnv = null;
+
+    /**
+     * Release the mounted project and restore the process environment.
+     */
     public function tearDown(): void
     {
-        Hilos::$env = null;
+        Hilos::$env = $this->previousEnv;
         Hilos::$setting = null;
         Hilos::$db = null;
         Hilos::$notify = null;
@@ -57,6 +63,16 @@ final class ProtectedModeRuntimeMountTest extends TestCase
         ProtectedModeMountTestNoRuntimeHilos::init();
 
         $this->assertNull(Hilos::$rt);
+    }
+
+    /**
+     * Preserve the process environment before a test initializes its project.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->previousEnv = Hilos::$env;
     }
 }
 

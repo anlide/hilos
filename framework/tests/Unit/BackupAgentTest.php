@@ -80,23 +80,32 @@ final class BackupAgentTest extends TestCase
 
     private string $previousProcessZone;
 
+    private ?EnvAccessor $previousEnv = null;
+
+    /**
+     * Preserve the process environment before mounting the backup fixture.
+     */
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->previousEnv = Hilos::$env;
         $this->previousProcessZone = date_default_timezone_get();
         date_default_timezone_set(TimeConstants::UTC_TIME_ZONE);
         Hilos::$sr = new SignalRouter();
         Hilos::$env = $this->env();
     }
 
+    /**
+     * Release the fixture and restore the process environment and time zone.
+     */
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterDaemon(StateBackupHistory::RT_COLLECTION);
         Hilos::$rt = null;
         Hilos::$sr = null;
-        Hilos::$env = null;
+        Hilos::$env = $this->previousEnv;
         Hilos::$db = null;
         date_default_timezone_set($this->previousProcessZone);
 

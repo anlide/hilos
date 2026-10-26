@@ -195,6 +195,9 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
         $this->queuedSignalNames();
 
+        $this->tickPastTheThrottle();
+        $this->queuedSignalNames();
+
         $this->assertSame([self::ACCEPT_KEY], ClusterLogIndexMirror::viewerKeys());
         $this->assertSame([self::ACCEPT_KEY], $this->tickRecipients());
 
