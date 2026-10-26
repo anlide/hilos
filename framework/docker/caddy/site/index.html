@@ -19,7 +19,7 @@
 <body>
   <div class="container py-4" style="max-width: 48rem;">
     <h1 class="h3 mb-1">Hilos preview lane</h1>
-    <p class="text-secondary">Demos running in the tailnet on <code>nova-lt</code>. Reachable only from devices on the Tailscale mesh.</p>
+    <p class="text-secondary">Demos running on the preview host in the tailnet. Reachable only from devices on the Tailscale mesh.</p>
 
     <div class="card mb-4">
       <div class="card-body">
@@ -74,7 +74,7 @@
 
     <div class="alert alert-secondary small" role="alert">
       Seeing a certificate warning? Install the preview CA root once per device:
-      <a href="http://ca.hilos/nova-lt.crt" class="alert-link">download the CA root</a> and trust it.
+      <a href="http://ca.hilos/root.crt" class="alert-link">download the CA root</a> and trust it.
       The <code>*.hilos</code> names resolve through the tailnet split-DNS rule.
     </div>
   </div>

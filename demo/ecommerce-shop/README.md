@@ -34,8 +34,6 @@ framework's.
 
 ### What it is going to show
 
-The design lives in `hilos-ops/mockups/demos/ecommerce-shop`:
-
 - **Storefront**: flower categories as tiles, a category as a table or as
   tiles, with filters and an order; a one-of-a-kind item sold to somebody else
   leaves every open page at once.

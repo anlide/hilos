@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The resolution and listing paths need no daemon and no endpoint: they read the
  * catalog and env and print. The --probe path is a live network round-trip and is
- * exercised by the nova-lt acceptance run, not here (the convention from
+ * exercised by the acceptance run on a provisioned stand, not here (the convention from
  * {@see VerificationTestExpireCommandTest}).
  */
 final class LlmPingCommandTest extends TestCase

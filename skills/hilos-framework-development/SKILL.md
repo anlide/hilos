@@ -18,6 +18,9 @@ that match the affected subsystem.
 - Writing SQL past `Hilos::$db`, or choosing a static or instance field for
   state instead of `Hilos::$rt`: `docs/agents/framework-first.md`
 - App topology registry: `docs/agents/app-topology.md`
+- A machine name, a host path, or private tooling that arrived with the task,
+  and the public shapes that replace them in code, comments, and commit text:
+  `docs/agents/public-repository-hygiene.md`
 - Style and PHPDoc contracts: use `$hilos-code-style-php`
 - Exception families and `@throws`: use `$hilos-exception`
 - Facade, magic, array, and key-based accessors: use `$hilos-accessor-contracts`

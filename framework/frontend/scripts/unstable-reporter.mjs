@@ -4,9 +4,9 @@
 // The reporter supplies evidence; scripts/run-test-suite.php owns the verdict.
 //
 // The line is the entire contract between this file and the runner. It works
-// on a fresh checkout without hilos-ops and needs no Playwright-specific parser.
-// A step that prints no such line (phpunit, vitest, check) reports zero by
-// staying quiet.
+// on a fresh checkout with no external pipeline and needs no Playwright-specific
+// parser. A step that prints no such line (phpunit, vitest, check) reports zero
+// by staying quiet.
 //
 // Silence at zero is deliberate and holds at every level — no line here, no field
 // in the ledger, no section in the summary. A clean run has to look byte for byte

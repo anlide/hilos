@@ -17,10 +17,10 @@ durable primitive; the lighter list and append-stream primitives are in
 
 What a table *looks* like is not here. The approved surface — cards on a narrow
 screen, the four empty states, the highlight as a Bootstrap contextual class, the
-appearance of the selection panel and of the progress bars — is the mockup
-`hilos-ops/mockups/components/table/index.html`, and this document points at it
-instead of restating it. Here: subscription mechanics, live changes, and the wire
-contract.
+appearance of the selection panel and of the progress bars — is the approved table
+mockup, handed in with the task rather than kept in this repository, and this
+document points at it instead of restating it. Here: subscription mechanics, live
+changes, and the wire contract.
 
 ## The rule everything follows from
 

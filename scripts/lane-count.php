@@ -29,7 +29,7 @@ declare(strict_types=1);
 const SERIAL_LANES = 1;
 
 /**
- * Cores one lane is granted. Measured on nova-de (run 0656): three lanes kept the
+ * Cores one lane is granted. Measured on the test box (run 0656): three lanes kept the
  * load per CPU at 0.1–0.4 on sixteen cores, a lane at its peak taking about two.
  */
 const ADAPTIVE_CORES_PER_LANE = 2;

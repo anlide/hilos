@@ -47,8 +47,8 @@ declare(strict_types=1);
  *                  every outcome, so that reading a red step starts from what it
  *                  left behind rather than from what the log seemed to say.
  *
- * Composer and hilos-ops/verify-run.sh drive the same repository-owned command
- * line. The runner also works on a fresh checkout without hilos-ops: its verdict
+ * Composer and an external pipeline drive the same repository-owned command
+ * line. The runner also works on a fresh checkout with no pipeline beside it: its verdict
  * depends only on each command's exit code and the hilos-unstable evidence it prints.
  */
 

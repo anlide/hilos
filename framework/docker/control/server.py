@@ -17,6 +17,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,7 +27,11 @@ def clean(s):
     return _ANSI.sub("", s or "").strip()
 
 PORT = 8099
-REPO = os.environ.get("HILOS_REPO", "/home/cloud/hilos")
+# Absolute root of the checkout this service drives, bind-mounted at the same
+# path as on the host (see docker-compose.yml). There is no default: a checkout
+# this service may assume does not exist, so an unset or unusable value refuses
+# to start (check_repo) instead of reaching into some other directory.
+REPO = os.environ.get("HILOS_REPO", "")
 COMPOSE = f"{REPO}/framework/docker/docker-compose.yml"
 PREVIEW = f"{REPO}/framework/docker/preview"
 OLLAMA = "hilos-ollama-local"
@@ -37,6 +42,25 @@ MODELS = {"0.5b": "qwen2.5:0.5b", "3b": "qwen2.5:3b"}
 
 _lock = threading.Lock()
 last_action = {}  # outcome of the most recent action, surfaced via /api/status
+
+
+def check_repo():
+    """Refuse to serve unless REPO names a usable Hilos checkout root.
+
+    Runs before the HTTP server binds, so a misconfigured service never answers
+    a request with commands aimed at a directory that is not the checkout.
+    """
+    if not REPO:
+        reason = "HILOS_REPO is not set or empty"
+    elif not os.path.isabs(REPO):
+        reason = f"HILOS_REPO={REPO!r} is not an absolute path"
+    else:
+        missing = [path for path in (COMPOSE, PREVIEW) if not os.path.isfile(path)]
+        if not missing:
+            return
+        reason = f"HILOS_REPO={REPO!r} is not a Hilos checkout: no {', '.join(missing)}"
+    sys.exit(f"control: {reason}; set HILOS_REPO to the absolute root of the checkout "
+             "to drive, mounted at the same path inside this container")
 
 
 def run(argv, timeout=120):
@@ -191,4 +215,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    check_repo()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

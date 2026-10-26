@@ -310,7 +310,7 @@ class. The pieces need no edge or group between them.
 Neither the order nor the lane count is the lever it looks like. The three steps of
 the `chat` demo share a group — one stand — so 106 + 1227 + 6 = 1339s of them can
 never overlap: **22m19s is the floor of a full run at any lane count**, measured
-2026-09-29 on nova-de at seven lanes (HIL-1227, run 0659). That run took 22m20s,
+2026-09-29 on the test box at seven lanes (HIL-1227, run 0659). That run took 22m20s,
 every other step was done by 7m08s, and seven lanes could otherwise pack the whole
 graph into 6m25s. The next lever is to cut `chat-e2e` across stands of its own, now
 that a stand can have instances (below). The numbers are in the head of

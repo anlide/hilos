@@ -17,6 +17,11 @@ value objects just to make them reachable. That creates a second dependency
 contract, can capture stale instances before initialization changes, and hides
 the fact that the framework source of truth is the active facade.
 
+Framework files are public, and their history with them. A machine name, a
+host's directory, or a line's private tooling that arrived with the task stays
+out of the code, its comments, and the commit message; the one rule for that is
+[public-repository-hygiene.md](public-repository-hygiene.md).
+
 ## Dependencies
 
 Keep third-party dependencies deliberately low — most of all on the **backend**.

@@ -31,7 +31,7 @@ import { tableRowKeys } from '../../helpers/table.js'
 // Red on the first attempt once in the 80 runs after HIL-1506 (0982, one lane) and
 // green on its retry: hilos-logs-node-m1 did not show within 5 s. The journals of
 // every node of that run are kept in
-// runs/0982/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+// runs/0982/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on the shared test box.
 // Parked by the owner on 09.10.2026 (HOTFIX) without a diagnosis.
 // Quarantine: F-009; original reason and parking date above.
 test(

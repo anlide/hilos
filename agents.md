@@ -15,8 +15,9 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 Exactly two things lift the commit ban, and nothing else does:
 
-1. **The pipeline's headless agent**, driving a ticket by `hilos-ops/playbook.md`.
-   It commits to its own ticket branch `HIL-<n>` and squash-merges that branch into
+1. **The pipeline's headless agent**, driving a ticket by the procedure of its
+   line — handed to it at launch, not kept in this repository. It commits to its
+   own ticket branch `HIL-<n>` and squash-merges that branch into
    `total-refac` on Verify. Committing is not a liberty there but the mechanism: the
    watcher reads a moved HEAD as the proof that the step progressed, and the branch
    is what keeps red work out of the base — an agent forbidden to commit cannot work
@@ -87,6 +88,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 |---|---|
 | [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions; also what a setting is — a value that takes effect without restart through normal DB sync or a settings collection reread — and so whether a new knob is a setting or an environment value |
 | [framework-first.md](docs/agents/framework-first.md) | about to write SQL of your own or read the database past `Hilos::$db`; about to give a class a static property, an instance field, or a local array to hold state — before either, find the mechanism the framework already has and name why you chose as you did |
+| [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md) | writing any text into the tracked tree — a rule file, a comment, a fixture, a README, a commit message — from a task, plan, note or tool output that named a machine, a directory on a host, or private tooling: what stays out, the public shapes that keep the meaning, and how the preview lane learns its checkout root from `HILOS_REPO` |
 
 ## Feature Development
 
@@ -253,7 +255,8 @@ The confirmation request must list the exact RT item fields, DB entity fields,
 signals, DTOs, and routes that would change. If implementation discovers an
 additional change in one of these surfaces, stop and ask again before editing it.
 
-On the headless line the stop has one more form (`hilos-ops/playbook.md`, "План неполон").
+On the headless line the stop has one more form — the "plan is incomplete" door of the
+line's own procedure, which the agent receives at launch rather than from this repository.
 When the approved plan is silent about a change in these surfaces that the leaf cannot be
 built without, the executor makes the narrowest such change — every written line of the plan
 stays true and the leaf does not widen — announces it with ⚠️ and files a proposal for the
@@ -274,6 +277,7 @@ rule — still goes back to the interview.
 10. A page subscription answers in **one** `page_response` with everything that page needs for its first render — no second action, companion signal, or standalone catalog request to draw it; assemble it in that page's `buildPagePayload()` / `onSubscribe()` (see [signals/subscriptions.md](docs/agents/signals/subscriptions.md))
 11. When you land behavior a doc marks as not written yet, clear its markers in the same commit — grep `docs/` for your `HIL-<n>` key (see [rule-authoring.md](docs/agents/rule-authoring.md))
 12. Outside tests, do not use or propose ORM forget for approval; use it only when the owner explicitly asks. This covers CLI, direct API, and indirect use; see [Forgetting loaded ORM state](docs/agents/testing.md#forgetting-loaded-orm-state).
+13. The tree and its history are public. A machine name, a host's directory, a private pipeline or a link into a private note that came with the task never enters a tracked file or a commit message; keep the meaning in a public shape (see [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md))
 
 ## Project docs (existing)
 

@@ -7,8 +7,8 @@ require_once __DIR__ . '/framework-pieces.php';
 /**
  * The full test run, as a graph instead of a script.
  *
- * `scripts/run-test-suite.php` executes this graph for both composer and
- * hilos-ops/verify-run.sh, including on a fresh checkout without hilos-ops.
+ * `scripts/run-test-suite.php` executes this graph for both composer and an
+ * external pipeline, including on a fresh checkout with no pipeline beside it.
  * Adding a demo is an entry in this list, not an edit to anyone's control flow.
  *
  * This file returns a list of steps. A step is:
@@ -43,8 +43,8 @@ require_once __DIR__ . '/framework-pieces.php';
  *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
  *            after the operations half moved, and the e2e of tasks and
  *            ecommerce-shop by HIL-1225 the same day, the same way), read off
- *            GREEN runs on nova-de. The framework-php group, chat-php, chat-e2e
- *            and the three fleets were re-measured alone on nova-de by HIL-1327
+ *            GREEN runs on the test box. The framework-php group, chat-php,
+ *            chat-e2e and the three fleets were re-measured alone there by HIL-1327
  *            on 2026-10-04 after the test databases moved into memory; chat and
  *            tasks e2e re-measured by HIL-1324 on 2026-10-09 after sign-in,
  *            step-up, session and passkey suites moved between them; chat and
@@ -59,8 +59,8 @@ require_once __DIR__ . '/framework-pieces.php';
  *            clock, never correctness.
  *
  * WHAT BOUNDS A FULL RUN, and why neither the order nor the lanes are the lever.
- * Measured 2026-09-29 (HIL-1227) on nova-de, run 0659, the first green run at
- * seven lanes:
+ * Measured 2026-09-29 (HIL-1227) on the test box, run 0659, the first green run
+ * at seven lanes:
  *
  *   22m19s  the floor, at ANY lane count. chat-php, chat-e2e and chat-check share
  *           `group => 'chat'` — one stand — so no two of them ever overlap:
@@ -74,34 +74,34 @@ require_once __DIR__ . '/framework-pieces.php';
  *           chat-e2e's own length and nothing the lanes did.
  *
  * The next lever is an instance of the stand as a parameter, so that chat-e2e can
- * be cut by area across stands of its own (hilos-ops/proposals, P-452) — not the
- * order of the steps and not the lane count.
+ * be cut by area across stands of its own — not the order of the steps and not
+ * the lane count.
  *
  * THE FRAMEWORK SUITE IN PIECES (HIL-1328). The unit suite runs beside four
  * integration pieces, each using its own database in one MariaDB container. A
  * class belongs to one piece by the crc32 of its short name, as declared in
- * scripts/framework-pieces.php. On nova-de at seven lanes, run 0789 (2026-10-04),
- * framework-deps through the last integration piece took 7m38s, then down took
- * 2s. Before the split, the `framework` step took 10m14s in green run 0788 on
- * the parent base. Archived id `framework` meant both suites in one process;
- * rc=1 there meant either unit or integration failed.
+ * scripts/framework-pieces.php. On the test box at seven lanes, run 0789
+ * (2026-10-04), framework-deps through the last integration piece took 7m38s,
+ * then down took 2s. Before the split, the `framework` step took 10m14s in green
+ * run 0788 on the parent base. Archived id `framework` meant both suites in one
+ * process; rc=1 there meant either unit or integration failed.
  *
  * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
  * `ecommerce-shop-cluster` and `online-testing-cluster` — may run beside any
  * e2e step. Neither an edge nor the order keeps them apart, and a fleet leaves
  * with its own step (`downsStand`), which is hygiene rather than separation.
- * Decided by the owner on 2026-09-29 on 43 full runs on nova-de (27–29.09),
+ * Decided by the owner on 2026-09-29 on 43 full runs on the test box (27–29.09),
  * where cluster overlapped chat-e2e for 1.5–6 minutes and every one was green;
  * run 0659 added three more e2e suites beside them. A red step beside a fleet
  * is read like any other: the full verdict stays red; neighbors in the step's
  * SNAPSHOT.txt and narrow re-runs supply diagnostic evidence. Keeping the fleets
  * apart from EACH OTHER, should that be needed, belongs to the leaves that add
- * them. The three fleets need nothing of the kind: in run 0747 on nova-de
+ * them. The three fleets need nothing of the kind: in run 0747 on the test box
  * (2026-10-02, HIL-1216),
  * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together
  * for 1m21s, and all were green. Log-streams may run beside any fleet too: in
- * 23 full runs on nova-de (2026-10-02/03, runs 0748–0773) it overlapped
+ * 23 full runs on the test box (2026-10-02/03, runs 0748–0773) it overlapped
  * ecommerce-shop-cluster, which carries scenario 9, for 113–136s, and every run
  * was green (HIL-1218). Two steps of the same cluster stand share a group: each
  * takes that compose project down before it runs (HIL-1232).
@@ -187,7 +187,7 @@ $steps = [
 ];
 
 $frameworkPieceIds = [];
-// HIL-1327, the group alone on nova-de, databases in memory, 2026-10-04.
+// HIL-1327, the group alone on the test box, databases in memory, 2026-10-04.
 $frameworkPieceSeconds = [1 => 10, 2 => 17, 3 => 16, 4 => 33];
 for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
     $frameworkPieceIds[] = frameworkPieceStepId($piece);
@@ -256,15 +256,15 @@ $steps = array_merge($steps, [
     // e2e step - no edge keeps them apart (the head of this file). It shares a group only with
     // its own browser step: both reset the same compose project (HIL-1232). Takes its stand
     // down at any outcome: a fleet has no reason to outlive its step, and one forgotten on
-    // nova-lt kept eating cores for the rest of the run, turning chat-e2e into 16m10s against
+    // the old box kept eating cores for the rest of the run, turning chat-e2e into 16m10s against
     // 9m36s with fourteen failures that were only the leak (HIL-752). This is hygiene, not what
     // lets the step run beside an e2e (the head of this file). It is declared here instead of
     // appended to the composer chain because that chain breaks at the first red, while the
     // runner holds the outcome. The demo's unit suite runs in binance-btc-tracker-php.
     // Scenarios 23 and 25 freeze the masters last (HIL-1125, HIL-1128). Scenarios 29 and 30
     // recreate and kill a slave (HIL-1243); scenario 32 recreates one twice (HIL-1274). The
-    // seconds are measured on nova-de, 2026-10-17 (HIL-1505): full fresh stand, cached images;
-    // 363.153 s rounded to 363, 18 passed, 3 existing skips (13, 8, 36), no retries.
+    // seconds are measured on the test box, 2026-10-17 (HIL-1505): full fresh stand, cached
+    // images; 363.153 s rounded to 363, 18 passed, 3 existing skips (13, 8, 36), no retries.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -300,7 +300,7 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-build', 'binance-btc-tracker-check'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // nova-de, 2026-10-25 (HOTFIX): full run 1590 at seven lanes, beside four demo
+        // On the test box, 2026-10-25 (HOTFIX): full run 1590 at seven lanes, beside four demo
         // e2e steps, 8m04s; daemon phase switched off (F-023), 13 live + 2 after-loss
         // passed, quarantine tail 10 live with F-011 failed, no retries or unstable tests.
         'seconds' => 484,
@@ -311,7 +311,7 @@ $steps = array_merge($steps, [
     // other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
     // demo's unit suite runs in ecommerce-shop-php. Seconds retain the historical estimate:
-    // ten fresh primary/replica matrices on nova-de (2026-10-05, HIL-1229), median 131 s,
+    // ten fresh primary/replica matrices on the test box (2026-10-05, HIL-1229), median 131 s,
     // max 136 s, no retries, scenarios 9 and 16 parked; not remeasured for the single server.
     [
         'id' => 'ecommerce-shop-cluster',
@@ -365,8 +365,8 @@ $steps = array_merge($steps, [
     // stand down at any outcome, standalone as well as here.
     //
     // No ordering edge: the old cluster step held back log-streams after scenario 9 ("s1 seen
-    // offline after its daemon died") timed out beside it twice on nova-lt (2026-09-17, runs
-    // 0350/0351). On nova-de, ecommerce-shop-cluster carries that scenario and overlapped
+    // offline after its daemon died") timed out beside it twice on the old box (2026-09-17, runs
+    // 0350/0351). On the test box, ecommerce-shop-cluster carries that scenario and overlapped
     // log-streams for 113–136s in 23 full runs (2026-10-02/03, runs 0748–0773), all green.
     // Like any fleet it may run beside this step (the head of this file); a red beside a fleet
     // is read by its SNAPSHOT.txt and a re-run alone.

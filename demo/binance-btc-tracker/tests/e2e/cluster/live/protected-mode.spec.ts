@@ -103,7 +103,7 @@ async function presentCode(page: Page, code: string): Promise<void> {
 // the daemon phase lost the leader and recreated s1: the code is accepted, the registration
 // never completes. On 1274 and 1277 the auth throttle also went silent for 8-9 s and
 // refused the first registration. Node journals:
-// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on the shared test box.
 test(
   'every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person',
   { tag: '@quarantine:F-016' },

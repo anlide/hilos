@@ -7,8 +7,8 @@ declare(strict_types=1);
  *
  * `scripts/check-log-streams.php` provokes the sources and `scripts/log-stream-verdicts.php`
  * judges the snapshots; this file only says WHAT is expected. One record per row of the
- * HIL-872 map (`hilos-ops/maps/HIL-872-log-streams.md`, the measurement of 2026-09-12), and
- * a few more for what a landed fix promised since. The map stays history and is not edited:
+ * HIL-872 map (the measurement of 2026-09-12, kept in the repository as this table), and a
+ * few more for what a landed fix promised since. The map stays history and is not edited:
  * where a fix has overtaken it the record carries today's contract and names the row it
  * supersedes. Row 18 has no record on purpose: its only live lever was the defect HIL-1045
  * removed, and a proof that rests on a bug must not keep the bug.

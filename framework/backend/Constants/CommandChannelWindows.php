@@ -54,9 +54,8 @@ use Hilos\Socket\Client\CommandClient;
  * a test environment variable, and a test-only multiplier on one link of a shared chain is a
  * flag in the framework. The cost is accepted knowingly: it is why the numbers are this large
  * rather than tuned to an idle box. The other route - counting worker turns instead of wall
- * clock seconds - was weighed and declined with its facts recorded in
- * hilos-ops/proposals/P-306-agent-wait-in-loop-turns.md, to be reopened if the flake returns
- * with the windows at this size.
+ * clock seconds - was weighed and declined in favor of these wall-clock windows, to be
+ * reopened if the flake returns with the windows at this size.
  *
  * **The middle window has a copy in TypeScript, and it cannot be otherwise.** The e2e client
  * is Node reaching the command port over TCP - Playwright has no PHP to run, so nothing there

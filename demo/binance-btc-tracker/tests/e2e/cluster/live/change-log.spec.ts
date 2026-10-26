@@ -33,7 +33,7 @@ import { clickSubmit, signUpPerson, typeInto } from '../../helpers/session.js'
 // failure is a browser sign-up after the daemon phase lost the leader and recreated s1: the
 // code is accepted, the registration never completes. On 1274 and 1277 the auth throttle
 // also went silent for 8-9 s and refused the first registration. Node journals:
-// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+// runs/<n>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on the shared test box.
 test(
   'cluster change log: one remote block receipt reads the same through every master',
   { tag: '@quarantine:F-016' },

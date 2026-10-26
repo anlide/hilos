@@ -9,7 +9,7 @@ declare(strict_types=1);
  * the rc ledger and the closing summary.
  *
  * The runner knows this grammar and nothing about Playwright's own formats,
- * so the verdict works on a fresh checkout without hilos-ops. Cluster scenarios
+ * so the verdict works on a fresh checkout with no external pipeline. Cluster scenarios
  * report retries with the same grammar. A step that never prints the line —
  * phpunit, vitest, check — reports zero by staying quiet, and so does a
  * Playwright step whose tests all passed first time.

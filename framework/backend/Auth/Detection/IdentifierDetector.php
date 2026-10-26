@@ -216,11 +216,10 @@ final class IdentifierDetector
      * was typed, it is the one they answer with. Kind still gates two keys below, but a
      * kind is a shape of identifier and not a particular one.
      *
-     * Kind gates two of the keys, and both gates are the mockup's
-     * (`hilos-ops/mockups/framework/guest/index.html`): a number never carries a
-     * password ("телефон — только код"), and a sign-in link is mailed, so it is
-     * offered for an address only. Naming either under a phone would reveal an
-     * affordance whose submit the backend then refuses.
+     * Kind gates two of the keys, and both gates come from the sign-in design: a
+     * number never carries a password ("телефон — только код"), and a sign-in link is
+     * mailed, so it is offered for an address only. Naming either under a phone would
+     * reveal an affordance whose submit the backend then refuses.
      *
      * An OAuth provider is never named here, whatever a project enables (HIL-419).
      * Its buttons stand on an EMPTY field and vanish with the first character

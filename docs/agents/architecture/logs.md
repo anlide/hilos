@@ -122,7 +122,9 @@ Such a line no longer reaches `daemon.log` or `daemon-error.log`, which is where
 an operator would have grepped for it until this leaf.
 
 Where each of these streams lands, and what lands beside them past the `Logger`,
-is the map HIL-872 drew (`hilos-ops/maps/HIL-872-log-streams.md`).
+was measured by HIL-872: its records are the table in
+[`scripts/log-streams.php`](../../../scripts/log-streams.php), and the streams it
+names are the ones this document describes.
 A worker's last words after the master's death are in none of these files — the
 master is the writer of `worker-*.log`, so nothing survives it — and the question
 "did the workers exit by themselves?" is answered by the watchdog's orphan-scan

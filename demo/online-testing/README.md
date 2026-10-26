@@ -29,8 +29,6 @@ framework tables.
 
 ### What it is going to show
 
-The design lives in `hilos-ops/mockups/demos/online-testing`:
-
 - **Tests**: a live table of the tests you have not taken yet, marked when they
   carry pictures or are checked by an AI; a visitor sees the list, and tests are
   taken after signing in.

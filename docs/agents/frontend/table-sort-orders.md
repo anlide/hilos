@@ -50,8 +50,8 @@ that out later on a production log.
 
 The mechanics of the window — the descriptor, the key-anchored window, the
 live-change taxonomy — are in [table-subscription.md](table-subscription.md).
-What the header and the "Order" menu look like is the mockup
-`hilos-ops/mockups/components/table/index.html` (section 7), not this document.
+What the header and the "Order" menu look like is the approved table mockup —
+its sort-order section — handed in with the task, not this document.
 
 ## Why not a free builder
 

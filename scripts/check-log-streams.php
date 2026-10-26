@@ -5,8 +5,9 @@ declare(strict_types=1);
 /**
  * Prove where every log line of a node lands, on a live stand, as a repeatable check (HIL-1018).
  *
- * The HIL-872 map (`hilos-ops/maps/HIL-872-log-streams.md`) was measured once, by hand, on a
- * script outside the repository that nobody runs. This command is that measurement as a step
+ * The HIL-872 map was measured once, by hand, on a script outside the repository that nobody
+ * runs; its rows live on as the records of `scripts/log-streams.php`, and the streams are
+ * described in `docs/agents/architecture/logs.md`. This command is that measurement as a step
  * of the run: it stands `demo/tasks` up, provokes each log source on purpose, and asserts WHERE
  * the line landed — a file of the log directory, the container log, or nowhere — against the
  * table in `scripts/log-streams.php`. It goes red when a stream moves. The judging is in

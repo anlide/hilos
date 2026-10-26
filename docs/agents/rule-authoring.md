@@ -14,6 +14,11 @@ documentation, Codex skill wrappers, Claude adapters, or Cursor rules.
   They should point to `agents.md` and `docs/agents/*` instead of duplicating
   detailed rules.
 - All repository rule, skill, and adapter files must be written in English.
+- All of them are public, and so is their history. A machine, a host's
+  directory, or a private pipeline named by a task, a plan, or a tool output is
+  read, never copied in — see
+  [public-repository-hygiene.md](public-repository-hygiene.md) for what stays
+  out and the public shapes that keep the meaning.
 
 ## Per-Demo Documentation
 
@@ -107,6 +112,9 @@ sections unless they prevent a recurring mistake.
 7. Add examples only when they make the rule easier to apply correctly.
 8. If the extracted rule touches a contract-gated surface, keep the gate in the
    rule text and stop before any implementation that changes that surface.
+9. Before handing over, read the added text as the public tree will show it,
+   and replace a private name or path that came with the task by a public
+   shape ([public-repository-hygiene.md](public-repository-hygiene.md)).
 
 ## Language And Tone
 

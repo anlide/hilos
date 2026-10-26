@@ -152,12 +152,23 @@ services:
       context: ./control
     container_name: hilos-preview-control
     environment:
-      # The repo is bind-mounted at the SAME path as on the host so the preview
-      # script's docker compose calls hand the host daemon paths that exist.
-      HILOS_REPO: ${HILOS_REPO:-/home/cloud/hilos}
+      # HILOS_REPO is the absolute root of the checkout to drive, bind-mounted
+      # below at the SAME path as on the host so the preview script's docker
+      # compose calls hand the host daemon paths that exist. It has no default:
+      # the value arrives as given, and with none set the service refuses to
+      # start (server.py) instead of assuming where a checkout lives.
+      HILOS_REPO: ${HILOS_REPO:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${HILOS_REPO:-/home/cloud/hilos}:${HILOS_REPO:-/home/cloud/hilos}
+      # Long form on purpose. The short form creates a missing host directory,
+      # and the stand-in path below exists only so this file keeps parsing for
+      # the other profiles when HILOS_REPO is unset; it is never a root the
+      # service uses, because the empty environment value above refuses first.
+      - type: bind
+        source: ${HILOS_REPO:-/hilos}
+        target: ${HILOS_REPO:-/hilos}
+        bind:
+          create_host_path: false
     ports:
       # Host 9099 (8099 is taken by a demo daemon's worker-comm mapping).
       - "127.0.0.1:9099:8099"

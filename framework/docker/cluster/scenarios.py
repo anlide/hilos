@@ -16,7 +16,7 @@ by id. Each scenario says what shape it needs (Need), and a stand that names a s
 cannot carry is refused before it is raised.
 
 Timing on a loaded host (HIL-367): the convergence caps below are sized for an
-adequately-provisioned stand (nova-lt / HIL-348). On a resource-constrained host
+adequately-provisioned stand (HIL-348). On a resource-constrained host
 the grace-driven detection windows (keepalive-timeout + failover-grace, HIL-183)
 run longer than the fixed caps and the matrix flakes on pure "timed out after Ns"
 without the cluster logic being wrong. Two guards keep the run honest without
@@ -5604,8 +5604,8 @@ FLAKY_SKIP = {
     "15 db interest addressing":
         "flake: m3 counts two facts taken in where one was addressed to it (red 1/420, last 2026-10-16)",
     # FIXME(F-015, 2026-10-17): the one below was parked on the owner's word (HOTFIX), without
-    # a diagnosis; its record is `flake show F-015` in hilos-ops. It is paid off by finding the
-    # cause, its line removed, and `-- 39` green on the ecommerce-shop cluster stand.
+    # a diagnosis, as a known flake. It is paid off by finding the cause, its line removed, and
+    # `-- 39` green on the ecommerce-shop cluster stand.
     #
     # 39, on the ecommerce-shop cluster stand since HIL-1412: red once in the 8 runs that carried
     # it (1251 to 1257), on HIL-1353 in seven lanes (1257), green alone on the rerun of the same

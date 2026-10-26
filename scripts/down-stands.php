@@ -7,8 +7,8 @@ declare(strict_types=1);
  *
  * This is the command every other teardown now goes through: each demo's `test:down`, the
  * framework's `test:framework:down`, each cluster stand's `test:cluster:down`, and
- * `test:stands:down` for the whole box. Putting it in the repository rather than in `hilos-ops`
- * lets the same run work on a fresh checkout where hilos-ops does not exist.
+ * `test:stands:down` for the whole box. Putting it in the repository rather than in an external
+ * pipeline lets the same run work on a fresh checkout where no such pipeline exists.
  *
  * Nothing here decides WHETHER to tear a stand down. A stand raised by hand is taken down along
  * with the rest, without a prompt and without an exemption — a guaranteed empty box for the

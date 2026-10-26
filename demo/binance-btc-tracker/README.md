@@ -44,8 +44,6 @@ the framework's, and the archives and the logs are files.
 
 ### What it is going to show
 
-The design lives in `hilos-ops/mockups/demos/binance-btc-tracker`:
-
 - **One pair, BTC/USDT**: every minute taken from the Binance stream, with the
   history back-filled from the start of the pair.
 - **Fifteen timeframes** folded from the minutes, and **RSI(14)** on each.

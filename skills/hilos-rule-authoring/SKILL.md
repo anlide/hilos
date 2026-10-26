@@ -14,6 +14,9 @@ skill wrappers. Start with `agents.md`, then read
 - Rule authoring guide: `docs/agents/rule-authoring.md`
 - AI tool integration: `docs/agents/ai-tools.md`
 - Repository index and global hard stops: `agents.md`
+- What never enters a public rule file or its commit — a machine name, a host
+  path, private tooling — and the public shapes that keep the meaning:
+  `docs/agents/public-repository-hygiene.md`
 - Skill creation/update mechanics: use `$skill-creator` when creating a new
   skill wrapper or substantially changing an existing one.
 
