@@ -750,7 +750,13 @@ readiness rule above:
   loss re-arms the flag, HIL-502) — never per tick, and never while the node is
   leaving. The base `onBecameSingletonHost()` queues
   `INITIAL_AGENTS_START` (launching the bootstrap agent list via routing); a project
-  overrides it to start its own cluster-singletons (e.g. one agent per active bot).
+  override calls the parent first, then can start its own cluster-singletons (e.g.
+  one agent per active bot).
+  When Status is enabled, the base hook then requests each cataloged `CLUSTER` +
+  `LEADER` component type through the ordinary `startAgent()` path, containing
+  failures per type. `NODE` and `CLUSTER` + `POLICY` components stay on their
+  per-node and placement paths. The hook's Status behavior and freeze-resume path
+  are described in [Status component startup](status-page.md#startup-paths).
   `WorkerServer::onInitialWorkersReady()` is now a per-node "local workers up" hook
   only and no longer starts singletons.
 - **WebSocket.** Every master accepts browsers (HIL-1304); a slave never does.

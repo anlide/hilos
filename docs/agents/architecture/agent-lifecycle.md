@@ -223,14 +223,25 @@ agent back depends on how it was started, and each kind has one way:
   action, a page subscribe, an agent-to-agent signal, a daemon cron tick —
   because starting is what addressing does.
 - **A node replica** (`AgentScope::NODE`) comes back at once: the worker server
-  re-runs its per-node start when a registered worker's link goes.
+  re-runs its per-node start when a registered worker's link goes. A Status
+  component registered as `NODE` uses this same path.
 - **A policy-placed singleton** (`AgentPlacement::POLICY`, not indexed) comes
-  back through the leader's placement pass, which retries every few seconds.
+  back through the leader's placement pass, which retries every few seconds. A
+  Status component registered as `CLUSTER` + `POLICY` uses this same path.
 - **An agent the leader's bootstrap started** — the bootstrap list, and whatever
   the project's `onBecameSingletonHost()` starts, such as a bot or a delivery
-  shard — comes back on the leader's next tick: the loss re-arms the
-  once-per-term start, and `onBecameSingletonHost()` runs again (HIL-502). It
-  already had to be idempotent, because a promotion runs it again too.
+  shard, plus enabled Status components registered as `CLUSTER` + `LEADER` —
+  comes back when the loss re-arms the once-per-term start and
+  `onBecameSingletonHost()` runs again (HIL-502). It already had to be
+  idempotent, because a promotion runs it again too. This is an ensure-once
+  re-fire, not a per-tick liveness scan.
+
+Protected-mode resume is another explicit path: after replaying the remembered
+roster, the default `onProtectedModeLifted()` starts `NODE` agents and checks
+the enabled Status catalog on the leader. That check can request a Status
+component whose earlier start was refused under freeze and so is absent from
+the remembered roster; the ordinary start gates still apply. See [Status
+component startup](status-page.md#startup-paths).
 
 Nothing is brought back while the node is leaving. A freeze decides through its
 own start gate: what it holds stays down until the lift brings it back.

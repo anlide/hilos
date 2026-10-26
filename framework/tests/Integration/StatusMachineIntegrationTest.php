@@ -64,17 +64,71 @@ use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Status\StatusSnapshot;
 use Hilos\Status\StatusUpdateKind;
 use Hilos\Status\StatusUpdateText;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Testing\IntegrationTest;
+use Hilos\Tests\Unit\StatusComponentBootstrapTestSupport;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 use RuntimeException;
 use Throwable;
 
+require_once dirname(__DIR__) . '/Unit/StatusComponentBootstrapTestSupport.php';
+
 /** Real ORM storage and the bounded automatic machine driven through the collector observation seam. */
 #[IntegrationTest]
 final class StatusMachineIntegrationTest extends StatusStorageIntegrationTestCase
 {
+    /** A confirmed catalog start becomes healthy only on a fresh report; a later real stop still creates a candidate. */
+    public function testConfirmedBootstrapWaitsForFreshPresenceAndStillDetectsFreshAbsence(): void
+    {
+        $owner = $this->startMachine(StatusMachineBootstrapHilos::class);
+        [$server, $manager, $worker] = StatusComponentBootstrapTestSupport::buildServer();
+        $server->onBecameSingletonHost();
+        self::assertSame(['probe'], $worker->startIds());
+        self::assertFalse($manager->isAgentStarted('probe'));
+        self::assertSame([], StatusComponentBootstrapTestSupport::roster($server, $manager)->workers[0]->agents,
+            'A start request alone must not become a live process fact');
+
+        $worker->report(new WorkerAgentStartedDTO('probe', 'probe'));
+        self::assertTrue($manager->isAgentStarted('probe'));
+        $running = StatusComponentBootstrapTestSupport::roster($server, $manager);
+        self::assertSame('probe', $running->workers[0]->agents[0]->id);
+        $this->reportRoster($owner, true, 1000, $running);
+        $owner->tickAt(1000);
+        self::assertNull(Hilos::$rt->hilosStatusComponents['service']->liveInstances);
+        self::assertNull(Hilos::$rt->hilosStatusComponents['service']->observedAt);
+        self::assertSame(StatusComponentState::UNKNOWN, StatusSnapshot::read()->components['service']->state);
+        self::assertSame([], $this->storedIncidents());
+
+        $this->reportRoster($owner, false, 2000, StatusComponentBootstrapTestSupport::roster($server, $manager));
+        $owner->tickAt(2000);
+        self::assertSame(1, Hilos::$rt->hilosStatusComponents['service']->expectedInstances);
+        self::assertSame(1, Hilos::$rt->hilosStatusComponents['service']->liveInstances);
+        self::assertSame(2000, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+        self::assertSame(StatusComponentState::OPERATIONAL, StatusSnapshot::read()->components['service']->state);
+        self::assertSame([], $this->storedIncidents());
+        $owner->tickAt(400000);
+        self::assertSame([], $this->storedIncidents(), 'Healthy counts must stay incident-free past the publication delay');
+
+        $server->stopPublic('probe');
+        $worker->report(new WorkerAgentStoppedDTO('probe', 'probe'));
+        self::assertFalse($manager->hasAgent('probe'));
+        $absent = StatusComponentBootstrapTestSupport::roster($server, $manager);
+        self::assertSame([], $absent->workers[0]->agents);
+        $this->reportRoster($owner, false, 401000, $absent);
+        $owner->tickAt(401000);
+        self::assertSame(0, Hilos::$rt->hilosStatusComponents['service']->liveInstances);
+        self::assertSame(401000, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+        self::assertCount(1, $this->storedIncidents());
+        self::assertSame('service', $this->storedIncidents()[0]['active_component_key']);
+        self::assertSame('major_outage', $this->storedIncidents()[0]['severity']);
+        self::assertSame('401000', $this->storedIncidents()[0]['detected_at']);
+        self::assertNull($this->storedIncidents()[0]['published_at']);
+        self::assertSame(StatusComponentState::CHECKING, StatusSnapshot::read()->components['service']->state);
+    }
+
     /** Partial frames and unchanged whole baselines cannot create a candidate. Deadlines need no new frame. */
     public function testFreshAbsenceCreatesOneCandidateAndTimerPublishesTheSameFact(): void
     {
@@ -720,6 +774,22 @@ final class StatusMachineIntegrationTest extends StatusStorageIntegrationTestCas
             }
         }
     }
+
+    /**
+     * @param StatusAgent $owner Production Status owner
+     * @param bool $snapshot Whole membership baseline or subsequent node report
+     * @param int $at Local acceptance moment and collector report identity
+     * @param DaemonProcessRoster $roster Production builder result from the bootstrap manager
+     */
+    private function reportRoster(StatusAgent $owner, bool $snapshot, int $at, DaemonProcessRoster $roster): void
+    {
+        $portion = new DaemonClusterPicturePortionSignalData($snapshot, [
+            new ClusterDaemonNodeView('n0', true, new ClusterDaemonNodeSlot(
+                'n0', new NodeDaemonPicture('n0', NodeRole::Master, 9999999999, $roster), $at,
+            )),
+        ]);
+        $owner->applyPicturePortion(DaemonClusterPicturePortionSignalData::fromArray($portion->toArray()), $at);
+    }
 }
 
 /** Adds only the new stubs and local claims outside the managed rollback scope. */
@@ -1007,6 +1077,12 @@ abstract class StatusMachineHilos extends Hilos
     protected const array STATUS_COMPONENTS = [
         'service' => ['name' => 'Service', 'description' => null, 'agentType' => 'probe'],
     ];
+}
+
+/** Same storage catalog with a leader-hosted component omitted from the project bootstrap list. */
+abstract class StatusMachineBootstrapHilos extends StatusMachineHilos
+{
+    public const array AGENTS = ['probe' => [AgentRegistryKey::SCOPE => AgentScope::CLUSTER]];
 }
 
 final class StatusMachineRuntime extends RtContext

@@ -52,6 +52,7 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Process;
 use Hilos\Files\Upload\UploadMemoryDeliverySink;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
@@ -76,6 +77,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
+use Hilos\Status\Exception\StatusComponentDeclarationException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -512,9 +514,9 @@ abstract class WorkerServer extends AbstractServer implements
      * Invoked by the daemon's leader-gated ensure-once once this node is the cluster
      * leader (or the sole node when cluster mode is off) and its workers are ready.
      * The base queues INITIAL_AGENTS_START so the project bootstrap agent list is
-     * launched through the existing signal routing. Child classes override to start
-     * their own cluster-singletons (e.g. one agent per active bot), calling
-     * parent::onBecameSingletonHost() first.
+     * launched through the existing signal routing, then directly starts the enabled
+     * Status catalog's leader-hosted components. Child classes override to start their
+     * own cluster-singletons (e.g. one agent per active bot), calling parent first.
      *
      * Every agent started here still passes the placement gate in {@see startAgent()}, so an
      * agent the registry declares {@see AgentScope::NODE} is unaffected. Re-fires when a
@@ -523,6 +525,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @throws InvalidArgumentException When the initial-agents signal cannot be named
      * @throws HilosException Whatever the project's own cluster-singleton start raises
+     * @throws StatusComponentDeclarationException When the enabled Status catalog is invalid
      */
     public function onBecameSingletonHost(): void
     {
@@ -532,6 +535,8 @@ abstract class WorkerServer extends AbstractServer implements
             new SignalName(SignalConstants::INITIAL_AGENTS_START),
             new SystemSignalDTO(systemName: SignalConstants::INITIAL_AGENTS_START),
         );
+
+        $this->startStatusComponentAgents();
     }
 
     /**
@@ -729,6 +734,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws HilosException Whatever the project's agent-daemon factory raises
      * @throws RtActionsCollectionNameNullException When the switch a finished roster walk tells cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
+     * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
      */
     public function onTick(): void
     {
@@ -2786,6 +2792,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws RtActionsCollectionNameNullException When the switch a finished walk tells cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
      */
     protected function advanceProtectedModeRoster(): void
     {
@@ -2845,6 +2852,8 @@ abstract class WorkerServer extends AbstractServer implements
 
     /**
      * Brings the next queued agent back for the lift in flight, and closes the walk after the last.
+     *
+     * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
      */
     private function advanceProtectedModeResume(): void
     {
@@ -2889,17 +2898,20 @@ abstract class WorkerServer extends AbstractServer implements
      * freeze; what the window adds is that it now happens mid-operation rather than only at the end.
      *
      * The framework brings back only what it knows: the agents the freeze itself stopped, plus
-     * the per-node registry list this default starts. Anything else this node was running is
-     * the application's call - a project that starts local agents by overriding
+     * the per-node registry list and enabled Status leader components this default starts.
+     * Anything else this node was running is the application's call - a project that starts local agents by overriding
      * {@see onInitialWorkersReady()} has to override this hook too, or those agents stay down
      * until something else starts them. The default is not redundant with the replayed roster:
      * the roster is captured once on entry, so an agent whose start the gate refused during the
      * freeze (a worker re-registering after a crash, a cluster placement) is in no list at all.
      * {@see startAgent()} is idempotent, so replaying a still-running agent is a no-op.
+     *
+     * @throws StatusComponentDeclarationException When the enabled Status catalog is invalid
      */
     protected function onProtectedModeLifted(): void
     {
         $this->startPerNodeAgents();
+        $this->startStatusComponentAgents();
     }
 
     /**
@@ -3065,6 +3077,44 @@ abstract class WorkerServer extends AbstractServer implements
     public function isReadyToShutdown(): bool
     {
         return $this->workers === [] && !$this->linkedWorkerConnectionOpen();
+    }
+
+    /**
+     * Starts each enabled Status leader component type once per pass, containing individual failures.
+     * NODE replicas and POLICY singletons keep their existing bootstrap and placement paths.
+     *
+     * @throws StatusComponentDeclarationException When the enabled Status catalog is invalid
+     */
+    private function startStatusComponentAgents(): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::STATUS) || !$this->amClusterLeader()) {
+            return;
+        }
+
+        /** @var array<string, true> Types already requested in this synchronous catalog pass */
+        $requestedTypes = [];
+        foreach (Hilos::statusComponents() as $component) {
+            if ($component->scope !== AgentScope::CLUSTER || $component->placement !== AgentPlacement::LEADER) {
+                continue;
+            }
+
+            $agentType = $component->agentType;
+            if (isset($requestedTypes[$agentType])) {
+                continue;
+            }
+            $requestedTypes[$agentType] = true;
+
+            try {
+                $this->startAgent($agentType, null);
+            } catch (Throwable $throwable) {
+                Logger::error("Failed to start Status component agent {$agentType}: " . $throwable->getMessage());
+                $this->reportContainedFailure(new ContainedFailure(
+                    MasterFailureUnit::AGENT_START,
+                    $this->buildAgentId($agentType, null),
+                    $throwable,
+                ));
+            }
+        }
     }
 
     /**

@@ -8,12 +8,14 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\StatusFeature;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
@@ -35,12 +37,16 @@ use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Status\StatusAgent;
 use Hilos\Status\StatusComponentDefinition;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
+
+require_once __DIR__ . '/StatusComponentBootstrapTestSupport.php';
 
 /** Independent Status lease and whole-picture normalization, with explicit local and foreign clocks. */
 final class StatusObservationTest extends TestCase
@@ -86,6 +92,42 @@ final class StatusObservationTest extends TestCase
         Hilos::$rt = $this->previousRuntime;
         (new ReflectionProperty(Hilos::class, 'appClass'))->setValue(null, $this->previousApp);
         parent::tearDown();
+    }
+
+    /** Bootstrap acknowledgement feeds the ordinary roster builder; only a subsequent usable report proves presence. */
+    public function testAcknowledgedCatalogBootstrapRemainsUnknownUntilFreshRosterAndThenDetectsStop(): void
+    {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, StatusObservationBootstrapHilos::class);
+        [$server, $manager, $worker] = StatusComponentBootstrapTestSupport::buildServer();
+        $server->onBecameSingletonHost();
+        self::assertSame(['probe'], $worker->startIds());
+        $worker->report(new WorkerAgentStartedDTO('probe', 'probe'));
+        self::assertTrue($manager->isAgentStarted('probe'));
+        $component = Hilos::statusComponents()->getIterator()['service'];
+        $running = StatusComponentBootstrapTestSupport::roster($server, $manager);
+        self::assertSame('probe', $running->workers[0]->agents[0]->id);
+        $this->apply(true, [new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot(
+            'n1', new NodeDaemonPicture('n1', NodeRole::Master, 9999999999, $running), 100,
+        ))], 1000);
+        self::assertNull($this->owner->observation($component)->liveInstances);
+        self::assertNull($this->owner->observation($component)->observedAt);
+        $this->apply(false, [new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot(
+            'n1', new NodeDaemonPicture('n1', NodeRole::Master, 9999999999, $running), 101,
+        ))], 2000);
+        self::assertSame(1, $this->owner->observation($component)->expectedInstances);
+        self::assertSame(1, $this->owner->observation($component)->liveInstances);
+        self::assertSame(2000, $this->owner->observation($component)->observedAt);
+
+        $server->stopPublic('probe');
+        $worker->report(new WorkerAgentStoppedDTO('probe', 'probe'));
+        self::assertFalse($manager->hasAgent('probe'));
+        $absent = StatusComponentBootstrapTestSupport::roster($server, $manager);
+        self::assertSame([], $absent->workers[0]->agents);
+        $this->apply(false, [new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot(
+            'n1', new NodeDaemonPicture('n1', NodeRole::Master, 9999999999, $absent), 102,
+        ))], 3000);
+        self::assertSame(0, $this->owner->observation($component)->liveInstances);
+        self::assertSame(3000, $this->owner->observation($component)->observedAt);
     }
 
     public function testPartialFramesCannotProveMembershipAndTheFirstWholeIsOnlyABaseline(): void
@@ -397,6 +439,20 @@ final class StatusObservationTest extends TestCase
 abstract class StatusObservationHilos extends Hilos
 {
     public const array AGENTS = [HilosAgentType::HILOS_INDEX => []];
+}
+
+/** Permanent leader component deliberately absent from SignalRouter's project bootstrap list. */
+abstract class StatusObservationBootstrapHilos extends StatusObservationHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        'probe' => [AgentRegistryKey::SCOPE => AgentScope::CLUSTER],
+    ];
+
+    protected const array FEATURES = [HilosFeature::STATUS];
+    protected const array STATUS_COMPONENTS = [
+        'service' => ['name' => 'Service', 'description' => null, 'agentType' => 'probe'],
+    ];
 }
 
 /** Lease-only cases stay unknown; the current-incidents source is a known empty manual set. */

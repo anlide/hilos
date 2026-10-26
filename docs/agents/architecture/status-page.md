@@ -102,6 +102,38 @@ nonempty and registered. The catalog refuses duplicate keys, unknown types,
 indexed types and idle types. Scope and placement are resolved from the agent
 registry and remain separate axes.
 
+### Startup Paths
+
+A component declaration also carries a startup obligation: its registered agent
+type must have a start path for its `scope` and `placement`. The catalog names
+the component; the project's `AGENTS` entry still determines where its agent
+runs:
+
+- `NODE` components use the existing per-node start after local workers are
+  ready. The protected-mode resume hook repeats that start.
+- `CLUSTER` + `POLICY` components use the daemon's existing placement pass. In
+  standalone mode, its throttled local fallback remains in force.
+- `CLUSTER` + `LEADER` components use the existing singleton-host hook. When
+  Status is enabled, the base `onBecameSingletonHost()` queues
+  `INITIAL_AGENTS_START` first, then requests each cataloged agent type once
+  through `startAgent()`. The ordinary placement and protected-mode gates still
+  apply, and each failed component start is contained independently. A project
+  override of this hook calls the parent first so the catalog start remains.
+
+The empty-catalog `service` fallback still names `HILOS_INDEX`; a request from
+both the bootstrap list and the Status helper is safe because `startAgent()` is
+idempotent. Repeated entries for one agent type are coalesced within a Status
+pass. The daemon re-runs the singleton-host hook after promotion and after a
+worker dies hosting agents; it does not scan all leader components for liveness
+on every tick. Leadership loss stops the local `CLUSTER` + `LEADER` agents
+through the existing loss hook.
+
+After the remembered roster is replayed, the existing protected-mode resume
+hook starts `NODE` agents and checks the enabled Status catalog again on the
+leader. This also requests a component whose earlier start was refused by the
+freeze and so was absent from the stopped roster. No Status-specific freeze
+bypass is added.
+
 ### Admin Pages
 
 The built admin section has two routed pages: `hilos_status` at `/hilos/status`
