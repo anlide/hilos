@@ -2,17 +2,16 @@
 // language: the base name or one locale correction of it, added where there is
 // none and edited where there is one. The session is the core's
 // (createHilosI18nCountryNameWindow): the writing language's row held in focus,
-// the mode fixed at opening, the creation form, the baseline/draft/incoming
-// merge of an edit with the expected value it sends, its notice and the one
-// canSave verdict. This view mirrors it, starts and disposes it with itself and
-// with a new session bound in its place, and gives every opening a tracked
-// action of its own, so a late refusal from a previous address paints nothing
-// on the next one. An empty text is a value the server stores and locks, never
-// a deletion. The window closes on the server's `::success`, a refusal stays in
-// its reserved row, and a busy save holds Cancel, Esc, the backdrop and the
-// close button. A viewer of the admin view mode reads and fills the form, the
-// conflict choices stay live, and neither Save nor Enter sends. Bootstrap
-// classes only (styling-rules.md).
+// the title fixed at opening, live occupancy, the baseline/draft/incoming merge,
+// its notice and the one canSave verdict. This view mirrors it, starts and
+// disposes it with itself and with a new session bound in its place, and gives
+// every opening a tracked action of its own, so a late refusal from a previous
+// address paints nothing on the next one. An empty text is a value the server
+// stores, never a deletion. The window closes on the server's `::success`, a
+// refusal stays in its reserved row, and a busy save holds Cancel, Esc, the
+// backdrop and the close button. A viewer of the admin view mode reads and
+// fills the form, the conflict choices stay live, and neither Save nor Enter
+// sends. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -67,15 +66,11 @@ type NameWindowNoticeKind = ReturnType<NameWindow['noticeKind']['get']>
       [busy]="saving()"
     >
       <div modalHeader data-id="i18n-country-name-title">
-        @if (mode() === 'edit') {
-          <h5
-            hilosConflictHeader
-            [title]="title()"
-            [conflict]="state().conflict"
-          ></h5>
-        } @else {
-          <h5 class="modal-title mb-0">{{ title() }}</h5>
-        }
+        <h5
+          hilosConflictHeader
+          [title]="title()"
+          [conflict]="state().conflict"
+        ></h5>
       </div>
       <div data-id="i18n-country-name-window">
         @if (target(); as held) {
@@ -127,65 +122,43 @@ type NameWindowNoticeKind = ReturnType<NameWindow['noticeKind']['get']>
         />
       </div>
       <ng-template #modalActions let-requestClose="requestClose">
-        @if (mode() === 'edit') {
-          <div
-            hilosConflictActions
-            [conflict]="state().conflict"
-            [disableSave]="!saveAvailable()"
-            [saveLabel]="saveLabel()"
-            (save)="submit()"
-            (acceptMine)="window().keepMine()"
-            (acceptTheirs)="window().takeTheirs()"
-          >
-            <ng-template #cancelButton>
-              <button
-                type="button"
-                class="btn btn-secondary"
-                [disabled]="saving()"
-                data-id="i18n-country-name-cancel"
-                (click)="requestClose()"
-              >
-                {{ copy.cancel }}
-              </button>
-            </ng-template>
-            <ng-template
-              #saveButton
-              let-saveDisabled="disabled"
-              let-onSave="onSave"
+        <div
+          hilosConflictActions
+          [conflict]="state().conflict"
+          [disableSave]="!saveAvailable()"
+          [saveLabel]="saveLabel()"
+          (save)="submit()"
+          (acceptMine)="window().keepMine()"
+          (acceptTheirs)="window().takeTheirs()"
+        >
+          <ng-template #cancelButton>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="saving()"
+              data-id="i18n-country-name-cancel"
+              (click)="requestClose()"
             >
-              <button
-                hilosLoadingButton
-                class="btn-primary"
-                [loading]="action().busy()"
-                [disabled]="saveDisabled"
-                data-id="i18n-country-name-submit"
-                (click)="onSave()"
-              >
-                {{ saveLabel() }}
-              </button>
-            </ng-template>
-          </div>
-        } @else {
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="saving()"
-            data-id="i18n-country-name-cancel"
-            (click)="requestClose()"
+              {{ copy.cancel }}
+            </button>
+          </ng-template>
+          <ng-template
+            #saveButton
+            let-saveDisabled="disabled"
+            let-onSave="onSave"
           >
-            {{ copy.cancel }}
-          </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="action().busy()"
-            [disabled]="!submitAvailable()"
-            data-id="i18n-country-name-submit"
-            (click)="submit()"
-          >
-            {{ saveLabel() }}
-          </button>
-        }
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              [loading]="action().busy()"
+              [disabled]="saveDisabled"
+              data-id="i18n-country-name-submit"
+              (click)="onSave()"
+            >
+              {{ saveLabel() }}
+            </button>
+          </ng-template>
+        </div>
       </ng-template>
     </hilos-modal>
   `,
@@ -198,7 +171,6 @@ export class HilosI18nCountryNameWindow {
   protected readonly nameMax = HILOS_I18N_COUNTRY_NAME_MAX
   protected readonly opened = signal(false)
   protected readonly target = signal<HilosI18nCountryNameTarget | null>(null)
-  protected readonly mode = signal<'add' | 'edit' | null>(null)
   protected readonly form = signal({ name: '' })
   protected readonly state = signal(hilosRowEditIdle({ name: '' }))
   protected readonly dirty = signal(false)
@@ -206,9 +178,7 @@ export class HilosI18nCountryNameWindow {
   protected readonly noticeText = signal('')
   protected readonly saving = signal(false)
   protected readonly canSave = signal(false)
-  protected readonly canSubmit = signal(false)
   protected readonly saveAvailable = signal(false)
-  protected readonly submitAvailable = signal(false)
   protected readonly saveLabel = signal<string>(
     HILOS_I18N_COUNTRY_NAME_COPY.add,
   )
@@ -244,7 +214,6 @@ export class HilosI18nCountryNameWindow {
       const stops = [
         mirrorHilosSignal(window.opened, this.opened),
         mirrorHilosSignal(window.target, this.target),
-        mirrorHilosSignal(window.mode, this.mode),
         mirrorHilosSignal(window.form, this.form),
         mirrorHilosSignal(window.state, this.state),
         mirrorHilosSignal(window.dirty, this.dirty),
@@ -252,9 +221,7 @@ export class HilosI18nCountryNameWindow {
         mirrorHilosSignal(window.noticeText, this.noticeText),
         mirrorHilosSignal(window.saving, this.saving),
         mirrorHilosSignal(window.canSave, this.canSave),
-        mirrorHilosSignal(window.canSubmit, this.canSubmit),
         mirrorHilosSignal(window.saveAvailable, this.saveAvailable),
-        mirrorHilosSignal(window.submitAvailable, this.submitAvailable),
         mirrorHilosSignal(window.saveLabel, this.saveLabel),
         subscribeSignal(window.target, () =>
           this.action.set(createHilosTrackedAction()),
@@ -281,11 +248,7 @@ export class HilosI18nCountryNameWindow {
   // save is in flight, or while the session refuses what would leave.
   protected submit(event?: Event): void {
     event?.preventDefault()
-    if (
-      this.lookOnly.locked() ||
-      this.saving() ||
-      !(this.mode() === 'add' ? this.canSubmit() : this.canSave())
-    ) {
+    if (this.lookOnly.locked() || !this.canSave()) {
       return
     }
     void this.window().save(this.action().run)

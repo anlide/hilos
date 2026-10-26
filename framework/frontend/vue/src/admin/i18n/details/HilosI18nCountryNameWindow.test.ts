@@ -242,6 +242,10 @@ describe('country name modal', () => {
           name: '',
         },
       })
+      const target = h.window.target.get()
+      const accessibleName = document
+        .querySelector('[role="dialog"]')
+        ?.getAttribute('aria-label')
       h.focused.set(original)
       h.dispatched[0]!.refuse(
         new ActionError(
@@ -251,20 +255,28 @@ describe('country name modal', () => {
         ),
       )
       await settled()
-      expect(h.window.mode.get()).toBe('add')
-      expect(input().value).toBe('')
+      expect(h.window.mode.get()).toBe('edit')
+      expect(h.window.target.get()).toBe(target)
+      expect(
+        document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
+      ).toBe(accessibleName)
+      expect(input().value).toBe(
+        localeCode === null ? 'Original' : 'Correction',
+      )
       expect(el('i18n-country-name-error')?.textContent).toContain(
         'A name already exists',
       )
       await fill('  My value  ')
       button('submit').click()
       expect(h.dispatched[1]).toMatchObject({
+        name: 'hilos_i18n_country_name_update',
         payload: {
           countryId: 141,
           inLanguageId: 47,
-          baseNameId: localeCode === null ? null : 301,
+          nameId: localeCode === null ? 301 : 401,
           localeId: localeCode === null ? null : 501,
           name: '  My value  ',
+          expectedName: localeCode === null ? 'Original' : 'Correction',
         },
       })
       h.dispatched[1]!.settle({ message: 'Country name added.' })
@@ -273,6 +285,127 @@ describe('country name modal', () => {
       expect(el('i18n-country-name-window')).toBeNull()
     },
   )
+
+  it.each([null, 'qw-GB'])(
+    'accepts an untouched occupation at %s without another write',
+    async (localeCode) => {
+      const h = harness(null, localeCode)
+      await settled()
+      h.focused.set(
+        localeCode === null
+          ? { ...original, name: '' }
+          : {
+              ...original,
+              corrections: [{ ...original.corrections[0]!, name: '' }],
+            },
+      )
+      await settled()
+      expect(h.window.mode.get()).toBe('edit')
+      expect(el('i18n-country-name-notice')?.textContent).toContain(
+        'Updated just now',
+      )
+      expect(button('submit').disabled).toBe(true)
+      enter()
+      expect(h.dispatched).toHaveLength(0)
+      expect(h.window.opened.get()).toBe(true)
+    },
+  )
+
+  it.each([null, 'qw-GB'])(
+    'offers both choices on an occupied add at %s and updates only after Save',
+    async (localeCode) => {
+      const h = harness(null, localeCode)
+      await settled()
+      const target = h.window.target.get()
+      await fill('Mine')
+      h.focused.set(original)
+      await settled()
+      expect(h.window.target.get()).toBe(target)
+      expect(el('i18n-country-name-notice')?.textContent).toContain(
+        localeCode === null
+          ? 'Name changed elsewhere to "Original".'
+          : 'Name changed elsewhere to "Correction".',
+      )
+      expect(el('conflict-accept-mine')).not.toBeNull()
+      expect(el('conflict-accept-theirs')).not.toBeNull()
+      expect(el('conflict-merge')).toBeNull()
+      el('conflict-accept-mine')?.click()
+      await settled()
+      expect(h.dispatched).toHaveLength(0)
+      expect(input().value).toBe('Mine')
+      h.focused.set(
+        localeCode === null
+          ? { ...original, name: 'Newer' }
+          : {
+              ...original,
+              corrections: [{ ...original.corrections[0]!, name: 'Newer' }],
+            },
+      )
+      await settled()
+      el('conflict-accept-theirs')?.click()
+      await settled()
+      expect(h.dispatched).toHaveLength(0)
+      expect(input().value).toBe('Newer')
+      expect(button('submit').disabled).toBe(true)
+      await fill('Mine')
+      button('submit').click()
+      expect(h.dispatched[0]).toMatchObject({
+        name: 'hilos_i18n_country_name_update',
+        payload: {
+          name: 'Mine',
+          nameId: localeCode === null ? 301 : 401,
+          expectedName: 'Newer',
+        },
+      })
+    },
+  )
+
+  it.each([null, 'qw-GB'])(
+    'keeps a pending add busy through occupation at %s until the refusal',
+    async (localeCode) => {
+      const h = harness(null, localeCode)
+      await settled()
+      await fill('Mine')
+      enter()
+      h.focused.set(original)
+      await settled()
+      expect(h.window.saving.get()).toBe(true)
+      expect(button('cancel').disabled).toBe(true)
+      expect(h.window.opened.get()).toBe(true)
+      button('submit').click()
+      expect(h.dispatched).toHaveLength(1)
+      h.dispatched[0]!.refuse(
+        new ActionError(
+          'hilos_i18n_country_name_add',
+          'fail',
+          'A name already exists.',
+        ),
+      )
+      await settled()
+      expect(h.window.opened.get()).toBe(true)
+      expect(h.window.saving.get()).toBe(false)
+      expect(h.window.mode.get()).toBe('edit')
+      expect(input().value).toBe('Mine')
+      expect(el('i18n-country-name-error')?.textContent).toContain(
+        'A name already exists.',
+      )
+    },
+  )
+
+  it('lets a viewer choose on an occupied add without sending', async () => {
+    const h = harness(null, null, true)
+    await settled()
+    await fill('Viewer draft')
+    h.focused.set(original)
+    await settled()
+    expect(el('conflict-accept-mine')).not.toBeNull()
+    el('conflict-accept-mine')?.click()
+    await settled()
+    expect(input().value).toBe('Viewer draft')
+    enter()
+    button('submit').click()
+    expect(h.dispatched).toHaveLength(0)
+  })
 
   it.each([null, 'qw-GB'])(
     'uses the same edit guard for Enter and Save at %s',

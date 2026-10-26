@@ -140,19 +140,67 @@ describe('React country name window', () => {
           name: '',
         },
       })
+      const target = h.window.target.get()
+      const accessibleName = el('modal').getAttribute('aria-label')
       act(() => h.focused.set(nameRow))
       await settle(() => h.refuse(0, 'A name already exists'))
       expect(el('i18n-country-name-error').textContent).toContain(
         'A name already exists',
       )
-      expect(h.window.mode.get()).toBe('add')
+      expect(h.window.mode.get()).toBe('edit')
+      expect(h.window.target.get()).toBe(target)
+      expect(el('modal').getAttribute('aria-label')).toBe(accessibleName)
       change('i18n-country-name-input', '  My value  ')
       click('i18n-country-name-submit')
-      expect(h.calls[1]?.payload).toMatchObject({ name: '  My value  ' })
+      expect(h.calls[1]).toMatchObject({
+        action: 'hilos_i18n_country_name_update',
+        payload: {
+          name: '  My value  ',
+          nameId: localeCode === null ? 301 : 401,
+          expectedName: localeCode === null ? 'Ukrainian' : 'Correction',
+        },
+      })
       await settle(() => h.succeed(1))
       expect(el('i18n-country-name-window')).toBeNull()
     },
   )
+  it.each([null, 'en-GB'])(
+    'accepts an untouched occupation at %s without another write',
+    (localeCode) => {
+      const h = setup(null, localeCode)
+      act(() =>
+        h.focused.set(
+          localeCode === null
+            ? { ...nameRow, name: '' }
+            : {
+                ...nameRow,
+                corrections: [{ ...nameRow.corrections[0]!, name: '' }],
+              },
+        ),
+      )
+      expect(h.window.mode.get()).toBe('edit')
+      expect(el('i18n-country-name-notice').textContent).toContain(
+        'Updated just now',
+      )
+      expect(el<HTMLButtonElement>('i18n-country-name-submit').disabled).toBe(
+        true,
+      )
+      enter()
+      expect(h.calls).toEqual([])
+    },
+  )
+  it('lets a viewer choose on an occupied add without sending', () => {
+    const h = setup(null, null, true)
+    change('i18n-country-name-input', 'Viewer draft')
+    act(() => h.focused.set({ ...nameRow, name: 'Theirs' }))
+    click('conflict-accept-mine')
+    expect(el<HTMLInputElement>('i18n-country-name-input').value).toBe(
+      'Viewer draft',
+    )
+    enter()
+    click('i18n-country-name-submit')
+    expect(h.calls).toEqual([])
+  })
   it.each([null, 'en-GB'])(
     'guards unchanged and repeated submit at %s through own echo until ack',
     async (localeCode) => {

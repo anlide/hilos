@@ -59,7 +59,7 @@ These windows use, or still need to adopt, creation in a known place; each
 implementing leaf removes its own marker in the commit that lands the behavior:
 
 - `createHilosI18nLanguageNameWindow`
-- `createHilosI18nCountryNameWindow` (not in the code yet — HIL-1642)
+- `createHilosI18nCountryNameWindow`
 - `createHilosI18nLocaleAdd`
 
 ## The modal owns the edit session

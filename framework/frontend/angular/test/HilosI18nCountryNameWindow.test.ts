@@ -142,6 +142,8 @@ describe('HilosI18nCountryNameWindow', () => {
   it('sends an empty add, keeps the refusal, and closes only on the ack of the literal text', async () => {
     const h = setup()
     h.act(() => h.window.open('13'))
+    const target = h.window.target.get()
+    const accessibleName = h.el('modal')?.getAttribute('aria-label')
     h.submit()
     expect(h.calls[0]).toMatchObject({
       action: 'hilos_i18n_country_name_add',
@@ -153,16 +155,70 @@ describe('HilosI18nCountryNameWindow', () => {
         name: '',
       },
     })
+    h.act(() => h.delta({ ...usInFrench, nameId: 701, name: 'France' }))
     await h.settle(() => h.refuse(0, 'A name already exists.'))
-    expect(h.window.mode.get()).toBe('add')
+    expect(h.window.mode.get()).toBe('edit')
+    expect(h.window.target.get()).toBe(target)
+    expect(h.el('modal')?.getAttribute('aria-label')).toBe(accessibleName)
     expect(h.el('i18n-country-name-error')?.textContent).toContain(
       'A name already exists.',
     )
     h.type('i18n-country-name-input', '  États-Unis  ')
     h.click('i18n-country-name-submit')
-    expect(h.calls[1]?.payload).toMatchObject({ name: '  États-Unis  ' })
+    expect(h.calls[1]).toMatchObject({
+      action: 'hilos_i18n_country_name_update',
+      payload: {
+        nameId: 701,
+        name: '  États-Unis  ',
+        expectedName: 'France',
+      },
+    })
     await h.settle(() => h.succeed(1, 'Name added.'))
     expect(h.el('modal')).toBeNull()
+  })
+
+  it('accepts an untouched occupation without another write', () => {
+    const h = setup()
+    h.act(() => h.window.open('13'))
+    h.act(() => h.delta({ ...usInFrench, nameId: 701, name: '' }))
+    expect(h.window.mode.get()).toBe('edit')
+    expect(h.el('i18n-country-name-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(h.button('submit').disabled).toBe(true)
+    h.submit()
+    expect(h.calls).toHaveLength(0)
+  })
+
+  it('keeps a pending add busy through occupation until the refusal', async () => {
+    const h = setup()
+    h.act(() => h.window.open('13'))
+    h.type('i18n-country-name-input', 'Mine')
+    h.submit()
+    h.act(() => h.delta({ ...usInFrench, nameId: 701, name: 'Theirs' }))
+    expect(h.window.opened.get()).toBe(true)
+    expect(h.button('cancel').disabled).toBe(true)
+    h.submit()
+    expect(h.calls).toHaveLength(1)
+    await h.settle(() => h.refuse(0, 'A name already exists.'))
+    expect(h.window.opened.get()).toBe(true)
+    expect(h.window.mode.get()).toBe('edit')
+    expect(h.input().value).toBe('Mine')
+    expect(h.el('i18n-country-name-error')?.textContent).toContain(
+      'A name already exists.',
+    )
+  })
+
+  it('lets a viewer choose on an occupied add without sending', () => {
+    const h = setup(true)
+    h.act(() => h.window.open('13'))
+    h.type('i18n-country-name-input', 'Viewer draft')
+    h.act(() => h.delta({ ...usInFrench, nameId: 701, name: 'Theirs' }))
+    h.click('conflict-accept-mine')
+    expect(h.input().value).toBe('Viewer draft')
+    h.submit()
+    h.button('submit').click()
+    expect(h.calls).toHaveLength(0)
   })
 
   it('sends a correction edit with its expected value and holds every close while busy', async () => {
