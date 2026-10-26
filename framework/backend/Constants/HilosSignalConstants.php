@@ -501,6 +501,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos moderation root page. */
     public const string SUBSCRIPTION_PAGE_HILOS_MODERATION = 'subscription_page_hilos_moderation';
 
+    /** Browser binding for one declared moderation kind. */
+    public const string SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND = 'subscription_page_hilos_moderation_kind';
+
     /** Subscription signal for Hilos MCP and Skills hub. */
     public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS = 'subscription_page_hilos_mcp_skills';
 

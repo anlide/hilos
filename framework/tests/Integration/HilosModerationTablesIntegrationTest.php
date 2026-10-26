@@ -153,15 +153,17 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         $this->assertNull($table->defaultSort());
         $this->assertSame([], $table->bulkActions());
         $this->assertSame([
-            ['hilos_profile_name', 'Profile name', 'framework', 'text', 'text-default', 0],
-            ['hilos_profile_photo', 'Profile photo', 'framework', 'image', 'vision-default', 0],
-            ['test_note', 'Project note', 'project', 'text_with_files', 'text-default', 0],
-            ['test_picture', 'Project picture', 'project', 'image', 'vision-default', 0],
+            ['hilos_profile_name', 'Profile name', 'framework', 'text', 'text-default', 0,
+                'hilos.moderation.text', ['insult', 'threat', 'hate_speech', 'sexual', 'spam', 'impersonation']],
+            ['hilos_profile_photo', 'Profile photo', 'framework', 'image', 'vision-default', 0,
+                'hilos.moderation.image', ['nudity', 'violence', 'hate']],
+            ['test_note', 'Project note', 'project', 'text_with_files', 'text-default', 0, 'hilos.moderation.text', ['rude']],
+            ['test_picture', 'Project picture', 'project', 'image', 'vision-default', 0, 'hilos.moderation.image', ['nudity']],
         ], array_map(static fn (AbstractTableRow $row): array => array_values($row->toArray()), $snapshot->rows));
 
         foreach ($snapshot->rows as $row) {
             $this->assertInstanceOf(HilosModerationKindTableRow::class, $row);
-            $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount'], array_keys($row->toArray()));
+            $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($row->toArray()));
             $this->assertSame($row->getRowKey(), $row->toArray()[HilosModerationKindTableRow::kind]);
             $this->assertSame($row->toArray(), HilosModerationKindTableRow::fromArray($row->toArray())->toArray());
             $this->assertSame([
@@ -234,6 +236,37 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             $this->assertFalse($table->containsRow('no_such_kind', $query));
         }
         $this->assertSame(ModerationTablesTestDirectory::NOTE, $table->findRow(ModerationTablesTestDirectory::NOTE)->getRowKey());
+    }
+
+    /** Exact kind selection and membership share the same published set, including malformed filters. */
+    public function testKindsFilterSelectsOnlyTheExactPublishedStringKey(): void
+    {
+        $table = new HilosModerationKindsTable();
+        $this->assertSame('kind', $table::FILTER_KIND);
+        $this->assertSame(self::kindKeys(), self::keys($table->getPage(new TableQueryDTO(filter: ['unrelated' => 'test_note']))));
+        foreach ([
+            ...self::kindKeys(), 'unknown_kind', 'test', 'TEST_NOTE', 'test_note ', '', null, 1, true, [], ['test_note'],
+        ] as $kind) {
+            $expected = is_string($kind) && in_array($kind, self::kindKeys(), true) ? [$kind] : [];
+            $query = new TableQueryDTO(limit: 1, filter: ['kind' => $kind]);
+            $snapshot = $table->getPage($query);
+            $this->assertSame($expected, self::keys($snapshot));
+            $this->assertSame(count($expected), $snapshot->totalCount);
+            $this->assertTrue($snapshot->totalExact);
+            $this->assertSame(1, $snapshot->limit);
+            foreach ([...self::kindKeys(), 'unknown_kind'] as $key) {
+                $this->assertSame(in_array($key, $expected, true), $table->containsRow($key, $query));
+            }
+        }
+        foreach ([['Project note', ['test_note']], ['picture', []], ['hilos.moderation.text', []], ['rude', []]] as [$search, $expected]) {
+            $query = new TableQueryDTO(search: $search, limit: 1, filter: ['kind' => 'test_note']);
+            $this->assertSame($expected, self::keys($table->getPage($query)));
+            $this->assertSame($expected !== [], $table->containsRow('test_note', $query));
+        }
+        self::bindAppClass(ModerationTablesNoPhotoTestHilos::class);
+        $photoQuery = new TableQueryDTO(limit: 1, filter: ['kind' => 'hilos_profile_photo']);
+        $this->assertSame([], $table->getPage($photoQuery)->rows);
+        $this->assertFalse($table->containsRow('hilos_profile_photo', $photoQuery));
     }
 
     public function testSelectedOrdersPageByAnchorAndIndexWithoutRepeatingTies(): void
@@ -360,8 +393,8 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             [ObjectSetting::id, ObjectSetting::key, ObjectSetting::value],
         ], array_column($configs, BrowserTableFieldKey::FIELDS));
         $origins = $table->wireFields();
-        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount'], array_keys($origins));
-        foreach (['kind', 'title', 'owner', 'input', 'ownRuleCount'] as $field) {
+        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($origins));
+        foreach (['kind', 'title', 'owner', 'input', 'ownRuleCount', 'profile', 'reasons'] as $field) {
             $this->assertFalse($origins[$field]->isColumn());
             $this->assertFalse($origins[$field]->isSetting());
             $this->assertNull($origins[$field]->fields);
@@ -377,7 +410,9 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
 
     public function testRowReaderRefusesMissingOrMistypedFieldsAndNegativeCounts(): void
     {
-        $row = new HilosModerationKindTableRow('test_note', 'Note', 'project', 'text', 'model', 0);
+        $row = new HilosModerationKindTableRow('test_note', 'Note', 'project', 'text', 'model', 0, 'hilos.moderation.text', ['spam', 'rude']);
+        $this->assertSame(['spam', 'rude'], HilosModerationKindTableRow::fromArray($row->toArray())->reasons);
+        $this->assertSame([], HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), ['reasons' => []]))->reasons);
         foreach (array_keys($row->toArray()) as $field) {
             $payload = $row->toArray();
             unset($payload[$field]);
@@ -392,6 +427,19 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             try {
                 HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), ['ownRuleCount' => $count]));
                 $this->fail('A mistyped or negative count must be refused');
+            } catch (InvalidFormatException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        foreach ([
+            ['profile' => null], ['profile' => 1], ['profile' => []], ['profile' => (object) []],
+            ['reasons' => null], ['reasons' => 'spam'], ['reasons' => (object) []],
+            ['reasons' => ['name' => 'spam']], ['reasons' => [1 => 'spam']], ['reasons' => ['spam', 1]],
+            ['reasons' => [false]], ['reasons' => [null]], ['reasons' => [[]]], ['reasons' => [(object) []]],
+        ] as $invalid) {
+            try {
+                HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), $invalid));
+                $this->fail('A mistyped profile or a non-string reason list must be refused');
             } catch (InvalidFormatException) {
                 $this->addToAssertionCount(1);
             }
@@ -741,6 +789,48 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         }
     }
 
+    /** A selected kind keeps its live values while source facts for other kinds never enter its window. */
+    public function testExactKindWindowOnlyReceivesItsOwnRuleCountsAndModelProfile(): void
+    {
+        $browser = $this->bootBrowser();
+        $window = $this->openWindow($browser, 'selected', HilosModerationKindsTable::TABLE, 'test_note', limit: 1);
+        $this->assertSame(['test_note'], array_column($window->rows, 'rowKey'));
+        $this->assertSame(1, $window->totalCount);
+        $unknown = $this->openWindow($browser, 'unknown', HilosModerationKindsTable::TABLE, 'unknown_kind', limit: 1);
+        $this->assertSame([], $unknown->rows);
+        $this->assertSame(0, $unknown->totalCount);
+
+        $foreign = Hilos::$db->moderationRules->actions->create(ModerationTablesTestDirectory::PICTURE, 'Foreign picture rule.');
+        $this->assertSame([], $this->flushBrowser($browser));
+        Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'Foreign text rule.');
+        $this->assertSame([], $this->flushBrowser($browser));
+        $foreign->actions->update('Edited foreign rule.');
+        $this->assertSame([], $this->flushBrowser($browser));
+        $foreign->actions->delete();
+        $this->assertSame([], $this->flushBrowser($browser));
+
+        $own = Hilos::$db->moderationRules->actions->create(ModerationTablesTestDirectory::NOTE, 'Selected rule.');
+        $frames = $this->flushBrowser($browser);
+        $this->assertRoutes($frames, [['selected', HilosModerationKindsTable::TABLE, SignalTypeConstants::TABLE_VIEWPORT_DELTA]]);
+        $this->assertKindDelta($frames[0]['data'], 'test_note', 1);
+        $this->assertSame('hilos.moderation.text', $frames[0]['data']['row']['slots']['kind']['profile']);
+        $this->assertSame(['rude'], $frames[0]['data']['row']['slots']['kind']['reasons']);
+
+        Hilos::$db->settings->actions->add(ModerationSettingsCatalog::IMAGE_MODEL, 'foreign-model', Hilos::$setting->catalog());
+        $this->assertSame([], $this->flushBrowser($browser));
+        Hilos::$db->settings->actions->add(ModerationSettingsCatalog::TEXT_MODEL, 'selected-model', Hilos::$setting->catalog());
+        $frames = $this->flushBrowser($browser);
+        $this->assertRoutes($frames, [['selected', HilosModerationKindsTable::TABLE, SignalTypeConstants::TABLE_VIEWPORT_DELTA]]);
+        $this->assertKindDelta($frames[0]['data'], 'test_note', 1);
+        $this->assertSame('selected-model', $frames[0]['data']['row']['slots']['kind']['model']);
+        $own->actions->delete();
+        $frames = $this->flushBrowser($browser);
+        $this->assertRoutes($frames, [['selected', HilosModerationKindsTable::TABLE, SignalTypeConstants::TABLE_VIEWPORT_DELTA]]);
+        $this->assertKindDelta($frames[0]['data'], 'test_note', 0);
+        $this->assertSame(1, Hilos::$sr->getTableViewport('selected', HilosModerationKindsTable::TABLE)->totalCount());
+        $this->assertSame(0, Hilos::$sr->getTableViewport('unknown', HilosModerationKindsTable::TABLE)->totalCount());
+    }
+
     /** Real delivered digests, kind filters and search scopes govern action-driven delivery. */
     public function testDeliveredWindowsFollowRuleCrudWithoutReloadsOrCrossingKindAndSearch(): void
     {
@@ -895,12 +985,17 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             $this->assertSame(self::kindKeys(), array_column($window->rows, 'rowKey'));
             foreach ($window->rows as $row) {
                 $kind = $row['slots']['kind'];
-                $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount'], array_keys($kind));
+                $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($kind));
                 $this->assertSame($row['rowKey'], $kind['kind']);
                 $this->assertIsString($kind['title']);
                 $this->assertContains($kind['owner'], ['framework', 'project']);
                 $this->assertContains($kind['input'], ['text', 'image', 'text_with_files']);
                 $this->assertSame($row['rowKey'] === 'test_note' ? 1 : 0, $kind['ownRuleCount']);
+                $this->assertSame(
+                    $kind['input'] === 'image' ? 'hilos.moderation.image' : 'hilos.moderation.text',
+                    $kind['profile'],
+                );
+                $this->assertSame(Hilos::moderationKinds()[$row['rowKey']]->reasons, $kind['reasons']);
                 $this->assertSame(
                     in_array($row['rowKey'], $openKinds, true) ? Hilos::$setting[$open]->string() : HiddenValue::mark(),
                     $kind['model'],
@@ -1207,7 +1302,7 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
      * @param ModerationTablesBrowser $browser Browser serving the local subscription
      * @param string $acceptKey Address of the connection
      * @param string $tableKey Registered table key
-     * @param ?string $kind Rules kind, absent for the directory
+     * @param ?string $kind Exact kind selection, absent for the complete directory
      * @param ?string $search Search within the selected kind
      * @param int $limit Requested rows per window
      * @param ?TableSortOrderDTO $sort Requested order, defaulting to the table's own
@@ -1226,7 +1321,10 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             ModerationTablesBrowser::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, ModerationTablesBrowser::PAGE),
         );
-        $filter = $kind === null ? [] : [HilosModerationRulesTable::FILTER_KIND => $kind];
+        $filter = $kind === null ? [] : [
+            ($tableKey === HilosModerationKindsTable::TABLE ? HilosModerationKindsTable::FILTER_KIND : HilosModerationRulesTable::FILTER_KIND)
+                => $kind,
+        ];
         if ($search !== null) {
             $filter[TableConstants::FILTER_KEY_SEARCH] = $search;
         }
@@ -1356,7 +1454,7 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         $this->assertSame(['rowKey', 'slots'], array_keys($delta['row']));
         $this->assertSame(['kind'], array_keys($delta['row']['slots']));
         $row = $delta['row']['slots']['kind'];
-        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount'], array_keys($row));
+        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($row));
         $this->assertSame($kind, $row['kind']);
         $this->assertSame($count, $row['ownRuleCount']);
     }

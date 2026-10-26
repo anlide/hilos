@@ -216,6 +216,9 @@ final class HilosPageConstants
     /** @var string Hilos — moderation root */
     public const string HILOS_MODERATION = 'hilos_moderation';
 
+    /** @var string Hilos — one declared moderation kind */
+    public const string HILOS_MODERATION_KIND = 'hilos_moderation_kind';
+
     /** @var string Hilos — MCP and Skills hub */
     public const string HILOS_MCP_SKILLS = 'hilos_mcp_skills';
 

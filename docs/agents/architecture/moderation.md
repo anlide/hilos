@@ -352,11 +352,15 @@ and mounted through `ChatTableContext`:
 - `HilosModerationKindsTable` (`hilosModerationKinds`) exposes each published
   kind by string row key `kind` in slot `kind`, with `kind`, `title`, `owner`
   (`framework` or `project`), `input` (`text`, `image` or `text_with_files`),
-  `model` and nonnegative `ownRuleCount`. Rows follow directory order by
-  default. The count covers persisted rules of that kind; zero means its
-  built-in rules apply, and built-in rules are not database rows. `model` uses
+  `model`, nonnegative `ownRuleCount`, `profile: string` and
+  `reasons: list<string>`. Rows follow directory order by default. The count
+  covers persisted rules of that kind; zero means its built-in rules apply,
+  and built-in rules are not database rows. `model` uses
   `ModerationSettingsCatalog::IMAGE_MODEL` for `image` input and
-  `ModerationSettingsCatalog::TEXT_MODEL` otherwise.
+  `ModerationSettingsCatalog::TEXT_MODEL` otherwise. Its wire field uses
+  `settingFrom` for that model setting and is `HiddenValue` to a viewer denied
+  that setting; every other field, including `profile` and `reasons`, is
+  `notPersonal`.
 - `HilosModerationRulesTable` (`hilosModerationRules`) uses the `kind` window
   filter and exposes persisted rules for a published string kind by positive
   integer row key `id` in slot `rule`, with `id`, `kind` and `rule`. Its default
@@ -367,17 +371,44 @@ table observes `moderationRules`. Rows use the existing `page_response.windows`
 and `table_window` shapes. Source-change fan-out keeps open windows current
 through `table_viewport_delta`, `table_viewport_append`,
 `table_viewport_announce` and `table_viewport_count`, including kind counts and
-model changes across every kind using that profile. No signal names or DTOs are
-added.
+model changes across every kind using that profile. The kinds table's optional
+exact `kind` filter returns one published kind; an unknown or non-string value
+returns no rows, and `query()` and `containsRow()` use the same filtered set.
+Without the filter, the root keeps its directory order, 25-row window and
+existing columns. No signal names or DTOs are added.
 
 The section has these pages, with Vue/chat as their first consumer:
 
 - `/hilos/moderation`, page key `hilos_moderation`: the kinds table
   (`AbstractHilosModerationPage` / `HilosModerationPage`).
-- `/hilos/moderation/{kind}`: the kind's Overview, beside its Rules tab;
-  an unknown kind answers 404. (not in the code yet — HIL-1630)
+- `/hilos/moderation/{kind}`, page key `hilos_moderation_kind` and signal
+  `subscription_page_hilos_moderation_kind`: the kind's read-only Overview
+  (`AbstractHilosModerationKindPage` / Chat's `ModerationKindPage`). Its
+  required string route param is looked up in the code-declared kind directory;
+  an unknown kind answers 404. The page inherits the `ADMIN` access gate and
+  viewer behavior, declares no `DB_EXISTS` requirement or actions, and repeats
+  the full directory check and page response for direct, repeated, updated and
+  reconnected subscriptions.
 - `/hilos/moderation/{kind}/rules`: custom rules or their built-in fallback;
   an unknown kind answers 404. (not in the code yet — HIL-1631)
+
+Before answering the kind page, `onSubscribeBeforeResponse()` clears reported
+table windows for that connection and installs a canonical `hilosModerationKinds`
+viewport filtered by the route's `kind`, limited to one row and rendering all
+eight row fields. The first `page_response` therefore carries the selected row
+in its window. Core's `createHilosModerationKind(context, kind)` binds one
+`TableViewportController` and one `bindTableViewport`; it leaves the client
+`initialFilter` unset so the canonical first window is accepted without a second
+fetch. A different page key synchronously disposes this detail binding before
+the next root descriptors are gathered; a later Vue unmount safely disposes it
+again, and its owner token cannot remove a newer root registration. The same
+detail page key continues through the existing binder when its route params
+change or it reconnects.
+
+The core and Vue detail APIs are exported from their moderation sections, not as
+context-free SDK defaults; existing compatibility root exports remain. Vue's
+`HilosModerationKindPage` receives the project's context through Chat's lazy
+`ModerationKind.vue` wrapper and `hilosModerationContext` in `App.vue`.
 
 The rule actions and their dialog validation belong to separate leaves:
 

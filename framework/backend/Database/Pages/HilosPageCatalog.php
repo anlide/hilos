@@ -171,6 +171,15 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Moderation',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
+        HilosPageConstants::HILOS_MODERATION_KIND => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Kind',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One declared check and the rules in force.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MODERATION,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-check',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Kind',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
         HilosPageConstants::HILOS_I18N => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Internationalization',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Languages, countries, locales, and translation screens.',

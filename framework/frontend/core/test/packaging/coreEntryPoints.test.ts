@@ -19,6 +19,7 @@ import * as legal from '../../src/admin/legal/index.js'
 import * as logs from '../../src/admin/logs/index.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
 import * as moderation from '../../src/admin/moderation/index.js'
+import * as moderationKind from '../../src/admin/moderation/hilosModerationKind.js'
 import * as security from '../../src/admin/security/index.js'
 import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
@@ -297,6 +298,9 @@ const adminModerationTypes = [
   'HilosModerationKindRow',
   'HilosModerationKindsTable',
 ]
+/** Detail APIs stay exclusive to their lazy section. */
+const adminModerationKindValues = ['createHilosModerationKind']
+const adminModerationKindTypes = ['HilosModerationKind']
 const expectedValues = [
   ...daemonNodeValues,
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
@@ -464,6 +468,19 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/moderation' &&
+          adminModerationKindValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              moderationKind[name as keyof typeof moderationKind],
+            ),
+            name,
+          ).toBe(true)
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
@@ -476,6 +493,7 @@ describe('core public entries', () => {
         ...analyticsPeriodValues,
         ...analyticsPeopleValues,
         ...channelSummaryValues,
+        ...adminModerationKindValues,
       ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
@@ -701,6 +719,11 @@ describe('core public entries', () => {
       'admin/communications/hilosCommunicationsChannel.ts',
     )
     const sectionOnly = [...channelSummaryValues, ...channelSummaryTypes]
+    const kindExports = exportsOf('admin/moderation/hilosModerationKind.ts')
+    const kindNames = [
+      ...adminModerationKindValues,
+      ...adminModerationKindTypes,
+    ]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (
@@ -731,6 +754,13 @@ describe('core public entries', () => {
           expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(summaryExports.get(name))
+        } else if (
+          entry === 'admin/moderation/index.ts' &&
+          kindNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(kindExports.get(name))
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -746,6 +776,7 @@ describe('core public entries', () => {
         ...periodNames,
         ...peopleNames,
         ...sectionOnly,
+        ...kindNames,
       ].sort(),
     )
   })

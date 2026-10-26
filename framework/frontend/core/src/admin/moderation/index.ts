@@ -12,3 +12,8 @@ export {
   type HilosModerationKindRow,
   type HilosModerationKindsTable,
 } from './hilosModeration.js'
+
+export {
+  createHilosModerationKind,
+  type HilosModerationKind,
+} from './hilosModerationKind.js'

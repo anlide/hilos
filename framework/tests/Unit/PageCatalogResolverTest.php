@@ -678,6 +678,41 @@ final class PageCatalogResolverTest extends TestCase
         ], $head->pageTabs);
     }
 
+    public function testModerationKindOwnsItsSingletonOverviewOutsideTheSectionRow(): void
+    {
+        ModerationKindPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['kind' => 'project_kind']);
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_MODERATION_KIND, $params);
+        self::assertNotNull($head);
+        self::assertSame([
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_MODERATION_KIND,
+                'label' => 'Kind',
+                'lead' => 'One declared check and the rules in force.',
+                'icon' => 'bi-shield-check',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_MODERATION, 'label' => 'Moderation'],
+                ['page' => HilosPageConstants::HILOS_MODERATION_KIND, 'label' => 'Kind'],
+            ],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_MODERATION_KIND, 'label' => 'Overview'],
+            ],
+            'pageChildren' => [],
+        ], $head->toArray());
+        self::assertSame(
+            HilosPageConstants::HILOS_MODERATION_KIND,
+            PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_MODERATION_KIND),
+        );
+        $root = PageCatalogResolver::head(HilosPageConstants::HILOS_MODERATION, $params);
+        self::assertNotNull($root);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_MODERATION, 'label' => 'Overview'],
+        ], $root->pageTabs);
+        self::assertSame([], $root->toArray()['pageChildren']);
+    }
+
     public function testCountryAndNamesShareTheExactHeadWithoutChangingTheirIdentity(): void
     {
         CountryPageHeadTestHilos::initBrowser();
@@ -1501,4 +1536,13 @@ abstract class PollsCommunicationsPageHeadTestHilos extends LegacyCommunications
 abstract class OnlineTestingCommunicationsPageHeadTestHilos extends LegacyCommunicationsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = OnlineTestingPageCatalog::class;
+}
+
+/** A served moderation section and its independently owned kind overview. */
+abstract class ModerationKindPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_MODERATION => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_MODERATION_KIND => PageHeadTestPage::class,
+    ];
 }

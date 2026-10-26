@@ -682,9 +682,10 @@ thin project bindings and database/DDL setup above remain required.
 Framework-owned: the project activates the mechanism and supplies its own
 kinds, never a copy of the moderator or admin engine. Read
 [moderation.md](moderation.md) for the rules and current implementation status.
-The activation order is below; steps 1 to 4 and the table registrations in step
-5 are in the code. Page registrations in step 5 and the mounts in step 6 remain
-with their marked leaves:
+The activation order is below; steps 1 to 4, the table registrations and kind
+Overview binding in step 5, and the Vue root and Overview mounts in step 6 are
+in the code. The remaining Rules and action registrations and mounts stay with
+their marked leaves:
 
 1. Declare `HilosFeature::MODERATION` in `FEATURES`. This does not enable
    `PROFILE_PHOTO`.
@@ -720,13 +721,18 @@ with their marked leaves:
    `@property-read` entries; its `configure()` mounts the registered tables.
    Register the section root page (`AbstractHilosModerationPage`) and bind
    `hilosModerationKinds` in `PAGE_TABLES`.
-   Register the kind Overview page. (not in the code yet — HIL-1630)
+   Register the kind Overview with `AbstractHilosModerationKindPage`, mounted
+   in `PAGES` by Chat's `ModerationKindPage` on `HILOS_INDEX`; bind
+   `ChatTableContext::hilosModerationKinds` in `PAGE_TABLES`. Its route is
+   `/hilos/moderation/{kind}` and its page key is `hilos_moderation_kind`.
    Register the kind Rules page and bind `hilosModerationRules` in `PAGE_TABLES`
    with the required `kind` preset supplied by its route.
    (not in the code yet — HIL-1631)
 6. Mount the chosen frontend's SDK views through thin project bindings:
    Vue/chat mounts the root (`HilosModerationPage`).
-   It mounts Overview. (not in the code yet — HIL-1630)
+   It mounts Overview with `HilosModerationKindPage` through the lazy Chat
+   wrapper `views/Hilos/Moderation/ModerationKind.vue`, supplying
+   `hilosModerationContext`.
    It mounts Rules. (not in the code yet — HIL-1631)
    Its Add dialog follows. (not in the code yet — HIL-1632)
    Its Edit dialog follows. (not in the code yet — HIL-1633)

@@ -53,6 +53,9 @@ final class HilosPageRouteParams
     /** Route param for country detail pages. */
     public const string HILOS_I18N_COUNTRY_CODE = 'countryCode';
 
+    /** Route param for one declared moderation kind. */
+    public const string HILOS_MODERATION_KIND = 'kind';
+
     /** Route param shared by the communications channel's pages. */
     public const string HILOS_COMMUNICATIONS_CHANNEL_ID = 'channelId';
 

@@ -187,6 +187,11 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.MODERATION]: lazyPage(() =>
     import('./views/Hilos/Moderation/Moderation.vue').then((m) => m.default),
   ),
+  [HilosPages.MODERATION_KIND]: lazyPage(() =>
+    import('./views/Hilos/Moderation/ModerationKind.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.LEGAL]: lazyPage(() =>
     import('./views/Hilos/Legal/Legal.vue').then((m) => m.default),
   ),

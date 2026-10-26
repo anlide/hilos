@@ -35,12 +35,14 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
+use Hilos\Moderation\ModerationLlmConstants;
 use Hilos\Moderation\ModerationSettingsCatalog;
 
 /** Published moderation kinds, in directory order unless the window selects another order. */
 final class HilosModerationKindsTable extends TableDefinition implements MultiRowViewportTable
 {
     public const string TABLE = 'hilosModerationKinds';
+    public const string FILTER_KIND = 'kind';
 
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [self::RULES_SOURCE, self::SETTINGS_SOURCE],
@@ -168,12 +170,14 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
                     ? ModerationSettingsCatalog::IMAGE_MODEL : ModerationSettingsCatalog::TEXT_MODEL,
             ),
             HilosModerationKindTableRow::ownRuleCount => WireField::notPersonal(),
+            HilosModerationKindTableRow::profile => WireField::notPersonal(),
+            HilosModerationKindTableRow::reasons => WireField::notPersonal(),
         ];
     }
 
     /**
      * @param string|int $rowKey Candidate kind key
-     * @param TableQueryDTO $query Window search applied to the same complete rows as query
+     * @param TableQueryDTO $query Exact kind filter and search applied to the same complete rows as query
      * @return ?bool Whether the published kind matches; always known
      * @throws DatabaseException When a rule or setting cannot be read
      * @throws InvalidArgumentException When a directory or loaded object is invalid
@@ -187,7 +191,7 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return $this->containsRowInMemory($this->rows(), $rowKey, $this->scopeSearch($query));
+        return $this->containsRowInMemory($this->rows($query), $rowKey, $this->scopeSearch($query));
     }
 
     /** Configures the typed kind row contract. */
@@ -225,8 +229,8 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
     }
 
     /**
-     * @param TableQueryDTO $query Scoped search and selected window order
-     * @return TableSnapshotDTO Window over every published kind
+     * @param TableQueryDTO $query Optional exact kind filter, scoped search and selected window order
+     * @return TableSnapshotDTO Window over the matching published kinds
      * @throws DatabaseException When a rule or setting cannot be read
      * @throws InvalidArgumentException When a directory or loaded object is invalid
      * @throws LogicException When a collection is not configured
@@ -239,11 +243,12 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->rows(), $query);
+        return $this->filterInMemory($this->rows($query), $query);
     }
 
     /**
-     * @return list<array<string, mixed>> Complete current rows in directory order
+     * @param TableQueryDTO $query Optional exact kind filter; absent keeps the complete directory
+     * @return list<array<string, mixed>> Matching current rows in directory order
      * @throws DatabaseException When a rule or setting cannot be read
      * @throws InvalidArgumentException When a directory or loaded object is invalid
      * @throws LogicException When a collection is not configured
@@ -252,10 +257,15 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
      * @throws ObjectGetIdStringNotImplementedException When a matched rule has no object key
      * @throws CollectionNotManualException When a matched rule cannot enter the selection
      */
-    private function rows(): array
+    private function rows(TableQueryDTO $query): array
     {
+        $kinds = Hilos::moderationKinds();
+        if (array_key_exists(self::FILTER_KIND, $query->filter)) {
+            $kindKey = $query->filter[self::FILTER_KIND];
+            $kinds = is_string($kindKey) && isset($kinds[$kindKey]) ? [$kinds[$kindKey]] : [];
+        }
         $rows = [];
-        foreach (Hilos::moderationKinds() as $kind) {
+        foreach ($kinds as $kind) {
             $rows[] = $this->row($kind)->toArray();
         }
 
@@ -283,6 +293,8 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
             model: Hilos::$setting[$kind->input === ModerationInput::IMAGE
                 ? ModerationSettingsCatalog::IMAGE_MODEL : ModerationSettingsCatalog::TEXT_MODEL]->string(),
             ownRuleCount: count(Hilos::$db->moderationRules->whereColumnIs(ObjectModerationRule::kind, $kind->key)),
+            profile: $kind->input === ModerationInput::IMAGE ? ModerationLlmConstants::PROFILE_IMAGE : ModerationLlmConstants::PROFILE_TEXT,
+            reasons: $kind->reasons,
         );
     }
 }

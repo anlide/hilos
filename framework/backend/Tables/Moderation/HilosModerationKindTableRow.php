@@ -16,6 +16,8 @@ final class HilosModerationKindTableRow extends AbstractTableRow
     public const string input = 'input';
     public const string model = 'model';
     public const string ownRuleCount = 'ownRuleCount';
+    public const string profile = 'profile';
+    public const string reasons = 'reasons';
 
     /**
      * @param string $kind Published kind key and row key
@@ -24,7 +26,9 @@ final class HilosModerationKindTableRow extends AbstractTableRow
      * @param string $input Declared input: text, image or text_with_files
      * @param string $model Current model setting for the input
      * @param int $ownRuleCount Number of persisted rules belonging to this kind
-     * @throws InvalidFormatException When the own-rule count is negative
+     * @param string $profile LLM profile selected by the declared input
+     * @param list<string> $reasons Declared refusal reasons in directory order
+     * @throws InvalidFormatException When the count is negative or reasons are not a list of strings
      */
     public function __construct(
         public string $kind,
@@ -33,9 +37,19 @@ final class HilosModerationKindTableRow extends AbstractTableRow
         public string $input,
         public string $model,
         public int $ownRuleCount,
+        public string $profile,
+        public array $reasons,
     ) {
         if ($ownRuleCount < 0) {
             throw new InvalidFormatException('A moderation kind cannot have a negative rule count');
+        }
+        if (!array_is_list($reasons)) {
+            throw new InvalidFormatException('Moderation kind reasons must be a list of strings');
+        }
+        foreach ($reasons as $reason) {
+            if (!is_string($reason)) {
+                throw new InvalidFormatException('Moderation kind reasons must be strings');
+            }
         }
     }
 
@@ -61,6 +75,8 @@ final class HilosModerationKindTableRow extends AbstractTableRow
             self::input => $this->input,
             self::model => $this->model,
             self::ownRuleCount => $this->ownRuleCount,
+            self::profile => $this->profile,
+            self::reasons => $this->reasons,
         ];
     }
 
@@ -78,6 +94,8 @@ final class HilosModerationKindTableRow extends AbstractTableRow
             input: self::requireString($data, self::input),
             model: self::requireString($data, self::model),
             ownRuleCount: self::requireInt($data, self::ownRuleCount),
+            profile: self::requireString($data, self::profile),
+            reasons: self::requireArray($data, self::reasons),
         );
     }
 }

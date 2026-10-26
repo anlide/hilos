@@ -29,6 +29,8 @@ describe('resolveHilosModerationKindRow', () => {
             input: 'text',
             model: 'qwen2.5:3b',
             ownRuleCount: 2,
+            profile: 'hilos.moderation.text',
+            reasons: ['spam', 'insult', 'threat'],
           },
         },
       }),
@@ -39,6 +41,8 @@ describe('resolveHilosModerationKindRow', () => {
       input: 'text',
       model: 'qwen2.5:3b',
       ownRuleCount: 2,
+      profile: 'hilos.moderation.text',
+      reasons: ['spam', 'insult', 'threat'],
     })
   })
 
@@ -70,11 +74,50 @@ describe('resolveHilosModerationKindRow', () => {
           input: 'image',
           model: { _hidden: true },
           ownRuleCount: 0,
+          profile: 'hilos.moderation.image',
+          reasons: ['nudity', 'violence', 'hate'],
         },
       },
     })
 
     expect(row.model).toBe(HIDDEN_VALUE)
+    expect(row.profile).toBe('hilos.moderation.image')
+    expect(row.reasons).toStrictEqual(['nudity', 'violence', 'hate'])
+  })
+
+  it.each(
+    [
+      null,
+      'spam',
+      1,
+      { name: 'spam' },
+      ['spam', 1],
+      ['spam', null],
+      ['spam', false],
+      ['spam', ['threat']],
+      ['spam', { name: 'threat' }],
+    ].map((reasons) => ({ reasons })),
+  )(
+    'does not coerce malformed reasons into strings: $reasons',
+    ({ reasons }) => {
+      const row = resolveHilosModerationKindRow({
+        rowKey: 'test_note',
+        slots: { kind: { profile: { name: 'text' }, reasons } },
+      })
+
+      expect(row.reasons).toStrictEqual([])
+      expect(row.profile).toBe('')
+    },
+  )
+
+  it('keeps an empty reasons list', () => {
+    const row = resolveHilosModerationKindRow({
+      rowKey: 'test_note',
+      slots: { kind: { profile: 'hilos.moderation.text', reasons: [] } },
+    })
+
+    expect(row.profile).toBe('hilos.moderation.text')
+    expect(row.reasons).toStrictEqual([])
   })
 
   it('handles zero and positive rule counts correctly', () => {
@@ -122,6 +165,8 @@ describe('resolveHilosModerationKindRow', () => {
       input: '',
       model: '',
       ownRuleCount: 0,
+      profile: '',
+      reasons: [],
     })
   })
 })
@@ -275,6 +320,8 @@ describe('HilosModerationKindRowKey and constants', () => {
       input: 'input',
       model: 'model',
       ownRuleCount: 'ownRuleCount',
+      profile: 'profile',
+      reasons: 'reasons',
     })
     expect(HILOS_MODERATION_KINDS_TABLE).toBe('hilosModerationKinds')
     expect(HILOS_MODERATION_KIND_SLOT).toBe('kind')

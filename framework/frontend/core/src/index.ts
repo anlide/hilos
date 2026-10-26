@@ -2693,8 +2693,19 @@ export {
 export { bindInteractionBlock } from './base/index.js'
 // Status remains behind its section entry; base imports no Status implementation.
 export * from './admin/status/index.js'
-// Moderation remains behind its section entry; base imports no Moderation implementation.
-export * from './admin/moderation/index.js'
+// Preserve the legacy Moderation exports; detail APIs stay in their lazy section.
+export {
+  createHilosModerationKindsTable,
+  resolveHilosModerationKindRow,
+  moderationKindPath,
+  HILOS_MODERATION_COPY,
+  HILOS_MODERATION_KINDS_TABLE,
+  HILOS_MODERATION_KIND_SLOT,
+  HilosModerationKindRowKey,
+  type HilosModerationContext,
+  type HilosModerationKindRow,
+  type HilosModerationKindsTable,
+} from './admin/moderation/hilosModeration.js'
 export {
   createHilosTimeZonePicker,
   type HilosTimeZonePicker,

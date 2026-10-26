@@ -70,6 +70,23 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION)).toBe(true)
   })
 
+  it('serves kind Overview only in Vue, with Rules still absent', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION_KIND)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION_KIND)).toBe(
+      true,
+    )
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION_KIND)).toBe(
+      true,
+    )
+    expect(Object.values(HilosPages)).not.toContain(
+      'hilos_moderation_kind_rules',
+    )
+  })
+
   it('opens the Daemon environment page in all three view layers', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(false)
