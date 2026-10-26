@@ -238,6 +238,7 @@ export {
   expectChangeLogReceiptMoment,
   expectChangeLogTimes,
   watchChangeLogDisplay,
+  expectFreshChangeLogReceiptWriter,
   expectChangeLogReceiptWriter,
   expectChangeLogValues,
   expectRegistrationFeedRow,

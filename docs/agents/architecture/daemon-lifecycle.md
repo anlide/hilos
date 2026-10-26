@@ -752,6 +752,13 @@ readiness rule above:
   `INITIAL_AGENTS_START` (launching the bootstrap agent list via routing); a project
   override calls the parent first, then can start its own cluster-singletons (e.g.
   one agent per active bot).
+  When `CHANGE_LOG` is enabled, the framework also requests its registered
+  `CLUSTER` + `LEADER` journal agent directly through `startAgent()`; the agent's
+  daemon places it in a monopolistic worker. This is a feature-specific lifecycle
+  start, not another entry in the project bootstrap list. A thrown start failure
+  is logged and contained as `AGENT_START`. The same direct request runs after a
+  protected-mode lift, including when freeze refused the first start before it
+  could enter the remembered roster.
   When Status is enabled, the base hook then requests each cataloged `CLUSTER` +
   `LEADER` component type through the ordinary `startAgent()` path, containing
   failures per type. `NODE` and `CLUSTER` + `POLICY` components stay on their

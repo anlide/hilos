@@ -196,6 +196,40 @@ export async function watchChangeLogDisplay(
   }
 }
 
+/** Reopen the receipt on every attempt until a fresh snapshot names its writer. */
+export async function expectFreshChangeLogReceiptWriter(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  receiptId: string,
+  agentId: string,
+): Promise<void> {
+  const modal = page.getByTestId('modal')
+  const detail = page.getByTestId('hilos-change-log-detail')
+  const header = detail.locator(':scope > dl').first()
+  const error = page.getByTestId('hilos-change-log-detail-error')
+  await expect
+    .poll(async () => {
+      if (await modal.isVisible()) {
+        await modal.getByTestId('modal-close').click()
+        await expect(modal).toBeHidden()
+      }
+      await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
+      await expectChangeLogReceiptOpen(expect, page, receiptId)
+      // A refusal settles the read too, and must fail instead of being retried.
+      await expect(header.or(error)).toBeVisible()
+      await expect(error).toHaveCount(0)
+      return (
+        await header
+          .locator('dt')
+          .filter({ hasText: /^Agent$/ })
+          .locator('+ dd')
+          .innerText()
+      ).trim()
+    })
+    .toBe(agentId)
+}
+
 /** Check the receipt's writer and retain its complete attribution header. */
 export async function expectChangeLogReceiptWriter(
   expect: Expect,

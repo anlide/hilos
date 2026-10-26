@@ -1030,41 +1030,14 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
   // driven right up to the enabled button and then canceled.
   await openBackups(page)
 
-  // A row to aim at. The live arrival of a created row is parked (HIL-432 above), so
-  // the row is picked up from a fresh snapshot instead of from a delta.
-  await askCreate(page)
-  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
-
-  // The row key is what the poll waits on, and the restore button is then named in
-  // full. A `hilos-backup-restore-` prefix would not name it: the outcome cell, the
-  // CLI hint and the confirmation field share that prefix, and the outcome cell comes
-  // first in the row — so the first prefix match stops being the button as soon as
-  // any restore has run here.
-  const rows = page.locator('[data-id^="hilos-table-row-"]')
-  let backupId = ''
-  await expect
-    .poll(
-      async () => {
-        await gotoPage(page, '/hilos/backup')
-        await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-        if ((await rows.count()) === 0) {
-          return 0
-        }
-        backupId =
-          (await rows.first().getAttribute('data-id'))?.replace(
-            'hilos-table-row-',
-            '',
-          ) ?? ''
-
-        return page
-          .locator(`[data-id="hilos-backup-restore-${backupId}"]`)
-          .count()
-      },
-      { timeout: 60_000 },
-    )
-    .toBeGreaterThan(0)
-
+  // Wait for this run's terminal notice before taking a fresh snapshot: a stored
+  // row can appear while the subsystem is still busy. Its addressed notice also
+  // names our archive, so an older row cannot satisfy readiness on a retry.
+  const backupId = await createNamedBackup(page)
   expect(backupId).toBeTruthy()
+  await gotoPage(page, '/hilos/backup', PAGE_READY)
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByTestId(`hilos-table-row-${backupId}`)).toBeVisible()
 
   // The other side of the rule a dark restore button follows (HIL-661): a live one
   // has no "why" button beside it, and its title is its name, not a reason. The

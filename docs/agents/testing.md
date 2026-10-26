@@ -851,12 +851,25 @@ in `test-results/main` and `playwright-report/main`, so it clears neither the
 the protected-mode operator sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks
 backup, logs, protected mode, one person's tabs, theme delivery, Change Log and
-i18n across masters. `cluster/live/change-log.spec.ts` checks one remote writer and
-one receipt through every master: the person's `started` owner is observed on a
-slave before and after the block, away from the card's leader host. Fresh reads
-must return the same receipt and single entry IDs, exact actor/action/agent,
-`block` values `0` → `1` and complete attribution header, with the leader and
-term unchanged. Point it with `-- --grep 'cluster change log:'` (HIL-1465).
+i18n across masters. `cluster/live/change-log.spec.ts` first observes a known
+leader Workers roster and its started monopolistic `hilos_change_log` worker
+before opening Change Log. If the first roster was unknown, it makes one fresh
+Workers navigation after the known node report, then applies the full roster
+checks; this independent read does not warm the journal. It checks the person's
+`started` `hilos_user:<id>` owner on a slave before and after the block, then
+pins the receipt and `rowKey`. Fresh socket, filter and receipt reads through
+every master must return that receipt and its single entry with exact actor,
+action, writer, the complete When/Source header, and `block` values `0` → `1`;
+the leader and term stay unchanged. The shared
+`expectFreshChangeLogReceiptWriter` helper reopens the pinned receipt within the
+normal assertion budget until the actual writer appears, and lets refusals or
+errors fail. Attached evidence includes bootstrap, placement and term, the
+pinned receipt and master reads (HIL-1621).
+
+The cold acceptance run passed on the test box on 2026-10-26 with no retry.
+F-016 remains quarantined: its tag, 2026-10-18 date and original failure
+observation stay in the spec, and this pass does not settle the earlier flake.
+Point the scenario with `-- --grep 'cluster change log:'` (HIL-1465).
 This pointed run stays in the live phase, with no fault request.
 The theme spec checks settings on all three masters, choices and reset between
 independent account sessions, new tabs, and stale Dark reconnect without adoption;

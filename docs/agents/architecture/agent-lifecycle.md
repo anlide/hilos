@@ -235,13 +235,16 @@ agent back depends on how it was started, and each kind has one way:
   `onBecameSingletonHost()` runs again (HIL-502). It already had to be
   idempotent, because a promotion runs it again too. This is an ensure-once
   re-fire, not a per-tick liveness scan.
+- **The framework Change Log agent** is requested again by the same
+  singleton-host hook when its worker is lost and `CHANGE_LOG` is enabled.
 
 Protected-mode resume is another explicit path: after replaying the remembered
-roster, the default `onProtectedModeLifted()` starts `NODE` agents and checks
-the enabled Status catalog on the leader. That check can request a Status
-component whose earlier start was refused under freeze and so is absent from
-the remembered roster; the ordinary start gates still apply. See [Status
-component startup](status-page.md#startup-paths).
+roster, the default `onProtectedModeLifted()` starts `NODE` agents, requests the
+enabled leader-hosted Change Log agent, and checks the enabled Status catalog on
+the leader. Either leader-specific start can include an agent whose earlier
+request was refused under freeze and so is absent from the remembered roster;
+the ordinary start gates still apply. See [Status component
+startup](status-page.md#startup-paths).
 
 Nothing is brought back while the node is leaving. A freeze decides through its
 own start gate: what it holds stays down until the lift brings it back.

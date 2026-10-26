@@ -362,6 +362,31 @@ final class ClusterContextTest extends TestCase
         $this->assertArrayHasKey(ClusterCommandConstants::FIELD_NODE_LAST_SEEN, $nodes[0]);
     }
 
+    public function testInspectSeparatesReceiptTrafficFromSettingsFactsWithoutLosingTheTotal(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        $context = new ClusterContext();
+
+        $this->assertSame([], $context->inspect()[ClusterCommandConstants::FIELD_DB_REPLICAS_BY_COLLECTION]);
+        $context->noteDbReplica('changeLogReceipts');
+        $context->noteDbReplica('settings');
+        $context->noteDbReplica('changeLogReceipts');
+        $context->noteDbReplica('settings');
+        $context->noteDbReplica(null);
+
+        $inspection = $context->inspect();
+        $this->assertSame(5, $inspection[ClusterCommandConstants::FIELD_DB_REPLICAS]);
+        $this->assertSame(
+            ['changeLogReceipts' => 2, 'settings' => 2],
+            $inspection[ClusterCommandConstants::FIELD_DB_REPLICAS_BY_COLLECTION],
+        );
+        $this->assertNull($inspection[ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION]);
+        $this->assertSame($inspection, $context->inspect(), 'Inspection must not consume acceptance counts');
+        $this->assertSame([], (new ClusterContext())->inspect()[ClusterCommandConstants::FIELD_DB_REPLICAS_BY_COLLECTION]);
+    }
+
     public function testInspectReportsTheAdminViewModeOfThisNode(): void
     {
         putenv('CLUSTER_ENABLED=true');

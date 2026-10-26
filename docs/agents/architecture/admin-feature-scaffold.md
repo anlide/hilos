@@ -656,6 +656,10 @@ For its data and privacy boundaries, read
    collections. The bounds, immutable snapshots, connection handling and
    reading rights are in
    [Reading The Journal](change-log.md#reading-the-journal).
+   With `CHANGE_LOG` enabled, this framework journal registration is enough for
+   the leader lifecycle to start the `CLUSTER` + `LEADER` agent directly. Do not
+   add it to the project's `INITIAL_AGENTS_START` list; this feature-specific
+   hook is not a general auto-start registry.
 7. In a Vue, React or Angular project, mount the section's three pages —
    `HilosChangeLogPage`, `HilosChangeLogTablesPage` and
    `HilosChangeLogTablePage` — from `@hilos/vue`, `@hilos/react` or

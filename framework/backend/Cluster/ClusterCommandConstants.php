@@ -152,6 +152,9 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: DB replicas from other nodes this one has accepted */
     public const string FIELD_DB_REPLICAS = 'dbReplicas';
 
+    /** @var string Inspect reply key: accepted DB replica counts keyed by collection */
+    public const string FIELD_DB_REPLICAS_BY_COLLECTION = 'dbReplicasByCollection';
+
     /** @var string Inspect reply key: collection the last accepted DB replica named */
     public const string FIELD_LAST_DB_REPLICA_COLLECTION = 'lastDbReplicaCollection';
 

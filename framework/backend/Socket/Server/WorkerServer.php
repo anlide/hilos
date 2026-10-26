@@ -516,8 +516,9 @@ abstract class WorkerServer extends AbstractServer implements
      * leader (or the sole node when cluster mode is off) and its workers are ready.
      * The base queues INITIAL_AGENTS_START so the project bootstrap agent list is
      * launched through the existing signal routing, then directly starts the enabled
-     * Status catalog's leader-hosted components. Child classes override to start their
-     * own cluster-singletons (e.g. one agent per active bot), calling parent first.
+     * change-log agent and Status catalog's leader-hosted components, containing their
+     * start failures independently. Child classes override to start their own
+     * cluster-singletons (e.g. one agent per active bot), calling parent first.
      *
      * Every agent started here still passes the placement gate in {@see startAgent()}, so an
      * agent the registry declares {@see AgentScope::NODE} is unaffected. Re-fires when a
@@ -537,6 +538,7 @@ abstract class WorkerServer extends AbstractServer implements
             new SystemSignalDTO(systemName: SignalConstants::INITIAL_AGENTS_START),
         );
 
+        $this->startChangeLogAgent();
         $this->startStatusComponentAgents();
     }
 
@@ -2894,7 +2896,7 @@ abstract class WorkerServer extends AbstractServer implements
      * freeze; what the window adds is that it now happens mid-operation rather than only at the end.
      *
      * The framework brings back only what it knows: the agents the freeze itself stopped, plus
-     * the per-node registry list and enabled Status leader components this default starts.
+     * the per-node registry list, enabled leader-hosted change log and Status components this default starts.
      * Anything else this node was running is the application's call - a project that starts local agents by overriding
      * {@see onInitialWorkersReady()} has to override this hook too, or those agents stay down
      * until something else starts them. The default is not redundant with the replayed roster:
@@ -2907,6 +2909,7 @@ abstract class WorkerServer extends AbstractServer implements
     protected function onProtectedModeLifted(): void
     {
         $this->startPerNodeAgents();
+        $this->startChangeLogAgent();
         $this->startStatusComponentAgents();
     }
 
@@ -3073,6 +3076,37 @@ abstract class WorkerServer extends AbstractServer implements
     public function isReadyToShutdown(): bool
     {
         return $this->workers === [] && !$this->linkedWorkerConnectionOpen();
+    }
+
+    /**
+     * Requests the enabled leader-hosted journal through the ordinary start gates, containing failure.
+     * NODE replicas and POLICY singletons keep their existing bootstrap and placement paths.
+     * A refused first start under freeze is retried on lift even when no roster entry was remembered.
+     */
+    private function startChangeLogAgent(): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::CHANGE_LOG) || !$this->amClusterLeader()) {
+            return;
+        }
+
+        $registryEntry = Hilos::appClass()::AGENTS[HilosAgentType::HILOS_CHANGE_LOG] ?? null;
+        if (
+            AgentRegistry::scope($registryEntry) !== AgentScope::CLUSTER
+            || AgentRegistry::placement($registryEntry) !== AgentPlacement::LEADER
+        ) {
+            return;
+        }
+
+        try {
+            $this->startAgent(HilosAgentType::HILOS_CHANGE_LOG, null);
+        } catch (Throwable $throwable) {
+            Logger::error('Failed to start change-log agent ' . HilosAgentType::HILOS_CHANGE_LOG . ': ' . $throwable->getMessage());
+            $this->reportContainedFailure(new ContainedFailure(
+                MasterFailureUnit::AGENT_START,
+                $this->buildAgentId(HilosAgentType::HILOS_CHANGE_LOG, null),
+                $throwable,
+            ));
+        }
     }
 
     /**

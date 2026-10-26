@@ -146,6 +146,9 @@ final class ClusterContext
     /** @var int DB replicas from other nodes this one has accepted, for the acceptance inspector */
     private int $dbReplicas = 0;
 
+    /** @var array<string, int> Process-local acceptance counts, separated from unrelated DB facts */
+    private array $dbReplicasByCollection = [];
+
     /** @var ?string Collection the last accepted DB replica named, or null when none has arrived */
     private ?string $lastDbReplicaCollection = null;
 
@@ -863,16 +866,18 @@ final class ClusterContext
     /**
      * Records that a DB replica from another node was accepted here.
      *
-     * Counted for the acceptance inspector and for nothing else: on a stand where each node has
-     * a schema of its own, whether the ROW landed is not a question the stand can ask, so what
-     * it checks is that the frame arrived and named the collection it was sent about. Whether
-     * the row lands is settled by unit tests, against a collection whose fullness is known.
+     * Counts belong to this master's inspector alone and reset with it. The collection split
+     * lets a probe distinguish its own row facts from lawful receipt or other background facts;
+     * it changes neither acceptance nor delivery of any frame.
      *
      * @param ?string $collectionKey Collection the accepted replica named, or null when it named none
      */
     public function noteDbReplica(?string $collectionKey): void
     {
         $this->dbReplicas++;
+        if ($collectionKey !== null) {
+            $this->dbReplicasByCollection[$collectionKey] = ($this->dbReplicasByCollection[$collectionKey] ?? 0) + 1;
+        }
         $this->lastDbReplicaCollection = $collectionKey;
     }
 
@@ -1141,6 +1146,7 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ =>
                 $replicas[ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ] ?? [],
             ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
+            ClusterCommandConstants::FIELD_DB_REPLICAS_BY_COLLECTION => $this->dbReplicasByCollection,
             ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
             ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE => Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true,
         ];

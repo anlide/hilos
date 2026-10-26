@@ -250,6 +250,19 @@ attribution. The writer comes from the payload, never the transport source,
 emitter or receiving agent. An `HilosException` is logged once for that delivery;
 this best-effort bookkeeping does not change the completed business result.
 
+When `CHANGE_LOG` is enabled, the framework requests the registered
+`HILOS_CHANGE_LOG` agent from the leader's singleton hook. The hook queues the
+existing `INITIAL_AGENTS_START` signal, then directly requests the journal before
+the queued bootstrap signal is routed. This path applies only to an agent
+registered as `CLUSTER` + `LEADER`, and its daemon requires a monopolistic worker.
+The worker registers the computed database read interest before creating the
+agent and reports `agent_started` after that registration, so the master treats
+the successful start as ready to receive eligible database sync. A thrown
+lifecycle start failure is logged and contained as `AGENT_START`; the request
+still goes through the ordinary start gates. This path adds no replay or
+delivery/order guarantee, and journal bookkeeping does not change the completed
+business result.
+
 The receiver calls
 `Hilos::$db->changeLogReceipts->actions->recordWriter(int $receiptId, string $writerAgentId): void`
 under its `Update` claim. This is the narrow exception to the known-key
@@ -517,10 +530,12 @@ the Entity/DbCollection row API. Named-database collections do not replace them
 or change the data-plus-journal backup pair and its restore gates.
 
 The `hilos_change_log` section agent remains one cluster agent in a monopolistic
-worker. Change Log pages and tables read through typed collection APIs on
-`Hilos::$db`, including the overview, table catalog/detail, history, feed and
-receipt/entry reads below. The separate database is not a permanent reason to
-bypass the ORM.
+worker. With `CHANGE_LOG` enabled, the framework's leader lifecycle starts its
+`CLUSTER` + `LEADER` registration directly; projects do not add it to the
+`INITIAL_AGENTS_START` list. Change Log pages and tables read through typed
+collection APIs on `Hilos::$db`, including the overview, table catalog/detail,
+history, feed and receipt/entry reads below. The separate database is not a
+permanent reason to bypass the ORM.
 
 **The April placeholder is not the model.** The applied
 `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`
@@ -856,24 +871,35 @@ DDL outcome and startup idempotence; it does not force a scheduler race or prove
 claim ownership through installation by itself. `MigrationClaimIntegrationTest`
 and `JournalTriggerStartupIntegrationTest` cover that claim boundary.
 
-`demo/binance-btc-tracker/tests/e2e/cluster/live/change-log.spec.ts` proves one
-remote writer and one receipt read through every master. An administrator blocks
-a person from a separate browser context; the person's real `started`
-`hilos_user:<id>` placement is checked on a slave before and after the write,
-away from the leader serving the card through `hilos_index`. Each master gets a
-fresh connection, filter and receipt open. The receipt ID, single entry ID,
-actor, action, writer agent, `block` values `0` → `1` and complete visible
-attribution header, including When and Source, must agree. The leader and term
-stay unchanged (HIL-1465).
+`demo/binance-btc-tracker/tests/e2e/cluster/live/change-log.spec.ts` is the
+existing HIL-1465 live scenario, expanded under HIL-1621 to prove the cold
+bootstrap and collection-based journal reads through every master. Before the
+first Change Log open, it reads the leader's actual Workers page and observes a
+known node report, then the full roster with `hilos_change_log` started on its
+monopolistic worker. If the first Workers window predates the known node report,
+the scenario makes one fresh Workers navigation after that report and then
+applies the same full roster checks. This independent daemon-page read does not
+warm the journal.
+
+The person's real `started` `hilos_user:<id>` placement is checked on a slave
+before and after the block, away from the leader serving the card through
+`hilos_index`. Only after the block does the scenario first open Change Log. It
+pins the receipt and its `rowKey` before repeated reads. Through each master's
+fresh socket and filter, the same receipt and its single entry must agree on
+actor, action, writer, `block` values `0` → `1`, and the full attribution header,
+including When and Source. The shared
+`expectFreshChangeLogReceiptWriter` helper reopens that pinned receipt under the
+normal assertion budget until the expected writer appears; a refusal or error
+fails the assertion. The leader and term stay unchanged. Attached success or
+failure evidence records bootstrap, worker and writer placement, leader/term,
+the pinned receipt, and each master's read. This proves the observed path; it
+does not promise replay or global order, lossless delivery during a crash or
+election, or coverage of writes before the subscriber is ready.
 
 Peer forwarding preserves the business-row frame's `receiptId` and
 `writerAgentId` snapshot.
 The journal agent applies attribution through that frame path under its declared
 `Update` operation (HIL-1618).
-A separate cluster scenario proves the collection-based reading and new
-attribution path through any master. (not in the code yet — HIL-1621)
-That scenario is still to be added; the existing HIL-1465 scenario above remains
-the earlier scenario, not acceptance of the new path under HIL-1621.
 
 The existing stands no longer carry primary/replica or Galera topologies, by
 the owner's decision of 2026-10-14. Specialized database carriers and six new

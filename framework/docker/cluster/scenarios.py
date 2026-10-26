@@ -804,10 +804,14 @@ def admin_view_mode(views, node):
     return None if view is None else view.get("adminViewMode")
 
 
-def db_replicas(views, node):
-    """Cross-node DB replicas a node reports having accepted, or -1 when unreachable."""
+def db_replicas(views, node, collection=None):
+    """Accepted DB facts, optionally for one collection, or -1 when unreachable."""
     view = views.get(node)
-    return -1 if view is None else int(view.get("dbReplicas", 0))
+    if view is None:
+        return -1
+    if collection is not None:
+        return int((view["dbReplicasByCollection"] or {}).get(collection, 0))
+    return int(view.get("dbReplicas", 0))
 
 
 def db_collections_read(views, node):
@@ -2515,11 +2519,21 @@ def scenario_11_cross_node_db_fact():
     replicas. A node that did would apply its own frame back over the row it had just written,
     which is a loop rather than a sync, and no other scenario asks it - scenario 15 counts every
     node before its announcements but judges only the receivers.
-    """
-    sender, watcher = MASTERS[0], MASTERS[1]
-    wait_converge(ALL_NODES)
 
-    sender_replicas_before = db_replicas(inspect_all([sender]), sender)
+    The sender is the leader, where the automatically started journal reads receipts. Each read
+    command on the watcher creates and deletes an empty CLI receipt: lawful remote facts that
+    increase the sender's total. Count settings separately, with exact receiver deltas too, so
+    receipt traffic cannot impersonate a loop or hide an extra settings fact (HIL-1621).
+    """
+    views = wait_converge(ALL_NODES)
+    sender = leaders(views)[0]
+    watcher = next(node for node in MASTERS if node != sender)
+    views = wait_until(lambda current: "changeLogReceipts" in db_collections_read(current, sender),
+                       CONVERGE_TIMEOUT, f"{sender}'s journal reads receipts before the DB probe")
+
+    sender_replicas_before = db_replicas(views, sender, "settings")
+    watcher_replicas_before = db_replicas(views, watcher, "settings")
+    sender_total_before = db_replicas(views, sender)
 
     # Tact one. The watcher answers because it went and read the row, and by answering it now
     # holds a copy of it - which is the only thing this tact establishes.
@@ -2535,9 +2549,14 @@ def scenario_11_cross_node_db_fact():
                   f"the copy {watcher} already held goes stale and comes back as v2")
 
     # Both writes have reached the watcher by now, so whatever the sender was going to count for
-    # them it has counted.
-    assert db_replicas(inspect_all([sender]), sender) == sender_replicas_before, \
+    # them it has counted. Receipt facts from the watcher's reads belong to another collection.
+    views = inspect_all()
+    assert db_replicas(views, watcher, "settings") == watcher_replicas_before + 2, \
+        f"{watcher} did not accept exactly the two settings facts {sender} wrote"
+    assert db_replicas(views, sender, "settings") == sender_replicas_before, \
         f"{sender} counted its own writes as replicas; a fact must not come back to its raiser"
+    print(f"    {sender} accepted {db_replicas(views, sender) - sender_total_before} other DB facts; "
+          "settings replicas stayed unchanged", flush=True)
 
     # Tact three: a link that went away and came back.
     print(f"    recreating {watcher} to break and re-establish its links")
@@ -2548,10 +2567,17 @@ def scenario_11_cross_node_db_fact():
     # holds one is the write below asking anything of the mesh.
     wait_db_value(watcher, DB_PROBE_KEY, "v2", CONVERGE_TIMEOUT,
                   f"the recreated {watcher} takes a copy of the row")
+    watcher_replicas_before = db_replicas(inspect_all([watcher]), watcher, "settings")
     assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v3"), \
         f"could not write the probe row on {sender} after the reconnect"
     wait_db_value(watcher, DB_PROBE_KEY, "v3", CONVERGE_TIMEOUT,
                   f"{watcher} follows a write made after it re-linked")
+
+    views = inspect_all()
+    assert db_replicas(views, watcher, "settings") == watcher_replicas_before + 1, \
+        f"{watcher} did not accept exactly one settings fact after re-linking"
+    assert db_replicas(views, sender, "settings") == sender_replicas_before, \
+        f"{sender} counted its own write after the reconnect as a replica"
 
     return (f"{sender} wrote the row and {watcher} answered with it, answered the rewrite out of "
             f"a copy it already held, and followed one more write after re-linking")
