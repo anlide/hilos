@@ -79,6 +79,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsOverviewPage;
@@ -398,6 +399,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
             DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
             DaemonEnvPage::PAGE => DaemonEnvPage::class,
+            DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
             DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             LogsOverviewPage::PAGE => LogsOverviewPage::class,
             LogsKeysPage::PAGE => LogsKeysPage::class,
@@ -603,10 +605,12 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
     public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
-        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
-        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
-        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
+        $this->assertSame([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
+            $this->assertSame('node_param', $routes[$page]->source->value);
+            $this->assertSame('nodeId', $routes[$page]->param);
+            $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[$page]->fallbackAgentType);
+        }
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void
@@ -1078,8 +1082,12 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE],
         );
         $this->assertSame(
-            [BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => [], BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => []],
+            [BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => []],
             Hilos::PAGE_TABLES[DaemonEnvPage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => []],
+            Hilos::PAGE_TABLES[DaemonEnvOrphansPage::PAGE],
         );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonPlacement => []],

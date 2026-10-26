@@ -71,6 +71,7 @@ describe('HilosDaemonNodeShell', () => {
         'Cron',
         'HTTP',
         'Environment',
+        'Env orphans',
       ])
       const active = nodeTabs.find((tab) => tab.page === page)!
       expect(
@@ -115,6 +116,7 @@ describe('HilosDaemonNodeShell', () => {
       'Agents',
       'Cron',
       'HTTP',
+      'Env orphans',
     ])
     expect(node('log')).toBeNull()
     expect(el('hilos-daemon-environment-link')).toBeNull()
@@ -290,7 +292,7 @@ describe('HilosDaemonNodeShell', () => {
       expect(text('h1')).toEqual(['n1'])
       expect(
         document.querySelectorAll('nav[aria-label="Node pages"] a'),
-      ).toHaveLength(6)
+      ).toHaveLength(7)
       expect(el('hilos-daemon-environment-link')!.textContent).toBe(
         'On the environment page',
       )
@@ -395,7 +397,7 @@ describe('actual node child pages', () => {
       expect(node('line')).toBeNull()
       expect(node('log')).toBeNull()
       const tables = [...h.view.container.querySelectorAll('table.table-hover')]
-      expect(tables).toHaveLength(page === HilosPages.DAEMON_ENV ? 2 : 1)
+      expect(tables).toHaveLength(1)
       const windows = h.registerTableWindow.mock.calls.length
       act(() =>
         h.publish({
@@ -418,7 +420,7 @@ describe('actual node child pages', () => {
               .getElementById(table.getAttribute('aria-labelledby')!)
               ?.textContent?.trim(),
           ),
-        ).toEqual(['Catalog keys', 'Orphans in .env'])
+        ).toEqual(['Catalog keys'])
       } else {
         expect(tables[0]!.getAttribute('aria-labelledby')).toBe(
           el('hilos-page-head-title')!.id,

@@ -18,6 +18,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvOrphansPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodePage;
@@ -139,9 +140,14 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
     {
         $page = new $pageClass(new DaemonNodePageTestAgent());
 
-        $this->expectException(PageResourceNotFoundException::class);
-        $this->expectExceptionMessage('Unknown Daemon node: missing-node');
-        $page->onSubscribe(self::ACCEPT_KEY, $this->address('missing-node'));
+        try {
+            $page->onSubscribe(self::ACCEPT_KEY, $this->address('missing-node'));
+            self::fail('An unknown node must be refused before any answer');
+        } catch (PageResourceNotFoundException $e) {
+            self::assertSame('Unknown Daemon node: missing-node', $e->getMessage());
+        }
+
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
@@ -153,8 +159,14 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         $page->onSubscribe(self::ACCEPT_KEY, $this->address('known-node'));
         Hilos::$sr?->getNextQueuedSignal();
 
-        $this->expectException(PageResourceNotFoundException::class);
-        $page->onUpdateSubscription(self::ACCEPT_KEY, $this->address('missing-node'));
+        try {
+            $page->onUpdateSubscription(self::ACCEPT_KEY, $this->address('missing-node'));
+            self::fail('An update to an unknown node must be refused before another answer');
+        } catch (PageResourceNotFoundException $e) {
+            self::assertSame('Unknown Daemon node: missing-node', $e->getMessage());
+        }
+
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     /** @param class-string<AbstractHilosDaemonNodePage> $pageClass Node page under admission */
@@ -196,6 +208,7 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         return [
             'workers' => [DaemonNodePageTestWorkersPage::class],
             'node overview' => [DaemonNodePageTestOverviewPage::class],
+            'env orphans' => [DaemonNodePageTestEnvOrphansPage::class],
         ];
     }
 
@@ -251,6 +264,10 @@ final class DaemonNodePageTestOverviewPage extends AbstractHilosDaemonNodeOvervi
 }
 
 final class DaemonNodePageTestEnvPage extends AbstractHilosDaemonEnvPage
+{
+}
+
+final class DaemonNodePageTestEnvOrphansPage extends AbstractHilosDaemonEnvOrphansPage
 {
 }
 

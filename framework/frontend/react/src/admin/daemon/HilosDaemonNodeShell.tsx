@@ -46,7 +46,8 @@ export function HilosDaemonNodeShell({
         scopePage !== HilosPages.DAEMON_AGENTS &&
         scopePage !== HilosPages.DAEMON_CRON &&
         scopePage !== HilosPages.DAEMON_HTTP_SERVER &&
-        scopePage !== HilosPages.DAEMON_ENV
+        scopePage !== HilosPages.DAEMON_ENV &&
+        scopePage !== HilosPages.DAEMON_ENV_ORPHANS
       )
         return null
       const nodeId = route.params.nodeId

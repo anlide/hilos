@@ -1,4 +1,5 @@
 import { HilosDaemonEnvPage } from '../../src/admin/daemon/HilosDaemonEnvPage.js'
+import { HilosDaemonEnvOrphansPage } from '../../src/admin/daemon/HilosDaemonEnvOrphansPage.js'
 import { HilosDaemonHttpServerPage } from '../../src/admin/daemon/HilosDaemonHttpServerPage.js'
 import { HilosDaemonCronPage } from '../../src/admin/daemon/HilosDaemonCronPage.js'
 import { HilosDaemonAgentsPage } from '../../src/admin/daemon/HilosDaemonAgentsPage.js'
@@ -57,6 +58,7 @@ const NODE_BENCH = new InjectionToken<NodeBench>('NodeBench')
     HilosDaemonCronPage,
     HilosDaemonHttpServerPage,
     HilosDaemonEnvPage,
+    HilosDaemonEnvOrphansPage,
     HilosDaemonNodePage,
     HilosDaemonNodeShell,
     HilosViewportTable,
@@ -79,6 +81,9 @@ const NODE_BENCH = new InjectionToken<NodeBench>('NodeBench')
         }
         @case (pages.DAEMON_ENV) {
           <hilos-daemon-env-page [context]="context" />
+        }
+        @case (pages.DAEMON_ENV_ORPHANS) {
+          <hilos-daemon-env-orphans-page [context]="context" />
         }
       }
     } @else if (bench.shell) {
@@ -204,6 +209,7 @@ export const nodeTabs = [
   { page: HilosPages.DAEMON_WEBSOCKETS, label: 'WebSockets' },
   { page: HilosPages.DAEMON_HTTP_SERVER, label: 'HTTP' },
   { page: HilosPages.DAEMON_ENV, label: 'Environment' },
+  { page: HilosPages.DAEMON_ENV_ORPHANS, label: 'Env orphans' },
 ]
 
 export function nodeHeading(

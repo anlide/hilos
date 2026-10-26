@@ -302,6 +302,38 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/hilos/daemon/http/old-server').page).toBeNull()
   })
 
+  it('routes env orphans through an encoded node, not as one missing segment', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const nodeId = 'node / east%?'
+    const path = resolveHilosPath(HilosPages.DAEMON_ENV_ORPHANS, { nodeId })!
+    expect(path).toBe('/hilos/daemon/node%20%2F%20east%25%3F/env/orphans')
+    expect(router.match(path)).toEqual({
+      page: HilosPages.DAEMON_ENV_ORPHANS,
+      params: { nodeId },
+      admin: true,
+    })
+    expect(router.match('/hilos/daemon/standalone/env/orphans')).toEqual({
+      page: HilosPages.DAEMON_ENV_ORPHANS,
+      params: { nodeId: 'standalone' },
+      admin: true,
+    })
+    expect(router.match('/hilos/daemon/env/orphans')).toEqual({
+      page: null,
+      params: {},
+      admin: false,
+    })
+    expect(router.match('/hilos/daemon/env/env/orphans')).toEqual({
+      page: HilosPages.DAEMON_ENV_ORPHANS,
+      params: { nodeId: 'env' },
+      admin: true,
+    })
+    expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
+      page: HilosPages.DAEMON_ENV_MISMATCH,
+      params: {},
+      admin: true,
+    })
+  })
+
   it('addresses Placement without params with the PHP key and built SDK views', () => {
     const page = HilosPages.DAEMON_PLACEMENT
     const path = '/hilos/daemon/placement'

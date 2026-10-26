@@ -583,9 +583,7 @@ describe('HilosDaemonEnvPage', () => {
     expect(
       h.view.find('[data-id="hilos-daemon-env-keys-empty-silent"]').text(),
     ).toBe('Nothing is read while the node is silent.')
-    expect(
-      h.view.find('[data-id="hilos-daemon-env-orphans-empty-silent"]').text(),
-    ).toBe('Nothing is read while the node is silent.')
+    expect(h.view.findAll('table.table-hover')).toHaveLength(1)
 
     h.view.unmount()
   })
@@ -632,28 +630,30 @@ describe('HilosDaemonEnvPage', () => {
     await nextTick()
 
     const ladder = h.view.find('[data-id="hilos-daemon-env-ladder"]')
-    const rows = ladder.findAll('tbody tr')
-    expect(rows).toHaveLength(5)
+    expect(ladder.find('ol').exists()).toBe(true)
+    const items = ladder.findAll('li')
+    expect(items).toHaveLength(5)
 
-    expect(rows[0]?.findAll('td')[0]?.text()).toBe('1')
-    expect(rows[0]?.text()).toContain('Launch environment')
+    expect(items[0]?.text()).toContain('1')
+    expect(items[0]?.text()).toContain('Launch environment')
 
-    expect(rows[1]?.findAll('td')[0]?.text()).toBe('2')
-    expect(rows[1]?.text()).toContain('.env')
+    expect(items[1]?.text()).toContain('2')
+    expect(items[1]?.text()).toContain('.env')
 
-    expect(rows[2]?.findAll('td')[0]?.text()).toBe('3')
-    expect(rows[2]?.text()).toContain('.env.example')
+    expect(items[2]?.text()).toContain('3')
+    expect(items[2]?.text()).toContain('.env.example')
 
-    expect(rows[3]?.findAll('td')[0]?.text()).toBe('4')
-    expect(rows[3]?.text()).toContain('Catalog default')
+    expect(items[3]?.text()).toContain('4')
+    expect(items[3]?.text()).toContain('Catalog default')
 
-    expect(rows[4]?.findAll('td')[0]?.text()).toBe('')
-    expect(rows[4]?.text()).toContain('No value')
+    const noValue = items[4]?.text() ?? ''
+    expect(noValue).toContain('No value')
+    expect(/^\d/.test(noValue)).toBe(false)
 
     h.view.unmount()
   })
 
-  it('disposes both old table bindings and registers new ones when nodeId changes', async () => {
+  it('disposes the old catalog binding and registers a new one when nodeId changes', async () => {
     const h = harness()
     h.response({ nodeId: 'n1', cluster: true, keys: [] }, false, [], [])
     await nextTick()
@@ -664,13 +664,10 @@ describe('HilosDaemonEnvPage', () => {
         .at(-1)?.[2].filter,
     ).toEqual({ node: 'n1' })
     expect(
-      h.sendViewport.mock.calls
-        .filter((c) => c[1] === 'hilosDaemonEnvOrphans')
-        .at(-1)?.[2].filter,
-    ).toEqual({ node: 'n1' })
+      h.sendViewport.mock.calls.some((c) => c[1] === 'hilosDaemonEnvOrphans'),
+    ).toBe(false)
 
     const oldKeysWindow = h.activeWindows.get('hilosDaemonEnvKeys')
-    const oldOrphansWindow = h.activeWindows.get('hilosDaemonEnvOrphans')
 
     h.selectNode('n2')
     h.response({ nodeId: 'n2', cluster: true, keys: [] }, false, [], [])
@@ -678,25 +675,14 @@ describe('HilosDaemonEnvPage', () => {
 
     expect(h.lifecycle).toEqual([
       'register:hilosDaemonEnvKeys',
-      'register:hilosDaemonEnvOrphans',
       'unregister:hilosDaemonEnvKeys',
-      'unregister:hilosDaemonEnvOrphans',
       'register:hilosDaemonEnvKeys',
-      'register:hilosDaemonEnvOrphans',
     ])
     expect(h.activeWindows.get('hilosDaemonEnvKeys')).not.toBe(oldKeysWindow)
-    expect(h.activeWindows.get('hilosDaemonEnvOrphans')).not.toBe(
-      oldOrphansWindow,
-    )
 
     expect(
       h.sendViewport.mock.calls
         .filter((c) => c[1] === 'hilosDaemonEnvKeys')
-        .at(-1)?.[2].filter,
-    ).toEqual({ node: 'n2' })
-    expect(
-      h.sendViewport.mock.calls
-        .filter((c) => c[1] === 'hilosDaemonEnvOrphans')
         .at(-1)?.[2].filter,
     ).toEqual({ node: 'n2' })
 
@@ -707,14 +693,14 @@ describe('HilosDaemonEnvPage', () => {
     }
   })
 
-  it('renders default orphans empty message and attention empty state on keys table', async () => {
+  it('renders the attention empty state on the catalog table', async () => {
     const h = harness()
     h.response({ nodeId: 'n1', cluster: true, keys: [] }, false, [], [])
     await nextTick()
 
     expect(
-      h.view.find('[data-id="hilos-daemon-env-orphans-empty"]').text(),
-    ).toBe('Every line in .env is declared in the catalog.')
+      h.view.find('[data-id="hilos-daemon-env-orphans-empty"]').exists(),
+    ).toBe(false)
 
     expect(
       h.view.find('[data-id="hilos-daemon-env-keys-empty-attention"]').exists(),

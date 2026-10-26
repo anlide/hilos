@@ -62,6 +62,7 @@ use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
@@ -378,6 +379,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
             DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
             DaemonEnvPage::PAGE => DaemonEnvPage::class,
+            DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
             DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             LogsOverviewPage::PAGE => LogsOverviewPage::class,
             LogsKeysPage::PAGE => LogsKeysPage::class,
@@ -472,10 +474,12 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
-        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
-        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
-        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
+        $this->assertSame([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
+            $this->assertSame('node_param', $routes[$page]->source->value);
+            $this->assertSame('nodeId', $routes[$page]->param);
+            $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[$page]->fallbackAgentType);
+        }
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void
@@ -1051,6 +1055,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::PAGE,
             DaemonWorkersPage::PAGE,
             DaemonEnvPage::PAGE,
+            DaemonEnvOrphansPage::PAGE,
             DaemonPlacementPage::PAGE,
             DaemonAgentsPage::PAGE,
             DaemonEnvMismatchPage::PAGE,
@@ -1211,6 +1216,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
+        $this->assertSame(DaemonEnvOrphansPage::class, Hilos::PAGES[DaemonEnvOrphansPage::PAGE]);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvOrphansPage::PAGE]);
 
         $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
         $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
@@ -1262,9 +1269,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
         $this->assertSame([
             OnlineTestingTableContext::hilosDaemonEnvKeys => [],
-            OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
-        self::assertSame([OnlineTestingTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE]);
+        $this->assertSame([
+            OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvOrphansPage::PAGE]);
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosDaemonPlacement => []],
+            Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE],
+        );
         $this->assertSame([OnlineTestingTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
         $this->assertSame([
             OnlineTestingTableContext::hilosDaemonEnvDiverged => [],

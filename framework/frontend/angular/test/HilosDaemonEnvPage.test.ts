@@ -38,9 +38,9 @@ function windowRows(keys: readonly HilosDaemonEnvKeyRow[]) {
 }
 
 describe('HilosDaemonEnvPage', () => {
-  it('starts both node windows with the existing default filter and draws the full payload summary', () => {
+  it('starts the catalog window with the existing default filter and draws the full payload summary', () => {
     const h = harness()
-    expect(h.register).toHaveBeenCalledTimes(2)
+    expect(h.register).toHaveBeenCalledTimes(1)
     h.window('hilosDaemonEnvKeys', [])
     expect(h.register.mock.calls[0]?.[1].descriptor().filter).toEqual({
       node: 'n1',
@@ -68,7 +68,6 @@ describe('HilosDaemonEnvPage', () => {
       keys,
     })
     h.window('hilosDaemonEnvKeys', windowRows([keys[0]!]))
-    h.window('hilosDaemonEnvOrphans', [])
     expect(h.el('hilos-daemon-env-keys')?.textContent?.trim()).toBe('3')
     expect(h.el('hilos-daemon-env-missing')?.textContent?.trim()).toBe('1')
     expect(h.el('hilos-daemon-env-example')?.textContent?.trim()).toBe('1')
@@ -80,14 +79,35 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.el('hilos-daemon-env-ladder')?.textContent).toContain(
       'Launch environment',
     )
+    const rows = [
+      ...(h.el('hilos-daemon-env-ladder')?.querySelectorAll('li') ?? []),
+    ]
+    expect(rows).toHaveLength(5)
+    expect(rows.map((row) => row.querySelector('span')?.textContent)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '',
+    ])
+    expect(
+      rows.map((row) => row.querySelector('.badge')?.textContent?.trim()),
+    ).toEqual([
+      'Launch environment',
+      '.env',
+      '.env.example',
+      'Catalog default',
+      'No value',
+    ])
+    expect(rows.every((row) => !!row.querySelector('[title]'))).toBe(true)
     expect(
       h
         .el('hilos-daemon-env-ladder')
-        ?.querySelector('table')
+        ?.querySelector('ol')
         ?.getAttribute('aria-labelledby'),
     ).toBe('hilos-daemon-env-ladder-heading')
     h.fixture.destroy()
-    expect(h.unregister).toHaveBeenCalledTimes(2)
+    expect(h.unregister).toHaveBeenCalledTimes(1)
     expect(h.listeners()).toBe(0)
   })
 
@@ -112,18 +132,6 @@ describe('HilosDaemonEnvPage', () => {
       keys,
     })
     h.window('hilosDaemonEnvKeys', windowRows(keys))
-    h.window('hilosDaemonEnvOrphans', [
-      {
-        rowKey: 'ORPHAN',
-        slots: {
-          orphan: {
-            key: 'ORPHAN',
-            value: { kind: 'secret', length: 9 },
-            similarTo: 'INTEGER',
-          },
-        },
-      },
-    ])
     expect(
       h.el('hilos-table-row-HIDDEN')?.querySelector('[data-id="hilos-hidden"]'),
     ).not.toBeNull()
@@ -132,8 +140,7 @@ describe('HilosDaemonEnvPage', () => {
       true,
     )
     expect(h.el('hilos-table-row-EMPTY')?.textContent).toContain('empty')
-    expect(h.el('hilos-table-row-ORPHAN')?.textContent).toContain('9 chars')
-    expect(h.el('hilos-table-row-ORPHAN')?.textContent).toContain('INTEGER')
+    expect(h.el('hilos-table-row-ORPHAN')).toBeNull()
     expect(h.root.textContent).not.toContain('visible-value')
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
@@ -142,7 +149,6 @@ describe('HilosDaemonEnvPage', () => {
   it('mirrors attention changes, drives search and clears values when the node is silent', () => {
     const h = harness()
     h.window('hilosDaemonEnvKeys', [])
-    h.window('hilosDaemonEnvOrphans', [])
     expect(h.el('hilos-daemon-env-keys-empty-attention')).toBeNull()
     const attention = h.root.querySelector<HTMLInputElement>(
       'input[data-id^="hilos-table-filter-attention"]',
@@ -190,14 +196,13 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.el('hilos-daemon-env-keys')).toBeNull()
     expect(h.root.textContent).not.toContain('visible-value')
     h.window('hilosDaemonEnvKeys', [])
-    h.window('hilosDaemonEnvOrphans', [])
     expect(h.el('hilos-daemon-env-keys-empty-silent')).not.toBeNull()
-    expect(h.el('hilos-daemon-env-orphans-empty-silent')).not.toBeNull()
+    expect(h.el('hilos-daemon-env-orphans-empty-silent')).toBeNull()
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
   })
 
-  it('replaces both tables and all watchers on node and context changes', () => {
+  it('replaces the catalog table and all watchers on node and context changes', () => {
     const h = harness()
     h.route.set({
       page: HilosPages.DAEMON_ENV,
@@ -205,9 +210,9 @@ describe('HilosDaemonEnvPage', () => {
       admin: true,
     })
     h.detect()
-    expect(h.unregister).toHaveBeenCalledTimes(2)
+    expect(h.unregister).toHaveBeenCalledTimes(1)
     h.window('hilosDaemonEnvKeys', [])
-    expect(h.register.mock.calls.at(-2)?.[1].descriptor().filter).toEqual({
+    expect(h.register.mock.calls.at(-1)?.[1].descriptor().filter).toEqual({
       node: 'n2',
     })
     const scopes = new ScopeManager()
@@ -224,7 +229,7 @@ describe('HilosDaemonEnvPage', () => {
     h.detect()
     expect(h.el('hilos-daemon-env-silent')).toBeNull()
     h.fixture.destroy()
-    expect(h.unregister).toHaveBeenCalledTimes(6)
+    expect(h.unregister).toHaveBeenCalledTimes(3)
     expect(h.listeners()).toBe(0)
   })
 })

@@ -52,6 +52,8 @@ import {
   expectStandaloneCron,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
+  expectStandaloneEnvOrphans,
+  expectViewerEnvOrphans,
   expectStandaloneMismatch,
   ROWS,
   fitsInScrollport,
@@ -423,7 +425,7 @@ test.describe('daemon node pages', () => {
       page,
       context,
     }) => {
-      // Cold reply hold, reload and six independent table subscriptions.
+      // Cold reply hold, reload and every addressed tab's table subscription.
       test.slow()
       await setAdminViewMode(viewer)
       if (!viewer) await signUpAdmin(page)
@@ -839,9 +841,13 @@ test.describe('daemon environment', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'standalone',
     )
-    for (const name of ['Catalog keys', 'Orphans in .env', 'Reading ladder']) {
-      await expect(page.getByRole('table', { name })).toBeVisible()
-    }
+    await expect(
+      page.getByRole('table', { name: 'Catalog keys' }),
+    ).toBeVisible()
+    await expect(page.getByRole('table')).toHaveCount(1)
+    await expect(
+      page.getByRole('list', { name: 'Reading ladder' }),
+    ).toBeVisible()
     const search = page.getByTestId('hilos-table-search')
     await expect(search).toHaveAccessibleName('Key or value')
     await search.fill('')
@@ -875,22 +881,43 @@ test.describe('daemon environment', () => {
     await fitsInScrollport(secret)
     await page.getByTestId(DAEMON_ROOT_CRUMB).click()
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
-    // A cold mount must bind the same two windows with all keys selected.
+    await expectStandaloneEnvOrphans(expect, page)
+    await page.reload()
+    await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env\/orphans$/)
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('table')).toHaveCount(1)
+    await page.goBack()
+    await expectStandaloneNodeOverview(expect, page)
+    await page.goForward()
+    await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env\/orphans$/)
+    await gotoPage(page, '/hilos/daemon/standalone/env/orphans', PAGE_READY)
+    await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole('table')).toHaveCount(1)
+    // A cold mount binds the catalog window with all keys selected.
     await gotoPage(page, '/hilos/daemon/standalone/env', PAGE_READY)
     await expectDaemonPage(expect, page, 'hilos_daemon_env')
     await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
     await expectStandaloneEnvironment(expect, page)
   })
 
-  test('a viewer reads Cron, HTTP, environment and comparison with values hidden', async ({
+  test('a viewer reads Cron, HTTP, environment, orphans and comparison with values hidden', async ({
     page,
   }) => {
-    // Four live child subscriptions and the environment's filtered windows.
+    // Five live child subscriptions and the environment's filtered windows.
     test.slow()
     await setAdminViewMode(true)
     await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
-    for (const child of ['cron', 'http_server', 'env', 'env_mismatch']) {
+    for (const child of [
+      'cron',
+      'http_server',
+      'env',
+      'env_orphans',
+      'env_mismatch',
+    ]) {
       const key = `hilos_daemon_${child}`
       await gotoPage(
         page,
@@ -941,6 +968,7 @@ test.describe('daemon environment', () => {
         await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
         await expect(shownByTestId(page, /^hilos-table-row-/)).toHaveCount(0)
       }
+      if (child === 'env_orphans') await expectViewerEnvOrphans(expect, page)
       if (child === 'env_mismatch') await expectStandaloneMismatch(expect, page)
       const returnLink = page.getByTestId(
         child === 'env_mismatch'

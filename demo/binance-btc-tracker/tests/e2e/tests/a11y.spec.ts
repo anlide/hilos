@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 import {
+  DAEMON_NODE_PATH,
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
+  expectDaemonNodeTableName,
   expectPublicStatusAccessibility,
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
@@ -301,6 +303,21 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
+})
+
+test('the Env orphans tab names its one table through the heading from the keyboard', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, DAEMON_NODE_PATH, PAGE_READY)
+  const link = page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans')
+  await link.focus()
+  await expect(link).toBeFocused()
+  await link.press('Enter')
+  await expectPageReady(page)
+  await expect(page).toHaveURL(`${DAEMON_NODE_PATH}/env/orphans`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expectDaemonNodeTableName(expect, page)
 })
 
 test.describe('Daemon section accessibility', () => {

@@ -1,8 +1,7 @@
-// Environment inspection uses the node's page answer and its two table windows.
+// Environment inspection uses the node's page answer and its catalog-key window.
 import { Fragment, useContext, useEffect, useMemo } from 'react'
 import {
   createHilosDaemonEnvKeysTable,
-  createHilosDaemonEnvOrphansTable,
   daemonEnvSourceBadge,
   daemonEnvSummary,
   DAEMON_ENV_FILTER_ATTENTION,
@@ -11,7 +10,6 @@ import {
   DAEMON_ENV_VALUE_FIELD,
   DAEMON_ENV_REQUIRED_FIELD,
   DAEMON_ENV_DECLARED_BY_FIELD,
-  DAEMON_ENV_SIMILAR_TO_FIELD,
   DAEMON_ENV_LADDER,
   DAEMON_ENV_PER_NODE_HINT,
   DAEMON_ENV_SENSITIVE_HINT,
@@ -19,7 +17,6 @@ import {
   formatDaemonEnvDrift,
   formatDaemonEnvDriftNotice,
   formatDaemonEnvRequired,
-  formatDaemonEnvSimilarTo,
   formatDaemonEnvValue,
   readHilosDaemonEnvPage,
   type HilosDaemonEnvContext,
@@ -62,10 +59,6 @@ export function HilosDaemonEnvPage({
     () => createHilosDaemonEnvKeysTable(context, nodeId),
     [context, nodeId],
   )
-  const orphans = useMemo(
-    () => createHilosDaemonEnvOrphansTable(context, nodeId),
-    [context, nodeId],
-  )
   const page = useSignal(
     useMemo(() => readHilosDaemonEnvPage(context.scopes), [context]),
   )
@@ -87,12 +80,10 @@ export function HilosDaemonEnvPage({
       summary.drifted.length > 0)
   useEffect(() => {
     keys.start()
-    orphans.start()
     return () => {
       keys.dispose()
-      orphans.dispose()
     }
-  }, [keys, orphans])
+  }, [keys])
 
   return (
     <HilosDaemonNodeShell
@@ -389,64 +380,26 @@ export function HilosDaemonEnvPage({
         className="border rounded-3 overflow-hidden mb-3"
         data-id="hilos-daemon-env-ladder"
       >
-        <div className="table-responsive">
-          <table
-            className="table table-sm align-middle mb-0"
-            aria-labelledby="hilos-daemon-env-ladder-heading"
-          >
-            <tbody>
-              {DAEMON_ENV_LADDER.map((source, index) => (
-                <tr key={source}>
-                  <td className="text-center text-body-secondary small text-nowrap px-3">
-                    {source === 'missing' ? '' : index + 1}
-                  </td>
-                  <td className="text-nowrap">
-                    <HilosDaemonEnvSourceBadge source={source} />
-                  </td>
-                  <td className="small text-body-secondary text-break w-100">
-                    {daemonEnvSourceBadge(source).hint}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <HilosViewportTable
-        key={`orphans-${nodeId}`}
-        controller={orphans.controller}
-        cells={{
-          [DAEMON_ENV_KEY_FIELD]: (row) => (
-            <code className="fw-semibold text-break">{row.key}</code>
-          ),
-          [DAEMON_ENV_VALUE_FIELD]: (row) => (
-            <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-              <HilosDaemonEnvValue
-                view={formatDaemonEnvValue(row.value, 'string', true)}
-              />
-              <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle">
-                not in catalog
+        <ol
+          className="list-unstyled mb-0"
+          aria-labelledby="hilos-daemon-env-ladder-heading"
+        >
+          {DAEMON_ENV_LADDER.map((source, index) => (
+            <li
+              key={source}
+              className={`d-flex flex-wrap align-items-baseline gap-2 px-3 py-2${index < DAEMON_ENV_LADDER.length - 1 ? ' border-bottom' : ''}`}
+            >
+              <span className="text-body-secondary small text-nowrap">
+                {source === 'missing' ? '' : index + 1}
               </span>
-            </span>
-          ),
-          [DAEMON_ENV_SIMILAR_TO_FIELD]: (row) => (
-            <span className="small text-body-secondary text-break">
-              {formatDaemonEnvSimilarTo(row)}
-            </span>
-          ),
-        }}
-        empty={
-          page.nodeSilent ? (
-            <span data-id="hilos-daemon-env-orphans-empty-silent">
-              Nothing is read while the node is silent.
-            </span>
-          ) : (
-            <span data-id="hilos-daemon-env-orphans-empty">
-              Every line in .env is declared in the catalog.
-            </span>
-          )
-        }
-      />
+              <HilosDaemonEnvSourceBadge source={source} />
+              <span className="small text-body-secondary text-break">
+                {daemonEnvSourceBadge(source).hint}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
     </HilosDaemonNodeShell>
   )
 }

@@ -52,6 +52,7 @@ use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
@@ -246,6 +247,7 @@ final class Hilos extends HilosFacade
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
         DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
@@ -502,6 +504,8 @@ final class Hilos extends HilosFacade
         ],
         DaemonEnvPage::PAGE => [
             OnlineTestingTableContext::hilosDaemonEnvKeys => [],
+        ],
+        DaemonEnvOrphansPage::PAGE => [
             OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
         ],
         DaemonPlacementPage::PAGE => [

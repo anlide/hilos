@@ -236,20 +236,24 @@ the election resolves.
 Each node is an entity page at `/hilos/daemon/{nodeId}`. Its catalog entry opts
 into the shared `HilosPageHead`, drawn by `HilosDaemonNodeShell` in Vue, React,
 and Angular. The owner is the node, not the Daemon root section. One head and
-one row serve Overview, Workers, Agents, Cron, HTTP, and Environment; the row's
-breadcrumb ends at `nodeId`, not at the current child tab. WebSockets remains an
-unbuilt catalog key, and the `.env` orphans page is not built. The root's Nodes
-diagram links to each addressed Node Overview; the selected node remains its
-own entity and head owner.
+one row serve Overview, Workers, Agents, Cron, HTTP, Environment, and Env
+orphans; the row's breadcrumb ends at `nodeId`, not at the current child tab.
+WebSockets remains an unbuilt catalog key. The root's Nodes diagram links to
+each addressed Node Overview; the selected node remains its own entity and
+head owner.
 
 For mirror-backed node pages, `DaemonNodeHeading` carries `clustered`, `state`,
 `silentSince`, and `role`. `state` remains the picture's verdict;
 `silentSince` is present only for a silent node. `role` is the role in the last
 report and stays null until a report exists. On standalone installations the
-head shows “Single installation” without state or role. The environment page
-builds its own node line from installation mode, `nodeSilent`, and the existing
-RT declared node identity; it has no section-mirror viewer lease. Environment
-value ownership, masking, and fallback remain as described below.
+head shows “Single installation” without state or role. Environment and Env
+orphans are local-node pages. `AbstractHilosDaemonEnvPage` declares a
+`NODE_PARAM` index on param `nodeId` with fallback `hilos_daemon`; Env orphans
+inherits that index. Neither page holds a section-mirror lease:
+`onSubscribeAfterResponse` and `onUnsubscribe` on the base are empty, and Env
+orphans does not override them. Each page builds its node line from
+installation mode, `nodeSilent`, and the existing RT declared node identity.
+Environment value ownership, masking, and fallback remain as described below.
 
 `AbstractHilosDaemonNodePage` uses the existing per-page, per-node publisher and
 fingerprint. With no page-wide delivery debt, changed data goes through
@@ -312,13 +316,17 @@ The environment page of node X is served by node X's agent. It answers the
 subscription with one whole `page_response`, directly to the asking socket. The
 collector's picture contains counts and value-free labels. For a silent node the
 section agent answers “node silent” with no values. A directory watch and
-periodic rescan make the node agent re-answer open environment pages after
-`.env` or `.env.example` changes.
-The page's tiles and alarms are computed from that same response (the full
-masked key list), not from the table window. The page's two tables — catalog
-keys and `.env` orphans — are windows of that same agent: rows are built in its
-process from the masked view, so a re-answer re-sends them, and a search or the
-attention filter reads only what the reader is shown.
+periodic rescan make the node agent re-answer both open pages of that node
+after `.env` or `.env.example` changes. `DaemonNodeAgent::refreshEnvironment`
+walks `HILOS_DAEMON_ENV` and `HILOS_DAEMON_ENV_ORPHANS`.
+Environment's tiles and alarms are computed from that same response (the full
+masked key list), not from the table window. The orphans page has neither.
+Environment holds one table, the catalog keys. Env orphans is its own page and
+holds one table. The reading ladder on Environment is an ordered list, not a
+table. Catalog-key rows are built in the node agent's process from the masked
+view, so a re-answer re-sends them, and a search or the attention filter reads
+only what the reader is shown. Orphan rows are built the same way, and a
+re-answer re-sends that table too.
 
 The environment catalog opens a value to an admin view-mode viewer only with
 `admin_view_visible => true`; no current key is open, and `sensitive` forbids
@@ -481,19 +489,30 @@ measurement interval. The `.env` on disk belongs to the node agent.
 
 ## Switching The Section On
 
-The project declares `DAEMON` in `Hilos::FEATURES`. Startup requires ten
-abstract Daemon pages and three agents, refusing a partial activation. The
-required pages include Overview, Agent placement, Node Overview, Workers,
-Agents, Cron, WebSockets, HTTP, Environment and Env mismatch. Thin backend page
-subclasses and `PAGE_TABLES` bindings activate the feature in all six demos:
-chat, binance-btc-tracker, tasks, polls, online-testing and ecommerce-shop.
+The project declares `DAEMON` in `Hilos::FEATURES`. Startup requires eleven
+abstract Daemon pages, including `AbstractHilosDaemonEnvOrphansPage`, and three
+agents, refusing a partial activation. The required pages include Overview,
+Agent placement, Node Overview, Workers, Agents, Cron, WebSockets, HTTP,
+Environment, Env orphans and Env mismatch. Thin backend page subclasses and
+`PAGE_TABLES` bindings activate the feature in all six demos: chat,
+binance-btc-tracker, tasks, polls, online-testing and ecommerce-shop.
 `hilosDaemonPlacement` belongs to the Agent placement page in each project;
-table registration, row shape and ACL are unchanged. Node Overview has
-no browser table of its own, and the existing child-table paths stay with their
+table registration, row shape and ACL are unchanged. Node Overview has no
+browser table of its own, and the existing child-table paths stay with their
 pages. The section agent serves Overview and Agent placement; in chat it also
 replaces the former index agent. The Environment subclass keeps its
-node-addressed `SUBSCRIPTION_AGENT_TYPE`. Six node child addresses require a
-node ID, including on standalone installations.
+node-addressed `SUBSCRIPTION_AGENT_TYPE`. Seven node child addresses require a
+node ID, including on standalone installations: workers, agents, cron,
+websockets, http, env, and env/orphans. Env mismatch stays cluster-wide, at
+`/hilos/daemon/env-mismatch`.
+
+All three SDKs build ten pages: the root, Agent placement, Node, Workers,
+Agents, Cron, HTTP, Environment, Env orphans, and Env mismatch. WebSockets
+remains unbuilt in Vue, React, and Angular. The frontend mounts these pages in
+the existing chat, binance-btc-tracker, tasks, polls, and ecommerce-shop UIs.
+Online-testing has no frontend Daemon section. Ecommerce activates `DAEMON`
+without `LOGS`; its root and every node head suppress log links, as do its
+Workers and Agents pages.
 
 The section owner `HILOS_DAEMON` uses the shared `HilosPageHead`: the `bi-cpu`
 icon, the lead “Nodes and their processes, with agent placement across them.”,
@@ -569,8 +588,9 @@ Changed rows still use the existing table classifier and held viewport, even
 when the summary is unchanged; a page-wide recovery answer takes priority over
 partial publications.
 
-All three SDKs build nine pages: Overview, Agent placement, Node, Workers,
-Agents, Cron, HTTP, Environment and Env mismatch. WebSockets remains unbuilt.
+All three SDKs build ten pages: Overview, Agent placement, Node, Workers,
+Agents, Cron, HTTP, Environment, Env orphans and Env mismatch. WebSockets
+remains unbuilt.
 The frontend mounts those pages in chat, binance-btc-tracker, tasks, polls and
 ecommerce-shop. Online-testing enables the backend feature without a UI.
 Ecommerce activates `DAEMON` without `LOGS`; its root and every node head

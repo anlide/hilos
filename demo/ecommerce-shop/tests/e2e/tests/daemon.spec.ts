@@ -249,7 +249,7 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
 })
 
 for (const viewer of [false, true]) {
-  test(`keeps all six addressed Node pages free of log links after reload and history as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+  test(`keeps every addressed Node page free of log links after reload and history as ${viewer ? 'a viewer' : 'an admin'}`, async ({
     page,
     context,
   }) => {

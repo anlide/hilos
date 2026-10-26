@@ -354,6 +354,11 @@ export class App {
     [HilosPages.DAEMON_ENV]: lazyPage(() =>
       import('./views/hilos/daemon/env.js').then((module) => module.DaemonEnv),
     ),
+    [HilosPages.DAEMON_ENV_ORPHANS]: lazyPage(() =>
+      import('./views/hilos/daemon/env-orphans.js').then(
+        (module) => module.DaemonEnvOrphans,
+      ),
+    ),
     [HilosPages.DAEMON_ENV_MISMATCH]: lazyPage(() =>
       import('./views/hilos/daemon/env-mismatch.js').then(
         (module) => module.DaemonEnvMismatch,

@@ -48,6 +48,7 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPlacementPage;
@@ -237,6 +238,7 @@ final class Hilos extends HilosFacade
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
         DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
@@ -510,6 +512,8 @@ final class Hilos extends HilosFacade
         ],
         DaemonEnvPage::PAGE => [
             EcommerceShopTableContext::hilosDaemonEnvKeys => [],
+        ],
+        DaemonEnvOrphansPage::PAGE => [
             EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
         ],
         DaemonPlacementPage::PAGE => [

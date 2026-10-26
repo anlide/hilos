@@ -307,6 +307,7 @@ final class PageCatalogResolverTest extends TestCase
                 ['page' => HilosPageConstants::HILOS_DAEMON_WEBSOCKETS, 'label' => 'WebSockets'],
                 ['page' => HilosPageConstants::HILOS_DAEMON_HTTP_SERVER, 'label' => 'HTTP'],
                 ['page' => HilosPageConstants::HILOS_DAEMON_ENV, 'label' => 'Environment'],
+                ['page' => HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS, 'label' => 'Env orphans'],
             ],
             'pageChildren' => [],
         ];
@@ -318,6 +319,7 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_DAEMON_WEBSOCKETS,
             HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
             HilosPageConstants::HILOS_DAEMON_ENV,
+            HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS,
         ] as $page) {
             self::assertSame($expected, PageCatalogResolver::head($page, $params)?->toArray(), $page);
             self::assertSame(HilosPageConstants::HILOS_DAEMON_NODE, PageCatalogResolver::rowOwner($page));
@@ -1683,6 +1685,7 @@ abstract class DaemonPageHeadTestHilos extends Hilos
         HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_HTTP_SERVER => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_ENV => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH => PageHeadTestPage::class,
     ];
 }

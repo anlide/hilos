@@ -81,6 +81,7 @@ use Demo\Tasks\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsOverviewPage;
@@ -304,6 +305,7 @@ final class Hilos extends HilosFacade
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
         DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
@@ -635,6 +637,8 @@ final class Hilos extends HilosFacade
         ],
         DaemonEnvPage::PAGE => [
             TasksTableContext::hilosDaemonEnvKeys => [],
+        ],
+        DaemonEnvOrphansPage::PAGE => [
             TasksTableContext::hilosDaemonEnvOrphans => [],
         ],
         DaemonPlacementPage::PAGE => [

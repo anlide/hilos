@@ -22,6 +22,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Fs\Watch\FsRescanSchedule;
 use Hilos\Hilos;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvOrphansPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -143,6 +144,59 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->assertCount(2, Hilos::$browser->resent);
     }
 
+    public function testRescanReanswersBothEnvironmentPagesOfThisNodeOnly(): void
+    {
+        $this->agent = new DaemonNodeAgent();
+        $this->agent->onStart();
+        Hilos::$sr->getNextQueuedSignal();
+        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('other', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$browser->page = new DaemonNodeEnvironmentTestPage($this->agent);
+        Hilos::$browser->orphansPage = new DaemonNodeEnvironmentOrphansTestPage($this->agent);
+        foreach ([
+            [HilosPageConstants::HILOS_DAEMON_ENV, 'ak-env', 'standalone'],
+            [HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS, 'ak-orphans', 'standalone'],
+            [HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS, 'ak-other', 'other'],
+            [HilosPageConstants::HILOS_DAEMON_ENV, 'ak-closed', 'standalone'],
+        ] as [$page, $acceptKey, $nodeId]) {
+            Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO(
+                $acceptKey, $page, [HilosPageRouteParams::HILOS_DAEMON_NODE_ID => $nodeId],
+            ));
+        }
+        foreach (['ak-env', 'ak-orphans', 'ak-other'] as $acceptKey) {
+            Hilos::$rt->connectionsSource()?->add(DaemonNodeEnvironmentConnection::create($acceptKey, null));
+        }
+
+        file_put_contents($this->root . '/.env', self::KEY . "=second\n");
+        $this->forceWatchWindowDue();
+        $this->agent->onTick();
+
+        $reading = $this->agent->environmentReading();
+        $this->assertEqualsCanonicalizing([
+            ['ak-env', HilosPageConstants::HILOS_DAEMON_ENV],
+            ['ak-orphans', HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS],
+        ], Hilos::$browser->resent);
+        $this->assertSame([$reading, $reading], Hilos::$browser->readingAtResend);
+        $this->assertFalse(Hilos::$browser->payloads[0]->data['nodeSilent']);
+        $this->assertSame('second', Hilos::$browser->payloads[0]->data['environment']['keys'][0]['disk']['value']['text']);
+        $this->assertSame(['node', 'nodeSilent'], array_keys(Hilos::$browser->payloads[1]->data));
+        $this->assertFalse(Hilos::$browser->payloads[1]->data['nodeSilent']);
+        $this->assertStringNotContainsString('second', (string)json_encode(Hilos::$browser->payloads[1]->data));
+
+        $this->forceWatchWindowDue();
+        $this->agent->onTick();
+        $this->assertCount(2, Hilos::$browser->resent);
+
+        Hilos::$browser->viewer = true;
+        file_put_contents($this->root . '/.env', self::KEY . "=third\n");
+        $this->forceWatchWindowDue();
+        $this->agent->onTick();
+        $this->assertCount(4, Hilos::$browser->resent);
+        $this->assertSame(HiddenValue::mark(), Hilos::$browser->payloads[2]->data['environment']['keys'][0]['value']);
+        $this->assertSame(['node', 'nodeSilent'], array_keys(Hilos::$browser->payloads[3]->data));
+        $this->assertStringNotContainsString('third', (string)json_encode(Hilos::$browser->payloads[3]->data));
+    }
+
     public function testHolderForgetsOnlyItsNodeOnStop(): void
     {
         $this->agent = new DaemonNodeAgent();
@@ -178,6 +232,7 @@ final class DaemonNodeEnvironmentTestBrowser extends BrowserContext
     public array $payloads = [];
 
     public ?DaemonNodeEnvironmentTestPage $page = null;
+    public ?DaemonNodeEnvironmentOrphansTestPage $orphansPage = null;
     public bool $viewer = false;
 
     public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
@@ -189,11 +244,21 @@ final class DaemonNodeEnvironmentTestBrowser extends BrowserContext
     {
         $this->resent[] = [$acceptKey, $page];
         $this->readingAtResend[] = LocalNodeEnvironment::reading();
-        $this->payloads[] = $this->page->payload($acceptKey);
+        $this->payloads[] = $page === HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS
+            ? $this->orphansPage->payload($acceptKey)
+            : $this->page->payload($acceptKey);
     }
 }
 
 final class DaemonNodeEnvironmentTestPage extends AbstractHilosDaemonEnvPage
+{
+    public function payload(string $acceptKey): PagePayload
+    {
+        return $this->buildPagePayload($acceptKey, new PageRouteParams(['nodeId' => 'standalone']));
+    }
+}
+
+final class DaemonNodeEnvironmentOrphansTestPage extends AbstractHilosDaemonEnvOrphansPage
 {
     public function payload(string $acceptKey): PagePayload
     {

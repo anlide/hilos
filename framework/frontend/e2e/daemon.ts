@@ -28,6 +28,11 @@ export const DAEMON_NODE_TABS = [
   { key: 'hilos_daemon_cron', path: '/cron', label: 'Cron' },
   { key: 'hilos_daemon_http_server', path: '/http', label: 'HTTP' },
   { key: 'hilos_daemon_env', path: '/env', label: 'Environment' },
+  {
+    key: 'hilos_daemon_env_orphans',
+    path: '/env/orphans',
+    label: 'Env orphans',
+  },
 ] as const
 export const DAEMON_ROOT_CRUMB = 'hilos-breadcrumb-hilos_daemon'
 export const DAEMON_PLACEMENT_TYPE = 'hilos_daemon_node'
@@ -184,7 +189,7 @@ export async function expectDaemonSectionHead(
   ).toHaveCount(0)
 }
 
-/** Shared entity head and real links on all six addressed Node pages. */
+/** Shared entity head and real links on every addressed Node page. */
 export async function expectDaemonNodeHead(
   expect: Expect,
   page: Page,
@@ -655,7 +660,62 @@ export async function expectStandaloneEnvironment(
   expect(Number(count.replace(/,/g, ''))).toBeGreaterThan(0)
   const ladder = page.getByTestId('hilos-daemon-env-ladder')
   await expect(ladder).toBeVisible()
-  await expect(ladder.locator('tr')).toHaveCount(5)
+  await expect(ladder.locator('li')).toHaveCount(5)
+}
+
+/**
+ * From the node row, open Env orphans and read its one untitled table.
+ *
+ * The caller is on the Daemon root, where that node's row is a link.
+ */
+export async function expectStandaloneEnvOrphans(
+  expect: Expect,
+  page: Page,
+  nodeId = 'standalone',
+): Promise<void> {
+  const node = page.getByTestId(`hilos-daemon-node-${nodeId}`)
+  await node.scrollIntoViewIfNeeded()
+  await node.focus()
+  await node.press('Enter')
+  await expectDaemonPage(expect, page, 'hilos_daemon_node')
+  const link = page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans')
+  await link.focus()
+  await expect(link).toBeFocused()
+  await link.press('Enter')
+  await expect(page).toHaveURL(
+    new RegExp(`/hilos/daemon/${nodeId}/env/orphans$`),
+  )
+  await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
+  await expect(page.getByRole('table')).toHaveCount(1)
+  await expect(
+    page.getByRole('table', { name: 'Orphans in .env' }),
+  ).toHaveCount(0)
+  await expect(page.locator('body')).not.toContainText('Orphans in .env')
+  await expect(link).toHaveAttribute('aria-current', 'page')
+}
+
+/**
+ * A view-mode viewer sees each orphan value hidden, with no character count.
+ *
+ * An empty live window has no value to hide. A present row is the hidden mark
+ * and nothing that states a length.
+ */
+export async function expectViewerEnvOrphans(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expect(page.getByRole('table')).toHaveCount(1)
+  await expect(
+    page.getByRole('table', { name: 'Orphans in .env' }),
+  ).toHaveCount(0)
+  const rows = shownByTestId(page, /^hilos-table-(row|card)-/)
+  const empty = page.getByTestId('hilos-daemon-env-orphans-empty')
+  await expect(rows.or(empty).first()).toBeVisible()
+  for (const row of await rows.all()) {
+    await expect(row.getByTestId('hilos-hidden')).toHaveText('Hidden')
+    await expect(row).not.toContainText(/Set ·|\d+\s*chars/)
+  }
+  await expect(page.locator('body')).not.toContainText(/Set ·\s*\d+\s*chars/)
 }
 
 /** A single installation has no other environment to compare or table to open. */

@@ -39,6 +39,7 @@ use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPlacementPage;
@@ -598,6 +599,8 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         self::assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
+        self::assertSame(DaemonEnvOrphansPage::class, Hilos::PAGES[DaemonEnvOrphansPage::PAGE]);
+        self::assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvOrphansPage::PAGE]);
 
         $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
         self::assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
@@ -630,8 +633,10 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([ChatTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
         self::assertSame([
             ChatTableContext::hilosDaemonEnvKeys => [],
-            ChatTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
+        self::assertSame([
+            ChatTableContext::hilosDaemonEnvOrphans => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvOrphansPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
         self::assertSame([
@@ -984,10 +989,12 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
-        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
-        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
-        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
+        $this->assertSame([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
+            $this->assertSame('node_param', $routes[$page]->source->value);
+            $this->assertSame('nodeId', $routes[$page]->param);
+            $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[$page]->fallbackAgentType);
+        }
     }
 
     public function testComputedGroupRoutesCoverEveryRegisteredGroup(): void

@@ -15,6 +15,10 @@ export {
   HilosDaemonEnvPage,
 } from './HilosDaemonEnvPage.js'
 export {
+  type HilosDaemonEnvOrphansPageProps,
+  HilosDaemonEnvOrphansPage,
+} from './HilosDaemonEnvOrphansPage.js'
+export {
   type HilosDaemonHttpServerPageProps,
   HilosDaemonHttpServerPage,
 } from './HilosDaemonHttpServerPage.js'

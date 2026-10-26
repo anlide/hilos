@@ -18,7 +18,6 @@ import {
 import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 import {
   createHilosDaemonEnvKeysTable,
-  createHilosDaemonEnvOrphansTable,
   daemonEnvSummary,
   readHilosDaemonEnvPage,
   formatDaemonEnvValue,
@@ -27,7 +26,6 @@ import {
   formatDaemonEnvDrift,
   formatDaemonEnvDriftNotice,
   formatDaemonEnvRequired,
-  formatDaemonEnvSimilarTo,
   DAEMON_ENV_FILTER_ATTENTION,
   DAEMON_ENV_LADDER,
   DAEMON_ENV_PER_NODE_HINT,
@@ -37,7 +35,6 @@ import {
   DAEMON_ENV_VALUE_FIELD,
   DAEMON_ENV_REQUIRED_FIELD,
   DAEMON_ENV_DECLARED_BY_FIELD,
-  DAEMON_ENV_SIMILAR_TO_FIELD,
   type HilosDaemonEnvContext,
   type HilosDaemonEnvPageState,
 } from '@hilos/core/admin/daemon'
@@ -61,7 +58,6 @@ import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
     @let nodeSilent = this.nodeSilent();
     @let summary = this.summary();
     @let keys = this.keys();
-    @let orphans = this.orphans();
     @let keysFilter = this.keysFilter();
 
     <hilos-daemon-node-shell [context]="context()" [page]="page">
@@ -370,77 +366,28 @@ import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
           class="border rounded-3 overflow-hidden mb-3"
           data-id="hilos-daemon-env-ladder"
         >
-          <div class="table-responsive">
-            <table
-              class="table table-sm align-middle mb-0"
-              aria-labelledby="hilos-daemon-env-ladder-heading"
-            >
-              <tbody>
-                @for (
-                  source of DAEMON_ENV_LADDER;
-                  track source;
-                  let ix = $index
-                ) {
-                  <tr>
-                    <td
-                      class="text-center text-body-secondary small text-nowrap px-3"
-                    >
-                      {{ source === 'missing' ? '' : ix + 1 }}
-                    </td>
-                    <td class="text-nowrap">
-                      <hilos-daemon-env-source-badge
-                        [source]="source"
-                      ></hilos-daemon-env-source-badge>
-                    </td>
-                    <td class="small text-body-secondary text-break w-100">
-                      {{ daemonEnvSourceBadge(source).hint }}
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <ol
+            class="list-unstyled mb-0"
+            aria-labelledby="hilos-daemon-env-ladder-heading"
+          >
+            @for (source of DAEMON_ENV_LADDER; track source; let ix = $index) {
+              <li
+                class="d-flex flex-wrap align-items-baseline gap-2 px-3 py-2"
+                [class.border-bottom]="ix < DAEMON_ENV_LADDER.length - 1"
+              >
+                <span class="text-body-secondary small text-nowrap">{{
+                  source === 'missing' ? '' : ix + 1
+                }}</span>
+                <hilos-daemon-env-source-badge
+                  [source]="source"
+                ></hilos-daemon-env-source-badge>
+                <span class="small text-body-secondary text-break">{{
+                  daemonEnvSourceBadge(source).hint
+                }}</span>
+              </li>
+            }
+          </ol>
         </div>
-
-        <hilos-viewport-table [controller]="orphans.controller">
-          <ng-template [hilosTableCell]="DAEMON_ENV_KEY_FIELD" let-row>
-            <code class="fw-semibold">{{ row.key }}</code>
-          </ng-template>
-
-          <ng-template [hilosTableCell]="DAEMON_ENV_VALUE_FIELD" let-row>
-            @if (!nodeSilent) {
-              <span class="d-inline-flex align-items-center gap-2 flex-wrap">
-                <hilos-daemon-env-value
-                  [view]="formatDaemonEnvValue(row.value, 'string', true)"
-                  [required]="row.required ?? false"
-                ></hilos-daemon-env-value>
-                <span
-                  class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                >
-                  not in catalog
-                </span>
-              </span>
-            }
-          </ng-template>
-
-          <ng-template [hilosTableCell]="DAEMON_ENV_SIMILAR_TO_FIELD" let-row>
-            <span class="small text-body-secondary">{{
-              formatDaemonEnvSimilarTo(row)
-            }}</span>
-          </ng-template>
-
-          <ng-template #empty>
-            @if (nodeSilent) {
-              <span data-id="hilos-daemon-env-orphans-empty-silent">
-                Nothing is read while the node is silent.
-              </span>
-            } @else {
-              <span data-id="hilos-daemon-env-orphans-empty">
-                Every line in .env is declared in the catalog.
-              </span>
-            }
-          </ng-template>
-        </hilos-viewport-table>
       </ng-template>
     </hilos-daemon-node-shell>
   `,
@@ -468,14 +415,10 @@ export class HilosDaemonEnvPage {
   protected readonly keys = computed(() =>
     createHilosDaemonEnvKeysTable(this.context(), this.nodeId()),
   )
-  protected readonly orphans = computed(() =>
-    createHilosDaemonEnvOrphansTable(this.context(), this.nodeId()),
-  )
   protected readonly keysFilter = signal<Record<string, unknown>>({})
   constructor() {
     effect((onCleanup) => {
       const keys = this.keys()
-      const orphans = this.orphans()
       const stops = [
         mirrorHilosSignal(
           readHilosDaemonEnvPage(this.context().scopes),
@@ -484,11 +427,9 @@ export class HilosDaemonEnvPage {
         mirrorHilosSignal(keys.controller.filter, this.keysFilter),
       ]
       keys.start()
-      orphans.start()
       onCleanup(() => {
         stops.forEach((stop) => stop())
         keys.dispose()
-        orphans.dispose()
       })
     })
   }
@@ -498,7 +439,6 @@ export class HilosDaemonEnvPage {
   protected readonly formatDaemonEnvDrift = formatDaemonEnvDrift
   protected readonly formatDaemonEnvDriftNotice = formatDaemonEnvDriftNotice
   protected readonly formatDaemonEnvRequired = formatDaemonEnvRequired
-  protected readonly formatDaemonEnvSimilarTo = formatDaemonEnvSimilarTo
   protected readonly DAEMON_ENV_FILTER_ATTENTION = DAEMON_ENV_FILTER_ATTENTION
   protected readonly DAEMON_ENV_LADDER = DAEMON_ENV_LADDER
   protected readonly DAEMON_ENV_PER_NODE_HINT = DAEMON_ENV_PER_NODE_HINT
@@ -508,5 +448,4 @@ export class HilosDaemonEnvPage {
   protected readonly DAEMON_ENV_VALUE_FIELD = DAEMON_ENV_VALUE_FIELD
   protected readonly DAEMON_ENV_REQUIRED_FIELD = DAEMON_ENV_REQUIRED_FIELD
   protected readonly DAEMON_ENV_DECLARED_BY_FIELD = DAEMON_ENV_DECLARED_BY_FIELD
-  protected readonly DAEMON_ENV_SIMILAR_TO_FIELD = DAEMON_ENV_SIMILAR_TO_FIELD
 }

@@ -293,6 +293,8 @@ export {
   watchDaemonCronDisplay,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
+  expectStandaloneEnvOrphans,
+  expectViewerEnvOrphans,
   expectStandaloneMismatch,
   expectClusterOverview,
   expectClusterDaemonNodePage,

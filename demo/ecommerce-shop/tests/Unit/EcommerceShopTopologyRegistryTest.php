@@ -64,6 +64,7 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPlacementPage;
@@ -365,6 +366,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
             DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
             DaemonEnvPage::PAGE => DaemonEnvPage::class,
+            DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
             DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
@@ -461,10 +463,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
-        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
-        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
-        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
+        $this->assertSame([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
+            $this->assertSame('node_param', $routes[$page]->source->value);
+            $this->assertSame('nodeId', $routes[$page]->param);
+            $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[$page]->fallbackAgentType);
+        }
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void
@@ -1427,6 +1431,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
+        $this->assertSame(DaemonEnvOrphansPage::class, Hilos::PAGES[DaemonEnvOrphansPage::PAGE]);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvOrphansPage::PAGE]);
 
         $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
         $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
@@ -1463,8 +1469,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame([EcommerceShopTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
         $this->assertSame([
             EcommerceShopTableContext::hilosDaemonEnvKeys => [],
-            EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
+        $this->assertSame([
+            EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvOrphansPage::PAGE]);
         $this->assertSame([
             EcommerceShopTableContext::hilosDaemonEnvDiverged => [],
             EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => [],

@@ -369,45 +369,6 @@ describe('HilosDaemonEnvPage', () => {
     ).toBe('43')
   })
 
-  it('keeps orphan values length-only or hidden and gives only the similar name', () => {
-    const h = harness()
-    h.response(
-      environment(),
-      false,
-      [],
-      [
-        {
-          key: 'DB_PASSWD',
-          value: { kind: 'secret', length: 19 },
-          similarTo: 'DB_PASSWORD',
-        },
-        {
-          key: 'HILOS_LOG_LEVEL',
-          value: { kind: 'secret', length: 5 },
-          similarTo: null,
-        },
-      ],
-    )
-    const row = h.find('hilos-table-row-DB_PASSWD')!
-    expect(row.textContent).toContain('Set · 19 charsnot in catalogDB_PASSWORD')
-    expect(h.find('hilos-table-row-HILOS_LOG_LEVEL')?.textContent).toContain(
-      'Set · 5 charsnot in catalog—',
-    )
-    expect(row.textContent).not.toMatch(/typo|renamed/i)
-    h.response(
-      environment(),
-      false,
-      [],
-      [{ key: 'DB_PASSWD', value: HIDDEN_VALUE, similarTo: 'DB_PASSWORD' }],
-    )
-    expect(
-      h
-        .find('hilos-table-row-DB_PASSWD')
-        ?.querySelector('[data-id="hilos-hidden"]')?.textContent,
-    ).toBe('Hidden')
-    expect(h.find('hilos-table-row-DB_PASSWD')?.textContent).not.toContain('19')
-  })
-
   it('distinguishes waiting, silence and known empty, using no inferred node state', () => {
     const h = harness()
     expect(h.find('hilos-daemon-env-keys')).toBeNull()
@@ -422,17 +383,14 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.find('hilos-daemon-env-keys-empty-silent')?.textContent).toBe(
       'Nothing is read while the node is silent.',
     )
-    expect(h.find('hilos-daemon-env-orphans-empty-silent')?.textContent).toBe(
-      'Nothing is read while the node is silent.',
+    expect(h.view.container.querySelectorAll('table.table-hover')).toHaveLength(
+      1,
     )
     h.response(environment(), false, [], [])
     expect(h.find('hilos-daemon-env-keys')?.textContent).toBe('0')
     expect(h.find('hilos-daemon-node-state')).toBeNull()
     expect(h.find('hilos-page-head-action')?.getAttribute('href')).toBe(
       '/hilos/daemon',
-    )
-    expect(h.find('hilos-daemon-env-orphans-empty')?.textContent).toBe(
-      'Every line in .env is declared in the catalog.',
     )
     h.response(environment([], 'standalone', false), false, [], [])
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
@@ -444,11 +402,12 @@ describe('HilosDaemonEnvPage', () => {
 
   it('uses the five reading sources in order and leaves No value unnumbered', () => {
     const h = harness()
-    const rows = [
-      ...h.find('hilos-daemon-env-ladder')!.querySelectorAll('tbody tr'),
-    ]
+    expect(
+      h.find('hilos-daemon-env-ladder')?.querySelector('ol'),
+    ).not.toBeNull()
+    const rows = [...h.find('hilos-daemon-env-ladder')!.querySelectorAll('li')]
     expect(rows).toHaveLength(5)
-    expect(rows.map((row) => row.querySelector('td')?.textContent)).toEqual([
+    expect(rows.map((row) => row.querySelector('span')?.textContent)).toEqual([
       '1',
       '2',
       '3',
@@ -518,22 +477,19 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.find('hilos-table-row-LIVE')).not.toBeNull()
   })
 
-  it('releases both bindings on node changes, resets filters and cleans up on unmount', () => {
+  it('releases the catalog binding on node changes, resets filters and cleans up on unmount', () => {
     const h = harness()
     h.response(environment([key('OLD')]), false, [key('OLD')], [])
     const old = [...h.activeWindows.values()]
     fireEvent.click(h.find('hilos-table-filter-attention')!)
     h.selectNode('n2')
     h.response(environment([key('NEW')], 'n2'), false, [key('NEW')], [])
-    expect(h.register).toHaveBeenCalledTimes(4)
-    expect(h.unregister.mock.calls).toEqual([
-      ['hilosDaemonEnvKeys', old[0]],
-      ['hilosDaemonEnvOrphans', old[1]],
-    ])
+    expect(h.register).toHaveBeenCalledTimes(2)
+    expect(h.unregister.mock.calls).toEqual([['hilosDaemonEnvKeys', old[0]]])
     expect(
       [...h.activeWindows.values()].every((sink) => !old.includes(sink)),
     ).toBe(true)
-    expect(h.listeners.get('tableWindow')?.size).toBe(2)
+    expect(h.listeners.get('tableWindow')?.size).toBe(1)
     expect(h.find('hilos-table-row-OLD')).toBeNull()
     expect(h.find('hilos-table-row-NEW')).not.toBeNull()
     expect(h.find('hilos-page-head-title')?.textContent).toBe('n2')
@@ -542,7 +498,7 @@ describe('HilosDaemonEnvPage', () => {
     ).toBe(false)
     expect(h.sendViewport).toHaveBeenLastCalledWith(
       HilosPages.DAEMON_ENV,
-      'hilosDaemonEnvOrphans',
+      'hilosDaemonEnvKeys',
       expect.objectContaining({ filter: { node: 'n2' } }),
     )
     h.view.unmount()

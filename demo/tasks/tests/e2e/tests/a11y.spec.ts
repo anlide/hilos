@@ -316,7 +316,7 @@ test('the default language deletion explanation is named, keyboard readable and 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({
   page,
 }) => {
-  // Six addressed pages, each with a real subscription and keyboard navigation.
+  // Each addressed page has a real subscription and keyboard navigation.
   test.slow()
   await grantAdminToSelf(page)
   await gotoPage(page, DAEMON_NODE_PATH)

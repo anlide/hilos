@@ -60,6 +60,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvOrphansPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsOverviewPage;
@@ -284,6 +285,7 @@ class Hilos extends HilosFacade
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvOrphansPage::PAGE => DaemonEnvOrphansPage::class,
         DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
@@ -557,6 +559,8 @@ class Hilos extends HilosFacade
         ],
         DaemonEnvPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => [],
+        ],
+        DaemonEnvOrphansPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => [],
         ],
         DaemonPlacementPage::PAGE => [

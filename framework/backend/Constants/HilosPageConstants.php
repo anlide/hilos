@@ -177,6 +177,9 @@ final class HilosPageConstants
     /** @var string Hilos daemon — node environment */
     public const string HILOS_DAEMON_ENV = 'hilos_daemon_env';
 
+    /** @var string Hilos daemon — environment orphans of one node */
+    public const string HILOS_DAEMON_ENV_ORPHANS = 'hilos_daemon_env_orphans';
+
     /** @var string Hilos daemon — environment differences across the cluster */
     public const string HILOS_DAEMON_ENV_MISMATCH = 'hilos_daemon_env_mismatch';
 

@@ -462,6 +462,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Environment values of one node and where they came from.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON_NODE,
         ],
+        HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Env orphans',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Lines in .env that are not declared in the catalog.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON_NODE,
+        ],
         HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Env mismatch',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Environment keys whose values differ across the cluster.',

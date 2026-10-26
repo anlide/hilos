@@ -1,4 +1,5 @@
 import HilosDaemonEnvPage from '../../src/admin/daemon/HilosDaemonEnvPage.vue'
+import HilosDaemonEnvOrphansPage from '../../src/admin/daemon/HilosDaemonEnvOrphansPage.vue'
 import HilosDaemonHttpServerPage from '../../src/admin/daemon/HilosDaemonHttpServerPage.vue'
 import HilosDaemonCronPage from '../../src/admin/daemon/HilosDaemonCronPage.vue'
 import HilosDaemonAgentsPage from '../../src/admin/daemon/HilosDaemonAgentsPage.vue'
@@ -79,6 +80,7 @@ export const nodeTabs = [
   { page: HilosPages.DAEMON_WEBSOCKETS, label: 'WebSockets' },
   { page: HilosPages.DAEMON_HTTP_SERVER, label: 'HTTP' },
   { page: HilosPages.DAEMON_ENV, label: 'Environment' },
+  { page: HilosPages.DAEMON_ENV_ORPHANS, label: 'Env orphans' },
 ]
 
 export function nodeHeading(
@@ -175,6 +177,7 @@ export function nodeHarness(
     [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
     [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
     [HilosPages.DAEMON_ENV]: HilosDaemonEnvPage,
+    [HilosPages.DAEMON_ENV_ORPHANS]: HilosDaemonEnvOrphansPage,
   }
   const Content = defineComponent({
     setup() {

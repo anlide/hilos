@@ -57,25 +57,47 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
+        return $this->buildLocalEnvironmentPayload($acceptKey, $params, true);
+    }
+
+    /**
+     * Shared node heading and silence. The environment catalog is present only when asked for.
+     *
+     * @param string $acceptKey Subscribing connection
+     * @param PageRouteParams $params Route params naming the node
+     * @param bool $includeEnvironment Whether this answer carries the environment catalog
+     * @return PagePayload Heading and silence, plus the catalog only for the environment page
+     * @throws MissingPageRouteParamException When the node id is absent
+     * @throws EnvException When cluster mode cannot be read
+     * @throws HilosException When the declared node identity cannot be read
+     */
+    protected function buildLocalEnvironmentPayload(
+        string $acceptKey,
+        PageRouteParams $params,
+        bool $includeEnvironment,
+    ): PagePayload {
         $nodeId = HilosDaemonNodeSubscribeParams::fromPageRouteParams($params)->nodeId;
         $agent = $this->getAgent();
         $reading = $agent instanceof DaemonNodeAgent ? $agent->environmentReading() : null;
         $ownerAnswers = $reading !== null && $reading->nodeId === $nodeId;
         $role = Hilos::$rt?->hilosClusterNodes[$nodeId]?->role;
-
-        return new PagePayload(data: [
+        $pageData = [
             self::NODE => new DaemonNodeHeading(
                 Hilos::$cluster?->isEnabled() === true,
                 $ownerAnswers ? null : DaemonNodeState::Silent,
                 null,
                 $role === null ? null : NodeRole::tryFrom($role),
             )->toArray(),
-            self::ENVIRONMENT => $ownerAnswers
+        ];
+        if ($includeEnvironment) {
+            $pageData[self::ENVIRONMENT] = $ownerAnswers
                 ? $reading->view(Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true,
                     Hilos::$cluster?->isEnabled() === true)
-                : null,
-            self::NODE_SILENT => !$ownerAnswers,
-        ]);
+                : null;
+        }
+        $pageData[self::NODE_SILENT] = !$ownerAnswers;
+
+        return new PagePayload(data: $pageData);
     }
 
     /** @return array<string, WireField> Values are already masked by the node owner */

@@ -174,6 +174,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.DAEMON_ENV]: lazyPage(() =>
     import('./views/Hilos/Daemon/Env.vue').then((m) => m.default),
   ),
+  [HilosPages.DAEMON_ENV_ORPHANS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/EnvOrphans.vue').then((m) => m.default),
+  ),
   [HilosPages.DAEMON_ENV_MISMATCH]: lazyPage(() =>
     import('./views/Hilos/Daemon/EnvMismatch.vue').then((m) => m.default),
   ),

@@ -21,6 +21,7 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvOrphansPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
@@ -57,6 +58,7 @@ final class DaemonFeatureActivationTest extends TestCase
             AbstractHilosDaemonWebsocketsPage::class,
             AbstractHilosDaemonHttpServerPage::class,
             AbstractHilosDaemonEnvPage::class,
+            AbstractHilosDaemonEnvOrphansPage::class,
             AbstractHilosDaemonEnvMismatchPage::class,
         ], $definition->requirements()->requiredPages);
         self::assertSame([
@@ -78,7 +80,8 @@ final class DaemonFeatureActivationTest extends TestCase
         self::assertSame([
             AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
             AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
-            AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
+            AbstractHilosDaemonEnvPage::class => HilosDaemonEnvKeysTable::class,
+            AbstractHilosDaemonEnvOrphansPage::class => HilosDaemonEnvOrphansTable::class,
             AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
             AbstractHilosDaemonEnvMismatchPage::class => [
                 HilosDaemonEnvDivergedTable::class,
@@ -293,6 +296,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
         DaemonFeatureWebsocketsPage::PAGE => DaemonFeatureWebsocketsPage::class,
         DaemonFeatureHttpServerPage::PAGE => DaemonFeatureHttpServerPage::class,
         DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
+        DaemonFeatureEnvOrphansPage::PAGE => DaemonFeatureEnvOrphansPage::class,
         DaemonFeatureEnvMismatchPage::PAGE => DaemonFeatureEnvMismatchPage::class,
     ];
 
@@ -328,6 +332,8 @@ class DaemonFeatureCompleteHilos extends HilosFacade
         DaemonFeatureWorkersPage::PAGE => [HilosDaemonWorkersTable::TABLE => []],
         DaemonFeatureEnvPage::PAGE => [
             HilosDaemonEnvKeysTable::TABLE => [],
+        ],
+        DaemonFeatureEnvOrphansPage::PAGE => [
             HilosDaemonEnvOrphansTable::TABLE => [],
         ],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
@@ -402,6 +408,10 @@ final class DaemonFeatureHttpServerPage extends AbstractHilosDaemonHttpServerPag
 }
 
 final class DaemonFeatureEnvPage extends AbstractHilosDaemonEnvPage
+{
+}
+
+final class DaemonFeatureEnvOrphansPage extends AbstractHilosDaemonEnvOrphansPage
 {
 }
 

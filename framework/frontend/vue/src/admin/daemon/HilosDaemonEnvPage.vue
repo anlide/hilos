@@ -1,10 +1,9 @@
-<!-- Environment and .env file inspection of one Daemon node. The page scope
-carries the complete parsed environment and silence indicator; server viewports
-supply the catalog-key and orphan rows. -->
+<!-- Environment inspection of one Daemon node. The page scope carries the
+complete parsed environment and silence indicator; the server viewport supplies
+the catalog-key rows. -->
 <script setup lang="ts">
 import {
   createHilosDaemonEnvKeysTable,
-  createHilosDaemonEnvOrphansTable,
   daemonEnvSourceBadge,
   daemonEnvSummary,
   DAEMON_ENV_FILTER_ATTENTION,
@@ -15,7 +14,6 @@ import {
   formatDaemonEnvDrift,
   formatDaemonEnvDriftNotice,
   formatDaemonEnvRequired,
-  formatDaemonEnvSimilarTo,
   formatDaemonEnvValue,
   readHilosDaemonEnvPage,
   type HilosDaemonEnvContext,
@@ -54,9 +52,6 @@ const nodeId = computed(
 const keys = shallowRef(
   createHilosDaemonEnvKeysTable(props.context, nodeId.value),
 )
-const orphans = shallowRef(
-  createHilosDaemonEnvOrphansTable(props.context, nodeId.value),
-)
 
 const page = useSignal(readHilosDaemonEnvPage(props.context.scopes))
 const nodeSilent = computed(() => page.value.nodeSilent)
@@ -81,13 +76,10 @@ watch(
   nodeId,
   (nextNodeId) => {
     keys.value.dispose()
-    orphans.value.dispose()
     keys.value = createHilosDaemonEnvKeysTable(props.context, nextNodeId)
-    orphans.value = createHilosDaemonEnvOrphansTable(props.context, nextNodeId)
     bindFilterWatch()
     if (mounted) {
       keys.value.start()
-      orphans.value.start()
     }
   },
   { flush: 'sync' },
@@ -96,14 +88,12 @@ watch(
 onMounted(() => {
   mounted = true
   keys.value.start()
-  orphans.value.start()
 })
 
 onUnmounted(() => {
   mounted = false
   unwatchFilter?.()
   keys.value.dispose()
-  orphans.value.dispose()
 })
 </script>
 
@@ -418,105 +408,35 @@ onUnmounted(() => {
       class="border rounded-3 overflow-hidden mb-3"
       data-id="hilos-daemon-env-ladder"
     >
-      <div class="table-responsive">
-        <table
-          class="table table-sm align-middle mb-0"
-          aria-labelledby="hilos-daemon-env-ladder-heading"
+      <ol
+        class="list-unstyled mb-0"
+        aria-labelledby="hilos-daemon-env-ladder-heading"
+      >
+        <li
+          v-for="(source, ix) in DAEMON_ENV_LADDER"
+          :key="source"
+          class="d-flex flex-wrap align-items-baseline gap-2 px-3 py-2"
+          :class="{ 'border-bottom': ix < DAEMON_ENV_LADDER.length - 1 }"
         >
-          <tbody>
-            <tr v-for="(source, ix) in DAEMON_ENV_LADDER" :key="source">
-              <td
-                class="text-center text-body-secondary small text-nowrap px-3"
-              >
-                {{ source === 'missing' ? '' : ix + 1 }}
-              </td>
-              <td class="text-nowrap">
-                <span
-                  class="badge rounded-pill"
-                  :class="[
-                    `bg-${daemonEnvSourceBadge(source).tone}-subtle`,
-                    `text-${daemonEnvSourceBadge(source).tone}-emphasis`,
-                    `border border-${daemonEnvSourceBadge(source).tone}-subtle`,
-                  ]"
-                  :title="daemonEnvSourceBadge(source).hint"
-                >
-                  {{ daemonEnvSourceBadge(source).label }}
-                </span>
-              </td>
-              <td class="small text-body-secondary text-break w-100">
-                {{ daemonEnvSourceBadge(source).hint }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <HilosViewportTable :key="nodeId" :controller="orphans.controller">
-      <template #cell-key="{ row }">
-        <code class="fw-semibold">{{ row.key }}</code>
-      </template>
-
-      <template #cell-value="{ row }">
-        <span class="d-inline-flex align-items-center gap-2 flex-wrap">
-          <template
-            v-for="(val, index) in [
-              formatDaemonEnvValue(row.value, 'string', true),
-            ]"
-            :key="index"
-          >
-            <HilosHiddenMark v-if="val.kind === 'hidden'" />
-            <span v-else-if="val.kind === 'secret'" class="text-body-secondary">
-              <i class="bi bi-key me-1" aria-hidden="true"></i>{{ val.text }}
-            </span>
-            <span v-else-if="val.kind === 'none'" class="text-body-secondary">
-              —
-            </span>
-            <span
-              v-else-if="val.kind === 'empty'"
-              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-              title="An empty string is a value"
-            >
-              empty
-            </span>
-            <input
-              v-else-if="val.kind === 'boolean'"
-              type="checkbox"
-              class="form-check-input mt-0"
-              disabled
-              tabindex="-1"
-              :checked="val.on"
-              :aria-label="val.on ? 'On' : 'Off'"
-            />
-            <code
-              v-else-if="val.kind === 'text'"
-              :class="{ 'fst-italic': val.numeric }"
-            >
-              {{ val.text }}
-            </code>
-          </template>
+          <span class="text-body-secondary small text-nowrap">{{
+            source === 'missing' ? '' : ix + 1
+          }}</span>
           <span
-            class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+            class="badge rounded-pill text-nowrap"
+            :class="[
+              `bg-${daemonEnvSourceBadge(source).tone}-subtle`,
+              `text-${daemonEnvSourceBadge(source).tone}-emphasis`,
+              `border border-${daemonEnvSourceBadge(source).tone}-subtle`,
+            ]"
+            :title="daemonEnvSourceBadge(source).hint"
           >
-            not in catalog
+            {{ daemonEnvSourceBadge(source).label }}
           </span>
-        </span>
-      </template>
-
-      <template #cell-similarTo="{ row }">
-        <span class="small text-body-secondary">{{
-          formatDaemonEnvSimilarTo(row)
-        }}</span>
-      </template>
-
-      <template #empty>
-        <span v-if="nodeSilent" data-id="hilos-daemon-env-orphans-empty-silent">
-          Nothing is read while the node is silent.
-        </span>
-        <span v-else data-id="hilos-daemon-env-orphans-empty">
-          Every line in .env is declared in the catalog.
-        </span>
-      </template>
-    </HilosViewportTable>
+          <span class="small text-body-secondary text-break">{{
+            daemonEnvSourceBadge(source).hint
+          }}</span>
+        </li>
+      </ol>
+    </div>
   </HilosDaemonNodeShell>
 </template>

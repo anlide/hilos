@@ -214,6 +214,7 @@ const daemonNodeValues = [
   'DAEMON_NODE_OVERVIEW_DATA',
   'daemonNodeOverviewSchema',
   'readHilosDaemonNodeOverview',
+  'readHilosDaemonEnvOrphansPage',
 ]
 /** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
 const statusValues = [
@@ -720,6 +721,7 @@ describe('core public entries', () => {
       [
         ...legacy.type,
         'HilosAnalyticsPerson',
+        'HilosDaemonEnvOrphansPageState',
         'HilosDaemonNodeOverviewData',
         'HilosProfileDeviceKind',
         ...i18nOverviewTypes,

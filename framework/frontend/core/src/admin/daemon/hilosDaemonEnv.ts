@@ -121,6 +121,12 @@ export interface HilosDaemonEnvPageState {
   readonly nodeSilent: boolean
 }
 
+/** Page state of the orphans tab: the node heading and silence, without the catalog. */
+export interface HilosDaemonEnvOrphansPageState {
+  readonly node: HilosDaemonNodeHeading | null
+  readonly nodeSilent: boolean
+}
+
 /** One uncataloged line in the selected node's .env file. */
 export interface HilosDaemonEnvOrphanRow {
   readonly rowKey: string
@@ -259,6 +265,23 @@ export function readHilosDaemonEnvPage(
 }
 
 /**
+ * Read the orphans page: the node heading and silence, without the catalog.
+ *
+ * @param scopes The page scope manager.
+ */
+export function readHilosDaemonEnvOrphansPage(
+  scopes: ScopeManager,
+): ReadonlySignal<HilosDaemonEnvOrphansPageState> {
+  const nodeSilentSignal = scopes.pageDataSignal(DAEMON_ENV_NODE_SILENT_DATA)
+  const node = readHilosDaemonNodeHeading(scopes)
+
+  return computedSignal(() => ({
+    node: node.get(),
+    nodeSilent: nodeSilentSignal.get() === true,
+  }))
+}
+
+/**
  * Read one orphan slot; identity comes from the table fragment's row key.
  *
  * @param row The raw row in the page scope.
@@ -278,6 +301,7 @@ export function resolveHilosDaemonEnvOrphanRow(
 /** Build one environment viewport with the shared node filter and lifecycle. */
 function createEnvironmentTable<TRow>(
   context: HilosDaemonEnvContext,
+  page: string,
   nodeId: string,
   tableKey: string,
   resolve: (row: TableRow) => TRow,
@@ -286,17 +310,9 @@ function createEnvironmentTable<TRow>(
   const controller = new TableViewportController<TRow>({
     resolve,
     sendViewport: (descriptor) =>
-      context.connection.sendTableViewport(
-        HilosPages.DAEMON_ENV,
-        tableKey,
-        descriptor,
-      ),
+      context.connection.sendTableViewport(page, tableKey, descriptor),
     sendRendered: (rendered) =>
-      context.connection.sendTableRendered(
-        HilosPages.DAEMON_ENV,
-        tableKey,
-        rendered,
-      ),
+      context.connection.sendTableRendered(page, tableKey, rendered),
     initialFilter: { [DAEMON_ENV_FILTER_NODE]: nodeId },
     frame,
   })
@@ -309,7 +325,7 @@ function createEnvironmentTable<TRow>(
         bindTableViewport(
           context.connection,
           context.scopes,
-          { page: HilosPages.DAEMON_ENV, tableKey },
+          { page, tableKey },
           controller,
         ),
       )
@@ -369,6 +385,7 @@ export function createHilosDaemonEnvKeysTable(
   }
   return createEnvironmentTable(
     context,
+    HilosPages.DAEMON_ENV,
     nodeId,
     DAEMON_ENV_KEYS_TABLE,
     resolveHilosDaemonEnvKeyRow,
@@ -393,10 +410,11 @@ export function createHilosDaemonEnvOrphansTable(
   ]
   return createEnvironmentTable(
     context,
+    HilosPages.DAEMON_ENV_ORPHANS,
     nodeId,
     DAEMON_ENV_ORPHANS_TABLE,
     resolveHilosDaemonEnvOrphanRow,
-    { title: 'Orphans in .env', columns },
+    { columns },
   )
 }
 

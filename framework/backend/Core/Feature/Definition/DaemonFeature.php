@@ -11,6 +11,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvOrphansPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
@@ -51,6 +52,7 @@ final class DaemonFeature extends FeatureDefinition
                 AbstractHilosDaemonWebsocketsPage::class,
                 AbstractHilosDaemonHttpServerPage::class,
                 AbstractHilosDaemonEnvPage::class,
+                AbstractHilosDaemonEnvOrphansPage::class,
                 AbstractHilosDaemonEnvMismatchPage::class,
             ],
             requiredAgents: [
@@ -72,7 +74,8 @@ final class DaemonFeature extends FeatureDefinition
             requiredPageTables: [
                 AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
                 AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
-                AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
+                AbstractHilosDaemonEnvPage::class => HilosDaemonEnvKeysTable::class,
+                AbstractHilosDaemonEnvOrphansPage::class => HilosDaemonEnvOrphansTable::class,
                 AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
                 AbstractHilosDaemonEnvMismatchPage::class => [
                     HilosDaemonEnvDivergedTable::class,

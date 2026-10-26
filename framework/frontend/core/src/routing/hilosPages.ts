@@ -87,6 +87,7 @@ export const HilosPages = {
   DAEMON_WEBSOCKETS: 'hilos_daemon_websockets',
   DAEMON_HTTP_SERVER: 'hilos_daemon_http_server',
   DAEMON_ENV: 'hilos_daemon_env',
+  DAEMON_ENV_ORPHANS: 'hilos_daemon_env_orphans',
   DAEMON_ENV_MISMATCH: 'hilos_daemon_env_mismatch',
   LOGS: 'hilos_logs',
   LOGS_KEYS: 'hilos_logs_keys',
@@ -310,6 +311,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.DAEMON_ENV]: { path: '/hilos/daemon/{nodeId}/env', admin: true },
+  [HilosPages.DAEMON_ENV_ORPHANS]: {
+    path: '/hilos/daemon/{nodeId}/env/orphans',
+    admin: true,
+  },
   [HilosPages.DAEMON_ENV_MISMATCH]: {
     path: '/hilos/daemon/env-mismatch',
     admin: true,

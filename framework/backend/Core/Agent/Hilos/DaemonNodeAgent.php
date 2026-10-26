@@ -275,13 +275,15 @@ final class DaemonNodeAgent extends AbstractHilosAgent
             $this->updatePicture($this->picture->withEnvironment($reading->summary()));
             if (!$initial) {
                 $this->logAgentInfo('Node environment changed; re-answering environment pages');
-                foreach (Hilos::$sr?->getAcceptKeysForPage(
-                    HilosPageConstants::HILOS_DAEMON_ENV,
-                    HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
-                    $this->picture->nodeId,
-                ) ?? [] as $acceptKey) {
-                    if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
-                        Hilos::$browser?->resendPageWhole(HilosPageConstants::HILOS_DAEMON_ENV, $acceptKey);
+                foreach ([HilosPageConstants::HILOS_DAEMON_ENV, HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS] as $page) {
+                    foreach (Hilos::$sr?->getAcceptKeysForPage(
+                        $page,
+                        HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
+                        $this->picture->nodeId,
+                    ) ?? [] as $acceptKey) {
+                        if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
+                            Hilos::$browser?->resendPageWhole($page, $acceptKey);
+                        }
                     }
                 }
             }

@@ -16,6 +16,7 @@ import {
   formatDaemonEnvRequired,
   formatDaemonEnvSimilarTo,
   formatDaemonEnvValue,
+  readHilosDaemonEnvOrphansPage,
   readHilosDaemonEnvPage,
   resolveHilosDaemonEnvKeyRow,
   resolveHilosDaemonEnvOrphanRow,
@@ -224,7 +225,7 @@ describe('daemon environment viewports', () => {
         descriptor: { filter: { node: 'standalone' }, sort: null },
       },
       {
-        page: HilosPages.DAEMON_ENV,
+        page: HilosPages.DAEMON_ENV_ORPHANS,
         tableKey: 'hilosDaemonEnvOrphans',
         descriptor: { filter: { node: 'node-2' }, sort: null },
       },
@@ -262,8 +263,11 @@ describe('daemon environment viewports', () => {
   it('declares three unsorted orphan columns without search or filters', () => {
     const frame = createHilosDaemonEnvOrphansTable(stubContext().context, 'n1')
       .controller.frame
-    expect(frame.declaration?.title).toBe('Orphans in .env')
+    expect(frame.declaration?.title).toBeUndefined()
+    expect(frame.declaration?.subtitle).toBeUndefined()
     expect(frame.declaration?.search).toBeUndefined()
+    expect(frame.declaration?.filters).toBeUndefined()
+    expect(frame.declaration?.mainAction).toBeUndefined()
     expect(frame.declaration?.filters).toBeUndefined()
     expect(frame.columns.get().map(({ key, label }) => [key, label])).toEqual([
       ['key', 'Line in file'],
@@ -274,6 +278,101 @@ describe('daemon environment viewports', () => {
     expect(
       frame.columns.get().every((column) => column.sortable !== true),
     ).toBe(true)
+  })
+
+  it('binds orphans to the orphans page, drops a late environment frame, and takes the first window', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.DAEMON_ENV_ORPHANS)
+    const listeners = new Map<string, Set<(payload: never) => void>>()
+    const registered: string[] = []
+    const unregistered: string[] = []
+    const rendered: string[] = []
+    const sent: string[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void) {
+        const group = listeners.get(event) ?? new Set()
+        group.add(listener)
+        listeners.set(event, group)
+        return () => {
+          group.delete(listener)
+        }
+      },
+      registerTableWindow(tableKey: string) {
+        registered.push(tableKey)
+      },
+      unregisterTableWindow(tableKey: string) {
+        unregistered.push(tableKey)
+      },
+      tableWindowDescriptors: () => ({}),
+      sendTableViewport(page: string) {
+        sent.push(page)
+        return true
+      },
+      sendTableRendered(page: string) {
+        rendered.push(page)
+        return true
+      },
+    } as unknown as HilosConnection
+    const orphans = createHilosDaemonEnvOrphansTable(
+      { connection, scopes },
+      'n1',
+    )
+    orphans.start()
+    expect(registered).toEqual(['hilosDaemonEnvOrphans'])
+    const frame = {
+      data: {
+        page: '',
+        tableKey: 'hilosDaemonEnvOrphans',
+        rows: [
+          {
+            rowKey: 'RAW',
+            slots: {
+              orphan: {
+                key: 'RAW',
+                value: { kind: 'secret', length: 4 },
+                similarTo: null,
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+        totalExact: true,
+        limit: 25,
+        sort: null,
+        firstAnchor: null,
+        lastAnchor: null,
+        rowsBefore: 0,
+      },
+    }
+    const emit = (page: string) => {
+      frame.data.page = page
+      for (const listener of listeners.get('projectSignal') ?? []) {
+        listener({
+          type: 'page_response',
+          data: {
+            page,
+            payload: {
+              windows: { hilosDaemonEnvOrphans: frame.data },
+            },
+          },
+        } as never)
+      }
+      for (const listener of listeners.get('tableWindow') ?? []) {
+        listener(frame as never)
+      }
+    }
+    emit(HilosPages.DAEMON_ENV)
+    expect(orphans.controller.rows.get()).toEqual([])
+    emit(HilosPages.DAEMON_ENV_ORPHANS)
+    expect(orphans.controller.rows.get()[0]?.rowKey).toBe('RAW')
+    expect(sent.every((page) => page === HilosPages.DAEMON_ENV_ORPHANS)).toBe(
+      true,
+    )
+    expect(
+      rendered.every((page) => page === HilosPages.DAEMON_ENV_ORPHANS),
+    ).toBe(true)
+    orphans.dispose()
+    expect(unregistered).toEqual(['hilosDaemonEnvOrphans'])
   })
 })
 
@@ -454,6 +553,30 @@ describe('daemon environment cell text', () => {
         similarTo: null,
       }),
     ).toBe('—')
+  })
+})
+
+describe('readHilosDaemonEnvOrphansPage', () => {
+  it('reads the heading and silence and ignores an environment catalog', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_ENV_ORPHANS)
+    const state = readHilosDaemonEnvOrphansPage(scopes)
+    expect(state.get()).toEqual({ node: null, nodeSilent: false })
+    expect(state.get()).not.toHaveProperty('environment')
+    const node = {
+      clustered: false,
+      state: null,
+      silentSince: null,
+      role: null,
+    }
+    page.data.set('node', node)
+    page.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
+      nodeId: 'n1',
+      cluster: false,
+      keys: [],
+    })
+    expect(state.get()).toEqual({ node, nodeSilent: true })
   })
 })
 
