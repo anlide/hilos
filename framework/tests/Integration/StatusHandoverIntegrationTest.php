@@ -59,6 +59,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
@@ -66,6 +67,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -81,6 +83,10 @@ use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\StatusAgent;
+use Hilos\Status\StatusPublicFiles;
+use Hilos\Status\StatusPublicSnapshot;
+use Hilos\Status\StatusPublicHeartbeat;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusSeverity;
 use Hilos\Status\StatusSnapshot;
@@ -113,6 +119,7 @@ final class StatusHandoverIntegrationTest extends FrameworkIntegrationTestCase
     /** @var array<string, mixed> Account-standing memory restored with the original context */
     private array $previousStanding = [];
     private StatusAgent $owner;
+    private StatusPublicVolume $publicVolume;
     private StatusHandoverWorker $worker;
     private StatusHandoverRuntime $runtime;
     private PageSignalRouter $gatekeeper;
@@ -157,6 +164,7 @@ final class StatusHandoverIntegrationTest extends FrameworkIntegrationTestCase
         $this->runtime->bindStateCollectionNames();
         Hilos::$rt = $this->runtime;
         Hilos::$browser = new IdentityTestBrowser(7, true);
+        $this->publicVolume = new StatusPublicVolume();
         $this->owner = new StatusAgent();
         OwnershipDeclaration::claimAll($this->owner);
         $this->worker = new StatusHandoverWorker($this->owner);
@@ -193,6 +201,7 @@ final class StatusHandoverIntegrationTest extends FrameworkIntegrationTestCase
             Hilos::$notify = $this->previousNotify;
             Hilos::$setting = $this->previousSetting;
             Hilos::$browser = $this->previousBrowser;
+            $this->publicVolume->close();
             parent::tearDown();
         }
     }
@@ -303,6 +312,164 @@ final class StatusHandoverIntegrationTest extends FrameworkIntegrationTestCase
         self::assertNull($this->row($replacement->id)['published_at']);
         self::assertNull($this->row($replacement->id)['suppressed_at']);
         self::assertSame([], $this->updates($replacement->id));
+    }
+
+    public function testPublicPairFollowsCheckingPublicationCommentRecoveryAndDatabaseAvailability(): void
+    {
+        $incident = $this->candidate();
+        $this->freshAbsence();
+        $at = TimeHelper::nowMs();
+        $this->publicationTicks($at);
+        $checking = $this->publicPair();
+        self::assertSame('checking', $checking->components[0]->state->value);
+        self::assertCount(1, $checking->candidates);
+        self::assertSame([], $checking->outages);
+        $this->success($this->ask(HilosSignalConstants::STATUS_PUBLISH_NOW, $incident->id));
+        $this->publicationTicks($at + 100);
+        $published = $this->publicPair();
+        self::assertSame('major_outage', $published->components[0]->state->value);
+        self::assertSame([], $published->candidates);
+        self::assertNotSame($checking->revision, $published->revision);
+        $this->success($this->ask(HilosSignalConstants::STATUS_ADD_UPDATE, $incident->id, 'Investigating', 'public-comment'));
+        $this->publicationTicks($at + 200);
+        $commented = $this->publicPair();
+        self::assertNotSame($published->revision, $commented->revision);
+        self::assertContains('Investigating', array_column($commented->outages[0]->updates, 'text'));
+        $this->healthyReport($at + 300);
+        $this->publicationTicks($at + 300);
+        $resolved = $this->publicPair();
+        self::assertSame('operational', $resolved->components[0]->state->value);
+        self::assertSame($at + 300, $resolved->outages[0]->resolvedAt);
+        self::assertContains('Resolved.', array_column($resolved->outages[0]->updates, 'text'));
+        self::assertSame('resolved', array_column($this->updates($incident->id), 'kind')[2]);
+        $this->healthyReport($at + 350);
+        $this->publicationTicks($at + 350);
+        self::assertSame($resolved->toArray(), $this->publicPair()->toArray(), 'Identical counts with a new report time change no public fact');
+        $database = Hilos::$db;
+        Hilos::$db = null;
+        try {
+            $this->publicationTicks($at + 400);
+            $unknown = $this->publicPair();
+            self::assertSame('unknown', $unknown->components[0]->state->value);
+            self::assertSame($resolved->toArray()['outages'], $unknown->toArray()['outages']);
+            $this->asOwner(fn () => $this->owner->tickAt($at + 31000));
+            self::assertSame($unknown->toArray(), $this->publicPair()->toArray());
+            self::assertSame($at + 31000, StatusPublicHeartbeat::fromJson(
+                Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read(),
+            )->aliveAt);
+        } finally {
+            Hilos::$db = $database;
+        }
+        $this->publicationTicks($at + 32000);
+        self::assertSame('operational', $this->publicPair()->components[0]->state->value);
+        self::assertSame($resolved->toArray()['outages'], $this->publicPair()->toArray()['outages']);
+    }
+
+    public function testFileFailureEmitsNoHintAndOnlyARepairedPairMayAdvanceHeartbeat(): void
+    {
+        $incident = $this->candidate();
+        $this->success($this->ask(HilosSignalConstants::STATUS_PUBLISH_NOW, $incident->id));
+        $at = TimeHelper::nowMs();
+        $this->publicationTicks($at);
+        $first = $this->publicPair();
+        $heartbeatPath = Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->getPath();
+        $oldHeartbeat = file_get_contents($heartbeatPath);
+        rename($heartbeatPath, $heartbeatPath . '.saved');
+        mkdir($heartbeatPath);
+        try {
+            $this->success($this->ask(HilosSignalConstants::STATUS_ADD_UPDATE, $incident->id, 'Committed before failure', 'failed-file'));
+            $this->publicationTicks($at + 31000);
+            self::assertNotSame($first->revision, StatusPublicSnapshot::fromJson(
+                Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(),
+            )->revision, 'Status installation precedes the failed matching heartbeat');
+            self::assertSame($oldHeartbeat, file_get_contents($heartbeatPath . '.saved'));
+            self::assertSame([], array_values(array_filter($this->drain(),
+                static fn (SignalDTO $frame): bool => $frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED)));
+        } finally {
+            rmdir($heartbeatPath);
+            rename($heartbeatPath . '.saved', $heartbeatPath);
+        }
+        $this->publicationTicks($at + 33000);
+        $repaired = $this->publicPair();
+        self::assertContains('Committed before failure', array_column($repaired->outages[0]->updates, 'text'));
+        $hints = array_values(array_filter($this->drain(),
+            static fn (SignalDTO $frame): bool => $frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED));
+        self::assertCount(1, $hints);
+    }
+
+    public function testLiftUsesTheFrameworkDatabaseResetAndRequiresANewWholeRoster(): void
+    {
+        $incident = $this->candidate();
+        $this->success($this->ask(HilosSignalConstants::STATUS_PUBLISH_NOW, $incident->id));
+        $at = TimeHelper::nowMs();
+        $this->publicationTicks($at);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+        $this->publicationTicks($at + 100);
+        self::assertSame('maintenance', $this->publicPair()->components[0]->state->value);
+        // Model the real replaced DB and the worker's normal re-hydrate handler, before lift.
+        Database::sqlRun('UPDATE hilos_status_incident SET resolved_at = ?, active_component_key = NULL WHERE id = ?', [$at + 200, $incident->id]);
+        DbSyncApplicator::applyReHydrate();
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
+        $this->publicationTicks($at + 300);
+        self::assertSame('unknown', $this->publicPair()->components[0]->state->value);
+        self::assertSame($at + 200, $this->publicPair()->outages[0]->resolvedAt);
+        self::assertSame(1, count(Database::sql('SELECT id FROM hilos_status_incident')->rows()));
+        $this->healthyReport($at + 400);
+        $this->publicationTicks($at + 400);
+        self::assertSame('unknown', $this->publicPair()->components[0]->state->value, 'A delta is no membership baseline');
+        $picture = new NodeDaemonPicture('node', NodeRole::Master, 9999999999,
+            new DaemonProcessRoster([new DaemonWorkerPicture(1, 'regular', null, 4096, [])], null, 0));
+        $this->owner->applyPicturePortion(new DaemonClusterPicturePortionSignalData(true, [
+            new ClusterDaemonNodeView('node', true, new ClusterDaemonNodeSlot('node', $picture, $at + 500)),
+        ]), $at + 500);
+        $this->publicationTicks($at + 500);
+        self::assertSame('unknown', $this->publicPair()->components[0]->state->value, 'A full stopped roster only establishes the baseline');
+        $this->healthyReport($at + 600);
+        $this->publicationTicks($at + 600);
+        self::assertSame('operational', $this->publicPair()->components[0]->state->value);
+        self::assertCount(1, Database::sql('SELECT id FROM hilos_status_incident')->rows(), 'Parked agents never create a new incident');
+    }
+
+    public function testPublicationRestartsAMutatedLargeBuildAndReplayKeepsTheContentRevision(): void
+    {
+        $incident = $this->candidate();
+        $this->success($this->ask(HilosSignalConstants::STATUS_PUBLISH_NOW, $incident->id));
+        $at = TimeHelper::nowMs();
+        for ($step = 0; $step < 8; ++$step) {
+            $this->asOwner(fn () => $this->owner->tickAt($at + $step));
+        }
+        $first = $this->publicPair();
+        self::assertCount(1, $first->outages);
+        self::assertCount(1, $first->outages[0]->updates);
+        for ($index = 0; $index < 130; ++$index) {
+            $this->success($this->ask(HilosSignalConstants::STATUS_ADD_UPDATE, $incident->id, 'Team ' . $index, 'portion-' . $index));
+        }
+        for ($step = 0; $step < 2; ++$step) {
+            $this->asOwner(fn () => $this->owner->tickAt($at + 10 + $step));
+            self::assertSame($first->revision, $this->publicPair()->revision, 'No partial timeline can replace the first whole');
+        }
+        $this->success($this->ask(HilosSignalConstants::STATUS_ADD_UPDATE, $incident->id, 'Newest committed text', 'newest'));
+        for ($step = 0; $step < 30; ++$step) {
+            $this->asOwner(fn () => $this->owner->tickAt($at + 20 + $step));
+        }
+        $published = $this->publicPair();
+        self::assertNotSame($first->revision, $published->revision);
+        self::assertCount(132, $published->outages[0]->updates);
+        self::assertContains('Newest committed text', array_column($published->outages[0]->updates, 'text'));
+        self::assertCount(132, $this->updates($incident->id), 'The whole file follows actual committed timeline rows');
+        $this->success($this->ask(HilosSignalConstants::STATUS_ADD_UPDATE, $incident->id, 'Newest committed text', 'newest'));
+        for ($step = 0; $step < 10; ++$step) {
+            $this->asOwner(fn () => $this->owner->tickAt($at + 100 + $step));
+        }
+        self::assertSame($published->toArray(), $this->publicPair()->toArray(), 'A replay changes no public content');
+        $this->drain();
+        $this->asOwner(fn () => $this->owner->tickAt($at + 30100));
+        self::assertSame($published->toArray(), $this->publicPair()->toArray(), 'Heartbeat changes neither revision nor generatedAt');
+        $hints = array_values(array_filter($this->drain(),
+            static fn (SignalDTO $frame): bool => $frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED));
+        self::assertCount(1, $hints);
+        self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $hints[0]->signalType->getType());
+        self::assertSame([], $hints[0]->data->data->toArray());
     }
 
     public function testTeamTextIsNormalizedImmutableAndReplayedByTheExistingLookup(): void
@@ -582,6 +749,35 @@ final class StatusHandoverIntegrationTest extends FrameworkIntegrationTestCase
         self::assertStringContainsString($reason, $answer->error);
         self::assertNull($answer->errorType);
         self::assertNull($answer->errorDetail);
+    }
+
+    /** @param int $at Clock used for a finite publication budget */
+    private function publicationTicks(int $at): void
+    {
+        for ($step = 0; $step < 12; ++$step) {
+            $this->asOwner(fn () => $this->owner->tickAt($at + $step));
+        }
+    }
+
+    /** @param int $at Distinct process report identity and local acceptance clock */
+    private function healthyReport(int $at): void
+    {
+        $picture = new NodeDaemonPicture('node', NodeRole::Master, 9999999999,
+            new DaemonProcessRoster([new DaemonWorkerPicture(1, 'regular', null, 4096, [
+                new DaemonAgentPicture('probe', 'cluster', 'leader'),
+            ])], null, 0));
+        $this->owner->applyPicturePortion(new DaemonClusterPicturePortionSignalData(false, [
+            new ClusterDaemonNodeView('node', true, new ClusterDaemonNodeSlot('node', $picture, $at)),
+        ]), $at);
+    }
+
+    /** @return StatusPublicSnapshot Actual coherent pair served to a public reader */
+    private function publicPair(): StatusPublicSnapshot
+    {
+        $snapshot = StatusPublicSnapshot::fromJson(Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
+        $heartbeat = StatusPublicHeartbeat::fromJson(Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read());
+        self::assertSame($snapshot->revision, $heartbeat->revision);
+        return $snapshot;
     }
 
     /** @return StatusIncident Candidate written under the real owner's claim */

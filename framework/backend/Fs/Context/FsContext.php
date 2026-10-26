@@ -28,6 +28,7 @@ use Hilos\Hilos;
  * @property-read FsTmpDirectory $tmp Built-in temporary directory, the cluster's: files are handed to the files library through it
  * @property-read FsDirectory $files Published files of the files registry, where the project registers it
  * @property-read FsDirectory $analytics_journal The node's analytics journal, where the project registers it
+ * @property-read FsDirectory $status Shared public Status files, where the project registers it
  */
 abstract class FsContext
 {
@@ -66,6 +67,14 @@ abstract class FsContext
      * DirectoryScope::CLUSTER, the start refuses it declared NODE.
      */
     public const string LEGAL_EXPORT = 'legal_export';
+
+    /**
+     * Public Status files shared by the Status publisher and every node's nginx.
+     *
+     * A project declaring HilosFeature::STATUS registers it as DirectoryScope::CLUSTER;
+     * startup refuses a missing directory or one declared NODE.
+     */
+    public const string STATUS = 'status';
 
     /**
      * The node's analytics journal; its one owner is the journal agent of that node (HIL-1154).
@@ -197,7 +206,7 @@ abstract class FsContext
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
      * Three rules. Tmp is the cluster's whatever features the project declares. The reserved
-     * files, data_export and legal_export are the cluster's, so any declared NODE is a fault; the
+     * files, data_export, legal_export and status are the cluster's, so any declared NODE is a fault; the
      * reserved analytics_journal is the node's, so it declared CLUSTER is one. One path is one
      * directory with one owner, so names registered on one path with different owners are a fault,
      * tmp counted under its reserved name. Paths are compared as written, less trailing
@@ -212,7 +221,7 @@ abstract class FsContext
         if ($this->_tmp !== null && $this->_tmp->getScope() === DirectoryScope::NODE) {
             $errors[] = "FS tmp directory is the cluster's: set it with DirectoryScope::CLUSTER";
         }
-        foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT] as $reserved) {
+        foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT, self::STATUS] as $reserved) {
             if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
                 $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
             }

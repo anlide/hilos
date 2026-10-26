@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\SignalTypeConstants;
 use Closure;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
@@ -62,6 +63,7 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\StatusAgent;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Status\StatusSnapshot;
@@ -91,6 +93,7 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
     private array $environment = [];
     private string $app;
     private StatusAgent $owner;
+    private StatusPublicVolume $publicVolume;
     private StatusNoticeLibrary $library;
     private StatusNoticeMailAgent $mail;
     private StatusNoticeSettingsOwner $settingsOwner;
@@ -142,6 +145,7 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         Hilos::$sr = new StatusNoticeRouter();
         Hilos::$notify = new HilosNotifier();
         Hilos::$setting = new SettingsAccessor(StatusNoticeSettingsCatalog::class);
+        $this->publicVolume = new StatusPublicVolume();
         $this->owner = new StatusAgent();
         $this->library = new StatusNoticeLibrary();
         $this->mail = new StatusNoticeMailAgent('1');
@@ -191,6 +195,7 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
                 putenv($value === false ? $name : $name . '=' . $value);
             }
             new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->app);
+            $this->publicVolume->close();
             parent::tearDown();
         }
     }
@@ -395,7 +400,11 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         Hilos::$db = null;
         $this->frames();
         $this->tick(self::AT + 1);
-        self::assertSame([], $this->frames());
+        $frames = $this->frames();
+        self::assertCount(1, $frames);
+        self::assertSame(HilosSignalConstants::STATUS_FILES_CHANGED, $frames[0]->signalName->getName());
+        self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
+        self::assertSame([], $frames[0]->data->data->toArray());
         self::assertSame(0, $this->tasks());
         self::assertSame(StatusComponentState::MAINTENANCE, StatusSnapshot::read()->components['service']->state);
         $this->asAgent($this->owner, fn () => $this->owner->onStop());

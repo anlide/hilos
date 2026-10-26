@@ -122,6 +122,17 @@ export async function gotoMaintenance(page: Page, path: string): Promise<void> {
   await expect(page.getByTestId(MAINTENANCE)).toBeVisible()
 }
 
+/**
+ * Public Status has no page subscription. Its own file-backed components,
+ * rather than a synthetic page response, settle this document navigation.
+ *
+ * @param page The guest browser, including before its first socket welcome.
+ */
+export async function gotoPublicStatus(page: Page): Promise<void> {
+  await page.goto('/status')
+  await expect(page.getByTestId('public-status-components')).toBeVisible()
+}
+
 /** The live connection indicator the shell keeps at every state, freeze included. */
 const CONNECTION_STATE = 'conn-state'
 

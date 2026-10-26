@@ -35,6 +35,16 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 true,
                 emptyIsMissing: true,
             ),
+            EnvConstants::STATUS_POLL_INTERVAL_SECONDS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                30,
+                emptyIsMissing: true,
+            ) + [EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => 1],
+            EnvConstants::STATUS_STALE_AFTER_SECONDS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                120,
+                emptyIsMissing: true,
+            ) + [EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => 1],
             EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::WORKER_COMM_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
             EnvConstants::COMMAND_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '127.0.0.1', emptyIsMissing: true, perNode: true),

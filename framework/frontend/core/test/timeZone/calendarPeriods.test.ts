@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatSnapshotMoment } from '../../src/format/moment.js'
-import { calendarPeriodStarts } from '../../src/timeZone/calendarPeriods.js'
+import {
+  calendarDays,
+  calendarPeriodStarts,
+} from '../../src/timeZone/calendarPeriods.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -194,4 +197,98 @@ describe('calendar period starts', () => {
       expect(() => calendarPeriodStarts(now, 'UTC')).toThrow(RangeError)
     },
   )
+})
+
+describe('calendar day sequence', () => {
+  it.each([
+    [
+      '2026-03-29T12:00:00Z',
+      '2026-03-28T23:00:00Z',
+      '2026-03-29T22:00:00Z',
+      23,
+    ],
+    [
+      '2026-10-25T12:00:00Z',
+      '2026-10-24T22:00:00Z',
+      '2026-10-25T23:00:00Z',
+      25,
+    ],
+  ])('preserves the Warsaw DST day at %s', (now, start, end, hours) => {
+    const days = calendarDays(Date.parse(now), 'Europe/Warsaw', 90)
+    const today = days.at(-1)
+    expect(days).toHaveLength(90)
+    expect(today).toEqual({
+      startTs: Date.parse(start),
+      endTs: Date.parse(end),
+    })
+    expect((today!.endTs - today!.startTs) / 3600000).toBe(hours)
+    for (let index = 1; index < days.length; index++) {
+      expect(days[index - 1]?.endTs).toBe(days[index]?.startTs)
+    }
+  })
+
+  it.each([
+    [
+      'UTC',
+      '2026-01-01T00:00:00Z',
+      '2025-12-31T00:00:00Z',
+      '2026-01-02T00:00:00Z',
+    ],
+    [
+      'UTC',
+      '2024-03-01T00:00:00Z',
+      '2024-02-29T00:00:00Z',
+      '2024-03-02T00:00:00Z',
+    ],
+    [
+      'Pacific/Apia',
+      '2011-12-30T12:00:00Z',
+      '2011-12-29T10:00:00Z',
+      '2011-12-31T10:00:00Z',
+    ],
+    [
+      'Pacific/Apia',
+      '2011-12-29T12:00:00Z',
+      '2011-12-28T10:00:00Z',
+      '2011-12-30T10:00:00Z',
+    ],
+    [
+      'America/Sao_Paulo',
+      '2018-11-04T12:00:00Z',
+      '2018-11-03T03:00:00Z',
+      '2018-11-05T02:00:00Z',
+    ],
+    [
+      'America/Havana',
+      '2026-11-01T06:00:00Z',
+      '2026-10-31T04:00:00Z',
+      '2026-11-02T05:00:00Z',
+    ],
+  ])(
+    'steps calendar fields across boundaries in %s at %s',
+    (zone, now, first, end) => {
+      const days = calendarDays(Date.parse(now), zone, 2)
+      expect(days[0]?.startTs).toBe(Date.parse(first))
+      expect(days[0]?.endTs).toBe(days[1]?.startTs)
+      expect(days[1]?.endTs).toBe(Date.parse(end))
+    },
+  )
+
+  it('uses the requested reader zone and supports UTC without Intl', () => {
+    const now = Date.parse('2026-01-01T00:30:00Z')
+    expect(calendarDays(now, 'America/Los_Angeles', 1)[0]?.startTs).toBe(
+      Date.parse('2025-12-31T08:00:00Z'),
+    )
+    vi.stubGlobal('Intl', undefined)
+    expect(calendarDays(now, 'UTC', 1)).toEqual([
+      {
+        startTs: Date.parse('2026-01-01T00:00:00Z'),
+        endTs: Date.parse('2026-01-02T00:00:00Z'),
+      },
+    ])
+  })
+
+  it.each([0, -1, 1.5, NaN, Infinity])('refuses invalid count %s', (count) => {
+    expect(() => calendarDays(Date.now(), 'UTC', count)).toThrow(RangeError)
+  })
 })

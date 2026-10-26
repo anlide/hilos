@@ -28,6 +28,7 @@ import * as base from '../../src/base/index.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
+import * as publicStatus from '../../src/status/index.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -51,6 +52,7 @@ const sections = {
 }
 const publicEntries: Record<string, Record<string, unknown>> = {
   './base': base,
+  './status': publicStatus,
   ...Object.fromEntries(
     Object.entries(sections).map(([name, api]) => [`./admin/${name}`, api]),
   ),
@@ -258,6 +260,48 @@ const statusTypes = [
   'HilosStatusState',
   'HilosStatusSummary',
 ]
+/** The public file reader is its own lazy entry, separate from admin Status. */
+const publicStatusValues = [
+  'createPublicStatus',
+  'publicStatusBanner',
+  'publicStatusCandidateSchema',
+  'publicStatusComponentSchema',
+  'publicStatusDayStrips',
+  'publicStatusFileSchema',
+  'publicStatusHeartbeatSchema',
+  'publicStatusHistory',
+  'publicStatusMaintenancePeriodSchema',
+  'publicStatusOutageSchema',
+  'publicStatusOutageViews',
+  'publicStatusOverall',
+  'publicStatusUpdateSchema',
+  'publicStatusWorkSchema',
+  'readPublicStatusFiles',
+]
+const publicStatusTypes = [
+  'PublicStatus',
+  'PublicStatusBanner',
+  'PublicStatusCandidate',
+  'PublicStatusComponent',
+  'PublicStatusDay',
+  'PublicStatusDayState',
+  'PublicStatusDayStrip',
+  'PublicStatusFetch',
+  'PublicStatusFile',
+  'PublicStatusFreshness',
+  'PublicStatusHeartbeat',
+  'PublicStatusHistoryEntry',
+  'PublicStatusMaintenancePeriod',
+  'PublicStatusMaintenanceView',
+  'PublicStatusOptions',
+  'PublicStatusOutage',
+  'PublicStatusOutageView',
+  'PublicStatusPair',
+  'PublicStatusReadResult',
+  'PublicStatusState',
+  'PublicStatusUpdate',
+  'PublicStatusWork',
+]
 /** Restore-card selectors added on the maintenance frame. The frozen snapshot stays as it was. */
 const maintenanceFrameValues = [
   'hilosMaintenanceOtherBrowserLine',
@@ -317,6 +361,7 @@ const expectedValues = [
   ...adminModerationValues,
   ...connectionInteractionValues,
   ...statusValues,
+  ...publicStatusValues,
   ...profileRenameValues,
   ...userOverviewValues,
   ...maintenanceFrameValues,
@@ -375,12 +420,13 @@ function runtimeClosure(entry: string): string[] {
 }
 
 describe('core public entries', () => {
-  it('publishes base and exactly fifteen sections with one tsc output per source', () => {
+  it('publishes base, public Status and exactly fifteen admin sections with one tsc output per source', () => {
     const manifest = JSON.parse(
       readFileSync(join(packageRoot, 'package.json'), 'utf8'),
     ) as {
       exports: Record<string, Record<string, string>>
     }
+    expect(Object.keys(sections)).toHaveLength(15)
     expect(Object.keys(manifest.exports).sort()).toEqual(
       [
         '.',
@@ -602,8 +648,24 @@ describe('core public entries', () => {
     )
   })
 
+  it('exports the public reader once, outside base and admin Status', () => {
+    expect(Object.keys(publicStatus).sort()).toEqual(
+      [...publicStatusValues].sort(),
+    )
+    for (const name of publicStatusValues) {
+      expect(base, name).not.toHaveProperty(name)
+      expect(status, name).not.toHaveProperty(name)
+      expect(core[name as keyof typeof core]).toBe(
+        publicStatus[name as keyof typeof publicStatus],
+      )
+    }
+    const closure = runtimeClosure('status/index.ts')
+    expect(closure).not.toContain('index.ts')
+    expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([])
+  })
+
   it('preserves legacy types and resolves each entry to the same declaration', () => {
-    const entries = ['index.ts', 'base/index.ts'].concat(
+    const entries = ['index.ts', 'base/index.ts', 'status/index.ts'].concat(
       Object.keys(sections).map(
         (section) =>
           `admin/${section.replace('change-log', 'changeLog')}/index.ts`,
@@ -664,6 +726,7 @@ describe('core public entries', () => {
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
         ...statusTypes,
+        ...publicStatusTypes,
         ...adminModerationTypes,
         ...maintenanceFrameTypes,
       ].sort(),
@@ -781,9 +844,10 @@ describe('core public entries', () => {
     )
   })
 
-  it('keeps the entire base runtime closure free of admin implementations', () => {
+  it('keeps the entire base runtime closure free of public Status and admin implementations', () => {
     const closure = runtimeClosure('base/index.ts')
     expect(closure).not.toContain('index.ts')
+    expect(closure.filter((file) => file.startsWith('status/'))).toEqual([])
     expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([
       'admin/identity/hilosPageIdentity.ts',
       'admin/identity/hilosPageInstanceName.ts',
@@ -814,6 +878,7 @@ describe('core public entries', () => {
       'logsSignals',
       'maintenanceSignals',
       'settingPresetsSignals',
+      'statusSignals',
     ]) {
       expect(closure).toContain(`protocol/${protocol}.ts`)
     }

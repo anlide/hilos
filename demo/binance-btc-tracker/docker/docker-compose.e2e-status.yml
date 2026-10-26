@@ -2,6 +2,7 @@
 # These files replace the two thin entrypoints only inside the e2e daemon.
 services:
   binance-btc-tracker-daemon-test:
+    # Ordinary delivery scenarios retain the production publication defaults.
     volumes:
       - ../tests/Fixtures/Status/daemon.php:/app/backend/Bootstrap/daemon.php:ro
       - ../tests/Fixtures/Status/worker.php:/app/backend/Bootstrap/worker.php:ro

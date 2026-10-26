@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Connections;
 
+use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClientLocation;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Core\Router\SignalNameInterface;
 
 /**
  * The cluster's index of which node each browser connection is attached to.
@@ -45,6 +47,9 @@ final class ClusterClientLocation implements ClientLocation
 
     /** @var int Cross-node deliveries this node has accepted for its browsers since start */
     private int $deliveries = 0;
+
+    /** @var int Existing client-test signals accepted by this node's peer sink since start */
+    private int $testDeliveries = 0;
 
     /** @var ?string Browser the last addressed cross-node delivery was for, or null when there has been none */
     private ?string $lastAcceptKey = null;
@@ -187,6 +192,26 @@ final class ClusterClientLocation implements ClientLocation
     public function deliveries(): int
     {
         return $this->deliveries;
+    }
+
+    /**
+     * Counts only the existing CLI probe at the same receiving boundary as the total.
+     * Background broadcasts still count in deliveries(), without becoming probe evidence.
+     * This is private master-lifetime inspection state, not shared application RT state.
+     *
+     * @param SignalNameInterface $name Name of the signal accepted from a peer
+     */
+    public function noteTestDelivery(SignalNameInterface $name): void
+    {
+        if ($name->getName() === ClusterCommandConstants::SIGNAL_CLIENT_TEST) {
+            $this->testDeliveries++;
+        }
+    }
+
+    /** @return int Client-test signals accepted from peers, excluding unrelated application traffic */
+    public function testDeliveries(): int
+    {
+        return $this->testDeliveries;
     }
 
     /**

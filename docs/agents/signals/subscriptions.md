@@ -131,7 +131,6 @@ render and every later read, even with a live connection; `page_response` is
 neither its source nor a condition of reading. See
 [status-page.md](../architecture/status-page.md#reading-status). This does not
 permit a second data action on any subscribed page.
-(not in the code yet — HIL-1690)
 
 The rule is absolute rather than a preference because the cost of breaking it is
 not one extra request. A page that needs `N` answers has `2^N` intermediate
@@ -266,7 +265,6 @@ without the first screen of rows of the table it shows.
 picture comes from the coherent file pair, not an extra request beside a page
 subscription. Its empty change hint only asks the reader to reread those files;
 see [the Status contract](../architecture/status-page.md#static-publication).
-(not in the code yet — HIL-1690)
 
 ### The first table window rides in the answer
 

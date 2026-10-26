@@ -20,6 +20,12 @@
       "import": "./dist/base/index.js",
       "default": "./dist/base/index.js"
     },
+    "./status": {
+      "development": "./src/status/index.ts",
+      "types": "./dist/status/index.d.ts",
+      "import": "./dist/status/index.js",
+      "default": "./dist/status/index.js"
+    },
     "./admin/i18n": {
       "development": "./src/admin/i18n/index.ts",
       "types": "./dist/admin/i18n/index.d.ts",

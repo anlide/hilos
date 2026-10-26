@@ -65,6 +65,16 @@ function openConnection(onBuildMismatch?: () => void) {
 }
 
 describe('createHilosConnection', () => {
+  it('accepts the empty Status hint on a guest connection without project schemas', () => {
+    const { connection, socket } = openConnection()
+    const received: string[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.type))
+    socket.emit('message', {
+      data: JSON.stringify({ type: 'status_files_changed', data: {} }),
+    })
+    expect(received).toEqual(['status_files_changed'])
+  })
+
   it('returns the connection and an action-error store', () => {
     const { connection, actionErrors } = openConnection()
 

@@ -8,6 +8,8 @@ import {
   type NavigablePages,
   type NavigationEnvironment,
 } from '../../src/routing/HilosRouter.js'
+import { HilosPages } from '../../src/routing/hilosPages.js'
+import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
 import { lazyPage } from '../../src/routing/pageView.js'
 import { createPageViewState } from '../../src/routing/pageViewState.js'
@@ -76,6 +78,7 @@ function harness(initial = '/main', unbuilt: ReadonlySet<string> = new Set()) {
       a: { path: '/a/{id?}', admin: true },
       b: { path: '/b', admin: true },
       alias: { path: '/alias', admin: true },
+      [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },
     }),
     pages,
     env,
@@ -88,12 +91,142 @@ function harness(initial = '/main', unbuilt: ReadonlySet<string> = new Set()) {
     pageError.set(null)
     pageLoading.set(false)
   }
-  return { router, state, pageLoading, pageError, answer }
+  return { router, state, pages, pageLoading, pageError, answer }
 }
 
 afterEach(() => vi.useRealTimers())
 
 describe('createPageViewState', () => {
+  it('mounts cold public Status without a server answer', () => {
+    const { state, pages } = harness('/status')
+    state.setPages({ [HilosPages.PUBLIC_STATUS]: componentB })
+    expect(pages.subscribe).not.toHaveBeenCalled()
+    expect(state.view.get()).toBe(componentB)
+    expect(state.loading.get()).toBe(false)
+    expect(state.error.get()).toBeNull()
+    state.dispose()
+  })
+
+  it.each(['pending', 'denied', 'ready'] as const)(
+    'leaves a %s page for Status and gates every synchronous window on return',
+    (previous) => {
+      const { state, router, pageError, pageLoading, answer } = harness()
+      state.setPages({ main, [HilosPages.PUBLIC_STATUS]: componentB })
+      if (previous === 'ready') answer()
+      if (previous === 'denied') {
+        pageError.set({
+          page: 'main',
+          httpCode: 403,
+          errorCode: 'forbidden',
+          title: 'Forbidden',
+          message: 'Access was removed.',
+        })
+        pageLoading.set(false)
+      }
+      const entering: Component[] = []
+      const offEntry = subscribeSignal(state.view, (view) => {
+        if (view) entering.push(view)
+      })
+      router.navigate('/status')
+      offEntry()
+      expect(entering).toEqual([componentB])
+      expect(state.view.get()).toBe(componentB)
+      expect(state.loading.get()).toBe(false)
+      expect(state.error.get()).toBeNull()
+      router.denyCurrentPage()
+      router.awaitPageAnswer()
+      expect(state.view.get()).toBe(componentB)
+
+      const seen: Component[] = []
+      const off = subscribeSignal(state.view, (view) => {
+        if (view) seen.push(view)
+      })
+      const offRoute = subscribeSignal(router.currentRoute, () => {
+        expect(state.view.get()).toBeUndefined()
+        expect(state.loading.get()).toBe(true)
+      })
+      router.navigate('/main')
+      offRoute()
+      expect(seen).toEqual([])
+      expect(state.view.get()).toBeUndefined()
+      expect(state.loading.get()).toBe(true)
+      answer()
+      expect(seen).toEqual([main])
+      off()
+      state.dispose()
+    },
+  )
+
+  it('waits for Status code, ignores stale server state, and reports a lazy import failure', async () => {
+    const first = deferred<Component>()
+    const { state, router, pageError, pageLoading } = harness()
+    state.setPages({
+      main,
+      [HilosPages.PUBLIC_STATUS]: lazyPage(() => first.promise),
+    })
+    router.navigate('/status')
+    expect(state.loading.get()).toBe(true)
+    expect(state.view.get()).toBeUndefined()
+    pageError.set({
+      page: 'main',
+      httpCode: 401,
+      errorCode: 'unauthorized',
+      title: 'Sign in',
+      message: 'Please sign in.',
+    })
+    pageLoading.set(true)
+    expect(state.error.get()).toBeNull()
+    first.reject(new Error('chunk unavailable'))
+    await Promise.resolve()
+    expect(state.error.get()?.errorCode).toBe('page_load_failed')
+    expect(state.loading.get()).toBe(false)
+    state.dispose()
+  })
+
+  it('returns to cached Status code without a wait but gates cached ordinary code', async () => {
+    const status = deferred<Component>()
+    const ordinary = deferred<Component>()
+    const { state, router, answer } = harness()
+    const loader = vi.fn(() => status.promise)
+    state.setPages({
+      main: lazyPage(() => ordinary.promise),
+      [HilosPages.PUBLIC_STATUS]: lazyPage(loader),
+    })
+    ordinary.resolve(main)
+    await ordinary.promise
+    answer()
+    expect(state.view.get()).toBe(main)
+    router.navigate('/status')
+    status.resolve(componentB)
+    await status.promise
+    expect(state.view.get()).toBe(componentB)
+    router.navigate('/main')
+    expect(state.view.get()).toBeUndefined()
+    router.navigate('/status')
+    expect(state.view.get()).toBe(componentB)
+    expect(state.loading.get()).toBe(false)
+    expect(loader).toHaveBeenCalledTimes(1)
+    router.navigate('/main')
+    expect(state.view.get()).toBeUndefined()
+    answer()
+    expect(state.view.get()).toBe(main)
+    state.dispose()
+  })
+
+  it.each(['react', 'angular'] as const)(
+    'does not import or mount a ghost Status view in %s',
+    (layer) => {
+      const { state } = harness('/status', hilosUnbuiltPages(layer))
+      const loader = vi.fn(() => Promise.resolve(componentB))
+      state.setPages({ [HilosPages.PUBLIC_STATUS]: lazyPage(loader) })
+      expect(loader).not.toHaveBeenCalled()
+      expect(state.view.get()).toBeUndefined()
+      expect(state.loading.get()).toBe(false)
+      expect(state.error.get()?.errorCode).toBe('not_built')
+      state.dispose()
+    },
+  )
+
   it('keeps eager function components opaque and waits for the server', () => {
     const eager = vi.fn(main)
     const { state, answer } = harness()

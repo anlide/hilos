@@ -3113,6 +3113,9 @@ final class HilosSignalConstants
     /** Full snapshot or changed whole node views for the Status owner (HIL-1688). */
     public const string STATUS_DAEMON_PICTURE_PORTION = 'status_daemon_picture_portion';
 
+    /** Empty hint after a public Status file pair or heartbeat is successfully published. */
+    public const string STATUS_FILES_CHANGED = 'status_files_changed';
+
     /** Browser metadata for the Status overview and component window. */
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS = 'subscription_page_hilos_status';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS = 'subscription_page_hilos_status_components';

@@ -88,11 +88,19 @@ class EnvAccessor implements ArrayAccess
                         EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE,
                         EnvCatalogConstants::CATALOG_ENTRY_PER_NODE,
                         EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE,
+                        EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE,
                     ], true)) {
                         throw new EnvInvalidValueException("Environment variable '{$key}' catalog field '{$field}' is unknown");
                     }
                 }
                 $this->entryType($key, $entry);
+                if (array_key_exists(EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE, $entry)
+                    && ($entry[EnvCatalogConstants::CATALOG_ENTRY_TYPE] !== EnvCatalogConstants::TYPE_INTEGER
+                        || !is_int($entry[EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE]))) {
+                    throw new EnvInvalidValueException(
+                        "Environment variable '{$key}' catalog field 'min_value' requires an integer bound and type",
+                    );
+                }
                 foreach ([
                     EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING,
                     EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING,
@@ -457,7 +465,7 @@ class EnvAccessor implements ArrayAccess
      *
      * @param string $key Environment variable name
      * @return mixed Effective env value
-     * @throws EnvInvalidValueException When catalog metadata is invalid
+     * @throws EnvInvalidValueException When catalog metadata is invalid or a value violates its declared minimum
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws MissingEnvironmentVariableException When a required value is missing
      */
@@ -465,6 +473,15 @@ class EnvAccessor implements ArrayAccess
     {
         $resolution = $this->resolve($key, $this->envCache ?? [], $this->exampleCache);
         if ($resolution->source !== EnvSource::MISSING) {
+            $minimum = $this->entryFor($key)[EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE] ?? null;
+            if ($minimum !== null) {
+                $integer = EnvValue::integerOf($resolution->value);
+                if ($integer === null || $integer < $minimum) {
+                    throw new EnvInvalidValueException(
+                        "Environment variable '{$key}' value must be an integer greater than or equal to {$minimum}",
+                    );
+                }
+            }
             return $resolution->value;
         }
         if ($this->entryBool($key, $this->entryFor($key), EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING, false)) {

@@ -1,0 +1,7 @@
+# Only the dedicated Status browser phase uses shorter real clock boundaries.
+# The catalog binding remains in e2e-status; ordinary delivery keeps 30/120.
+services:
+  binance-btc-tracker-daemon-test:
+    environment:
+      STATUS_POLL_INTERVAL_SECONDS: "2"
+      STATUS_STALE_AFTER_SECONDS: "6"

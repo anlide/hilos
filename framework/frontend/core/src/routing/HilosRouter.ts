@@ -20,6 +20,7 @@ import {
   type ReadonlySignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import { HilosPages } from './hilosPages.js'
 import { type PageError, ROUTE_NOT_FOUND_ERROR } from './pageError.js'
 import { type PageRouteMatch, type PageRouter } from './PageRouter.js'
 
@@ -34,7 +35,7 @@ export interface NavigablePages {
   subscribe(pageKey: string, params?: Record<string, string>): unknown
   /**
    * Leave the current page without subscribing another. The navigator calls it
-   * for an address no route claims, so the subscription that was live is told
+   * for a route miss or PUBLIC_STATUS, so the subscription that was live is told
    * `page_unsubscribe` and nothing is subscribed in its place.
    */
   unsubscribe(): void
@@ -99,13 +100,15 @@ export interface HilosRouter {
    * The current page's error, or null while it loads cleanly. A route miss is
    * the local route-404, already set before the socket opens and left in place
    * by a cleared, denied, or awaited subscription. Any other page forwards the
-   * subscription error. The routed outlet (HilosView) shows an error surface
+   * subscription error, except PUBLIC_STATUS, whose nginx reader has no server
+   * subscription. The routed outlet (HilosView) shows an error surface
    * while it is set.
    */
   readonly pageError: ReadonlySignal<PageError | null>
   /**
    * True from a navigation until that page's subscription answers, either with
-   * its payload or with an error. A route miss is never loading. The routed
+   * its payload or with an error. A route miss and a built PUBLIC_STATUS never
+   * wait for a server answer. The routed
    * outlet holds the page back while it is set, so a page is never shown and
    * then taken away again by a denial that was still on the wire, and a test
    * waits on this state instead of racing the round trip with a visibility
@@ -271,15 +274,22 @@ export function createHilosRouter(
       pages.unsubscribe()
     } else if (unbuilt.has(match.page)) {
       pages.refuseUnbuilt(match.page)
+    } else if (match.page === HilosPages.PUBLIC_STATUS) {
+      // This one page reads public nginx files without a backend counterpart.
+      // Unbuilt must win first so an unavailable view cannot become a ghost.
+      pages.unsubscribe()
     } else {
       pages.subscribe(match.page, match.params)
     }
   }
 
-  // A miss keeps its local 404. Clearing, denying, or awaiting the subscription
-  // underneath it would either erase that surface or raise a wait for a page
-  // that was never subscribed.
-  const onMiss = (): boolean => currentRoute.get().page === null
+  // Neither a miss nor the built file reader has a server subscription for
+  // generic access reactions to clear, deny or await. Unbuilt keeps its refusal.
+  const onPublicStatus = (): boolean =>
+    currentRoute.get().page === HilosPages.PUBLIC_STATUS &&
+    !unbuilt.has(HilosPages.PUBLIC_STATUS)
+  const withoutSubscription = (): boolean =>
+    currentRoute.get().page === null || onPublicStatus()
 
   return {
     currentRoute,
@@ -288,29 +298,31 @@ export function createHilosRouter(
     pageError: computedSignal<PageError | null>(() =>
       currentRoute.get().page === null
         ? ROUTE_NOT_FOUND_ERROR
-        : pages.pageError.get(),
+        : onPublicStatus()
+          ? null
+          : pages.pageError.get(),
     ),
     pageLoading: computedSignal<boolean>(() =>
-      currentRoute.get().page === null ? false : pages.pageLoading.get(),
+      withoutSubscription() ? false : pages.pageLoading.get(),
     ),
     pageIdentity: pages.pageIdentity,
     dashboardSections: pages.dashboardSections,
     resolvePath: (page, params) =>
       unbuilt.has(page) ? undefined : router.path(page, params),
     clearPageError: () => {
-      if (onMiss()) {
+      if (withoutSubscription()) {
         return
       }
       pages.clearPageError()
     },
     denyCurrentPage: () => {
-      if (onMiss()) {
+      if (withoutSubscription()) {
         return
       }
       pages.denyCurrentPage()
     },
     awaitPageAnswer: () => {
-      if (onMiss()) {
+      if (withoutSubscription()) {
         return
       }
       pages.awaitPageAnswer()

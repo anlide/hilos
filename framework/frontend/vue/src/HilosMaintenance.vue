@@ -4,9 +4,10 @@ protected mode, on every url, so a visitor who arrives mid-maintenance sees
 planned work rather than a generic outage. The words come from the backend
 registry and travel the wire (the Hilos i18n model); this component holds
 layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
-known but no sentence arrived with it. It is a state, not a page: no links, no
-retry button — the mode lifts on its own and the core reloads the document. The
-one exception is the code field, shown only while the freeze says it accepts a
+known but no sentence arrived with it. The mode lifts on its own and the core
+reloads the document. The native Service status link always opens the public
+file reader, even without a usable socket. The code field is shown only while
+the freeze says it accepts a
 pass AND the shell hands over an administrative surface AND at least one code has
 been minted: that phase is the verification window, and a verifier admitted by the
 code sees the whole product rather than this screen, while a visitor on a public
@@ -35,6 +36,8 @@ import {
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
   formatRestorePhaseLine,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core/base'
@@ -228,5 +231,12 @@ function present(): void {
         </div>
       </div>
     </form>
+    <a
+      :href="HILOS_PAGE_ROUTES[HilosPages.PUBLIC_STATUS]"
+      class="small mt-3"
+      data-id="maintenance-service-status"
+    >
+      <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Service status
+    </a>
   </div>
 </template>

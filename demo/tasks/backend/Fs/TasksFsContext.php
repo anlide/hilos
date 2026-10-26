@@ -10,11 +10,11 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 
-/** Shared files, uploads and exports, and the node-local analytics journal. */
+/** Shared files, uploads, exports and public Status files, and the node-local analytics journal. */
 final class TasksFsContext extends FsContext
 {
     /**
-     * Registers shared upload, registry and export storage beside the node's analytics journal.
+     * Registers shared upload, registry, export and Status storage beside the node's analytics journal.
      *
      * @throws EnvException When the published-files directory override cannot be read
      */
@@ -40,6 +40,11 @@ final class TasksFsContext extends FsContext
         $this->registerDirectory(
             FsContext::LEGAL_EXPORT,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/legal_export',
+            DirectoryScope::CLUSTER,
+        );
+        $this->registerDirectory(
+            FsContext::STATUS,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/status',
             DirectoryScope::CLUSTER,
         );
     }

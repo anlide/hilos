@@ -8,6 +8,7 @@ import {
   subscribeSignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import { HilosPages } from './hilosPages.js'
 import { type HilosRouter } from './HilosRouter.js'
 import { PAGE_LOAD_FAILED_ERROR, type PageError } from './pageError.js'
 import { type LazyPageView, type PageView } from './pageView.js'
@@ -20,7 +21,7 @@ const RESOURCE_NOT_FOUND_CODE = 'not_found'
 
 /** The routed outlet's shared code, data, and refusal state. */
 export interface PageViewState<T> {
-  /** The component only while both code and the server answer are ready. */
+  /** Ready code after the server answer; PUBLIC_STATUS needs only its code. */
   readonly view: ReadonlySignal<T | undefined>
   /** Code or the server answer is pending, with no final error. */
   readonly loading: ReadonlySignal<boolean>
@@ -242,6 +243,8 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     if (departing) {
       awaitingSubscription =
         route.page !== null &&
+        // Only the public nginx reader has no first server answer to await.
+        route.page !== HilosPages.PUBLIC_STATUS &&
         router.resolvePath(route.page, route.params) !== undefined
       departing = false
     }

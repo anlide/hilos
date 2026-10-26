@@ -6,6 +6,7 @@ import { libInjectCss } from 'vite-plugin-lib-inject-css'
 const entry = {
   index: './src/index.ts',
   base: './src/base/index.ts',
+  status: './src/status/index.ts',
   'admin-views': './src/admin/hilosAdminViews.ts',
   'admin/analytics': './src/admin/analytics/index.ts',
   'admin/appearance': './src/admin/appearance/index.ts',

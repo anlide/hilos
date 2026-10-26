@@ -49,6 +49,10 @@ assertAcyclic('index.js')
 const base = closure('base.js')
 assert.ok(modules(base).includes('src/base/index.ts'))
 assert.ok(!modules(base).some((id) => id.startsWith('src/admin/')))
+assert.ok(!modules(base).some((id) => id.startsWith('src/status/')))
+assert.ok(
+  !modules(base).some((id) => id.startsWith('src/public/HilosStatusPage.vue')),
+)
 assert.ok(!modules(base).includes('src/index.ts'))
 // The shared page head is a common primitive: it ships in that same clean base
 // closure, not in an admin section or in the compatibility root.
@@ -71,6 +75,9 @@ const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
   import { HilosTableText } from '@hilos/vue/base'
   import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal } from '@hilos/vue/admin/status'
+  import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
+  import { HilosPublicStatusPage } from '@hilos/vue'
+  import type { HilosConnection } from '@hilos/core/base'
   import { HilosModerationPage } from '@hilos/vue/admin/moderation'
   import type { HilosStatusContext, HilosStatusIncidentController } from '@hilos/core/admin/status'
   import type { HilosModerationContext } from '@hilos/core/admin/moderation'
@@ -80,6 +87,7 @@ const typeSource = `
   type ModalProps = InstanceType<typeof HilosStatusIncidentModal>['$props']
   type ModerationProps = InstanceType<typeof HilosModerationPage>['$props']
   type Props = InstanceType<typeof HilosTableText>['$props']
+  type PublicProps = InstanceType<typeof PublicStatusPage>['$props']
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
   const exactValue: Same<Props['value'], Hideable<string>> = true
@@ -87,6 +95,14 @@ const typeSource = `
   const componentsContext: Same<ComponentsProps['context'], HilosStatusContext> = true
   const moderationContext: Same<ModerationProps['context'], HilosModerationContext> = true
   const incidentController: Same<ModalProps['controller'], HilosStatusIncidentController> = true
+  const publicConnection: Same<PublicProps['connection'], HilosConnection> = true
+  const publicAlias: Same<typeof PublicStatusPage, typeof HilosPublicStatusPage> = true
+  declare const connection: HilosConnection
+  const coldStatus: PublicProps = { connection }
+  // @ts-expect-error Public Status requires only the project's singleton connection.
+  const missingConnection: PublicProps = {}
+  // @ts-expect-error There is no controller injection or second polling engine.
+  const controller: PublicProps['controller'] = {}
   // @ts-expect-error A Status page requires the project's typed context.
   const missingContext: StatusProps = {}
   // @ts-expect-error A Moderation page requires the project's typed context.
@@ -131,6 +147,38 @@ assert.equal(
 const metadata = closure('admin-views.js')
 assert.deepEqual(modules(metadata), ['src/admin/hilosAdminViews.ts'])
 assert.ok(graph['admin-views.js'].dynamicImports.length > 0)
+assert.ok(!graph['admin-views.js'].dynamicImports.includes('status.js'))
+assert.deepEqual(manifest.exports['./status'], {
+  development: './src/status/index.ts',
+  types: './dist/status/index.d.ts',
+  import: './dist/status.js',
+  default: './dist/status.js',
+})
+const publicStatus = closure('status.js')
+assert.ok(modules(publicStatus).includes('src/status/index.ts'))
+assert.ok(
+  modules(publicStatus).some((id) =>
+    id.startsWith('src/public/HilosStatusPage.vue'),
+  ),
+)
+assert.ok(!modules(publicStatus).some((id) => id.startsWith('src/admin/')))
+assert.ok(!modules(publicStatus).includes('src/index.ts'))
+const publicEvidence = sdkEvidence(packageDir)
+const publicInputs = publicEvidence.modules('@hilos/vue/status')
+const baseInputs = new Set(publicEvidence.modules('@hilos/vue/base'))
+assert.ok(
+  publicInputs.some((id) => id.endsWith('/core/src/status/publicStatus.ts')),
+)
+// Core/base owns the shared page identity and view-mode primitives. Public
+// Status may reuse that reviewed closure, but adds no admin module.
+assert.ok(
+  !publicInputs
+    .filter((id) => !baseInputs.has(id))
+    .some((id) => /\/src\/admin\//.test(id)),
+)
+assert.ok(!publicInputs.some((id) => /\/src\/admin\/status\//.test(id)))
+assert.ok(!publicInputs.some((id) => /\/core\/src\/index\.ts$/.test(id)))
+assertAcyclic('status.js')
 // Follow the built externals into core as well as the Vue chunks. A clean Vue
 // source list alone cannot catch a compatibility root hidden in a shared chunk.
 for (const entry of ['@hilos/vue/base', '@hilos/vue/admin-views']) {
@@ -185,6 +233,7 @@ try {
             import * as base from '@hilos/vue/base'
             import { hilosAdminViews } from '@hilos/vue/admin-views'
             import { HilosSettingsPage } from '@hilos/vue/admin/settings'
+            import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
             import * as coreRoot from '@hilos/core'
             import * as coreBase from '@hilos/core/base'
             import * as coreSettings from '@hilos/core/admin/settings'
@@ -237,6 +286,9 @@ try {
               )
               .join(' && ')}
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
+            export const samePublicStatus = root.HilosPublicStatusPage === PublicStatusPage &&
+              PublicStatusPage !== root.HilosStatusPage && !('HilosPublicStatusPage' in base) &&
+              !(HilosPages.PUBLIC_STATUS in hilosAdminViews())
             export const samePageHead =
               root.HilosPageHead !== undefined && root.HilosPageHead === base.HilosPageHead
             export const sameTableText =
@@ -287,6 +339,7 @@ try {
   assert.equal(consumer.sameCoreSection, true)
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
+  assert.equal(consumer.samePublicStatus, true)
   assert.equal(consumer.samePageHead, true)
   assert.equal(consumer.sameTableText, true)
   assert.equal(consumer.privateText, true)

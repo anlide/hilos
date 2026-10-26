@@ -14,11 +14,11 @@ use Hilos\Fs\FsTmpDirectory;
 
 /**
  * Chat-project filesystem context: tmp, the files registry's directory, data exports, the
- * administrators' exports of acceptance records and the analytics journal.
+ * administrators' exports of acceptance records, public Status files and the analytics journal.
  *
  * Tmp is the cluster's: the uploads agent keeps a file's chunks there and the images agent draws
  * copies there, both for the files library, which may live on another node. The files directory
- * and the exports are the cluster's. The analytics journal is the node's: each node's journal
+ * and the exports and Status files are the cluster's. The analytics journal is the node's: each node's journal
  * agent keeps its own files there (HIL-1154), under a subdirectory of the environment and the
  * node, so the environments that mount this one data directory never see each other's.
  *
@@ -74,6 +74,11 @@ final class ChatFsContext extends FsContext
             FsContext::ANALYTICS_JOURNAL,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/analytics_journal',
             DirectoryScope::NODE,
+        );
+        $this->registerDirectory(
+            FsContext::STATUS,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/status',
+            DirectoryScope::CLUSTER,
         );
     }
 }

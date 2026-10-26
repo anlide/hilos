@@ -207,6 +207,62 @@ function mountShell(connection: HilosConnection, banner?: string) {
 }
 
 describe('HilosMaintenance', () => {
+  it.each([FROZEN, FROZEN_WITHOUT_COPY, VERIFYING, MINTED, REJECTED])(
+    'keeps one native Service status link through the maintenance and code phases: %j',
+    async (status) => {
+      for (const adminSurface of [false, true]) {
+        const feed = fakeConnection(status, RT_STALENESS_FRESH, 'disconnected')
+        const wrapper = mount(HilosMaintenance, {
+          props: { status, connection: feed.connection, adminSurface },
+        })
+        const assertLink = () => {
+          const links = wrapper.findAll('a')
+          expect(links).toHaveLength(1)
+          expect(links[0].text()).toBe('Service status')
+          expect(links[0].attributes('href')).toBe('/status')
+          expect(links[0].attributes('role')).toBeUndefined()
+          expect(links[0].attributes('aria-disabled')).toBeUndefined()
+          expect(links[0].element.closest('fieldset, [inert], form')).toBeNull()
+          // Capture before the browser's document navigation, without following it.
+          const event = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+          })
+          const preventNavigation = (event: Event) => {
+            expect(event.defaultPrevented).toBe(false)
+            event.preventDefault()
+          }
+          links[0].element.addEventListener('click', preventNavigation, {
+            once: true,
+          })
+          links[0].element.dispatchEvent(event)
+          expect(feed.presented).toEqual([])
+        }
+        assertLink()
+        for (const progress of [
+          restoreFrame(),
+          restoreFrame({ running: false, outcome: 'success' }),
+          restoreFrame({
+            running: false,
+            outcome: 'error',
+            failureReason: 'Restore refused',
+          }),
+        ]) {
+          feed.pushRestore(progress)
+          await nextTick()
+          expect(wrapper.find('[data-id="maintenance-restore"]').exists()).toBe(
+            true,
+          )
+          assertLink()
+        }
+        expect(wrapper.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+          status.acceptsPass && status.passIssued && adminSurface,
+        )
+        wrapper.unmount()
+      }
+    },
+  )
+
   it('renders the copy the backend authored', () => {
     const wrapper = mount(HilosMaintenance, {
       props: {

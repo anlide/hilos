@@ -22,9 +22,23 @@ final class BinanceBtcTrackerFsContextTest extends TestCase
         $context = new BinanceBtcTrackerFsContext();
         $context->configure();
 
-        self::assertSame([FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT], array_keys($context->getDirectories()));
+        self::assertSame(
+            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS],
+            array_keys($context->getDirectories()),
+        );
         self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::DATA_EXPORT)->getScope());
         self::assertSame([], $context->declarationErrors());
+    }
+
+    public function testStatusUsesItsOwnSharedDataDirectory(): void
+    {
+        $context = new BinanceBtcTrackerFsContext();
+        $context->configure();
+
+        self::assertTrue($context->hasDirectory(FsContext::STATUS));
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->status->getPath());
+        self::assertSame(DirectoryScope::CLUSTER, $context->status->getScope());
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->clusterDirectories()[FsContext::STATUS]);
     }
 }

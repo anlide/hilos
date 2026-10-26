@@ -90,7 +90,7 @@
             "@test:db-prepare",
             "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-status.yml --profile e2e up -d --build binance-btc-tracker-daemon-test binance-btc-tracker-nginx-test"
         ],
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml -f docker/docker-compose.e2e-status.yml -f docker/docker-compose.e2e-restart.yml --profile e2e run --rm binance-btc-tracker-e2e-runner node ../../../../framework/frontend/scripts/playwright-run.mjs",
+        "test:e2e": "../../framework/docker/standalone-status/e2e",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
             "@test:down @no_additional_args",
@@ -126,7 +126,14 @@
         "test:cluster:restart": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml restart",
         "test:cluster:inspect": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml inspect",
         "test:cluster:logs": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml logs",
-        "test:cluster:client": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml client"
+        "test:cluster:client": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml client",
+        "test:e2e-status": "../../framework/docker/standalone-status/run cycle",
+        "test:status-tooling": [
+            "../../framework/docker/standalone-status/run unit",
+            "@test:status-tooling-cli"
+        ],
+        "test:status-tooling-cli": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm --no-deps binance-btc-tracker-e2e-runner python3 -B ../../../../framework/docker/standalone-status/cli_check.py",
+        "test:e2e-status-full": "../../framework/docker/standalone-status/full"
     },
     "config": {
         "process-timeout": 0,

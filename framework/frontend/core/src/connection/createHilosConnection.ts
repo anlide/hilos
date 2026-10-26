@@ -14,6 +14,7 @@ import {
   LOGS_WORKERS_SIGNAL_SCHEMAS,
 } from '../protocol/logsSignals.js'
 import { MAINTENANCE_STATE_SIGNAL_SCHEMAS } from '../protocol/maintenanceSignals.js'
+import { STATUS_SIGNAL_SCHEMAS } from '../protocol/statusSignals.js'
 import { AUTH_CONVERGE_SIGNAL_SCHEMAS } from '../auth/authConvergeSignals.js'
 import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals.js'
 import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals.js'
@@ -178,6 +179,7 @@ export function createHilosConnection(
       ...PAGE_SIGNAL_SCHEMAS,
       ...GROUP_SIGNAL_SCHEMAS,
       ...BACKUP_SIGNAL_SCHEMAS,
+      ...STATUS_SIGNAL_SCHEMAS,
       ...LOGS_SIGNAL_SCHEMAS,
       ...LOGS_KEYS_SIGNAL_SCHEMAS,
       ...LOGS_OVERVIEW_SIGNAL_SCHEMAS,

@@ -74,7 +74,26 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
     expect(HilosPages.STATUS).toBe('hilos_status')
     expect(HilosPages.STATUS_COMPONENTS).toBe('hilos_status_components')
-    expect(router.match('/status').page).toBeNull()
+    expect(router.match('/status').page).toBe(HilosPages.PUBLIC_STATUS)
+  })
+
+  it('addresses the public file reader independently of admin Status and footer links', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    expect(HilosPages.PUBLIC_STATUS).toBe('status')
+    expect(HILOS_ROUTE_DECLARATIONS[HilosPages.PUBLIC_STATUS]).toEqual({
+      path: '/status',
+      admin: false,
+    })
+    expect(router.match('/status')).toEqual({
+      page: HilosPages.PUBLIC_STATUS,
+      params: {},
+      admin: false,
+    })
+    expect(resolveHilosPath(HilosPages.PUBLIC_STATUS)).toBe('/status')
+    expect(router.match('/status/7').page).toBeNull()
+    expect(HILOS_FOOTER_LINKS.map((link) => link.page)).not.toContain(
+      HilosPages.PUBLIC_STATUS,
+    )
   })
 
   it('addresses the Moderation admin page without parameters with the PHP key', () => {
@@ -437,6 +456,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.PROFILE_DATA,
       HilosPages.PROFILE_AGREEMENTS,
       HilosPages.PROFILE_AGREEMENTS_HISTORY,
+      HilosPages.PUBLIC_STATUS,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])
     for (const [page, declaration] of Object.entries(

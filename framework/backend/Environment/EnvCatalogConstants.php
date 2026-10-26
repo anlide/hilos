@@ -16,6 +16,7 @@ final class EnvCatalogConstants
     public const string CATALOG_ENTRY_SENSITIVE = 'sensitive';
     public const string CATALOG_ENTRY_PER_NODE = 'per_node';
     public const string CATALOG_ENTRY_ADMIN_VIEW_VISIBLE = 'admin_view_visible';
+    public const string CATALOG_ENTRY_MIN_VALUE = 'min_value';
 
     public const string TYPE_STRING = 'string';
     public const string TYPE_INTEGER = 'integer';

@@ -260,6 +260,7 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
+      - ../data/status:/status:ro
       - ../data/legal_export:/legal_export:ro
       - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:/published:ro
       - nginx-ssl-local:/etc/nginx/ssl
@@ -291,6 +292,7 @@ services:
     volumes:
       - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
       - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:/published:ro
+      - ../data/status:/status:ro
     depends_on:
       - polls-daemon-local
     restart: unless-stopped

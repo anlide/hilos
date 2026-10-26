@@ -16,6 +16,7 @@ use Hilos\Environment\Exception\EnvNotInCatalogException;
 use Hilos\Environment\Exception\EnvTypeMismatchException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -67,6 +68,92 @@ final class EnvAccessorTest extends TestCase
 
         $this->assertSame('fallback', $env[self::STRING_KEY]->string());
         $this->assertTrue(isset($env[self::STRING_KEY]));
+    }
+
+    /** @return iterable<string, array{EnvConstants, int}> Public Status interval defaults */
+    public static function statusIntervals(): iterable
+    {
+        yield 'poll' => [EnvConstants::STATUS_POLL_INTERVAL_SECONDS, 30];
+        yield 'stale' => [EnvConstants::STATUS_STALE_AFTER_SECONDS, 120];
+    }
+
+    /**
+     * @param EnvConstants $key Interval key read through the facade's normal typed reader
+     * @param int $default Expected catalog default in seconds
+     */
+    #[DataProvider('statusIntervals')]
+    public function testStatusIntervalDefaultsAndPositiveOverrides(EnvConstants $key, int $default): void
+    {
+        $previousEnv = Hilos::$env;
+        $previousValue = getenv($key->name);
+        Hilos::$env = new EnvAccessor();
+        try {
+            putenv($key->name);
+            self::assertSame($default, Hilos::$env[$key]->int());
+            putenv($key->name . '=');
+            self::assertSame($default, Hilos::$env[$key]->int());
+            foreach ([1, 47] as $seconds) {
+                putenv($key->name . '=' . $seconds);
+                self::assertSame($seconds, Hilos::$env[$key]->int());
+            }
+        } finally {
+            putenv($previousValue === false ? $key->name : $key->name . '=' . $previousValue);
+            Hilos::$env = $previousEnv;
+        }
+    }
+
+    /** @return iterable<string, array{EnvConstants, string}> Nonpositive and noninteger interval overrides */
+    public static function invalidStatusIntervals(): iterable
+    {
+        foreach ([EnvConstants::STATUS_POLL_INTERVAL_SECONDS, EnvConstants::STATUS_STALE_AFTER_SECONDS] as $key) {
+            foreach (['0', '-1', '-120', '0.5', '30.0', '1e2', 'not-an-integer', 'true'] as $value) {
+                yield $key->name . ':' . $value => [$key, $value];
+            }
+        }
+    }
+
+    /**
+     * @param EnvConstants $key Interval key whose catalog requires a positive integer
+     * @param string $value Invalid process override
+     */
+    #[DataProvider('invalidStatusIntervals')]
+    public function testStatusIntervalsRejectInvalidValues(EnvConstants $key, string $value): void
+    {
+        $previousValue = getenv($key->name);
+        putenv($key->name . '=' . $value);
+        try {
+            $this->expectException(EnvInvalidValueException::class);
+            $this->expectExceptionMessage($key->name);
+            (new EnvAccessor())[$key]->int();
+        } finally {
+            putenv($previousValue === false ? $key->name : $key->name . '=' . $previousValue);
+        }
+    }
+
+    public function testIntegerMinimumRejectsAnInvalidCatalogDefault(): void
+    {
+        $env = $this->env([
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 0) + [
+                EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => 1,
+            ],
+        ]);
+
+        $this->expectException(EnvInvalidValueException::class);
+        $this->expectExceptionMessage(self::INTEGER_KEY);
+        $env[self::INTEGER_KEY]->int();
+    }
+
+    public function testIntegerMinimumAllowsItsBoundaryAndLeavesUnboundedIntegersAlone(): void
+    {
+        $env = $this->env([
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, -4) + [
+                EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => -4,
+            ],
+            self::SECOND_REQUIRED_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, -10),
+        ]);
+
+        self::assertSame(-4, $env[self::INTEGER_KEY]->int());
+        self::assertSame(-10, $env[self::SECOND_REQUIRED_KEY]->int());
     }
 
     public function testEmptyIsMissingUsesCatalogDefault(): void
@@ -457,6 +544,13 @@ final class EnvAccessorTest extends TestCase
             [$base + [EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE => 'yes'], 'sensitive'],
             [$base + [EnvCatalogConstants::CATALOG_ENTRY_PER_NODE => 1], 'per_node'],
             [$base + [EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => null], 'admin_view_visible'],
+            [$base + [EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => 1], 'min_value'],
+            [$this->entry(EnvCatalogConstants::TYPE_INTEGER, 1) + [
+                EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => '1',
+            ], 'min_value'],
+            [$this->entry(EnvCatalogConstants::TYPE_INTEGER, 1) + [
+                EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => null,
+            ], 'min_value'],
             [$base + [
                 EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE => true,
                 EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,

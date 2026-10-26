@@ -55,6 +55,7 @@ final class PollsFsContextTest extends TestCase
                 FsContext::ANALYTICS_JOURNAL,
                 FsContext::DATA_EXPORT,
                 FsContext::LEGAL_EXPORT,
+                FsContext::STATUS,
             ], array_keys($context->getDirectories()));
             self::assertSame($publishedPath, $context->getDirectory(FsContext::FILES)->getPath());
             self::assertSame(dirname(__DIR__, 2) . '/data/files/tmp', $context->tmp->getPath());
@@ -67,5 +68,16 @@ final class PollsFsContextTest extends TestCase
         } finally {
             Hilos::$env = $previousEnv;
         }
+    }
+
+    public function testStatusUsesItsOwnSharedDataDirectory(): void
+    {
+        $context = new PollsFsContext();
+        $context->configure();
+
+        self::assertTrue($context->hasDirectory(FsContext::STATUS));
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->status->getPath());
+        self::assertSame(DirectoryScope::CLUSTER, $context->status->getScope());
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->clusterDirectories()[FsContext::STATUS]);
     }
 }

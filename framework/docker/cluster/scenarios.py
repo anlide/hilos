@@ -792,6 +792,12 @@ def client_deliveries(views, node):
     return -1 if view is None else int(view.get("clientDeliveries", 0))
 
 
+def client_test_deliveries(views, node):
+    """The existing CLI probe only; background fan-outs cannot satisfy its assertions."""
+    view = views.get(node)
+    return -1 if view is None else int(view["clientTestDeliveries"])
+
+
 def admin_view_mode(views, node):
     """Whether a node reports serving admin view mode, or None while it is unreachable."""
     view = views.get(node)
@@ -2108,7 +2114,8 @@ def scenario_10_cross_node_browser():
     so the delivery lands on that node and on no other. A FAN-OUT has no address at all, because
     which browsers it reaches is answered by each node's own subscriptions, so it is carried to
     every node instead. The sender is the exception on purpose: it expands its own fan-out
-    locally, and the counter here is of frames that came off the mesh.
+    locally, and the probe counter here is of client-test frames that came off the mesh.
+    The total counter keeps counting unrelated application traffic, including Status hints.
 
     The scenario opens no browser, so one is attached through the CLI and delivery is read
     from the inspect reply rather than from a socket. Everything between those two ends - the
@@ -2124,27 +2131,40 @@ def scenario_10_cross_node_browser():
                    f"{sender} learns that {holder} holds a browser")
 
         views = inspect_all()
-        before = {n: client_deliveries(views, n) for n in ALL_NODES}
+        totals_before = {n: client_deliveries(views, n) for n in ALL_NODES}
+        before = {n: client_test_deliveries(views, n) for n in ALL_NODES}
         assert client(sender, "test:cluster:client:send", key, "hello"), \
             f"could not raise an addressed signal on {sender}"
 
         def addressed_arrived(views):
             view = views.get(holder)
             return (bool(view)
-                    and client_deliveries(views, holder) > before[holder]
+                    and client_test_deliveries(views, holder) == before[holder] + 1
                     and view.get("lastClientAcceptKey") == key)
 
         wait_until(addressed_arrived, CONVERGE_TIMEOUT,
                    f"{holder} takes in the signal {sender} addressed to its browser")
 
-        others = [n for n in ALL_NODES if n not in (holder, sender)]
-        quiet = inspect_all(others)
+        others = [n for n in ALL_NODES if n != holder]
+        # Where Status is active, cross a real background delivery before checking the
+        # negative. This reproduces the old total-counter collision without a fake frame,
+        # changing cadence, or making an application broadcast into probe evidence.
+        if placement_row(views, "hilos_status"):
+            quiet = wait_until(
+                lambda current: any(client_deliveries(current, n) > totals_before[n] for n in others),
+                CONVERGE_TIMEOUT, "background traffic crosses the addressed probe", nodes=others)
+            print(f"    background totals: before={totals_before}, "
+                  f"after={ {n: client_deliveries(quiet, n) for n in others} }; "
+                  f"probe before={before}, after={ {n: client_test_deliveries(quiet, n) for n in others} }",
+                  flush=True)
+        else:
+            quiet = inspect_all(others)
         for node in others:
-            assert client_deliveries(quiet, node) == before[node], \
+            assert client_test_deliveries(quiet, node) == before[node], \
                 f"an addressed signal reached {node}, which holds no such browser"
 
         views = inspect_all()
-        before = {n: client_deliveries(views, n) for n in ALL_NODES}
+        before = {n: client_test_deliveries(views, n) for n in ALL_NODES}
         assert client(sender, "test:cluster:client:fanout", "everyone"), \
             f"could not raise a fan-out on {sender}"
 
@@ -2152,16 +2172,18 @@ def scenario_10_cross_node_browser():
         last_deliveries = {}
 
         def fanout_arrived(views):
-            last_deliveries.update({n: client_deliveries(views, n) for n in receivers})
-            return all(last_deliveries[n] > before[n] for n in receivers)
+            last_deliveries.update({n: client_test_deliveries(views, n) for n in receivers})
+            return all(last_deliveries[n] == before[n] + 1 for n in receivers)
 
         try:
             wait_until(fanout_arrived, CONVERGE_TIMEOUT,
                        "every node but the sender takes in the fan-out", nodes=receivers)
         except ScenarioTimeout as exc:
             missing = {n: {"before": before[n], "last": last_deliveries.get(n, -1)}
-                       for n in receivers if last_deliveries.get(n, -1) <= before[n]}
+                       for n in receivers if last_deliveries.get(n, -1) != before[n] + 1}
             raise ScenarioTimeout(f"{exc}\nfan-out receivers still missing deliveries: {missing}") from exc
+        assert client_test_deliveries(inspect_all([sender]), sender) == before[sender], \
+            "the sender received its own fan-out from the mesh instead of expanding it locally"
         return (f"{sender} answered a browser attached to {holder} and fanned out to all "
                 f"{len(receivers)} other nodes")
     finally:

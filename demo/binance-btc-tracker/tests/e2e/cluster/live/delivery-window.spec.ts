@@ -12,6 +12,7 @@ import {
   setCustomSetting,
   shownByTestId,
   waitDeliveryBoundary,
+  waitForDeliveryQuiet,
   watchClusterMasterUpgrades,
   watchDeliveryFrames,
   type DeliveryFrameLog,
@@ -54,6 +55,7 @@ const CHANGED_WINDOW_MS = 4_000
 const PENDING_WINDOW_MS = 3_000
 const IMMEDIATE_MS = 1_000
 const JITTER_MS = 200
+const STATUS_HEARTBEAT_MS = 30_000
 // Three independent admin contexts and several real 8 s/4 s delivery boundaries.
 const REMOTE_TIMEOUT_FACTOR = 6
 const control = deliveryClusterControl()
@@ -81,6 +83,32 @@ async function received(log: DeliveryFrameLog, value: string) {
 function expectGap(gap: number, windowMs: number): void {
   expect(gap).toBeGreaterThanOrEqual(windowMs - JITTER_MS)
   expect(gap).toBeLessThan(windowMs + IMMEDIATE_MS)
+}
+
+function hints(log: DeliveryFrameLog) {
+  return log.packets.flatMap((packet) =>
+    packet.frames.flatMap(({ wire }) =>
+      object(wire).type === 'status_files_changed' ? [{ packet, wire }] : [],
+    ),
+  )
+}
+
+/** Every frame counts: an unexpected boundary must fail the exact packet oracle. */
+function packetEvents(packet: DeliveryFrameLog['packets'][number]) {
+  return packet.frames.map(({ wire }) => {
+    const envelope = object(wire)
+    if (envelope.type === 'status_files_changed') {
+      expect(envelope.data).toEqual({})
+      return { type: envelope.type }
+    }
+    const data = object(envelope.data)
+    expect(envelope.type).toBe('table_viewport_delta')
+    expect(data.page).toBe('hilos_settings')
+    expect(data.tableKey).toBe('settings')
+    expect(data.kind).toBe('row_updated')
+    const slot = object(object(object(data.row).slots).settings)
+    return { type: envelope.type, key: data.rowKey, value: String(slot.value) }
+  })
 }
 
 async function attach(name: string, evidence: unknown): Promise<void> {
@@ -117,8 +145,8 @@ test('cluster delivery: remote source coalesces physical packets and keeps follo
   const mutations: DeliverySettingMutation[] = []
   const phases: Record<string, unknown> = {}
   let sequence = 0
-  const write = async (key = SOURCE_KEY) => {
-    const value = key === OTHER_KEY ? '156511' : `remote-${++sequence}`
+  const write = async (key = SOURCE_KEY, otherValue = '156511') => {
+    const value = key === OTHER_KEY ? otherValue : `remote-${++sequence}`
     const mutation = await saveDeliverySetting(
       expect,
       writerPage,
@@ -161,7 +189,26 @@ test('cluster delivery: remote source coalesces physical packets and keeps follo
       configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
     ).toContainText(String(WINDOW_MS))
     const passiveAt = performance.now()
-    await waitDeliveryBoundary(passiveAt + WINDOW_MS + IMMEDIATE_MS)
+    // Observe a real publication first, then all physical traffic reaching quiet.
+    // This puts the first burst between heartbeats without silencing Status.
+    await expect
+      .poll(
+        () =>
+          [a, b].every((log) =>
+            hints(log).some(({ packet }) => packet.at > passiveAt),
+          ),
+        {
+          timeout: STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
+        },
+      )
+      .toBe(true)
+    phases.quiet = await waitForDeliveryQuiet(
+      expect,
+      [a, b],
+      WINDOW_MS,
+      IMMEDIATE_MS,
+      STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
+    )
 
     const anchor = await write()
     const anchors = [
@@ -205,6 +252,21 @@ test('cluster delivery: remote source coalesces physical packets and keeps follo
       expect(
         relevant.map(({ wire }) => object(object(wire).data).rowKey),
       ).toEqual([OTHER_KEY, SOURCE_KEY])
+      // No hint or other unsupported frame occurred inside this merge segment.
+      expect(packetEvents(release.packet)).toEqual([
+        { type: 'table_viewport_delta', key: OTHER_KEY, value: '156511' },
+        {
+          type: 'table_viewport_delta',
+          key: SOURCE_KEY,
+          value: burst.at(-1)!.value,
+        },
+      ])
+      expect(
+        hints(writer).filter(
+          ({ packet }) =>
+            packet.at > anchor.sent && packet.at <= release.packet.at,
+        ),
+      ).toEqual([])
       expect(release.packet.raw).toMatch(/^\{"type":"signal_batch"/)
       expect(
         release.packet.frames.every(
@@ -217,10 +279,143 @@ test('cluster delivery: remote source coalesces physical packets and keeps follo
     }
     phases.coalescing = { anchor, anchors, burst, releases }
 
-    await waitDeliveryBoundary(
-      Math.max(...releases.map(({ packet }) => packet.at)) +
-        WINDOW_MS +
+    // The next real heartbeat falls inside a new fixed window. Two acknowledged
+    // source states precede it, and two follow it: latest wins in EACH segment.
+    phases.mixedQuiet = await waitForDeliveryQuiet(
+      expect,
+      [a, b],
+      WINDOW_MS,
+      IMMEDIATE_MS,
+      STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
+    )
+    const mixedAnchor = await write()
+    const mixedAnchors = [
+      await received(a, mixedAnchor.value),
+      await received(b, mixedAnchor.value),
+    ]
+    for (const update of mixedAnchors)
+      expect(update.packet.at - mixedAnchor.sent).toBeLessThan(IMMEDIATE_MS)
+    const beforeHint = [await write(), await write()]
+    await expect
+      .poll(
+        () =>
+          hints(writer).filter(({ packet }) => packet.at > mixedAnchor.sent)
+            .length,
+        { timeout: WINDOW_MS },
+      )
+      .toBe(1)
+    const hint = hints(writer).find(
+      ({ packet }) => packet.at > mixedAnchor.sent,
+    )!
+    expect(beforeHint.at(-1)!.accepted).toBeLessThan(hint.packet.at)
+    // Keep the cross-node source send unambiguously after the independent hint.
+    await waitDeliveryBoundary(hint.packet.at + JITTER_MS)
+    const afterHint = [
+      await write(OTHER_KEY, '156512'),
+      await write(),
+      await write(),
+    ]
+    expect(afterHint[0]!.sent).toBeGreaterThan(hint.packet.at)
+    expect(afterHint.at(-1)!.accepted).toBeLessThan(
+      Math.min(...mixedAnchors.map(({ packet }) => packet.at)) +
+        WINDOW_MS -
         IMMEDIATE_MS,
+    )
+    for (const log of [a, b])
+      expect(updates(log).at(-1)!.value).toBe(mixedAnchor.value)
+    const mixedReleases = [
+      await received(a, afterHint.at(-1)!.value),
+      await received(b, afterHint.at(-1)!.value),
+    ]
+    const sourceEvents = writer.packets
+      .filter(
+        ({ at }) =>
+          at > mixedAnchors[0]!.packet.at && at <= mixedReleases[0]!.packet.at,
+      )
+      .flatMap(({ frames }) => frames)
+      .filter(
+        ({ wire }) =>
+          object(wire).type === 'status_files_changed' ||
+          (object(wire).type === 'table_viewport_delta' &&
+            object(object(wire).data).tableKey === 'settings'),
+      )
+    // The writer is request-active and sees every own mutation and the genuine
+    // opaque hint. This independent stream proves the exact segment membership.
+    expect(
+      sourceEvents.map(({ wire }) =>
+        object(wire).type === 'status_files_changed'
+          ? { type: 'status_files_changed' }
+          : {
+              type: 'table_viewport_delta',
+              key: object(object(wire).data).rowKey,
+              value: String(
+                object(
+                  object(object(object(object(wire).data).row).slots).settings,
+                ).value,
+              ),
+            },
+      ),
+    ).toEqual([
+      ...beforeHint.map(({ key, value }) => ({
+        type: 'table_viewport_delta',
+        key,
+        value,
+      })),
+      { type: 'status_files_changed' },
+      ...afterHint.map(({ key, value }) => ({
+        type: 'table_viewport_delta',
+        key,
+        value,
+      })),
+    ])
+    for (const [index, log] of [a, b].entries()) {
+      const release = mixedReleases[index]!
+      expectGap(release.packet.at - mixedAnchors[index]!.packet.at, WINDOW_MS)
+      expect(packetEvents(release.packet)).toEqual([
+        {
+          type: 'table_viewport_delta',
+          key: SOURCE_KEY,
+          value: beforeHint.at(-1)!.value,
+        },
+        { type: 'status_files_changed' },
+        { type: 'table_viewport_delta', key: OTHER_KEY, value: '156512' },
+        {
+          type: 'table_viewport_delta',
+          key: SOURCE_KEY,
+          value: afterHint.at(-1)!.value,
+        },
+      ])
+      expect(
+        updates(log)
+          .filter(({ packet }) => packet.at > mixedAnchors[index]!.packet.at)
+          .map(({ value }) => value),
+      ).toEqual([beforeHint.at(-1)!.value, afterHint.at(-1)!.value])
+      expect(
+        updates(log, OTHER_KEY).find(({ value }) => value === '156512')!.packet,
+      ).toBe(release.packet)
+      expect(
+        log.packets.filter(
+          ({ at }) =>
+            at > mixedAnchors[index]!.packet.at && at <= release.packet.at,
+        ),
+      ).toEqual([release.packet])
+    }
+    phases.mixed = {
+      mixedAnchor,
+      mixedAnchors,
+      beforeHint,
+      hint,
+      afterHint,
+      sourceEvents,
+      mixedReleases,
+    }
+
+    phases.clickQuiet = await waitForDeliveryQuiet(
+      expect,
+      [a, b],
+      WINDOW_MS,
+      IMMEDIATE_MS,
+      STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
     )
     const quiet = await write()
     const quietA = await received(a, quiet.value)
@@ -286,8 +481,12 @@ test('cluster delivery: remote source coalesces physical packets and keeps follo
     await expect(
       configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
     ).toContainText(String(CHANGED_WINDOW_MS))
-    await waitDeliveryBoundary(
-      Math.max(response.at, bRelease.packet.at) + WINDOW_MS + IMMEDIATE_MS,
+    phases.changedQuiet = await waitForDeliveryQuiet(
+      expect,
+      [a, b],
+      WINDOW_MS,
+      IMMEDIATE_MS,
+      STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
     )
     const changedAnchor = await write()
     const changedAnchors = [

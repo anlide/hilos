@@ -45,7 +45,8 @@ const props = defineProps<{ authGate: AuthGate }>()
 // page, the person's notification settings, and the four footer pages whose text
 // is this demo's.
 // Each descriptor is created once for this App instance; selecting a page
-// loads only its project wrapper and SDK section. Public pages stay eager.
+// loads only its project wrapper and SDK section. The four prose pages stay
+// eager; the public Status file reader loads on entry.
 const pages: Record<string, PageView<Component>> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
@@ -196,6 +197,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
+  [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
+    import('./views/Status/Status.vue').then((m) => m.default),
+  ),
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their

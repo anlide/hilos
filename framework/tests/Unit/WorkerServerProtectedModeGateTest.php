@@ -23,6 +23,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Server\AwaitingWorkerAgent;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\TestCase;
@@ -333,8 +334,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
     /**
      * The published exception list is the agents both gates already let through.
      *
-     * Mail stays running and may start. Status is not in those gates, so it is stopped, refused
-     * a start, and absent from the list. The initiator is named on the row, not in the list.
+     * Mail and Status stay running and may start, and both appear in the list. The initiator is named on the row, not in the list.
      */
     public function testThePreservedListIsWhatBothGatesAlreadyLetThrough(): void
     {
@@ -350,10 +350,10 @@ final class WorkerServerProtectedModeGateTest extends TestCase
 
         $diagnostics = $server->getProtectedModeAgentDiagnostics();
         $this->assertSame(
-            [HilosAgentType::HILOS_MAIL],
+            [HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS],
             $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
         );
-        $this->assertNotContains(
+        $this->assertContains(
             HilosAgentType::HILOS_STATUS,
             $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
         );
@@ -361,10 +361,10 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             self::INITIATOR_TYPE,
             $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
         );
-        $this->assertSame(2, $diagnostics[StateProtectedModeRuntime::stoppedAgentCount]);
+        $this->assertSame(1, $diagnostics[StateProtectedModeRuntime::stoppedAgentCount]);
         $this->assertTrue($diagnostics[StateProtectedModeRuntime::agentStartGateClosed]);
         $this->assertNotContains(HilosAgentType::HILOS_MAIL, $server->getProtectedModeStoppedAgents());
-        $this->assertContains(HilosAgentType::HILOS_STATUS, $server->getProtectedModeStoppedAgents());
+        $this->assertNotContains(HilosAgentType::HILOS_STATUS, $server->getProtectedModeStoppedAgents());
 
         $manager->askedFor = [];
         $mailReachedSelection = false;
@@ -376,11 +376,42 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->assertTrue($mailReachedSelection, 'The start gate lets the preserved mail pool through.');
 
         $manager->askedFor = [];
-        $server->startAgentPublic(HilosAgentType::HILOS_STATUS);
-        $this->assertFalse(
-            $manager->wasAskedFor(HilosAgentType::HILOS_STATUS),
-            'Status is not a preserved type, so the freeze still refuses its start.',
-        );
+        $statusReachedSelection = false;
+        try {
+            $server->startAgentPublic(HilosAgentType::HILOS_STATUS);
+        } catch (NoSuitableWorkerException) {
+            $statusReachedSelection = true;
+        }
+        $this->assertTrue($statusReachedSelection, 'The public Status publisher passes the same start gate.');
+    }
+
+    public function testPreservedTypesAndWaitingWorkersSurviveEveryOccupiedPhase(): void
+    {
+        foreach ([
+            StateProtectedModeRuntime::PHASE_ACTIVATING, StateProtectedModeRuntime::PHASE_ACTIVE,
+            StateProtectedModeRuntime::PHASE_VERIFYING, StateProtectedModeRuntime::PHASE_DEACTIVATING,
+        ] as $phase) {
+            $manager = new FreezeGateTestAgentManagerDaemon();
+            $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+            $this->freeze($phase, self::INITIATOR_TYPE, null);
+            $waiting = [];
+            foreach ([self::INITIATOR_TYPE, HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS, self::OTHER_TYPE] as $type) {
+                $manager->registerUnlinked($type, null);
+                $waiting[$type] = new AwaitingWorkerAgent($type, $type, null, false, microtime(true) + 10, false);
+            }
+            new ReflectionProperty(WorkerServer::class, 'agentsAwaitingWorker')->setValue($server, $waiting);
+            $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+            $this->passes($server, 4);
+            self::assertSame([
+                self::INITIATOR_TYPE, HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS,
+            ], array_keys(new ReflectionProperty(WorkerServer::class, 'agentsAwaitingWorker')->getValue($server)), $phase);
+            self::assertNotContains(HilosAgentType::HILOS_STATUS, $server->getProtectedModeStoppedAgents(), $phase);
+            self::assertNotContains(HilosAgentType::HILOS_MAIL, $server->getProtectedModeStoppedAgents(), $phase);
+            foreach ([HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS, self::INITIATOR_TYPE, self::OTHER_TYPE] as $type) {
+                $refused = new ReflectionClass(WorkerServer::class)->getMethod('protectedModeRefusesStart')->invoke($server, $type, null);
+                self::assertSame($type === self::OTHER_TYPE && $phase !== StateProtectedModeRuntime::PHASE_VERIFYING, $refused, $phase);
+            }
+        }
     }
 
     /**
@@ -412,7 +443,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             );
             $this->assertSame(0, Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount);
             $this->assertSame(
-                [HilosAgentType::HILOS_MAIL],
+                [HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS],
                 Hilos::$rt->hilosProtectedModeRuntime->preservedAgentTypes,
             );
             $this->assertSame(false, Hilos::$rt->hilosProtectedModeRuntime->agentStartGateClosed);

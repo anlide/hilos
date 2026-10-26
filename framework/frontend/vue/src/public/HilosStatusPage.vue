@@ -1,0 +1,395 @@
+<!-- Public Status reads only the core file controller, even before handshake.
+The mount owns one reader; the Vue state below remembers only a focused day. -->
+<script setup lang="ts">
+import {
+  formatMoment,
+  hilosTimeZone,
+  type HilosConnection,
+} from '@hilos/core/base'
+import {
+  createPublicStatus,
+  type PublicStatusDay,
+  type PublicStatusDayStrip,
+  type PublicStatusState,
+} from '@hilos/core/status'
+import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
+
+import HilosStaticPage from '../HilosStaticPage.vue'
+import { useSignal } from '../useSignal.js'
+
+const props = defineProps<{
+  /** The project's connection singleton; no session answer is required. */
+  connection: HilosConnection
+}>()
+
+const reader = createPublicStatus(props.connection)
+const projection = useSignal(reader.projection)
+const freshness = useSignal(reader.freshness)
+const banner = useSignal(reader.banner)
+const connectionMessage = useSignal(reader.connectionMessage)
+const components = useSignal(reader.components)
+const currentOutages = useSignal(reader.currentOutages)
+const history = useSignal(reader.history)
+const dayStrips = useSignal(reader.dayStrips)
+const timeZone = useSignal(hilosTimeZone)
+const detailId = useId()
+const selectedDay = ref<{ componentKey: string; startTs: number } | null>(null)
+
+// Presentation only: precedence, freshness, calendar and interval facts belong
+// to the core controller. The same words accompany badges and colored days.
+const states: Record<
+  PublicStatusState | 'not_responding',
+  { label: string; tone: string; icon: string }
+> = {
+  operational: { label: 'Operational', tone: 'success', icon: 'check-circle' },
+  checking: { label: 'Checking', tone: 'warning', icon: 'search' },
+  partial_outage: {
+    label: 'Partial outage',
+    tone: 'warning',
+    icon: 'exclamation-triangle',
+  },
+  major_outage: { label: 'Major outage', tone: 'danger', icon: 'x-circle' },
+  maintenance: { label: 'Maintenance', tone: 'info', icon: 'tools' },
+  unknown: { label: 'Unknown', tone: 'secondary', icon: 'question-circle' },
+  not_responding: {
+    label: 'Not responding',
+    tone: 'danger',
+    icon: 'exclamation-triangle',
+  },
+}
+const candidates = computed(() =>
+  freshness.value.kind === 'fresh' ? (projection.value?.candidates ?? []) : [],
+)
+const scheduledWorks = computed(() => projection.value?.scheduledWorks ?? [])
+const activeMaintenance = computed(
+  () =>
+    projection.value?.maintenancePeriods.filter(
+      (period) => period.endedAt === null,
+    ) ?? [],
+)
+const lastUpdate = computed(() =>
+  freshness.value.aliveAt === null ? null : moment(freshness.value.aliveAt),
+)
+
+function moment(at: number): string {
+  void timeZone.value
+  return formatMoment(at) ?? '—'
+}
+
+function dayLabel(day: PublicStatusDay): string {
+  void timeZone.value
+  return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${states[day.state].label}`
+}
+
+function dayDetail(strip: PublicStatusDayStrip): string {
+  const selected = selectedDay.value
+  const day =
+    (selected?.componentKey === strip.componentKey
+      ? strip.days.find((item) => item.startTs === selected.startTs)
+      : undefined) ?? strip.days.at(-1)
+  return day === undefined ? '' : dayLabel(day)
+}
+
+function componentName(key: string): string {
+  return (
+    components.value.find((component) => component.componentKey === key)
+      ?.name ?? key
+  )
+}
+
+onMounted(() => reader.start())
+onUnmounted(() => reader.dispose())
+</script>
+
+<template>
+  <HilosStaticPage title="System status" icon="bi-activity">
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-id="public-status-live"
+    >
+      {{ banner.title }} {{ connectionMessage }}
+    </div>
+
+    <div class="hilos-stack mb-3 small">
+      <div class="invisible border rounded p-2" aria-hidden="true" inert>
+        Your live connection to the site is lost — the system is up
+      </div>
+      <div
+        v-if="connectionMessage"
+        class="border rounded p-2 bg-warning-subtle text-warning-emphasis"
+        data-id="public-status-connection"
+      >
+        {{ connectionMessage }}
+      </div>
+    </div>
+
+    <div
+      class="border rounded p-3 mb-3"
+      :class="`bg-${states[banner.kind].tone}-subtle text-${states[banner.kind].tone}-emphasis`"
+      data-id="public-status-banner"
+    >
+      <h2 class="h5 mb-0">
+        <i
+          :class="`bi bi-${states[banner.kind].icon} me-2`"
+          aria-hidden="true"
+        ></i>
+        {{ banner.title }}
+      </h2>
+      <p v-if="freshness.kind === 'unknown'" class="small mt-2 mb-0">
+        There is no trustworthy status picture yet. This page keeps checking.
+      </p>
+    </div>
+
+    <section
+      v-if="candidates.length"
+      class="card mb-3"
+      data-id="public-status-candidates"
+    >
+      <div class="card-header"><h2 class="h6 mb-0">Checking</h2></div>
+      <ul class="list-group list-group-flush">
+        <li
+          v-for="candidate in candidates"
+          :key="candidate.componentKey"
+          class="list-group-item"
+        >
+          <h3 class="h6">
+            Checking a possible problem with
+            {{ componentName(candidate.componentKey) }}
+          </h3>
+          <p class="small mb-0">
+            Detected at {{ moment(candidate.detectedAt) }}. If confirmed, it
+            will appear here as an incident.
+          </p>
+        </li>
+      </ul>
+    </section>
+
+    <section
+      v-if="currentOutages.length"
+      class="mb-3"
+      data-id="public-status-outages"
+    >
+      <h2 class="h6">Current incidents</h2>
+      <article
+        v-for="outage in currentOutages"
+        :key="outage.id"
+        class="card mb-3"
+      >
+        <div class="card-header d-flex flex-wrap align-items-center gap-2">
+          <h3 class="h6 mb-0 text-break">
+            {{ componentName(outage.componentKey) }}
+          </h3>
+          <span
+            class="badge"
+            :class="`text-bg-${states[outage.severity].tone}`"
+            >{{ states[outage.severity].label }}</span
+          >
+          <span class="small"
+            >Since {{ outage.detectedAtLabel }} ·
+            {{ outage.durationLabel }}</span
+          >
+        </div>
+        <ul
+          v-if="outage.updates.length"
+          class="list-group list-group-flush small"
+        >
+          <li
+            v-for="(update, index) in outage.updates"
+            :key="index"
+            class="list-group-item text-break"
+            data-id="public-status-update"
+          >
+            <span class="text-body-secondary">{{ moment(update.at) }}</span>
+            <p class="mb-1">{{ update.text }}</p>
+            <span class="badge bg-body-secondary text-body border fw-normal">{{
+              update.source === 'team' ? 'From the team' : 'Automatic'
+            }}</span>
+          </li>
+        </ul>
+      </article>
+    </section>
+
+    <section
+      v-if="scheduledWorks.length"
+      class="card mb-3"
+      data-id="public-status-works"
+    >
+      <div class="card-header">
+        <h2 class="h6 mb-0">Scheduled maintenance</h2>
+      </div>
+      <div
+        v-for="work in scheduledWorks"
+        :key="work.id"
+        class="card-body border-top text-break"
+      >
+        <h3 class="h6">{{ work.title }}</h3>
+        <p class="small">
+          {{ moment(work.startsAt) }} – {{ moment(work.endsAt) }}
+        </p>
+        <p v-if="work.description" class="small">{{ work.description }}</p>
+        <p class="small mb-0">
+          Affects: {{ work.componentKeys.map(componentName).join(', ') }}
+        </p>
+      </div>
+    </section>
+
+    <section
+      v-if="activeMaintenance.length"
+      class="card mb-3"
+      data-id="public-status-maintenance"
+    >
+      <div class="card-header">
+        <h2 class="h6 mb-0">Current maintenance</h2>
+      </div>
+      <div
+        v-for="period in activeMaintenance"
+        :key="period.id"
+        class="card-body text-break"
+      >
+        <h3 class="h6">{{ period.title }}</h3>
+        <p class="small mb-0">Started at {{ moment(period.startedAt) }}</p>
+      </div>
+    </section>
+
+    <section
+      v-if="components.length"
+      class="card mb-3"
+      data-id="public-status-components"
+    >
+      <div class="card-header"><h2 class="h6 mb-0">Components</h2></div>
+      <div
+        v-for="(component, componentIndex) in components"
+        :key="component.componentKey"
+        class="card-body border-top"
+      >
+        <div class="d-flex flex-wrap align-items-start gap-2 mb-2">
+          <div class="flex-grow-1 text-break">
+            <h3 class="h6 mb-1">{{ component.name }}</h3>
+            <p v-if="component.description" class="small mb-0">
+              {{ component.description }}
+            </p>
+          </div>
+          <span
+            class="badge"
+            :class="`text-bg-${states[component.state].tone}`"
+            data-id="public-status-component-state"
+            >{{ states[component.state].label }}</span
+          >
+        </div>
+        <template
+          v-for="strip in dayStrips.filter(
+            (item) => item.componentKey === component.componentKey,
+          )"
+          :key="strip.componentKey"
+        >
+          <div
+            v-for="variant in [
+              { days: strip.days, classes: 'd-none d-md-block', count: 90 },
+              { days: strip.narrowDays, classes: 'd-md-none', count: 30 },
+            ]"
+            :key="variant.count"
+            :class="variant.classes"
+            :data-id="`public-status-days-${variant.count}`"
+          >
+            <div
+              class="d-flex gap-1"
+              role="group"
+              :aria-label="`${component.name}: last ${variant.count} days`"
+            >
+              <button
+                v-for="day in variant.days"
+                :key="day.startTs"
+                type="button"
+                class="btn flex-fill p-0 py-2 border-0 rounded-1"
+                :class="`btn-${states[day.state].tone}`"
+                :aria-label="dayLabel(day)"
+                :aria-describedby="`${detailId}-${componentIndex}`"
+                @focus="
+                  selectedDay = {
+                    componentKey: component.componentKey,
+                    startTs: day.startTs,
+                  }
+                "
+                @click="
+                  selectedDay = {
+                    componentKey: component.componentKey,
+                    startTs: day.startTs,
+                  }
+                "
+              ></button>
+            </div>
+            <div
+              class="d-flex justify-content-between small text-body-secondary mt-1"
+            >
+              <span>{{ variant.count }} days</span><span>Today</span>
+            </div>
+          </div>
+          <p
+            :id="`${detailId}-${componentIndex}`"
+            class="small mb-0 mt-1"
+            data-id="public-status-day-detail"
+          >
+            {{ dayDetail(strip) }}
+          </p>
+        </template>
+      </div>
+    </section>
+
+    <section
+      v-if="projection"
+      class="card mb-3"
+      data-id="public-status-history"
+    >
+      <div class="card-header"><h2 class="h6 mb-0">Past incidents</h2></div>
+      <p v-if="!history.length" class="card-body small mb-0">
+        No past published incidents
+      </p>
+      <ul v-else class="list-group list-group-flush small">
+        <li
+          v-for="entry in history"
+          :key="`${entry.kind}-${entry.id}`"
+          class="list-group-item text-break"
+        >
+          <template v-if="entry.kind === 'outage'">
+            <h3 class="h6">
+              {{ componentName(entry.componentKey) }}
+              <span
+                class="badge"
+                :class="`text-bg-${states[entry.severity].tone}`"
+                >{{ states[entry.severity].label }}</span
+              >
+            </h3>
+            <p class="mb-1">
+              {{ entry.detectedAtLabel }} · {{ entry.durationLabel }}
+            </p>
+            <p class="mb-1">Resolved at {{ entry.resolvedAtLabel }}</p>
+            <p
+              v-for="(update, index) in entry.updates"
+              :key="index"
+              class="mb-1"
+            >
+              {{ moment(update.at) }} · {{ update.text }}
+            </p>
+          </template>
+          <template v-else>
+            <h3 class="h6">
+              {{ entry.title }}
+              <span class="badge text-bg-info">Maintenance</span>
+            </h3>
+            <p class="mb-1">
+              {{ entry.startedAtLabel }} · {{ entry.durationLabel }}
+            </p>
+            <p class="mb-0">Completed at {{ entry.endedAtLabel }}</p>
+          </template>
+        </li>
+      </ul>
+    </section>
+
+    <p class="small text-body-secondary" data-id="public-status-last-update">
+      Last update from the system: {{ lastUpdate ?? 'Unknown' }}
+    </p>
+  </HilosStaticPage>
+</template>

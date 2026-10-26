@@ -2691,8 +2691,9 @@ export {
 } from './connection/restoreProgress.js'
 
 export { bindInteractionBlock } from './base/index.js'
-// Status remains behind its section entry; base imports no Status implementation.
+// Status implementations have lazy entries; base imports neither reader nor admin.
 export * from './admin/status/index.js'
+export * from './status/index.js'
 // Preserve the legacy Moderation exports; detail APIs stay in their lazy section.
 export {
   createHilosModerationKindsTable,

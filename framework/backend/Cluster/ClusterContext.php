@@ -1128,6 +1128,7 @@ final class ClusterContext
             ),
             ClusterCommandConstants::FIELD_CLIENT_INDEX => $this->clientConnections?->countsByNode() ?? [],
             ClusterCommandConstants::FIELD_CLIENT_DELIVERIES => $this->clientConnections?->deliveries() ?? 0,
+            ClusterCommandConstants::FIELD_CLIENT_TEST_DELIVERIES => $this->clientConnections?->testDeliveries() ?? 0,
             ClusterCommandConstants::FIELD_LAST_CLIENT_ACCEPT_KEY => $this->clientConnections?->lastAcceptKey(),
             ClusterCommandConstants::FIELD_RT_COLLECTIONS => $replicas[ClusterCommandConstants::FIELD_RT_COLLECTIONS]
                 ?? [],

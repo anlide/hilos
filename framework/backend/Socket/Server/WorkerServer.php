@@ -130,6 +130,7 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private const array PROTECTED_MODE_PRESERVED_AGENT_TYPES = [
         HilosAgentType::HILOS_MAIL,
+        HilosAgentType::HILOS_STATUS,
     ];
 
     /**
@@ -2092,12 +2093,9 @@ abstract class WorkerServer extends AbstractServer implements
         }
 
         if (in_array($agentType, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
-            // The one pool the freeze lets through, and it is load-bearing: the alert about a node
-            // frozen with nothing happening behind it goes out over this pool, so a freeze that
-            // stopped it would kill the only channel out of the node exactly when it is needed
-            // (HIL-482). Narrow and justified - raw send touches no database, the payload travels
-            // whole inside the signal. The exemption keeps the raw half; the durable half silences
-            // itself (AbstractDeliveryChannelAgent, HIL-1060).
+            // Raw mail carries freeze alerts; Status keeps public files and heartbeat alive.
+            // Their database halves obey the freeze independently. This grants no DB writer
+            // an exemption from silence (AbstractDeliveryChannelAgent and StatusAgent).
             return false;
         }
 
@@ -2521,7 +2519,7 @@ abstract class WorkerServer extends AbstractServer implements
      * Walking the whole roster inside this call used to hold the master's loop for as long as the
      * roster was long, and every client of the node waited on it (HIL-1012). The initiator agent is
      * left running so it can carry out the destructive operation the freeze protects, and so is
-     * the mail pool. Bringing the stopped agents back when the freeze lifts is the mirror seam,
+     * the mail pool and the public Status publisher. Bringing stopped agents back is the mirror seam,
      * landed in HIL-267 slice 7b.
      *
      * @param string $initiatorAgentType Initiator agent type left running
@@ -2542,7 +2540,8 @@ abstract class WorkerServer extends AbstractServer implements
         // wait, and its record goes with it. It is not remembered for the lift - it never ran here -
         // and comes up the ordinary way the next time it is addressed (HIL-998, HIL-1671).
         foreach (array_keys($this->agentsAwaitingWorker) as $agentId) {
-            if ($agentId === $initiatorAgentId) {
+            if ($agentId === $initiatorAgentId
+                || in_array($this->parseAgentId($agentId)->type, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
                 continue;
             }
 
@@ -2558,10 +2557,7 @@ abstract class WorkerServer extends AbstractServer implements
             }
 
             if (in_array($this->parseAgentId($agentId)->type, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
-                // Left running for the same reason the start gate lets it back up: it carries the
-                // alert about this very freeze, and a stopped mail pool would make a stuck node
-                // silent as well as unreachable (HIL-482). Its raw half, that is: the durable half
-                // silences itself (AbstractDeliveryChannelAgent, HIL-1060).
+                // The same narrow raw-mail and public-file exception as the start gate.
                 continue;
             }
 
@@ -2676,8 +2672,8 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * Read off the remembered set and the replay queue, the two places such an agent stands between
      * its stop and its turn in the walk. A stop over an unfinished lift moves the queue back into the
-     * set (stopAgentsForProtectedMode()), so the answer holds through it; the initiator and the mail
-     * pool are never stopped, so never here; once the walk has asked for the agent it is an ordinary
+     * set (stopAgentsForProtectedMode()), so the answer holds through it; the initiator and preserved
+     * types are never stopped, so never here; once the walk has asked for the agent it is an ordinary
      * start under way. The master asks this to hold a connection's close for the agent rather than
      * drop it (HIL-1208).
      *

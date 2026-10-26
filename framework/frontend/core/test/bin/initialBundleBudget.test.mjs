@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import ts from 'typescript'
@@ -917,6 +917,81 @@ function coreSdk() {
 }
 
 describe('core tsc source/output ownership', () => {
+  it('keeps the real public Status closure lazy, including a source-less installed entry', () => {
+    const { pkg, compile, save } = coreSdk()
+    const visited = new Set()
+    function compileSource(name) {
+      if (visited.has(name)) return
+      visited.add(name)
+      const output = compile(
+        name,
+        readFileSync(new URL(`../../src/${name}`, import.meta.url), 'utf8'),
+      )
+      const module = ts.createSourceFile(
+        output,
+        readFileSync(output, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+      )
+      for (const statement of module.statements) {
+        if (
+          (!ts.isImportDeclaration(statement) &&
+            !ts.isExportDeclaration(statement)) ||
+          !statement.moduleSpecifier ||
+          !ts.isStringLiteral(statement.moduleSpecifier) ||
+          !statement.moduleSpecifier.text.startsWith('.')
+        )
+          continue
+        compileSource(
+          relative(
+            join(pkg, 'src'),
+            resolve(pkg, 'src', dirname(name), statement.moduleSpecifier.text),
+          ).replace(/\.js$/, '.ts'),
+        )
+      }
+    }
+    compileSource('status/index.ts')
+    const manifest = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'))
+    manifest.exports['./status'] = { import: './dist/status/index.js' }
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify(manifest))
+    save()
+    const input = graph([
+      chunk('main.js', [], ['status.js'], ['@hilos/core/base']),
+      chunk('status.js', [], [], ['@hilos/core/status']),
+    ])
+    const report = measureInitialBundle(input)
+    expect(checkInitialBundleBudget(report).errors).toEqual([])
+    expect(report.initial.modules.some((id) => id.includes('/status/'))).toBe(
+      false,
+    )
+    expect(report.lazy[0].modules).toContain(
+      join(pkg, 'src/status/publicStatus.ts'),
+    )
+    expect(report.lazy[0].modules).toContain(
+      join(pkg, 'src/status/statusFiles.ts'),
+    )
+    expect(report.lazy[0].modules).toContain(
+      join(pkg, 'src/status/derivedStatus.ts'),
+    )
+    expect(errors('@hilos/core/status')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('public Status entrypoint'),
+      ]),
+    )
+    expect(errors(join(pkg, 'src/status/publicStatus.ts'))).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('unapproved core source snapshot'),
+      ]),
+    )
+    rmSync(join(pkg, 'src'), { recursive: true })
+    expect(measureInitialBundle(input)).toEqual(report)
+    expect(errors('@hilos/core/status')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('public Status entrypoint'),
+      ]),
+    )
+  })
+
   it.each(['vue', 'react'])(
     'keeps core and all public subpaths external only in the %s SDK build',
     async (layer) => {

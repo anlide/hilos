@@ -1,0 +1,213 @@
+import { expect, test } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import {
+  DAEMON_ROOT_PATH,
+  DAEMON_WORKERS_PATH,
+  STATUS_PATH,
+  deliveryObject,
+  expectPublicStatusPair,
+  expectPublicStatusReadOnly,
+  expectStandaloneOverview,
+  expectStandaloneWorkers,
+  shownByTestId,
+  submitStatusIncident,
+  watchDeliveryFrames,
+  watchPublicStatus,
+  watchStatusFrames,
+  watchTableSearch,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { gotoPage, gotoPublicStatus, PAGE_READY } from '../helpers/page.js'
+import { withStatusAgentLoss } from '../helpers/status.js'
+
+test.use({ colorScheme: 'light' })
+
+test('prepare an accepted public archive through real loss, publication and resolution', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  test.slow() // Real collector loss, publication and resolved file projection.
+  const control = standaloneStatusControl()
+  await grantAdminToSelf(page)
+  const context = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+    timezoneId: 'Europe/Warsaw',
+  })
+  const guest = await context.newPage()
+  const workers = await page.context().newPage()
+  const admin = watchStatusFrames(page)
+  const log = watchPublicStatus(guest)
+  const workerLog = watchDeliveryFrames(workers)
+  const workerTable = await watchTableSearch(workers, {
+    page: 'hilos_daemon_workers',
+    tableKey: 'hilosDaemonWorkers',
+  })
+  const preparation: {
+    mirrorReadyAt?: number
+    workersOpeningAt?: number
+    sourceReadyAt?: number
+    backClickedAt?: number
+    windowRequestId?: string
+    settledAt?: number
+    rows?: readonly string[]
+  } = {}
+  try {
+    // Overview and Workers read the same Daemon page agent's picture mirror.
+    // Wait for its real roster before opening a viewport: the cold first
+    // window has no previous address for Back to the rows to return to.
+    await gotoPage(workers, DAEMON_ROOT_PATH, PAGE_READY)
+    await expectStandaloneOverview(
+      expect,
+      workers,
+      'binance-btc-tracker-mysql-test',
+    )
+    preparation.mirrorReadyAt = performance.now()
+    preparation.workersOpeningAt = performance.now()
+    await gotoPage(workers, DAEMON_WORKERS_PATH, PAGE_READY)
+    await expect
+      .poll(async () =>
+        (await workerTable.read()).frames
+          .filter(
+            ({ direction, wire }) =>
+              direction === 'received' && wire.type === 'page_response',
+          )
+          .map(
+            ({ wire }) =>
+              deliveryObject(
+                deliveryObject(deliveryObject(wire.data).payload).data,
+              ).processesReported,
+          )
+          .at(-1),
+      )
+      .toBe(true)
+    preparation.sourceReadyAt = performance.now()
+    const back = shownByTestId(workers, 'hilos-table-empty-page-back')
+    const rows = shownByTestId(
+      workers,
+      /^hilos-table-(row|card)-(regular|monopolistic):\d+$/,
+    )
+    await expect(rows.or(back)).not.toHaveCount(0)
+    if (await back.isVisible()) {
+      await back.scrollIntoViewIfNeeded()
+      await expect(back).toBeVisible()
+      await expect(back).toBeEnabled()
+      await back.focus()
+      const mark = await workerTable.mark()
+      preparation.backClickedAt = performance.now()
+      await back.click()
+      // The shared journal exposes the real request and the controller's
+      // accepted id after dispatch; Workers has no search box, so its
+      // settlement does not use the toolbox's search-specific check.
+      await expect
+        .poll(async () => {
+          const state = await workerTable.read()
+          const request = state.frames
+            .filter(
+              ({ direction, index, socket, wire }) =>
+                direction === 'sent' &&
+                index >= mark.cursor &&
+                socket === mark.socket &&
+                wire.type === 'table_viewport',
+            )
+            .at(-1)
+          if (typeof request?.wire.requestId !== 'string') return false
+          preparation.windowRequestId = request.wire.requestId
+          return state.application.some(
+            (table) =>
+              table.appliedRequestId === preparation.windowRequestId &&
+              table.rows.length > 0 &&
+              JSON.stringify(table.rows) === JSON.stringify(table.domRows),
+          )
+        })
+        .toBe(true)
+      preparation.rows = await workerTable.rowKeys()
+      await expect(workers.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(back).toBeHidden()
+    }
+    await expectStandaloneWorkers(expect, workers)
+    preparation.rows = await workerTable.rowKeys()
+    preparation.settledAt = performance.now()
+    await gotoPage(page, STATUS_PATH, PAGE_READY)
+    await gotoPublicStatus(guest)
+    await expectPublicStatusPair(expect, guest, log)
+    let detectedAt = 0
+    await withStatusAgentLoss(workers, admin, async () => {
+      await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
+      const incident = admin.latest()!.incidents![0]
+      detectedAt = incident.detectedAt
+      await page
+        .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
+        .click()
+      await submitStatusIncident(
+        expect,
+        page,
+        admin,
+        'hilos_status_publish_now',
+        incident.incidentId,
+      )
+      await expectPublicStatusPair(expect, guest, log, ({ status }) =>
+        status.outages.some(
+          (outage) =>
+            outage.detectedAt === detectedAt && outage.resolvedAt === null,
+        ),
+      )
+    })
+    const accepted = await expectPublicStatusPair(
+      expect,
+      guest,
+      log,
+      ({ status }) =>
+        status.outages.some(
+          (outage) =>
+            outage.detectedAt === detectedAt && outage.resolvedAt !== null,
+        ) &&
+        status.components.every(
+          (component) => component.state === 'operational',
+        ),
+    )
+    await expect(guest.getByTestId('public-status-banner')).toHaveText(
+      'All systems operational',
+    )
+    const history = await guest.getByTestId('public-status-history').innerText()
+    const days = await guest
+      .getByTestId('public-status-days-90')
+      .getByRole('button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label')),
+      )
+    expect(days.at(-1)).toMatch(/ · Major outage$/)
+    expectPublicStatusReadOnly(expect, log)
+    // Evidence of accepted real facts, never a publisher input or a JSON replacement.
+    await writeFile(
+      join(control.directory, 'accepted.json'),
+      JSON.stringify({ accepted, history, days }),
+    )
+  } finally {
+    await log.stop()
+    admin.stop()
+    workerLog.stop()
+    const evidence = test.info().outputPath('archive-preparation.json')
+    await writeFile(
+      evidence,
+      JSON.stringify({
+        public: log,
+        admin: admin.frames,
+        workers: workerLog,
+        preparation,
+        workerTable: await workerTable.read(),
+        workerPage: await workers.locator('body').innerText(),
+      }),
+    )
+    await test.info().attach('standalone-status-archive-preparation', {
+      path: evidence,
+      contentType: 'application/json',
+    })
+    await workers.close()
+    await context.close()
+  }
+})

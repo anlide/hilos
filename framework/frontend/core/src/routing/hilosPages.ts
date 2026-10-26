@@ -9,6 +9,8 @@
 // `HilosPageConstants` and the paths mirror the framework rows of the page
 // catalog; both must stay byte-identical to their backend counterparts (the page
 // key is the subscription wire identity, the path is the canonical admin URL).
+// PUBLIC_STATUS is the sole exception: it reads public nginx files, has no
+// backend page or subscription, and remains readable without a handshake.
 // Every declaration also states whether its page is an administrative surface,
 // which is what keeps a framework page out of the public half of the app.
 //
@@ -22,7 +24,7 @@
 
 import { type HilosRouteDeclaration } from './PageRouter.js'
 
-/** Hilos admin page keys, mirroring PHP `HilosPageConstants`. */
+/** Framework page keys; all except PUBLIC_STATUS mirror PHP `HilosPageConstants`. */
 export const HilosPages = {
   DASHBOARD: 'hilos',
   PROFILE: 'hilos_profile',
@@ -124,6 +126,7 @@ export const HilosPages = {
   BILLING_PROVIDER: 'hilos_billing_provider',
   BILLING_PAYMENTS: 'hilos_billing_payments',
   BILLING_REFUNDS: 'hilos_billing_refunds',
+  PUBLIC_STATUS: 'status',
   ABOUT: 'hilos_about',
   TERMS: 'hilos_terms',
   PRIVACY: 'hilos_privacy',
@@ -412,6 +415,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/billing/{providerId}/refunds',
     admin: true,
   },
+  [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },
   [HilosPages.ABOUT]: { path: '/about', admin: false },
   [HilosPages.TERMS]: { path: '/terms', admin: false },
   [HilosPages.PRIVACY]: { path: '/privacy', admin: false },

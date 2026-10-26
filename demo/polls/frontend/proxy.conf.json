@@ -1,4 +1,10 @@
 {
+  "/status-data": {
+    "target": "http://polls-files-local"
+  },
+  "/status-data/**": {
+    "target": "http://polls-files-local"
+  },
   "/_hilos/data-export": {
     "target": "http://polls-daemon-local:8090"
   },

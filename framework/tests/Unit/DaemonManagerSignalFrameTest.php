@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -19,6 +20,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Hilos;
+use Hilos\Status\DTO\StatusFilesChangedSignalData;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -95,6 +97,27 @@ final class DaemonManagerSignalFrameTest extends TestCase
 
         $this->assertSame('{"type":"unit-frame-drop","data":{"s":"ok"}}', $frame);
         $this->assertSame('', $this->written());
+    }
+
+    public function testStatusHintKeepsItsClassAcrossIpcAndBecomesAnObjectOnlyInTheBrowserFrame(): void
+    {
+        $payload = new WebSocketSignalData(new StatusFilesChangedSignalData());
+        self::assertSame([
+            'data' => [], 'dataType' => StatusFilesChangedSignalData::class,
+        ], $payload->toArray());
+        $restored = WebSocketSignalData::fromArray(json_decode(json_encode($payload->toArray()), true));
+        self::assertInstanceOf(StatusFilesChangedSignalData::class, $restored->data);
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::WORKER), new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
+            new SignalName(HilosSignalConstants::STATUS_FILES_CHANGED), $restored,
+        );
+        self::assertSame('{"type":"status_files_changed","data":{}}', new DaemonManagerSignalFrameTestManager()->encodeFrame($signal));
+        self::assertSame([], $restored->data->toArray());
+    }
+
+    public function testOtherEmptyPayloadsKeepTheirExistingArrayEncoding(): void
+    {
+        self::assertSame('{"type":"unit-frame-drop","data":[]}', new DaemonManagerSignalFrameTestManager()->encodeFrame($this->signal([])));
     }
 
     public function testServiceMarkerCannotBeEncodedEvenOnANonAddressedPath(): void

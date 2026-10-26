@@ -122,7 +122,6 @@ and refuses those writes. Chat and Binance BTC Tracker mount the Vue pages;
 React and Angular remain unbuilt until HIL-1695 and HIL-1696.
 The public `/status` surface reads nginx files even under freeze; it is separate
 from the admin table and does not read its mirror or wait for `page_response`.
-(not in the code yet — HIL-1690)
 
 The project must NOT copy the table query, the catalog-merge, the value-source
 logic, or the action routing. Those are framework-owned.

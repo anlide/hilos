@@ -45,9 +45,21 @@ final class ChatFsContextTest extends TestCase
                 FsContext::DATA_EXPORT => DirectoryScope::CLUSTER,
                 FsContext::LEGAL_EXPORT => DirectoryScope::CLUSTER,
                 FsContext::ANALYTICS_JOURNAL => DirectoryScope::NODE,
+                FsContext::STATUS => DirectoryScope::CLUSTER,
             ],
             array_map(static fn(FsDirectory $directory): DirectoryScope => $directory->getScope(), $context->getDirectories()),
         );
         self::assertSame([], $context->declarationErrors());
+    }
+
+    public function testStatusUsesItsOwnSharedDataDirectory(): void
+    {
+        $context = new ChatFsContext();
+        $context->configure();
+
+        self::assertTrue($context->hasDirectory(FsContext::STATUS));
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->status->getPath());
+        self::assertSame(DirectoryScope::CLUSTER, $context->status->getScope());
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->clusterDirectories()[FsContext::STATUS]);
     }
 }

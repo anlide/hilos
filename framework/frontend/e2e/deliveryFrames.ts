@@ -1,4 +1,4 @@
-import type { Page, WebSocket } from '@playwright/test'
+import type { Expect, Page, WebSocket } from '@playwright/test'
 
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 
@@ -111,5 +111,43 @@ export type DeliveryFrameLog = ReturnType<typeof watchDeliveryFrames>
 export async function waitDeliveryBoundary(at: number): Promise<void> {
   while (performance.now() < at) {
     await new Promise((resolve) => setTimeout(resolve, at - performance.now()))
+  }
+}
+
+/**
+ * Observe an entire physical quiet interval on every socket. Any incoming
+ * packet, including an opaque hint or parse failure, restarts the measurement.
+ * Browser requests also restart it; transport pings do not open request grace.
+ */
+export async function waitForDeliveryQuiet(
+  expect: Expect,
+  logs: DeliveryFrameLog[],
+  windowMs: number,
+  marginMs: number,
+  timeoutMs: number,
+) {
+  const startedAt = performance.now()
+  const activity = () =>
+    logs.map((log) =>
+      Math.max(
+        log.connections.at(-1)?.opened ?? startedAt,
+        log.packets.at(-1)?.at ?? 0,
+        log.sent.filter(({ raw }) => raw !== 'ping').at(-1)?.at ?? 0,
+      ),
+    )
+  await expect
+    .poll(() => performance.now() - Math.max(...activity()), {
+      timeout: timeoutMs,
+      // The next preparation brackets a real heartbeat inside an 8s window;
+      // a 1s polling overshoot would consume its source-write budget.
+      intervals: [20, 50, 100],
+      message: 'all physical traffic reached real quiet',
+    })
+    .toBeGreaterThanOrEqual(windowMs + marginMs)
+  return {
+    startedAt,
+    at: performance.now(),
+    lastActivity: activity(),
+    packetCounts: logs.map(({ packets }) => packets.length),
   }
 }

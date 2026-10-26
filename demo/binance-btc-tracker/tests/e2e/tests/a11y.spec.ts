@@ -2,14 +2,23 @@ import { expect, test } from '@playwright/test'
 import {
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
+  expectPublicStatusAccessibility,
+  expectPublicStatusPair,
+  expectPublicStatusReadOnly,
   expectStatusHead,
   expectLanguagePageHead,
   expectStatusIncidentDialog,
   shownByTestId,
+  watchPublicStatus,
   watchStatusFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectPageReady,
+  gotoPage,
+  gotoPublicStatus,
+  PAGE_READY,
+} from '../helpers/page.js'
 import {
   STATUS_FAULT_COMPONENT,
   withStatusAgentLoss,
@@ -65,6 +74,32 @@ test('Status pages expose the shared heading, current tab, title, named table an
   await overview.press('Enter')
   await expectPageReady(page)
   await expectStatusHead(expect, page)
+})
+
+test('public Status exposes file-backed semantics, shell landmarks and keyboard day details', async ({
+  page,
+}) => {
+  const log = watchPublicStatus(page)
+  try {
+    await gotoPublicStatus(page)
+    await expectPublicStatusPair(expect, page, log, ({ status }) =>
+      status.components.every((component) => component.state === 'operational'),
+    )
+    await expect(page).toHaveTitle('Status · BTC Tracker')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Status · BTC Tracker',
+    )
+    await expectPublicStatusAccessibility(expect, page, 'Settings library')
+    await expect(page.getByRole('navigation')).not.toHaveCount(0)
+    await expect(page.getByRole('contentinfo')).toHaveCount(1)
+    expectPublicStatusReadOnly(expect, log)
+  } finally {
+    await log.stop()
+    await test.info().attach('public-status-accessibility-real-files', {
+      body: JSON.stringify(log),
+      contentType: 'application/json',
+    })
+  }
 })
 
 // FIXME(F-031, 2026-10-25): Timeout ожидания воркера в withStatusAgentLoss · чужой · попытка 1 · HIL-1591

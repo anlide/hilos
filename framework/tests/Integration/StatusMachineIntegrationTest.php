@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Cluster\NodeRole;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -57,6 +58,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\Exception\StatusIncidentWriteException;
 use Hilos\Status\StatusAgent;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusIncidentOutcome;
 use Hilos\Status\StatusSeverity;
@@ -476,8 +478,10 @@ final class StatusMachineIntegrationTest extends StatusStorageIntegrationTestCas
         self::assertSame([
             [EntityStatusIncident::active_component_key, ...array_map(static fn (int $n): string => 'c' . $n, range(1, 32))],
             [EntityStatusIncident::active_component_key, 'c33', 'c34', 'c35'],
+            [EntityStatusIncident::active_component_key, ...array_map(static fn (int $n): string => 'c' . $n, range(1, 35))],
             [EntityStatusIncident::active_component_key, ...array_map(static fn (int $n): string => 'c' . $n, range(1, 32))],
             [EntityStatusIncident::active_component_key, 'c33', 'c34', 'c35'],
+            [EntityStatusIncident::active_component_key, ...array_map(static fn (int $n): string => 'c' . $n, range(1, 35))],
         ], Hilos::$db->statusIncidents->selections);
     }
 
@@ -802,6 +806,7 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
     private ?int $statusExecutionToken = null;
     private ?int $machineExecutionToken = null;
     private ?StatusAgent $machineOwner = null;
+    private ?StatusPublicVolume $publicVolume = null;
     private ?HilosNotifier $previousNotify = null;
     private ?SettingsAccessor $previousSetting = null;
     private string $previousApp;
@@ -819,6 +824,7 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
         $this->previousMirrors = (new ReflectionProperty(SourceChangeBus::class, 'mirrors'))->getValue();
         Hilos::$notify = null;
         parent::prepareIntegrationEnvironment();
+        $this->publicVolume = new StatusPublicVolume();
         foreach ([EntityStatusIncident::_table, EntityStatusIncidentUpdate::_table] as $table) {
             Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
             $this->statusTables[] = $table;
@@ -867,6 +873,8 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
                 $this->statusExecutionToken = null;
             }
             Hilos::$notify = $this->previousNotify;
+            $this->publicVolume?->close();
+            $this->publicVolume = null;
             try {
                 parent::releaseIntegrationEnvironment();
             } catch (Throwable $failure) {
@@ -981,11 +989,16 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
         return Database::sql('SELECT kind, severity, text, at FROM hilos_status_incident_update ORDER BY id')->rows();
     }
 
-    /** @return list<string> Queued signal names; transactional announcements remain held by the rollback root */
+    /** @return list<string> Machine signals; validated file hints are independent of the rollback-held announcements */
     protected function drainMachineSignals(): array
     {
         $names = [];
         while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED) {
+                self::assertSame('ws_all_connected', $frame->signalType->getType());
+                self::assertSame([], $frame->data->data->toArray());
+                continue;
+            }
             $names[] = $frame->signalName->getName();
         }
         return $names;

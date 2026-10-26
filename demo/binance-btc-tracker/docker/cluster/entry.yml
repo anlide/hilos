@@ -10,6 +10,8 @@ services:
       - ../nginx.cluster.conf.template:/etc/nginx/nginx.conf.template:ro
       - ../../frontend:/srv/frontend:ro
       - ${HILOS_CLUSTER_DATA_EXPORT_DIR:-../../data/data_export}:/data_export:ro
+      # Nodes already share this directory through their project bind at /app.
+      - ../../data/status:/status:ro
     ports:
       - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_ENTRY_HTTP_PUBLISHED_PORT:-80}:80"
       - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_ENTRY_HTTPS_PUBLISHED_PORT:-443}:443"

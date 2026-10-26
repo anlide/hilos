@@ -1293,6 +1293,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
             static::refuseLegalExportWithoutDirectory();
+            static::refuseStatusWithoutDirectory();
             static::refuseAccessLogWithoutSessionAddress();
             static::refuseAnalyticsWithoutPrivacyDeclaration();
             static::refuseAnalyticsWithoutJournalDirectory();
@@ -1485,6 +1486,23 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['The legal agent keeps exports of acceptance records in the legal_export directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * @throws IncompleteFeatureActivationException When STATUS has no directory for its public files
+     */
+    protected static function refuseStatusWithoutDirectory(): void
+    {
+        if (!in_array(HilosFeature::STATUS, static::FEATURES, true)
+            || static::$fs?->hasDirectory(FsContext::STATUS) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::STATUS keeps public files in the status directory, but the FS context registers none'],
         );
     }
 

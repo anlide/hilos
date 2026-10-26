@@ -19,6 +19,7 @@ import {
   createPageRouter,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
+  HilosPages,
   lazyPage,
 } from '@hilos/core/base'
 import type {
@@ -407,6 +408,7 @@ function waitingRouter(
       main: { path: '/', admin: false },
       lazy: { path: '/lazy/{id?}', admin: true },
       other: { path: '/other', admin: true },
+      [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },
     }),
     {
       ...navigablePages(),
@@ -457,6 +459,106 @@ async function settleCode(): Promise<void> {
   await Promise.resolve()
   await nextTick()
 }
+
+describe('HilosView public Status assembly (HIL-1690)', () => {
+  it.each(['pending', 'ready', 'stale', 401, 403, 404] as const)(
+    'leaves the previous %s subscription behind and restores ordinary waiting',
+    async (previous) => {
+      const { router, answer, pageError, pageLoading, subscribe } =
+        waitingRouter()
+      const status = trackedPage('public-file-reader')
+      const auth = trackedPage('auth-surface')
+      const wrapper = mount(HilosView, {
+        props: {
+          pages: {
+            main: MainPage,
+            [HilosPages.PUBLIC_STATUS]: status.component,
+          },
+          authSurface: auth.component,
+        },
+        global: { provide: { [hilosRouterKey as symbol]: router } },
+      })
+      if (previous !== 'pending') answer()
+      await nextTick()
+      if (previous === 'stale') pageLoading.set(true)
+      if (typeof previous === 'number') {
+        pageError.set({ ...NOT_FOUND, httpCode: previous })
+        await nextTick()
+        expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(
+          previous === 401,
+        )
+      }
+      subscribe.mockClear()
+      router.navigate('/status')
+      await nextTick()
+      expect(wrapper.find('[data-id="public-file-reader"]').exists()).toBe(true)
+      expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(false)
+      expect(wrapper.findComponent(ErrorPage).exists()).toBe(false)
+      expect(
+        wrapper.get('[data-id="hilos-page-departure"]').element
+          .childElementCount,
+      ).toBe(0)
+      expect(subscribe).not.toHaveBeenCalled()
+      // Late old refusal/loading and generic session hooks cannot replace files.
+      pageError.set({ ...NOT_FOUND, httpCode: 401 })
+      pageLoading.set(true)
+      router.denyCurrentPage()
+      router.awaitPageAnswer()
+      await nextTick()
+      expect(wrapper.find('[data-id="public-file-reader"]').exists()).toBe(true)
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('ready')
+      router.navigate('/')
+      await nextTick()
+      expect(wrapper.find('[data-id="main"]').exists()).toBe(false)
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('loading')
+      answer()
+      await nextTick()
+      expect(wrapper.find('[data-id="main"]').exists()).toBe(true)
+      wrapper.unmount()
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'still waits for public lazy code and handles its %s independently of old frames',
+    async (outcome) => {
+      const pending = deferred<Component>()
+      const { router, pageError, pageLoading } = waitingRouter()
+      const status = trackedPage('public-file-reader')
+      const wrapper = mountPages(router, {
+        main: MainPage,
+        [HilosPages.PUBLIC_STATUS]: lazyPage(() => pending.promise),
+      })
+      pageError.set({ ...NOT_FOUND, httpCode: 403 })
+      router.navigate('/status')
+      await nextTick()
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe('loading')
+      expect(status.mounted).not.toHaveBeenCalled()
+      pageError.set({ ...NOT_FOUND, httpCode: 401 })
+      pageLoading.set(true)
+      if (outcome === 'resolve') pending.resolve(status.component)
+      else pending.reject(new Error('Import failed'))
+      await settleCode()
+      await settleCode()
+      expect(
+        wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
+      ).toBe(outcome === 'resolve' ? 'ready' : 'error')
+      expect(wrapper.find('[data-id="public-file-reader"]').exists()).toBe(
+        outcome === 'resolve',
+      )
+      if (outcome === 'reject')
+        expect(wrapper.getComponent(ErrorPage).props('error')).toEqual(
+          LOCAL_FAILURE,
+        )
+      wrapper.unmount()
+    },
+  )
+})
 
 describe('HilosView lazy pages', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -1235,6 +1337,30 @@ describe('HilosView and a page shell under a live deletion', () => {
     expect(wrapper.find('[data-id="hilos-admin-page"]').exists()).toBe(false)
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+  })
+
+  it('leaves a retained deleted card and its dialog for the public file reader', async () => {
+    const { pageError, router, wrapper } = await openCard(true)
+    const status = trackedPage('public-file-reader')
+    await wrapper.setProps({
+      pages: {
+        ...wrapper.props('pages'),
+        [HilosPages.PUBLIC_STATUS]: status.component,
+      },
+    })
+    pageError.set(CARD_DELETED)
+    await nextTick()
+    expect(wrapper.findComponent(HilosAdminPage).exists()).toBe(true)
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    router.navigate('/status')
+    await nextTick()
+    expect(wrapper.find('[data-id="public-file-reader"]').exists()).toBe(true)
+    expect(wrapper.findComponent(HilosAdminPage).exists()).toBe(false)
+    expect(wrapper.findComponent(ErrorPage).exists()).toBe(false)
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(
+      wrapper.get('[data-id="hilos-page-departure"]').element.childElementCount,
+    ).toBe(0)
   })
 
   it('replaces a card that did not opt in, line and all', async () => {

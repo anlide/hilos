@@ -4,6 +4,28 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 import { resolvePageTitle } from '../../src/routing/pageTitle.js'
 
 describe('resolvePageTitle', () => {
+  it('titles public Status before any handshake or page answer, preserving project priority', () => {
+    expect(
+      resolvePageTitle(HilosPages.PUBLIC_STATUS, {}, '', undefined, false),
+    ).toBe('Status')
+    expect(
+      resolvePageTitle(HilosPages.PUBLIC_STATUS, {}, 'Demo', undefined, false),
+    ).toBe('Status · Demo')
+    expect(
+      resolvePageTitle(
+        HilosPages.PUBLIC_STATUS,
+        { [HilosPages.PUBLIC_STATUS]: 'Service health' },
+        'Demo',
+        'Old catalog',
+        false,
+        'Old owner',
+      ),
+    ).toBe('Service health · Demo')
+    expect(resolvePageTitle(HilosPages.STATUS, {}, '', undefined, false)).toBe(
+      '',
+    )
+  })
+
   it('titles an admin page from the heading its answer carried', () => {
     expect(
       resolvePageTitle(

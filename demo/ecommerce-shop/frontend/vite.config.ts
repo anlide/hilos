@@ -64,6 +64,11 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
       // it. Harmless for normal localhost dev.
       allowedHosts: ['.hilos'],
       proxy: {
+        // Public Status JSON comes from the shared-volume nginx gateway.
+        '/status-data': {
+          target: 'http://ecommerce-shop-files-local',
+          changeOrigin: true,
+        },
         '/_hilos/data-export': {
           target:
             env.VITE_DATA_EXPORT_TARGET ||

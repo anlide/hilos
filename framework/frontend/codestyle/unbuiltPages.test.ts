@@ -60,6 +60,47 @@ function withHonestCopy<T>(check: (root: string) => T): T {
   }
 }
 
+it('accepts only public Status as a non-admin registry entry without a PHP page', () => {
+  withHonestCopy((root) => {
+    const keys = join(root, KEYS_PATH)
+    writeFileSync(
+      keys,
+      readFileSync(keys, 'utf8')
+        .replace(
+          'export const HilosPages = {',
+          "export const HilosPages = {\n  PUBLIC_STATUS: 'status',",
+        )
+        .replace(
+          'export const HILOS_ROUTE_DECLARATIONS = {',
+          "export const HILOS_ROUTE_DECLARATIONS = {\n  [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },",
+        ),
+    )
+    const registry = join(
+      root,
+      'framework/frontend/core/src/routing/hilosUnbuiltPages.ts',
+    )
+    const original = readFileSync(registry, 'utf8')
+    writeFileSync(
+      registry,
+      original.replace(
+        'export const HILOS_UNBUILT_PAGES = {',
+        "export const HILOS_UNBUILT_PAGES = {\n  [HilosPages.PUBLIC_STATUS]: ['react', 'angular'],",
+      ),
+    )
+    expect(checkTree(root)).toEqual([])
+    writeFileSync(
+      registry,
+      original.replace(
+        'export const HILOS_UNBUILT_PAGES = {',
+        "export const HILOS_UNBUILT_PAGES = {\n  [HilosPages.PUBLIC]: ['react', 'angular'],",
+      ),
+    )
+    expect(checkTree(root)).toEqual([
+      `UNBUILT-PAGE framework/frontend/core/src/routing/hilosUnbuiltPages.ts:3 — 'hilos_public' is not an admin page; remove its registry entry ${DOC}`,
+    ])
+  })
+})
+
 it.each([
   {
     shell: '<HilosAdminPage :page="page"><slot /></HilosAdminPage>',

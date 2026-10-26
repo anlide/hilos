@@ -65,6 +65,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Status\StatusAgent;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusSeverity;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -94,6 +95,7 @@ final class StatusAdminPageIntegrationTest extends FrameworkIntegrationTestCase
     /** @var array<string, mixed> Account-standing memory restored with the original context */
     private array $previousStanding = [];
     private StatusAgent $owner;
+    private StatusPublicVolume $publicVolume;
     private StatusAdminPageWorker $worker;
     private StatusAdminPageRuntime $runtime;
     private PageSignalRouter $gatekeeper;
@@ -138,6 +140,7 @@ final class StatusAdminPageIntegrationTest extends FrameworkIntegrationTestCase
         $this->runtime->bindStateCollectionNames();
         Hilos::$rt = $this->runtime;
         StatusAdminPageHilos::initBrowser(new IdentityTestBrowser(7, true));
+        $this->publicVolume = new StatusPublicVolume();
         $this->owner = new StatusAgent();
         OwnershipDeclaration::claimAll($this->owner);
         $this->worker = new StatusAdminPageWorker($this->owner);
@@ -176,6 +179,7 @@ final class StatusAdminPageIntegrationTest extends FrameworkIntegrationTestCase
             Hilos::$notify = $this->previousNotify;
             Hilos::$setting = $this->previousSetting;
             Hilos::$browser = $this->previousBrowser;
+            $this->publicVolume->close();
             parent::tearDown();
         }
     }

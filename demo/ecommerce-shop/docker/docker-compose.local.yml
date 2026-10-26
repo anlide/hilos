@@ -198,6 +198,7 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
+      - ../data/status:/status:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
       # HTTPS only. The container's own :80 vhost stays unpublished on purpose —
@@ -214,6 +215,18 @@ services:
     networks:
       hilos-ecommerce-shop-local-network:
         ipv4_address: ${DOCKER_NGINX_IP:-10.202.0.12}
+
+  # Internal dev gateway: the frontend reads public Status files from the
+  # writer's shared directory even when no daemon answers. No host listener.
+  ecommerce-shop-files-local:
+    image: nginx:alpine
+    container_name: ecommerce-shop-files-local
+    volumes:
+      - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../data/status:/status:ro
+    restart: unless-stopped
+    networks:
+      - hilos-ecommerce-shop-local-network
 
   # Vite dev server with HMR for the frontend. Mounts the whole repo at /hilos so
   # the @hilos/react `file:` symlink into framework/frontend resolves, and runs npm

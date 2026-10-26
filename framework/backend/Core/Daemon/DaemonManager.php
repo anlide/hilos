@@ -235,6 +235,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Status\DTO\StatusFilesChangedSignalData;
 use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -5100,6 +5101,7 @@ abstract class DaemonManager extends BaseManager implements
         // mesh reached this node, which is what a cluster scenario asserts on and what the
         // scenario, which opens no browser, has no other way of seeing.
         Hilos::$cluster?->clientConnections()?->noteAddressedDelivery($acceptKey);
+        Hilos::$cluster?->clientConnections()?->noteTestDelivery($signal->signalName);
 
         $webSocketServer = $this->findWebSocketServer();
         if ($webSocketServer === null) {
@@ -5567,6 +5569,7 @@ abstract class DaemonManager extends BaseManager implements
     public function deliverFanoutToClients(string $originNodeId, SignalDTO $signal): void
     {
         Hilos::$cluster?->clientConnections()?->noteFanoutDelivery();
+        Hilos::$cluster?->clientConnections()?->noteTestDelivery($signal->signalName);
 
         $webSocketServer = $this->findWebSocketServer();
         if ($webSocketServer === null) {
@@ -6459,7 +6462,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $message = [
             'type' => $signal->signalName->getName(),
-            'data' => $innerData->toArray(),
+            'data' => $innerData instanceof StatusFilesChangedSignalData ? (object)[] : $innerData->toArray(),
         ];
         $this->mergeEnvelopeMetadata($message, $innerData);
 

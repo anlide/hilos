@@ -87,6 +87,27 @@ view files, which live in `views/<Page>/`:
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.
 
+## The public Status route
+
+`HilosPages.PUBLIC_STATUS` is the narrow exception to page-key mirroring: the
+framework defines it as `'status'` with `{ path: '/status', admin: false }` in
+`framework/frontend/core/src/routing/hilosPages.ts`. It is a framework-owned
+client route, so an app does not duplicate it in `pages/keys.ts` or
+`APP_ROUTES`. There is deliberately no matching backend `PageConstants`,
+`Hilos::PAGES` entry or catalog record: nginx files supply its contents, and it
+does not subscribe or consume `page_response`. Do not invent a backend page or a
+generic subscription bypass for it.
+
+The router checks the view layer's unbuilt set before this exception. A built
+view leaves any previous subscription and does not open another; an unbuilt
+React or Angular view is still refused by the ordinary unbuilt-page guard.
+Chat and Binance BTC Tracker mount the Vue reader through their lazy view maps
+with `lazyPage()`. The shared title resolver supplies the framework label
+`Status`; no backend catalog heading is involved. These are implementation
+facts for this route, not a new rule for ordinary pages. App page-key mirroring,
+subscription waiting, access handling and the action lifecycle remain unchanged
+for every ordinary page.
+
 ## What the SDK provides
 
 Three `@hilos/core` exports carry the half of the wiring that is identical in

@@ -11,6 +11,7 @@ import {
   HILOS_ROUTE_DECLARATIONS,
 } from '../../src/routing/hilosPages.js'
 import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
+import { resolvePageTitle } from '../../src/routing/pageTitle.js'
 import { hilosTabLinks } from '../../src/routing/hilosAdmin.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import { ROUTE_NOT_FOUND_ERROR } from '../../src/routing/pageError.js'
@@ -19,6 +20,8 @@ import {
   type HilosPageIdentity,
 } from '../../src/admin/identity/hilosPageIdentity.js'
 import { createSignal } from '../../src/state/signal.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { PageSubscription } from '../../src/subscription/PageSubscription.js'
 
 const router = createPageRouter({
   main: { path: '/', admin: false },
@@ -130,6 +133,162 @@ function fakePages() {
     refused,
   }
 }
+
+describe('public Status without a server page', () => {
+  function setup(path: string, layer: 'vue' | 'react' | 'angular' = 'vue') {
+    const frames: unknown[] = []
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(
+      {
+        state: 'connected',
+        reconnectDragging: false,
+        send: (text) => {
+          frames.push(JSON.parse(text))
+          return true
+        },
+        on: () => () => {},
+        forgetPageFrames: () => {},
+        tableWindowDescriptors: () => ({}),
+      },
+      scopes,
+    )
+    const browser = fakeEnvironment(path)
+    const navigator = createHilosRouter(
+      createPageRouter(HILOS_ROUTE_DECLARATIONS),
+      pages,
+      browser.env,
+      (page) => resolvePageTitle(page, {}, '', undefined, false),
+      hilosUnbuiltPages(layer),
+    )
+    navigator.start()
+    return { navigator, pages, scopes, frames, browser }
+  }
+
+  it('cold-loads without a handshake, subscription or page scope', () => {
+    const { navigator, pages, scopes, frames } = setup('/status')
+    expect(navigator.currentRoute.get()).toEqual({
+      page: HilosPages.PUBLIC_STATUS,
+      params: {},
+      admin: false,
+    })
+    expect(navigator.currentTitle.get()).toBe('Status')
+    expect(navigator.pageError.get()).toBeNull()
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(scopes.page()).toBeUndefined()
+    expect(frames).toEqual([])
+    pages.releaseOnSession()
+    expect(frames).toEqual([])
+    navigator.stop()
+  })
+
+  it.each(['pending', 'denied'] as const)(
+    'leaves a %s subscription and ignores its late answer and error',
+    (previous) => {
+      const { navigator, pages, scopes, frames, browser } = setup('/hilos')
+      pages.releaseOnSession()
+      if (previous === 'denied') pages.denyCurrentPage()
+      navigator.navigate('/status')
+      expect(frames).toEqual([
+        { type: 'page_subscribe', page: HilosPages.DASHBOARD, params: {} },
+        { type: 'page_unsubscribe', page: HilosPages.DASHBOARD },
+      ])
+      expect(scopes.page()).toBeUndefined()
+      expect(pages.ingestPageResponse(HilosPages.DASHBOARD, {})).toBe(false)
+      expect(
+        pages.handleSubscriptionError({
+          page: HilosPages.DASHBOARD,
+          httpCode: 403,
+          errorCode: 'forbidden',
+          title: 'Forbidden',
+          message: 'Access was removed.',
+        }),
+      ).toBe(false)
+      navigator.clearPageError()
+      navigator.denyCurrentPage()
+      navigator.awaitPageAnswer()
+      expect(navigator.pageError.get()).toBeNull()
+      expect(navigator.pageLoading.get()).toBe(false)
+      expect(frames).toHaveLength(2)
+
+      browser.pop('/hilos')
+      expect(navigator.pageLoading.get()).toBe(true)
+      expect(frames[2]).toEqual({
+        type: 'page_subscribe',
+        page: HilosPages.DASHBOARD,
+        params: {},
+      })
+      pages.ingestPageResponse(HilosPages.DASHBOARD, {})
+      expect(navigator.pageLoading.get()).toBe(false)
+      navigator.stop()
+    },
+  )
+
+  it.each(['react', 'angular'] as const)(
+    'refuses an unbuilt %s Status before applying the file-reader exception',
+    (layer) => {
+      const { navigator, pages, frames } = setup('/status', layer)
+      expect(navigator.resolvePath(HilosPages.PUBLIC_STATUS)).toBeUndefined()
+      expect(navigator.pageError.get()).toMatchObject({
+        httpCode: 404,
+        errorCode: 'not_served',
+      })
+      expect(navigator.pageLoading.get()).toBe(false)
+      pages.releaseOnSession()
+      expect(frames).toEqual([])
+      navigator.stop()
+    },
+  )
+
+  it('keeps other public pages subscribed and restores route-miss behavior', () => {
+    const { navigator, pages, frames } = setup('/status')
+    navigator.replacePath('/about')
+    expect(navigator.pageLoading.get()).toBe(true)
+    expect(frames).toEqual([])
+    pages.releaseOnSession()
+    expect(frames).toEqual([
+      { type: 'page_subscribe', page: HilosPages.ABOUT, params: {} },
+    ])
+    navigator.denyCurrentPage()
+    expect(navigator.pageError.get()?.httpCode).toBe(403)
+    navigator.navigate('/status/missing')
+    expect(navigator.pageError.get()).toBe(ROUTE_NOT_FOUND_ERROR)
+    expect(navigator.resolvePath('unknown')).toBeUndefined()
+    navigator.replacePath('/status')
+    expect(navigator.pageError.get()).toBeNull()
+    expect(navigator.pageLoading.get()).toBe(false)
+    navigator.stop()
+  })
+
+  it('projects only Status independently of old subscription signals and generic hooks', () => {
+    const port = fakePages()
+    const navigator = createHilosRouter(
+      createPageRouter(HILOS_ROUTE_DECLARATIONS),
+      port.pages,
+      fakeEnvironment('/status').env,
+    )
+    port.pageLoading.set(true)
+    port.pageError.set({
+      page: HilosPages.DASHBOARD,
+      httpCode: 401,
+      errorCode: 'unauthorized',
+      title: 'Sign in',
+      message: 'Please sign in.',
+    })
+    navigator.start()
+    navigator.clearPageError()
+    navigator.denyCurrentPage()
+    navigator.awaitPageAnswer()
+    expect(navigator.pageError.get()).toBeNull()
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(port.clearedCount()).toBe(0)
+    expect(port.calledOnPages).toEqual([])
+    expect(port.pageError.get()?.httpCode).toBe(401)
+    expect(port.pageLoading.get()).toBe(true)
+    expect(port.calls).toEqual([])
+    expect(port.unsubscribeCount()).toBe(1)
+    navigator.stop()
+  })
+})
 
 describe('unbuilt pages', () => {
   it('refuses direct entry to the unbuilt user tabs in every view layer', () => {

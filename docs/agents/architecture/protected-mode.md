@@ -333,12 +333,13 @@ leaves nothing to pick up: the restore engine settles every pending row of the
 restored journal as failed, since whether it went out is not known, and a person
 decides with retry (`BackupRestorer`, `RestoredDeliveries`).
 
-Status's continuing file publisher owes the same DB silence and forgetting:
-only the sanitized public snapshot and freeze fact remain available for its
-files and heartbeat. No DB read/write, DB action or durable delivery runs while
-`silencesUnstoppedWriters()` holds; resume reacquires permitted DB data and a
-fresh Daemon picture. See [status-page.md](status-page.md#freeze-and-disconnection).
-(not in the code yet — HIL-1690)
+Status's continuing file publisher keeps the same DB silence and forgetting:
+only a detached sanitized public snapshot and the freeze fact remain available
+for its files and heartbeat. The Status owner abandons its observation baseline
+and partial DB-derived build on entry. No DB read/write, Status setting read,
+DB action or durable delivery runs while `silencesUnstoppedWriters()` holds;
+after lift it reacquires permitted DB data and a fresh Daemon picture. See
+[status-page.md](status-page.md#freeze-and-disconnection).
 
 ## Entry Is Fail-Closed In Both Branches
 
@@ -451,11 +452,13 @@ dead exactly when it is needed. **The log line comes first and always** — it i
 the one report that cannot fail, and a delivery failure never changes the
 watchdog's own state.
 
-The file half of Status needs the same two-sided start/stop exception so its
-heartbeat continues during Maintenance. This is not present in the gates yet;
-it permits public file publication only, never ordinary ORM writes or durable
-mail. The exact boundary is [Status under freeze](status-page.md#freeze-and-disconnection).
-(not in the code yet — HIL-1690)
+`HILOS_STATUS` is preserved with `HILOS_MAIL` by the worker start gate and stop
+walk, and by the list of agents awaiting a worker. In the worker server these
+are `protectedModeRefusesStart()` and `stopAgentsForProtectedMode()`; the same
+preserved list feeds the published daemon picture. This permits public file
+publication only, never ordinary ORM writes or durable mail. The Status owner
+still obeys DB silence in every occupied freeze phase. The exact boundary is
+[Status under freeze](status-page.md#freeze-and-disconnection).
 
 ### The Freeze Survives A Restart And A Leader Change
 
@@ -656,10 +659,12 @@ lift, the way `admits()` is enforced by the phase rather than by the emptiness o
 its list.
 
 The public `/status` file reader is the sole page exception: nginx serves it
-without a page subscription, including on a cold load in full freeze. It stays
-outside the maintenance stub, which links to it as **Service status**. This
-opens no application subscription or mutation; see [status-page.md](status-page.md).
-(not in the code yet — HIL-1690)
+without a page subscription, including on a cold load in full freeze. The built
+Vue shell keeps its read-only page available through the first-frame hold,
+disconnect, stale heartbeat and page-level access reactions. It stays outside
+the maintenance stub, which links to it as **Service status**. This opens no
+application subscription or mutation and does not enable shell requests,
+actions or modal controls; see [status-page.md](status-page.md).
 The same browser exception belongs in React (not in the code yet — HIL-1695)
 and Angular (not in the code yet — HIL-1696).
 

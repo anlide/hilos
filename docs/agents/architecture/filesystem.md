@@ -30,24 +30,26 @@ name through the directory's ArrayAccess
 (`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
-The framework reserves five names: `tmp` (`FsContext::TMP`, the cluster's: files
+The framework reserves six names: `tmp` (`FsContext::TMP`, the cluster's: files
 are handed to the files library through it), `files` (`FsContext::FILES`,
 HIL-336), `data_export` (`FsContext::DATA_EXPORT`, HIL-303), `legal_export`
 (`FsContext::LEGAL_EXPORT`, HIL-1234, the administrators' exports of acceptance
-records — [legal-documents.md](legal-documents.md)) and `analytics_journal`
+records — [legal-documents.md](legal-documents.md)), `status`
+(`FsContext::STATUS`, public Status files) and `analytics_journal`
 (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a node directory whose one owner is
-the node's journal agent — [analytics.md](analytics.md)). The start refuses
-`UPLOADS` or `IMAGES` without tmp, `FILES` without `files`, `AUTH` without
-`data_export`, a registered legal agent (`HilosAgentType::HILOS_LEGAL`) without
-`legal_export` and `ANALYTICS` without `analytics_journal`
+the node's journal agent — [analytics.md](analytics.md)). During `Hilos::init()`
+the start refuses `UPLOADS` or `IMAGES` without tmp, `FILES` without `files`,
+`AUTH` without `data_export`, a registered legal agent
+(`HilosAgentType::HILOS_LEGAL`) without `legal_export`, `HilosFeature::STATUS`
+without `status`, and `ANALYTICS` without `analytics_journal`
 (`refuseUploadsWithoutTmp()`, `refuseImagesWithoutTmp()`,
 `refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()`,
-`refuseLegalExportWithoutDirectory()` and
-`refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`). A
-sixth refusal, `refuseMisdeclaredDirectories()`, throws
-`InvalidTopologyException` when `tmp`, `files`, `data_export` or `legal_export`
-is declared `NODE`, when `analytics_journal` is declared `CLUSTER`, or when one
-path is declared by two owners; the rules live in
+`refuseLegalExportWithoutDirectory()`, `refuseStatusWithoutDirectory()` and
+`refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`).
+The general declaration guard `refuseMisdeclaredDirectories()` throws
+`InvalidTopologyException` when `tmp`, `files`, `data_export`, `legal_export`
+or `status` is declared `NODE`, when `analytics_journal` is declared `CLUSTER`,
+or when one path is declared by two owners; the rules live in
 `FsContext::declarationErrors()`, which a project's unit test can call on its
 own context.
 
@@ -81,7 +83,14 @@ A Status installation also registers reserved logical name `status`
 (`FsContext::STATUS`, `Hilos::$fs->status`) as `CLUSTER`: one publisher and every
 node's nginx share its files. The public allowlist and publication contract are
 in [status-page.md](status-page.md#static-publication).
-(not in the code yet — HIL-1690)
+All six demo contexts register this directory at `data/status`, and their nginx
+containers mount the same directory read-only. The registrations are in
+`demo/chat/backend/Fs/ChatFsContext.php`,
+`demo/tasks/backend/Fs/TasksFsContext.php`,
+`demo/polls/backend/Fs/PollsFsContext.php`,
+`demo/binance-btc-tracker/backend/Fs/BinanceBtcTrackerFsContext.php`,
+`demo/ecommerce-shop/backend/Fs/EcommerceShopFsContext.php` and
+`demo/online-testing/backend/Fs/OnlineTestingFsContext.php`.
 
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy
@@ -156,7 +165,6 @@ The Status directory keeps this same mandatory marker and format. Its public
 nginx locations expose only `status.json` and `heartbeat.json`, never the marker,
 temporary files or directory listings; the marker's node id stays private.
 See [Status publication](status-page.md#intervals-hint-and-http-addresses).
-(not in the code yet — HIL-1690)
 
 **Who reads it, and when.** Only the start of a cluster node's daemon, once,
 right after the database marker and before the peer port opens

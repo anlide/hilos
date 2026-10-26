@@ -77,9 +77,21 @@ final class FsContextDeclarationTest extends TestCase
             ->declareTmp('/srv/shared/tmp', DirectoryScope::CLUSTER)
             ->declareDirectory('published', '/srv/shared/published', DirectoryScope::CLUSTER)
             ->declareDirectory(FsContext::FILES, '/srv/shared/published', DirectoryScope::CLUSTER)
-            ->declareDirectory(FsContext::DATA_EXPORT, '/srv/shared/exports', DirectoryScope::CLUSTER);
+            ->declareDirectory(FsContext::DATA_EXPORT, '/srv/shared/exports', DirectoryScope::CLUSTER)
+            ->declareDirectory(FsContext::STATUS, '/srv/shared/status', DirectoryScope::CLUSTER);
 
         self::assertSame([], $context->declarationErrors());
+    }
+
+    public function testStatusHasTheRegisteredMagicHandleAndClusterMarkerPath(): void
+    {
+        $context = (new DeclaringFsContext())
+            ->declareDirectory(FsContext::STATUS, '/srv/shared/status', DirectoryScope::CLUSTER);
+
+        self::assertTrue($context->hasDirectory(FsContext::STATUS));
+        self::assertSame($context->getDirectory(FsContext::STATUS), $context->status);
+        self::assertSame(['/srv/shared/status'], array_values($context->clusterDirectories()));
+        self::assertSame(DirectoryScope::CLUSTER, $context->status->getScope());
     }
 
     public function testAReservedDirectoryDeclaredNodeIsNamed(): void
@@ -87,13 +99,15 @@ final class FsContextDeclarationTest extends TestCase
         $context = (new DeclaringFsContext())
             ->declareDirectory(FsContext::FILES, '/srv/node/files', DirectoryScope::NODE)
             ->declareDirectory(FsContext::DATA_EXPORT, '/srv/node/exports', DirectoryScope::NODE)
-            ->declareDirectory(FsContext::LEGAL_EXPORT, '/srv/node/legal-exports', DirectoryScope::NODE);
+            ->declareDirectory(FsContext::LEGAL_EXPORT, '/srv/node/legal-exports', DirectoryScope::NODE)
+            ->declareDirectory(FsContext::STATUS, '/srv/node/status', DirectoryScope::NODE);
 
         self::assertSame(
             [
                 "FS directory [files] is the cluster's: register it with DirectoryScope::CLUSTER",
                 "FS directory [data_export] is the cluster's: register it with DirectoryScope::CLUSTER",
                 "FS directory [legal_export] is the cluster's: register it with DirectoryScope::CLUSTER",
+                "FS directory [status] is the cluster's: register it with DirectoryScope::CLUSTER",
             ],
             $context->declarationErrors(),
         );
@@ -167,6 +181,20 @@ final class FsContextDeclarationTest extends TestCase
         try {
             $this->expectException(InvalidTopologyException::class);
             $this->expectExceptionMessage('FS directory [data_export] is the cluster\'s');
+            DirectoryOwnersHilos::checkDirectories();
+        } finally {
+            Hilos::$fs = $previousFs;
+        }
+    }
+
+    public function testTheStartRefusesANodeStatusDirectory(): void
+    {
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = (new DeclaringFsContext())
+            ->declareDirectory(FsContext::STATUS, '/srv/node/status', DirectoryScope::NODE);
+        try {
+            $this->expectException(InvalidTopologyException::class);
+            $this->expectExceptionMessage("FS directory [status] is the cluster's");
             DirectoryOwnersHilos::checkDirectories();
         } finally {
             Hilos::$fs = $previousFs;

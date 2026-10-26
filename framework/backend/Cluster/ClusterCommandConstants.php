@@ -98,6 +98,9 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: cross-node deliveries this node has accepted for its browsers */
     public const string FIELD_CLIENT_DELIVERIES = 'clientDeliveries';
 
+    /** @var string Inspect reply key: existing CLI client-test signals accepted from peers */
+    public const string FIELD_CLIENT_TEST_DELIVERIES = 'clientTestDeliveries';
+
     /** @var string Inspect reply key: browser the last addressed cross-node delivery was for */
     public const string FIELD_LAST_CLIENT_ACCEPT_KEY = 'lastClientAcceptKey';
 

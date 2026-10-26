@@ -53,7 +53,9 @@ import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js
 import { bindThemeState } from '../../core/src/theme/themeState.js'
 import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
 import HilosLayout from './HilosLayout.vue'
+import HilosModal from './HilosModal.vue'
 import LoadingButton from './LoadingButton.vue'
+import HilosStatusPage from './public/HilosStatusPage.vue'
 import {
   useConnectionInteraction,
   type ConnectionInteraction,
@@ -434,6 +436,308 @@ describe('HilosLayout impersonation strip', () => {
 
     expect(up.find('[data-id="impersonation-banner"]').exists()).toBe(true)
     expect(up.element.querySelectorAll(live).length).toBe(liveWithout)
+  })
+})
+
+describe('HilosLayout public Status exception (HIL-1690)', () => {
+  let dispose: (() => void) | undefined
+  let unbind: (() => void) | undefined
+
+  beforeEach(() => {
+    const now = Date.now()
+    const projection = {
+      schemaVersion: 1,
+      revision: 'shell-public-status',
+      generatedAt: now,
+      config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
+      components: [
+        {
+          componentKey: 'site',
+          name: 'Site',
+          description: 'Public service',
+          state: 'operational',
+        },
+      ],
+      candidates: [],
+      outages: [],
+      scheduledWorks: [],
+      maintenancePeriods: [],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () =>
+          url.endsWith('/status.json')
+            ? projection
+            : {
+                schemaVersion: 1,
+                revision: projection.revision,
+                aliveAt: now,
+              },
+      })),
+    )
+  })
+
+  afterEach(() => {
+    dispose?.()
+    unbind?.()
+    dispose = undefined
+    unbind = undefined
+    vi.unstubAllGlobals()
+  })
+
+  function publicShell(feed: ReturnType<typeof shellFeed>) {
+    const modalOpen = ref(false)
+    const mutate = vi.fn()
+    const currentRoute = createSignal<PageRouteMatch>({
+      page: HilosPages.PUBLIC_STATUS,
+      params: {},
+      admin: false,
+    })
+    const wrapper = mount(HilosLayout, {
+      props: { connection: feed.connection },
+      attachTo: document.body,
+      slots: {
+        default: () => h(HilosStatusPage, { connection: feed.connection }),
+        user: () =>
+          h(
+            HilosModal,
+            {
+              modelValue: modalOpen.value,
+              'aria-label': 'Protected action',
+              initialFocus: 'dialog',
+            },
+            () =>
+              h(
+                'button',
+                { 'data-id': 'shell-dialog-action', onClick: mutate },
+                'Save',
+              ),
+          ),
+      },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: {
+            ...routerOn(HilosPages.PUBLIC_STATUS),
+            currentRoute,
+          },
+        },
+      },
+    })
+    dispose = () => wrapper.unmount()
+    return {
+      wrapper,
+      modalOpen,
+      mutate,
+      route(page: string) {
+        currentRoute.set({
+          page,
+          params: {},
+          admin: page === HilosPages.STATUS,
+        })
+      },
+      async readDay() {
+        await flushPromises()
+        const day = wrapper.get<HTMLButtonElement>(
+          '[data-id="public-status-days-30"] button',
+        )
+        expect(day.element.disabled).toBe(false)
+        expect(day.element.closest('fieldset')?.disabled).toBe(false)
+        expect(day.element.closest('[inert]')).toBeNull()
+        expect(day.attributes('aria-disabled')).toBeUndefined()
+        day.element.focus()
+        const event = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+        })
+        day.element.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(false)
+        await nextTick()
+        expect(wrapper.get('[data-id="public-status-day-detail"]').text()).toBe(
+          day.attributes('aria-label'),
+        )
+        const last = wrapper
+          .findAll<HTMLButtonElement>(
+            '[data-id="public-status-days-30"] button',
+          )
+          .at(-1)!
+        last.element.focus()
+        await nextTick()
+        expect(document.activeElement).toBe(last.element)
+        expect(wrapper.get('[data-id="public-status-day-detail"]').text()).toBe(
+          last.attributes('aria-label'),
+        )
+        expect(wrapper.find('[data-id="conn-state"]').exists()).toBe(true)
+      },
+    }
+  }
+
+  it('paints cold file content without releasing the first-frame hold or ordinary routes', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected', firstFrameHeld: true }, 'firstFrameHold')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    expect(
+      shell.wrapper
+        .get('[data-id="hilos-boot-state"]')
+        .attributes('data-state'),
+    ).toBe('ready')
+    expect(feed.connection.firstFrameHeld).toBe(true)
+    expect(shell.wrapper.get('[data-id="nav-brand"]').element.tagName).toBe(
+      'SPAN',
+    )
+    expect(shell.wrapper.find('[data-id="app-footer"]').exists()).toBe(false)
+    for (const page of [
+      HilosPages.ABOUT,
+      HilosPages.TERMS,
+      HilosPages.STATUS,
+    ]) {
+      shell.route(page)
+      await nextTick()
+      expect(shell.wrapper.find('[data-id="app-root"]').exists()).toBe(false)
+      expect(
+        shell.wrapper
+          .get('[data-id="hilos-boot-state"]')
+          .attributes('data-state'),
+      ).toBe('held')
+      shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it('keeps file controls usable through freeze phases and restores the ordinary cover', async () => {
+    const feed = shellFeed()
+    const shell = publicShell(feed)
+    for (const status of [
+      FROZEN,
+      { ...FROZEN, acceptsPass: true },
+      { ...FROZEN, acceptsPass: true, passIssued: true },
+      ADMITTED,
+    ]) {
+      feed.push({ protectedMode: status }, 'protectedMode')
+      feed.push({ state: 'reconnecting' }, 'state')
+      await shell.readDay()
+      expect(shell.wrapper.find('[data-id="maintenance"]').exists()).toBe(false)
+      expect(
+        shell.wrapper.find('[data-id="protected-mode-banner"]').exists(),
+      ).toBe(false)
+      shell.route(HilosPages.STATUS)
+      await nextTick()
+      expect(shell.wrapper.find('[data-id="maintenance"]').exists()).toBe(
+        status.active,
+      )
+      if (!status.active) {
+        expect(
+          shell.wrapper.get<HTMLFieldSetElement>('fieldset').element.disabled,
+        ).toBe(true)
+      }
+      shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it.each(['blocked', 'frozen', 'takeover'] as const)(
+    'keeps public reading under %s and restores the ordinary account restriction',
+    async (standing) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        standing === 'blocked'
+          ? BLOCKED
+          : standing === 'frozen'
+            ? reconsentHandshake({ frozen: true, shown: 'frozen' })
+            : {
+                ...TAKEOVER,
+                data: {
+                  impersonationPolicy: {
+                    ...DEFAULT_IMPERSONATION_POLICY,
+                    viewOnly: true,
+                  },
+                },
+              },
+      )
+      const feed = shellFeed()
+      feed.push({ state: 'disconnected' }, 'state')
+      const shell = publicShell(feed)
+      await shell.readDay()
+      expect(shell.wrapper.find('[data-id="account-blocked"]').exists()).toBe(
+        false,
+      )
+      expect(
+        shell.wrapper.find('[data-id="legal-frozen-screen"]').exists(),
+      ).toBe(false)
+      if (standing === 'takeover') {
+        expect(
+          shell.wrapper.get<HTMLButtonElement>('[data-id="impersonation-stop"]')
+            .element.disabled,
+        ).toBe(true)
+        expect(
+          shell.wrapper.get<HTMLButtonElement>('[data-id="nav-logout"]').element
+            .disabled,
+        ).toBe(true)
+        await shell.wrapper
+          .get('[data-id="impersonation-stop"]')
+          .trigger('click')
+        expect(session.source.sent).toHaveLength(0)
+      }
+      shell.route('ordinary')
+      await flushPromises()
+      expect(
+        shell.wrapper.get<HTMLFieldSetElement>('fieldset').element.disabled,
+      ).toBe(true)
+      if (standing !== 'takeover') {
+        expect(
+          shell.wrapper
+            .find(
+              `[data-id="${standing === 'blocked' ? 'account-blocked' : 'legal-frozen-screen'}"]`,
+            )
+            .exists(),
+        ).toBe(true)
+      }
+      shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    },
+  )
+
+  it('restores the caller interaction policy on a rapid ordinary round trip', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected' }, 'state')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    for (const allow of [false, true, false]) {
+      await shell.wrapper.setProps({ allowDisconnectedInteraction: allow })
+      shell.route('ordinary')
+      await nextTick()
+      expect(
+        shell.wrapper.get<HTMLFieldSetElement>('fieldset').element.disabled,
+      ).toBe(!allow)
+      shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it('keeps a shell action dialog blocked while public day controls are released', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected' }, 'state')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    shell.modalOpen.value = true
+    await flushPromises()
+    const action = document.querySelector<HTMLButtonElement>(
+      '[data-id="shell-dialog-action"]',
+    )!
+    const scope = action.closest<HTMLFieldSetElement>(
+      '[data-id="modal-interaction-scope"]',
+    )!
+    expect(scope.disabled).toBe(true)
+    action.click()
+    expect(shell.mutate).not.toHaveBeenCalled()
+    feed.push({ state: 'connected' }, 'state')
+    await flushPromises()
+    expect(scope.disabled).toBe(false)
+    action.click()
+    expect(shell.mutate).toHaveBeenCalledTimes(1)
   })
 })
 

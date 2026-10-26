@@ -56,6 +56,7 @@ import {
   createPageViewState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
+  HilosPages,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
 
@@ -108,6 +109,17 @@ watch(pageLoading, (loading) => skeletonFlag.set(loading), { immediate: true })
 onUnmounted(skeletonFlag.dispose)
 const pageSlot = ref<HTMLElement | null>(null)
 const pageDeparture = ref<HTMLElement | null>(null)
+// This reader has no server wait to toggle loading and clear a departure copy.
+// Drop the previous page even while the public reader's lazy code is pending.
+watch(
+  route,
+  (current) => {
+    if (current.page === HilosPages.PUBLIC_STATUS) {
+      pageDeparture.value?.replaceChildren()
+    }
+  },
+  { flush: 'sync' },
+)
 let unbindPageDeparture: (() => void) | null = null
 onMounted(() => {
   if (pageSlot.value && pageDeparture.value) {

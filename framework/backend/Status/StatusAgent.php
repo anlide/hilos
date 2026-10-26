@@ -6,6 +6,7 @@ namespace Hilos\Status;
 
 use ArrayIterator;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -22,6 +23,7 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\StatusIncident as EntityStatusIncident;
 use Hilos\Database\View\Item\StatusIncident;
@@ -33,10 +35,14 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
+use Hilos\Status\DTO\StatusFilesChangedSignalData;
 use Hilos\Status\Exception\StatusComponentDeclarationException;
 use Hilos\Status\Exception\StatusIncidentWriteException;
+use Hilos\Status\Exception\StatusException;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\WiringRefusal;
+use Random\RandomException;
 use SplQueue;
 use Throwable;
 
@@ -73,6 +79,7 @@ final class StatusAgent extends AbstractHilosAgent
     private const int FIRST_SNAPSHOT_RETRY_INTERVAL_MS = 1000;
     private const int COMPONENTS_PER_TICK = 32;
     private const int NOTICE_DRAFTS_PER_TICK = 32;
+    private const int PUBLIC_REVISION_BYTES = 16;
 
     /** @var SplQueue<StatusCandidateNotice> Best-effort work of this instance, lost on stop or freeze */
     private SplQueue $candidateNotices;
@@ -98,6 +105,24 @@ final class StatusAgent extends AbstractHilosAgent
     private bool $reconcilePending = false;
     private ?int $nextReconcileAt = null;
 
+    // Private publication work of this owner; no ORM references or shared RT cache.
+    private StatusPublicSnapshotBuilder $publicBuilder;
+    private StatusPublicFiles $publicFiles;
+    private ?StatusPublicSnapshot $publicArchive = null;
+    private ?StatusPublicSnapshot $publicCurrent = null;
+    private ?StatusComponentState $freezeState = null;
+    private bool $publicInvalidated = true;
+    private bool $publicReadPending = true;
+    private bool $publicNeedsBuild = true;
+    private bool $publicSourceAvailable = false;
+    private int $publicDatabaseRetryAt = 0;
+    private int $publicAttemptAt = 0;
+    private int $publicHeartbeatAttemptAt = 0;
+    private ?int $publicHistoryExpiryAt = null;
+    private ?string $publicFailure = null;
+    private int $publicPollIntervalSeconds;
+    private int $publicStaleAfterSeconds;
+
     /**
      * @throws StatusComponentDeclarationException When the project's component declaration is invalid
      * @throws HilosException When runtime access or the first watch is refused
@@ -111,10 +136,27 @@ final class StatusAgent extends AbstractHilosAgent
         $this->wasFrozen = false;
         $this->reconcilePending = false;
         $this->nextReconcileAt = null;
+        $this->publicBuilder = new StatusPublicSnapshotBuilder();
+        $this->publicFiles = new StatusPublicFiles();
+        $this->publicPollIntervalSeconds = Hilos::$env[EnvConstants::STATUS_POLL_INTERVAL_SECONDS]->int();
+        $this->publicStaleAfterSeconds = Hilos::$env[EnvConstants::STATUS_STALE_AFTER_SECONDS]->int();
+        $this->publicArchive = $this->publicFiles->restore();
+        $this->publicCurrent = null;
+        $this->publicInvalidated = true;
+        $this->publicReadPending = true;
+        $this->publicNeedsBuild = true;
+        $this->publicSourceAvailable = false;
+        $this->publicDatabaseRetryAt = 0;
+        $this->publicAttemptAt = 0;
+        $this->publicHeartbeatAttemptAt = 0;
+        $this->publicHistoryExpiryAt = null;
+        $this->publicFailure = null;
         $this->refreshFreeze();
+        $nowMs = TimeHelper::nowMs();
         if (!$this->wasFrozen) {
-            $this->watchIfDue(TimeHelper::nowMs());
+            $this->watchIfDue($nowMs);
         }
+        $this->advancePublic($nowMs);
     }
 
     /**
@@ -134,51 +176,15 @@ final class StatusAgent extends AbstractHilosAgent
     public function tickAt(int $nowMs): void
     {
         $this->refreshFreeze();
-        if ($this->wasFrozen) {
-            return;
-        }
-        $this->drainCandidateNotices();
-        $this->watchIfDue($nowMs);
-        if (!$this->components->valid()) {
-            if (!$this->reconcilePending && ($this->nextReconcileAt === null || $nowMs < $this->nextReconcileAt)) {
-                return;
-            }
-            $this->components->rewind();
-            $this->reconcilePending = false;
-            $this->nextReconcileAt = null;
-        }
-        $portion = [];
-        while ($this->components->valid() && count($portion) < self::COMPONENTS_PER_TICK) {
-            $portion[$this->components->key()] = $this->components->current();
-            $this->components->next();
-        }
         try {
-            $incidents = [];
-            foreach (Hilos::$db->statusIncidents->whereColumnIn(
-                EntityStatusIncident::active_component_key, ...array_keys($portion),
-            ) as $incident) {
-                $incidents[$incident->componentKey] = $incident;
+            if (!$this->wasFrozen && Hilos::$db !== null) {
+                $this->tickMachineAt($nowMs);
             }
-            foreach ($portion as $key => $component) {
-                $observation = $this->observation($component);
-                $deadline = Database::transaction(DatabaseNames::PRIMARY, function () use (
-                    $component, $observation, $incidents, $key, $nowMs,
-                ): ?int {
-                    Hilos::$rt->hilosStatusComponents->actions->ensure($key, $observation->expectedInstances);
-                    Hilos::$rt->hilosStatusComponents[$key]->actions->update(
-                        $observation->expectedInstances, $observation->liveInstances, $observation->observedAt,
-                    );
-                    return $this->reconcile($component, $observation, $incidents[$key] ?? null, $nowMs);
-                });
-                if ($deadline !== null && ($this->nextReconcileAt === null || $deadline < $this->nextReconcileAt)) {
-                    $this->nextReconcileAt = $deadline;
-                }
-            }
-        } catch (Throwable $failure) {
-            // Retry from durable facts; already committed components remain idempotent.
-            $this->components->rewind();
-            $this->nextReconcileAt = null;
+        } catch (DatabaseException $failure) {
+            $this->publicDatabaseRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
             throw $failure;
+        } finally {
+            $this->advancePublic($nowMs);
         }
     }
 
@@ -191,6 +197,8 @@ final class StatusAgent extends AbstractHilosAgent
     {
         $this->refreshFreeze();
         $this->resetNotices();
+        $this->publicBuilder->reset();
+        $this->publicFiles->cancel();
         if (!$this->wasFrozen) {
             $this->sendToAgent(HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH, new DaemonPictureWatchSignalData(0));
         }
@@ -340,11 +348,19 @@ final class StatusAgent extends AbstractHilosAgent
                     if (Hilos::$db->statusIncidents[$ask->incidentId]->publishedAt === null) {
                         throw new StatusIncidentWriteException('Publish this incident before adding a team update.');
                     }
+                    $previous = $ask->requestId === null ? null
+                        : Hilos::$db->statusIncidentUpdates->forRequest($ask->incidentId, $ask->requestId);
                     Hilos::$db->statusIncidentUpdates->actions->append(
                         $ask->incidentId, StatusUpdateKind::TEAM, StatusSeverity::from(Hilos::$db->statusIncidents[$ask->incidentId]->severity),
                         new StatusUpdateText($ask->text), $nowMs, $ask->requestId,
                     );
+                    if ($previous === null) {
+                        $this->invalidatePublicAfterCommit();
+                    }
                 }
+                Database::afterCommit(function (): void {
+                    $this->publicReadPending = true;
+                });
             });
         } catch (WiringRefusal $failure) {
             return $this->incidentWriteRefusal($failure);
@@ -390,6 +406,7 @@ final class StatusAgent extends AbstractHilosAgent
         if ($observation->liveInstances >= $observation->expectedInstances) {
             if ($incident !== null) {
                 $incident->actions->resolve($nowMs);
+                $this->invalidatePublicAfterCommit();
                 if ($incident->publishedAt !== null) {
                     $this->appendAutomaticUpdate($incident, StatusUpdateKind::RESOLVED, $nowMs);
                 }
@@ -406,6 +423,7 @@ final class StatusAgent extends AbstractHilosAgent
             $incident = Hilos::$db->statusIncidents->actions->candidate(
                 $component->componentKey, $component->name, $severity, $nowMs, $nowMs + $delay * TimeConstants::MS_PER_SECOND,
             );
+            $this->invalidatePublicAfterCommit();
             $notice = new StatusCandidateNotice(
                 $incident->id, $incident->componentKey, $incident->componentName, $incident->detectedAt, $incident->publishAt,
             );
@@ -456,6 +474,59 @@ final class StatusAgent extends AbstractHilosAgent
         Hilos::$db->statusIncidentUpdates->actions->append(
             $incident->id, $kind, $severity, new StatusUpdateText($text), $nowMs,
         );
+        $this->invalidatePublicAfterCommit();
+    }
+
+    /**
+     * @param int $nowMs Local reconciliation clock
+     * @throws HilosException When an observation, transaction or notice fails
+     */
+    private function tickMachineAt(int $nowMs): void
+    {
+        $this->drainCandidateNotices();
+        $this->watchIfDue($nowMs);
+        if (!$this->components->valid()) {
+            if (!$this->reconcilePending && ($this->nextReconcileAt === null || $nowMs < $this->nextReconcileAt)) {
+                return;
+            }
+            $this->components->rewind();
+            $this->reconcilePending = false;
+            $this->nextReconcileAt = null;
+        }
+        $this->publicReadPending = true;
+        $portion = [];
+        while ($this->components->valid() && count($portion) < self::COMPONENTS_PER_TICK) {
+            $portion[$this->components->key()] = $this->components->current();
+            $this->components->next();
+        }
+        try {
+            $incidents = [];
+            foreach (Hilos::$db->statusIncidents->whereColumnIn(
+                EntityStatusIncident::active_component_key, ...array_keys($portion),
+            ) as $incident) {
+                $incidents[$incident->componentKey] = $incident;
+            }
+            foreach ($portion as $key => $component) {
+                $observation = $this->observation($component);
+                $deadline = Database::transaction(DatabaseNames::PRIMARY, function () use (
+                    $component, $observation, $incidents, $key, $nowMs,
+                ): ?int {
+                    Hilos::$rt->hilosStatusComponents->actions->ensure($key, $observation->expectedInstances);
+                    Hilos::$rt->hilosStatusComponents[$key]->actions->update(
+                        $observation->expectedInstances, $observation->liveInstances, $observation->observedAt,
+                    );
+                    return $this->reconcile($component, $observation, $incidents[$key] ?? null, $nowMs);
+                });
+                if ($deadline !== null && ($this->nextReconcileAt === null || $deadline < $this->nextReconcileAt)) {
+                    $this->nextReconcileAt = $deadline;
+                }
+            }
+        } catch (Throwable $failure) {
+            // Retry from durable facts; already committed components remain idempotent.
+            $this->components->rewind();
+            $this->nextReconcileAt = null;
+            throw $failure;
+        }
     }
 
     /**
@@ -500,6 +571,143 @@ final class StatusAgent extends AbstractHilosAgent
         $this->noticeRecipients = null;
     }
 
+    /** Raises no file side effects inside a transaction or a rolled-back generation. */
+    private function invalidatePublicAfterCommit(): void
+    {
+        Database::afterCommit(function (): void {
+            $this->publicInvalidated = true;
+        });
+    }
+
+    /**
+     * One bounded build and serialization portion, independent of visitors and machine early returns.
+     * Read failures retain only sanitized history. A failed write keeps its publisher retry state.
+     *
+     * @param int $nowMs Local publication clock
+     * @throws HilosException When declarations, source wiring or hint delivery are refused
+     */
+    private function advancePublic(int $nowMs): void
+    {
+        $available = !$this->wasFrozen && Hilos::$db !== null && $nowMs >= $this->publicDatabaseRetryAt;
+        if ($available !== $this->publicSourceAvailable) {
+            $this->publicSourceAvailable = $available;
+            $this->publicInvalidated = true;
+        }
+        if ($this->publicHistoryExpiryAt !== null && $nowMs >= $this->publicHistoryExpiryAt) {
+            $this->publicHistoryExpiryAt = null;
+            $this->publicInvalidated = true;
+        }
+        if ($nowMs < $this->publicAttemptAt) {
+            return;
+        }
+        try {
+            if ($this->publicInvalidated) {
+                $this->publicBuilder->reset();
+                $this->publicFiles->cancel();
+                $this->publicInvalidated = false;
+                $this->publicReadPending = true;
+                $this->publicNeedsBuild = true;
+            }
+            // Finish this machine pass before photographing counts, including after a lift.
+            // The ordinary worker re-hydrate handler completes synchronously before the lift;
+            // no old SQL cursor, View reference or observation baseline is resumed here.
+            if ($this->publicReadPending && (!$available || !$this->components->valid())) {
+                $current = $available ? StatusSnapshot::read() : null;
+                if ($current !== null && $current->incidents === null) {
+                    $current = null;
+                    $this->publicDatabaseRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+                    $this->publicSourceAvailable = false;
+                    $this->publicNeedsBuild = true;
+                }
+                $projection = $this->publicUnavailable($nowMs);
+                if ($current !== null) {
+                    $projection = $projection->withCurrent($current, $projection->revision, $nowMs);
+                }
+                if ($this->publicNeedsBuild || $projection->components != $this->publicCurrent?->components
+                    || $projection->candidates != $this->publicCurrent?->candidates) {
+                    $this->publicBuilder->reset();
+                    $this->publicFiles->cancel();
+                    if ($current === null) {
+                        $this->publicBuilder->beginDetached($projection);
+                    } else {
+                        $this->publicBuilder->begin(
+                            $current, $projection->revision, $nowMs, $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
+                        );
+                    }
+                    $this->publicCurrent = $projection;
+                    $this->publicNeedsBuild = false;
+                }
+                $this->publicReadPending = false;
+            }
+            $this->publicBuilder->advance();
+            if ($this->publicBuilder->isReady()) {
+                $this->publicArchive = $this->publicBuilder->getSnapshot();
+                $this->publicHistoryExpiryAt = $this->publicBuilder->getNextHistoryExpiryAt();
+                $this->publicFiles->begin($this->publicArchive);
+                $this->publicBuilder->reset();
+            }
+            $receipt = $this->publicFiles->advance($nowMs);
+            if ($receipt === null && $nowMs >= $this->publicHeartbeatAttemptAt) {
+                try {
+                    $receipt = $this->publicFiles->heartbeat($nowMs);
+                } catch (StatusException $failure) {
+                    // A refused heartbeat cannot stall the independent bounded build/staging.
+                    $this->publicHeartbeatAttemptAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+                    $this->reportPublicFailure($failure);
+                }
+            }
+            if ($receipt !== null) {
+                $this->sendToAllConnected(HilosSignalConstants::STATUS_FILES_CHANGED, new StatusFilesChangedSignalData());
+                $this->publicFailure = null;
+            }
+        } catch (DatabaseException $failure) {
+            $this->publicDatabaseRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+            $this->publicInvalidated = true;
+            $this->reportPublicFailure($failure);
+        } catch (StatusException $failure) {
+            $this->publicAttemptAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+            $this->reportPublicFailure($failure);
+        }
+    }
+
+    /**
+     * Catalog plus unconditional freeze only; deliberately never calls the shared admin reader.
+     * Null runtime is Unknown. Every occupied phase is Maintenance, including verification.
+     *
+     * @param int $nowMs Projection moment in epoch milliseconds UTC
+     * @return StatusPublicSnapshot New current overlay with the last complete sanitized archive
+     * @throws HilosException When the catalog, revision or publication metadata is invalid
+     */
+    private function publicUnavailable(int $nowMs): StatusPublicSnapshot
+    {
+        $components = [];
+        foreach (Hilos::statusComponents() as $component) {
+            $components[] = new StatusPublicComponent(
+                $component->componentKey, $component->name, $component->description,
+                $this->freezeState ?? StatusComponentState::UNKNOWN,
+            );
+        }
+        try {
+            $revision = RandomHelper::secureHex(self::PUBLIC_REVISION_BYTES);
+        } catch (RandomException $failure) {
+            throw new StatusException('Cannot mint a public Status revision.', previous: $failure);
+        }
+        return new StatusPublicSnapshot(
+            $revision, $nowMs,
+            $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
+            $components, [], $this->publicArchive?->outages ?? [],
+        );
+    }
+
+    /** @param HilosException $failure Private diagnostic; never copied to a public file */
+    private function reportPublicFailure(HilosException $failure): void
+    {
+        if ($this->publicFailure !== $failure->getMessage()) {
+            $this->logAgentError($failure->getMessage());
+            $this->publicFailure = $failure->getMessage();
+        }
+    }
+
     /**
      * Null means this process holds no runtime state and must wait, just as during an active freeze.
      *
@@ -507,8 +715,18 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function refreshFreeze(): void
     {
-        if (Hilos::$rt === null || Hilos::$rt->hilosProtectedModeRuntime === null
-            || Hilos::$rt->hilosProtectedModeRuntime->phase !== ProtectedModeRuntime::PHASE_INACTIVE) {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        $state = $freeze === null ? StatusComponentState::UNKNOWN
+            : ($freeze->phase === ProtectedModeRuntime::PHASE_INACTIVE ? null : StatusComponentState::MAINTENANCE);
+        if ($state !== $this->freezeState) {
+            $this->freezeState = $state;
+            $this->publicInvalidated = true;
+            // No SQL cursor survives entry, lift or loss of the unconditional runtime row.
+            if (isset($this->publicBuilder)) {
+                $this->publicBuilder->reset();
+            }
+        }
+        if ($state !== null) {
             $this->resetNotices();
             $this->resetObservation();
             $this->wasFrozen = true;

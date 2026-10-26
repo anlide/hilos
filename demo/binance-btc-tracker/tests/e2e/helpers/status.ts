@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
-import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import type { watchStatusFrames } from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import {
@@ -85,4 +86,38 @@ export async function withStatusAgentLoss(
   })
   if (failure !== undefined) throw failure
   if (restartError) throw restartError
+}
+
+/**
+ * Private names on the real shared Status disk. A genuine cluster marker is
+ * preserved; standalone has no marker, so its otherwise absent name gets an
+ * isolated sentinel too. Published JSON files are never modified.
+ */
+export async function withPrivateStatusFiles(
+  run: (names: string[], sentinel: string) => Promise<void>,
+): Promise<void> {
+  const directory = new URL('../../../data/status/', import.meta.url)
+  const marker = '.hilos-cluster-directory.json'
+  const sentinel = `private-status-e2e-${randomUUID()}`
+  const names = [marker, `.${sentinel}.tmp`, `${sentinel}.json`]
+  const created: URL[] = []
+  try {
+    for (const name of names) {
+      const path = new URL(name, directory)
+      try {
+        await writeFile(path, sentinel, { flag: 'wx' })
+        created.push(path)
+      } catch (error) {
+        if (
+          name !== marker ||
+          (error as NodeJS.ErrnoException).code !== 'EEXIST'
+        )
+          throw error
+        expect((await stat(path)).isFile()).toBe(true)
+      }
+    }
+    await run(names, sentinel)
+  } finally {
+    for (const path of created) await rm(path)
+  }
 }

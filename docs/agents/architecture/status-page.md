@@ -4,11 +4,11 @@ Read this before declaring Status components, changing the candidate and outage
 machine, publishing its public files, building its admin section, or reading
 `/status` without a connection or under a freeze.
 
-This document records the Status backend built by HIL-1688 and the admin
-surface built by HIL-1689. Public files and their reader, subscribers and mail,
-scheduled work and completed history, separate cluster/failover proof, and the
-React and Angular views remain with HIL-1690 through HIL-1696 where their
-markers say so.
+This document records the Status backend built by HIL-1688, the admin surface
+built by HIL-1689, and the public file publisher and reader built by HIL-1690.
+Subscribers and mail, scheduled works and actual maintenance periods, admin
+history, separate cluster/failover proof, and the React and Angular views remain
+with HIL-1691 through HIL-1696 where their markers say so.
 
 ## Core Rule
 
@@ -20,17 +20,17 @@ The public page reads one sanitized projection from nginx files, with or without
 a usable socket. Neither an admin table mirror nor `page_response` supplies
 that projection. File publication and its heartbeat continue under a freeze;
 the database half obeys the freeze's silence.
-(not in the code yet — HIL-1690)
 
 HIL-1688 builds the framework feature, component catalog, collector consumer,
 durable incident machine, candidate notices, internal owner operations and a
 typed backend read projection. HIL-1689 adds the Overview and Components admin
 pages, the read-only component viewport, the Overview's incident actions and
-the Vue views mounted by Chat and Binance BTC Tracker. Later leaves own public
-files, the public reader and the publisher's freeze exception (HIL-1690);
-subscribers or their mail (HIL-1691); scheduled works or actual maintenance
-history (HIL-1692); the admin history UI (HIL-1693); separate cluster/failover
-proof (HIL-1694); and React and Angular views (HIL-1695 and HIL-1696).
+the Vue views mounted by Chat and Binance BTC Tracker. HIL-1690 adds the public
+file pair, its browser reader and the publisher's narrow freeze exception.
+Later leaves own subscribers or their mail (HIL-1691); scheduled works and
+actual maintenance periods (HIL-1692); the admin history UI (HIL-1693); separate
+cluster/failover proof (HIL-1694); and React and Angular views (HIL-1695 and
+HIL-1696).
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -250,14 +250,16 @@ The SDK exports the implementation lazily from `@hilos/core/admin/status` and
 not imported by either package's eager `base` entry or Vue's default
 `hilosAdminViews()` map. Chat and Binance BTC Tracker mount thin Vue wrappers
 over the framework pages with their existing scope, connection and action
-singletons. React and Angular intentionally remain unbuilt until HIL-1695 and
-HIL-1696.
+singletons. The public `/status` route is the framework-owned client file reader;
+it has no backend page, catalog entry or `page_response` subscription. React and
+Angular Status views intentionally remain unbuilt until HIL-1695 and HIL-1696.
 
 The project also registers the shared Status directory, mounts the same volume
 for every node's nginx, and binds the public page to the framework reader.
 Neither a separate writer per node nor a project copy of the reader is an
-activation mechanism.
-(not in the code yet — HIL-1690)
+activation mechanism. Each of the six demo filesystem contexts registers
+`FsContext::STATUS` at `data/status` with `DirectoryScope::CLUSTER`; its nginx
+mounts that directory read-only.
 
 ## Facts And Ownership
 
@@ -398,15 +400,18 @@ and RT source interest through the existing
 protected mode silences unstopped writers,
 it does not read the incident DB; every occupied freeze phase overlays each
 component as Maintenance.
-This projection is not a public file format or a ready `/status` page.
+This is the admin `page_response` projection. The public file format is the
+separate sanitized `StatusPublicSnapshot` built by `StatusPublicSnapshotBuilder`;
+the public reader never consumes this admin payload.
 
 ### Continuous Fact And Timeline
 
 Each new continuous abnormal observation creates one durable candidate with a
 fixed detection moment and publication deadline. `StatusSnapshot::read()` can
-project an available unpublished incident as `CHECKING`; the public page/file
-surface is still future work. When live count is zero the current severity is
-Major; a positive count below expected is Partial. Partial↔Major changes update
+project an available unpublished incident as `CHECKING`; the public snapshot
+projects only its component key and detection moment while that fact is
+currently Checking. When live count is zero the current severity is Major; a
+positive count below expected is Partial. Partial↔Major changes update
 the same open record. Until publication they do not raise `peak_severity`; on
 publication the peak starts at the then-current severity. After publication,
 the peak records the greatest proven severity and a severity change appends one
@@ -514,21 +519,29 @@ delivery merely because Status still publishes files.
 
 ## Static Publication
 
-Reserve `FsContext::STATUS = 'status'` with `DirectoryScope::CLUSTER`, reached
-as `Hilos::$fs->status`. This is a logical directory name, not a physical path;
-the installation chooses the shared disk volume. The one Status owner publishes
-the sanitized projection on change and a heartbeat independently of visitors.
-(not in the code yet — HIL-1690)
+`FsContext::STATUS = 'status'` is a reserved logical directory name reached as
+`Hilos::$fs->status`. A project registers it in its filesystem context as
+`DirectoryScope::CLUSTER`; `Hilos::init()` refuses Status activation when the
+directory is missing or declared `NODE`. The installation chooses the backing
+shared disk volume. All six demos register `data/status` as this cluster
+directory and mount the same directory read-only into nginx. The one cluster
+Status owner publishes the sanitized projection independently of visitors.
+The general registration, cluster marker and shared-volume rules are in
+[filesystem.md](filesystem.md).
 
-Use existing `FsPath::publish()` to publish each complete file atomically from
-a temporary file on that same volume. The public names are exactly
-`status.json` and `heartbeat.json`; their filename constants belong to the
-implementation. Publish in this order: whole `status.json`, then whole
+`StatusPublicSnapshotBuilder` reads the typed `StatusSnapshot` and published
+incident history in bounded portions; it completes an incident's timeline in
+bounded portions too. It retains only detached public values, never DB or RT
+objects. `StatusPublicFiles` serializes a bounded fragment/byte portion per
+owner pass and uses `FsPath::publish()` to atomically install each complete file
+from a temporary file on the same volume. It restores one coherent pair at
+owner start; an absent, malformed or revision-mismatched pair does not replace
+the last known archive. Publish whole `status.json`, then whole
 `heartbeat.json` with the same revision, then the change hint. A heartbeat-only
-pass updates `aliveAt` and sends the hint while retaining the last successfully
-published content revision. A write failure must not manufacture a fresh
-heartbeat for an unsuccessful publication.
-(not in the code yet — HIL-1690)
+pass updates `aliveAt` with the last successful content revision and then sends
+the hint. A failed build or write is retried without advancing the heartbeat or
+sending a success hint; if the files temporarily disagree, the reader accepts
+neither revision-mixed pair.
 
 ### Public JSON v1
 
@@ -538,8 +551,7 @@ Every moment below — including `at`, `startsAt` and `endsAt` — is an integer
 of epoch milliseconds UTC, following [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
 Every `id` is opaque. `revision` is a unique opaque content revision without a
 node id or term; the heartbeat repeats the last successfully published
-`status.json` revision. The file contract and serialization are future work.
-(not in the code yet — HIL-1690)
+`status.json` revision.
 
 ```text
 status.json = {
@@ -577,34 +589,41 @@ MaintenancePeriod = {
 }
 ```
 
-(not in the code yet — HIL-1690)
+The current writer emits `scheduledWorks: []` and `maintenancePeriods: []`.
+These v1 shapes are reserved for the scheduled works and actual maintenance
+periods owned by HIL-1692.
+(not in the code yet — HIL-1692)
 
 Apply these publication limits:
 
 - Components retain project declaration order. `agentType` is admin-only.
 - Candidates contain current Checking only, with no internal id, publication
   deadline or manual cancellation reason.
-- Outages contain published open outages and history intersecting the last
-  90 days. Automatic update text is safe public wording selected by fact code;
-  team text is the administrator's published wording.
+- Outages contain published open outages and published completed outages
+  intersecting the last 90 days. Automatic update text is safe public wording
+  selected by fact code; team text is the administrator's published wording.
+  Each outage uses an opaque public id, never the internal integer id.
+  Unpublished, suppressed and canceled candidates never become outage history.
+- The public JSON reserves `Work` and `MaintenancePeriod` shapes, but the current
+  writer keeps both lists empty. Their publication rules and implementation
+  remain with HIL-1692.
 - Works contain upcoming announcements and those belonging to current works;
   canceled announcements are not public.
 - Maintenance periods contain active periods and completed periods intersecting
   the last 90 days. `workId: null` means unannounced works; `title` is a public
   label. Their boundaries follow the actual freeze, not schedule clocks.
-- Never publish subscribers, email addresses, tokens, session time zones, PIDs,
-  node ids/IPs, raw Daemon pictures, private error or exception text, or hidden
-  candidates in history. Version, config and revision exist only to read the
-  public projection correctly.
-
-(not in the code yet — HIL-1690)
+(not in the code yet — HIL-1692)
+- Never publish subscribers, email addresses, tokens, session time zones,
+  operation or phase, PIDs, node ids/IPs, agent types, raw Daemon pictures,
+  private error or exception text, or hidden candidates in history. Version,
+  config and revision exist only to read the public projection correctly.
 
 ### Intervals, Hint And HTTP Addresses
 
 | Environment constant | Type | Default |
 |---|---|---|
-| `EnvConstants::STATUS_POLL_INTERVAL_SECONDS` | integer > 0 | 30 seconds |
-| `EnvConstants::STATUS_STALE_AFTER_SECONDS` | integer > 0 | 120 seconds |
+| `EnvConstants::STATUS_POLL_INTERVAL_SECONDS` | positive integer (minimum 1) | 30 seconds |
+| `EnvConstants::STATUS_STALE_AFTER_SECONDS` | positive integer (minimum 1) | 120 seconds |
 
 Publish both values in `status.json.config` so a cold page learns them without
 the daemon. The heartbeat interval is `min(30 seconds, staleAfterSeconds / 3)`.
@@ -613,7 +632,6 @@ the polling env value. Defaults yield a heartbeat every 30 seconds; a smaller
 stale threshold requires a faster heartbeat. This derived internal cadence is
 not a third env key and does not change the public shape. An nginx response
 never updates `aliveAt`.
-(not in the code yet — HIL-1690)
 
 Declare `HilosSignalConstants::STATUS_FILES_CHANGED = 'status_files_changed'`
 with `Hilos\Status\DTO\StatusFilesChangedSignalData`, payload `{}` (no fields).
@@ -621,92 +639,100 @@ It is only a hint that publication succeeded: no status, error, address or file
 path travels in it. Use existing `sendToAllConnected()` / `WS_ALL_CONNECTED` so
 a guest on `/status` receives it without a page subscription; the active Status
 reader rereads the files, and other pages ignore it. Do not add a group or
-subscription channel. Heartbeat publication sends this hint too, including when
-the component state has not changed.
-(not in the code yet — HIL-1690)
+subscription channel. The hint is sent only after a matching pair or a
+heartbeat-only update succeeds, including when component state has not changed.
 
 The public client route is `/status`. nginx serves the built project shell
-there, plus exactly two public GET addresses:
+there, plus exactly two public file addresses, allowlisted for GET and HEAD:
 
 - `/status-data/status.json`;
 - `/status-data/heartbeat.json`.
 
-Use explicit location allowlists and `Cache-Control: no-store`. Do not expose
-directory listings, temporary or hidden files. The existing mandatory
+Use exact nginx locations with `Cache-Control: no-store`; the `/status-data/`
+catch-all refuses every other name, slash form or method, and directory listing
+is disabled. Do not expose temporary or hidden files. The mandatory
 `.hilos-cluster-directory.json` marker stays private: its node identifier is
-required for the cluster guard, not public Status data. This restriction does
-not remove or change that marker. Every node's nginx reads the same files.
-Do not add a backend-fetch endpoint for the projection.
-(not in the code yet — HIL-1690)
+required for the cluster guard, not public Status data. Every node's nginx reads
+the same read-only volume. Do not add a backend-fetch endpoint for the
+projection.
 
 ## Reading /status
 
-On entry, always read the nginx files. Render their contents without waiting
+On entry, always read both nginx files. Render their contents without waiting
 for daemon HTTP, an API, DB, handshake or `page_response`. Accept only a pair
-with matching `revision` and supported `schemaVersion`; reread on a publication
-race instead of mixing revisions. File mtime, a successful nginx response and
-the arrival of a hint cannot turn the last coherent projection into a new one.
-(not in the code yet — HIL-1690)
+with matching `revision` and supported `schemaVersion`; retry a revision race
+up to three pair reads instead of mixing revisions. File mtime, a successful
+nginx response and the arrival of a hint cannot turn the last coherent
+projection into a new one.
 
 With a usable live connection, reread the same files after every change hint.
 Without one, including a connection held by freeze, poll at the file's
-`pollIntervalSeconds` (default 30 seconds). On recovery of usable live
+`pollIntervalSeconds` (default 30 seconds). On recovery of a usable live
 connection, reread immediately. Maintain the local heartbeat-age timer even
 with a live socket, so a stopped publisher is detected independently of
-transport health.
-(not in the code yet — HIL-1690)
+transport health. Only one read runs at a time; hints during it request one
+follow-up read, and unmount aborts pending fetches and disposes both timers.
 
 A fresh heartbeat with a broken socket says **system is up**; it does not erase
-an outage or Maintenance in the projection. Once `aliveAt` is older than
+an outage or Maintenance in the projection. Age is measured against the
+reader's current clock, even with a live socket. Once `aliveAt` is older than
 `staleAfterSeconds` (default 120 seconds), say **not responding since**
 `<aliveAt>` and show components as Unknown. Stale operational data is not proof
-of current health. Empty, malformed or missing files mean no trustworthy current
-picture; keep the last valid history if available, but invent no Operational
-verdict. Without a first valid snapshot, the verdict is Unknown.
-(not in the code yet — HIL-1690)
+of current health. Empty, malformed or missing files do not replace the last
+accepted pair; retain its history while its heartbeat is fresh, then show the
+stale verdict. Staleness maps current components to Unknown and hides the
+current Checking list, while retaining the accepted published incidents and
+history. Without any accepted pair, the banner and component knowledge are
+Unknown; never invent Operational.
 
-The public surface shows an overall banner, components, current outages and
-their timelines, upcoming works and history. Derive the 90-day strip (30 days
-in the narrow view) and public history from published outages and actual
-maintenance intervals. Each day shows its worst published fact; candidates do
-not color days or remain in public history. Show no SLA percentage. Use the
-shared time mechanism for calendar boundaries and the core formatter in the
-reader's zone, including the browser's zone for a guest; do not reproduce the
-mockup's UTC screen labels (D-248). The [time-zone canon](time-zones.md) owns
-zone selection and formatting, including recipient-zone mail.
-(not in the code yet — HIL-1690)
+The current public surface shows an overall banner, component states, Checking
+candidates, published open outages and their timelines, plus completed
+published-outage history. The 90-day calendar strip uses published outage
+intervals; the narrow strip is its last 30 days. Each day shows its worst
+published fact; candidates do not color days or enter history. The current
+writer emits no scheduled works or maintenance periods, so those sections and
+facts remain with HIL-1692. Show no SLA percentage. Use the shared time
+mechanism for calendar boundaries and the core formatter in the reader's zone,
+including the browser's zone for a guest; do not reproduce the mockup's UTC
+screen labels (D-248). The [time-zone canon](time-zones.md) owns zone selection
+and formatting, including recipient-zone mail.
 
 ## Freeze And Disconnection
 
 `/status` is the narrow exception to subscription waiting, the freeze stub,
-disconnect blocking and the ordinary stale-data screen. It remains readable on
-a cold load during full freeze; the maintenance stub links to it as **Service
-status**. A disconnected shell may indicate the break, but cannot cover the
-file reader with a blocking overlay. Other pages keep their existing rules.
-(not in the code yet — HIL-1690)
+disconnect blocking and the ordinary stale-data screen. The built Vue reader
+remains available on a cold load during full freeze; the maintenance stub links
+to it as **Service status**. A disconnected shell may indicate the break, but
+cannot cover the file reader with a blocking overlay. The exception covers this
+read-only page's first-frame paint, disconnect, stale heartbeat and access
+reactions only; it does not unblock shell requests, actions or modal controls.
+Other pages keep their existing rules. React and Angular remain unbuilt until
+HIL-1695 and HIL-1696.
 
 Do not show the subscription button without a usable live connection. Public
 file reading grants no offline mutation path or permission to bypass a freeze
 for subscription actions.
 (not in the code yet — HIL-1691)
 
-The publisher's file half must survive full freeze, or normal Maintenance would
-become “not responding” after the stale threshold. Its narrow exception covers
-both `WorkerServer::protectedModeRefusesStart()` and
-`WorkerServer::stopAgentsForProtectedMode()`. Today their continuing-pool
-exception is `HILOS_MAIL`; Status is not yet excepted. Follow that raw-mail
-precedent only for public projection and heartbeat work, with no new master
-I/O and no child/background process.
-(not in the code yet — HIL-1690)
+The publisher's file half survives full freeze, or normal Maintenance would
+become “not responding” after the stale threshold. `HILOS_STATUS` is preserved
+with `HILOS_MAIL` by both `WorkerServer::protectedModeRefusesStart()` and
+`WorkerServer::stopAgentsForProtectedMode()`, including agents awaiting a
+worker. This permits only the public projection and heartbeat work, with no new
+master I/O, child process or background process.
 
-While `silencesUnstoppedWriters()` is true, keep only the sanitized public
-snapshot and the freeze fact needed for publication. Do not read or write DB,
-serve DB actions or handle durable delivery. Discard SQL caches and other
-memory tied to the replaced database. After silence lifts, reacquire permitted
-DB data and a fresh Daemon picture before resuming normal observation; the
-stops caused by freeze must not produce outages. This is no exception for
-ordinary ORM writes.
-(not in the code yet — HIL-1690)
+In every occupied freeze phase, the Status owner publishes from a detached
+sanitized snapshot and the freeze fact. It does not read DB-backed Status data
+or settings, observe components, perform ORM actions or deliver durable mail.
+Its public files contain no operation or phase, node/process/network details,
+agent type, internal error, subscriber address, token or session time zone.
+Entry abandons the owner's observation baseline and partial public build; after
+lift it obtains a fresh Daemon picture and resumes only from permitted data.
+On a cold owner start it restores only a revision-matched file pair; with no
+valid pair, the reader begins Unknown. A known occupied freeze publishes
+Maintenance while retaining only restored sanitized history; a missing freeze
+runtime row publishes Unknown. Agents stopped by the freeze do not become
+outage facts. This is no exception for ordinary ORM writes.
 
 Serving these files is independent of the daemon, not of nginx or its machine.
 If nginx or the whole host is unavailable, the page cannot open. External
@@ -714,43 +740,60 @@ hosting and external monitoring are outside this feature.
 
 ## Implementation Status And Leaf Owners
 
-Existing foundations are the Daemon collector and watch DTO, scope/placement
-declarations, `DirectoryScope::CLUSTER`, `FsPath::publish()` and the private
-cluster-directory guard. Those foundations alone are not the Status
-implementation; the backend core below landed with HIL-1688, while later
-surfaces remain separately owned.
+The built feature is split by owner below. The source paths also identify the
+current validation surfaces.
 
-| Work | Owner and status |
-|---|---|
-| Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed backend read | Landed by HIL-1688 |
-| Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head and Vue views | Landed by HIL-1689; React and Angular views remain with HIL-1695 and HIL-1696 |
-| SDK packaging | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs` | Core's 14-section entrypoint set includes Status; the current Core and Vue manifests export `/admin/status`, with compatibility-root identity. The built base closures stay free of Status, and Vue's default view map does not eagerly include it. React and Angular have no Status view entry yet. |
-| Public files, heartbeat, hint, nginx routes, reader and freeze publisher | (not in the code yet — HIL-1690) |
-| Subscribers and their mail | (not in the code yet — HIL-1691) |
-| Scheduled works, actual maintenance periods and Completed delivery | (not in the code yet — HIL-1692) |
-| Admin history | (not in the code yet — HIL-1693) |
-| Cluster and failover proof | (not in the code yet — HIL-1694) |
-| React UI parity, including public freeze/disconnection behavior | (not in the code yet — HIL-1695) |
-| Angular UI parity, including public freeze/disconnection behavior | (not in the code yet — HIL-1696) |
+| Work | Source and test evidence | Owner and state |
+|---|---|---|
+| Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed admin read | `framework/backend/Status/`, `framework/tests/Unit/Status*Test.php`, `framework/tests/Integration/Status*Test.php` | Landed by HIL-1688 |
+| Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head and Vue views | `framework/backend/Pages/Status/`, `framework/backend/Tables/Status/`, `framework/frontend/core/src/admin/status/`, `framework/frontend/vue/src/admin/status/` | Landed by HIL-1689; React and Angular remain with HIL-1695 and HIL-1696 |
+| SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs` | Core and Vue export `/admin/status` lazily; eager base closures remain free of Status. React and Angular have no Status view entry yet. |
+| Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | Landed by HIL-1690 |
+| Public route, Vue page and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts` | Core route and Vue views are built; React and Angular public views remain with HIL-1695 and HIL-1696 |
+| Subscribers and their mail | — | (not in the code yet — HIL-1691) |
+| Scheduled works, actual maintenance periods and Completed delivery | — | (not in the code yet — HIL-1692) |
+| Admin history | — | (not in the code yet — HIL-1693) |
+| Separate cluster and failover proof | — | (not in the code yet — HIL-1694) |
+| React UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1695) |
+| Angular UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1696) |
 
 PR-133 through PR-135 and PR-204 through PR-209 remain the code leaves' design
 promises. HIL-1685 neither implements nor closes them. Exact HIL-1691 and
-HIL-1692 storage schemas, admin and guest action DTOs, and frontend page
-registry keys remain with their implementation interviews and the ordinary
-contract approval gate. Remove a future marker only in the commit that lands
-its behavior, following
+HIL-1692 storage schemas and admin and guest action DTOs remain with their
+implementation interviews and the ordinary contract approval gate. Remove a
+future marker only in the commit that lands its behavior, following
 [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ## Validation
 
-For this documentation, run
-`composer run test:framework:unit -- --filter AgentDocGuardTest`, then
-`composer ai:install` and `composer ai:install:check`, through the prescribed
-test environment. Check `git diff --check` and walk the index and skill links.
-No new text test or full frontend/e2e/cluster run is needed for this text layer.
+The public Status checks are split across these existing layers:
 
-Review the built feature, component declaration, setting, agent pair, DB/RT
-operations, notices and typed projection against current source. Keep sibling
-markers, public JSON v1, privacy, D-248 and the narrow file/freeze exceptions
-aligned with the future owners. Cluster and failover evidence belongs to
-HIL-1694.
+- Backend serialization and recovery: `framework/tests/Unit/StatusPublicFilesTest.php` and `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`.
+- Core file parsing, pair coherence, freshness, hint/poll lifecycle, calendar and time zone: `framework/frontend/core/test/status/statusFiles.test.ts`, `publicStatus.test.ts` and `derivedStatus.test.ts`.
+- Vue rendering and the public 90/30 strip: `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; the shared theme shell is covered by `framework/frontend/vue/src/HilosLayout.test.ts`.
+- Real browser/daemon behavior and nginx boundary: `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`. Both specs use light color scheme with the demo's Desktop Chrome project; they do not claim dark or narrow-viewport E2E coverage.
+
+The reproducible standalone publisher fixture is
+`composer -d demo/binance-btc-tracker run test:e2e-status-full`; run it through
+the stand wrapper. `test:e2e` collects the original native Playwright selection
+once. Ordinary specs run with Status's production poll/stale defaults (30/120);
+`status.spec.ts` and the Status `a11y.spec.ts` run in a separate phase with the
+test-only 2/6 overlay. Every selected test runs once, including selections by
+file, line, grep or shard. Both phases use the shared Playwright entry and keep
+their own artifacts. A failure stays red while the remaining phase still runs.
+Unpointed `test:e2e` then adds the standalone fixture, so unpointed
+`test:e2e-full` and `test:e2e-prebuilt` include all three phases. Pointed runs
+execute only their selected browser tests. The standalone fixture also applies
+the accelerated overlay before pinning its daemon lifetime; its same-container
+recovery and independent backstop remain in effect. The unit and docs checks
+for this text change are
+`composer run test:framework:unit -- --filter AgentDocGuardTest`,
+`composer ai:install` and `composer ai:install:check`, also through the stand
+wrapper; check relative links and `git diff --check`.
+
+The day-strip suffix and reader-zone boundaries are unit-tested outside the
+browser E2E. Status uses the shared Bootstrap theme mechanism; no dark-scheme or
+narrow-viewport Status E2E is claimed. These checks do not claim an SLA or
+independent cluster/failover proof; cluster/failover evidence belongs to
+HIL-1694. No run-specific temporary paths, process ids or container ids belong
+in this canon.

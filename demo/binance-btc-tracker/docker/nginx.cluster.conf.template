@@ -67,7 +67,48 @@ http {
         gzip_min_length 1024;
         gzip_types text/plain text/css text/xml text/javascript application/javascript application/json;
 
-        rewrite ^(.+)/$ $1 permanent;
+        # Status namespace rejects every unlisted name, including trailing slashes.
+        rewrite ^(?!/status-data(?:/|$))(.+)/$ $1 permanent;
+
+        # Public Status files: exact names only; never ask the daemon.
+        # Repeat security headers because add_header replaces inherited headers.
+        location = /status-data/status.json {
+            alias /status/status.json;
+            default_type application/json;
+            limit_except GET { deny all; }
+            add_header Cache-Control "no-store" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+        }
+        location = /status-data/heartbeat.json {
+            alias /status/heartbeat.json;
+            default_type application/json;
+            limit_except GET { deny all; }
+            add_header Cache-Control "no-store" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+        }
+        location = /status-data {
+            add_header Cache-Control "no-store" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            return 404;
+        }
+        location ^~ /status-data/ {
+            autoindex off;
+            add_header Cache-Control "no-store" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            return 404;
+        }
+
+        location = /status {
+            try_files /index.html =404;
+        }
 
         location = /robots.txt { try_files $uri =404; }
         location = /sitemap.xml { try_files $uri =404; }

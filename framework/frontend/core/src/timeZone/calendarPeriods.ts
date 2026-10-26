@@ -54,6 +54,25 @@ function localCoordinate(
   )
 }
 
+/** The shared Gregorian field reader; UTC needs no Intl implementation. */
+function calendarFormatter(timeZone: string): Intl.DateTimeFormat | null {
+  return timeZone === 'UTC'
+    ? null
+    : new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        calendar: 'gregory',
+        numberingSystem: 'latn',
+        era: 'short',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hourCycle: 'h23',
+      })
+}
+
 /**
  * Walk IANA offset intervals with hourly probes; IANA transitions are farther
  * apart than a probe. Locate each change at its first millisecond, including
@@ -135,22 +154,7 @@ export function calendarPeriodStarts(
 ): CalendarPeriodStarts {
   const now = new Date(nowMs).getTime()
   if (!Number.isFinite(now)) throw new RangeError('Invalid calendar moment')
-  const formatter =
-    timeZone === 'UTC'
-      ? null
-      : new Intl.DateTimeFormat('en-US', {
-          timeZone,
-          calendar: 'gregory',
-          numberingSystem: 'latn',
-          era: 'short',
-          year: 'numeric',
-          month: 'numeric',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: 'numeric',
-          second: 'numeric',
-          hourCycle: 'h23',
-        })
+  const formatter = calendarFormatter(timeZone)
   const local = new Date(
     formatter === null ? now : localCoordinate(formatter, now),
   )
@@ -173,4 +177,89 @@ export function calendarPeriodStarts(
     dayStartTs: periodStart(intervals, day, day + DAY_MS),
     hourStartTs: periodStart(intervals, hour, hour + HOUR_MS, true),
   }
+}
+
+/** One real calendar day as a half-open interval of absolute moments. */
+export interface CalendarDay {
+  readonly startTs: number
+  readonly endTs: number
+}
+
+/**
+ * Read the last count real calendar days, oldest first and including today.
+ * Reuse the offset-interval engine above: folds, missing midnights and even
+ * skipped dates do not turn a day into an elapsed 24-hour duration.
+ *
+ * @param nowMs The browser moment identifying today.
+ * @param timeZone The effective reader zone.
+ * @param count The positive integer number of days to return.
+ */
+export function calendarDays(
+  nowMs: number,
+  timeZone: string,
+  count: number,
+): readonly CalendarDay[] {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new RangeError('Invalid calendar day count')
+  }
+  const now = new Date(nowMs).getTime()
+  if (!Number.isFinite(now)) throw new RangeError('Invalid calendar moment')
+  const formatter = calendarFormatter(timeZone)
+  const local = new Date(
+    formatter === null ? now : localCoordinate(formatter, now),
+  )
+  local.setUTCHours(0, 0, 0, 0)
+  local.setUTCDate(local.getUTCDate() + 1)
+  const tomorrow = local.getTime()
+  if (!Number.isFinite(tomorrow))
+    throw new RangeError('Calendar days are unavailable')
+  const intervals =
+    formatter === null
+      ? []
+      : offsetIntervals(
+          formatter,
+          tomorrow - (count + 4) * DAY_MS,
+          tomorrow + 2 * DAY_MS,
+        )
+  const boundaryAt = (coordinate: number): number | undefined => {
+    if (formatter === null) return coordinate
+    try {
+      return periodStart(intervals, coordinate, coordinate + DAY_MS)
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error
+
+      return undefined
+    }
+  }
+  // If tomorrow is a skipped date, today's end is the next real date's start.
+  // Search forward for that first boundary before walking backwards.
+  let end = boundaryAt(local.getTime())
+  while (end === undefined) {
+    local.setUTCDate(local.getUTCDate() + 1)
+    if (local.getTime() > tomorrow + 2 * DAY_MS) {
+      throw new RangeError('Calendar days are unavailable')
+    }
+    end = boundaryAt(local.getTime())
+  }
+  const boundaries: number[] = [end]
+  while (boundaries.length <= count) {
+    local.setUTCDate(local.getUTCDate() - 1)
+    const coordinate = local.getTime()
+    if (
+      !Number.isFinite(coordinate) ||
+      coordinate < tomorrow - (count + 3) * DAY_MS
+    ) {
+      throw new RangeError('Calendar days are unavailable')
+    }
+    // A whole skipped date has no periodStart. Its neighbors still form
+    // consecutive real days, so omit that date rather than inventing one.
+    const start = boundaryAt(coordinate)
+    if (start !== undefined) boundaries.push(start)
+  }
+  boundaries.reverse()
+
+  return boundaries.slice(0, -1).map((startTs, index) => ({
+    startTs,
+    endTs: boundaries[index + 1]!,
+  }))
 }

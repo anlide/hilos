@@ -52,6 +52,11 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
       port: 5173,
       strictPort: true,
       proxy: {
+        // Public Status JSON comes from the shared-volume nginx gateway.
+        '/status-data': {
+          target: 'http://binance-btc-tracker-files-local',
+          changeOrigin: true,
+        },
         '/_hilos/data-export': {
           target:
             env.VITE_DATA_EXPORT_TARGET ||

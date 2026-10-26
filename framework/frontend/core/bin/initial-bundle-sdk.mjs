@@ -83,12 +83,13 @@ function targetFile(directory, target, boundary = directory) {
 
 function publicEntry(name) {
   return (
-    ['.', './base', './admin-views'].includes(name) ||
+    ['.', './base', './admin-views', './status'].includes(name) ||
     name.startsWith('./admin/')
   )
 }
 
 function boundaryVerdict(name) {
+  if (name === './status') return 'public Status entrypoint'
   return name === '.'
     ? 'compatibility root'
     : name.startsWith('./admin/')

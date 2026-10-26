@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -40,6 +41,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Status\StatusAgent;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentDefinition;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -57,6 +59,7 @@ final class StatusObservationTest extends TestCase
     private ?HilosDbContext $previousDb;
     private StatusObservationRuntime $runtime;
     private StatusAgent $owner;
+    private StatusPublicVolume $publicVolume;
     private int $startedAt;
 
     protected function setUp(): void
@@ -74,6 +77,7 @@ final class StatusObservationTest extends TestCase
         $this->runtime->configure();
         $this->runtime->bindStateCollectionNames();
         Hilos::$rt = $this->runtime;
+        $this->publicVolume = new StatusPublicVolume();
         $this->owner = new StatusAgent();
         OwnershipDeclaration::claimAll($this->owner);
         ExecutionContext::setCurrentAgentId($this->owner->getId());
@@ -83,6 +87,7 @@ final class StatusObservationTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->publicVolume->close();
         RtTruthSourceRegistry::unregisterAgent($this->owner->getId());
         TruthSourceRegistry::unregisterAgent($this->owner->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->owner->getId()));
@@ -425,11 +430,16 @@ final class StatusObservationTest extends TestCase
         return $frames[0]->data->data;
     }
 
-    /** @return list<SignalDTO> Queued frames */
+    /** @return list<SignalDTO> Lease frames; independently validated public hints are allowed during freeze */
     private function drain(): array
     {
         $frames = [];
         while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED) {
+                self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frame->signalType->getType());
+                self::assertSame([], $frame->data->data->toArray());
+                continue;
+            }
             $frames[] = $frame;
         }
         return $frames;

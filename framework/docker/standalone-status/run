@@ -1,0 +1,37 @@
+#!/bin/sh
+# Disposable test tooling; only this container receives the local Docker socket.
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo=$(CDPATH= cd -- "$here/../../.." && pwd -P)
+if [ -n "${DOCKER_CONTEXT:-}" ]; then
+    endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
+elif [ -n "${DOCKER_HOST:-}" ]; then
+    endpoint=$DOCKER_HOST
+else
+    endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
+fi
+case "$endpoint" in
+    unix:///*) socket=${endpoint#unix://} ;;
+    *) echo 'standalone-status requires a local Unix Docker endpoint' >&2; exit 2 ;;
+esac
+[ -S "$socket" ] && [ -r "$socket" ] && [ -w "$socket" ]
+unset DOCKER_CONTEXT DOCKER_HOST DOCKER_TLS_VERIFY DOCKER_CERT_PATH
+state=$(mktemp -d /tmp/hilos-standalone-status.XXXXXXXX)
+chmod 777 "$state"
+# On abrupt controller loss the independent container still needs this mount.
+trap 'if [ ! -f "$state/manifest.json" ] || [ -f "$state/finished" ]; then rm -rf "$state"; fi' EXIT
+docker --host "$endpoint" build --iidfile "$state/image" \
+    -f "$repo/framework/docker/Dockerfile.cluster-harness" "$repo/framework/docker" >&2
+image=$(cat "$state/image")
+set -- "$image" python3 "$here/runner.py" "$@"
+for name in HILOS_STAND_SUFFIX HILOS_STAND_CPU_SHARES HILOS_STAND_NET_BINANCE_BTC_TRACKER HILOS_E2E_TIMEOUT_SCALE; do
+    value=$(printenv "$name" || true)
+    [ -z "$value" ] || set -- --env "$name=$value" "$@"
+done
+docker --host "$endpoint" run --rm --init \
+    --mount "type=bind,source=$repo,target=$repo" \
+    --mount "type=bind,source=$socket,target=$socket" \
+    --mount "type=bind,source=$state,target=$state" \
+    --workdir "$repo/demo/binance-btc-tracker" \
+    --env "DOCKER_HOST=$endpoint" --env "STATUS_CONTROL_DIR=$state" \
+    --env "STATUS_HARNESS_IMAGE=$image" "$@"

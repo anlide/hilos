@@ -66,7 +66,8 @@ const props = defineProps<{ authGate: AuthGate }>()
 // directly). Unbuilt framework pages, including guardian, are refused with
 // 404 by the router through HILOS_UNBUILT_PAGES.
 // Each descriptor is created once for this App instance; selecting a page
-// loads only its project wrapper and SDK section. Public pages stay eager.
+// loads only its project wrapper and SDK section. The four prose pages stay
+// eager; the public Status file reader loads on entry.
 const pages: Record<string, PageView<Component>> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,
@@ -88,6 +89,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
+  [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
+    import('./views/Status/Status.vue').then((m) => m.default),
+  ),
   [HilosPages.SETTINGS]: lazyPage(() =>
     import('./views/Hilos/Settings/Settings.vue').then((m) => m.default),
   ),

@@ -1,0 +1,15 @@
+#!/bin/sh
+# A clean, reproducible cycle; a failing browser still tears this stand down.
+set -eu
+[ "$#" -eq 0 ] || { echo 'test:e2e-status-full takes no filters' >&2; exit 2; }
+trap 'composer run test:e2e-down' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+composer run test:down
+composer run test:up
+composer run test:e2e-build
+composer run test:e2e-install
+composer run test:e2e-check
+composer run test:e2e-up
+composer run test:e2e-status

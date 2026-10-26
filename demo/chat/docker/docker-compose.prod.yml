@@ -93,6 +93,7 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
+      - ../data/status:/status:ro
       - ../data/legal_export:/legal_export:ro
       - nginx-ssl-prod:/etc/nginx/ssl
       # Published attachments, streamed by nginx via the daemon's X-Accel-Redirect.

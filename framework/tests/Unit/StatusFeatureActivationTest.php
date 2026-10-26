@@ -30,6 +30,8 @@ use Hilos\Database\Entity\Item\StatusIncidentUpdate;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
@@ -95,6 +97,43 @@ final class StatusFeatureActivationTest extends TestCase
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
         ], StatusAgent::AGENT_SIGNALS);
         self::assertSame([], StatusAgent::AGENT_ACTIONS);
+    }
+
+    /** @return iterable<string, array{?FsContext}> Missing filesystem or missing registration */
+    public static function missingStatusStorage(): iterable
+    {
+        yield 'no filesystem' => [null];
+        yield 'no status directory' => [new StatusActivationFsContext()];
+    }
+
+    /** @param ?FsContext $context Filesystem without Status storage */
+    #[DataProvider('missingStatusStorage')]
+    public function testMissingStatusStorageIsRefusedOnlyWhenEnabled(?FsContext $context): void
+    {
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = $context;
+        try {
+            StatusDisabledHilos::checkDirectory();
+            $this->expectException(IncompleteFeatureActivationException::class);
+            $this->expectExceptionMessage('HilosFeature::STATUS keeps public files in the status directory');
+            StatusEnabledHilos::checkDirectory();
+        } finally {
+            Hilos::$fs = $previousFs;
+        }
+    }
+
+    public function testRegisteredStatusStoragePassesWithoutCreatingTheDirectory(): void
+    {
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = new StatusActivationFsContext();
+        Hilos::$fs->configure();
+        try {
+            StatusEnabledHilos::checkDirectory();
+            self::assertSame('/uncreated/status', Hilos::$fs->status->getPath());
+            self::assertSame([], Hilos::$fs->declarationErrors());
+        } finally {
+            Hilos::$fs = $previousFs;
+        }
     }
 
     /** @return iterable<string, array{class-string<Hilos>, string}> Incomplete declarations */
@@ -224,11 +263,23 @@ abstract class StatusEnabledHilos extends Hilos
     public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [HilosAgentType::HILOS_INDEX => []];
     protected const array FEATURES = [HilosFeature::STATUS, HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY];
     protected const string SETTINGS_CATALOG = StatusSettingsCatalog::class;
+
+    /** Checks storage after the fixture context is configured. */
+    public static function checkDirectory(): void
+    {
+        static::refuseStatusWithoutDirectory();
+    }
 }
 
 abstract class StatusDisabledHilos extends Hilos
 {
     public const array AGENTS = [HilosAgentType::HILOS_INDEX => []];
+
+    /** No Status feature means no storage obligation. */
+    public static function checkDirectory(): void
+    {
+        static::refuseStatusWithoutDirectory();
+    }
 }
 
 abstract class StatusNoDependenciesHilos extends StatusEnabledHilos
@@ -323,4 +374,13 @@ abstract class StatusNoTableHilos extends StatusEnabledHilos
 abstract class StatusNoBindingHilos extends StatusEnabledHilos
 {
     public const array PAGE_TABLES = [];
+}
+
+final class StatusActivationFsContext extends FsContext
+{
+    /** Registers an intentionally uncreated shared path. */
+    public function configure(): void
+    {
+        $this->registerDirectory(self::STATUS, '/uncreated/status', DirectoryScope::CLUSTER);
+    }
 }

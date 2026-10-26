@@ -12,6 +12,7 @@ import {
   setCustomSetting,
   shownByTestId,
   waitDeliveryBoundary,
+  waitForDeliveryQuiet,
   watchDeliveryFrames,
   type DeliveryFrameLog,
   type DeliveryPacket,
@@ -639,13 +640,31 @@ test('a deliberately delayed window response opens a fresh fixed grace window on
       a.packets.at(-1)!.at,
       b.packets.at(-1)!.at,
     )
-    await waitDeliveryBoundary(passiveStart + WINDOW_MS + IMMEDIATE_MS)
+    // Status keeps publishing at its ordinary cadence. Every physical packet
+    // restarts this preparation, including hints; elapsed time since a request
+    // alone cannot prove quiet. One heartbeat plus the quiet interval bounds it.
+    const quiet = await waitForDeliveryQuiet(
+      expect,
+      [a, b],
+      WINDOW_MS,
+      IMMEDIATE_MS,
+      30_000 + WINDOW_MS + IMMEDIATE_MS,
+    )
+    phases.quiet = quiet
 
     // Baseline: the quiet anchor passes, two real acknowledged writes then
     // accumulate. A later pass cannot claim immediate delivery by coincidence.
     const anchor = await write()
     const anchorA = await receiveValue(a, anchor.value)
     const anchorB = await receiveValue(b, anchor.value)
+    for (const [index, log] of [a, b].entries()) {
+      expect(anchor.sent - quiet.lastActivity[index]!).toBeGreaterThanOrEqual(
+        WINDOW_MS + IMMEDIATE_MS,
+      )
+      expect(
+        log.packets.filter(({ at }) => at > quiet.at && at < anchor.sent),
+      ).toEqual([])
+    }
     expect(anchorA.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
     expect(anchorB.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
     const pending = [await write(), await write()]

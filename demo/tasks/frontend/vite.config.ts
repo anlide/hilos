@@ -71,6 +71,11 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
       // localhost-dev default.
       hmr: env.VITE_DISABLE_HMR ? false : undefined,
       proxy: {
+        // Public Status JSON comes from the shared-volume nginx gateway.
+        '/status-data': {
+          target: env.VITE_FILES_TARGET || 'http://tasks-files-local',
+          changeOrigin: true,
+        },
         '/_hilos/data-export': {
           target:
             env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',

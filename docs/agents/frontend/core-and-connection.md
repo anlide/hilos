@@ -50,7 +50,9 @@ The narrow page exception is the public `/status` file reader: nginx serves its
 built shell and public files on a cold load without daemon, handshake or
 subscription. Freeze does not replace it with the stub; the stub links to it as
 **Service status**. See [status-page.md](../architecture/status-page.md#freeze-and-disconnection).
-(not in the code yet — HIL-1690)
+The Vue shell keeps this read-only page available without opening a page
+subscription or enabling shell requests, actions or modal controls. Other pages
+keep the freeze behavior above.
 This exception also applies in React (not in the code yet — HIL-1695)
 and Angular (not in the code yet — HIL-1696).
 
@@ -168,8 +170,8 @@ auth-gate surface on a 401 — the gate, not the page, owns the sign-in form.
 The public `/status` reader waits for a coherent nginx file pair, never for
 `page_response`; the [Status canon](../architecture/status-page.md#reading-status)
 defines what it shows without a valid pair. This grants no early render to another
-subscribed page.
-(not in the code yet — HIL-1690)
+subscribed page. The file pair is its own first render boundary; it does not
+change when ordinary subscribed pages may render.
 
 The gate stays as it is, and a frame sent ahead of the answer is no longer lost
 to it. A page that ships its own state frame before `page_response` is heard: the
@@ -235,11 +237,12 @@ also stay outside the page binding. Sign out, Stop and Keep my account remain
 independently disabled while the connection is unavailable, even when the page
 opts into local interaction.
 
-The planned `/status` file reader needs an SDK shell opt-out to read without a
-usable live connection, including under freeze. That shell seam exists; the
-page, route and subscription work remain future work. See
+On the built Vue `/status` route, the shell lets only the read-only page use its
+local file reader without a usable live connection, including under freeze.
+Page-level access reactions do not clear or await it because it has no server
+subscription. This does not enable shell requests, actions or modal controls,
+and does not change the connection policy for other pages. See
 [Status reading](../architecture/status-page.md#reading-status).
-(not in the code yet — HIL-1690)
 Its subscription button is absent without usable live connection.
 (not in the code yet — HIL-1691)
 
@@ -263,7 +266,6 @@ with a live socket. A stale heartbeat means **not responding since** `<aliveAt>`
 and Unknown components; the [Status reader](../architecture/status-page.md#reading-status)
 defines coherent rereads and the fresh-heartbeat/disconnected case. This is the
 explicit exception to the ordinary banner and timestamp rule.
-(not in the code yet — HIL-1690)
 
 ## SDK shell
 

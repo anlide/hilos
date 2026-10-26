@@ -57,6 +57,7 @@ final class TasksFsContextTest extends TestCase
             FsContext::ANALYTICS_JOURNAL,
             FsContext::DATA_EXPORT,
             FsContext::LEGAL_EXPORT,
+            FsContext::STATUS,
         ], array_keys($context->getDirectories()));
         self::assertSame(DirectoryScope::CLUSTER, $context->getTmp()->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::FILES)->getScope());
@@ -96,5 +97,16 @@ final class TasksFsContextTest extends TestCase
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::FILES)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getTmp()->getScope());
         self::assertSame([], $context->declarationErrors());
+    }
+
+    public function testStatusUsesItsOwnSharedDataDirectory(): void
+    {
+        $context = new TasksFsContext();
+        $context->configure();
+
+        self::assertTrue($context->hasDirectory(FsContext::STATUS));
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->status->getPath());
+        self::assertSame(DirectoryScope::CLUSTER, $context->status->getScope());
+        self::assertSame(dirname(__DIR__, 2) . '/data/status', $context->clusterDirectories()[FsContext::STATUS]);
     }
 }

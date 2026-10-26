@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 
 import {
   KEYS_PATH,
@@ -65,7 +66,15 @@ export function checkTree(root: string): string[] {
   const spent = new Set(staged.filter(wellFormed))
   const found: Finding[] = []
   for (const entry of entries) {
-    if (!pages.some((page) => page.key === entry.key && page.admin)) {
+    // Public Status reads nginx files and has no PHP catalog/admin view. Only
+    // that approved public key may record its unavailable SDK layers here.
+    if (
+      !pages.some(
+        (page) =>
+          page.key === entry.key &&
+          (page.admin || page.key === HilosPages.PUBLIC_STATUS),
+      )
+    ) {
       found.push({
         ...entry,
         message: `'${entry.key}' is not an admin page; remove its registry entry`,

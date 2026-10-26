@@ -177,9 +177,22 @@ describe('hilosUnbuiltPages', () => {
     ).toEqual(hilosUnbuiltPages('vue'))
   })
 
-  it('lists only admin pages with nonempty, distinct view layers', () => {
+  it('keeps the public file reader unbuilt only in React and Angular', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.PUBLIC_STATUS]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.PUBLIC_STATUS)).toBe(false)
+    for (const layer of ['react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(HilosPages.PUBLIC_STATUS)).toBe(true)
+    }
+  })
+
+  it('lists admin pages and only the public Status exception, with distinct layers', () => {
     for (const [key, layers] of Object.entries(HILOS_UNBUILT_PAGES)) {
-      expect(HILOS_ROUTE_DECLARATIONS[key as HilosPageKey].admin).toBe(true)
+      expect(HILOS_ROUTE_DECLARATIONS[key as HilosPageKey].admin).toBe(
+        key !== HilosPages.PUBLIC_STATUS,
+      )
       expect(layers.length).toBeGreaterThan(0)
       expect(new Set(layers).size).toBe(layers.length)
     }

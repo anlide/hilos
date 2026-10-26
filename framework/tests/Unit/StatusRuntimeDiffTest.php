@@ -36,6 +36,7 @@ use Hilos\Runtime\View\Actions\Item\HilosStatusComponentActions;
 use Hilos\Runtime\View\Collection\HilosStatusComponents;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\StatusAgent;
+use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusSnapshot;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -52,6 +53,7 @@ final class StatusRuntimeDiffTest extends TestCase
     private ?RtContext $previousRuntime;
     private ?HilosDbContext $previousDb;
     private StatusAgent $owner;
+    private StatusPublicVolume $publicVolume;
     private StatusReadIncidents $incidents;
     private StatusReadDbContext $database;
     private StatusReadRuntime $runtime;
@@ -74,6 +76,7 @@ final class StatusRuntimeDiffTest extends TestCase
         Hilos::$db = $this->database;
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        $this->publicVolume = new StatusPublicVolume();
         $this->owner = new StatusAgent();
         OwnershipDeclaration::claimAll($this->owner);
         ExecutionContext::setCurrentAgentId($this->owner->getId());
@@ -83,6 +86,7 @@ final class StatusRuntimeDiffTest extends TestCase
     protected function tearDown(): void
     {
         $this->owner->onStop();
+        $this->publicVolume->close();
         RtTruthSourceRegistry::unregisterAgent($this->owner->getId());
         TruthSourceRegistry::unregisterAgent($this->owner->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->owner->getId()));
@@ -182,7 +186,7 @@ final class StatusRuntimeDiffTest extends TestCase
         self::assertNull(Hilos::$rt->hilosStatusComponents['service']->observedAt);
         $this->owner->onTick();
         self::assertCount(2, Hilos::$rt->hilosStatusComponents);
-        self::assertSame(1, $this->database->reads);
+        self::assertSame(3, $this->database->reads); // Reconciliation plus the public current snapshot's two typed reads.
         self::assertSame(StatusComponentState::UNKNOWN, StatusSnapshot::read()->components['service']->state);
     }
 

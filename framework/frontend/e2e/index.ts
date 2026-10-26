@@ -78,6 +78,7 @@ export {
 export {
   deliveryObject,
   waitDeliveryBoundary,
+  waitForDeliveryQuiet,
   watchDeliveryFrames,
   type DeliveryFrameLog,
   type DeliveryPacket,
@@ -460,6 +461,19 @@ export {
   submitStatusIncident,
   expectStatusIncidentDialog,
 } from './status.js'
+
+export {
+  PUBLIC_STATUS_PATH,
+  PUBLIC_STATUS_FILES,
+  watchPublicStatus,
+  expectPublicStatusPair,
+  expectPublicStatusArchive,
+  expectPublicStatusStale,
+  expectPublicStatusReadOnly,
+  expectPublicStatusAccessibility,
+  type PublicStatusLog,
+  type DisplayedStatusPair,
+} from './publicStatus.js'
 
 export {
   communicationsChannelReplies,

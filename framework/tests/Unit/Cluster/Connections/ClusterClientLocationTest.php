@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Connections;
 
+use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\Connections\ClusterClientLocation;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Router\SignalName;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -305,6 +308,7 @@ final class ClusterClientLocationTest extends TestCase
 
         $this->assertSame(0, $index->deliveries());
         $this->assertNull($index->lastAcceptKey());
+        $this->assertSame(0, $index->testDeliveries());
     }
 
     /**
@@ -333,6 +337,27 @@ final class ClusterClientLocationTest extends TestCase
         $index->noteFanoutDelivery();
 
         $this->assertSame(2, $index->deliveries());
+        $this->assertSame('ak-1', $index->lastAcceptKey());
+    }
+
+    /** A real Status fan-out must remain visible in the total without impersonating the CLI probe. */
+    public function testBackgroundSignalsCannotBecomeClientTestEvidence(): void
+    {
+        $index = new ClusterClientLocation();
+        $index->noteAddressedDelivery('ak-1');
+        $index->noteTestDelivery(new SignalName(ClusterCommandConstants::SIGNAL_CLIENT_TEST));
+        $index->noteFanoutDelivery();
+        $index->noteTestDelivery(new SignalName(HilosSignalConstants::STATUS_FILES_CHANGED));
+
+        $this->assertSame(2, $index->deliveries());
+        $this->assertSame(1, $index->testDeliveries());
+        $this->assertSame('ak-1', $index->lastAcceptKey());
+
+        $index->noteFanoutDelivery();
+        $index->noteTestDelivery(new SignalName(ClusterCommandConstants::SIGNAL_CLIENT_TEST));
+
+        $this->assertSame(3, $index->deliveries());
+        $this->assertSame(2, $index->testDeliveries());
         $this->assertSame('ak-1', $index->lastAcceptKey());
     }
 }

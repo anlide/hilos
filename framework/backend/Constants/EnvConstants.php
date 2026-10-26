@@ -30,6 +30,12 @@ enum EnvConstants
     /** @var string HTTP status server: allow persistent connections (keep-alive); true|false */
     case HTTP_STATUS_KEEP_ALIVE;
 
+    /** @var string Public Status polling interval in seconds; positive integer, default 30 */
+    case STATUS_POLL_INTERVAL_SECONDS;
+
+    /** @var string Public Status heartbeat staleness threshold in seconds; positive integer, default 120 */
+    case STATUS_STALE_AFTER_SECONDS;
+
     /** @var string Worker communication host */
     case WORKER_COMM_HOST;
 

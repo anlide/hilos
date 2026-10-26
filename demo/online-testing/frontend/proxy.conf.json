@@ -1,4 +1,10 @@
 {
+  "/status-data": {
+    "target": "http://online-testing-files-local"
+  },
+  "/status-data/**": {
+    "target": "http://online-testing-files-local"
+  },
   "/_hilos/data-export": {
     "target": "http://online-testing-daemon-local:8090"
   },

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Native selection is collected once, then runs in its publication environment.
+set -eu
+exec ../../framework/docker/standalone-status/run e2e "$@"

@@ -6,18 +6,19 @@
 // DOM-free so the view layer only reads the resolved string from the navigator's
 // currentTitle signal.
 
-import { HILOS_FOOTER_LINKS } from './hilosPages.js'
+import { HilosPages, HILOS_FOOTER_LINKS } from './hilosPages.js'
 import { ROUTE_NOT_FOUND_ERROR } from './pageError.js'
 
 /**
- * The framework-owned label for a public footer page, or undefined for any other
- * page. The footer pages are the one set whose labels stay on the frontend: they
- * are not in the admin catalog by design, so nothing sends their names over the
- * wire.
+ * The framework-owned label for a footer page or the public nginx Status reader.
+ * These labels stay on the frontend: no admin catalog sends them on the wire.
  *
  * @param pageKey The page key to label.
  */
 function frameworkPageLabel(pageKey: string): string | undefined {
+  if (pageKey === HilosPages.PUBLIC_STATUS) {
+    return 'Status'
+  }
   return HILOS_FOOTER_LINKS.find((link) => link.page === pageKey)?.label
 }
 

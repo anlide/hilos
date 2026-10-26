@@ -26,7 +26,10 @@ HilosLinks — no-refresh navigation that leaves the socket alive — so the she
 alone moves between the project home, the admin section, and the public pages.
 While the connection reports protected mode the shell becomes the maintenance
 surface (HilosMaintenance) and keeps only the connection indicator — every other
-region of the shell links to a page the freeze has shut. On the very first frame
+region of the shell links to a page the freeze has shut. Only PUBLIC_STATUS keeps
+its public file reader, local day controls and a passive project brand. It also
+paints during the first-frame hold without releasing that connection hold or
+the restrictions on shell requests. On the very first frame
 there is nothing to report yet, and on a browser that has met maintenance here the
 core holds that frame back (HIL-613): the shell then renders only the hidden
 hilos-boot-state marker, so a reload into a frozen node never flashes the ordinary
@@ -132,13 +135,31 @@ const props = defineProps<{
   toastCorner?: HilosToastCorner
 }>()
 
+const router = inject(hilosRouterKey, undefined)
+const currentRoute = router ? useSignal(router.currentRoute) : undefined
+// Only this file reader has local content before welcome and under a freeze.
+const publicStatus = computed(
+  () => currentRoute?.value.page === HilosPages.PUBLIC_STATUS,
+)
+const allowDisconnectedInteraction = computed(
+  () => publicStatus.value || (props.allowDisconnectedInteraction ?? false),
+)
 const connectionInteraction = createConnectionInteractionState(
   props.connection,
   props.allowDisconnectedInteraction,
 )
+// The automatic file-reader exception belongs to the page DOM only. Shell
+// dialogs retain the caller's policy and cannot gain offline action controls.
+const pageInteraction = createConnectionInteractionState(
+  props.connection,
+  allowDisconnectedInteraction.value,
+)
 provide(hilosConnectionInteractionKey, connectionInteraction)
 const unavailable = useSignal(connectionInteraction.unavailable)
 watch(() => props.connection, connectionInteraction.setConnection, {
+  flush: 'sync',
+})
+watch(() => props.connection, pageInteraction.setConnection, {
   flush: 'sync',
 })
 watch(
@@ -146,9 +167,18 @@ watch(
   connectionInteraction.setAllowDisconnectedInteraction,
   { flush: 'sync' },
 )
+watch(
+  allowDisconnectedInteraction,
+  pageInteraction.setAllowDisconnectedInteraction,
+  { flush: 'sync' },
+)
 onScopeDispose(connectionInteraction.dispose)
+onScopeDispose(pageInteraction.dispose)
 // A server render has no unmount phase; retain its snapshot, not a live source.
-onServerPrefetch(async () => connectionInteraction.dispose())
+onServerPrefetch(async () => {
+  connectionInteraction.dispose()
+  pageInteraction.dispose()
+})
 
 const pageRoot = ref<HTMLElement>()
 const pageFieldset = ref<HTMLFieldSetElement>()
@@ -161,7 +191,7 @@ watch(
     onCleanup(
       bindInteractionBlock(root, {
         fieldset,
-        blocked: connectionInteraction.blocked,
+        blocked: pageInteraction.blocked,
         descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
       }),
     )
@@ -205,7 +235,10 @@ watch(
 // telling the visitor. The state is read from the connection, not from a page
 // store, so it outlives routing and subscription lifecycles.
 const protectedMode = useProtectedMode(props.connection)
-const underMaintenance = computed(() => protectedMode.value.active)
+const firstFrameHeld = useFirstFrameHold(props.connection)
+const underMaintenance = computed(
+  () => protectedMode.value.active || firstFrameHeld.value,
+)
 
 // The opposite side of the same state: whoever the mode does NOT hold, while it
 // still holds the node, is inside a system that is closed to everybody else and
@@ -215,7 +248,7 @@ const underMaintenance = computed(() => protectedMode.value.active)
 // that would have to be rebuilt on each of them. It is drawn above the project's
 // own banner slot: the SDK speaks first.
 const verificationBanner = computed(() =>
-  protectedModeBannerCopy(protectedMode.value),
+  publicStatus.value ? undefined : protectedModeBannerCopy(protectedMode.value),
 )
 
 // The second framework strip (HIL-1064): the session says an administrator
@@ -357,25 +390,17 @@ const onSignOut = (): void => {
 // draws nothing at all in the meantime — not a spinner, not a placeholder: the
 // wait is measured in the time one frame takes, and anything drawn in it is a
 // second flash replacing the first.
-const firstFrameHeld = useFirstFrameHold(props.connection)
+// Release this screen's paint only; the connection's hold and identity persist.
+const shellHeld = computed(() => firstFrameHeld.value && !publicStatus.value)
 // The one place the two boot outcomes are named, on the marker a test waits for
 // rather than polling for chrome that is absent by design while held.
-const bootState = computed(() => (firstFrameHeld.value ? 'held' : 'ready'))
+const bootState = computed(() => (shellHeld.value ? 'held' : 'ready'))
 
 // Mirror the navigator's current page title: set it as the document title so the
 // browser tab tracks the no-refresh navigation, and render it in the live region
 // below so a screen reader announces the page change (WCAG 2.4.2). Without a
 // router (tests, the hard-link fallback) there is no title to track.
-const router = inject(hilosRouterKey, undefined)
 const pageTitle = router ? useSignal(router.currentTitle) : undefined
-
-// The maintenance surface shows the verifier's code field only on an
-// administrative url, so the shell hands the route's surface type down to it.
-// Without a router there is no route and therefore no administrative surface
-// (tests, the hard-link fallback): the field then hides, which is the safe way
-// round — a missing field is fixed by typing the admin url, a field shown where
-// it should not be is the defect this closes.
-const currentRoute = router ? useSignal(router.currentRoute) : undefined
 
 // This disclosure belongs to this mounted shell only. The router and connection
 // remain the sources of navigation and server state; no shared state is needed.
@@ -496,6 +521,7 @@ const viewModeStrip = computed(
 // public pages. It reads its content afresh each time it rises.
 const frozenShown = computed(
   () =>
+    !publicStatus.value &&
     frozen.value &&
     !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute?.value.page ?? ''),
 )
@@ -588,7 +614,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
 <template>
   <div data-id="hilos-boot-state" :data-state="bootState" hidden />
   <div
-    v-if="!firstFrameHeld"
+    v-if="!shellHeld"
     class="d-flex flex-column vh-100 overflow-hidden"
     data-id="app-root"
   >
@@ -620,6 +646,13 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         >
           <slot name="brand">Hilos</slot>
         </HilosLink>
+        <span
+          v-else-if="publicStatus"
+          class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+          data-id="nav-brand"
+        >
+          <slot name="brand">Hilos</slot>
+        </span>
         <div
           v-if="!underMaintenance && $slots.nav"
           id="hilos-nav-panel"
@@ -842,10 +875,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       ref="pageRoot"
       tabindex="-1"
       class="container flex-grow-1 min-h-0 overflow-auto py-4"
-      :class="{ 'd-flex flex-column': underMaintenance }"
+      :class="{ 'd-flex flex-column': underMaintenance && !publicStatus }"
     >
       <HilosMaintenance
-        v-if="underMaintenance"
+        v-if="underMaintenance && !publicStatus"
         :status="protectedMode"
         :connection="props.connection"
         :admin-surface="currentRoute?.admin ?? false"
@@ -857,7 +890,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         data-id="page-interaction-scope"
       >
         <HilosAccountBlocked
-          v-if="accountBlocked !== null"
+          v-if="accountBlocked !== null && !publicStatus"
           :notice="accountBlocked"
         />
         <div
