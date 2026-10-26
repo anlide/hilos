@@ -23,6 +23,7 @@ import { createHilosUploadField } from '@hilos/core/base'
 import {
   HilosAvatar,
   HilosFormError,
+  HilosLink,
   HilosUploadDrop,
   HilosUploadFiles,
   HilosUploadPicker,
@@ -33,6 +34,8 @@ import {
 
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
+import { PAGE_BOT, PAGE_USER } from '../../pages/keys.js'
+import { router } from '../../pages/routes.js'
 import {
   EVENT_MESSAGE_SENT,
   mainParticipants,
@@ -261,7 +264,8 @@ onUnmounted(() => {
     <h1 class="visually-hidden">Conversations</h1>
     <p class="flex-shrink-0">
       <template v-if="isAuthenticated">
-        Signed in as <span data-id="self-user">{{ selfName }}</span>
+        Signed in as
+        <span class="fw-semibold" data-id="self-user">{{ selfName }}</span>
         <span data-id="self-user-id" hidden>{{ selfId }}</span>
       </template>
       <template v-else>
@@ -417,35 +421,41 @@ onUnmounted(() => {
             >
               No participants yet
             </div>
-            <div
+            <HilosLink
               v-for="participant in participants"
               :key="participant.key"
-              class="list-group-item d-flex align-items-center gap-2"
-              data-id="participant"
+              :to="router.path(PAGE_USER, { id: participant.key }) ?? ''"
+              class="list-group-item list-group-item-action"
+              :data-id="`participant-link-${participant.key}`"
             >
-              <HilosAvatar
-                :name="participant.name"
-                :photo="participant.merged ? null : participant.photo"
-                :icon="participant.merged ? MERGED_ICON : null"
-                size="sm"
-              />
-              <span data-id="participant-name">{{ participant.name }}</span>
-              <!-- A merged account has no presence of its own any more. -->
               <span
-                v-if="!participant.merged"
-                class="rounded-circle flex-shrink-0"
-                :class="
-                  participant.presence === 'online'
-                    ? 'bg-success'
-                    : 'bg-secondary'
-                "
-                style="width: 10px; height: 10px"
-                aria-hidden="true"
-              />
-              <span class="visually-hidden">{{
-                participant.merged ? 'merged' : participant.presence
-              }}</span>
-            </div>
+                class="d-flex align-items-center gap-2"
+                data-id="participant"
+              >
+                <HilosAvatar
+                  :name="participant.name"
+                  :photo="participant.merged ? null : participant.photo"
+                  :icon="participant.merged ? MERGED_ICON : null"
+                  size="sm"
+                />
+                <span data-id="participant-name">{{ participant.name }}</span>
+                <!-- A merged account has no presence of its own any more. -->
+                <span
+                  v-if="!participant.merged"
+                  class="rounded-circle flex-shrink-0"
+                  :class="
+                    participant.presence === 'online'
+                      ? 'bg-success'
+                      : 'bg-secondary'
+                  "
+                  style="width: 10px; height: 10px"
+                  aria-hidden="true"
+                />
+                <span class="visually-hidden">{{
+                  participant.merged ? 'merged' : participant.presence
+                }}</span>
+              </span>
+            </HilosLink>
           </div>
         </div>
 
@@ -467,28 +477,31 @@ onUnmounted(() => {
             >
               No bots yet
             </div>
-            <div
+            <HilosLink
               v-for="bot in bots"
               :key="bot.key"
-              class="list-group-item"
-              data-id="bot"
+              :to="router.path(PAGE_BOT, { id: bot.key }) ?? ''"
+              class="list-group-item list-group-item-action"
+              :data-id="`bot-link-${bot.key}`"
             >
-              <div class="d-flex align-items-center gap-2">
-                <HilosAvatar :name="bot.name" size="sm" />
-                <span class="fw-semibold me-auto" data-id="bot-name">{{
-                  bot.name
-                }}</span>
-                <span
-                  v-if="bot.status"
-                  class="badge bg-body-tertiary text-body-emphasis"
-                  data-id="bot-status"
-                  >{{ bot.status }}</span
-                >
+              <div data-id="bot">
+                <div class="d-flex align-items-center gap-2">
+                  <HilosAvatar :name="bot.name" size="sm" />
+                  <span class="fw-semibold me-auto" data-id="bot-name">{{
+                    bot.name
+                  }}</span>
+                  <span
+                    v-if="bot.status"
+                    class="badge bg-body-tertiary text-body-emphasis"
+                    data-id="bot-status"
+                    >{{ bot.status }}</span
+                  >
+                </div>
+                <div v-if="bot.description" class="small text-muted">
+                  {{ bot.description }}
+                </div>
               </div>
-              <div v-if="bot.description" class="small text-muted">
-                {{ bot.description }}
-              </div>
-            </div>
+            </HilosLink>
           </div>
         </div>
       </div>

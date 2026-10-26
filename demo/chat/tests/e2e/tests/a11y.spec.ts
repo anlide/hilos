@@ -160,6 +160,13 @@ test('the shell exposes a skip link and marks the active nav item', async ({
     'page',
   )
 
+  // Conversations is in the shell, and this page is the dashboard, so the
+  // link is not the current page.
+  await expect(page.getByTestId('nav-conversations')).not.toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+
   await expectPageReady(page)
   const build = await expectDesktopShell(expect, page, 'nav-profile')
   const document = await watchClientDocument(page)
@@ -167,6 +174,14 @@ test('the shell exposes a skip link and marks the active nav item', async ({
     await page.getByTestId('nav-brand').click()
     await expect(page).toHaveURL('/')
     await expectPageReady(page)
+    await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+      'href',
+      '/',
+    )
+    await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
     await document.unchanged()
     expect(await expectDesktopShell(expect, page, 'nav-profile')).toBe(build)
   } finally {
@@ -214,6 +229,30 @@ test('the home page exposes a heading and presence as text', async ({
   await expect(
     page.getByTestId('participant').filter({ hasText: user.name }),
   ).toContainText('online')
+
+  // The same row is a real link. Its accessible name carries the person and
+  // the presence, and Enter follows the address the href already names.
+  const selfUserId = Number(
+    await page.getByTestId('self-user-id').textContent(),
+  )
+  expect(selfUserId).toBe(user.userId)
+  const link = page.getByTestId(`participant-link-${selfUserId}`)
+  await expect(link).toHaveAccessibleName(`${user.name} online`)
+  await expect(link).toHaveAttribute('href', `/user/${selfUserId}`)
+  await expect(link).toHaveJSProperty('tagName', 'A')
+  await link.focus()
+  await expect(link).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expectPageReady(page)
+  expect(new URL(page.url()).pathname).toBe(`/user/${selfUserId}`)
+  await expect(page.getByTestId('user-name')).toHaveText(user.name)
+
+  await page.getByTestId('nav-conversations').click()
+  await expectPageReady(page)
+  expect(new URL(page.url()).pathname).toBe('/')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Conversations',
+  )
 })
 
 test('the user Overview exposes a shared heading, named navigation and keyboard rename', async ({

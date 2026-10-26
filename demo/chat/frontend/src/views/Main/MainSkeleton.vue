@@ -2,9 +2,22 @@
 page waits for its first answer. It lays out on the grid Main.vue lays out on —
 the "who is here" line, the event stream in the wide column, participants and
 bots in the narrow one, the composer below — so nothing moves when the page
-lands. Decorative from end to end: the outlet announces the wait once. -->
+lands. Decorative from end to end: the outlet announces the wait once. The
+composer holds the empty refusal's room and invisible copies of the paperclip
+and of the button the session would show, so that row is already as wide as
+the one that replaces it. -->
 <script setup lang="ts">
-import { HilosSkeleton } from '@hilos/vue/base'
+import { computed } from 'vue'
+import { HilosFormError, HilosSkeleton, useSignal } from '@hilos/vue/base'
+
+import { currentUserId } from '../../bootstrap/session.js'
+
+const selfId = useSignal(currentUserId)
+
+// The live composer branches on whether the session names a user
+// (Main.vue, `selfId.value !== null`): Send when it does, Sign in to send
+// when it does not. The stub repeats those words so the row matches.
+const isAuthenticated = computed(() => selfId.value !== null)
 </script>
 
 <template>
@@ -37,10 +50,26 @@ import { HilosSkeleton } from '@hilos/vue/base'
       </div>
     </div>
 
-    <div class="mt-3 flex-shrink-0 d-flex gap-2 placeholder-glow">
-      <span class="btn btn-outline-secondary disabled placeholder col-1"></span>
-      <span class="placeholder flex-grow-1 rounded"></span>
-      <span class="btn btn-primary disabled placeholder col-1"></span>
+    <div class="mt-3 flex-shrink-0">
+      <HilosFormError :message="null" data-id="main-skeleton-message-error" />
+      <div
+        class="d-flex gap-2 placeholder-glow"
+        data-id="main-skeleton-composer"
+      >
+        <span
+          class="btn btn-outline-secondary disabled placeholder flex-shrink-0"
+        >
+          <span class="invisible">
+            <i class="bi bi-paperclip" aria-hidden="true"></i>
+          </span>
+        </span>
+        <span class="placeholder flex-grow-1 rounded"></span>
+        <span class="btn btn-primary disabled placeholder flex-shrink-0">
+          <span class="invisible">{{
+            isAuthenticated ? 'Send' : 'Sign in to send'
+          }}</span>
+        </span>
+      </div>
     </div>
   </div>
 </template>

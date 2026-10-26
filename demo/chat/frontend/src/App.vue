@@ -36,6 +36,7 @@ import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
 import { currentUserName, currentUserPhoto } from './bootstrap/session'
 import { PAGE_ADMIN_BOTS, PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
+import { router } from './pages/routes.js'
 import About from './views/About/About.vue'
 import Bot from './views/Bot/Bot.vue'
 import License from './views/License/License.vue'
@@ -298,13 +299,13 @@ const pageSkeletons: Record<string, Component> = {
 // through, and the relay navigates home once the session upgrades. The paths come
 // from @hilos/core (HIL-409): a mail client and a provider enter them, so both
 // halves have to agree on the strings.
-const router = inject(hilosRouterKey)
-if (!router) {
+const injectedRouter = inject(hilosRouterKey)
+if (!injectedRouter) {
   throw new Error(
     'App requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
-const currentPath = useSignal(router.currentPath)
+const currentPath = useSignal(injectedRouter.currentPath)
 const isMagicRoute = computed(() => currentPath.value === AUTH_MAGIC_LINK_PATH)
 const isOAuthCallbackRoute = computed(
   () => currentPath.value === AUTH_OAUTH_CALLBACK_PATH,
@@ -330,6 +331,15 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
       <i class="bi bi-chat-dots" aria-hidden="true"></i>
       <span class="d-none d-md-inline ms-1">Hilos Chat</span>
       <span class="visually-hidden d-md-none">Hilos Chat</span>
+    </template>
+    <template #nav>
+      <HilosLink
+        :to="router.path(PAGE_MAIN) ?? ''"
+        class="nav-link"
+        data-id="nav-conversations"
+      >
+        Conversations
+      </HilosLink>
     </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />

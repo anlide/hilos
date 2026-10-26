@@ -1,5 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
+import { openBotEdit, watchBotSearch } from '../helpers/bots'
 import {
   clickSubmit,
   logout,
@@ -9,7 +11,8 @@ import {
   typeInto,
   uniqueEmail,
 } from '../helpers/session'
-import { gotoPage } from '../helpers/page'
+import { expectPageReady, gotoPage } from '../helpers/page'
+import { tableRowKeyByText } from '../helpers/table'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 
@@ -207,4 +210,158 @@ test('gates sending behind the surface, and returns the identity line to anonymo
     'Browsing anonymously',
   )
   await expect(page.getByTestId('self-user')).toHaveCount(0)
+})
+
+/**
+ * A seeded bot that stays quiet while active: it speaks only on a topic of its
+ * own (food), and no test of this demo dictates that topic to the analyzer.
+ */
+const QUIET_BOT = 'Quinn'
+
+/**
+ * Switch a seeded bot on or off in the bots admin table.
+ *
+ * @param page An administrator's page.
+ * @param name The seeded bot's name.
+ * @param active Whether the bot is to be active.
+ * @param windows The observer installed before the first document.
+ */
+async function setBotActive(
+  page: Page,
+  name: string,
+  active: boolean,
+  windows: Awaited<ReturnType<typeof watchBotSearch>>,
+): Promise<void> {
+  await openBotEdit(page, name, windows)
+  await page.getByTestId('admin-bots-active').setChecked(active)
+  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+}
+
+/**
+ * Count full document loads from this moment.
+ *
+ * The window's cold load has already happened. A click that stays inside the
+ * live document leaves the count where it is.
+ *
+ * @param page The window whose later loads to count.
+ * @returns A reader of the loads since this call.
+ */
+function countLaterLoads(page: Page): () => number {
+  let loads = 0
+  page.on('load', () => {
+    loads += 1
+  })
+
+  return () => loads
+}
+
+/**
+ * The page settled, the socket stayed up, and the document did not reload.
+ *
+ * @param page The window that just followed a link.
+ * @param loads Document loads since that window's cold load.
+ * @param baseline The load count before the click.
+ */
+async function expectSameDocument(
+  page: Page,
+  loads: () => number,
+  baseline: number,
+): Promise<void> {
+  await expectPageReady(page)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  expect(loads()).toBe(baseline)
+}
+
+/**
+ * Open the person's page and Quinn's page from the home roster, then return
+ * through Conversations. Every step is a click in the document already open.
+ *
+ * @param page A window already on `/`, with its load count running.
+ * @param userId The person's durable id.
+ * @param name The name the person page must show.
+ * @param rowKey Quinn's row key, read from the bots table.
+ * @param loads Document loads since the cold load of this window.
+ */
+async function followHomeLinks(
+  page: Page,
+  userId: number,
+  name: string,
+  rowKey: string,
+  loads: () => number,
+): Promise<void> {
+  const baseline = loads()
+
+  await page.getByTestId(`participant-link-${userId}`).click()
+  await expectSameDocument(page, loads, baseline)
+  expect(new URL(page.url()).pathname).toBe(`/user/${userId}`)
+  await expect(page.getByTestId('user-name')).toHaveText(name)
+
+  await page.getByTestId('nav-conversations').click()
+  await expectSameDocument(page, loads, baseline)
+  expect(new URL(page.url()).pathname).toBe('/')
+
+  await page.getByTestId(`bot-link-${rowKey}`).click()
+  await expectSameDocument(page, loads, baseline)
+  // The address shows the click opened Quinn's page; the heading
+  // shows the name.
+  expect(new URL(page.url()).pathname).toBe(`/bot/${rowKey}`)
+  await expect(page.getByTestId('bot-name')).toHaveText(QUIET_BOT)
+
+  await page.getByTestId('nav-conversations').click()
+  await expectSameDocument(page, loads, baseline)
+  expect(new URL(page.url()).pathname).toBe('/')
+}
+
+// The roster rows are real links. An administrator and a separate guest open
+// the person's page and the quiet seeded bot from those links and come back
+// through Conversations. The main list shows only active bots, so Quinn is
+// switched on for the walk and off again afterwards. The load count starts
+// after each window's first home navigation; later clicks must not reload it.
+test.describe('home links', () => {
+  test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+
+  test('opens a person and a bot from the home links without a reload', async ({
+    browser,
+    page,
+  }) => {
+    // Two bot edits, a second window, and both walks outlive the
+    // single-client cap.
+    test.slow()
+
+    const windows = await watchBotSearch(page)
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const guestContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
+    let quinnActive = false
+
+    try {
+      const userId = await signUpAdmin(page)
+      const name = (await page.getByTestId('self-user').innerText()).trim()
+      await setBotActive(page, QUIET_BOT, true, windows)
+      quinnActive = true
+      const rowKey = await tableRowKeyByText(page, QUIET_BOT)
+
+      const guestPage = await guestContext.newPage()
+      await gotoPage(page, '/')
+      await expectPageReady(page)
+      const adminLoads = countLaterLoads(page)
+      await gotoPage(guestPage, '/')
+      await expectPageReady(guestPage)
+      const guestLoads = countLaterLoads(guestPage)
+
+      await followHomeLinks(page, userId, name, rowKey, adminLoads)
+      await followHomeLinks(guestPage, userId, name, rowKey, guestLoads)
+    } finally {
+      try {
+        await guestContext.close()
+      } finally {
+        if (quinnActive) {
+          await setBotActive(page, QUIET_BOT, false, windows)
+        }
+      }
+    }
+  })
 })
