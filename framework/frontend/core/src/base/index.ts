@@ -588,6 +588,7 @@ export {
 } from '../profile/profileSessions.js'
 export {
   createHilosProfileDeviceActions,
+  hilosProfileDeviceKind,
   profilePushChannel,
   PROFILE_DEVICE_CREATED_AT_FIELD,
   PROFILE_DEVICE_ENDPOINT_HASH_FIELD,
@@ -599,6 +600,7 @@ export {
   type HilosProfileDevice,
   type HilosProfileDeviceActionContext,
   type HilosProfileDeviceActions,
+  type HilosProfileDeviceKind,
   type HilosProfilePushChannel,
 } from '../profile/profileDevices.js'
 export {

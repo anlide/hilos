@@ -368,6 +368,7 @@ const expectedValues = [
   ...maintenanceRestoreActionValues,
   ...maintenanceRestoreCopyValues,
   'PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD',
+  'hilosProfileDeviceKind',
 ].sort()
 
 /**
@@ -569,6 +570,7 @@ describe('core public entries', () => {
     expect(base.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD).toBe(
       core.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
     )
+    expect(base.hilosProfileDeviceKind).toBe(core.hilosProfileDeviceKind)
     expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
     expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
     expect(base.createHilosTimeZonePicker).toBe(
@@ -717,6 +719,7 @@ describe('core public entries', () => {
       [
         ...legacy.type,
         'HilosDaemonNodeOverviewData',
+        'HilosProfileDeviceKind',
         ...i18nOverviewTypes,
         ...pageHeadTypes,
         ...publicLegalTypes,
@@ -745,6 +748,8 @@ describe('core public entries', () => {
       ...tableFocusReturnValues,
       ...connectionInteractionTypes,
       ...connectionInteractionValues,
+      'HilosProfileDeviceKind',
+      'hilosProfileDeviceKind',
     ]) {
       expect(root.get(name), name).toBeDefined()
       expect(baseExports.get(name), name).toBe(root.get(name))

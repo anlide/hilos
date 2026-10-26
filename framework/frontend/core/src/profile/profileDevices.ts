@@ -31,6 +31,41 @@ export interface HilosProfileDevice {
   readonly current: boolean
 }
 
+/** Approximate device kind for visual presentation based on the platform label. */
+export type HilosProfileDeviceKind = 'phone' | 'tablet' | 'laptop' | 'display'
+
+/**
+ * Approximate device kind for visual presentation based on the stored platform label.
+ *
+ * This is a presentational hint derived from the server's platform label, not an
+ * authoritative hardware classification. It contains no visual or CSS styling.
+ *
+ * @param deviceName Stored browser/platform label, or null.
+ */
+export function hilosProfileDeviceKind(
+  deviceName: string | null,
+): HilosProfileDeviceKind {
+  if (deviceName === null) {
+    return 'display'
+  }
+
+  const normalized = deviceName.trim().toLowerCase()
+  if (normalized.endsWith(' on iphone') || normalized.endsWith(' on android')) {
+    return 'phone'
+  }
+  if (normalized.endsWith(' on ipad')) {
+    return 'tablet'
+  }
+  if (normalized.endsWith(' on macos') || normalized.endsWith(' on chromeos')) {
+    return 'laptop'
+  }
+  if (normalized.endsWith(' on windows') || normalized.endsWith(' on linux')) {
+    return 'display'
+  }
+
+  return 'display'
+}
+
 /** The globally enabled push channel a local device toggle needs. */
 export interface HilosProfilePushChannel {
   readonly channel: string

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import {
   formatProfileDateTime,
+  hilosProfileDeviceKind,
   hilosPushSubscription,
   hilosTimeZone,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
+  type HilosProfileDeviceKind,
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
@@ -15,6 +17,13 @@ import HilosPushDeviceToggle from '../HilosPushDeviceToggle.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
+
+const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
+  phone: 'bi bi-phone',
+  tablet: 'bi bi-tablet',
+  laptop: 'bi bi-laptop',
+  display: 'bi bi-display',
+}
 
 const props = withDefaults(
   defineProps<{
@@ -72,72 +81,76 @@ async function removeDevice(subscriptionId: number): Promise<void> {
       this is not the same list as sessions.
     </p>
 
-    <div class="d-flex flex-column gap-3">
-      <article
-        v-for="device in devices"
-        :key="device.id"
-        class="card"
-        data-id="profile-device-row"
-      >
-        <div
-          class="card-body d-flex flex-wrap align-items-start justify-content-between gap-2"
-        >
-          <div>
-            <h3 class="h6 mb-1">{{ device.deviceName ?? 'Unknown device' }}</h3>
-            <span
-              v-if="device.current"
-              class="badge text-bg-primary me-1"
-              data-id="profile-device-this"
-              >this one</span
-            >
-            <span
-              v-if="device.expired"
-              class="badge text-bg-secondary"
-              data-id="profile-device-expired"
-              >Subscription expired</span
-            >
-            <div v-else class="small text-body-secondary">
-              Subscribed · added {{ dateTime(device.createdAt) }}
-            </div>
-          </div>
-          <HilosPushDeviceToggle
-            v-if="device.current && pushChannel !== null"
-            :connection="connection"
-            :channel="pushChannel.channel"
-            :label="pushChannel.label"
-            :vapid-public-key="pushChannel.vapidPublicKey"
-            :store="pushStore"
-          />
-          <LoadingButton
-            v-else
-            class="btn-outline-danger btn-sm"
-            :loading="removeBusy"
-            :disabled="!refreshed"
-            data-id="profile-device-remove"
-            @click="removeDevice(device.id)"
+    <article
+      v-for="device in devices"
+      :key="device.id"
+      class="d-flex align-items-center gap-3 py-3 border-bottom"
+      data-id="profile-device-row"
+    >
+      <i
+        :class="[
+          DEVICE_KIND_ICONS[hilosProfileDeviceKind(device.deviceName)],
+          'fs-5 text-body-secondary flex-shrink-0',
+        ]"
+        aria-hidden="true"
+      />
+      <div class="flex-grow-1 min-w-0 text-break">
+        <h3 class="fw-semibold small mb-0">
+          {{ device.deviceName ?? 'Unknown device'
+          }}<span
+            v-if="device.current"
+            class="badge text-bg-success ms-1"
+            data-id="profile-device-this"
+            >this one</span
           >
-            Remove
-          </LoadingButton>
+        </h3>
+        <div
+          v-if="device.expired"
+          class="small text-body-secondary"
+          data-id="profile-device-expired"
+        >
+          Subscription expired
         </div>
-      </article>
-
-      <article
-        v-if="showUnsubscribedCurrent"
-        class="card"
-        data-id="profile-device-none-this"
+        <div v-else class="small text-body-secondary">
+          Subscribed · added {{ dateTime(device.createdAt) }}
+        </div>
+      </div>
+      <HilosPushDeviceToggle
+        v-if="device.current && pushChannel !== null"
+        :connection="connection"
+        :channel="pushChannel.channel"
+        :label="pushChannel.label"
+        :vapid-public-key="pushChannel.vapidPublicKey"
+        :store="pushStore"
+      />
+      <LoadingButton
+        v-else
+        class="btn-outline-secondary btn-sm"
+        :loading="removeBusy"
+        :disabled="!refreshed"
+        data-id="profile-device-remove"
+        @click="removeDevice(device.id)"
       >
-        <div class="card-body">
-          <h3 class="h6">This browser · Not subscribed</h3>
-          <HilosPushDeviceToggle
-            v-if="pushChannel !== null"
-            :connection="connection"
-            :channel="pushChannel.channel"
-            :label="pushChannel.label"
-            :vapid-public-key="pushChannel.vapidPublicKey"
-            :store="pushStore"
-          />
-        </div>
-      </article>
-    </div>
+        Remove
+      </LoadingButton>
+    </article>
+
+    <article
+      v-if="showUnsubscribedCurrent"
+      class="card"
+      data-id="profile-device-none-this"
+    >
+      <div class="card-body">
+        <h3 class="h6">This browser · Not subscribed</h3>
+        <HilosPushDeviceToggle
+          v-if="pushChannel !== null"
+          :connection="connection"
+          :channel="pushChannel.channel"
+          :label="pushChannel.label"
+          :vapid-public-key="pushChannel.vapidPublicKey"
+          :store="pushStore"
+        />
+      </div>
+    </article>
   </section>
 </template>
