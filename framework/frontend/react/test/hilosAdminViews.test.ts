@@ -19,6 +19,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.SETTINGS,
     HilosPages.BACKUP,
     HilosPages.COMMUNICATIONS,
+    HilosPages.ANALYTICS,
     HilosPages.ANALYTICS_PERSON,
   ]) {
     expect(views).not.toHaveProperty(key)
@@ -42,6 +43,6 @@ it('loads every default as a real React component', async () => {
     hilosAdminViews(),
   ) as LazyPageView<ComponentType>[]
   const loaded = await Promise.all(views.map((view) => view.load()))
-  expect(loaded).toHaveLength(32)
+  expect(loaded).toHaveLength(31)
   for (const component of loaded) expect(component).toBeTypeOf('function')
 })

@@ -147,10 +147,12 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.USER]: lazyPage(() =>
     import('./views/Hilos/Users/User.js').then((m) => m.default),
   ),
-  // The framework Analytics pages of one browser session and of one person: the
-  // framework owns the header, the tables and every word; the project binds its
-  // connection and page scope (views/Hilos/Analytics). The overview comes from
-  // hilosAdminViews.
+  // The framework Analytics pages: the framework owns the header, the tables and
+  // every word; the project binds its connection and page scope
+  // (views/Hilos/Analytics).
+  [HilosPages.ANALYTICS]: lazyPage(() =>
+    import('./views/Hilos/Analytics/Analytics.js').then((m) => m.default),
+  ),
   [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
     import('./views/Hilos/Analytics/BrowserSession.js').then((m) => m.default),
   ),

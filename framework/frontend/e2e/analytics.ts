@@ -630,7 +630,17 @@ export async function expectAnalyticsOverview(
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Analytics',
     )
-    await expectAnalyticsSectionHead(expect, page, 'overview')
+    const tabs = page.getByTestId('hilos-page-tabs')
+    if ((await tabs.count()) > 0) {
+      await expectAnalyticsSectionHead(expect, page, 'overview')
+    } else {
+      await expect(tabs).toHaveCount(0)
+      const crumbs = page.getByTestId('hilos-breadcrumb')
+      await expect(crumbs.getByRole('link')).toHaveText(['Hilos'])
+      await expect(crumbs.locator('[aria-current="page"]')).toContainText(
+        'Analytics',
+      )
+    }
     for (const testId of [
       'hilos-admin-title',
       'hilos-admin-children',

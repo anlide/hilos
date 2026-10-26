@@ -9,6 +9,7 @@ import {
   signUp,
 } from '../helpers/session'
 import {
+  expectAnalyticsOverview,
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -332,6 +333,61 @@ test('Node pages expose one entity heading, link tabs and tables named through t
       await expectDaemonNodeTableName(expect, page)
     await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
     await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+  }
+})
+
+test('Analytics overview exposes one heading, breadcrumb landmark and semantic visitor tiles', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/analytics')
+  await expectPageReady(page)
+  await expectAnalyticsOverview(expect, page, 'tiles')
+
+  const head = page.getByTestId('hilos-page-head')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
+  await expect(page.locator('h1')).toHaveCount(1)
+
+  const breadcrumb = head.getByTestId('hilos-breadcrumb')
+  await expect(breadcrumb).toHaveRole('navigation')
+  await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
+  await expect(breadcrumb.getByRole('link')).toHaveText(['Hilos'])
+  const currentCrumb = breadcrumb.locator('li').last()
+  await expect(currentCrumb).toContainText('Analytics')
+  await expect(currentCrumb).toHaveAttribute('aria-current', 'page')
+  await expect(currentCrumb.getByRole('link')).toHaveCount(0)
+
+  const tiles = page.getByTestId('hilos-analytics-overview-tiles')
+  await expect(tiles.locator('dl')).toHaveCount(3)
+  for (const period of ['week', 'day', 'hour'] as const) {
+    const dl = tiles.getByTestId(`hilos-analytics-visitors-${period}`)
+    await expect(dl).toBeVisible()
+    await expect(dl.locator('dt')).toHaveCount(1)
+    await expect(dl.locator('dd')).toHaveCount(2)
+    await expect(dl.locator('dt')).toBeVisible()
+    await expect(
+      dl.getByTestId(`hilos-analytics-visitors-${period}-count`),
+    ).toBeVisible()
+    await expect(
+      dl.getByTestId(`hilos-analytics-visitors-${period}-since`),
+    ).toBeVisible()
+  }
+
+  const icon = head
+    .locator('span[aria-hidden="true"]')
+    .filter({ has: page.locator('i') })
+  await expect(icon).toBeVisible()
+  await expect(icon).toHaveAttribute('aria-hidden', 'true')
+  await expect(
+    page.getByTestId('hilos-analytics-overview-skeleton'),
+  ).toHaveCount(0)
+
+  await expect(tiles.getByRole('link')).toHaveCount(0)
+  await expect(tiles.getByRole('button')).toHaveCount(0)
+  for (const period of ['week', 'day', 'hour'] as const) {
+    const count = tiles.getByTestId(`hilos-analytics-visitors-${period}-count`)
+    await expect(count.getByRole('link')).toHaveCount(0)
+    await expect(count.getByRole('button')).toHaveCount(0)
   }
 })
 

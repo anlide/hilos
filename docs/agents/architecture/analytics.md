@@ -409,9 +409,9 @@ layer that has built the section, which all three layers have.
   session counts for those periods. The core projection holds the first complete
   valid answer for the current page scope; a later answer or reconnect does not
   replace it, though reconnect may cause the backend subscription to run again.
-  Vue renders three aggregate tiles from that captured snapshot, under the
-  shared section head. React and Angular retain the legacy empty-state body;
-  their tiles rendering remains in HIL-1735/1736.
+  Vue and React render three aggregate tiles from that captured snapshot, under the
+  shared section head. Angular retains the legacy empty-state body; its tiles
+  rendering remains in HIL-1736.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
   `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is

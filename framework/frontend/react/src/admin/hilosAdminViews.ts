@@ -15,8 +15,9 @@
 // HilosLogsKeysPage / HilosLogsWorkersPage / HilosLogsRotationsPage /
 // HilosLogsViewPage / HilosLogsSettingsPage) that require a project-supplied context,
 // so a project mounts them directly rather than through this default map.
-// HilosAnalyticsBrowserSessionPage and HilosAnalyticsPersonPage likewise need the
-// project's Analytics context and are mounted explicitly under
+// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage and
+// HilosAnalyticsPersonPage need the project's Analytics context and are
+// mounted explicitly under HilosPages.ANALYTICS,
 // HilosPages.ANALYTICS_BROWSER_SESSION and HilosPages.ANALYTICS_PERSON. The
 // dashboard is the real HilosDashboardPage (self-contained, no project context),
 // reused here as its own default.
@@ -165,9 +166,6 @@ export function hilosAdminViews(): Record<string, PageView<ComponentType>> {
     // CHANGE_LOG, CHANGE_LOG_TABLES and CHANGE_LOG_TABLE read a live connection
     // and page scope, so a project mounts HilosChangeLogPage,
     // HilosChangeLogTablesPage and HilosChangeLogTablePage directly.
-    [HilosPages.ANALYTICS]: lazyPage(() =>
-      import('@hilos/react/admin/analytics').then((m) => m.HilosAnalyticsPage),
-    ),
     [HilosPages.MCP_SKILLS]: lazyPage(() =>
       import('@hilos/react/admin/mcp-skills').then((m) => m.HilosMcpSkillsPage),
     ),

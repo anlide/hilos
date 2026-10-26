@@ -801,8 +801,8 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 no-value sign reads as a null page name, as the frames carry it) and the cell
 locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` and
 `expectAnalyticsOverview` check the way in, with an explicit `tiles` body for
-Vue and the default legacy `empty` body for React/Angular. Chat arms
-`watchSocketFrames` before registration and bookmarks its log before opening
+Vue/React (chat/tasks) and the default legacy `empty` body for Angular/polls. Chat
+arms `watchSocketFrames` before registration and bookmarks its log before opening
 Analytics from the dashboard. `readAnalyticsOverviewSnapshot` reads one complete
 overview reply from that opening's frames; `expectAnalyticsOverviewTiles` matches
 its exact counts and captured period/zone labels independently of the production
