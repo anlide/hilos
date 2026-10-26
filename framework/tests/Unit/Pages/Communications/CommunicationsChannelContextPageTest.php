@@ -33,6 +33,7 @@ use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelConfigurationPage;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelPage;
+use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelFramePage;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -206,6 +207,7 @@ final class CommunicationsChannelContextPageTest extends TestCase
             ChannelContextTestChannelPage::class,
             ChannelContextTestConfigurationPage::class,
             ChannelContextTestDeliveriesPage::class,
+            ChannelContextTestFramePage::class,
         ] as $page) {
             self::assertSame(PageAccessLevel::ADMIN, $page::ACCESS_LEVEL);
             self::assertSame(PageReach::ROUTE, $page::REACH);
@@ -223,6 +225,7 @@ final class CommunicationsChannelContextPageTest extends TestCase
     {
         yield 'legacy channel fields' => [ChannelContextTestChannelPage::class, HilosCommunicationsChannelFieldsTable::TABLE];
         yield 'configuration awaiting mount' => [ChannelContextTestConfigurationPage::class, null];
+        yield 'letter frame' => [ChannelContextTestFramePage::class, null];
         yield 'delivery journal' => [ChannelContextTestDeliveriesPage::class, HilosNotificationDeliveriesTable::TABLE];
     }
 
@@ -278,6 +281,7 @@ abstract class ChannelContextTestHilos extends Hilos
         ChannelContextTestChannelPage::PAGE => ChannelContextTestChannelPage::class,
         ChannelContextTestConfigurationPage::PAGE => ChannelContextTestConfigurationPage::class,
         ChannelContextTestDeliveriesPage::PAGE => ChannelContextTestDeliveriesPage::class,
+        ChannelContextTestFramePage::PAGE => ChannelContextTestFramePage::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -339,4 +343,9 @@ final class ChannelContextTestSettings extends SettingsAccessor
     {
         return $this->shown && $key === DeliveryChannelSettings::enabledKey('email');
     }
+}
+
+final class ChannelContextTestFramePage extends AbstractHilosCommunicationsChannelFramePage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = 'channel-test-agent';
 }

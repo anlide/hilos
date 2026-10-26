@@ -9,6 +9,12 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Pages\Legal\AbstractHilosLegalAcceptancesPage;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\View\Collection\AccountDeletions;
+use Hilos\Database\View\Collection\LegalAcceptances;
+use Hilos\Database\View\Collection\UserMerges;
+use Hilos\Database\View\Collection\Users;
+use Hilos\Database\View\Item\LegalAcceptance;
+use Hilos\Database\View\Item\User;
 use Hilos\Hilos;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
@@ -16,9 +22,11 @@ use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\LegalStandingResolver;
 use Hilos\Pages\Legal\LegalAdminAudience;
+use Hilos\Users\AccountStandingResolver;
+use Generator;
 use PHPUnit\Framework\TestCase;
 
-/** Isolates the audience and supplies already-aggregated DB boundary values. */
+/** Isolates the audience and account standing, with separate aggregate and per-person reads. */
 abstract class LegalAdminTestCase extends TestCase
 {
     protected LegalAdminReadProbe $reads;
@@ -35,9 +43,31 @@ abstract class LegalAdminTestCase extends TestCase
         $this->previousRouter = Hilos::$sr;
         $this->previousBrowser = Hilos::$browser;
         $this->previousFacade = Hilos::appClass();
+        AccountStandingResolver::forgetAll();
         LegalAdminTestHilos::initBrowser();
         $this->reads = new LegalAdminReadProbe();
-        Hilos::$db = new LegalAdminTestDb($this->reads);
+        $legalAcceptances = $this->createStub(LegalAcceptances::class);
+        $legalAcceptances->method('documentsOnRecord')->willReturnCallback($this->reads->documentsOnRecord(...));
+        $legalAcceptances->method('heldCounts')->willReturnCallback($this->reads->heldCounts(...));
+        $legalAcceptances->method('acceptedCounts')->willReturnCallback($this->reads->acceptedCounts(...));
+        $legalAcceptances->method('revisionsOnRecord')->willReturnCallback($this->reads->revisionsOnRecord(...));
+        $acceptance = $this->createStub(LegalAcceptance::class);
+        $acceptance->method('__get')->willReturnMap([['document', 'terms'], ['revisionId', 'current']]);
+        $legalAcceptances->method('ofUser')->willReturnSelf();
+        $legalAcceptances->method('getIterator')->willReturnCallback(static function () use ($acceptance): Generator {
+            yield $acceptance;
+        });
+        $user = $this->createStub(User::class);
+        $user->method('getIdString')->willReturn('1');
+        $user->method('__get')->willReturnMap([['block', false]]);
+        $deletions = $this->createStub(AccountDeletions::class);
+        $deletions->method('liveOf')->willReturn(null);
+        Hilos::$db = new LegalAdminTestDb(
+            $legalAcceptances,
+            UserMerges::initEmpty(),
+            $deletions,
+            Users::fromSingleItem($user),
+        );
         Hilos::$sr = new SignalRouter();
         Hilos::$browser = $this->createMock(BrowserContext::class);
         Hilos::$browser->method('resolveActionUserId')->willReturn(1);
@@ -49,6 +79,7 @@ abstract class LegalAdminTestCase extends TestCase
     protected function tearDown(): void
     {
         LegalAdminAudience::reset();
+        AccountStandingResolver::forgetAll();
         $this->previousFacade::initBrowser();
         Hilos::$db = $this->previousDb;
         Hilos::$sr = $this->previousRouter;
@@ -134,16 +165,25 @@ final class LegalAdminReadProbe
     }
 }
 
-/** Replaces only the aggregate boundary without opening a DB connection. */
+/** Typed account sources and the aggregate boundary, without a DB connection. */
 final class LegalAdminTestDb extends HilosDbContext
 {
-    /** @param LegalAdminReadProbe $legalAcceptances Counted histogram reader */
-    public function __construct(public LegalAdminReadProbe $legalAcceptances)
-    {
+    /**
+     * @param LegalAcceptances $legalAcceptances Counted aggregates and the viewer's acceptances
+     * @param UserMerges $userMerges Empty merge history
+     * @param AccountDeletions $accountDeletions No pending deletion
+     * @param Users $users Unblocked viewer
+     */
+    public function __construct(
+        public LegalAcceptances $legalAcceptances,
+        public UserMerges $userMerges,
+        public AccountDeletions $accountDeletions,
+        public Users $users,
+    ) {
         parent::__construct();
     }
 
-    /** No collections need mounting for the aggregate boundary. */
+    /** Sources are supplied directly by the fixture. */
     public function configure(): void
     {
     }

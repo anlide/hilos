@@ -543,6 +543,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos communications deliveries page. */
     public const string SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_DELIVERIES = 'subscription_page_hilos_communications_deliveries';
 
+    /** Subscription signal for the email letter frame. */
+    public const string SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_FRAME = 'subscription_page_hilos_communications_channel_frame';
+
     /** Subscription signal for Hilos security hub. */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY = 'subscription_page_hilos_security';
 

@@ -502,3 +502,18 @@ export {
   resetCommunicationsField,
   saveCommunicationsField,
 } from './communications.js'
+export {
+  COMMUNICATIONS_FRAME_PATH,
+  communicationsFrameHtml,
+  draftCommunicationsFrame,
+  expectCommunicationsFrameConflict,
+  expectCommunicationsFrameDiscard,
+  expectCommunicationsFrameInitial,
+  expectCommunicationsFrameLive,
+  expectCommunicationsFramePreview,
+  resetCommunicationsFrame,
+  restoreCommunicationsFrame,
+  saveCommunicationsFrame,
+  submitCommunicationsFrame,
+  expectCommunicationsFrameEditor,
+} from './communicationsFrame.js'

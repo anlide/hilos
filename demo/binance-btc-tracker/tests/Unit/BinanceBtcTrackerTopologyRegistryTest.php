@@ -65,6 +65,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
@@ -231,6 +232,19 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
+    public function testLetterFrameUsesTheExistingIndexOwnerWithoutTablesOrMutations(): void
+    {
+        self::assertSame(CommunicationsChannelFramePage::class, Hilos::PAGES[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame(CommunicationsChannelConfigurationPage::SUBSCRIPTION_AGENT_TYPE,
+            Hilos::getPageRoutes()[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_FRAME,
+        ], CommunicationsChannelFramePage::BROWSER);
+        self::assertSame([], CommunicationsChannelFramePage::ACTIONS);
+        self::assertSame([], CommunicationsChannelFramePage::SIGNALS);
+        self::assertArrayNotHasKey(CommunicationsChannelFramePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
     /** The shared Status owner is a permanent singleton placed on a regular worker. */
     public function testStatusOwnerUsesTheFrameworkPairAndFactories(): void
     {
@@ -410,6 +424,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             CommunicationsPage::PAGE => CommunicationsPage::class,
             CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
             CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+            CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             AboutPage::PAGE => AboutPage::class,
@@ -798,6 +813,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
             CommunicationsChannelConfigurationPage::class,
+            CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::class,
             AboutPage::class,
             TermsPage::class,

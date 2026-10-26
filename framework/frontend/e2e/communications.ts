@@ -12,12 +12,13 @@ import { shownByTestId } from './table.js'
 const CHANNEL = 'hilos_communications_channel'
 const CONFIGURATION = 'hilos_communications_channel_configuration'
 const DELIVERIES = 'hilos_communications_deliveries'
+const FRAME = 'hilos_communications_channel_frame'
 
-/** The same channel identity and navigation on all three SDK tabs. */
+/** The same channel identity and navigation on every channel page. */
 export async function expectCommunicationsChannelHead(
   expect: Expect,
   page: Page,
-  tab: 'overview' | 'configuration' | 'deliveries',
+  tab: 'overview' | 'configuration' | 'deliveries' | 'frame',
   channel = 'email',
   label = 'Email',
 ): Promise<void> {
@@ -26,7 +27,9 @@ export async function expectCommunicationsChannelHead(
       ? CHANNEL
       : tab === 'configuration'
         ? CONFIGURATION
-        : DELIVERIES
+        : tab === 'deliveries'
+          ? DELIVERIES
+          : FRAME
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
     'ready',
@@ -67,7 +70,9 @@ export async function expectCommunicationsChannelHead(
     `Channel ${channel} · driver`,
   )
   await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(1)
-  await expect(page.getByTestId(/^hilos-page-tab-/)).toHaveCount(3)
+  await expect(page.getByTestId(/^hilos-page-tab-/)).toHaveCount(
+    channel === 'email' ? 4 : 3,
+  )
   await expect(
     page.getByTestId('hilos-page-tabs').locator('[aria-current="page"]'),
   ).toHaveCount(1)
@@ -85,6 +90,14 @@ export async function expectCommunicationsChannelHead(
   await expect(
     page.getByTestId(`hilos-page-tab-${DELIVERIES}`),
   ).toHaveAttribute('href', `/hilos/communications/${channel}/deliveries`)
+  if (channel === 'email') {
+    await expect(page.getByTestId(`hilos-page-tab-${FRAME}`)).toHaveAttribute(
+      'href',
+      '/hilos/communications/email/frame',
+    )
+  } else {
+    await expect(page.getByTestId(`hilos-page-tab-${FRAME}`)).toHaveCount(0)
+  }
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
 }
 
@@ -92,7 +105,7 @@ export async function expectCommunicationsChannelHead(
 export async function expectCommunicationsAccessibility(
   expect: Expect,
   page: Page,
-  tab: 'overview' | 'configuration' | 'deliveries',
+  tab: 'overview' | 'configuration' | 'deliveries' | 'frame',
   enabledName: 'Enabled' | 'Enable Email',
 ): Promise<void> {
   await expectCommunicationsChannelHead(expect, page, tab)
@@ -106,6 +119,7 @@ export async function expectCommunicationsAccessibility(
     [CHANNEL, 'Overview'],
     [CONFIGURATION, 'Configuration'],
     [DELIVERIES, 'Deliveries'],
+    [FRAME, 'Letter frame'],
   ]) {
     const link = page.getByTestId(`hilos-page-tab-${key}`)
     await expect(link).toHaveRole('link')

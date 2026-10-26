@@ -61,6 +61,7 @@ use Demo\Polls\Notification\PollsDeliveryChannelRegistry;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
@@ -315,6 +316,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
         CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+        CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,

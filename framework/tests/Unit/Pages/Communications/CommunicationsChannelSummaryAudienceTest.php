@@ -32,6 +32,9 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\SettingValue;
 use Hilos\Database\View\Collection\Settings;
+use Hilos\Database\View\Collection\AccountDeletions;
+use Hilos\Database\View\Collection\UserMerges;
+use Hilos\Database\View\Collection\Users;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -41,12 +44,15 @@ use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelConfigurationPage;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelPage;
+use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelFramePage;
+use Hilos\Mail\Frame\MailLetterFrameSettings;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
 use Hilos\Pages\Communications\CommunicationsChannelSummaryAudience;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\Users\AccountStandingResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -66,6 +72,8 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
 
     /** @var array<string, string> Persisted overrides, read by the real config resolver */
     private array $values = [];
+    private bool $frameVisible = false;
+    private int $frameReads = 0;
 
     /** @var array<string, int> Summary reads counted at the descriptor's fields seam */
     private array $reads = ['email' => 0, 'sms' => 0];
@@ -73,6 +81,7 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
     /** @var array<string, Closure> Optional side effect or failure while a summary is being read */
     private array $onRead = [];
 
+    /** Installs channel sources with no account verdict retained from another database fixture. */
     protected function setUp(): void
     {
         parent::setUp();
@@ -82,6 +91,7 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
         $this->previousBrowser = Hilos::$browser;
         $this->previousRouter = Hilos::$sr;
         $this->previousAppClass = Hilos::appClass();
+        AccountStandingResolver::forgetAll();
         Hilos::$env = null;
         Hilos::$sr = new SignalRouter();
         $this->browser = new SummaryAudienceTestBrowser(1, true);
@@ -106,29 +116,45 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
         $settings = $this->createStub(Settings::class);
         $settings->method('offsetExists')->willReturnCallback(fn (string $key): bool => isset($this->values[$key]));
         $settings->method('offsetGet')->willReturnCallback(function (string $key): Setting {
+            if ($key === MailLetterFrameSettings::SETTING_KEY) {
+                $this->frameReads++;
+            }
             $row = $this->createStub(Setting::class);
             $row->method('__get')->willReturn($this->values[$key]);
             return $row;
         });
+        $deletions = $this->createStub(AccountDeletions::class);
+        $merges = $this->createStub(UserMerges::class);
+        $users = $this->createStub(Users::class);
         Hilos::$db = $this->createStub(HilosDbContext::class);
-        Hilos::$db->method('__get')->willReturn($settings);
+        Hilos::$db->method('__get')->willReturnCallback(static fn (string $key): mixed => match ($key) {
+            HilosDbContext::settings => $settings,
+            HilosDbContext::accountDeletions => $deletions,
+            HilosDbContext::userMerges => $merges,
+            HilosDbContext::users => $users,
+            default => null,
+        });
         Hilos::$setting = $this->createStub(SettingsAccessor::class);
+        Hilos::$setting->method('offsetExists')->willReturnCallback(static fn (string $key): bool =>
+            str_starts_with($key, DeliveryChannelSettings::PREFIX));
         Hilos::$setting->method('offsetGet')->willReturnCallback(static fn (string $key): SettingValue => new SettingValue($key));
         Hilos::$setting->method('typeFor')->willReturnCallback(static fn (string $key): string =>
             str_ends_with($key, '.enabled') ? SettingsCatalogConstants::TYPE_BOOLEAN : SettingsCatalogConstants::TYPE_STRING);
         Hilos::$setting->method('effectiveValueFor')->willReturnCallback(fn (string $key): mixed => $this->values[$key] ?? false);
-        Hilos::$setting->method('visibleInAdminViewMode')->willReturnCallback(static fn (string $key): bool =>
-            $key === DeliveryChannelSettings::enabledKey('sms'));
+        Hilos::$setting->method('visibleInAdminViewMode')->willReturnCallback(fn (string $key): bool =>
+            $key === DeliveryChannelSettings::enabledKey('sms') || ($this->frameVisible && $key === MailLetterFrameSettings::SETTING_KEY));
         CommunicationsChannelSummaryAudience::reset();
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new CommunicationsChannelSummaryAudience());
     }
 
+    /** Drops this fixture's account verdicts before restoring the process bindings. */
     protected function tearDown(): void
     {
         CommunicationsChannelSummaryAudience::reset();
         SourceChangeBus::reset();
         SummaryAudienceTestRegistry::$channels = [];
+        AccountStandingResolver::forgetAll();
         Hilos::$db = $this->previousDb;
         Hilos::$setting = $this->previousSetting;
         Hilos::$env = $this->previousEnv;
@@ -147,7 +173,7 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
     {
         $recipients = [];
         foreach (['email', 'sms'] as $channel) {
-            foreach ($this->tabs() as $index => $page) {
+            foreach ($this->tabs($channel) as $index => $page) {
                 $acceptKey = $channel . '-' . $index;
                 $this->subscribe($acceptKey, $page, $channel);
                 $recipients[$acceptKey] = [$page, $channel];
@@ -170,7 +196,7 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
         self::assertSame([], $this->frames());
         $this->tick();
         $frames = $this->frames();
-        self::assertCount(6, $frames);
+        self::assertCount(7, $frames);
         foreach ($frames as [$acceptKey, $name, $data]) {
             self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $name);
             self::assertInstanceOf(PageResponseSignalData::class, $data);
@@ -184,7 +210,15 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
             self::assertSame(2, $summary['fieldCount']);
             self::assertSame(1, $summary['secretFieldCount']);
             self::assertFalse($summary['configured']);
-            self::assertSame(['page' => $page, 'payload' => ['data' => ['channelSummary' => $summary]]], $data->toArray());
+            $expected = ['channelSummary' => $summary];
+            if ($page === HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME) {
+                $frame = $data->payload->data['letterFrame'];
+                self::assertSame('email', $frame['channel']);
+                self::assertSame('default', $frame['source']);
+                self::assertStringContainsString('482913', $frame['previewHtml']);
+                $expected['letterFrame'] = $frame;
+            }
+            self::assertSame(['page' => $page, 'payload' => ['data' => $expected]], $data->toArray());
             self::assertStringNotContainsString('private-host', $data->toJson());
         }
         self::assertSame($held, Hilos::$sr->getTableViewport('email-0', 'held-table'));
@@ -194,8 +228,90 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
         self::assertSame(['email' => 1, 'sms' => 1], $this->reads);
         SourceChangeBus::publish($change);
         $this->tick();
-        self::assertCount(6, $this->frames());
+        self::assertCount(7, $this->frames());
         self::assertSame(['email' => 2, 'sms' => 2], $this->reads, 'Memo must expire with the pass.');
+    }
+
+    public function testFrameMemoBelongsOnlyToOneGuardedPass(): void
+    {
+        $this->values[MailLetterFrameSettings::SETTING_KEY] = '<shared>[[:content]]</shared>';
+        $this->subscribe('frame-1', HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME);
+        $this->subscribe('frame-2', HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME);
+        $this->subscribe('overview');
+        $this->changed();
+        $this->tick();
+        $frames = $this->frames();
+        self::assertCount(3, $frames);
+        self::assertSame($frames[0][2]->payload->data['letterFrame'], $frames[1][2]->payload->data['letterFrame']);
+        self::assertArrayNotHasKey('letterFrame', $frames[2][2]->payload->data);
+        self::assertSame(1, $this->frameReads);
+        $this->tick();
+        self::assertSame([], $this->frames());
+        self::assertSame(1, $this->frameReads);
+        $this->values[MailLetterFrameSettings::SETTING_KEY] = '<next>[[:content]]</next>';
+        $this->changed();
+        $this->tick();
+        $frames = $this->frames();
+        self::assertCount(3, $frames);
+        self::assertSame('<next>[[:content]]</next>', $frames[0][2]->payload->data['letterFrame']['html']);
+        self::assertSame(2, $this->frameReads);
+    }
+
+    public function testFrameEchoAndResetReadTheCurrentSourceAndApplyTheSameViewerMask(): void
+    {
+        $this->subscribe('frame', HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME);
+        $this->subscribe('overview');
+        foreach ([false, true] as $shown) {
+            $this->browser->viewer = true;
+            $this->frameVisible = $shown;
+            $this->values[MailLetterFrameSettings::SETTING_KEY] = '<remote>[[:content]]</remote>';
+            $this->changed();
+            $this->tick();
+            $frames = $this->frames();
+            self::assertCount(2, $frames);
+            $frame = $frames[0][2]->payload->data['letterFrame'];
+            self::assertSame('settings', $frame['source']);
+            self::assertSame('email', $frame['channel']);
+            self::assertSame($shown ? '<remote>[[:content]]</remote>' : HiddenValue::mark(), $frame['html']);
+            if ($shown) {
+                self::assertStringStartsWith('<remote>', $frame['previewHtml']);
+                self::assertStringContainsString('482913', $frame['previewHtml']);
+            } else {
+                self::assertSame(HiddenValue::mark(), $frame['previewHtml']);
+            }
+            self::assertArrayNotHasKey('letterFrame', $frames[1][2]->payload->data);
+        }
+        unset($this->values[MailLetterFrameSettings::SETTING_KEY]);
+        SourceChangeBus::whileApplyingRemote(fn () => $this->changed());
+        $this->tick();
+        $frame = $this->frames()[0][2]->payload->data['letterFrame'];
+        self::assertSame('default', $frame['source']);
+        self::assertStringNotContainsString('<remote>', $frame['previewHtml']);
+    }
+
+    public function testBrokenFrameOwesTheWholePageAndRecoversOnTheNextSettingsFact(): void
+    {
+        $this->subscribe('broken', HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME);
+        $this->subscribe('overview');
+        $this->values[MailLetterFrameSettings::SETTING_KEY] = 'broken private frame';
+        $this->changed();
+        $this->tick();
+        $frames = $this->frames();
+        self::assertSame(['subscription_page_error', 'page_response'], array_column($frames, 1));
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('broken'));
+        $resender = new SummaryAudienceTestResender($this->agent);
+        $resender->answer = true;
+        $this->browser->bindPageResender($resender);
+        $this->browser->flushToSignalRouter();
+        $this->values[MailLetterFrameSettings::SETTING_KEY] = '<repaired>[[:content]]</repaired>';
+        $this->changed();
+        $this->tick();
+        $frames = $this->frames();
+        self::assertCount(2, $frames);
+        self::assertSame(1, $resender->attempts);
+        self::assertSame('settings', $frames[0][2]->payload->data['letterFrame']['source']);
+        self::assertArrayHasKey('pageLabel', $frames[0][2]->payload->data);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('broken'));
     }
 
     /** @return iterable<string, array{SourceChange, bool}> Every settings operation with both provenances */
@@ -424,11 +540,15 @@ final class CommunicationsChannelSummaryAudienceTest extends TestCase
         yield 'unsubscribe' => [true];
     }
 
-    /** @return list<string> All channel context page keys */
-    private function tabs(): array
+    /**
+     * @param string $channel Registry channel whose applicable tabs are served
+     * @return list<string> All applicable channel context page keys
+     */
+    private function tabs(string $channel): array
     {
         return [HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
-            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES];
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            ...($channel === 'email' ? [HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME] : [])];
     }
 
     /**
@@ -510,6 +630,7 @@ abstract class SummaryAudienceTestHilos extends Hilos
         SummaryAudienceTestChannelPage::PAGE => SummaryAudienceTestChannelPage::class,
         SummaryAudienceTestConfigurationPage::PAGE => SummaryAudienceTestConfigurationPage::class,
         SummaryAudienceTestDeliveriesPage::PAGE => SummaryAudienceTestDeliveriesPage::class,
+        SummaryAudienceTestFramePage::PAGE => SummaryAudienceTestFramePage::class,
     ];
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = SummaryAudienceTestRegistry::class;
@@ -597,7 +718,9 @@ final class SummaryAudienceTestResender implements PageResender
         if (!$this->answer) {
             return PageResendOutcome::Failed;
         }
-        new SummaryAudienceTestConfigurationPage($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
+        $class = $page === HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME
+            ? SummaryAudienceTestFramePage::class : SummaryAudienceTestConfigurationPage::class;
+        new $class($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
         return PageResendOutcome::Answered;
     }
 
@@ -610,4 +733,8 @@ final class SummaryAudienceTestResender implements PageResender
     {
         return PageResendOutcome::Unserved;
     }
+}
+
+final class SummaryAudienceTestFramePage extends AbstractHilosCommunicationsChannelFramePage
+{
 }

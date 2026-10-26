@@ -21,11 +21,13 @@ final class EmailContent
      * @param string $subject Rendered subject line
      * @param string $text Plain-text body (also the fallback part when html is set)
      * @param ?string $html HTML body, or null for a text-only message
+     * @param string $language Language of the rendered content, independent of the requested locale
      */
     public function __construct(
         public readonly string $subject,
         public readonly string $text,
         public readonly ?string $html = null,
+        public readonly string $language = 'en',
     ) {
     }
 }

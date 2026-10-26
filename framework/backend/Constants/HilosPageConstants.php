@@ -258,6 +258,9 @@ final class HilosPageConstants
     /** @var string Hilos — channel deliveries log */
     public const string HILOS_COMMUNICATIONS_DELIVERIES = 'hilos_communications_deliveries';
 
+    /** @var string Hilos — email letter frame */
+    public const string HILOS_COMMUNICATIONS_CHANNEL_FRAME = 'hilos_communications_channel_frame';
+
     /** @var string Hilos — security center overview */
     public const string HILOS_SECURITY = 'hilos_security';
 

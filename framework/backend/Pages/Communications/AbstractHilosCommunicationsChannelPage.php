@@ -28,6 +28,9 @@ use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Frame\MailLetterFrame;
+use Hilos\Mail\Frame\MailLetterFrameSettings;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -164,6 +167,22 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosCommu
     {
         $descriptor = $this->requireChannel($dto->channel);
 
+        if ($dto->field === MailLetterFrameSettings::FIELD) {
+            if ($descriptor->name() !== MailDeliveryChannel::NAME) {
+                throw new TableActionException('Letter frames require the email channel.');
+            }
+            if (!is_string($dto->value)) {
+                throw new TableActionException(MailLetterFrame::TYPE_REFUSAL);
+            }
+            $error = MailLetterFrame::validate($dto->value);
+            if ($error !== null) {
+                throw new TableActionException($error);
+            }
+            $this->write($acceptKey, MailLetterFrameSettings::SETTING_KEY, $dto->value, 'Letter frame saved.');
+
+            return;
+        }
+
         if ($dto->field === DeliveryChannelSettings::ENABLED_FIELD) {
             // No success sentence here: the toggle answers for itself by switching on screen.
             $this->write($acceptKey, $descriptor->enabledSettingKey(), (bool) $dto->value, null);
@@ -206,6 +225,26 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosCommu
     private function handleReset(string $acceptKey, HilosChannelSettingResetActionDTO $dto): void
     {
         $descriptor = $this->requireChannel($dto->channel);
+
+        if ($dto->field === MailLetterFrameSettings::FIELD) {
+            if ($descriptor->name() !== MailDeliveryChannel::NAME) {
+                throw new TableActionException('Letter frames require the email channel.');
+            }
+            $this->forward(
+                HilosSignalConstants::HILOS_SETTING_RESET,
+                new SettingResetSignalData(
+                    replySignal: HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE,
+                    acceptKey: $acceptKey,
+                    requestId: $this->currentActionRequestId(),
+                    action: HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+                    successMessage: 'Letter frame override reset.',
+                    key: MailLetterFrameSettings::SETTING_KEY,
+                ),
+            );
+
+            return;
+        }
+
         $field = $this->requireField($descriptor, $dto->field);
         if ($field->secret) {
             throw new TableActionException("Field '{$field->key}' is a secret and has no settings override");

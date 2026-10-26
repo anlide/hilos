@@ -34,6 +34,7 @@ const currentSummary = computedSignal(() => {
     route?.page !== props.page ||
     (page !== HilosPages.COMMUNICATIONS_CHANNEL &&
       page !== HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION &&
+      page !== HilosPages.COMMUNICATIONS_CHANNEL_FRAME &&
       page !== HilosPages.COMMUNICATIONS_DELIVERIES)
   ) {
     return null

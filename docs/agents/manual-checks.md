@@ -118,6 +118,25 @@ Keep these numbers stable: hand-overs refer to them.
 
 1. Any phone, an authenticator app — on a stand (APP_ENV=local), /profile/security → Add an app, scan the QR: the new entry reads "Hilos (local): <address>"; the code it shows confirms the app.
 
+## Mail
+
+Automation captures MIME and HTML, including the frame and plain-text alternative;
+it does not reproduce a real mail client's HTML renderer. Paths that touch this surface:
+`framework/backend/Mail/Frame/**`, `framework/backend/Mail/Delivery/MailDeliveryChannelAgent.php`,
+`framework/backend/Mail/SmtpMailTransport.php` and the Communications Letter frame pages.
+The preview is synthetic and sends no letter. Use an actual HTML-bearing letter for
+these checks; the framework password-reset template is plain text.
+
+### Manual items
+
+Keep these numbers stable: hand-overs refer to them. These items have not been checked by hand.
+
+1. A real mail client — receive an HTML letter with neither a project frame nor an installation override: its content appears once inside the framework frame, and the text alternative is readable.
+2. The same client — receive an HTML letter with a project frame and no override: its header, footer and styles appear around the content without losing it.
+3. Communications → Email → Letter frame — save an installation override, receive a new HTML letter and check that the override replaces the project frame. Confirm Reset, receive another letter and check that the project frame returns; repeat with no project frame and check the framework default.
+4. Receive HTML letters whose content languages are English, Arabic and Hebrew: inspect the received HTML's `lang` and `dir`, then check reading order and layout in the mail client. English is ltr; Arabic and Hebrew are rtl. The template's own words remain unchanged.
+5. Receive a plain-text-only letter while a frame override is active: it stays plain text with no frame or literal placeholders. Compare an HTML letter's text alternative too: it retains the original unframed text.
+
 ## Other surfaces — one line each until a change reaches them
 
 - Mail (Mailpit, real SMTP; `framework/backend/Mail/SmtpMailTransport.php`): how the HTML letter renders in a real mail client — specs read only the text part (`demo/chat/tests/e2e/helpers/mail.ts`); that the magic link points at the right host — specs keep only its path; deliverability (SPF/DKIM, the spam folder); the link opened on another device.

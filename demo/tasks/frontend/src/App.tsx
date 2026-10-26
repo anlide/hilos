@@ -184,6 +184,9 @@ const pages: Record<string, PageView<ComponentType>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.COMMUNICATIONS_CHANNEL_FRAME]: lazyPage(() =>
+    import('./views/Hilos/Communications/Frame.js').then((m) => m.default),
+  ),
   [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
     import('./views/Hilos/Communications/Deliveries.js').then((m) => m.default),
   ),

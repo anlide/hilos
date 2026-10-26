@@ -47,6 +47,17 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     public const string FIELD_SMTP_USERNAME = 'smtp_username';
     public const string FIELD_SMTP_PASSWORD = 'smtp_password';
 
+    /** Project HTML frame, or null to use the framework frame. */
+    protected const ?string LETTER_FRAME = null;
+
+    /**
+     * @return ?string Project HTML frame before an administrator override
+     */
+    public function projectLetterFrame(): ?string
+    {
+        return static::LETTER_FRAME;
+    }
+
     /**
      * @return string The `email` channel name
      */

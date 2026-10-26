@@ -64,6 +64,7 @@ use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\AppearancePage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
@@ -316,6 +317,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
         CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+        CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,

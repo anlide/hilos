@@ -10,22 +10,33 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
+use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Schema\Schema;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\View\Collection\Settings;
+use Hilos\Database\View\Item\Setting;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Mail\EmailContent;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 use Hilos\Mail\FailedMailTransport;
+use Hilos\Mail\Frame\MailLetterFrame;
+use Hilos\Mail\Frame\MailLetterFrameSettings;
 use Hilos\Mail\MailSendOutcome;
 use Hilos\Mail\MailTransportInterface;
 use Hilos\Mail\Template\MagicLinkMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Mail\Template\MailTemplateRegistry;
+use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -52,6 +63,200 @@ final class MailDeliveryChannelAgentTest extends TestCase
 
     /** Sentence carried by the last step drained off the queue, or null when it carried none. */
     private ?string $lastDetail = null;
+
+    public function testHtmlIntakesUseTheRenderedLanguageAndPreserveOtherParts(): void
+    {
+        $transports = [
+            new ScriptedMailTransport(1, MailSendOutcome::delivered()),
+            new ScriptedMailTransport(1, MailSendOutcome::delivered()),
+            new ScriptedMailTransport(1, MailSendOutcome::delivered()),
+        ];
+        $agent = new TestableMailAgent($transports);
+        $agent->content = new EmailContent('Rendered subject', 'Fallback', '<b>[[:lang]]</b>', 'he-IL');
+        $notification = ObjectNotification::create();
+        $notification->title = 'Title';
+        $notification->body = 'Body';
+        $attempt = $agent->notificationAttempt($notification);
+        $this->rawSend($agent, new MailSendSignalData(
+            to: 'user@example.com', shardKey: 1, templateKey: 'project.html', locale: 'ar',
+        ));
+        $this->rawSend($agent, new MailSendSignalData(
+            to: 'user@example.com', shardKey: 1, subject: 'Inline', text: 'Inline fallback', html: '', locale: 'AR_sa',
+        ));
+        $agent->onTick();
+
+        foreach ([$transports[0], $transports[1]] as $transport) {
+            self::assertSame('Rendered subject', $transport->started?->subject);
+            self::assertSame('Fallback', $transport->started?->text);
+            self::assertSame(
+                MailLetterFrame::render(MailLetterFrame::DEFAULT_HTML, '<b>[[:lang]]</b>', 'he-IL'),
+                $transport->started?->html,
+            );
+        }
+        self::assertSame('Inline', $transports[2]->started?->subject);
+        self::assertSame('Inline fallback', $transports[2]->started?->text);
+        self::assertSame(MailLetterFrame::render(MailLetterFrame::DEFAULT_HTML, '', 'AR_sa'), $transports[2]->started?->html);
+        $attempt->close();
+        $agent->onStop();
+    }
+
+    public function testInlineWithoutLocaleUsesEnglishAndRawRetryKeepsTheBuiltMessage(): void
+    {
+        $first = new ScriptedMailTransport(1, MailSendOutcome::failed('temporary', false));
+        $second = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+        $agent = new TestableMailAgent([$first, $second]);
+        $this->rawSend($agent, new MailSendSignalData(
+            to: 'user@example.com', shardKey: 1, subject: 'Hi', text: 'Fallback', html: '<p>Hello</p>',
+        ));
+        for ($tick = 0; $tick < 4; $tick++) {
+            $agent->onTick();
+        }
+        self::assertSame(MailLetterFrame::render(MailLetterFrame::DEFAULT_HTML, '<p>Hello</p>', 'en'), $first->started?->html);
+        self::assertSame($first->started, $second->started);
+    }
+
+    public function testTemplateWithoutLanguageUsesEnglishAndStillFramesEmptyHtml(): void
+    {
+        $transport = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+        $agent = new TestableMailAgent([$transport]);
+        $agent->content = new EmailContent('Subject', 'Fallback', '');
+        $this->rawSend($agent, new MailSendSignalData(
+            to: 'user@example.com', shardKey: 1, templateKey: 'project.html', locale: 'ar',
+        ));
+        $agent->onTick();
+        self::assertSame(MailLetterFrame::render(MailLetterFrame::DEFAULT_HTML, '', 'en'), $transport->started?->html);
+        $agent->onStop();
+    }
+
+    public function testAgentKeepsItsNotificationInterestBesideSettings(): void
+    {
+        self::assertContains(HilosDbContext::settings, MailDeliveryChannelAgent::READS_DB);
+        self::assertContains(HilosDbContext::notifications, MailDeliveryChannelAgent::READS_DB);
+    }
+
+    public function testTextOnlyIntakesNeverConsultSettings(): void
+    {
+        $previousSetting = Hilos::$setting;
+        $previousDb = Hilos::$db;
+        $db = $this->createMock(HilosDbContext::class);
+        $db->expects(self::never())->method('__get');
+        Hilos::$db = $db;
+        $setting = $this->createMock(SettingsAccessor::class);
+        $setting->expects(self::never())->method('offsetExists');
+        $setting->expects(self::never())->method('offsetGet');
+        Hilos::$setting = $setting;
+        $transports = array_map(static fn (): ScriptedMailTransport => new ScriptedMailTransport(1, MailSendOutcome::delivered()), range(1, 3));
+        $agent = new TestableMailAgent($transports);
+        $agent->content = new EmailContent('Subject', 'Text');
+        try {
+            $notification = ObjectNotification::create();
+            $notification->title = 'Title';
+            $attempt = $agent->notificationAttempt($notification);
+            $this->rawSend($agent, new MailSendSignalData(to: 'user@example.com', shardKey: 1, templateKey: 'project.text'));
+            $this->rawSend($agent, new MailSendSignalData(to: 'user@example.com', shardKey: 1, subject: 'Subject', text: 'Text'));
+            $agent->onTick();
+            foreach ($transports as $transport) {
+                self::assertNotNull($transport->started);
+                self::assertNull($transport->started->html);
+            }
+            $attempt->close();
+        } finally {
+            $agent->onStop();
+            Hilos::$setting = $previousSetting;
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    public function testInvalidLegacyFrameFailsBothIntakesSafelyWithoutOpeningATransport(): void
+    {
+        $previous = [Hilos::$setting, Hilos::$db, Hilos::$sr];
+        $object = ObjectSetting::create();
+        $object->key = MailLetterFrameSettings::SETTING_KEY;
+        $object->type = 'string';
+        $object->value = '<private>246802</private>';
+        $settings = $this->createMock(Settings::class);
+        $settings->method('offsetExists')->willReturn(true);
+        $settings->method('offsetGet')->willReturn(new Setting($object));
+        $db = $this->createMock(HilosDbContext::class);
+        $db->method('__get')->willReturn($settings);
+        Hilos::$db = $db;
+        Hilos::$setting = new class extends SettingsAccessor {
+            protected function getCatalog(): array
+            {
+                return [MailLetterFrameSettings::SETTING_KEY => MailLetterFrameSettings::catalogEntry(null)];
+            }
+        };
+        $agent = new TestableMailAgent([]);
+        $agent->content = new EmailContent('Subject', 'Secret fallback', '<p>auth-secret</p>');
+        try {
+            $this->watchSignals();
+            foreach ([null, 'project.html'] as $templateKey) {
+                $this->rawSend($agent, new MailSendSignalData(
+                    to: 'user@example.com', shardKey: 1, subject: 'Subject', text: 'Secret fallback',
+                    html: '<p>auth-secret</p>', templateKey: $templateKey, params: ['code' => '246802'],
+                    progressTicket: self::PROGRESS_TICKET,
+                ));
+            }
+            self::assertSame([HilosCodeSendAttempt::STATE_FAILED, HilosCodeSendAttempt::STATE_FAILED], $this->reportedSteps());
+            self::assertSame('Letter frame is invalid.', $this->lastReportedDetail());
+            $notification = ObjectNotification::create();
+            $notification->title = 'Title';
+            $attempt = $agent->notificationAttempt($notification);
+            $attempt->tick(0.0);
+            self::assertTrue($attempt->isPermanentFailure());
+            self::assertSame('Letter frame is invalid.', $attempt->errorDetail());
+            $attempt->close();
+            for ($tick = 0; $tick < 3; $tick++) {
+                $agent->onTick();
+            }
+            self::assertSame(0, $agent->createdCount);
+            $log = implode("\n", $agent->warnings);
+            self::assertStringContainsString('Letter frame is invalid.', $log);
+            foreach (['246802', 'auth-secret', '<private>', 'Secret fallback'] as $secret) {
+                self::assertStringNotContainsString($secret, $log);
+            }
+        } finally {
+            [Hilos::$setting, Hilos::$db, Hilos::$sr] = $previous;
+        }
+    }
+
+    public function testUnavailableFrameSourceFailsSendingInsteadOfUsingADefault(): void
+    {
+        $previous = [Hilos::$setting, Hilos::$db, Hilos::$sr];
+        $settings = $this->createMock(Settings::class);
+        $settings->method('offsetExists')->willThrowException(new DatabaseException('private query details'));
+        $db = $this->createMock(HilosDbContext::class);
+        $db->method('__get')->willReturn($settings);
+        Hilos::$db = $db;
+        Hilos::$setting = new class extends SettingsAccessor {
+            protected function getCatalog(): array
+            {
+                return [MailLetterFrameSettings::SETTING_KEY => MailLetterFrameSettings::catalogEntry(null)];
+            }
+        };
+        $agent = new TestableMailAgent([]);
+        $agent->content = new EmailContent('Subject', 'Fallback', '<p>Body</p>');
+        try {
+            $this->watchSignals();
+            $this->rawSend($agent, new MailSendSignalData(
+                to: 'user@example.com', shardKey: 1, subject: 'Subject', text: 'Fallback', html: '<p>Body</p>',
+                progressTicket: self::PROGRESS_TICKET,
+            ));
+            self::assertSame([HilosCodeSendAttempt::STATE_FAILED], $this->reportedSteps());
+            self::assertSame('Letter frame could not be read.', $this->lastReportedDetail());
+            $notification = ObjectNotification::create();
+            $notification->title = 'Title';
+            $attempt = $agent->notificationAttempt($notification);
+            $attempt->tick(0.0);
+            self::assertSame('Letter frame could not be read.', $attempt->errorDetail());
+            $attempt->close();
+            $agent->onTick();
+            self::assertSame(0, $agent->createdCount);
+            self::assertSame(['Letter frame could not be read.'], $agent->warnings);
+        } finally {
+            [Hilos::$setting, Hilos::$db, Hilos::$sr] = $previous;
+        }
+    }
 
     protected function tearDown(): void
     {
@@ -647,6 +852,10 @@ final class ConfigProbingMailAgent extends MailDeliveryChannelAgent
 final class TestableMailAgent extends MailDeliveryChannelAgent
 {
     public int $createdCount = 0;
+    public ?EmailContent $content = null;
+
+    /** @var list<string> Sentences handed to the agent logger */
+    public array $warnings = [];
 
     /** @var list<MailTransportInterface> Transports handed out one per createTransport() call. */
     private array $transports;
@@ -659,6 +868,34 @@ final class TestableMailAgent extends MailDeliveryChannelAgent
     {
         parent::__construct('1');
         $this->transports = $transports;
+    }
+
+    /**
+     * @param ObjectNotification $notification Rendered through the real notification intake
+     * @return DeliveryAttempt Started notification attempt
+     */
+    public function notificationAttempt(ObjectNotification $notification): DeliveryAttempt
+    {
+        return $this->createAttempt('user@example.com', $notification);
+    }
+
+    /** @return MailTemplateRegistry Registry that returns the case's rendered content */
+    protected function templateRegistry(): MailTemplateRegistry
+    {
+        if ($this->content === null) {
+            return parent::templateRegistry();
+        }
+
+        return new class ($this->content) extends MailTemplateRegistry {
+            public function __construct(private readonly EmailContent $content)
+            {
+            }
+
+            public function render(string $key, array $params, ?string $locale = null): EmailContent
+            {
+                return $this->content;
+            }
+        };
     }
 
     protected function createTransport(): MailTransportInterface
@@ -680,6 +917,12 @@ final class TestableMailAgent extends MailDeliveryChannelAgent
     protected function rawBackoffMs(int $attempts): float
     {
         return 0.0;
+    }
+
+    /** @param string $message Domain sentence to capture at the logger boundary */
+    protected function logAgentWarning(string $message): void
+    {
+        $this->warnings[] = $message;
     }
 }
 

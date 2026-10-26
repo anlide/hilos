@@ -336,6 +336,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Delivery log for one channel.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
         ],
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Letter frame',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Letter frame',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Header, footer and styles around every letter.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+        ],
         HilosPageConstants::HILOS_SECURITY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security Center',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Sign-in methods, two-factor authentication and OAuth login providers.',

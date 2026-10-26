@@ -19,6 +19,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.SETTINGS,
     HilosPages.BACKUP,
     HilosPages.COMMUNICATIONS,
+    HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
     HilosPages.ANALYTICS,
     HilosPages.ANALYTICS_PERSON,
   ]) {

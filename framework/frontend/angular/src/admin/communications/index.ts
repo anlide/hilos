@@ -1,3 +1,4 @@
+export { HilosCommunicationsChannelFramePage } from './HilosCommunicationsChannelFramePage.js'
 export { HilosCommunicationsChannelConfigurationPage } from './HilosCommunicationsChannelConfigurationPage.js'
 export { HilosCommunicationsChannelPage } from './HilosCommunicationsChannelPage.js'
 export { HilosCommunicationsDeliveriesPage } from './HilosCommunicationsDeliveriesPage.js'

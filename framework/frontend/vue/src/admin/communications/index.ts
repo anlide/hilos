@@ -1,3 +1,4 @@
+export { default as HilosCommunicationsChannelFramePage } from './HilosCommunicationsChannelFramePage.vue'
 export { default as HilosCommunicationsChannelConfigurationPage } from './HilosCommunicationsChannelConfigurationPage.vue'
 export { default as HilosCommunicationsChannelPage } from './HilosCommunicationsChannelPage.vue'
 export { default as HilosCommunicationsDeliveriesPage } from './HilosCommunicationsDeliveriesPage.vue'

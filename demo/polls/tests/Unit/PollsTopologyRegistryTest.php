@@ -81,6 +81,7 @@ use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
@@ -264,6 +265,19 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    public function testLetterFrameUsesTheExistingIndexOwnerWithoutTablesOrMutations(): void
+    {
+        self::assertSame(CommunicationsChannelFramePage::class, Hilos::PAGES[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame(CommunicationsChannelConfigurationPage::SUBSCRIPTION_AGENT_TYPE,
+            Hilos::getPageRoutes()[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_FRAME,
+        ], CommunicationsChannelFramePage::BROWSER);
+        self::assertSame([], CommunicationsChannelFramePage::ACTIONS);
+        self::assertSame([], CommunicationsChannelFramePage::SIGNALS);
+        self::assertArrayNotHasKey(CommunicationsChannelFramePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
     /** The shared Status owner is a permanent singleton placed on a regular worker. */
     public function testStatusOwnerUsesTheFrameworkPairAndFactories(): void
     {

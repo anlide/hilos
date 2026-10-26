@@ -13,6 +13,8 @@ import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
 import * as communications from '../../src/admin/communications/index.js'
 import * as channelSummary from '../../src/admin/communications/hilosCommunicationsChannel.js'
+import * as letterFrame from '../../src/admin/communications/hilosCommunicationsChannelFrame.js'
+import * as letterFrameEdit from '../../src/admin/communications/hilosCommunicationsChannelFrameEdit.js'
 import * as daemon from '../../src/admin/daemon/index.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
@@ -187,6 +189,19 @@ const channelSummaryValues = [
   'createHilosChannelSummary',
 ]
 const channelSummaryTypes = ['HilosChannelSummary']
+/** Frame APIs are lazy-section additions, without new root or base exports. */
+const letterFrameValues = [
+  'LETTER_FRAME_DATA',
+  'LETTER_FRAME_FIELD',
+  'letterFrameSchema',
+  'createHilosChannelFrame',
+]
+const letterFrameTypes = ['HilosLetterFrame']
+const letterFrameEditValues = ['createHilosChannelFrameEdit']
+const letterFrameEditTypes = [
+  'HilosChannelFrameEditFields',
+  'HilosChannelFrameEditForm',
+]
 /** Connection interaction APIs added to the shared shell's core surface. */
 const connectionInteractionValues = [
   'bindInteractionBlock',
@@ -518,6 +533,29 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (
+          entry === './admin/communications' &&
+          letterFrameValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(value, letterFrame[name as keyof typeof letterFrame]),
+            name,
+          ).toBe(true)
+        } else if (
+          entry === './admin/communications' &&
+          letterFrameEditValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              letterFrameEdit[name as keyof typeof letterFrameEdit],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
           entry === './admin/moderation' &&
           adminModerationKindValues.includes(name)
         ) {
@@ -542,6 +580,8 @@ describe('core public entries', () => {
         ...analyticsPeriodValues,
         ...analyticsPeopleValues,
         ...channelSummaryValues,
+        ...letterFrameValues,
+        ...letterFrameEditValues,
         ...adminModerationKindValues,
       ].sort(),
     )
@@ -791,6 +831,14 @@ describe('core public entries', () => {
       'admin/communications/hilosCommunicationsChannel.ts',
     )
     const sectionOnly = [...channelSummaryValues, ...channelSummaryTypes]
+    const frameExports = exportsOf(
+      'admin/communications/hilosCommunicationsChannelFrame.ts',
+    )
+    const frameNames = [...letterFrameValues, ...letterFrameTypes]
+    const frameEditExports = exportsOf(
+      'admin/communications/hilosCommunicationsChannelFrameEdit.ts',
+    )
+    const frameEditNames = [...letterFrameEditValues, ...letterFrameEditTypes]
     const kindExports = exportsOf('admin/moderation/hilosModerationKind.ts')
     const kindNames = [
       ...adminModerationKindValues,
@@ -827,6 +875,20 @@ describe('core public entries', () => {
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(summaryExports.get(name))
         } else if (
+          entry === 'admin/communications/index.ts' &&
+          frameNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(frameExports.get(name))
+        } else if (
+          entry === 'admin/communications/index.ts' &&
+          frameEditNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(frameEditExports.get(name))
+        } else if (
           entry === 'admin/moderation/index.ts' &&
           kindNames.includes(name)
         ) {
@@ -848,6 +910,8 @@ describe('core public entries', () => {
         ...periodNames,
         ...peopleNames,
         ...sectionOnly,
+        ...frameNames,
+        ...frameEditNames,
         ...kindNames,
       ].sort(),
     )

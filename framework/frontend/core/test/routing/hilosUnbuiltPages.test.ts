@@ -10,6 +10,16 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
+  it('serves the contextual Frame page in all three kits', () => {
+    for (const kit of ['vue', 'react', 'angular'] as const) {
+      expect(
+        hilosUnbuiltPages(kit).has(HilosPages.COMMUNICATIONS_CHANNEL_FRAME),
+      ).toBe(false)
+    }
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
+    )
+  })
   it('selects the view layer without hiding a section with built children', () => {
     const vue = hilosUnbuiltPages('vue')
     expect(vue.has(HilosPages.ROLES)).toBe(true)

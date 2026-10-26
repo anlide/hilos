@@ -7,6 +7,8 @@ namespace Hilos\Notification\Delivery;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Frame\MailLetterFrameSettings;
 
 /**
  * ChannelSettingsCatalog - the framework settings-catalog fragment for delivery channels (HIL-200).
@@ -14,13 +16,14 @@ use Hilos\Hilos;
  * Derives one settings entry per channel from the project's channel registry
  * ({@see Hilos::notificationChannelRegistryClass()}): a boolean enablement key
  * ({@see DeliveryChannelSettings::enabledKey()}) plus one key per non-secret config
- * field ({@see AbstractDeliveryChannel::configFields()}). Every default is the empty
- * value for its type - the real default lives in env, and {@see ChannelConfigResolver}
+ * field ({@see AbstractDeliveryChannel::configFields()}). Operational defaults are empty
+ * values for their types - the real default lives in env, and {@see ChannelConfigResolver}
  * only reads a settings value when an admin override is persisted. A project folds
  * this into its own catalog with `array_replace(parent::getCatalog(), ...)`, so a new
  * channel or field is picked up without touching the project catalog.
  *
- * Secret fields get no settings key: a secret is env-only and never written to the DB.
+ * Email also receives a letter-frame entry whose default is the registered project frame
+ * or the framework frame. Secret fields get no settings key: they remain env-only.
  */
 final class ChannelSettingsCatalog implements CatalogProviderInterface
 {
@@ -38,7 +41,7 @@ final class ChannelSettingsCatalog implements CatalogProviderInterface
      * Builds settings entries for a set of channel descriptors.
      *
      * The enablement key plus one entry per non-secret config field, every default
-     * empty for its type. Secret fields are skipped (env-only, never persisted).
+     * empty for its type. Email also includes its letter frame; secret fields are skipped.
      *
      * @param iterable<string, AbstractDeliveryChannel> $channels Channel descriptors keyed by name
      * @return array<string, array<string, mixed>> Catalog keyed by setting key
@@ -62,6 +65,12 @@ final class ChannelSettingsCatalog implements CatalogProviderInterface
                     SettingsCatalogConstants::CATALOG_ENTRY_TYPE => $field->type,
                     SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::emptyDefaultFor($field->type),
                 ];
+            }
+
+            if ($channel === MailDeliveryChannel::NAME) {
+                $catalog[MailLetterFrameSettings::SETTING_KEY] = MailLetterFrameSettings::catalogEntry(
+                    $descriptor instanceof MailDeliveryChannel ? $descriptor->projectLetterFrame() : null,
+                );
             }
         }
 

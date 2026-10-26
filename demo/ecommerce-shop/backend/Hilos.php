@@ -38,6 +38,7 @@ use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsPage;
@@ -245,6 +246,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
         CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+        CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         I18nPage::PAGE => I18nPage::class,

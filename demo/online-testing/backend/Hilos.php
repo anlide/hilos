@@ -36,6 +36,7 @@ use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
@@ -258,6 +259,7 @@ final class Hilos extends HilosFacade
         CommunicationsPage::PAGE => CommunicationsPage::class,
         CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
         CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+        CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,

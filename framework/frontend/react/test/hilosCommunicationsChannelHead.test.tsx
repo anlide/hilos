@@ -26,6 +26,7 @@ describe('channel head binding', () => {
     HilosPages.COMMUNICATIONS_CHANNEL,
     HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
     HilosPages.COMMUNICATIONS_DELIVERIES,
+    HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
   ])('binds the permitted first-answer name and block on %s', (page) => {
     const h = communicationsHarness(page)
     const view = h.mount(<Head context={h.context} page={page} />)

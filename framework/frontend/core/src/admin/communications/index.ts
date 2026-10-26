@@ -23,6 +23,18 @@ export {
   type HilosChannelSummary,
 } from './hilosCommunicationsChannel.js'
 export {
+  LETTER_FRAME_DATA,
+  LETTER_FRAME_FIELD,
+  letterFrameSchema,
+  createHilosChannelFrame,
+  type HilosLetterFrame,
+} from './hilosCommunicationsChannelFrame.js'
+export {
+  createHilosChannelFrameEdit,
+  type HilosChannelFrameEditFields,
+  type HilosChannelFrameEditForm,
+} from './hilosCommunicationsChannelFrameEdit.js'
+export {
   createHilosChannelFieldEdit,
   hilosChannelDisplayValue,
   hilosChannelEditedValue,

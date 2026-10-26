@@ -56,6 +56,36 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
+  it('addresses the built email Frame page with the exact backend key', () => {
+    const page = HilosPages.COMMUNICATIONS_CHANNEL_FRAME
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    expect(page).toBe('hilos_communications_channel_frame')
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+    expect(php).toContain(
+      "HILOS_COMMUNICATIONS_CHANNEL_FRAME = 'hilos_communications_channel_frame';",
+    )
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/communications/{channelId}/frame',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, { channelId: 'email' })).toBe(
+      '/hilos/communications/email/frame',
+    )
+    expect(router.match('/hilos/communications/email/frame')).toEqual({
+      page,
+      params: { channelId: 'email' },
+      admin: true,
+    })
+    for (const kit of ['vue', 'react', 'angular'] as const)
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
+  })
+
   it('addresses both Status admin pages without parameters and keeps their unbuilt views honest', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     for (const [page, path] of [

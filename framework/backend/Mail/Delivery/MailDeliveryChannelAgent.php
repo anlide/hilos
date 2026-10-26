@@ -12,8 +12,12 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -22,9 +26,12 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailConfigException;
+use Hilos\Mail\Exception\MailLetterFrameInvalidException;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Mail\FailedMailTransport;
+use Hilos\Mail\Frame\MailLetterFrame;
+use Hilos\Mail\Frame\MailLetterFrameResolver;
 use Hilos\Mail\MailTransportConfig;
 use Hilos\Mail\MailTransportFactory;
 use Hilos\Mail\MailTransportInterface;
@@ -70,6 +77,9 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_MAIL;
 
+    /** Settings are read afresh when composing HTML; the parent's notification interest is retained. */
+    public const array READS_DB = [...parent::READS_DB, HilosDbContext::settings];
+
     /**
      * Pool routes: both intakes are fanned across the pool by the recipient's shard key.
      *  - HILOS_MAIL_DELIVER (input A) carries a notification delivery;
@@ -91,6 +101,9 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     /** Base retry backoff in milliseconds for raw sends, doubled per prior attempt. */
     private const float RAW_RETRY_BACKOFF_BASE_MS = 1000.0;
+
+    /** Safe failure when the current frame source cannot be read. */
+    private const string FRAME_UNAVAILABLE_REASON = 'Letter frame could not be read.';
 
     /** The channel descriptor, built once and reused across ticks. */
     private ?MailDeliveryChannel $channel = null;
@@ -207,9 +220,22 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             ],
         );
 
+        try {
+            $html = $this->frameHtml($content->html, $content->language);
+        } catch (MailLetterFrameInvalidException | DatabaseException | InvalidArgumentException | LogicException | SettingException $failure) {
+            $reason = $failure instanceof MailLetterFrameInvalidException
+                ? MailLetterFrameInvalidException::REASON : self::FRAME_UNAVAILABLE_REASON;
+
+            return new MailDeliveryAttempt(
+                new FailedMailTransport($reason),
+                new EmailMessage($address, $content->subject, $content->text),
+                microtime(true) * TimeConstants::MS_PER_SECOND,
+            );
+        }
+
         return new MailDeliveryAttempt(
             $this->createTransport(),
-            new EmailMessage($address, $content->subject, $content->text, html: $content->html),
+            new EmailMessage($address, $content->subject, $content->text, html: $html),
             microtime(true) * TimeConstants::MS_PER_SECOND,
         );
     }
@@ -298,6 +324,13 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     {
         try {
             $message = $this->buildRawMessage($signal);
+        } catch (MailLetterFrameInvalidException | DatabaseException | InvalidArgumentException | LogicException | SettingException $failure) {
+            $reason = $failure instanceof MailLetterFrameInvalidException
+                ? MailLetterFrameInvalidException::REASON : self::FRAME_UNAVAILABLE_REASON;
+            $this->logAgentWarning($reason);
+            $this->reportCodeSendStep($signal->progressTicket, HilosCodeSendAttempt::STATE_FAILED, $reason);
+
+            return;
         } catch (MailTemplateNotInCatalogException) {
             $this->logAgentWarning(
                 "raw send to '{$signal->to}' dropped: unknown template '{$signal->templateKey}'",
@@ -326,19 +359,55 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @return EmailMessage The message to hand a transport
      * @throws MailTemplateNotInCatalogException When a named template is absent from the catalog
      * @throws MailTemplateParamMissingException When a named template needs a param the payload lacks
+     * @throws DatabaseException When the current settings source cannot be read
+     * @throws InvalidArgumentException When a settings object has the wrong collection type
+     * @throws LogicException When the settings collection is misconfigured
+     * @throws SettingException When the frame setting has invalid catalog metadata
+     * @throws MailLetterFrameInvalidException When an HTML message's effective frame is invalid
      */
     private function buildRawMessage(MailSendSignalData $signal): EmailMessage
     {
         if ($signal->templateKey !== null) {
             $content = $this->templateRegistry()->render($signal->templateKey, $signal->params, $signal->locale);
 
-            return new EmailMessage($signal->to, $content->subject, $content->text, html: $content->html);
+            return new EmailMessage(
+                $signal->to,
+                $content->subject,
+                $content->text,
+                html: $this->frameHtml($content->html, $content->language),
+            );
         }
 
         // The payload invariant guarantees the inline pair whenever no template names the content,
         // so the pair is passed through as it is: a broken invariant has to fail loudly here rather
         // than mail an empty subject.
-        return new EmailMessage($signal->to, $signal->subject, $signal->text, html: $signal->html);
+        return new EmailMessage(
+            $signal->to,
+            $signal->subject,
+            $signal->text,
+            html: $this->frameHtml($signal->html, $signal->locale ?? 'en'),
+        );
+    }
+
+    /**
+     * Text-only messages bypass both the resolver and settings, including the emergency path.
+     *
+     * @param ?string $html Rendered body, where even an empty string is HTML
+     * @param string $language Language of the rendered body
+     * @return ?string Framed HTML, or null for text-only content
+     * @throws DatabaseException When the current settings source cannot be read
+     * @throws InvalidArgumentException When a settings object has the wrong collection type
+     * @throws LogicException When the settings collection is misconfigured
+     * @throws SettingException When the frame setting has invalid catalog metadata
+     * @throws MailLetterFrameInvalidException When the effective frame is invalid
+     */
+    private function frameHtml(?string $html, string $language): ?string
+    {
+        if ($html === null) {
+            return null;
+        }
+
+        return MailLetterFrame::render(new MailLetterFrameResolver()->resolve()->html, $html, $language);
     }
 
     /**
@@ -372,7 +441,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
                 $sentForReal = $attempt->isSentForReal();
                 $attempt->close();
                 $this->reportCodeSendStep(
-                    $send,
+                    $send->progressTicket,
                     $sentForReal ? HilosCodeSendAttempt::STATE_SENT : HilosCodeSendAttempt::STATE_NOT_SENT,
                     null,
                 );
@@ -387,7 +456,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             if ($permanent || $send->attempts >= $this->maxAttempts()) {
                 $this->logRawFailure($send, $error);
-                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_FAILED, $error);
+                $this->reportCodeSendStep($send->progressTicket, HilosCodeSendAttempt::STATE_FAILED, $error);
                 unset($this->rawSends[$id]);
                 continue;
             }
@@ -395,7 +464,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             // Back to the queue, which is where the letter honestly is: this refusal has
             // retries left behind it, and a line that said "could not send" and then "sent"
             // a second later would be flicker rather than news (HIL-826).
-            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_QUEUED, null);
+            $this->reportCodeSendStep($send->progressTicket, HilosCodeSendAttempt::STATE_QUEUED, null);
         }
     }
 
@@ -416,7 +485,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             $send->attempts++;
             $send->attempt = new MailDeliveryAttempt($this->createTransport(), $send->message, $nowMs);
-            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENDING, null);
+            $this->reportCodeSendStep($send->progressTicket, HilosCodeSendAttempt::STATE_SENDING, null);
         }
     }
 
@@ -472,21 +541,20 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * The frame is queued rather than sent, like every other agent-to-agent word here, so a
      * transport step never waits on a delivery.
      *
-     * @param RawMailSend $send Send whose step is being reported
+     * @param ?string $progressTicket Opaque watched-send ticket, or null when nobody is watching
      * @param string $state One of the five states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Transport's own error text on a refusal, null otherwise
      */
-    private function reportCodeSendStep(RawMailSend $send, string $state, ?string $detail): void
+    private function reportCodeSendStep(?string $progressTicket, string $state, ?string $detail): void
     {
-        $ticket = $send->progressTicket;
-        if ($ticket === null) {
+        if ($progressTicket === null) {
             return;
         }
 
         try {
             $this->sendToAgent(
                 HilosSignalConstants::HILOS_CODE_SEND_STEP,
-                CodeSendStepSignalData::step($ticket, $state, $detail),
+                CodeSendStepSignalData::step($progressTicket, $state, $detail),
             );
         } catch (InvalidArgumentException $failure) {
             // A step that cannot be named leaves the line where it was, which is a line one

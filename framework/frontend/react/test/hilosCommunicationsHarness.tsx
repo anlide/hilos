@@ -80,6 +80,10 @@ export function communicationsHarness(
               label: 'Configuration',
             },
             { page: HilosPages.COMMUNICATIONS_DELIVERIES, label: 'Deliveries' },
+            {
+              page: HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
+              label: 'Letter frame',
+            },
           ],
       pageChildren: [],
     }

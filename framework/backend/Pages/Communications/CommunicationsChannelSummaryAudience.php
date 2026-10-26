@@ -15,8 +15,10 @@ use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Pages\Communications\DTO\CommunicationsChannelSummary;
 use Hilos\Pages\Communications\DTO\HilosChannelPageSubscribeParams;
+use Hilos\Pages\Communications\DTO\MailLetterFrameData;
 use Throwable;
 
 /** Defers settings reactions to the serving worker's tick without retaining channel data or subscribers. */
@@ -58,12 +60,15 @@ final class CommunicationsChannelSummaryAudience implements SourceChangeSubscrib
 
         /** @var array<string, CommunicationsChannelSummary|Throwable> $summaries Memo private to this pass, including failed reads */
         $summaries = [];
+        /** @var MailLetterFrameData|Throwable|null $frame Memo private to this pass */
+        $frame = null;
         foreach (Hilos::$sr?->pageSubscriptionRecords() ?? [] as $acceptKey => $subscription) {
             $acceptKey = (string) $acceptKey;
             if (!in_array($subscription->page, [
                 HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
                 HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+                HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME,
             ], true) || $subscription->agentType !== $agent->getType() || $subscription->agentIndex !== $agent->getIndex()
                 || Hilos::$sr->pageSubscription($acceptKey) !== $subscription
             ) {
@@ -73,7 +78,7 @@ final class CommunicationsChannelSummaryAudience implements SourceChangeSubscrib
             Hilos::$browser?->publishPageData(
                 $subscription->page,
                 $acceptKey,
-                static function () use ($acceptKey, $subscription, &$summaries): PagePayload {
+                static function () use ($acceptKey, $subscription, &$summaries, &$frame): PagePayload {
                     if (Hilos::$sr?->pageSubscription($acceptKey) !== $subscription) {
                         return new PagePayload();
                     }
@@ -95,9 +100,30 @@ final class CommunicationsChannelSummaryAudience implements SourceChangeSubscrib
                         throw $summaries[$channel];
                     }
 
-                    return new PagePayload(data: ['channelSummary' => $summaries[$channel]->toArray()]);
+                    $data = ['channelSummary' => $summaries[$channel]->toArray()];
+                    if ($subscription->page === HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME) {
+                        if ($channel !== MailDeliveryChannel::NAME) {
+                            throw new PageResourceNotFoundException('Letter frames require the email channel.');
+                        }
+                        if ($frame === null) {
+                            try {
+                                $frame = new CommunicationsLetterFrameReader()->read();
+                            } catch (Throwable $failure) {
+                                $frame = $failure;
+                            }
+                        }
+                        if ($frame instanceof Throwable) {
+                            throw $frame;
+                        }
+                        $data[MailLetterFrameData::DATA] = $frame->toArray();
+                    }
+
+                    return new PagePayload(data: $data);
                 },
-                ['channelSummary' => WireField::each(CommunicationsChannelSummary::wireFields())],
+                [
+                    'channelSummary' => WireField::each(CommunicationsChannelSummary::wireFields()),
+                    MailLetterFrameData::DATA => WireField::each(MailLetterFrameData::wireFields()),
+                ],
             );
         }
     }

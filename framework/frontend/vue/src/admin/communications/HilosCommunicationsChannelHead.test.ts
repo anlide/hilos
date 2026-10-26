@@ -25,6 +25,7 @@ const CHANNEL_PAGES = [
   HilosPages.COMMUNICATIONS_CHANNEL,
   HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
   HilosPages.COMMUNICATIONS_DELIVERIES,
+  HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
 ] as const
 
 const summary: HilosChannelSummary = {
@@ -61,6 +62,7 @@ function harness(
     { page: CHANNEL_PAGES[0], label: 'Overview' },
     { page: CHANNEL_PAGES[1], label: 'Configuration' },
     { page: CHANNEL_PAGES[2], label: 'Deliveries' },
+    { page: CHANNEL_PAGES[3], label: 'Letter frame' },
   ])
   scope.data.set('pageChildren', [])
   scope.data.set(CHANNEL_SUMMARY_DATA, summary)
@@ -121,7 +123,7 @@ describe('HilosCommunicationsChannelHead', () => {
       expect(view.findAll('[data-id="hilos-page-tabs"]')).toHaveLength(1)
       expect(
         view.get('nav[aria-label="Channel pages"]').findAll('a'),
-      ).toHaveLength(3)
+      ).toHaveLength(4)
       for (const key of CHANNEL_PAGES) {
         const tab = view.get(`[data-id="hilos-page-tab-${key}"]`)
         expect(tab.attributes('href')).toBe(

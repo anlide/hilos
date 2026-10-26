@@ -57,6 +57,7 @@ use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
+use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsPage;
@@ -166,6 +167,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Frame\MailLetterFrameSettings;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\Notification\DeliveryLogPruner;
@@ -211,6 +213,19 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
+    public function testLetterFrameUsesTheExistingIndexOwnerWithoutTablesOrMutations(): void
+    {
+        self::assertSame(CommunicationsChannelFramePage::class, Hilos::PAGES[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame(CommunicationsChannelConfigurationPage::SUBSCRIPTION_AGENT_TYPE,
+            Hilos::getPageRoutes()[CommunicationsChannelFramePage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL_FRAME,
+        ], CommunicationsChannelFramePage::BROWSER);
+        self::assertSame([], CommunicationsChannelFramePage::ACTIONS);
+        self::assertSame([], CommunicationsChannelFramePage::SIGNALS);
+        self::assertArrayNotHasKey(CommunicationsChannelFramePage::PAGE, Hilos::PAGE_TABLES);
+    }
+
     /** The shared Status owner is a permanent singleton placed on a regular worker. */
     public function testStatusOwnerUsesTheFrameworkPairAndFactories(): void
     {
@@ -373,6 +388,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             CommunicationsPage::PAGE => CommunicationsPage::class,
             CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
             CommunicationsChannelConfigurationPage::PAGE => CommunicationsChannelConfigurationPage::class,
+            CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             I18nPage::PAGE => I18nPage::class,
@@ -646,6 +662,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
             CommunicationsChannelConfigurationPage::class,
+            CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::class,
             UsersPage::class,
             UserPage::class,
@@ -1119,6 +1136,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_PORT),
             DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_SECURITY),
             DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_TIMEOUT_MS),
+            MailLetterFrameSettings::SETTING_KEY,
             DeliveryLogPruner::RETENTION_SETTING_KEY,
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,

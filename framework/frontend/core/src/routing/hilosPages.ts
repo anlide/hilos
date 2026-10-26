@@ -112,6 +112,7 @@ export const HilosPages = {
   COMMUNICATIONS_CHANNEL_CONFIGURATION:
     'hilos_communications_channel_configuration',
   COMMUNICATIONS_DELIVERIES: 'hilos_communications_deliveries',
+  COMMUNICATIONS_CHANNEL_FRAME: 'hilos_communications_channel_frame',
   SECURITY: 'hilos_security',
   SECURITY_2FA: 'hilos_security_2fa',
   SECURITY_STEP_UP: 'hilos_security_step_up',
@@ -377,6 +378,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.COMMUNICATIONS_DELIVERIES]: {
     path: '/hilos/communications/{channelId}/deliveries',
+    admin: true,
+  },
+  [HilosPages.COMMUNICATIONS_CHANNEL_FRAME]: {
+    path: '/hilos/communications/{channelId}/frame',
     admin: true,
   },
   [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },

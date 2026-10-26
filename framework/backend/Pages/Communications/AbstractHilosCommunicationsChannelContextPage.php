@@ -18,10 +18,11 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Pages\Communications\DTO\CommunicationsChannelSummary;
 use Hilos\Pages\Communications\DTO\HilosChannelPageSubscribeParams;
 
-/** Shared registry admission and page data for the three channel tabs. */
+/** Shared registry admission and page data for the channel tabs. */
 abstract class AbstractHilosCommunicationsChannelContextPage extends AbstractHilosPage
 {
     /** Settings read through the channel config resolver and the typed setting accessor. */
@@ -52,6 +53,7 @@ abstract class AbstractHilosCommunicationsChannelContextPage extends AbstractHil
      * @throws EnvException When an env-backed config field is invalid
      * @throws InvalidArgumentException When the resolved object type does not match its collection
      * @throws LogicException When a settings collection is not configured
+     * @throws HilosException When the tab-specific payload cannot be built
      */
     final protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
@@ -61,6 +63,23 @@ abstract class AbstractHilosCommunicationsChannelContextPage extends AbstractHil
             throw new PageResourceNotFoundException('Unknown channel: ' . $address->channelId);
         }
 
+        return $this->buildChannelPayload($descriptor, $address);
+    }
+
+    /**
+     * @param AbstractDeliveryChannel $descriptor Admitted registry channel
+     * @param HilosChannelPageSubscribeParams $address Validated channel address
+     * @return PagePayload Channel data before identity and browser assembly
+     * @throws PageResourceNotFoundException When a tab refuses the admitted channel
+     * @throws HilosException When a tab-specific source or preview cannot be read
+     * @throws DatabaseException When persisted settings cannot be read
+     * @throws SettingException When settings metadata or values are invalid
+     * @throws EnvException When an env-backed config field is invalid
+     * @throws InvalidArgumentException When a settings object has the wrong collection type
+     * @throws LogicException When a settings collection is not configured
+     */
+    protected function buildChannelPayload(AbstractDeliveryChannel $descriptor, HilosChannelPageSubscribeParams $address): PagePayload
+    {
         return new PagePayload(data: ['channelSummary' => new CommunicationsChannelSummaryReader()->read($descriptor)->toArray()]);
     }
 

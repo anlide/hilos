@@ -10,6 +10,7 @@ use Demo\Tasks\Database\Pages\PageCatalog as TasksPageCatalog;
 use Demo\EcommerceShop\Database\Pages\PageCatalog as EcommercePageCatalog;
 use Demo\Polls\Database\Pages\PageCatalog as PollsPageCatalog;
 use Demo\OnlineTesting\Database\Pages\PageCatalog as OnlineTestingPageCatalog;
+use Hilos\Pages\Communications\AbstractHilosCommunicationsChannelFramePage;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAgentInterface;
@@ -923,6 +924,7 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
             HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME,
         ] as $page) {
             self::assertSame(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, PageCatalogResolver::rowOwner($page));
             self::assertNull(PageCatalogResolver::head($page, $params));
@@ -931,6 +933,7 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
             HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME,
         ], array_column(PageCatalogResolver::children(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL), 'page'));
     }
 
@@ -953,6 +956,7 @@ final class PageCatalogResolverTest extends TestCase
                 HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION,
                 HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+                HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME,
             ] as $page) {
                 $head = PageCatalogResolver::head($page, $params);
                 self::assertNotNull($head);
@@ -972,6 +976,7 @@ final class PageCatalogResolverTest extends TestCase
                         ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Overview'],
                         ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, 'label' => 'Configuration'],
                         ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES, 'label' => 'Deliveries'],
+                        ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME, 'label' => 'Letter frame'],
                     ],
                     'pageChildren' => [],
                 ], $head->toArray());
@@ -998,6 +1003,30 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
+    public function testLetterFrameTabIsOnlyServedForEmailAndRemainsOmittedWhenUnserved(): void
+    {
+        CommunicationsPageHeadTestHilos::initBrowser();
+        foreach (['sms', 'push'] as $channel) {
+            $head = PageCatalogResolver::head(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+                new PageRouteParams(['channelId' => $channel]));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, 'label' => 'Configuration'],
+                ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES, 'label' => 'Deliveries'],
+            ], $head->pageTabs);
+        }
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME);
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            new PageRouteParams(['channelId' => 'email']));
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION, 'label' => 'Configuration'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES, 'label' => 'Deliveries'],
+        ], $head->pageTabs);
+    }
+
     /** A provider that did not adopt Communications keeps its legacy breadcrumb and child cards. */
     public function testRegisteredCommunicationsPagesKeepTheLegacyHeadWithoutOptIn(): void
     {
@@ -1018,6 +1047,8 @@ final class PageCatalogResolverTest extends TestCase
                 'label' => 'Configuration', 'lead' => 'The fields of one channel.'],
             ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
                 'label' => 'Deliveries', 'lead' => 'Delivery log for one channel.'],
+            ['page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME,
+                'label' => 'Letter frame', 'lead' => 'Header, footer and styles around every letter.'],
         ], PageCatalogResolver::children(HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL));
     }
 
@@ -1303,6 +1334,7 @@ abstract class LegacyCommunicationsPageHeadTestHilos extends Hilos
         HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => PageHeadTestPage::class,
         HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION => PageHeadTestPage::class,
         HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_FRAME => CommunicationsFramePageHeadTestPage::class,
     ];
 }
 
@@ -1754,4 +1786,8 @@ abstract class ModerationKindPageHeadTestHilos extends Hilos
         HilosPageConstants::HILOS_MODERATION => PageHeadTestPage::class,
         HilosPageConstants::HILOS_MODERATION_KIND => PageHeadTestPage::class,
     ];
+}
+
+final class CommunicationsFramePageHeadTestPage extends AbstractHilosCommunicationsChannelFramePage
+{
 }

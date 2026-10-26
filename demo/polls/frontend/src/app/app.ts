@@ -193,6 +193,11 @@ export class App {
         (module) => module.Configuration,
       ),
     ),
+    [HilosPages.COMMUNICATIONS_CHANNEL_FRAME]: lazyPage(() =>
+      import('./views/hilos/communications/frame.js').then(
+        (module) => module.Frame,
+      ),
+    ),
     [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
       import('./views/hilos/communications/deliveries.js').then(
         (module) => module.Deliveries,
