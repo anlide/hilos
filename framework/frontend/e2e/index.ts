@@ -398,6 +398,7 @@ export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'
 export { watchDaemonSource } from './daemonSource.js'
 export {
+  expectLogsPageHead,
   watchLogFrames,
   logMomentLabel,
   logBatchDirectory,

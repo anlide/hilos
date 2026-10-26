@@ -6,6 +6,7 @@ import {
   watchSocketFrames,
   watchLogFrames,
   expectLogLineClock,
+  expectLogsPageHead,
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
@@ -16,7 +17,7 @@ import {
   logMarker,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../helpers/logs.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 const READER_ZONE = 'America/Los_Angeles'
 test.use({ timezoneId: READER_ZONE })
@@ -57,6 +58,10 @@ test('follows a live log file: an appended line arrives on its own, and one appe
   try {
     await grantAdminToSelf(page)
     await gotoPage(page, VIEWER_PATH, PAGE_READY)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.reload()
+    await expectPageReady(page)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
 
     // Two gates before the first append, and they answer different questions.
     // The badge says a tail is running: the follow starts by itself, from the end
@@ -232,6 +237,7 @@ test.describe('the log viewer in the admin view mode', () => {
 
       await setAdminViewMode(true)
       await gotoPage(page, VIEWER_PATH, PAGE_READY)
+      await expectLogsPageHead(expect, page, 'hilos_logs_view')
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
       await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible({

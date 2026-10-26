@@ -213,6 +213,7 @@ for (const outcome of ['success', 'failure'] as const) {
       await expect(page).toHaveURL(/\/$/)
       await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
       await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
+      await expect(page.getByTestId('hilos-page-head')).toHaveCount(0)
       await expect(page.getByTestId('page-error')).toHaveCount(0)
     } finally {
       await held.dispose()

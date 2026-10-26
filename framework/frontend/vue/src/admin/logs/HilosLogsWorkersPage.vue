@@ -85,7 +85,11 @@ function clearFilters(): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.LOGS_WORKERS">
+  <HilosAdminPage
+    :page="HilosPages.LOGS_WORKERS"
+    head-kind="section"
+    tabs-label="Logs pages"
+  >
     <p class="text-body-secondary">
       The same thing again, but only for the workers and with the distinction
       the by-key page deliberately loses: an ordinary worker or the monopolistic

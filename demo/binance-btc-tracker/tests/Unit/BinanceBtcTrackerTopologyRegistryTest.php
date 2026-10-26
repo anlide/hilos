@@ -135,6 +135,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
@@ -489,6 +490,13 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::resetBrowser();
         }
         $pages = PageCatalog::pages();
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_LOGS],
+        );
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
@@ -515,6 +523,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
         self::assertSame([
             HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_LOGS,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,

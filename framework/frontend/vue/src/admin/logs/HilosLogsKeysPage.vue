@@ -81,7 +81,11 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.LOGS_KEYS">
+  <HilosAdminPage
+    :page="HilosPages.LOGS_KEYS"
+    head-kind="section"
+    tabs-label="Logs pages"
+  >
     <p class="text-body-secondary">
       A key is the file name that survives rotation: the same stream goes on
       being written under that name into the next batch.

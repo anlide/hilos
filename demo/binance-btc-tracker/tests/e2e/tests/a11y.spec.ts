@@ -7,6 +7,7 @@ import {
   expectPublicStatusReadOnly,
   expectStatusHead,
   expectLanguagePageHead,
+  expectLogsPageHead,
   expectStatusIncidentDialog,
   shownByTestId,
   watchPublicStatus,
@@ -72,6 +73,32 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   await expect(current.getByRole('link')).toHaveCount(0)
   await expect(head.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByRole('tablist')).toHaveCount(0)
+})
+
+test('Logs pages expose named navigation, one heading and ordinary keyboard links', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/logs', PAGE_READY)
+  await expectLogsPageHead(expect, page, 'hilos_logs')
+  const overview = page.getByTestId('hilos-page-tab-hilos_logs')
+  const keys = page.getByTestId('hilos-page-tab-hilos_logs_keys')
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(keys).toBeFocused()
+  await keys.press('Enter')
+  await expectPageReady(page)
+  await expect(page).toHaveURL(/\/hilos\/logs\/keys$/)
+  await expectLogsPageHead(expect, page, 'hilos_logs_keys')
+  await keys.focus()
+  await page.keyboard.press('Tab')
+  const workers = page.getByTestId('hilos-page-tab-hilos_logs_workers')
+  await expect(workers).toBeFocused()
+  await workers.press('Enter')
+  await expectPageReady(page)
+  await expect(page).toHaveURL(/\/hilos\/logs\/workers$/)
+  await expectLogsPageHead(expect, page, 'hilos_logs_workers')
 })
 
 test('Status pages expose the shared heading, current tab, title, named table and keyboard navigation', async ({

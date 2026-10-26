@@ -48,7 +48,7 @@ test('logs initial answers keep own state, response and declared facets in one p
     ).toEqual(['subscription_page_hilos_logs', 'page_response'])
     expect(overview.raw).toMatch(/^\{"type":"signal_batch"/)
 
-    await page.getByTestId('hilos-admin-child-hilos_logs_keys').click()
+    await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
     await expectPageReady(page)
     await expect.poll(() => page.locator(ROWS).count()).toBeGreaterThan(0)
     await expect

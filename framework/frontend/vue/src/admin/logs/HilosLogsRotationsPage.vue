@@ -280,7 +280,11 @@ const legendOpen = ref(false)
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.LOGS_ROTATIONS">
+  <HilosAdminPage
+    :page="HilosPages.LOGS_ROTATIONS"
+    head-kind="section"
+    tabs-label="Logs pages"
+  >
     <div
       class="d-flex flex-wrap align-items-center gap-3 border rounded-3 p-3 mb-4"
     >

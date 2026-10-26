@@ -117,6 +117,7 @@ use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -848,7 +849,7 @@ final class ChatTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Catalog overrides retain every framework field for User, Person, Appearance and both Communications owners. */
+    /** Catalog overrides retain every framework field for User, Person, Logs, Appearance and both Communications owners. */
     public function testCatalogAdoptsUserPersonAndBothCommunicationsOwnersWithCompleteEntries(): void
     {
         Hilos::initBrowser();
@@ -858,6 +859,13 @@ final class ChatTopologyRegistryTest extends TestCase
             Hilos::resetBrowser();
         }
         $pages = PageCatalog::pages();
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_LOGS],
+        );
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
@@ -884,6 +892,7 @@ final class ChatTopologyRegistryTest extends TestCase
         ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
         self::assertSame([
             HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_LOGS,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,

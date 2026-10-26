@@ -604,10 +604,10 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
         timeout: TAIL_ARRIVAL_TIMEOUT_MS,
       })
       .toBeGreaterThan(0)
-    await page.getByTestId('hilos-breadcrumb-hilos_logs').click()
+    await page.getByTestId('hilos-page-tab-hilos_logs').click()
     await expectPageReady(page)
     await expect(
-      page.getByTestId('hilos-admin-child-hilos_logs_keys'),
+      page.getByTestId('hilos-page-tab-hilos_logs_keys'),
     ).toBeVisible()
     const owner = await control.request(
       'locate',
@@ -635,7 +635,7 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
     expect(paused.state?.state).toMatch(/^[Tt]$/)
     phases.paused = { before, owner, paused, originalSocket, healthySocket }
     const sentMark = log.sent.length
-    await page.getByTestId('hilos-admin-child-hilos_logs_keys').click()
+    await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
     const subscribes = () =>
       log.sent
         .slice(sentMark)

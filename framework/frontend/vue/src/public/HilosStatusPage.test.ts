@@ -235,7 +235,9 @@ describe('public HilosStatusPage', () => {
     h.fail()
     h.publish({ malformed: true }, NOW + 120000)
     await settle()
-    await vi.advanceTimersByTimeAsync(120001)
+    // The settled live reader has only clock callbacks; batch intermediate
+    // renders, then flush the final state below.
+    vi.advanceTimersByTime(120001)
     await nextTick()
     expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
       `The system is not responding since ${formatMoment(NOW)}`,

@@ -4,11 +4,14 @@ import {
   armSocketDrop,
   dropSocket,
   expectCommunicationsChannelHead,
+  expectLogsPageHead,
+  shownByTestId,
   watchSocketFrames,
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
+import { FOLLOWED_STREAM } from '../helpers/logs.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 /** Wire key of the framework users table, the one table of the `/hilos/users` page. */
 const HILOS_USERS_TABLE = 'hilosUsers'
@@ -39,29 +42,27 @@ test('navigates the admin tree with no reload or reconnect', async ({
   await expect(page.getByTestId('dashboard-card-hilos_logs')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
 
-  // Dashboard card -> a top-level section page with its sub-navigation.
+  // Dashboard card -> the Logs owner and its six page links.
   await page.getByTestId('dashboard-card-hilos_logs').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  await expectLogsPageHead(expect, page, 'hilos_logs')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs')
-  await expect(
-    page.getByTestId('hilos-admin-child-hilos_logs_keys'),
-  ).toBeVisible()
+  await expect(page.getByTestId('hilos-page-tab-hilos_logs_keys')).toBeVisible()
 
-  // Section -> a sub-page, then back up through the breadcrumb.
-  await page.getByTestId('hilos-admin-child-hilos_logs_keys').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('By key')
+  // Every tab is its own page; Overview is the way back to the section summary.
+  await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_keys')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs/keys')
   await expect(page.getByTestId('hilos-table-title')).toHaveText('Log streams')
   await expect(page.getByTestId('hilos-table-search')).toBeVisible()
   await expect(page.getByTestId('hilos-table-filter-class')).toBeVisible()
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
   await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
-  await page.getByTestId('hilos-breadcrumb-hilos_logs').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  await page.getByTestId('hilos-page-tab-hilos_logs').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs')
 
-  await page.getByTestId('hilos-admin-child-hilos_logs_workers').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('By worker')
+  await page.getByTestId('hilos-page-tab-hilos_logs_workers').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_workers')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs/workers')
   await expect(page.getByTestId('hilos-table-title')).toHaveText(
     'Worker streams',
@@ -70,13 +71,54 @@ test('navigates the admin tree with no reload or reconnect', async ({
   await expect(page.getByTestId('hilos-table-filter-type')).toBeVisible()
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
   await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
-  await page.getByTestId('hilos-breadcrumb-hilos_logs').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  await page.getByTestId('hilos-page-tab-hilos_logs').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs')
+
+  await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await shownByTestId(page, 'hilos-table-filter-state').click()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
+  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+
+  await page.getByTestId('hilos-page-tab-hilos_logs_settings').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_settings')
+  await expect(page).toHaveURL(/\/hilos\/logs\/settings$/)
+  await page.getByTestId('hilos-page-tab-hilos_logs_view').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_view')
+  const stream = page.getByTestId('hilos-log-stream')
+  await expect(
+    stream.locator(`option[value="${FOLLOWED_STREAM}"]`),
+  ).toHaveCount(1)
+  await stream.selectOption(FOLLOWED_STREAM)
+  const viewerPath = `/hilos/logs/view/standalone/live/${FOLLOWED_STREAM}`
+  await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
+  await expectLogsPageHead(expect, page, 'hilos_logs_view')
+  await page.getByTestId('hilos-page-tab-hilos_logs').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs')
 
   // The whole tour stayed in one live document on one socket.
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)
+
+  // Cold entry, F5 and history use the same owner without extending its crumbs.
+  await gotoPage(page, viewerPath, PAGE_READY)
+  await expectLogsPageHead(expect, page, 'hilos_logs_view')
+  await page.reload()
+  await expectPageReady(page)
+  await expectLogsPageHead(expect, page, 'hilos_logs_view')
+  await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
+  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+  await page.goBack()
+  await expectPageReady(page)
+  await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
+  await expectLogsPageHead(expect, page, 'hilos_logs_view')
+  await page.goForward()
+  await expectPageReady(page)
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
 })
 
 // A built parametrized admin page resolves on cold load through the framework

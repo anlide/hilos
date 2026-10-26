@@ -11,7 +11,7 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
 /**
- * PageCatalog - Chat admin pages, dashboard group, and User, Analytics Person, Communications and Appearance head adoption.
+ * PageCatalog - Chat admin pages, dashboard group, and User, Logs, Analytics Person, Communications and Appearance head adoption.
  *
  * One screen the framework does not know about: the library bots. It hangs off the
  * dashboard, so it reaches the panel as a card of its own group rather than as a
@@ -35,6 +35,10 @@ final class PageCatalog implements PageCatalogProviderInterface
         return [
             HilosPageConstants::HILOS_USER => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_LOGS => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
             HilosPageConstants::HILOS_ANALYTICS_PERSON => array_replace(

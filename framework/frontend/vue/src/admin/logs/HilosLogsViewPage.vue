@@ -256,7 +256,11 @@ function toggle(entry: HilosLogViewerEntry): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.LOGS_VIEW">
+  <HilosAdminPage
+    :page="HilosPages.LOGS_VIEW"
+    head-kind="section"
+    tabs-label="Logs pages"
+  >
     <div class="border rounded-3 p-3 mb-3">
       <div class="row g-2 align-items-end">
         <div v-if="clustered" class="col-6 col-md-2">

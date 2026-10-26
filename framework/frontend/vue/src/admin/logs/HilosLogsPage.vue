@@ -110,7 +110,11 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.LOGS">
+  <HilosAdminPage
+    :page="HilosPages.LOGS"
+    head-kind="section"
+    tabs-label="Logs pages"
+  >
     <div
       class="row row-cols-1 row-cols-sm-2 g-3 mb-3"
       data-id="hilos-logs-tiles"

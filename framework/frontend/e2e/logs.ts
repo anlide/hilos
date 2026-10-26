@@ -5,6 +5,96 @@ import {
   watchDeliveryFrames,
 } from './deliveryFrames.js'
 
+/**
+ * Read the adopted Logs section head without changing its current route context.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on one of the six Logs pages.
+ * @param currentPage The key of the page whose link must be current.
+ */
+export async function expectLogsPageHead(
+  expect: Expect,
+  page: Page,
+  currentPage: string,
+): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toHaveCount(1)
+  await expect(head).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveAttribute('id', /\S+/)
+  await expect(heading).toHaveText('Logs')
+  const block = head.getByTestId('hilos-page-head-block')
+  await expect(block.locator('.rounded-circle i.bi-journal-text')).toHaveCount(
+    1,
+  )
+  await expect(block.locator('p')).toHaveText(
+    'Rotation stats, log keys, workers, and the viewer.',
+  )
+  const crumbs = head.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveRole('navigation')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.locator('ol > li')).toHaveText(['Hilos', 'Logs'])
+  await expect(page.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const last = crumbs.locator('[aria-current]')
+  await expect(last).toHaveCount(1)
+  await expect(last).toHaveAttribute('aria-current', 'page')
+  await expect(last).toHaveText('Logs')
+  await expect(last.locator('a')).toHaveCount(0)
+
+  const path = new URL(page.url()).pathname
+  const tabs = head.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveRole('navigation')
+  await expect(tabs).toHaveAccessibleName('Logs pages')
+  await expect(tabs.getByRole('link')).toHaveText([
+    'Overview',
+    'By key',
+    'By worker',
+    'Rotations',
+    'Settings',
+    'Viewer',
+  ])
+  for (const [key, href] of [
+    ['hilos_logs', '/hilos/logs'],
+    ['hilos_logs_keys', '/hilos/logs/keys'],
+    ['hilos_logs_workers', '/hilos/logs/workers'],
+    [
+      'hilos_logs_rotations',
+      path.startsWith('/hilos/logs/rotations/')
+        ? path
+        : '/hilos/logs/rotations',
+    ],
+    ['hilos_logs_settings', '/hilos/logs/settings'],
+    [
+      'hilos_logs_view',
+      path.startsWith('/hilos/logs/view/') ? path : '/hilos/logs/view',
+    ],
+  ]) {
+    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(link).toHaveAttribute('href', href)
+    if (key === currentPage) {
+      await expect(link).toHaveAttribute('aria-current', 'page')
+      await expect(link).toHaveClass(/(?:^| )active(?: |$)/)
+    } else {
+      await expect(link).not.toHaveAttribute('aria-current')
+      await expect(link).not.toHaveClass(/(?:^| )active(?: |$)/)
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(tabs.locator('.active')).toHaveCount(1)
+  await expect(head.getByRole('tablist')).toHaveCount(0)
+  await expect(head.getByRole('tab')).toHaveCount(0)
+  await expect(head.getByRole('tabpanel')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+}
+
 /** Observe real Logs traffic; the delivery toolbox retains raw frames and failures. */
 export function watchLogFrames(page: Page) {
   const log = watchDeliveryFrames(page)

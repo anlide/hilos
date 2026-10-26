@@ -384,6 +384,100 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
+    /** Both real Vue providers adopt all served Logs tabs without changing the framework default. */
+    public function testVueProvidersAdoptTheSameLogsHeadOnAllSixPages(): void
+    {
+        foreach ([ChatLogsPageHeadTestHilos::class, BinanceLogsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_LOGS]);
+            foreach ([
+                HilosPageConstants::HILOS_LOGS,
+                HilosPageConstants::HILOS_LOGS_KEYS,
+                HilosPageConstants::HILOS_LOGS_WORKERS,
+                HilosPageConstants::HILOS_LOGS_ROTATIONS,
+                HilosPageConstants::HILOS_LOGS_SETTINGS,
+                HilosPageConstants::HILOS_LOGS_VIEW,
+            ] as $page) {
+                self::assertSame(HilosPageConstants::HILOS_LOGS, PageCatalogResolver::rowOwner($page));
+                $head = PageCatalogResolver::head($page, new PageRouteParams([
+                    'state' => 'due', 'nodeId' => 'node-2', 'source' => 'live',
+                    'stream' => 'worker-0.log', 'anchor' => '1792836000123',
+                ]));
+                self::assertNotNull($head);
+                self::assertSame([
+                    'pageHeadOwner' => [
+                        'page' => HilosPageConstants::HILOS_LOGS,
+                        'label' => 'Logs',
+                        'lead' => 'Rotation stats, log keys, workers, and the viewer.',
+                        'icon' => 'bi-journal-text',
+                    ],
+                    'pageBreadcrumb' => [
+                        ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                        ['page' => HilosPageConstants::HILOS_LOGS, 'label' => 'Logs'],
+                    ],
+                    'pageTabs' => [
+                        ['page' => HilosPageConstants::HILOS_LOGS, 'label' => 'Overview'],
+                        ['page' => HilosPageConstants::HILOS_LOGS_KEYS, 'label' => 'By key'],
+                        ['page' => HilosPageConstants::HILOS_LOGS_WORKERS, 'label' => 'By worker'],
+                        ['page' => HilosPageConstants::HILOS_LOGS_ROTATIONS, 'label' => 'Rotations'],
+                        ['page' => HilosPageConstants::HILOS_LOGS_SETTINGS, 'label' => 'Settings'],
+                        ['page' => HilosPageConstants::HILOS_LOGS_VIEW, 'label' => 'Viewer'],
+                    ],
+                    'pageChildren' => [],
+                ], $head->toArray());
+                self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
+            }
+        }
+    }
+
+    /** A project serving only Logs Overview gets no links to absent child pages. */
+    public function testVueLogsHeadFiltersUnservedTabs(): void
+    {
+        foreach ([ChatLogsOverviewHeadTestHilos::class, BinanceLogsOverviewHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            $head = PageCatalogResolver::head(HilosPageConstants::HILOS_LOGS, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_LOGS,
+                    'label' => 'Logs',
+                    'lead' => 'Rotation stats, log keys, workers, and the viewer.',
+                    'icon' => 'bi-journal-text',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_LOGS, 'label' => 'Logs'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_LOGS, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $head->toArray());
+        }
+    }
+
+    /** Without project adoption the framework keeps the tab in the legacy breadcrumb. */
+    public function testLogsStayLegacyInTheDefaultProvider(): void
+    {
+        LogsPageHeadTestHilos::initBrowser();
+        foreach ([
+            HilosPageConstants::HILOS_LOGS,
+            HilosPageConstants::HILOS_LOGS_KEYS,
+            HilosPageConstants::HILOS_LOGS_WORKERS,
+            HilosPageConstants::HILOS_LOGS_ROTATIONS,
+            HilosPageConstants::HILOS_LOGS_SETTINGS,
+            HilosPageConstants::HILOS_LOGS_VIEW,
+        ] as $page) {
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
+        }
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_LOGS, 'label' => 'Logs'],
+            ['page' => HilosPageConstants::HILOS_LOGS_KEYS, 'label' => 'By key'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_LOGS_KEYS));
+    }
+
     /** Chat and Binance adopt Appearance; the framework facade and the other four providers stay legacy. */
     public function testVueProvidersAdoptTheAppearanceHeadWithOnlyOverviewServed(): void
     {
@@ -1268,6 +1362,47 @@ abstract class BinanceUserTabsPageHeadTestHilos extends BinanceUserPageHeadTestH
         HilosPageConstants::HILOS_USER_SESSIONS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_USER_ACCESS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_USER_ROLES => PageHeadTestPage::class,
+    ];
+}
+
+/** All Logs pages, registered out of catalog order to exercise ordering independently. */
+abstract class LogsPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_LOGS_VIEW => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LOGS_SETTINGS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LOGS_ROTATIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LOGS_WORKERS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LOGS_KEYS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LOGS => PageHeadTestPage::class,
+    ];
+}
+
+/** Chat's real provider supplies the complete Logs opt-in. */
+abstract class ChatLogsPageHeadTestHilos extends LogsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** Binance's real provider supplies its own Logs opt-in. */
+abstract class BinanceLogsPageHeadTestHilos extends LogsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Only Overview is served; the other catalog tabs must be absent. */
+abstract class ChatLogsOverviewHeadTestHilos extends ChatLogsPageHeadTestHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_LOGS => PageHeadTestPage::class,
+    ];
+}
+
+/** The Binance provider applies the same served-page filter. */
+abstract class BinanceLogsOverviewHeadTestHilos extends BinanceLogsPageHeadTestHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_LOGS => PageHeadTestPage::class,
     ];
 }
 

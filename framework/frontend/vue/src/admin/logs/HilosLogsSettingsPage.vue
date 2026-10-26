@@ -24,5 +24,7 @@ defineProps<{
     :context="context"
     :signal="LOG_SETTINGS_SIGNAL"
     :vocabulary="hilosLogSettingsVocabulary"
+    head-kind="section"
+    tabs-label="Logs pages"
   />
 </template>
