@@ -168,6 +168,42 @@ final class StepArtifactsTest extends TestCase
         $this->assertDirectoryDoesNotExist($root . '/snapshot/nodes');
     }
 
+    /** A step takes the Playwright output it wrote; what an earlier run left in the demo stays out. */
+    public function testCopiesOnlyThePlaywrightOutputTheStepWrote(): void
+    {
+        $root = $this->fixtureDirectory();
+        mkdir($root . '/test-results/main/a-test', 0o755, true);
+        mkdir($root . '/test-results/old-layout-test', 0o755, true);
+        file_put_contents($root . '/test-results/main/a-test/trace.zip', 'this run');
+        file_put_contents($root . '/test-results/old-layout-test/trace.zip', 'an earlier run');
+        touch($root . '/test-results/old-layout-test/trace.zip', time() - 3600);
+
+        $this->assertSame([], copyPlaywrightOutput($root . '/test-results', $root . '/snapshot', date('c', time() - 60)));
+        $this->assertSame('this run', file_get_contents($root . '/snapshot/main/a-test/trace.zip'));
+        $this->assertDirectoryDoesNotExist($root . '/snapshot/old-layout-test');
+    }
+
+    /** A step whose start cannot be read takes every file, as the collector did before it looked at times. */
+    public function testCopiesEveryPlaywrightFileWhenTheStartCannotBeRead(): void
+    {
+        $root = $this->fixtureDirectory();
+        mkdir($root . '/test-results/old-layout-test', 0o755, true);
+        file_put_contents($root . '/test-results/old-layout-test/trace.zip', 'an earlier run');
+        touch($root . '/test-results/old-layout-test/trace.zip', time() - 3600);
+
+        $this->assertSame([], copyPlaywrightOutput($root . '/test-results', $root . '/snapshot', 'not a moment'));
+        $this->assertSame('an earlier run', file_get_contents($root . '/snapshot/old-layout-test/trace.zip'));
+    }
+
+    /** A demo without Playwright output gives the snapshot nothing, not even an empty directory. */
+    public function testCopiesNothingFromADemoWithoutPlaywrightOutput(): void
+    {
+        $root = $this->fixtureDirectory();
+
+        $this->assertSame([], copyPlaywrightOutput($root . '/test-results', $root . '/snapshot', date('c')));
+        $this->assertDirectoryDoesNotExist($root . '/snapshot');
+    }
+
     /** A step without an override uses the stand's database; an override must stay shell quoted. */
     public function testDatabaseQuerySelectsTheStepDatabase(): void
     {

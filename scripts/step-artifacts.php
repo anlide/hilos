@@ -101,7 +101,8 @@ const STAND_LOG_PATTERNS = [
  * Where Playwright leaves its report and its per-test output, relative to the
  * step's working directory, and where each lands inside the snapshot. The retry
  * trace under `test-results` is the only evidence a flaky test ever leaves, and
- * today the next run of the same demo overwrites it.
+ * today the next run of the same demo overwrites it. Only what the step itself
+ * wrote is taken ({@see copyPlaywrightOutput()}).
  *
  * @var array<string, string>
  */
@@ -305,7 +306,7 @@ function collectStepArtifacts(
 
     $missing = [...$missing, ...copyStepLogs($root, $id, $stand, $path)];
     foreach (PLAYWRIGHT_OUTPUT_DIRS as $source => $target) {
-        $missing = [...$missing, ...copyArtifactTree('playwright', $cwd . '/' . $source, $path . '/' . $target)];
+        $missing = [...$missing, ...copyPlaywrightOutput($cwd . '/' . $source, $path . '/' . $target, $finished['at'])];
     }
 
     $probe = artifactBudgetLeft($deadline)
@@ -1294,6 +1295,76 @@ function copyArtifactTree(string $label, string $source, string $target): array
     }
 
     return $missing;
+}
+
+/**
+ * Copy the Playwright output the step wrote, each file in its own place, and leave the
+ * rest where it lies.
+ *
+ * Every step of a demo runs in the demo's directory, and nothing there is cleared whole:
+ * each Playwright run of the demo empties only its own subdirectory (`main`,
+ * `cluster-live`, `quarantine/…`), and an entry no config writes any more stays for
+ * good. Taken whole, that directory went into the php, check, build and cluster steps of
+ * the demo as well, and a red e2e step whose traces took 0.8 GB took 4.3 GB of the run
+ * store. A file last changed before the step started is an earlier step's evidence —
+ * that step's own snapshot holds it — or nobody's at all. A step running beside this one
+ * in the same directory can still leave a file in both snapshots; keeping the run's
+ * identical files once is the run store's business, not the collector's.
+ *
+ * @param string $source The directory Playwright writes; a missing one has nothing to copy.
+ * @param string $target Where the step's files go; made only when there is one to put there.
+ * @param string $startedAt When the step started, as the runner recorded it (`date('c')`);
+ *     a moment that cannot be read takes every file, as before.
+ * @return array<int, string> What could not be copied, with the reason.
+ */
+function copyPlaywrightOutput(string $source, string $target, string $startedAt): array
+{
+    $since = strtotime($startedAt);
+    // The runner lives through the whole run, and a report file keeps its path from one run to the next.
+    clearstatcache();
+    $missing = [];
+    foreach (artifactFilesUnder($source) as $file) {
+        $changed = filemtime($file);
+        if ($since !== false && $changed !== false && $changed < $since) {
+            continue;
+        }
+        $copy = $target . substr($file, strlen($source));
+        if (!makeArtifactDir(dirname($copy))) {
+            $missing[] = 'playwright: could not create ' . dirname($copy);
+            continue;
+        }
+        if (!is_readable($file) || !copy($file, $copy)) {
+            $missing[] = 'playwright: could not copy ' . $file;
+        }
+    }
+
+    return $missing;
+}
+
+/**
+ * Every file under a directory, depth first in name order. A directory that is not
+ * there lists nothing.
+ *
+ * @param string $dir The directory.
+ * @return array<int, string> The paths of its files.
+ */
+function artifactFilesUnder(string $dir): array
+{
+    if (!is_dir($dir)) {
+        return [];
+    }
+
+    $files = [];
+    foreach (scandir($dir) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        $files = is_dir($dir . '/' . $entry)
+            ? [...$files, ...artifactFilesUnder($dir . '/' . $entry)]
+            : [...$files, $dir . '/' . $entry];
+    }
+
+    return $files;
 }
 
 /**
