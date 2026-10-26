@@ -4,6 +4,22 @@ import {
   DAEMON_PLACEMENT_TYPE,
   DAEMON_ROOT_CRUMB,
   DAEMON_ROOT_PATH,
+  DAEMON_PLACEMENT_PATH,
+  expectDaemonSectionHead,
+  expectDaemonPlacementAnswer,
+  expectDaemonPlacementSourceReady,
+  expectDaemonPlacementPending,
+  expectDaemonPlacementRequests,
+  expectDaemonRootEntryPoints,
+  expectDaemonPlacementOwnership,
+  expectDaemonSectionAccessibility,
+  searchDaemonPlacement,
+  expectDaemonPlacementReset,
+  watchDaemonPlacementLive,
+  watchTableSearch,
+  watchDeliveryFrames,
+  holdPageReply,
+  expectStandaloneMismatch,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
   watchDaemonNodeFrames,
@@ -81,9 +97,11 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
     })
 
     // Placement checks: Node agent on each declared node, collector policy copy, and page agent.
-    const placementTab = page.getByTestId('hilos-daemon-placement-tab')
+    const placementTab = page.getByTestId(
+      'hilos-page-tab-hilos_daemon_placement',
+    )
     await placementTab.click()
-    await expect(placementTab).toHaveAttribute('aria-pressed', 'true')
+    await expect(placementTab).toHaveAttribute('aria-current', 'page')
     for (const nodeId of SMOKE_NODES) {
       await expect(
         shownByTestId(
@@ -101,11 +119,10 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
       shownByTestId(page, 'hilos-table-card-hilos_daemon'),
     )
     await expect(pageAgent).toBeVisible()
-    await page.getByTestId('hilos-daemon-nodes-tab').click()
-    await expect(page.getByTestId('hilos-daemon-nodes-tab')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await page.getByTestId('hilos-page-tab-hilos_daemon').click()
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_daemon'),
+    ).toHaveAttribute('aria-current', 'page')
   } else {
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
   }
@@ -281,6 +298,115 @@ for (const viewer of [false, true]) {
           showLogLinks: false,
         })
       }
+    }
+  })
+}
+
+for (const viewer of [false, true]) {
+  test(`cold Placement answers once, reloads and resets on history while live data preserves search as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+    page,
+    context,
+    browser,
+    baseURL,
+  }) => {
+    // Held cold reply, reload, a real connection report and history are separate round trips.
+    test.slow()
+    await setAdminViewMode(viewer)
+    if (!viewer) await grantAdminToSelf(page)
+    // The source may be null until its first full picture; prepare that fact
+    // in the setup tab, leaving the cold document's subscription untouched.
+    await gotoPage(page, DAEMON_PLACEMENT_PATH, PAGE_READY)
+    await expectDaemonPlacementSourceReady(expect, page)
+    const cold = await context.newPage()
+    const log = watchDeliveryFrames(cold)
+    const windows = await watchTableSearch(cold, {
+      page: 'hilos_daemon_placement',
+      tableKey: 'hilosDaemonPlacement',
+    })
+    const held = await holdPageReply(cold, 'hilos_daemon_placement')
+    const navigation = gotoPage(cold, DAEMON_PLACEMENT_PATH, PAGE_READY)
+    const completed = navigation.catch((error: unknown) => error)
+    const frames = () =>
+      log.packets
+        .flatMap((packet) => packet.frames)
+        .filter((frame) => frame.socket === log.sockets())
+    try {
+      await held.received
+      await expectDaemonPlacementPending(expect, cold)
+      held.release()
+      await navigation
+      const initial = await expectDaemonPlacementAnswer(expect, cold, frames())
+      expect(initial.entryPoints?.nodeId).toBe('standalone')
+      await expectDaemonPlacementRequests(expect, log)
+      if (viewer)
+        await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
+      await cold.reload()
+      await expectDaemonPage(expect, cold, 'hilos_daemon_placement')
+      await expectDaemonPlacementAnswer(expect, cold, frames())
+      await expectDaemonPlacementRequests(expect, log)
+      await expectDaemonSectionAccessibility(expect, cold)
+      await expect(
+        cold.getByTestId(/^hilos-daemon-(node|worker|agent)-log/),
+      ).toHaveCount(0)
+      await searchDaemonPlacement(expect, cold, windows)
+      const live = await watchDaemonPlacementLive(expect, cold, log, 2)
+      const visitor = await browser.newPage({
+        baseURL,
+        ignoreHTTPSErrors: true,
+      })
+      try {
+        await gotoPage(visitor, '/', PAGE_READY)
+        await live.changed()
+      } finally {
+        await visitor.context().close()
+        await live.dispose()
+      }
+      await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
+      await expectDaemonPage(expect, cold, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
+      await expect(cold.getByTestId('hilos-daemon-placement-view')).toHaveCount(
+        0,
+      )
+      const source = await expectDaemonRootEntryPoints(expect, cold, log)
+      expect(source.nodeId).toBe('standalone')
+      await cold.goBack()
+      await expectDaemonPlacementReset(expect, cold)
+      await cold.goForward()
+      await expectDaemonPage(expect, cold, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
+      await cold
+        .getByTestId('hilos-page-tab-hilos_daemon_placement')
+        .press('Enter')
+      await expectDaemonPlacementReset(expect, cold)
+      // The source's metrics link is a real addressed HTTP page.
+      await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
+      await expectDaemonPage(expect, cold, 'hilos_daemon')
+      await cold.getByTestId('hilos-daemon-entry-metrics').press('Enter')
+      await expectDaemonPage(expect, cold, 'hilos_daemon_http_server')
+      await expect(cold).toHaveURL(`${DAEMON_ROOT_PATH}/${source.nodeId}/http`)
+      await expect(cold.getByTestId('hilos-daemon-http-address')).toHaveText(
+        new RegExp(`:${source.httpPort}\\s*$`),
+      )
+      await gotoPage(cold, '/hilos/daemon/env-mismatch', PAGE_READY)
+      await expectStandaloneMismatch(expect, cold)
+      await cold
+        .getByTestId('hilos-page-tab-hilos_daemon_placement')
+        .press('Enter')
+      await expectDaemonPlacementReset(expect, cold)
+      expectDaemonPlacementOwnership(expect, log)
+    } finally {
+      held.dispose()
+      await completed
+      await test.info().attach('daemon-section-cold-history-live', {
+        body: JSON.stringify({
+          packets: log.packets,
+          sent: log.sent,
+          search: await windows.read(),
+        }),
+        contentType: 'application/json',
+      })
+      log.stop()
+      await cold.close()
     }
   })
 }

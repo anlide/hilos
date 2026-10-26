@@ -11,9 +11,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\DaemonSection\ClusterDaemonPicture;
-use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
@@ -21,7 +19,6 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Daemon\DTO\HilosDaemonOverviewData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
-use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use JsonException;
 
 /**
@@ -75,12 +72,6 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
                     return new PagePayload(data: $fingerprint === $previousFingerprint ? [] : [self::DAEMON => $data]);
                 },
                 self::pageDataFields(),
-            );
-            Hilos::$browser?->publishTableMutations(
-                self::PAGE,
-                $acceptKey,
-                HilosDaemonPlacementTable::TABLE,
-                static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
             );
         }
         if ($fingerprint !== null) {

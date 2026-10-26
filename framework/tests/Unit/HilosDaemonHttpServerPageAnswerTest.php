@@ -178,13 +178,13 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
 
         foreach ([[ConsensusRole::Leader, 'leader'], [ConsensusRole::Follower, 'standby']] as [$role, $state]) {
             $this->publish(null, standing: new DaemonNodeStanding(0, 0, true,
-                new DaemonConsensusPicture($role, 1, 'n1', 1, 1, 1)));
+                new DaemonConsensusPicture($role, 1, 'n1', 1, 1, 1), null));
             self::assertSame(['clustered' => true, 'state' => $state, 'silentSince' => null, 'role' => 'master'],
                 $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         }
 
         Hilos::$cluster = null;
-        $this->publish(null, standing: new DaemonNodeStanding(0, 0, false, null));
+        $this->publish(null, standing: new DaemonNodeStanding(0, 0, false, null, null));
         self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
     }

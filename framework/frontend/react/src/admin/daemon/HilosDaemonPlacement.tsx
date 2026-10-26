@@ -1,4 +1,4 @@
-// The root owns the subscription. This component draws the current window and
+// The Placement page owns the subscription. This component draws the current window and
 // lets the existing controller own expansion in both rows and narrow cards.
 import type { ReactNode } from 'react'
 import {
@@ -19,7 +19,7 @@ import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
 
-/** Props of the root's locally retained placement view. */
+/** Props of the Placement page matrix view. */
 interface HilosDaemonPlacementProps {
   view: HilosDaemonPlacementView
   overview: HilosDaemonOverviewData | null

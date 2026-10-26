@@ -58,6 +58,7 @@ final class NodeDaemonPicture
             && $this->cron == $other->cron
             && $this->environment == $other->environment
             && $this->standing == $other->standing
+            && $this->standing?->commandPort === $other->standing?->commandPort
             && $this->http == $other->http
             && $this->measurements == $other->measurements;
     }

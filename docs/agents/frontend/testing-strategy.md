@@ -218,27 +218,41 @@ tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
 Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
-The Daemon section did not move: each kit keeps one spec where its view is
-mounted — binance-btc-tracker (Vue), tasks (React), polls (Angular).
-online-testing enables the feature without a view; ecommerce-shop does not
-enable it (HIL-1400).
+The Daemon screen specs live where their views are mounted: binance-btc-tracker
+(Vue), tasks (React) and polls (Angular). Ecommerce-shop also activates the
+feature without `LOGS` and carries a standalone smoke of its own. Online-testing
+has the backend feature without a UI. Chat checks the section's accessibility
+in its existing `tests/e2e/tests/a11y.spec.ts`.
 
-Binance also carries one destructive cluster Daemon spec in
-`tests/e2e/cluster/daemon/daemon.spec.ts`, separate from those single-node
-screens. It reads remote node reports, restarts the remote log store through
-its real dialog, checks mismatch privacy over every matching incoming frame,
-and keeps both root views, mismatch and dashboard alive across leader loss on
-the same surviving follower. Shared `daemon.ts` owns `expectClusterOverview`,
+Binance carries an independent live cluster smoke at
+`tests/e2e/cluster/live/daemon-section.spec.ts`, titled “daemon section
+navigation: follower entry points name the live leader and every section link
+owns its address”. It opens the browser on a follower, checks existing consensus
+inspection and the source selected by delivered Overview data, compares its
+command port with the declared stand listener, follows the metrics link to that
+source node's HTTP page, and follows the Placement and Env mismatch links. It
+does not fault or restart a node or exercise the host handshake. The existing
+destructive case at `tests/e2e/cluster/daemon/daemon.spec.ts` remains parked by
+a static `test.fixme` and the host's `FLAKY_SKIP['daemon']`; it is not evidence
+for the independent live section smoke. Its scenario still covers remote node
+reports, a remote log-store restart, mismatch privacy over matching frames and
+leader-loss recovery on a surviving follower. The host phase and restoration
+steps remain documented in [../testing.md](../testing.md).
+
+The parked case retains its shared `expectClusterOverview`,
 `expectClusterDaemonNodePage`, `expectClusterLeaderPlacement` and
-`expectClusterEnvironmentMismatch`, with the spec's `expect` first.
-`expectDaemonWorkerAgent` expands newly reported worker rows until the named
-agent is visible; a one-time list of expand buttons can miss an arriving worker.
-`watchDaemonMismatchFrames(page)` is armed before navigation and returns all
-mismatch `page_response`/`table_window` texts plus `stop()`; direct node Env
-frames are outside that privacy boundary. Navigation, order, contexts, the
-host handshake and inode/offset node-log observations stay in the demo.
-The fresh `test:cluster:e2e -- --daemon` phase and restoration before old phases
-are described in [../testing.md](../testing.md).
+`expectClusterEnvironmentMismatch` checks in `daemon.ts`. The live smoke uses
+`expectDaemonEntryPoints`, `expectDaemonPlacementAnswer`,
+`expectDaemonPlacementRequests` and `expectDaemonPlacementOwnership`. The
+shared helpers compare received page frames and real stand facts, not hidden
+root DOM. `expectDaemonWorkerAgent` still expands newly reported worker rows
+until the named agent is visible; a one-time list of expand buttons can miss an
+arriving worker. `watchDaemonMismatchFrames(page)` remains armed before
+navigation and returns matching mismatch `page_response`/`table_window` texts
+plus `stop()`; direct node Env frames are outside that privacy boundary.
+Navigation, order, contexts, the host handshake and inode/offset node-log
+observations stay in the demo. The fresh `test:cluster:e2e -- --daemon` phase
+and restoration before the old phases remain documented in [../testing.md](../testing.md).
 
 The Analytics section did not move either: chat (Vue), tasks (React) and polls
 (Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`
@@ -641,24 +655,69 @@ callback that first points the second page at the follower.
 
 ### The Daemon section — names and checks
 
-`daemon.ts` owns the `DAEMON_*` paths, child and breadcrumb ids, placement types,
-cell id and totals. `expectDaemonPage`, `expectStandaloneOverview`,
-`expectStandalonePlacement` and `expectUnfilteredTotals` check the root;
-`expectStandaloneWorkers`, `expectStandaloneCron`, `expectStandaloneHttp`,
-`expectStandaloneEnvironment` and `expectStandaloneMismatch` check its children.
-Every check takes the spec's `expect` first, then its `Page`.
-`daemonRestart.ts` owns `RESTART_MARK_TIMEOUT_MS`, the observation budget for
-the shared restart mark. Each kit keeps one section spec. Test titles match across
-kits; only Vue carries the forged restart request, a server check.
+[`daemon.ts`](../../../framework/frontend/e2e/daemon.ts) owns the `DAEMON_*`
+paths, child and breadcrumb ids, placement types,
+cell id and totals. `expectDaemonPage` and `expectStandaloneOverview` check the
+Overview; the Overview helper checks its entry line and that no Placement view
+is mounted there. `expectStandalonePlacement` follows the link to the separate
+Placement address, and `expectUnfilteredTotals` reads the complete summary on
+that page. `expectStandaloneWorkers`, `expectStandaloneCron`,
+`expectStandaloneHttp`, `expectStandaloneEnvironment` and
+`expectStandaloneMismatch` check the remaining pages. Every check takes the
+spec's `expect` first, then its `Page`. `daemonRestart.ts` owns
+`RESTART_MARK_TIMEOUT_MS`, the observation budget for the shared restart mark.
+The three mounted SDKs keep their own section spec; only Vue carries the forged
+restart request, a server check.
 
-The cluster carrier is Binance's `cluster/daemon/daemon.spec.ts`; its host phases,
-cleanup and artifacts are described in [testing.md](../testing.md).
-`expectClusterOverview` and `expectClusterDaemonNodePage` wait for real node
-reports; the latter also accepts a reported empty roster. `expectDaemonWorkerAgent`
-expands visible worker rows as they arrive until the requested agent is visible.
+The shared section checks include `expectDaemonSectionHead` and
+`expectDaemonEntryPoints` for the catalogued head, navigation and source ports;
+`expectDaemonPlacementAnswer`, `expectDaemonPlacementPending`,
+`expectDaemonPlacementRequests` and `expectDaemonPlacementOwnership` for the
+Placement page's complete initial reply, pending state, direct subscription and
+table ownership; `expectDaemonSectionAccessibility` for the named table and
+keyboard controls; `watchDaemonPlacementLive` and
+`expectDaemonPlacementReset` for live retention and navigation cleanup. The
+`readDaemonSectionOverview` helper parses through the strict
+`daemonOverviewSchema`. `expectDaemonRootEntryPoints` checks source links on the
+Overview without assigning a Placement window to it.
+
+Binance's live cluster carrier is `cluster/live/daemon-section.spec.ts`; it is
+separate from the parked destructive scenario in `cluster/daemon/daemon.spec.ts`.
+The live test opens on a follower and confirms the live leader's delivered
+entry-points projection, the source HTTP page and the separate addresses for
+Overview, Agent placement and Env mismatch, without node failure or restart.
+The parked test's host phases, cleanup and artifacts are described in
+[testing.md](../testing.md). `expectClusterOverview` and
+`expectClusterDaemonNodePage` wait for real node reports; the latter also accepts
+a reported empty roster. `expectDaemonWorkerAgent` expands visible worker rows
+as they arrive until the requested agent is visible. The parked scenario's
 `expectClusterLeaderPlacement` checks the `Leader-hosted` label, exactly one
 instance in the new leader's cell and `?` in the dead member's cell.
 `expectClusterEnvironmentMismatch` checks remote digests and unknown silent cells.
+
+The cold standalone Placement cases cover admin and view-mode readers. Their
+first reply carries the head, `daemon` data and first table window in one
+`page_response`; a cold tab subscribes only to `hilos_daemon_placement`, without
+a header or summary action. Reload (F5) and Back/Forward history are checked;
+data-only updates retain search and selection while the page stays open, and
+leaving then returning resets them. The full-source cold proof first uses
+`expectDaemonPlacementSourceReady` in a separate setup Placement tab, then
+opens the cold tab. A `daemon: null` response before a complete snapshot is
+valid, and the first-ever load is not promised an immediate source.
+
+[`daemonSource.ts`](../../../framework/frontend/e2e/daemonSource.ts) supplies
+Binance's causal live-source proof. It reads real received frames and the
+committed Placement projection, rejects unrelated or
+replacement frames, and checks that the displayed change follows the delivered
+fact. Its unit cases cover unchanged values, a foreign socket, whole-window
+replacement, acknowledgements and an uncommitted projection. It does not
+synthesize traffic or inspect hidden root DOM.
+
+The accessibility check runs in chat's existing `a11y.spec.ts`: one h1, the
+shared owner and catalogued breadcrumb, named ordinary links and current page,
+table naming, and keyboard navigation and Placement controls. Daemon e2e follow
+the existing Light theme and desktop-width convention; narrow layouts and both
+themes remain product and shared-mechanism review concerns.
 
 `watchDaemonCronFrames(page: Page)` returns
 `{ frames: DaemonPageFrame[], stop(): void }`. Arm it before the first navigation

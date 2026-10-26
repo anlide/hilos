@@ -167,11 +167,22 @@ function styleBlocks(relativePath: string, source: string): string[] {
  * @returns One finished report line per component-declared style, in source order
  */
 function componentStyles(relativePath: string, source: string): string[] {
+  // A decorator requires @ even when its name is escaped. Its style property
+  // needs one of these names, or an escape that the compiler must decode.
+  if (
+    !source.includes('@') ||
+    (!COMPONENT_STYLE_PROPERTIES.some((name) => source.includes(name)) &&
+      !source.includes('\\'))
+  ) {
+    return []
+  }
+
+  // This downward walk passes its source explicitly; it needs no parent links.
   const sourceFile = ts.createSourceFile(
     relativePath,
     source,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const lines: string[] = []
 

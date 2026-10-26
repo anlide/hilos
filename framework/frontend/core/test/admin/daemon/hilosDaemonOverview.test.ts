@@ -64,6 +64,7 @@ function picture(
   return {
     clustered: true,
     nodes,
+    entryPoints: null,
     placement: {
       instances: null,
       types: 3,
@@ -130,6 +131,62 @@ describe('Daemon overview readers', () => {
     expect(read.get()?.nodes[0]?.standing).toBeNull()
     scopes.openPage('elsewhere')
     expect(read.get()).toBeNull()
+  })
+
+  it('requires entryPoints and preserves null ports and inclusive boundaries', () => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    for (const entryPoints of [
+      null,
+      { nodeId: 'n1', commandPort: null, httpPort: null },
+      { nodeId: 'n2', commandPort: 0, httpPort: 65535 },
+      { nodeId: 'n3', commandPort: 65535, httpPort: 0 },
+      { nodeId: 'n4', commandPort: 9013, httpPort: null },
+      { nodeId: 'n5', commandPort: null, httpPort: 8080 },
+    ]) {
+      page.data.set('daemon', { ...picture(), entryPoints })
+      expect(read.get()?.entryPoints).toEqual(entryPoints)
+    }
+    const missing: Record<string, unknown> = { ...picture() }
+    delete missing.entryPoints
+    page.data.set('daemon', missing)
+    expect(read.get()).toBeNull()
+  })
+
+  it('refuses malformed entryPoints without weakening the strict overview', () => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    const valid = { nodeId: 'n1', commandPort: 9013, httpPort: 8080 }
+    const invalid: unknown[] = [
+      undefined,
+      [],
+      'n1',
+      { commandPort: 9013, httpPort: 8080 },
+      { ...valid, nodeId: null },
+      { ...valid, nodeId: 1 },
+      { ...valid, extra: true },
+    ]
+    for (const key of ['commandPort', 'httpPort']) {
+      const missing: Record<string, unknown> = { ...valid }
+      delete missing[key]
+      invalid.push(missing)
+      for (const value of [
+        undefined,
+        '9013',
+        1.5,
+        true,
+        false,
+        -1,
+        65536,
+        NaN,
+        Infinity,
+      ])
+        invalid.push({ ...valid, [key]: value })
+    }
+    for (const entryPoints of invalid) {
+      page.data.set('daemon', { ...picture(), entryPoints })
+      expect(read.get()).toBeNull()
+    }
   })
 
   it('preserves unknown placement, reported zeros and the unplaced type list', () => {

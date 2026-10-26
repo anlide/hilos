@@ -73,6 +73,7 @@ use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonAgentsPage;
@@ -295,6 +296,7 @@ final class Hilos extends HilosFacade
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         DaemonPage::PAGE => DaemonPage::class,
+        DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
         DaemonNodePage::PAGE => DaemonNodePage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -635,7 +637,7 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosDaemonEnvKeys => [],
             TasksTableContext::hilosDaemonEnvOrphans => [],
         ],
-        DaemonPage::PAGE => [
+        DaemonPlacementPage::PAGE => [
             TasksTableContext::hilosDaemonPlacement => [],
         ],
         DaemonAgentsPage::PAGE => [

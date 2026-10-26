@@ -65,6 +65,14 @@ export const daemonOverviewSchema = z
   .strictObject({
     clustered: z.boolean(),
     nodes: z.array(daemonOverviewNodeSchema).readonly(),
+    entryPoints: z
+      .strictObject({
+        nodeId: z.string(),
+        commandPort: z.number().int().min(0).max(65535).nullable(),
+        httpPort: z.number().int().min(0).max(65535).nullable(),
+      })
+      .readonly()
+      .nullable(),
     placement: z
       .strictObject({
         instances: countSchema.nullable(),

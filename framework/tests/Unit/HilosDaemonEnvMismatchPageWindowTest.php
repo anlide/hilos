@@ -172,7 +172,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
             processes: new DaemonProcessRoster([], [], 0),
             cron: new DaemonCronPicture(null, []),
             environment: $picture->environment,
-            standing: new DaemonNodeStanding(1, 1, false, null),
+            standing: new DaemonNodeStanding(1, 1, false, null, null),
         );
         $this->deliver($agent, [new ClusterDaemonNodeView('a', true, new ClusterDaemonNodeSlot('a', $updated, 2))], false);
         self::assertSame([], $this->browser()->mutations);

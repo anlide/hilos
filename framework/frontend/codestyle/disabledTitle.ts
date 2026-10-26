@@ -249,11 +249,18 @@ function templateBlock(
  * @returns The line of the title of every offending JSX element and Angular template element
  */
 function typeScriptLines(relativePath: string, source: string): number[] {
+  // Both JSX and Angular findings need a title. Escaped identifiers still go
+  // through the compiler; this only avoids parsing source with no possible site.
+  if (!source.includes(JSX_TITLE_ATTRIBUTE) && !source.includes('\\')) {
+    return []
+  }
+
+  // This downward walk passes its source explicitly; it needs no parent links.
   const sourceFile = ts.createSourceFile(
     relativePath,
     source,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const found: number[] = []
 
@@ -418,7 +425,7 @@ function templateSays(attribute: TemplateAttribute): string {
     'expression.ts',
     `(${attribute.value})`,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const [statement] = parsed.statements
   if (

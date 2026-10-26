@@ -7,7 +7,7 @@ const mark = { documentStarted: 1, socket: 1, cursor: 1 }
 const pageReply = (connections: number, windows?: unknown) => ({
   type: 'page_response',
   data: {
-    page: 'hilos_daemon',
+    page: 'hilos_daemon_placement',
     payload: {
       data: {
         daemon: {
@@ -55,6 +55,10 @@ async function journal(connectionCount = 1) {
     },
   } as unknown as Awaited<ReturnType<typeof watchTableSearch>>
   const page = {
+    async evaluate() {
+      const value = /^Browser connections: (\d+)$/.exec(dom)
+      return value ? Number(value[1]) : null
+    },
     getByTestId() {
       return {
         node: true,
@@ -103,7 +107,7 @@ describe('Daemon source proof classification', () => {
     await b.source.connectionOpened(b.checks, { ...mark, cursor: 2 })
   })
 
-  it('requires a changed real value and its committed body text', async () => {
+  it('requires a changed real value and its committed Placement projection', async () => {
     const b = await journal()
     b.receive(pageReply(2))
     await b.source.connectionOpened(b.checks, mark)
@@ -115,7 +119,7 @@ describe('Daemon source proof classification', () => {
     'foreign socket',
     'whole replacement',
     'ack',
-    'uncommitted body',
+    'uncommitted projection',
   ])('rejects %s as an ordinary causal connection update', async (failure) => {
     const b = await journal()
     const wire = pageReply(
@@ -125,7 +129,7 @@ describe('Daemon source proof classification', () => {
     if (failure === 'ack') Object.assign(wire.data, { requestId: 'unrelated' })
     b.receive(
       wire,
-      failure === 'uncommitted body'
+      failure === 'uncommitted projection'
         ? 'Browser connections: 1'
         : 'Browser connections: 2',
       failure === 'foreign socket' ? 2 : 1,

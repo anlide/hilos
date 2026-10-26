@@ -19,6 +19,7 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
     public const string connections = 'connections';
     public const string clustered = 'clustered';
     public const string consensus = 'consensus';
+    public const string commandPort = 'commandPort';
     public const string role = 'role';
     public const string term = 'term';
     public const string leaderId = 'leaderId';
@@ -66,6 +67,7 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
             self::sessions => $standing->sessions,
             self::connections => $standing->connections,
             self::clustered => $standing->clustered,
+            self::commandPort => $standing->commandPort,
             self::consensus => $consensus === null ? null : [
                 self::role => $consensus->role->value,
                 self::term => $consensus->term,
@@ -109,7 +111,22 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
             self::requireInt($data, self::connections),
             self::requireBool($data, self::clustered),
             $consensus,
+            self::requiredNullableInt($data, self::commandPort),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire object
+     * @param string $key Required nullable integer key
+     * @return ?int Integer or explicit null
+     * @throws InvalidFormatException When the field is absent or invalid
+     */
+    private static function requiredNullableInt(array $data, string $key): ?int
+    {
+        if (!array_key_exists($key, $data)) {
+            throw new InvalidFormatException('Payload carries no integer or null under key ' . $key);
+        }
+        return self::optionalInt($data, $key);
     }
 
     /**

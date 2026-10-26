@@ -88,6 +88,15 @@ it('stays silent on the look-alikes the good fixtures seed', () => {
   expect(reportFixture('goodDisabledTitleAngular.ts')).toEqual([])
 })
 
+it('reports a JSX title whose name contains a Unicode escape', () => {
+  expect(
+    checkSource(
+      `${FIXTURES}/control.tsx`,
+      String.raw`const control = <button disabled ti\u0074le="Hidden" />`,
+    ),
+  ).toEqual([hides('control.tsx', 1)])
+})
+
 it('reads a name broken over lines as the same name', () => {
   expect(
     checkSource(

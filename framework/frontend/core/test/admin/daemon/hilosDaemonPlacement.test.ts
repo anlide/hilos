@@ -58,10 +58,19 @@ function stubTable(nodes: readonly HilosDaemonPlacementNode[]) {
   }> = []
   const nodeSignal = createSignal(nodes)
   const unbind = vi.fn()
-  const on = vi.fn(() => unbind)
+  const listeners = new Map<string, Set<(payload: never) => void>>()
+  const on = vi.fn((event: string, listener: (payload: never) => void) => {
+    const group = listeners.get(event) ?? new Set()
+    group.add(listener)
+    listeners.set(event, group)
+    return () => {
+      group.delete(listener)
+      unbind()
+    }
+  })
   const unregister = vi.fn()
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.DAEMON)
+  scopes.openPage(HilosPages.DAEMON_PLACEMENT)
   const context: HilosDaemonPlacementContext = {
     connection: {
       on,
@@ -97,6 +106,10 @@ function stubTable(nodes: readonly HilosDaemonPlacementNode[]) {
     on,
     unbind,
     unregister,
+    emit(event: string, data: unknown) {
+      for (const listener of listeners.get(event) ?? []) listener(data as never)
+    },
+    listeners,
   }
 }
 
@@ -242,7 +255,7 @@ describe('daemon placement viewport', () => {
       [],
     )
     expect(sentRendered).toHaveLength(1)
-    expect(sentRendered[0]?.page).toBe(HilosPages.DAEMON)
+    expect(sentRendered[0]?.page).toBe(HilosPages.DAEMON_PLACEMENT)
     expect(sentRendered[0]?.tableKey).toBe('hilosDaemonPlacement')
     expect(sentRendered[0]?.rendered).toEqual([
       'agentType',
@@ -254,7 +267,7 @@ describe('daemon placement viewport', () => {
     ])
 
     table.controller.refresh()
-    expect(sent.at(-1)?.page).toBe(HilosPages.DAEMON)
+    expect(sent.at(-1)?.page).toBe(HilosPages.DAEMON_PLACEMENT)
     expect(sent.at(-1)?.tableKey).toBe('hilosDaemonPlacement')
     expect(sent.at(-1)?.descriptor.filter).toEqual({})
     expect(sent.at(-1)?.descriptor.sort).toBeNull()
@@ -325,6 +338,7 @@ function viewPicture(
       },
     ],
     consensus: null,
+    entryPoints: null,
     placement: { instances: 2, types: 1, clusterTypes: 1, unplacedTypes: [] },
   }
 }
@@ -666,5 +680,67 @@ describe('daemon placement view', () => {
     h.window(['chat_room:99'])
     expect(h.view.selectedCell.get()).toBeNull()
     h.view.closeCell()
+  })
+})
+
+describe('Placement table address', () => {
+  it('accepts its initial window and ignores root, neighbor and departed page frames', () => {
+    const h = stubTable([])
+    h.table.start()
+    const window = {
+      rows: [rawRow('x', { agentType: 'x' })],
+      totalCount: 1,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+      limit: 25,
+      sort: [],
+      rowsBefore: 0,
+    }
+    const response = (page: string) =>
+      h.emit('projectSignal', {
+        type: 'page_response',
+        data: { page, payload: { windows: { hilosDaemonPlacement: window } } },
+      })
+    response(HilosPages.DAEMON)
+    expect(h.table.controller.rows.get()).toHaveLength(0)
+    response(HilosPages.DAEMON_PLACEMENT)
+    expect(h.table.controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'x',
+    ])
+    const other = { ...window, rows: [rawRow('other', { agentType: 'other' })] }
+    h.emit('tableWindow', {
+      data: {
+        ...other,
+        page: HilosPages.DAEMON,
+        tableKey: 'hilosDaemonPlacement',
+      },
+    })
+    h.emit('tableWindow', {
+      data: {
+        ...other,
+        page: HilosPages.DAEMON_PLACEMENT,
+        tableKey: 'hilosDaemonWorkers',
+      },
+    })
+    expect(h.table.controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'x',
+    ])
+    h.context.scopes.openPage(HilosPages.DAEMON_NODE)
+    h.emit('tableWindow', {
+      data: {
+        ...other,
+        page: HilosPages.DAEMON_PLACEMENT,
+        tableKey: 'hilosDaemonPlacement',
+      },
+    })
+    expect(h.table.controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'x',
+    ])
+    h.table.dispose()
+    expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(
+      true,
+    )
+    expect(h.unregister).toHaveBeenCalledTimes(1)
   })
 })

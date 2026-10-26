@@ -441,6 +441,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos daemon dashboard. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON = 'subscription_page_hilos_daemon';
 
+    /** Subscription signal for Hilos daemon placement. */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_PLACEMENT = 'subscription_page_hilos_daemon_placement';
+
     /** Subscription signal for the Hilos daemon node overview. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_NODE = 'subscription_page_hilos_daemon_node';
 

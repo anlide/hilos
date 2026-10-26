@@ -403,7 +403,9 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       )
       await gotoPage(placement.page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectClusterOverview(reports, placement.page, initialPicture)
-      await placement.page.getByTestId('hilos-daemon-placement-tab').click()
+      await placement.page
+        .getByTestId('hilos-page-tab-hilos_daemon_placement')
+        .click()
       await gotoPage(mismatch, `${DAEMON_ROOT_PATH}/env-mismatch`, PAGE_READY)
       await expectClusterEnvironmentMismatch(reports, mismatch, {
         key: remote.envKey,

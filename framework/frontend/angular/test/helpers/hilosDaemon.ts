@@ -55,6 +55,7 @@ export function daemonPicture(
   return {
     clustered,
     nodes,
+    entryPoints: null,
     placement: {
       instances: 7,
       types: 3,
@@ -114,33 +115,32 @@ export function daemonHarness<T>(
     admin: true,
   })
   const currentPath = createSignal(matcher.path(page, route.get().params) ?? '')
+  if (!isNodePage) {
+    scope.data.set('pageLabel', 'Daemon')
+    scope.data.set('pageHeadOwner', {
+      page: HilosPages.DAEMON,
+      label: 'Daemon',
+      lead: 'Nodes and their processes, with agent placement across them.',
+      icon: 'bi-cpu',
+    })
+    scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.DAEMON, label: 'Daemon' },
+    ])
+    scope.data.set('pageTabs', [
+      { page: HilosPages.DAEMON, label: 'Overview' },
+      { page: HilosPages.DAEMON_PLACEMENT, label: 'Agent placement' },
+      { page: HilosPages.DAEMON_ENV_MISMATCH, label: 'Env mismatch' },
+    ])
+    scope.data.set('pageChildren', [])
+  }
   const router = {
     currentRoute: route,
     currentPath,
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: !isNodePage
-      ? createSignal({
-          label: 'Daemon',
-          lead: '',
-          breadcrumb: [{ page: HilosPages.DAEMON, label: 'Daemon' }],
-          children: [
-            {
-              page: HilosPages.DAEMON_NODE,
-              label: 'Node',
-              lead: 'One node: processor, memory, environment summary, and maintenance.',
-              icon: 'bi-hdd-network',
-            },
-            {
-              page: HilosPages.DAEMON_ENV_MISMATCH,
-              label: 'Env mismatch',
-              lead: 'Environment keys whose values differ across the cluster.',
-              icon: null,
-            },
-          ],
-        })
-      : pageIdentity(scopes),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: matcher.path,
     clearPageError: vi.fn(),

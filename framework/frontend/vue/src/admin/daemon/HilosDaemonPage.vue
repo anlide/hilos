@@ -1,8 +1,7 @@
-<!-- Nodes link to their own overview; Placement keeps its local diagram state. -->
+<!-- Overview of the node picture and the selected entry points. -->
 <script setup lang="ts">
 import {
   createHilosDaemonOverview,
-  createHilosDaemonPlacementView,
   daemonMonopolisticCount,
   daemonPercentage,
   daemonProgressWidth,
@@ -20,20 +19,16 @@ import {
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
 import { HilosPages, hilosTimeZone } from '@hilos/core/base'
-import { inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosSkeleton from '../../HilosSkeleton.vue'
 import HilosLink from '../../HilosLink.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
-import HilosDaemonPlacement from './HilosDaemonPlacement.vue'
 
 const props = defineProps<{ context: HilosDaemonContext }>()
 const daemon = createHilosDaemonOverview(props.context)
-const placement = createHilosDaemonPlacementView(props.context, daemon.overview)
-const placementActive = ref(false)
-const placementOpened = ref(false)
 const overview = useSignal(daemon.overview)
 const database = useSignal(daemon.database)
 const timeZone = useSignal(hilosTimeZone)
@@ -47,57 +42,67 @@ function formatSilentSince(node: HilosDaemonOverviewNode): string | null {
   return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
 }
 
-/** Mount the matrix once and keep its local state between tab switches. */
-function openPlacement(): void {
-  placementOpened.value = true
-  placementActive.value = true
-}
-
-onMounted(() => {
-  placement.start()
-})
-onUnmounted(() => {
-  placement.dispose()
+const metricsPath = computed(() => {
+  const source = overview.value?.entryPoints
+  return source
+    ? router.resolvePath(HilosPages.DAEMON_HTTP_SERVER, {
+        nodeId: source.nodeId,
+      })
+    : null
 })
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON">
-    <div class="nav nav-tabs mb-3" aria-label="Daemon diagrams">
-      <button
-        type="button"
-        class="nav-link"
-        :class="{ active: !placementActive }"
-        :aria-pressed="!placementActive"
-        data-id="hilos-daemon-nodes-tab"
-        @click="placementActive = false"
-      >
-        Nodes and processes
-      </button>
-      <button
-        type="button"
-        class="nav-link"
-        :class="{ active: placementActive }"
-        :aria-pressed="placementActive"
-        data-id="hilos-daemon-placement-tab"
-        @click="openPlacement"
-      >
-        Agent placement
-      </button>
-    </div>
-
-    <HilosDaemonPlacement
-      v-if="placementOpened"
-      v-show="placementActive"
-      :view="placement"
-      :overview="overview"
-    />
-    <div v-show="!placementActive" data-id="hilos-daemon-nodes-view">
+  <HilosAdminPage
+    :page="HilosPages.DAEMON"
+    head-kind="section"
+    tabs-label="Daemon pages"
+  >
+    <div data-id="hilos-daemon-nodes-view">
       <div v-if="overview === null" data-id="hilos-daemon-overview-waiting">
         <p class="text-body-secondary">Waiting for the node picture…</p>
         <HilosSkeleton />
       </div>
       <template v-else>
+        <div
+          class="d-flex flex-wrap gap-3 small text-body-secondary mb-3"
+          data-id="hilos-daemon-entry-points"
+        >
+          <span
+            ><i class="bi bi-window me-1" aria-hidden="true"></i>Browsers</span
+          >
+          <span
+            ><i class="bi bi-terminal me-1" aria-hidden="true"></i>CLI on
+            <span
+              class="font-monospace"
+              data-id="hilos-daemon-entry-command-port"
+              >{{
+                overview.entryPoints?.commandPort == null
+                  ? '—'
+                  : `:${overview.entryPoints.commandPort}`
+              }}</span
+            ></span
+          >
+          <span
+            ><i class="bi bi-globe me-1" aria-hidden="true"></i>HTTP
+            <span
+              class="font-monospace"
+              data-id="hilos-daemon-entry-http-port"
+              >{{
+                overview.entryPoints?.httpPort == null
+                  ? '—'
+                  : `:${overview.entryPoints.httpPort}`
+              }}</span
+            >
+            <HilosLink
+              v-if="metricsPath"
+              :to="metricsPath"
+              class="ms-1"
+              data-id="hilos-daemon-entry-metrics"
+              >metrics</HilosLink
+            >
+          </span>
+        </div>
         <div
           v-if="overview.clustered"
           class="d-flex flex-wrap align-items-center gap-2 mb-3 small"

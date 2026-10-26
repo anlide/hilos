@@ -24,6 +24,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonPlacementPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
@@ -41,13 +42,14 @@ use PHPUnit\Framework\TestCase;
 /** Pins the real Daemon feature definition and its startup refusal contract. */
 final class DaemonFeatureActivationTest extends TestCase
 {
-    public function testDefinitionRequiresExactlyNinePagesAndThreeAgentsWithoutLogs(): void
+    public function testDefinitionRequiresExactlyTenPagesAndThreeAgentsWithoutLogs(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::DAEMON);
 
         self::assertInstanceOf(DaemonFeature::class, $definition);
         self::assertSame([
             AbstractHilosDaemonPage::class,
+            AbstractHilosDaemonPlacementPage::class,
             AbstractHilosDaemonNodeOverviewPage::class,
             AbstractHilosDaemonWorkersPage::class,
             AbstractHilosDaemonAgentsPage::class,
@@ -83,7 +85,7 @@ final class DaemonFeatureActivationTest extends TestCase
                 HilosDaemonEnvSourcesDifferTable::class,
             ],
             AbstractHilosDaemonHttpServerPage::class => HilosDaemonHttpRoutesTable::class,
-            AbstractHilosDaemonPage::class => HilosDaemonPlacementTable::class,
+            AbstractHilosDaemonPlacementPage::class => HilosDaemonPlacementTable::class,
         ], $definition->requirements()->requiredPageTables);
         self::assertSame([], $definition->requirements()->requires);
     }
@@ -230,11 +232,11 @@ final class DaemonFeatureActivationTest extends TestCase
         DaemonFeatureMissingPlacementTableHilos::validateFeatureActivation();
     }
 
-    public function testMissingPlacementRootBindingRefusesStartup(): void
+    public function testMissingPlacementPageBindingRefusesStartup(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
         $this->expectExceptionMessage('HilosFeature::DAEMON is declared but PAGE_TABLES binds no page extending '
-            . AbstractHilosDaemonPage::class . ' to ' . HilosDaemonPlacementTable::class);
+            . AbstractHilosDaemonPlacementPage::class . ' to ' . HilosDaemonPlacementTable::class);
 
         DaemonFeatureMissingPlacementBindingHilos::validateFeatureActivation();
     }
@@ -283,6 +285,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
 
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeaturePlacementPage::PAGE => DaemonFeaturePlacementPage::class,
         DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
@@ -333,7 +336,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
             HilosDaemonEnvSourcesDifferTable::TABLE => [],
         ],
         DaemonFeatureHttpServerPage::PAGE => [HilosDaemonHttpRoutesTable::TABLE => []],
-        DaemonFeaturePage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
+        DaemonFeaturePlacementPage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
     ];
 
     /** @return HilosDbContext Unused database context required by the facade contract */
@@ -367,6 +370,10 @@ final class DaemonFeatureTestPageAgentDaemon extends AbstractAgentDaemon
 }
 
 final class DaemonFeaturePage extends AbstractHilosDaemonPage
+{
+}
+
+final class DaemonFeaturePlacementPage extends AbstractHilosDaemonPlacementPage
 {
 }
 
@@ -406,6 +413,7 @@ final class DaemonFeatureMissingPageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeaturePlacementPage::PAGE => DaemonFeaturePlacementPage::class,
         DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
@@ -510,7 +518,7 @@ final class DaemonFeatureMissingMismatchBindingHilos extends DaemonFeatureComple
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
         DaemonFeatureEnvMismatchPage::PAGE => [HilosDaemonEnvDivergedTable::TABLE => []],
         DaemonFeatureHttpServerPage::PAGE => [HilosDaemonHttpRoutesTable::TABLE => []],
-        DaemonFeaturePage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
+        DaemonFeaturePlacementPage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
     ];
 }
 
@@ -536,7 +544,7 @@ final class DaemonFeatureMissingHttpServerBindingHilos extends DaemonFeatureComp
             HilosDaemonEnvOrphansTable::TABLE => [],
         ],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
-        DaemonFeaturePage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
+        DaemonFeaturePlacementPage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
     ];
 }
 
@@ -568,6 +576,7 @@ final class DaemonFeatureMissingEnvPageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeaturePlacementPage::PAGE => DaemonFeaturePlacementPage::class,
         DaemonFeatureNodePage::PAGE => DaemonFeatureNodePage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
@@ -604,6 +613,7 @@ final class DaemonFeatureMissingNodePageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
         DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeaturePlacementPage::PAGE => DaemonFeaturePlacementPage::class,
         DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,

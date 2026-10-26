@@ -350,12 +350,13 @@ function expectSetupRefusal(run: () => string[], pattern: RegExp): void {
 }
 
 it(
-  'reports a real TS2322, a test file and a new root, and skips a crooked fixture',
+  'reports syntax and type errors, a test file and a new root, and skips a crooked fixture',
   () => {
     const root = 'framework/frontend/codestyle'
     const mismatch = "Type 'string' is not assignable to type 'number'."
     const lines = compile({
       'bad.ts': 'export const value: number = "text"\n',
+      'broken.ts': 'export const missing = ;\n',
       'good.ts': 'export const value: number = 1\n',
       'sample.test.ts': 'export const sample: number = "sample"\n',
       'freshRoot.ts': 'export const added: number = "added"\n',
@@ -365,6 +366,7 @@ it(
 
     expect(lines).toEqual([
       `${TYPE_CHECK_RULE_ID} ${root}/bad.ts:1 — TS2322: ${mismatch} (see ${DOC})`,
+      `${TYPE_CHECK_RULE_ID} ${root}/broken.ts:1 — TS1109: Expression expected. (see ${DOC})`,
       `${TYPE_CHECK_RULE_ID} ${root}/freshRoot.ts:1 — TS2322: ${mismatch} (see ${DOC})`,
       `${TYPE_CHECK_RULE_ID} ${root}/note.mts:1 — TS2322: ${mismatch} (see ${DOC})`,
       `${TYPE_CHECK_RULE_ID} ${root}/sample.test.ts:1 — TS2322: ${mismatch} (see ${DOC})`,

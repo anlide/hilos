@@ -321,6 +321,11 @@ export class App {
     [HilosPages.DAEMON]: lazyPage(() =>
       import('./views/hilos/daemon/daemon.js').then((module) => module.Daemon),
     ),
+    [HilosPages.DAEMON_PLACEMENT]: lazyPage(() =>
+      import('./views/hilos/daemon/placement.js').then(
+        (module) => module.DaemonPlacement,
+      ),
+    ),
     [HilosPages.DAEMON_NODE]: lazyPage(() =>
       import('./views/hilos/daemon/node.js').then(
         (module) => module.DaemonNode,

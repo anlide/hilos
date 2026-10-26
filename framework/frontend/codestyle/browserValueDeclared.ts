@@ -86,11 +86,22 @@ const EXCLUDED_PATHS = ['framework/frontend/core/src/browser/browserValues.ts']
  * @returns One report line when the file writes and declares nothing, none otherwise
  */
 export function checkSource(relativePath: string, source: string): string[] {
+  // Every write needs one of these names. An escape may spell either name,
+  // so only their absence in unescaped source can avoid another full parse.
+  if (
+    !source.includes(STORAGE_WRITE) &&
+    !source.includes(COOKIE_PROPERTY) &&
+    !source.includes('\\')
+  ) {
+    return []
+  }
+
+  // This downward walk passes its source explicitly; it needs no parent links.
   const sourceFile = ts.createSourceFile(
     relativePath,
     source,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   let firstWrite: number | undefined
   let declares = false

@@ -79,6 +79,7 @@ export const HilosPages = {
   CHANGE_LOG_TABLES: 'hilos_change_log_tables',
   CHANGE_LOG_TABLE: 'hilos_change_log_table',
   DAEMON: 'hilos_daemon',
+  DAEMON_PLACEMENT: 'hilos_daemon_placement',
   DAEMON_NODE: 'hilos_daemon_node',
   DAEMON_WORKERS: 'hilos_daemon_workers',
   DAEMON_AGENTS: 'hilos_daemon_agents',
@@ -283,6 +284,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },
+  [HilosPages.DAEMON_PLACEMENT]: {
+    path: '/hilos/daemon/placement',
+    admin: true,
+  },
   [HilosPages.DAEMON_NODE]: { path: '/hilos/daemon/{nodeId}', admin: true },
   [HilosPages.DAEMON_WORKERS]: {
     path: '/hilos/daemon/{nodeId}/workers',

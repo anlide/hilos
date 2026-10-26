@@ -81,7 +81,7 @@ export interface HilosDaemonPlacementSelection {
   readonly agentIds: readonly string[]
 }
 
-/** One matrix and its local cell selection for the root page's lifetime. */
+/** One matrix and its local cell selection for the Placement page's lifetime. */
 export interface HilosDaemonPlacementView extends HilosDaemonPlacementTable {
   readonly nodes: ReadonlySignal<readonly HilosDaemonPlacementNode[]>
   readonly selectedCell: ReadonlySignal<HilosDaemonPlacementSelection | null>
@@ -165,13 +165,13 @@ export function createHilosDaemonPlacementTable(
     expandable,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.DAEMON,
+        HilosPages.DAEMON_PLACEMENT,
         DAEMON_PLACEMENT_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.DAEMON,
+        HilosPages.DAEMON_PLACEMENT,
         DAEMON_PLACEMENT_TABLE,
         rendered,
       ),
@@ -186,7 +186,10 @@ export function createHilosDaemonPlacementTable(
         bindTableViewport(
           context.connection,
           context.scopes,
-          { page: HilosPages.DAEMON, tableKey: DAEMON_PLACEMENT_TABLE },
+          {
+            page: HilosPages.DAEMON_PLACEMENT,
+            tableKey: DAEMON_PLACEMENT_TABLE,
+          },
           controller,
         ),
       )
@@ -203,7 +206,7 @@ export function createHilosDaemonPlacementTable(
  * Keep only the chosen address; the current window owns every instance id.
  *
  * @param context Connection and page scope used by the matrix.
- * @param overview The root's complete picture, independent of table search.
+ * @param overview The Placement page's complete picture, independent of table search.
  */
 export function createHilosDaemonPlacementView(
   context: HilosDaemonPlacementContext,

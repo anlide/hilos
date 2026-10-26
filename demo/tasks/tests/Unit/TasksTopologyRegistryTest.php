@@ -108,6 +108,7 @@ use Demo\Tasks\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonAgentsPage;
@@ -1214,7 +1215,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 DaemonCronPage::PAGE,
                 DaemonWorkersPage::PAGE,
                 DaemonEnvPage::PAGE,
-                DaemonPage::PAGE,
+                DaemonPlacementPage::PAGE,
                 DaemonAgentsPage::PAGE,
                 DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
@@ -1407,6 +1408,7 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::DAEMON, Hilos::features());
         foreach ([
             DaemonPage::class,
+            DaemonPlacementPage::class,
             DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
@@ -1419,6 +1421,7 @@ final class TasksTopologyRegistryTest extends TestCase
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
         $this->assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
+        $this->assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
@@ -1505,7 +1508,7 @@ final class TasksTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [TasksTableContext::hilosDaemonPlacement => []],
-            Hilos::PAGE_TABLES[DaemonPage::PAGE],
+            Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE],
         );
         $this->assertSame(
             [TasksTableContext::hilosDaemonAgents => []],

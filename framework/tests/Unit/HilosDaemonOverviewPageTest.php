@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\API\Router\HttpRouteTally;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\NodeRole;
@@ -44,6 +45,7 @@ use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonCronPicture;
+use Hilos\DaemonSection\DaemonHttpPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
@@ -172,8 +174,59 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'nodes' => [], 'consensus' => null,
             'placement' => ['instances' => null, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => null],
+            'entryPoints' => null,
         ], $response->payload->data['daemon']);
         self::assertSame([HilosClusterNode::RT_COLLECTION], AbstractHilosDaemonPage::READS_RT);
+    }
+
+    public function testEntryPointsFollowOnlyTheCurrentLiveLeaderAndItsOwnPorts(): void
+    {
+        $follower = $this->master('a', ConsensusRole::Follower, 5, 'z', 0, commandPort: 7101, httpPort: 8101);
+        $leader = $this->master('z', ConsensusRole::Leader, 5, 'z', 0, commandPort: 7102, httpPort: 8102);
+        $picture = ClusterDaemonPicture::empty()->withNode($follower)->withNode($leader);
+        self::assertSame(['nodeId' => 'z', 'commandPort' => 7102, 'httpPort' => 8102],
+            $this->projection($picture)['entryPoints']);
+        self::assertNull($this->projection($picture->withNode($this->node($leader->slot->picture, false)))['entryPoints']);
+        self::assertNull($this->projection($picture->withNode(
+            $this->master('a', ConsensusRole::Candidate, 6, null, 0, commandPort: 7101, httpPort: 8101),
+        ))['entryPoints']);
+
+        $picture = $picture->withNode($this->master('a', ConsensusRole::Leader, 6, 'a', 0, commandPort: 7101, httpPort: 8101));
+        self::assertSame(['nodeId' => 'a', 'commandPort' => 7101, 'httpPort' => 8101],
+            $this->projection($picture)['entryPoints']);
+        $picture = $picture->withNode($this->master('a', ConsensusRole::Leader, 6, 'a', 0));
+        self::assertSame(['nodeId' => 'a', 'commandPort' => null, 'httpPort' => null],
+            $this->projection($picture)['entryPoints']);
+        self::assertNull($this->projection(ClusterDaemonPicture::empty()->withNode($follower))['entryPoints']);
+    }
+
+    public function testStandaloneEntryPointsRequireExactlyOneLiveNodeWithAPicture(): void
+    {
+        $http = new DaemonHttpPicture('127.0.0.1', 65535, 1, [], new HttpRouteTally(0, 0, 0, null));
+        $standing = new DaemonNodeStanding(0, 0, false, null, 0);
+        foreach ([null, $standing] as $reportedStanding) {
+            foreach ([null, $http] as $reportedHttp) {
+                $report = new NodeDaemonPicture('solo', NodeRole::Master, 100, standing: $reportedStanding, http: $reportedHttp);
+                $picture = ClusterDaemonPicture::empty()->withNode($this->node($report));
+                self::assertSame([
+                    'nodeId' => 'solo', 'commandPort' => $reportedStanding?->commandPort, 'httpPort' => $reportedHttp?->port,
+                ], $this->projection($picture, false)['entryPoints']);
+            }
+        }
+
+        $live = $this->node($report);
+        foreach ([
+            ClusterDaemonPicture::empty(),
+            ClusterDaemonPicture::empty()->withNode($this->node($report, false)),
+            ClusterDaemonPicture::empty()->withNode(new ClusterDaemonNodeView('solo', true, null)),
+            ClusterDaemonPicture::empty()->withNode($live)->withNode(new ClusterDaemonNodeView('other', true, null)),
+            ClusterDaemonPicture::empty()->withNode($live)->withNode($this->node(new NodeDaemonPicture('other', NodeRole::Master, 1))),
+        ] as $picture) {
+            self::assertNull($this->projection($picture, false)['entryPoints']);
+        }
+        $picture = ClusterDaemonPicture::empty()->withNode($live)->withNode(new ClusterDaemonNodeView('old', false, null));
+        self::assertSame(['nodeId' => 'solo', 'commandPort' => 0, 'httpPort' => 65535],
+            $this->projection($picture, false)['entryPoints']);
     }
 
     public function testMissingSectionsAndSilentNodesWithAndWithoutAReportKeepTheirUnknowns(): void
@@ -210,7 +263,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         ]);
         $node = $this->projection(ClusterDaemonPicture::empty()->withNode($this->node(new NodeDaemonPicture(
             'n1', NodeRole::Master, 100, $roster, environment: $environment,
-            standing: new DaemonNodeStanding(0, 0, false, null),
+            standing: new DaemonNodeStanding(0, 0, false, null, null),
         ))), false)['nodes'][0];
         self::assertSame([
             ['index' => 1, 'kind' => 'regular', 'agentCount' => 1],
@@ -344,7 +397,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
             ->withNode($this->master('b', ConsensusRole::Follower, 5, 'a', 3))
             ->withNode($this->master('a', ConsensusRole::Leader, 5, 'a', 2))
             ->withNode($this->node(new NodeDaemonPicture('data', NodeRole::Slave, 100,
-                standing: new DaemonNodeStanding(0, 0, true, null))));
+                standing: new DaemonNodeStanding(0, 0, true, null, null))));
         $projection = $this->projection($picture);
         self::assertSame(['leader', 'standby', 'data'], array_column($projection['nodes'], 'state'));
         self::assertSame(['connections' => 4], $projection['nodes'][1]['standing']);
@@ -383,7 +436,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame($before, $this->projection(ClusterDaemonPictureMirror::picture(), false));
     }
 
-    public function testSubscriptionAndChangedOverviewAnswerOnceWithIdentityOwnDataAndExistingWindow(): void
+    public function testSubscriptionAndChangedOverviewAnswerOnceWithIdentityOwnDataWithoutPlacementWindows(): void
     {
         $report = new NodeDaemonPicture('n1', NodeRole::Master, 100, $this->roster('x:1'));
         $this->deliver([$this->node($report)]);
@@ -391,29 +444,39 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->subscribe('root');
         $first = $this->onlyResponse();
         self::assertSame('daemon-db', $first->payload->data['database']['name']);
+        self::assertSame(['nodeId' => 'n1', 'commandPort' => null, 'httpPort' => null],
+            $first->payload->data['daemon']['entryPoints']);
         self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_LABEL, $first->payload->data);
         self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_BREADCRUMB, $first->payload->data);
-        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $first->payload->windows);
+        self::assertArrayNotHasKey(HilosDaemonPlacementTable::TABLE, $first->payload->windows);
         self::assertEquals($first, PageResponseSignalData::fromArray($first->toArray()));
         $viewport = Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE);
-        self::assertNotNull($viewport);
-        self::assertSame(['search' => 'x:1'], $viewport->filter);
+        self::assertNull($viewport);
 
         $this->subscribe('closed', connected: false);
         $this->drain();
         $this->subscribe('child', HilosPageConstants::HILOS_DAEMON_WORKERS, dispatch: false);
         $this->resender->attempts = [];
-        $this->deliver([$this->node($report->withStanding(new DaemonNodeStanding(0, 0, false, null)))]);
+        $this->deliver([$this->node($report->withStanding(new DaemonNodeStanding(0, 0, false, null, null)))]);
         $response = $this->onlyResponse();
         self::assertSame([], $this->resender->attempts);
         self::assertSame(['connections' => 0], $response->payload->data['daemon']['nodes'][0]['standing']);
         self::assertSame(['data'], array_keys($response->payload->toArray()));
         self::assertSame(['daemon'], array_keys($response->payload->data));
         self::assertSame($viewport, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE));
-        self::assertSame($viewport->filter, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE)->filter);
+        self::assertNull(Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE));
+
+        $this->deliver([$this->node($report->withStanding(new DaemonNodeStanding(0, 0, false, null, 9013)))]);
+        $changed = $this->onlyResponse();
+        self::assertSame(['nodeId' => 'n1', 'commandPort' => 9013, 'httpPort' => null],
+            $changed->payload->data['daemon']['entryPoints']);
+        self::assertSame($response->payload->data['daemon']['nodes'], $changed->payload->data['daemon']['nodes']);
+        self::assertSame($response->payload->data['daemon']['placement'], $changed->payload->data['daemon']['placement']);
+        self::assertSame(['data'], array_keys($changed->payload->toArray()));
+        self::assertSame($viewport, Hilos::$sr->getTableViewport('root', HilosDaemonPlacementTable::TABLE));
     }
 
-    public function testPlacementOnlyChangesKeepTheWindowPathAndRepairDoesNotResend(): void
+    public function testPlacementOnlyChangesPublishNoTableAndRepairDoesNotResend(): void
     {
         $report = new NodeDaemonPicture('n1', NodeRole::Master, 100, $this->roster('x:1'));
         $this->deliver([$this->node($report)]);
@@ -422,11 +485,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->resender->attempts = [];
         $this->deliver([$this->node($report->withProcesses($this->roster('x:2')))]);
         $signals = $this->drain();
-        self::assertSame([SignalTypeConstants::TABLE_VIEWPORT_DELTA, SignalTypeConstants::TABLE_VIEWPORT_COUNT],
-            array_map(static fn ($frame): string => $frame->signalName->getName(), $signals));
-        self::assertSame('row_removed', $signals[0]->data->data->kind);
-        self::assertSame('left_set', $signals[0]->data->data->reason);
-        self::assertSame(0, $signals[1]->data->data->totalCount);
+        self::assertSame([], $signals);
         self::assertSame([], $this->resender->attempts);
 
         $repaired = $report->withProcesses($this->roster('x:2'))->sampledAt(500)
@@ -450,7 +509,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->resender->attempts = [];
 
         $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['x:1'], 0)))]);
-        $response = $this->responseAmong([SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_VIEWPORT_COUNT]);
+        $response = $this->responseAmong([SignalTypeConstants::PAGE_RESPONSE]);
         self::assertSame(['x'], $response->payload->data['daemon']['placement']['unplacedTypes']);
         self::assertSame(['data'], array_keys($response->payload->toArray()));
         self::assertSame([], $this->resender->attempts);
@@ -479,7 +538,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['leader'], 0)))]);
         $response = $this->onlyResponse();
         self::assertSame(['leader'], $response->payload->data['daemon']['placement']['unplacedTypes']);
-        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
+        self::assertArrayNotHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('root'));
     }
 
@@ -531,7 +590,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         DaemonOverviewTestPage::$fails = false;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:3')))]);
         $response = $this->onlyResponse();
-        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
+        self::assertArrayNotHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('root'));
         self::assertSame(['root'], Hilos::$sr->getAcceptKeysForPage(HilosPageConstants::HILOS_DAEMON));
         self::assertContains('root', ClusterDaemonPictureMirror::viewerKeys());
@@ -557,11 +616,23 @@ final class HilosDaemonOverviewPageTest extends TestCase
             'instances' => 1, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => ['leader', 'x'],
         ], $viewer->payload->data['daemon']['placement']);
         self::assertSame($admin->payload->data['database'], $viewer->payload->data['database']);
-        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $viewer->payload->windows);
+        self::assertArrayNotHasKey(HilosDaemonPlacementTable::TABLE, $viewer->payload->windows);
         $wire = json_encode($viewer->toArray(), JSON_THROW_ON_ERROR);
         self::assertStringNotContainsString('private-user', $wire);
         self::assertStringNotContainsString('private-password', $wire);
         self::assertStringNotContainsString('APP_ENV', $wire);
+
+        $this->deliver([$this->node(new NodeDaemonPicture('n1', NodeRole::Master, 100,
+            new DaemonProcessRoster($roster->workers, ['leader', 'x:2'], 0),
+            standing: new DaemonNodeStanding(0, 0, false, null, 9013)))]);
+        $updates = $this->drain();
+        self::assertCount(2, $updates);
+        foreach ($updates as $update) {
+            self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $update->signalName->getName());
+            self::assertSame(['data'], array_keys($update->data->data->payload->toArray()));
+            self::assertSame(['nodeId' => 'n1', 'commandPort' => 9013, 'httpPort' => null],
+                $update->data->data->payload->data['daemon']['entryPoints']);
+        }
         Hilos::$rt->hilosAdminViewModeRuntime->actions->set(false);
         $this->drain();
         $this->subscribe('guest');
@@ -599,11 +670,11 @@ final class HilosDaemonOverviewPageTest extends TestCase
 
     /** @return ClusterDaemonNodeView Master reporting its own consensus and sessions */
     private function master(string $id, ConsensusRole $role, int $term, ?string $leaderId, int $sessions,
-        bool $online = true): ClusterDaemonNodeView
+        bool $online = true, ?int $commandPort = null, ?int $httpPort = null): ClusterDaemonNodeView
     {
         return $this->node(new NodeDaemonPicture($id, NodeRole::Master, 100, standing: new DaemonNodeStanding(
-            $sessions, $sessions + 1, true, new DaemonConsensusPicture($role, $term, $leaderId, 1, 3, 2),
-        )), $online);
+            $sessions, $sessions + 1, true, new DaemonConsensusPicture($role, $term, $leaderId, 1, 3, 2), $commandPort,
+        ), http: $httpPort === null ? null : new DaemonHttpPicture('127.0.0.1', $httpPort, 1, [], new HttpRouteTally(0, 0, 0, null))), $online);
     }
 
     /** @return DaemonAgentPicture Started instance */
@@ -776,7 +847,7 @@ abstract class DaemonOverviewTestHilos extends Hilos
         'leader' => [],
     ];
     public const array PAGES = [HilosPageConstants::HILOS_DAEMON => DaemonOverviewTestPage::class];
-    public const array PAGE_TABLES = [HilosPageConstants::HILOS_DAEMON => [HilosDaemonPlacementTable::TABLE => []]];
+    public const array PAGE_TABLES = [];
 }
 
 final class DaemonOverviewTestTableContext extends TableContext

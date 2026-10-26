@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { readDaemonCronMoment } from '../daemon.js'
+import { readDaemonCronMoment, readDaemonSectionOverview } from '../daemon.js'
 import { createSocketFrameReader } from '../socket.js'
 
 const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
@@ -119,5 +119,56 @@ describe('real Cron moment evidence', () => {
       ),
     )
     expect(readDaemonCronMoment(frames, rowKey)).toBeUndefined()
+  })
+})
+
+describe('Daemon section browser projection', () => {
+  const overview = {
+    clustered: true,
+    nodes: [],
+    entryPoints: { nodeId: 'm1', commandPort: 0, httpPort: null },
+    placement: { instances: 0, types: 0, clusterTypes: 0, unplacedTypes: [] },
+    consensus: null,
+  }
+  const reply = (daemon: unknown) => ({
+    type: 'page_response',
+    data: { page: 'hilos_daemon_placement', payload: { data: { daemon } } },
+  })
+
+  it('reads the nested tuple from a logical batched browser reply without confusing zero and null', () => {
+    const raw = JSON.stringify({
+      type: 'signal_batch',
+      data: { frames: [reply(overview), reply(null)] },
+    })
+    const frames = createSocketFrameReader(1)(raw)
+    expect(readDaemonSectionOverview(frames[0]!)).toEqual(overview)
+    expect(readDaemonSectionOverview(frames[1]!)).toBeNull()
+    expect(frames[0]!.raw).toBe(raw)
+  })
+
+  it.each([
+    undefined,
+    { ...overview, entryPoints: undefined },
+    {
+      ...overview,
+      entryPoints: { nodeId: 'm1', commandPort: '8094', httpPort: 8090 },
+    },
+    {
+      ...overview,
+      entryPoints: { nodeId: 'm1', commandPort: 8094, httpPort: 65536 },
+    },
+  ])('rejects an incomplete or mistyped nested source %#', (daemon) => {
+    const frame = createSocketFrameReader(1)(JSON.stringify(reply(daemon)))[0]!
+    expect(() => readDaemonSectionOverview(frame)).toThrow()
+  })
+
+  it('rejects a node response in place of the section projection', () => {
+    const frame = createSocketFrameReader(1)(
+      JSON.stringify({
+        type: 'page_response',
+        data: { page: 'hilos_daemon_node', payload: { data: { overview } } },
+      }),
+    )[0]!
+    expect(() => readDaemonSectionOverview(frame)).toThrow()
   })
 })

@@ -414,6 +414,13 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Nodes and their processes, with agent placement across them.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-cpu',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        HilosPageConstants::HILOS_DAEMON_PLACEMENT => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Agent placement',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Agent placement',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where agent types and instances run across nodes.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_NODE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Node',

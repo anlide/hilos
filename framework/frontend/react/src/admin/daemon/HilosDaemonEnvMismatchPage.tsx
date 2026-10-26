@@ -83,7 +83,11 @@ export function HilosDaemonEnvMismatchPage({
     ),
   })
   return (
-    <HilosAdminPage page={HilosPages.DAEMON_ENV_MISMATCH}>
+    <HilosAdminPage
+      page={HilosPages.DAEMON_ENV_MISMATCH}
+      headKind="section"
+      tabsLabel="Daemon pages"
+    >
       {summary !== null && !summary.clustered ? (
         <div
           className="alert alert-secondary d-flex align-items-start gap-3 py-3"

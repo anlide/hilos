@@ -21,7 +21,13 @@ import {
   expectPasswordVisibility,
   shownByTestId,
   watchClientDocument,
+  DAEMON_ROOT_PATH,
+  expectDaemonPage,
+  expectDaemonSectionHead,
+  expectDaemonSectionAccessibility,
 } from '../../../../../framework/frontend/e2e/index.js'
+
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -459,5 +465,37 @@ test('Node pages expose one entity heading, link tabs and tables named through t
       await expectDaemonNodeTableName(expect, page)
     await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
     await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+  }
+})
+
+test.describe('Daemon section accessibility', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  for (const viewer of [false, true]) {
+    test(`Daemon section links, shared heading and Placement keyboard controls as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+      page,
+    }) => {
+      await setAdminViewMode(viewer)
+      if (!viewer) await grantAdminToSelf(page)
+      await gotoPage(page, DAEMON_ROOT_PATH)
+      await expectDaemonPage(expect, page, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+      const placement = page.getByTestId(
+        'hilos-page-tab-hilos_daemon_placement',
+      )
+      await placement.focus()
+      await expect(placement).toBeFocused()
+      await placement.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+      await expectDaemonSectionAccessibility(expect, page)
+      if (viewer)
+        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      const overview = page.getByTestId('hilos-page-tab-hilos_daemon')
+      await overview.focus()
+      await expect(overview).toBeFocused()
+      await overview.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+    })
   }
 })

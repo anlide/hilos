@@ -45,6 +45,9 @@ final readonly class HilosDaemonOverviewData
     public const string types = 'types';
     public const string clusterTypes = 'clusterTypes';
     public const string unplacedTypes = 'unplacedTypes';
+    public const string entryPoints = 'entryPoints';
+    public const string commandPort = 'commandPort';
+    public const string httpPort = 'httpPort';
 
     /**
      * Arrays here are the final wire projection, not internal picture state.
@@ -53,12 +56,14 @@ final readonly class HilosDaemonOverviewData
      * @param list<array<string, mixed>> $nodes Projected nodes in node-id order
      * @param ?array{nodeId: string, term: int, leaderId: ?string, onlineMasters: int, masters: int, quorumSize: int} $consensus Report
      * @param array{instances: ?int, types: int, clusterTypes: int, unplacedTypes: ?list<string>} $placement Full placement projection
+     * @param ?array{nodeId: string, commandPort: ?int, httpPort: ?int} $entryPoints Live source's listener ports
      */
     private function __construct(
         private bool $clustered,
         private array $nodes,
         private ?array $consensus,
         private array $placement,
+        private ?array $entryPoints,
     ) {
     }
 
@@ -85,6 +90,7 @@ final readonly class HilosDaemonOverviewData
             $nodes,
             $clustered ? self::consensusToArray($picture) : null,
             self::placementToArray($picture, $clustered),
+            self::entryPointsToArray($picture, $clustered),
         );
     }
 
@@ -96,6 +102,37 @@ final readonly class HilosDaemonOverviewData
             self::nodes => $this->nodes,
             self::consensus => $this->consensus,
             self::placement => $this->placement,
+            self::entryPoints => $this->entryPoints,
+        ];
+    }
+
+    /**
+     * @param ClusterDaemonPicture $picture Complete worker-local picture
+     * @param bool $clustered Whether the source must be the picture's leader
+     * @return ?array{nodeId: string, commandPort: ?int, httpPort: ?int} Live source, or null until known
+     */
+    private static function entryPointsToArray(ClusterDaemonPicture $picture, bool $clustered): ?array
+    {
+        $source = $clustered ? $picture->leader() : null;
+        if (!$clustered) {
+            foreach ($picture->nodes() as $node) {
+                if (!$node->online) {
+                    continue;
+                }
+                if ($source !== null) {
+                    return null;
+                }
+                $source = $node;
+            }
+        }
+        if ($source?->online !== true || $source->slot === null) {
+            return null;
+        }
+
+        return [
+            self::nodeId => $source->nodeId,
+            self::commandPort => $source->slot->picture->standing?->commandPort,
+            self::httpPort => $source->slot->picture->http?->port,
         ];
     }
 

@@ -62,10 +62,16 @@ An unfinished delivery names the leaf that will add it.
 | Process measurements | `DaemonStatus`, sampled by the master every five seconds; `DaemonStatusSource` serves its last sample | `measurements` part: on change of the rounded sample, once a minute, forced when the node agent starts |
 | Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | `standing.consensus`: role, term, recognised leader, and quorum view (live masters of the static set, set size, majority) |
 | Node sessions and connections | The master's own handshaked WebSocket clients | `standing.sessions` / `standing.connections`; sessions are distinct session tokens among those clients |
+| Registered command listener port | The master's registered `CommandServer` | Required-nullable `standing.commandPort`, read from `CommandServer::getPort()` (0..65535 or null) and carried through the shared `DaemonMasterStandingSignalData` standing serializer into the whole node picture and collector portion |
 
 The master does not read the on-disk `.env` for the section. The node agent reads
 the environment and that file itself.
 A worker may read the file; the master loop may not.
+
+The master reads `commandPort` from its registered command listener; it does no
+I/O or environment scan and adds no environment key for this field. Browser
+pages carry it in the `daemon.entryPoints` projection; it does not change the
+HTTP picture or the addressed Node Overview wire data.
 
 ## The Master Frame
 
@@ -233,8 +239,8 @@ and Angular. The owner is the node, not the Daemon root section. One head and
 one row serve Overview, Workers, Agents, Cron, HTTP, and Environment; the row's
 breadcrumb ends at `nodeId`, not at the current child tab. WebSockets remains an
 unbuilt catalog key, and the `.env` orphans page is not built. The root's Nodes
-table links to a node; node selection and the old root Inspector are not local
-root views.
+diagram links to each addressed Node Overview; the selected node remains its
+own entity and head owner.
 
 For mirror-backed node pages, `DaemonNodeHeading` carries `clustered`, `state`,
 `silentSince`, and `role`. `state` remains the picture's verdict;
@@ -291,8 +297,8 @@ a data-only page publication, while changed routes use the table mutation path
 independently. Existing child-table actions and restarts, and their viewer locks,
 remain in place. Data-only node and Overview publications do not resend tables
 or replace viewport windows.
-Node Overview has no browser table of its own; the root's Placement window and
-the child tables keep their existing table paths.
+Node Overview has no browser table of its own; Placement is published by its
+separate section page, and the child tables keep their existing table paths.
 
 ## What Never Leaves A Node
 
@@ -475,58 +481,100 @@ measurement interval. The `.env` on disk belongs to the node agent.
 
 ## Switching The Section On
 
-The project declares `DAEMON` in `Hilos::FEATURES`. Startup requires nine
-abstract Daemon pages and three agents, refusing a partial activation. Thin
-backend page subclasses activate it in chat, binance-btc-tracker, tasks, polls,
-online-testing, and ecommerce-shop; Node has no table binding. The section agent
-serves the Overview page and the root, replacing the index agent in chat. The
-Environment subclass inherits the framework's node-addressed
-`SUBSCRIPTION_AGENT_TYPE`. Six node child addresses require a node ID, including
-on standalone installations; Env mismatch is cluster-wide. On standalone it
-answers with `clustered: false` and no comparison.
+The project declares `DAEMON` in `Hilos::FEATURES`. Startup requires ten
+abstract Daemon pages and three agents, refusing a partial activation. The
+required pages include Overview, Agent placement, Node Overview, Workers,
+Agents, Cron, WebSockets, HTTP, Environment and Env mismatch. Thin backend page
+subclasses and `PAGE_TABLES` bindings activate the feature in all six demos:
+chat, binance-btc-tracker, tasks, polls, online-testing and ecommerce-shop.
+`hilosDaemonPlacement` belongs to the Agent placement page in each project;
+table registration, row shape and ACL are unchanged. Node Overview has
+no browser table of its own, and the existing child-table paths stay with their
+pages. The section agent serves Overview and Agent placement; in chat it also
+replaces the former index agent. The Environment subclass keeps its
+node-addressed `SUBSCRIPTION_AGENT_TYPE`. Six node child addresses require a
+node ID, including on standalone installations.
 
-All three SDKs build eight pages: the root, Node, Workers, Agents, Cron, HTTP,
-Environment, and Env mismatch. WebSockets remains unbuilt. The frontend mounts
-these pages in the existing chat, binance-btc-tracker, tasks, polls, and
-ecommerce-shop UIs. Online-testing has no frontend Daemon section. Ecommerce
-activates `DAEMON` without `LOGS`; its root and every node head suppress log
-links, as do its Workers and Agents pages. The root's data stays lean:
-`daemon` carries `clustered`, `nodes`, `consensus`, and `placement`, while the
-database summary remains as before. The root roster keeps the needed node
-measurements and `standing.connections`; Node carries its full measurements,
-standing counts, worker and environment diagnostics. Environment comparison and
-the other Inspector diagnostics are on Node, not the root. The root's Nodes
-table links to each node, and APP_ENV opens that node's Environment page; values
-stay on Environment.
+The section owner `HILOS_DAEMON` uses the shared `HilosPageHead`: the `bi-cpu`
+icon, the lead “Nodes and their processes, with agent placement across them.”,
+and the Hilos › Daemon breadcrumb. Its row contains ordinary addressed links
+for Overview and Agent placement, plus Env mismatch in clustered mode. The
+mismatch link is inapplicable when mode is unknown or reading it raises
+`EnvException`; that does not change direct subscription behavior. On a
+standalone direct URL, Env mismatch still answers with `clustered: false` and
+no comparison, and keeps its existing notice. Node remains a separate entity
+and head owner with its own row, not a section tab.
 
-The root keeps two local views, Nodes and Placement. Placement draws four totals
-from the complete `daemon.placement` summary, the existing placement viewport,
-one locally expanded cell and unplaced-type alarms. Search narrows the matrix
-window, never its totals or alarms. Running
-instances count every copy on every online node; any silent node, missing roster
-or empty node list makes the total null. Agent types count the project registry;
-One per cluster counts its declared LEADER and POLICY types, even on standalone.
-Unplaced types come from the leader, or the sole standalone node: null means
-unknown, an empty list means All placed, and each reported type gets one alarm.
+Agent placement is page key `hilos_daemon_placement` at the static address
+`/hilos/daemon/placement`; `placement` is not a node ID. The root Overview has
+no browser Placement table, controller or local toggle. It shows the Nodes
+diagram, consensus, database summary and entry-point line; node links still
+open the addressed Node Overview. The data projection stays lean: `daemon`
+carries `clustered`, `nodes`, `consensus`, `placement` and `entryPoints`, while
+the root database summary is unchanged. The node roster keeps its required
+measurements and `standing.connections`; Node pages retain their own full
+measurements, standing counts, worker and environment diagnostics.
 
-Tab switches keep search and the expanded cell without navigation or another
-subscription. Expansion reads current ids from the selected row/node pair and
-uses the viewport's ordinary row detail: directly under that type's row across
-the table's width, or inside that type's card on a narrow screen (D-216).
-Only one panel is open. Clicking the same cell again or Collapse closes it;
-another node of the same type changes its contents, and another type moves it.
-Changing the window by search, filter, order or page closes the panel and clears
-the cell selection; the arriving window does not reopen it. Local tab switches
-keep the cell selection. A missing row, empty
-or unknown cell, silent or removed node, unknown picture, refusal or freeze
-clears the cell selection. Both desktop cells and narrow cards use the viewport's
-ordinary slots; ids wrap. Admin view-mode readers have
-the same local controls. A changed `daemon` summary travels in a data-only
-`page_response` when no page-wide debt is outstanding and leaves the placement
-window in place. Changed placement rows go through the existing table classifier
-independently; it sends row and count changes according to the held viewport,
-including when the summary is unchanged. If the page is owed whole, its complete
-answer takes priority over either partial publication.
+In the whole-picture projection, `entryPoints` is null until its source is
+known; otherwise it contains `{nodeId, commandPort, httpPort}` with nullable
+ports. Clustered mode selects the live source from the existing picture leader;
+standalone mode selects only its sole live node. A missing, silent or unresolved
+leader does not fall back to the page agent or another consensus responder.
+Missing standing or HTTP sections leave their own port null, and a known zero
+remains zero. A missing full snapshot leaves `daemon` null. The Overview's
+metrics link resolves to the HTTP page for the source node, not to a listener
+URL; if that page has no HTTP section yet it can show its existing waiting state.
+
+The root entry line shows Browsers, CLI on `:port`, HTTP `:port` and a metrics
+link when the page resolver supplies an address. Agent placement reuses
+`HilosDaemonOverviewData` without the database summary. Its successful initial
+`page_response` carries the shared head, breadcrumb, tabs, `daemon` projection
+and first `hilosDaemonPlacement` window. The browser subscribes to this page
+directly; there is no root preload, header action or summary action. Its viewer
+lease starts after the successful reply and follows the existing unsubscribe
+cleanup on leave or connection close.
+
+`AbstractHilosDaemonPage` publishes only its Overview data. The separate
+`AbstractHilosDaemonPlacementPage` owns the Placement page's fingerprint, data
+and table mutations. The Overview has no Placement window, viewport or table
+mutation traffic. After applying each picture portion, the daemon agent runs
+both publishers with the immutable before-picture. They use the existing
+worker-local `ClusterDaemonPictureMirror`; no database, new runtime state,
+cache or SQL stores the projection or ports. An unchanged summary is deduplicated
+and data-only changes do not replace table windows; full-page recovery and
+viewport debt keep their existing behavior.
+
+Agent placement keeps the existing four totals, unknown/empty/unplaced values,
+alarms and search semantics. Running instances count every copy on every online
+node; any silent node, missing roster or empty node list makes that total null.
+Agent types count the project registry; cluster types count declared LEADER and
+POLICY types, even on standalone. Unplaced types come from the leader or the
+sole standalone node: null means unknown, an empty list means All placed, and
+each reported type gets one alarm. Search narrows the matrix window, not its
+totals or alarms.
+
+Search and the expanded cell are local to the lifetime of the Agent placement
+page. Expansion reads current ids from the selected row/node pair and uses the
+viewport's ordinary row detail: beneath the type's row across the table, or in
+the type's card on a narrow screen. Only one panel is open; clicking the same
+cell or Collapse closes it, another node changes its contents, and another type
+moves it. Replacing a window through search, filter, order or page closes the
+panel and clears selection; the new window does not reopen it. Missing rows,
+empty or unknown cells, silent or removed nodes, an unknown picture, refusal or
+freeze also clear selection. Admin view-mode readers have the same controls.
+Data-only updates while Placement stays open preserve search and selection;
+navigation away or unmount ends their local state, so returning starts fresh.
+Both table rows and cards use the viewport's ordinary slots, whose ids wrap.
+Changed rows still use the existing table classifier and held viewport, even
+when the summary is unchanged; a page-wide recovery answer takes priority over
+partial publications.
+
+All three SDKs build nine pages: Overview, Agent placement, Node, Workers,
+Agents, Cron, HTTP, Environment and Env mismatch. WebSockets remains unbuilt.
+The frontend mounts those pages in chat, binance-btc-tracker, tasks, polls and
+ecommerce-shop. Online-testing enables the backend feature without a UI.
+Ecommerce activates `DAEMON` without `LOGS`; its root and every node head
+suppress log links, as do its Workers and Agents pages.
 
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read

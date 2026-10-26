@@ -111,6 +111,24 @@ it('stays silent on the look-alikes the good fixtures seed', () => {
   expect(reportFixture('goodInlineStyleAngular.ts')).toEqual([])
 })
 
+it('reports a style write whose name contains a Unicode escape', () => {
+  expect(
+    checkSource(
+      `${FIXTURES}/escaped.ts`,
+      String.raw`node.st\u0079le.width = '1px'`,
+    ),
+  ).toEqual([sets('escaped.ts', 1, 'width')])
+})
+
+it('reports ngStyle when no lowercase style name occurs in the source', () => {
+  expect(
+    checkSource(
+      `${FIXTURES}/angular.ts`,
+      `@Component({ template: '<div [ngStyle]="{ width: size }"></div>' }) class Widget {}`,
+    ),
+  ).toEqual([sets('angular.ts', 1, 'width')])
+})
+
 it('reads an element only once, however many declarations it carries', () => {
   expect(
     checkSource(

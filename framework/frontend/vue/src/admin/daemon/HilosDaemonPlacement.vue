@@ -1,4 +1,4 @@
-<!-- The root owns the matrix subscription; this view only draws its current
+<!-- The Placement page owns the matrix subscription; this view only draws its current
 window, complete placement totals and the locally chosen cell. -->
 <script setup lang="ts">
 import {

@@ -66,6 +66,7 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPage;
+use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -356,6 +357,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             DaemonPage::PAGE => DaemonPage::class,
+            DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
             DaemonNodePage::PAGE => DaemonNodePage::class,
             DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
             DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -1409,6 +1411,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::DAEMON, Hilos::features());
         foreach ([
             DaemonPage::class,
+            DaemonPlacementPage::class,
             DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
@@ -1421,6 +1424,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
         $this->assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
+        $this->assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
@@ -1453,7 +1457,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(HilosDaemonHttpRoutesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonHttpRoutes]);
         $this->assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonPlacement]);
 
-        $this->assertSame([EcommerceShopTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
+        $this->assertSame([EcommerceShopTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE]);
         $this->assertSame([EcommerceShopTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
         $this->assertSame([EcommerceShopTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
         $this->assertSame([EcommerceShopTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);

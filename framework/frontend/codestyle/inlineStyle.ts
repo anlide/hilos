@@ -246,11 +246,22 @@ function typeScriptSites(
   source: string,
   lineOffset: number,
 ): Site[] {
+  // Every imperative or template site needs style or ngStyle. Keep parsing
+  // escaped source, which may carry either name without writing it literally.
+  if (
+    !source.includes(STYLE_PROPERTY) &&
+    !source.includes('ngStyle') &&
+    !source.includes('\\')
+  ) {
+    return []
+  }
+
+  // This downward walk passes its source explicitly; it needs no parent links.
   const sourceFile = ts.createSourceFile(
     relativePath,
     source,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const found: Site[] = []
   const lineOf = (node: ts.Node): number =>
@@ -408,7 +419,7 @@ function expressionProperties(expression: string): string[] | null {
     'expression.ts',
     `(${expression})`,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const [statement] = parsed.statements
   if (statement === undefined || !ts.isExpressionStatement(statement)) {

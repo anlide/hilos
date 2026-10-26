@@ -41,6 +41,19 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     private static ?string $summaryFingerprint = null;
 
     /**
+     * @param PageRouteParams $ownerParams Section route parameters, unused
+     * @return bool Whether a known cluster mode makes environment comparison applicable
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        try {
+            return Hilos::$cluster?->isEnabled() === true;
+        } catch (EnvException) {
+            return false;
+        }
+    }
+
+    /**
      * @param ?ClusterDaemonPicture $before Immutable picture before this portion
      * @throws HilosException When comparison metadata cannot be projected or encoded
      * @throws EnvException When cluster mode or node id cannot be read

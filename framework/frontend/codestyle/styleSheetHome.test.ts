@@ -6,6 +6,8 @@
 // The fixtures are trees rather than files because this rule judges a file list:
 // a stylesheet is legal by its path and by nothing else, so the case has to have
 // a sanctioned home of its own to be a case at all.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -58,6 +60,26 @@ it('reports exactly the homes the bad fixture tree seeds', () => {
 
 it('stays silent on the look-alikes the good fixture tree seeds', () => {
   expect(reportFixture('good')).toEqual([])
+})
+
+it('reports escaped component and style property names', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hilos-style-sheet-'))
+  try {
+    writeFileSync(
+      join(root, 'Widget.ts'),
+      String.raw`@Comp\u006fnent({
+  st\u0079les: ['p { color: red }'],
+  st\u0079leUrls: ['./widget.css'],
+})
+export class Widget {}`,
+    )
+    expect(checkTree(root, [])).toEqual([
+      `STYLE-SHEET-HOME Widget.ts:2 — a component declares styles of its own;${CURE}`,
+      `STYLE-SHEET-HOME Widget.ts:3 — a component declares styles of its own;${CURE}`,
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 it('reports a stylesheet the sanctioned list does not name, whatever it is called', () => {

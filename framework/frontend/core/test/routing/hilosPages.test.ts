@@ -256,6 +256,11 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { nodeId },
       admin: true,
     })
+    expect(router.match('/hilos/daemon/placement')).toEqual({
+      page: HilosPages.DAEMON_PLACEMENT,
+      params: {},
+      admin: true,
+    })
     expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
       page: HilosPages.DAEMON_ENV_MISMATCH,
       params: {},
@@ -295,6 +300,30 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     expect(router.match('/hilos/daemon/http/old-server').page).toBeNull()
+  })
+
+  it('addresses Placement without params with the PHP key and built SDK views', () => {
+    const page = HilosPages.DAEMON_PLACEMENT
+    const path = '/hilos/daemon/placement'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_daemon_placement')
+    expect(php).toContain(`HILOS_DAEMON_PLACEMENT = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(HILOS_PAGE_ROUTES[page]).toBe(path)
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    expect(router.match(`${path}/extra`).page).toBeNull()
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
+    }
   })
 
   it('addresses a browser session by its numeric id and opens it in every view layer', () => {

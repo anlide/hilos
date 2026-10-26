@@ -70,7 +70,11 @@ function nodeSlot(nodeId: string): string {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.DAEMON_ENV_MISMATCH">
+  <HilosAdminPage
+    :page="HilosPages.DAEMON_ENV_MISMATCH"
+    head-kind="section"
+    tabs-label="Daemon pages"
+  >
     <div
       v-if="summary !== null && !summary.clustered"
       class="alert alert-secondary d-flex align-items-start gap-3 py-3"

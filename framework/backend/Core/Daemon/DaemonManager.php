@@ -1356,6 +1356,7 @@ abstract class DaemonManager extends BaseManager implements
         try {
             $standing = $this->sampleStanding();
             if (!$this->standingForce && $standing == $this->standingLastSent
+                && $standing->commandPort === $this->standingLastSent?->commandPort
                 && $now - $this->standingLastSentAt < self::STANDING_REANNOUNCE_SECONDS) {
                 return;
             }
@@ -1585,7 +1586,7 @@ abstract class DaemonManager extends BaseManager implements
             $leadership->quorumSize(),
         ) : null;
 
-        return new DaemonNodeStanding(count($sessions), $connections, $clustered, $consensus);
+        return new DaemonNodeStanding(count($sessions), $connections, $clustered, $consensus, $this->findCommandServer()?->getPort());
     }
 
     /**

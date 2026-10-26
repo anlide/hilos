@@ -41,6 +41,7 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -581,6 +582,7 @@ final class ChatTopologyRegistryTest extends TestCase
 
         foreach ([
             DaemonPage::class,
+            DaemonPlacementPage::class,
             DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
@@ -593,6 +595,7 @@ final class ChatTopologyRegistryTest extends TestCase
             self::assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
         self::assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
+        self::assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         self::assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
@@ -629,7 +632,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatTableContext::hilosDaemonEnvKeys => [],
             ChatTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
-        self::assertSame([ChatTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
         self::assertSame([
             ChatTableContext::hilosDaemonEnvDiverged => [],

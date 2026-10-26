@@ -49,6 +49,18 @@ it('stays silent on the file that declares, and on the look-alikes beside it', (
   expect(reportFixture('goodBrowserValue.ts')).toEqual([])
 })
 
+it.each([
+  String.raw`document.c\u006fokie = 'value'`,
+  String.raw`localStorage.s\u0065tItem('key', 'value')`,
+])('reports a write whose name contains a Unicode escape: %s', (source) => {
+  expect(checkSource(`${FIXTURES}/escaped.ts`, source)).toEqual([
+    `BROWSER-VALUE-DECLARED ${FIXTURES}/escaped.ts:1 —` +
+      ' this file leaves a value in this browser and declares none; declare it with' +
+      ' browserValue({ store, key, label }) beside the write, so the erase on /privacy' +
+      ' can sweep it (see docs/agents/frontend/core-and-connection.md)',
+  ])
+})
+
 it('is silent on a file that writes nothing at all', () => {
   expect(
     checkSource(

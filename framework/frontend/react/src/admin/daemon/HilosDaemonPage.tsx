@@ -1,15 +1,7 @@
-// One page answer feeds the overview and the placement table. Switching these
-// local diagrams keeps their handles and never navigates or resubscribes.
-import {
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type CSSProperties,
-} from 'react'
+// Overview of the node picture and the selected entry points.
+import { useContext, useMemo, type CSSProperties } from 'react'
 import {
   createHilosDaemonOverview,
-  createHilosDaemonPlacementView,
   daemonMonopolisticCount,
   daemonPercentage,
   daemonProgressWidth,
@@ -32,7 +24,6 @@ import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
-import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 
 /** Props for the Daemon section root. */
 export interface HilosDaemonPageProps {
@@ -43,54 +34,24 @@ export interface HilosDaemonPageProps {
 /** @param props The project's connection and page scope. */
 export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
   const daemon = useMemo(() => createHilosDaemonOverview(context), [context])
-  const placement = useMemo(
-    () => createHilosDaemonPlacementView(context, daemon.overview),
-    [context, daemon],
-  )
-  const [placementActive, setPlacementActive] = useState(false)
-  const [placementOpened, setPlacementOpened] = useState(false)
   const overview = useSignal(daemon.overview)
   const database = useSignal(daemon.database)
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosDaemonPage requires a provided Hilos router.')
-  useEffect(() => {
-    placement.start()
-    return () => {
-      placement.dispose()
-    }
-  }, [placement])
+  const source = overview?.entryPoints
+  const metricsPath = source
+    ? router.resolvePath(HilosPages.DAEMON_HTTP_SERVER, {
+        nodeId: source.nodeId,
+      })
+    : null
   return (
-    <HilosAdminPage page={HilosPages.DAEMON}>
-      <div className="nav nav-tabs mb-3" aria-label="Daemon diagrams">
-        <button
-          type="button"
-          className={`nav-link ${!placementActive ? 'active' : ''}`}
-          aria-pressed={!placementActive}
-          data-id="hilos-daemon-nodes-tab"
-          onClick={() => setPlacementActive(false)}
-        >
-          Nodes and processes
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${placementActive ? 'active' : ''}`}
-          aria-pressed={placementActive}
-          data-id="hilos-daemon-placement-tab"
-          onClick={() => {
-            setPlacementOpened(true)
-            setPlacementActive(true)
-          }}
-        >
-          Agent placement
-        </button>
-      </div>
-      {placementOpened && (
-        <div hidden={!placementActive}>
-          <HilosDaemonPlacement view={placement} overview={overview} />
-        </div>
-      )}
-      <div hidden={placementActive} data-id="hilos-daemon-nodes-view">
+    <HilosAdminPage
+      page={HilosPages.DAEMON}
+      headKind="section"
+      tabsLabel="Daemon pages"
+    >
+      <div data-id="hilos-daemon-nodes-view">
         {overview === null ? (
           <div data-id="hilos-daemon-overview-waiting">
             <p className="text-body-secondary">Waiting for the node picture…</p>
@@ -98,6 +59,44 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
           </div>
         ) : (
           <>
+            <div
+              className="d-flex flex-wrap gap-3 small text-body-secondary mb-3"
+              data-id="hilos-daemon-entry-points"
+            >
+              <span>
+                <i className="bi bi-window me-1" aria-hidden="true" />
+                Browsers
+              </span>
+              <span>
+                <i className="bi bi-terminal me-1" aria-hidden="true" />
+                CLI on{' '}
+                <span
+                  className="font-monospace"
+                  data-id="hilos-daemon-entry-command-port"
+                >
+                  {source?.commandPort == null ? '—' : `:${source.commandPort}`}
+                </span>
+              </span>
+              <span>
+                <i className="bi bi-globe me-1" aria-hidden="true" />
+                HTTP{' '}
+                <span
+                  className="font-monospace"
+                  data-id="hilos-daemon-entry-http-port"
+                >
+                  {source?.httpPort == null ? '—' : `:${source.httpPort}`}
+                </span>
+                {metricsPath && (
+                  <HilosLink
+                    to={metricsPath}
+                    className="ms-1"
+                    data-id="hilos-daemon-entry-metrics"
+                  >
+                    metrics
+                  </HilosLink>
+                )}
+              </span>
+            </div>
             {overview.clustered && (
               <div
                 className="d-flex flex-wrap align-items-center gap-2 mb-3 small"

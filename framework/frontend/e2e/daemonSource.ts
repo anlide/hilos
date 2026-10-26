@@ -38,6 +38,51 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
   let initialConnections = latestConnections(initial)
   const evidence: unknown[] = []
 
+  // Placement renders the complete overview as a prop, while its body is only
+  // the matrix. Read that committed projection from Vue's live vnode tree,
+  // just as watchTableSearch reads the mounted controller's props.
+  const committedConnections = () =>
+    page.evaluate(() => {
+      interface VNode {
+        readonly props?: {
+          overview?: {
+            nodes: readonly {
+              nodeId: string
+              standing: { connections: number } | null
+            }[]
+          } | null
+        }
+        readonly el?: Node
+        readonly component?: { subTree: VNode; isUnmounted: boolean }
+        readonly suspense?: { activeBranch?: VNode }
+        readonly children?: unknown
+      }
+      const matrix = document.querySelector(
+        '[data-id="hilos-daemon-placement-view"]',
+      )
+      let count: number | null = null
+      const visit = (node: VNode | null | undefined): void => {
+        if (!node || typeof node !== 'object') return
+        if (matrix && node.el === matrix && node.el.isConnected) {
+          const source = node.props?.overview?.nodes.find(
+            (node) => node.nodeId === 'standalone',
+          )
+          if (typeof source?.standing?.connections === 'number')
+            count = source.standing.connections
+        }
+        if (node.component && !node.component.isUnmounted)
+          visit(node.component.subTree)
+        else if (Array.isArray(node.children)) {
+          for (const child of node.children) visit(child)
+        }
+        visit(node.suspense?.activeBranch)
+      }
+      for (const root of document.querySelectorAll('[data-v-app]')) {
+        visit((root as Element & { _vnode?: VNode })._vnode)
+      }
+      return count
+    })
+
   async function changed(
     expect: Expect,
     mark: TableMark,
@@ -126,9 +171,9 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
           { timeout: SOURCE_TIMEOUT_MS },
         )
         .toEqual(1)
-      await expect(
-        page.getByTestId('hilos-daemon-browsers-standalone'),
-      ).toHaveText('Browser connections: 1')
+      await expect
+        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
+        .toEqual(1)
     },
     async connectionOpened(expect: Expect, mark: TableMark) {
       expect(typeof initialConnections).toBe('number')
@@ -139,9 +184,9 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
           frame.wire.type === 'page_response' &&
           connections(frame) === initialConnections! + 1,
       )
-      await expect(
-        page.getByTestId('hilos-daemon-browsers-standalone'),
-      ).toHaveText(`Browser connections: ${initialConnections! + 1}`)
+      await expect
+        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
+        .toEqual(initialConnections! + 1)
       return frame
     },
     async connectionClosed(expect: Expect, mark: TableMark) {
@@ -153,9 +198,9 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
           frame.wire.type === 'page_response' &&
           connections(frame) === initialConnections,
       )
-      await expect(
-        page.getByTestId('hilos-daemon-browsers-standalone'),
-      ).toHaveText(`Browser connections: ${initialConnections}`)
+      await expect
+        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
+        .toEqual(initialConnections)
       return frame
     },
     async workerAdded(expect: Expect, mark: TableMark, userId: number) {

@@ -33,7 +33,7 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonPlacementPage;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
@@ -65,20 +65,20 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
         Hilos::$browser = new PlacementWindowTestBrowser();
         Hilos::$cluster = null;
         ClusterDaemonPictureMirror::forgetPicture();
-        AbstractHilosDaemonPage::onPictureForgotten();
+        AbstractHilosDaemonPlacementPage::onPictureForgotten();
         ClusterDaemonPictureMirror::addViewer(self::VIEWER);
         ClusterDaemonPictureMirror::addViewer(self::OTHER_VIEWER);
         $this->viewport = new TableViewportSubscription(HilosDaemonPlacementTable::TABLE,
             filter: [TableConstants::FILTER_KEY_SEARCH => 'x:1']);
-        Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON,
-            new WebSocketPageSubscribeSignalDTO(self::VIEWER, HilosPageConstants::HILOS_DAEMON));
+        Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON_PLACEMENT,
+            new WebSocketPageSubscribeSignalDTO(self::VIEWER, HilosPageConstants::HILOS_DAEMON_PLACEMENT));
         Hilos::$sr->setTableViewport(self::VIEWER, $this->viewport);
     }
 
     protected function tearDown(): void
     {
         ClusterDaemonPictureMirror::forgetPicture();
-        AbstractHilosDaemonPage::onPictureForgotten();
+        AbstractHilosDaemonPlacementPage::onPictureForgotten();
         foreach (ClusterDaemonPictureMirror::viewerKeys() as $key) {
             ClusterDaemonPictureMirror::removeViewer($key);
         }
@@ -174,14 +174,14 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
     {
         $standing = new DaemonNodeStanding($sessions, $sessions, true, new DaemonConsensusPicture(
             $leader ? ConsensusRole::Leader : ConsensusRole::Follower, 1, $leader ? $id : null, 1, 1, 1,
-        ));
+        ), null);
         $picture = new NodeDaemonPicture($id, NodeRole::Master, 10, $roster, $cron, standing: $standing);
         return new ClusterDaemonNodeView($id, $online, new ClusterDaemonNodeSlot($id, $picture, 10));
     }
 
     private function assertOneWindow(): void
     {
-        self::assertSame([[HilosPageConstants::HILOS_DAEMON, self::VIEWER]], $this->browser()->mutations);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_PLACEMENT, self::VIEWER]], $this->browser()->mutations);
         self::assertSame($this->viewport, $this->browser()->viewports[array_key_last($this->browser()->viewports)]);
     }
 

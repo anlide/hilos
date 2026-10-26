@@ -3,7 +3,10 @@ import { shownByTestId } from './table.js'
 import { fitsInScrollport } from './geometry.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 import { deliveryObject } from './deliveryFrames.js'
-import { watchClientDocument } from './lazyBundles.js'
+import { nextClientPaint, watchClientDocument } from './lazyBundles.js'
+import type { DeliveryFrameLog } from './deliveryFrames.js'
+import type { watchTableSearch } from './tableFocus.js'
+import { daemonOverviewSchema } from '../core/src/admin/daemon/index.js'
 import type {
   HilosDaemonNodeHeading,
   HilosDaemonNodeOverviewData,
@@ -14,6 +17,7 @@ import type {
  * navigation stay in each demo's spec.
  */
 export const DAEMON_ROOT_PATH = '/hilos/daemon'
+export const DAEMON_PLACEMENT_PATH = '/hilos/daemon/placement'
 export const DAEMON_WORKERS_PATH = '/hilos/daemon/standalone/workers'
 export const DAEMON_WORKERS_CHILD = 'hilos-page-tab-hilos_daemon_workers'
 export const DAEMON_NODE_PATH = '/hilos/daemon/standalone'
@@ -36,6 +40,9 @@ export const DAEMON_PLACEMENT_TOTALS = [
   'unplaced',
 ] as const
 
+// A changed connection is coalesced, reported within 5 s and fanned out within 0.5 s.
+const DAEMON_SOURCE_TIMEOUT_MS = 10_000
+
 /** The outlet must have mounted the destination before its ready mark counts. */
 export async function expectDaemonPage(
   expect: Expect,
@@ -52,7 +59,7 @@ export async function expectDaemonPage(
   )
 }
 
-/** Root-only picture: links, processes, database and the local placement switch. */
+/** Root picture: links, processes, database and section navigation. */
 export async function expectStandaloneOverview(
   expect: Expect,
   page: Page,
@@ -93,11 +100,88 @@ export async function expectStandaloneOverview(
     /^\s*Migration:\s+[1-9]\d*\s*$/,
   )
   await expect(database).not.toContainText(/password|username|credentials|@/i)
-  await expect(page.getByTestId('hilos-daemon-placement-tab')).toBeEnabled()
-  await expect(page.getByTestId('hilos-daemon-placement-tab')).toHaveAttribute(
-    'aria-pressed',
-    'false',
+  await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+  await expect(page.getByTestId('hilos-daemon-entry-points')).toContainText(
+    'Browsers',
   )
+  await expect(page.getByTestId('hilos-daemon-entry-command-port')).toHaveText(
+    /^:\d+$/,
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-http-port')).toHaveText(
+    /^:\d+$/,
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-metrics')).toHaveAttribute(
+    'href',
+    `${DAEMON_NODE_PATH}/http`,
+  )
+  await expect(page.getByTestId('hilos-daemon-placement-view')).toHaveCount(0)
+}
+
+/** Shared section identity and addressable tabs, without an entity in the row. */
+export async function expectDaemonSectionHead(
+  expect: Expect,
+  page: Page,
+  current: string,
+  clustered = false,
+): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveText('Daemon')
+  await expect(page.getByTestId('hilos-page-head-block')).toContainText(
+    'Nodes and their processes, with agent placement across them.',
+  )
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return {
+            label: words.textContent?.trim(),
+            current: item.getAttribute('aria-current'),
+          }
+        }),
+      ),
+    )
+    .toEqual([
+      { label: 'Hilos', current: null },
+      { label: 'Daemon', current: 'page' },
+    ])
+  await expect(
+    page.getByTestId('hilos-page-head-block').locator('.bi-cpu'),
+  ).toHaveCount(1)
+  const nav = page.getByTestId('hilos-page-tabs')
+  await expect(nav).toHaveRole('navigation')
+  await expect(nav).toHaveAccessibleName('Daemon pages')
+  await expect(nav.getByRole('link')).toHaveText(
+    clustered
+      ? ['Overview', 'Agent placement', 'Env mismatch']
+      : ['Overview', 'Agent placement'],
+  )
+  await expect(
+    nav.locator('[role="tablist"], [role="tab"], [aria-pressed]'),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-tab-hilos_daemon')).toHaveAttribute(
+    'href',
+    DAEMON_ROOT_PATH,
+  )
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_daemon_placement'),
+  ).toHaveAttribute('href', DAEMON_PLACEMENT_PATH)
+  const mismatch = page.getByTestId('hilos-page-tab-hilos_daemon_env_mismatch')
+  if (clustered)
+    await expect(mismatch).toHaveAttribute('href', '/hilos/daemon/env-mismatch')
+  else await expect(mismatch).toHaveCount(0)
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(page.getByTestId(`hilos-page-tab-${current}`)).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_daemon_node'),
+  ).toHaveCount(0)
 }
 
 /** Shared entity head and real links on all six addressed Node pages. */
@@ -289,23 +373,20 @@ export async function expectDaemonNodeFits(
   }
 }
 
-/** Open the local diagram and wait for its real standalone roster window. */
+/** Open Placement at its own address and wait for its real standalone roster window. */
 export async function expectStandalonePlacement(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  const tab = page.getByTestId('hilos-daemon-placement-tab')
+  const tab = page.getByTestId('hilos-page-tab-hilos_daemon_placement')
   await tab.focus()
   await tab.press('Enter')
-  await expect(tab).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('hilos-daemon-nodes-tab')).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  )
-  await expect(page).toHaveURL(new RegExp(`${DAEMON_ROOT_PATH}$`))
-  await expect(page.getByTestId('hilos-daemon-nodes-view')).toBeHidden()
-  await expect(page.getByTestId('hilos-daemon-database')).toBeHidden()
-  await expect(page.getByTestId('hilos-daemon-inspector')).toBeHidden()
+  await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+  await expectDaemonSectionHead(expect, page, 'hilos_daemon_placement')
+  await expect(page).toHaveURL(new RegExp(`${DAEMON_PLACEMENT_PATH}$`))
+  await expect(page.getByTestId('hilos-daemon-nodes-view')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-daemon-database')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-daemon-inspector')).toHaveCount(0)
   for (const total of DAEMON_PLACEMENT_TOTALS) {
     await expect(
       page.getByTestId(`hilos-daemon-placement-${total}`),
@@ -1193,4 +1274,499 @@ function watchDaemonPageFrames(
     }
   })
   return { frames, stop: observer.stop }
+}
+
+/** The strict browser projection, read from its nested page-response boundary. */
+export function readDaemonSectionOverview(frame: SocketFrame) {
+  const wire = deliveryObject(frame.wire)
+  if (wire.type !== 'page_response')
+    throw new Error('Expected a page response.')
+  const payload = deliveryObject(deliveryObject(wire.data).payload)
+  return daemonOverviewSchema
+    .nullable()
+    .parse(deliveryObject(payload.data).daemon)
+}
+
+/** A concrete initial source tuple requires the stand's first full picture. */
+export async function expectDaemonPlacementSourceReady(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+  await expect(page.getByTestId('hilos-daemon-placement-view')).toContainText(
+    'All placed',
+    { timeout: DAEMON_SOURCE_TIMEOUT_MS },
+  )
+  await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toBeVisible()
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+}
+
+/** With a reported source, one initial reply carries head, overview and window. */
+export async function expectDaemonPlacementAnswer(
+  expect: Expect,
+  page: Page,
+  frames: readonly SocketFrame[],
+  clustered = false,
+) {
+  const replies = frames.filter((frame) => {
+    const wire = deliveryObject(frame.wire)
+    return (
+      wire.type === 'page_response' &&
+      deliveryObject(wire.data).page === 'hilos_daemon_placement'
+    )
+  })
+  const complete = replies.filter(
+    (frame) =>
+      deliveryObject(deliveryObject(deliveryObject(frame.wire).data).payload)
+        .windows !== undefined,
+  )
+  expect(complete).toHaveLength(1)
+  const first = replies[0]!
+  expect(first).toBe(complete[0])
+  expect(first.failure).toBeUndefined()
+  const payload = deliveryObject(
+    deliveryObject(deliveryObject(first.wire).data).payload,
+  )
+  const data = deliveryObject(payload.data)
+  expect(data.pageHeadOwner).toEqual({
+    page: 'hilos_daemon',
+    label: 'Daemon',
+    lead: 'Nodes and their processes, with agent placement across them.',
+    icon: 'bi-cpu',
+  })
+  expect(data.pageBreadcrumb).toEqual([
+    { page: 'hilos', label: 'Hilos' },
+    { page: 'hilos_daemon', label: 'Daemon' },
+  ])
+  expect(data.pageTabs).toEqual([
+    { page: 'hilos_daemon', label: 'Overview' },
+    { page: 'hilos_daemon_placement', label: 'Agent placement' },
+    ...(clustered
+      ? [{ page: 'hilos_daemon_env_mismatch', label: 'Env mismatch' }]
+      : []),
+  ])
+  expect(data).not.toHaveProperty('database')
+  const windows = deliveryObject(payload.windows)
+  expect(Object.keys(windows)).toEqual(['hilosDaemonPlacement'])
+  const window = deliveryObject(windows.hilosDaemonPlacement)
+  expect(window.rows).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ rowKey: DAEMON_PLACEMENT_TYPE }),
+    ]),
+  )
+  const overview = readDaemonSectionOverview(first)
+  expect(overview).not.toBeNull()
+  expect(overview!.entryPoints).not.toBeNull()
+  expect(overview!.clustered).toBe(clustered)
+  await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+  await expectDaemonSectionHead(
+    expect,
+    page,
+    'hilos_daemon_placement',
+    clustered,
+  )
+  await expect(page).toHaveURL(new RegExp(`${DAEMON_PLACEMENT_PATH}$`))
+  await expect(page.getByTestId('hilos-daemon-database')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-daemon-nodes-view')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  return overview!
+}
+
+/** Cold navigation cannot reveal any previous head, body or actionable table. */
+export async function expectDaemonPlacementPending(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
+    'data-state',
+    'loading',
+  )
+  await expect(page.getByTestId('hilos-page-skeleton')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-page-skeleton').getByRole('status'),
+  ).toHaveText('Loading…')
+  await expect(page.getByTestId('hilos-page-departure')).toHaveAttribute(
+    'inert',
+    '',
+  )
+  await expect(page.getByTestId('hilos-page-departure')).toHaveAttribute(
+    'aria-hidden',
+    'true',
+  )
+  for (const id of [
+    'hilos-page-head',
+    'hilos-breadcrumb',
+    'hilos-daemon-placement-view',
+    'hilos-viewport-table',
+  ]) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0)
+}
+
+/** A cold document subscribes only to Placement; later table traffic stays there. */
+export async function expectDaemonPlacementRequests(
+  expect: Expect,
+  log: DeliveryFrameLog,
+): Promise<void> {
+  const socket = log.sockets()
+  const sent = log.sent
+    .filter((frame) => frame.socket === socket)
+    .map((frame) => deliveryObject(frame.wire))
+  expect(
+    sent
+      .filter((wire) => wire.type === 'page_subscribe')
+      .map((wire) => wire.page),
+  ).toEqual(['hilos_daemon_placement'])
+  expect(sent.filter((wire) => wire.type === 'action')).toEqual([])
+  await expect
+    .poll(() =>
+      log.sent.some((frame) => {
+        const wire = deliveryObject(frame.wire)
+        return (
+          frame.socket === socket &&
+          wire.type === 'table_rendered' &&
+          wire.tableKey === 'hilosDaemonPlacement'
+        )
+      }),
+    )
+    .toBe(true)
+  expect(
+    log.sent
+      .filter((frame) => frame.socket === socket)
+      .map((frame) => deliveryObject(frame.wire))
+      .filter(
+        (wire) =>
+          ['table_viewport', 'table_rendered'].includes(String(wire.type)) &&
+          wire.tableKey === 'hilosDaemonPlacement',
+      )
+      .map((wire) => wire.page),
+  ).toEqual(expect.arrayContaining(['hilos_daemon_placement']))
+  for (const frame of log.sent.filter((frame) => frame.socket === socket)) {
+    const wire = deliveryObject(frame.wire)
+    if (wire.tableKey === 'hilosDaemonPlacement')
+      expect(wire.page).toBe('hilos_daemon_placement')
+  }
+}
+
+/** Entry ports and the metrics address come from the actual browser projection. */
+export async function expectDaemonEntryPoints(
+  expect: Expect,
+  page: Page,
+  frame: SocketFrame,
+) {
+  const overview = readDaemonSectionOverview(frame)
+  expect(overview?.entryPoints).not.toBeNull()
+  const source = overview!.entryPoints!
+  expect(overview!.nodes).toContainEqual(
+    expect.objectContaining({ nodeId: source.nodeId, online: true }),
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-points')).toContainText(
+    'Browsers',
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-command-port')).toHaveText(
+    source.commandPort === null ? '—' : `:${source.commandPort}`,
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-http-port')).toHaveText(
+    source.httpPort === null ? '—' : `:${source.httpPort}`,
+  )
+  await expect(page.getByTestId('hilos-daemon-entry-metrics')).toHaveAttribute(
+    'href',
+    `${DAEMON_ROOT_PATH}/${source.nodeId}/http`,
+  )
+  return source
+}
+
+/** Section table naming, keyboard search/cell operation and textual placement state. */
+export async function expectDaemonSectionAccessibility(
+  expect: Expect,
+  page: Page,
+  clustered = false,
+): Promise<void> {
+  await expectDaemonSectionHead(
+    expect,
+    page,
+    'hilos_daemon_placement',
+    clustered,
+  )
+  const table = page.getByRole('table', { name: 'Daemon', exact: true })
+  await expect(table).toBeVisible()
+  const headingId = await page
+    .getByTestId('hilos-page-head-title')
+    .getAttribute('id')
+  expect(headingId).toBeTruthy()
+  await expect(table).toHaveAttribute('aria-labelledby', headingId!)
+  const search = page.getByTestId('hilos-table-search')
+  await expect(search).toHaveRole('searchbox')
+  await expect(search).toHaveAccessibleName('Search by agent id…')
+  await search.focus()
+  await expect(search).toBeFocused()
+  const cell = shownByTestId(page, DAEMON_PLACEMENT_CELL)
+  await expect(cell).toHaveRole('button')
+  await expect(cell).toHaveAccessibleName(
+    `${DAEMON_PLACEMENT_TYPE} on standalone: 1 instances`,
+  )
+  await cell.focus()
+  await expect(cell).toBeFocused()
+  await cell.press('Enter')
+  await expect(cell).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    shownByTestId(page, 'hilos-daemon-placement-selection'),
+  ).toContainText(DAEMON_PLACEMENT_TYPE)
+  await cell.press('Space')
+  await expect(cell).toHaveAttribute('aria-expanded', 'false')
+  await expect(
+    page.getByTestId('hilos-daemon-placement-selection'),
+  ).toHaveCount(0)
+  await expect(
+    page
+      .getByTestId('hilos-daemon-placement-unplaced')
+      .locator('..')
+      .getByRole('paragraph'),
+  ).toHaveText('All placed')
+  await search.fill('')
+  await search.pressSequentially(DAEMON_PLACEMENT_TYPE, { delay: 10 })
+  await expect(
+    table.locator(
+      'tbody > tr[data-id^="hilos-table-row-"]:not([data-id^="hilos-table-row-detail-"])',
+    ),
+  ).toHaveCount(1)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await expect(cell).toHaveAttribute('aria-expanded', 'false')
+  await search.fill('')
+  await expect
+    .poll(() =>
+      table
+        .locator(
+          'tbody > tr[data-id^="hilos-table-row-"]:not([data-id^="hilos-table-row-detail-"])',
+        )
+        .count(),
+    )
+    .toBeGreaterThan(1)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+}
+
+/** Search one observed instance, keeping whole-daemon totals and node columns. */
+export async function searchDaemonPlacement(
+  expect: Expect,
+  page: Page,
+  windows: Awaited<ReturnType<typeof watchTableSearch>>,
+) {
+  const cell = shownByTestId(page, DAEMON_PLACEMENT_CELL)
+  await cell.focus()
+  await cell.press('Enter')
+  const selection = page
+    .getByRole('table')
+    .getByTestId('hilos-daemon-placement-selection')
+  await expect(selection).toContainText(DAEMON_PLACEMENT_TYPE)
+  const ids = (await selection.locator('code').allTextContents()).slice(2)
+  expect(ids).toEqual([DAEMON_PLACEMENT_TYPE])
+  const totals = await Promise.all(
+    DAEMON_PLACEMENT_TOTALS.map((total) =>
+      page.getByTestId(`hilos-daemon-placement-${total}`).innerText(),
+    ),
+  )
+  const columns = await page
+    .getByRole('table')
+    .getByRole('columnheader')
+    .allTextContents()
+  const search = page.getByTestId('hilos-table-search')
+  const searched = await windows.mark()
+  await search.fill('')
+  await search.pressSequentially(ids[0]!, { delay: 10 })
+  await windows.renderedSettled(expect, searched, { search: ids[0]! }, [
+    DAEMON_PLACEMENT_TYPE,
+  ])
+  await expect(
+    page
+      .getByRole('table')
+      .locator(
+        'tbody > tr[data-id^="hilos-table-row-"]:not([data-id^="hilos-table-row-detail-"])',
+      ),
+  ).toHaveCount(1)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await expect(selection).toHaveCount(0)
+  await cell.focus()
+  await cell.press('Enter')
+  await expect(selection).toContainText(ids[0]!)
+  await expectUnfilteredTotals(expect, page, totals)
+  expect(
+    await page.getByRole('table').getByRole('columnheader').allTextContents(),
+  ).toEqual(columns)
+  return ids[0]!
+}
+
+/** New page ownership starts with an empty search and no retained cell. */
+export async function expectDaemonPlacementReset(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+  await expectDaemonSectionHead(expect, page, 'hilos_daemon_placement')
+  await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
+  await expect(
+    page.getByTestId('hilos-daemon-placement-selection'),
+  ).toHaveCount(0)
+  await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+}
+
+/**
+ * Retain native table/row/search/selection while a real connection fact changes.
+ * The Vue carrier additionally observes its controller and applied epoch through
+ * watchDaemonSource/watchTableContinuity; this check works for every SDK.
+ */
+export async function watchDaemonPlacementLive(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  expectedConnections: number,
+) {
+  const connections = (frame: SocketFrame) =>
+    readDaemonSectionOverview(frame)?.nodes.find(
+      (node) => node.nodeId === 'standalone',
+    )?.standing?.connections
+  const latest = () =>
+    log.packets
+      .flatMap((packet) => packet.frames)
+      .filter((frame) => {
+        const wire = deliveryObject(frame.wire)
+        return (
+          wire.type === 'page_response' &&
+          deliveryObject(wire.data).page === 'hilos_daemon_placement'
+        )
+      })
+      .at(-1)!
+  // Reload and previous tests can leave a last report from before sockets closed.
+  // Establish the real source baseline before the independent visitor opens.
+  await expect
+    .poll(() => connections(latest()), { timeout: DAEMON_SOURCE_TIMEOUT_MS })
+    .toBe(expectedConnections)
+  const handles = await Promise.all(
+    [
+      'hilos-viewport-table',
+      `hilos-table-row-${DAEMON_PLACEMENT_TYPE}`,
+      'hilos-table-search',
+      DAEMON_PLACEMENT_CELL,
+      'hilos-daemon-placement-selection',
+    ].map((id) => shownByTestId(page, id).elementHandle()),
+  )
+  expect(handles.every((handle) => handle !== null)).toBe(true)
+  const document = await watchClientDocument(page)
+  const start = log.packets.length
+  const sent = log.sent.length
+  return {
+    async changed(): Promise<void> {
+      await expect
+        .poll(
+          () =>
+            log.packets
+              .slice(start)
+              .flatMap((packet) => packet.frames)
+              .some((frame) => {
+                const wire = deliveryObject(frame.wire)
+                if (
+                  wire.type !== 'page_response' ||
+                  deliveryObject(wire.data).page !== 'hilos_daemon_placement'
+                )
+                  return false
+                return connections(frame) === expectedConnections + 1
+              }),
+          { timeout: DAEMON_SOURCE_TIMEOUT_MS },
+        )
+        .toBe(true)
+      // Observe retention after socket dispatch and the SDK's render have run.
+      await nextClientPaint(page)
+      const frames = log.packets.slice(start).flatMap((packet) => packet.frames)
+      for (const frame of frames) {
+        const wire = deliveryObject(frame.wire)
+        const data = deliveryObject(wire.data)
+        if (data.page !== 'hilos_daemon_placement') continue
+        expect(frame.failure).toBeUndefined()
+        expect([
+          'table_window',
+          'page_resubscribe',
+          'subscription_page_error',
+        ]).not.toContain(wire.type)
+        if (wire.type === 'page_response') {
+          expect(data).not.toHaveProperty('requestId')
+          expect(deliveryObject(data.payload)).not.toHaveProperty('windows')
+        }
+      }
+      expect(
+        log.sent
+          .slice(sent)
+          .map((frame) => deliveryObject(frame.wire))
+          .filter((wire) =>
+            [
+              'page_subscribe',
+              'page_update_subscription',
+              'table_viewport',
+            ].includes(String(wire.type)),
+          ),
+      ).toEqual([])
+      await document.unchanged()
+      for (const handle of handles)
+        expect(await handle!.evaluate((node) => node.isConnected)).toBe(true)
+      await expect(page.getByTestId('hilos-table-search')).toHaveValue(
+        DAEMON_PLACEMENT_TYPE,
+      )
+      await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+      await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toBeFocused()
+      await expect(
+        shownByTestId(page, 'hilos-daemon-placement-selection'),
+      ).toContainText(DAEMON_PLACEMENT_TYPE)
+    },
+    async dispose(): Promise<void> {
+      for (const handle of handles) await handle?.dispose()
+      await document.dispose()
+    },
+  }
+}
+
+/** All Placement traffic belongs to its page, and Overview never carries its window. */
+export function expectDaemonPlacementOwnership(
+  expect: Expect,
+  log: DeliveryFrameLog,
+): void {
+  for (const frame of log.sent) {
+    const wire = deliveryObject(frame.wire)
+    if (wire.tableKey === 'hilosDaemonPlacement')
+      expect(wire.page).toBe('hilos_daemon_placement')
+  }
+  for (const frame of log.packets.flatMap((packet) => packet.frames)) {
+    const wire = deliveryObject(frame.wire)
+    const data = deliveryObject(wire.data)
+    if (data.tableKey === 'hilosDaemonPlacement')
+      expect(data.page).toBe('hilos_daemon_placement')
+    if (wire.type === 'page_response' && data.page === 'hilos_daemon')
+      expect(
+        deliveryObject(deliveryObject(data.payload).windows),
+      ).not.toHaveProperty('hilosDaemonPlacement')
+  }
+}
+
+/** Root uses the same live source tuple and leaves all Placement windows to its tab. */
+export async function expectDaemonRootEntryPoints(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+) {
+  const replies = log.packets
+    .flatMap((packet) => packet.frames)
+    .filter((frame) => {
+      const wire = deliveryObject(frame.wire)
+      return (
+        wire.type === 'page_response' &&
+        deliveryObject(wire.data).page === 'hilos_daemon'
+      )
+    })
+  expect(replies.length).toBeGreaterThan(0)
+  expectDaemonPlacementOwnership(expect, log)
+  return expectDaemonEntryPoints(expect, page, replies.at(-1)!)
 }

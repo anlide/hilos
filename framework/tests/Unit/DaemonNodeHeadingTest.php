@@ -75,7 +75,7 @@ final class DaemonNodeHeadingTest extends TestCase
     private function node(string $id, NodeRole $role, bool $clustered = true, bool $leader = false): ClusterDaemonNodeView
     {
         $consensus = $leader ? new DaemonConsensusPicture(ConsensusRole::Leader, 1, $id, 2, 3, 2) : null;
-        $standing = $role === NodeRole::Master ? new DaemonNodeStanding(0, 0, $clustered, $consensus) : null;
+        $standing = $role === NodeRole::Master ? new DaemonNodeStanding(0, 0, $clustered, $consensus, null) : null;
 
         return new ClusterDaemonNodeView($id, true, new ClusterDaemonNodeSlot(
             $id, new NodeDaemonPicture($id, $role, 1, standing: $standing), 42,

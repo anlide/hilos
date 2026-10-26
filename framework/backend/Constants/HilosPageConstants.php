@@ -153,6 +153,9 @@ final class HilosPageConstants
     /** @var string Hilos daemon dashboard */
     public const string HILOS_DAEMON = 'hilos_daemon';
 
+    /** @var string Hilos daemon — agent placement */
+    public const string HILOS_DAEMON_PLACEMENT = 'hilos_daemon_placement';
+
     /** @var string Hilos daemon — one node overview */
     public const string HILOS_DAEMON_NODE = 'hilos_daemon_node';
 

@@ -213,7 +213,7 @@ final class HilosDaemonPlacementTableTest extends TestCase
     {
         $standing = new DaemonNodeStanding(0, 0, true, new DaemonConsensusPicture(
             $leader ? ConsensusRole::Leader : ConsensusRole::Follower, 1, $leader ? $id : null, 1, 3, 2,
-        ));
+        ), null);
         $picture = new NodeDaemonPicture($id, NodeRole::Master, 10, $processes, standing: $standing);
         return new ClusterDaemonNodeView($id, $online, new ClusterDaemonNodeSlot($id, $picture, 10));
     }

@@ -31,7 +31,7 @@ import {
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 
-/** The root's matrix window, with one inline detail owned by its headless view. */
+/** The Placement page's matrix window, with one inline detail owned by its headless view. */
 @Component({
   selector: 'hilos-daemon-placement',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -221,7 +221,7 @@ import {
   `,
 })
 export class HilosDaemonPlacement {
-  /** The matrix controller owned and started by the root. */
+  /** The matrix controller owned and started by the Placement page. */
   readonly view = input.required<HilosDaemonPlacementView>()
   /** Complete totals and node roster, independent of matrix search. */
   readonly overview = input.required<HilosDaemonOverviewData | null>()

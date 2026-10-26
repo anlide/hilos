@@ -59,11 +59,22 @@ const SOURCE_EXTENSION = '.ts'
  * @returns One finished report line per offending key
  */
 export function checkSource(relativePath: string, source: string): string[] {
+  // A checked declaration ends in _FIELD or RowKey. Escapes can spell those
+  // suffixes, so source containing any escape still needs the compiler.
+  if (
+    !source.includes('_FIELD') &&
+    !source.includes('RowKey') &&
+    !source.includes('\\')
+  ) {
+    return []
+  }
+
+  // This downward walk passes its source explicitly; it needs no parent links.
   const sourceFile = ts.createSourceFile(
     relativePath,
     source,
     ts.ScriptTarget.Latest,
-    true,
+    false,
   )
   const lines: string[] = []
 

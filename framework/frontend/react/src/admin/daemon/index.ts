@@ -26,6 +26,10 @@ export {
   type HilosDaemonNodePageProps,
   HilosDaemonNodePage,
 } from './HilosDaemonNodePage.js'
+export {
+  type HilosDaemonPlacementPageProps,
+  HilosDaemonPlacementPage,
+} from './HilosDaemonPlacementPage.js'
 export { HilosDaemonWebsocketsPage } from './HilosDaemonWebsocketsPage.js'
 export {
   type HilosDaemonWorkersPageProps,

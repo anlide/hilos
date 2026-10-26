@@ -322,8 +322,25 @@ final class PageCatalogResolverTest extends TestCase
             self::assertSame($expected, PageCatalogResolver::head($page, $params)?->toArray(), $page);
             self::assertSame(HilosPageConstants::HILOS_DAEMON_NODE, PageCatalogResolver::rowOwner($page));
         }
-        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_DAEMON, $params));
-        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $params));
+        foreach ([HilosPageConstants::HILOS_DAEMON, HilosPageConstants::HILOS_DAEMON_PLACEMENT,
+            HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH] as $page) {
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Daemon',
+                    'lead' => 'Nodes and their processes, with agent placement across them.', 'icon' => 'bi-cpu',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Daemon'],
+                ],
+                'pageTabs' => [
+                    ['page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_DAEMON_PLACEMENT, 'label' => 'Agent placement'],
+                    ['page' => HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, 'label' => 'Env mismatch'],
+                ],
+                'pageChildren' => [],
+            ], PageCatalogResolver::head($page, $params)?->toArray());
+        }
         self::assertSame(HilosPageConstants::HILOS_DAEMON, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH));
     }
 
@@ -1658,6 +1675,7 @@ abstract class DaemonPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
         HilosPageConstants::HILOS_DAEMON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_DAEMON_PLACEMENT => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_NODE => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_WORKERS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_DAEMON_AGENTS => PageHeadTestPage::class,

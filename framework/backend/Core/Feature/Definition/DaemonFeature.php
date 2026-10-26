@@ -14,6 +14,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonPlacementPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
@@ -27,7 +28,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 
-/** The Daemon section's nine pages, three agents, node tables and comparison tables form one feature. */
+/** The Daemon section's ten pages, three agents, node tables and comparison tables form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -42,6 +43,7 @@ final class DaemonFeature extends FeatureDefinition
         return new FeatureRequirements(
             requiredPages: [
                 AbstractHilosDaemonPage::class,
+                AbstractHilosDaemonPlacementPage::class,
                 AbstractHilosDaemonNodeOverviewPage::class,
                 AbstractHilosDaemonWorkersPage::class,
                 AbstractHilosDaemonAgentsPage::class,
@@ -77,7 +79,7 @@ final class DaemonFeature extends FeatureDefinition
                     HilosDaemonEnvSourcesDifferTable::class,
                 ],
                 AbstractHilosDaemonHttpServerPage::class => HilosDaemonHttpRoutesTable::class,
-                AbstractHilosDaemonPage::class => HilosDaemonPlacementTable::class,
+                AbstractHilosDaemonPlacementPage::class => HilosDaemonPlacementTable::class,
             ],
         );
     }

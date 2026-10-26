@@ -84,6 +84,7 @@ use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
@@ -1153,7 +1154,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 DaemonCronPage::PAGE,
                 DaemonWorkersPage::PAGE,
                 DaemonEnvPage::PAGE,
-                DaemonPage::PAGE,
+                DaemonPlacementPage::PAGE,
                 DaemonAgentsPage::PAGE,
                 DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
@@ -1403,6 +1404,7 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::DAEMON, Hilos::features());
         foreach ([
             DaemonPage::class,
+            DaemonPlacementPage::class,
             DaemonNodePage::class,
             DaemonWorkersPage::class,
             DaemonAgentsPage::class,
@@ -1415,6 +1417,7 @@ final class PollsTopologyRegistryTest extends TestCase
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
         $this->assertArrayNotHasKey(DaemonNodePage::PAGE, Hilos::PAGE_TABLES);
+        $this->assertArrayNotHasKey(DaemonPage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
         $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
@@ -1501,7 +1504,7 @@ final class PollsTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [PollsTableContext::hilosDaemonPlacement => []],
-            Hilos::PAGE_TABLES[DaemonPage::PAGE],
+            Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE],
         );
         $this->assertSame(
             [PollsTableContext::hilosDaemonAgents => []],

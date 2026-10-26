@@ -142,7 +142,7 @@ final class DaemonNodePictureTest extends TestCase
         self::assertEquals($measurements, $reported->picture->sampledAt(12)->withProcesses(null)
             ->withCron(null)->withEnvironment(null)->withStanding(null)->withHttp(null)->measurements);
         $http = new DaemonHttpPicture('127.0.0.1', 8080, 10, [], new HttpRouteTally(0, 0, 0, null));
-        $standing = new DaemonNodeStanding(1, 2, false, null);
+        $standing = new DaemonNodeStanding(1, 2, false, null, null);
         $withSections = $reported->picture->withHttp($http)->withStanding($standing);
         self::assertEquals($http, $withSections->withMeasurements(null)->http);
         self::assertEquals($standing, $withSections->withMeasurements(null)->standing);
@@ -205,7 +205,7 @@ final class DaemonNodePictureTest extends TestCase
         $agent = new DaemonNodeAgent();
         $agent->onStart();
         Hilos::$sr?->getNextQueuedSignal();
-        $standing = new DaemonNodeStanding(1, 2, false, null);
+        $standing = new DaemonNodeStanding(1, 2, false, null, 9013);
         $agent->onSignalAgent(
             new AgentSignalData(data: new DaemonMasterStandingSignalData('standalone', $standing)),
             SignalSource::DAEMON,
@@ -217,7 +217,7 @@ final class DaemonNodePictureTest extends TestCase
         self::assertEquals($standing, $reported->picture->standing);
 
         $agent->onSignalAgent(
-            new AgentSignalData(data: new DaemonMasterStandingSignalData('standalone', new DaemonNodeStanding(0, 0, false, null))),
+            new AgentSignalData(data: new DaemonMasterStandingSignalData('standalone', new DaemonNodeStanding(0, 0, false, null, null))),
             SignalSource::DAEMON,
             HilosSignalConstants::DAEMON_MASTER_STANDING,
         );
@@ -225,6 +225,20 @@ final class DaemonNodePictureTest extends TestCase
         $changed = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
         self::assertInstanceOf(DaemonNodePictureSignalData::class, $changed);
         self::assertSame(0, $changed->picture->standing?->sessions);
+        self::assertNull($changed->picture->standing?->commandPort);
+
+        foreach ([0, null] as $index => $commandPort) {
+            $agent->onSignalAgent(
+                new AgentSignalData(new DaemonMasterStandingSignalData('standalone', new DaemonNodeStanding(0, 0, false, null, $commandPort))),
+                SignalSource::DAEMON,
+                HilosSignalConstants::DAEMON_MASTER_STANDING,
+            );
+            $agent->reportIfDue(microtime(true) + 18.0 + $index * 6.0);
+            $changed = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+            self::assertInstanceOf(DaemonNodePictureSignalData::class, $changed);
+            self::assertNotNull($changed->picture->standing);
+            self::assertSame($commandPort, $changed->picture->standing->commandPort);
+        }
     }
 
     public function testMasterHttpReplacesTheSectionAndChangesTheNextWholeReport(): void
@@ -275,7 +289,7 @@ final class DaemonNodePictureTest extends TestCase
         foreach ([[SignalSource::AGENT, 'standalone'], [SignalSource::DAEMON, 'other-node']] as [$sender, $nodeId]) {
             try {
                 $agent->onSignalAgent(
-                    new AgentSignalData(data: new DaemonMasterStandingSignalData($nodeId, new DaemonNodeStanding(0, 0, false, null))),
+                    new AgentSignalData(data: new DaemonMasterStandingSignalData($nodeId, new DaemonNodeStanding(0, 0, false, null, null))),
                     $sender,
                     HilosSignalConstants::DAEMON_MASTER_STANDING,
                 );

@@ -485,7 +485,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
                 new DaemonAgentPicture('hidden:1', DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_POLICY),
             ]),
             new DaemonWorkerPicture(4, WorkerConstants::TYPE_MONOPOLISTIC, null, null, []),
-        ], ['hidden:lost'], 0), environment: $this->environment(), standing: new DaemonNodeStanding(0, 0, false, null),
+        ], ['hidden:lost'], 0), environment: $this->environment(), standing: new DaemonNodeStanding(0, 0, false, null, null),
             measurements: new DaemonMeasurements(100, 2.5, DaemonMeasurements::CORES_QUOTA, 0.0, 0.0, 0,
                 1048576, 2097152, 2, 1073741824, DaemonMeasurements::CEILING_CGROUP, 134217728));
     }

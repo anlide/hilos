@@ -12,6 +12,10 @@ import {
   shownByTestId,
   watchPublicStatus,
   watchStatusFrames,
+  DAEMON_ROOT_PATH,
+  expectDaemonPage,
+  expectDaemonSectionHead,
+  expectDaemonSectionAccessibility,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import {
@@ -24,6 +28,8 @@ import {
   STATUS_FAULT_COMPONENT,
   withStatusAgentLoss,
 } from '../helpers/status.js'
+
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 
 // Status's two pages and incident modal over the real socket. The framework's
 // broader shell/table audit stays with its existing representative demos.
@@ -295,4 +301,36 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
+})
+
+test.describe('Daemon section accessibility', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  for (const viewer of [false, true]) {
+    test(`Daemon section links, shared heading and Placement keyboard controls as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+      page,
+    }) => {
+      await setAdminViewMode(viewer)
+      if (!viewer) await grantAdminToSelf(page)
+      await gotoPage(page, DAEMON_ROOT_PATH)
+      await expectDaemonPage(expect, page, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+      const placement = page.getByTestId(
+        'hilos-page-tab-hilos_daemon_placement',
+      )
+      await placement.focus()
+      await expect(placement).toBeFocused()
+      await placement.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+      await expectDaemonSectionAccessibility(expect, page)
+      if (viewer)
+        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      const overview = page.getByTestId('hilos-page-tab-hilos_daemon')
+      await overview.focus()
+      await expect(overview).toBeFocused()
+      await overview.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon')
+      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+    })
+  }
 })

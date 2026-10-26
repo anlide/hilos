@@ -46,7 +46,7 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
     @let comparison = this.comparison();
     @let emptyState = this.emptyState();
 
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Daemon pages">
       @if (summary !== null && !summary.clustered) {
         <div
           class="alert alert-secondary d-flex align-items-start gap-3 py-3"

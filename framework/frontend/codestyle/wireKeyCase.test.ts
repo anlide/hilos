@@ -57,6 +57,17 @@ it('reports exactly the keys the bad fixture seeds', () => {
   ])
 })
 
+it.each([
+  String.raw`const VALUE_FI\u0045LD = 'wrong_key'`,
+  String.raw`const ValueRowK\u0065y = { value: 'wrong_key' } as const`,
+])('reports a declaration with an escaped suffix: %s', (source) => {
+  expect(checkSource(`${FIXTURES}/escaped.ts`, source)).toEqual([
+    `WIRE-KEY-CASE ${FIXTURES}/escaped.ts:1 — field key 'wrong_key'` +
+      ' is not camelCase; one spelling has to serve PHP, the wire and TS' +
+      ' (see docs/agents/code-style/cross-layer-field-names.md)',
+  ])
+})
+
 it('stays silent on the look-alikes the good fixture seeds', () => {
   expect(reportFixture('goodWireKeys.ts')).toEqual([])
 })

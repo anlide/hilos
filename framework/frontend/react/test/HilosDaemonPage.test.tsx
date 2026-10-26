@@ -3,10 +3,8 @@ import {
   HilosPages,
   ScopeManager,
   bindPageScope,
-  bindAdminAccess,
   createAppPageRouter,
   createHilosRouter,
-  hilosAdminAccess,
   hilosUnbuiltPages,
   type HilosConnection,
   type HilosDaemonOverviewData,
@@ -55,6 +53,7 @@ function picture(
   return {
     clustered,
     nodes,
+    entryPoints: null,
     placement: {
       instances: null,
       types: 3,
@@ -180,23 +179,29 @@ function harness(
             database,
             pageLabel: 'Daemon from catalog',
             pageLead: 'Technical overview',
+            pageHeadOwner: {
+              page: HilosPages.DAEMON,
+              label: 'Daemon from catalog',
+              lead: 'Technical overview',
+              icon: 'bi-cpu',
+            },
             pageBreadcrumb: [
+              { page: HilosPages.DASHBOARD, label: 'Hilos' },
               { page: HilosPages.DAEMON, label: 'Daemon from catalog' },
             ],
-            pageChildren: [
-              {
-                page: HilosPages.DAEMON_NODE,
-                label: 'Node',
-                lead: 'One node: processor, memory, environment summary, and maintenance.',
-                icon: 'bi-hdd-network',
-              },
-              {
-                page: HilosPages.DAEMON_ENV_MISMATCH,
-                label: 'Env mismatch',
-                lead: 'Environment keys whose values differ across the cluster.',
-                icon: null,
-              },
+            pageTabs: [
+              { page: HilosPages.DAEMON, label: 'Overview' },
+              { page: HilosPages.DAEMON_PLACEMENT, label: 'Agent placement' },
+              ...(value?.clustered
+                ? [
+                    {
+                      page: HilosPages.DAEMON_ENV_MISMATCH,
+                      label: 'Env mismatch',
+                    },
+                  ]
+                : []),
             ],
+            pageChildren: [],
           },
         },
       },
@@ -264,58 +269,25 @@ function harness(
   }
 }
 
-function placementRows(
-  ids: readonly string[] | null = ['chat_room:1', 'chat_room:2'],
-  node2Ids: readonly string[] | null = [],
-): TableRow[] {
-  return [
-    {
-      rowKey: 'chat_room',
-      slots: {
-        type: {
-          agentType: 'chat_room',
-          placement: 'policy',
-          idle: true,
-          nodes: [
-            { nodeId: 'n1', agentIds: ids },
-            { nodeId: 'n2', agentIds: node2Ids },
-          ],
-          unplacedAgentIds: ['chat_room:3'],
-        },
-      },
-    },
-  ]
-}
-
-function placementPicture(clustered = true): HilosDaemonOverviewData {
-  return {
-    ...picture([node('n1', { state: 'leader' }), node('n2')], clustered),
-    placement: {
-      instances: 27,
-      types: 12,
-      clusterTypes: 4,
-      unplacedTypes: ['chat_room', 'unshown_type'],
-    },
-  }
-}
-
-const CELL = 'hilos-daemon-placement-cell-chat_room-n1'
-const PANEL = 'hilos-daemon-placement-selection'
-const PLACEMENT = 'hilos-daemon-placement-tab'
-
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
 })
 
 describe('HilosDaemonPage', () => {
+  it('opens Overview without any placement controller or traffic', () => {
+    const h = harness(true, picture([node('n1')]))
+    expect(h.register).not.toHaveBeenCalled()
+    expect(h.sendViewport).not.toHaveBeenCalled()
+    expect(h.sendRendered).not.toHaveBeenCalled()
+    h.view.unmount()
+  })
+
   it('consumes the lean answer and exposes each node’s real encoded Overview link', () => {
     const nodeId = 'node /?#%2F🌍'
-    const h = harness(
-      false,
-      picture([node('n1'), node(nodeId)]),
-      placementRows(),
-    )
+    const h = harness(false, picture([node('n1'), node(nodeId)]), [
+      { rowKey: 'chat_room', slots: {} },
+    ])
     expect(h.view.container.querySelectorAll('h1')).toHaveLength(1)
     expect(h.view.container.querySelector('h1')?.textContent).toBe(
       'Daemon from catalog',
@@ -330,7 +302,7 @@ describe('HilosDaemonPage', () => {
     expect(box.getAttribute('aria-label')).toBe(`Node ${nodeId}`)
     expect(box.getAttribute('aria-pressed')).toBeNull()
     expect(h.find('hilos-daemon-inspector')).toBeNull()
-    expect(h.register).toHaveBeenCalledTimes(1)
+    expect(h.register).not.toHaveBeenCalled()
     expect(h.sendAction).not.toHaveBeenCalled()
     fireEvent.keyDown(box, { key: ' ' })
     expect(h.navigate).not.toHaveBeenCalled()
@@ -343,10 +315,7 @@ describe('HilosDaemonPage', () => {
     )
     expect(h.send).toHaveBeenCalledTimes(1)
     h.view.unmount()
-    expect(h.unregister).toHaveBeenCalledWith(
-      'hilosDaemonPlacement',
-      h.register.mock.calls[0]?.[1],
-    )
+    expect(h.unregister).not.toHaveBeenCalled()
     expect(
       [...h.listeners.values()].reduce((n, group) => n + group.size, 0),
     ).toBe(h.initialListenerCount)
@@ -412,7 +381,10 @@ describe('HilosDaemonPage', () => {
   })
 
   it('draws live CPU, memory, coverage and workers and replaces stale silent metrics with time', () => {
-    const h = harness(true, placementPicture())
+    const h = harness(
+      true,
+      picture([node('n1', { state: 'leader' }), node('n2')]),
+    )
     const box = () => h.find('hilos-daemon-node-n1')!
     expect(box().textContent).toContain('150%')
     expect(box().textContent).toContain('4.0 KB / 2.0 KB')
@@ -478,155 +450,6 @@ describe('HilosDaemonPage', () => {
     )
   })
 
-  it('retains one lazy matrix, search and open cell across local tabs, without another subscription', () => {
-    const h = harness(false, placementPicture(), placementRows())
-    h.click(PLACEMENT)
-    const matrix = h.find('hilos-daemon-placement-view')
-    const table = matrix!.querySelector('table')!
-    expect(table.textContent).toContain('n1 ★')
-    expect(table.textContent).toContain('Policy-placed · lazy')
-    fireEvent.change(h.find('hilos-table-search')!, {
-      target: { value: 'room' },
-    })
-    act(() => h.window(placementRows()))
-    h.click(CELL, table)
-    h.click('hilos-daemon-nodes-tab')
-    expect(matrix?.parentElement?.hidden).toBe(true)
-    h.click(PLACEMENT)
-    expect(h.find('hilos-daemon-placement-view')).toBe(matrix)
-    expect(matrix?.parentElement?.hidden).toBe(false)
-    expect((h.find('hilos-table-search') as HTMLInputElement).value).toBe(
-      'room',
-    )
-    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:2')
-    expect(h.find(CELL, table)?.getAttribute('aria-expanded')).toBe('true')
-    expect(h.register).toHaveBeenCalledTimes(1)
-    expect(h.send).not.toHaveBeenCalled()
-    expect(h.sendAction).not.toHaveBeenCalled()
-  })
-
-  it('uses the row detail and card detail, toggles with the chevron and reads live ids', () => {
-    const h = harness(false, placementPicture(), placementRows())
-    h.click(PLACEMENT)
-    const table = h.view.container.querySelector('table')!
-    h.click(CELL, table)
-    const detail = h.find('hilos-table-row-detail-chat_room', table)!
-    expect(h.find('hilos-table-row-chat_room', table)?.nextElementSibling).toBe(
-      detail,
-    )
-    expect(h.find(PANEL, detail)).not.toBeNull()
-    expect(
-      h
-        .find('hilos-table-card-chat_room')
-        ?.querySelector(`[data-id="${PANEL}"]`),
-    ).not.toBeNull()
-    expect(table.querySelectorAll(`[data-id="${PANEL}"]`)).toHaveLength(1)
-    h.click('hilos-table-expand-chat_room', table)
-    expect(h.find(PANEL, table)).toBeNull()
-    expect(h.find(CELL, table)?.getAttribute('aria-expanded')).toBe('false')
-    h.click('hilos-table-expand-chat_room', table)
-    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:2')
-    const longId = `chat_room:${'x'.repeat(200)}`
-    act(() => h.window(placementRows([longId], ['chat_room:55'])))
-    expect(h.find(PANEL, table)?.textContent).toContain(longId)
-    expect(h.find(PANEL, table)?.textContent).not.toContain('chat_room:2')
-    expect(
-      h.find(PANEL, table)?.querySelector('code.text-break'),
-    ).not.toBeNull()
-    h.click('hilos-daemon-placement-cell-chat_room-n2', table)
-    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:55')
-    expect(h.find(PANEL, table)?.textContent).not.toContain(longId)
-    h.click('hilos-daemon-placement-cell-chat_room-n2', table)
-    expect(h.find(PANEL, table)).toBeNull()
-  })
-
-  it('closes on search, keeps totals and alarms unfiltered and needs a new explicit open', () => {
-    vi.useFakeTimers()
-    const h = harness(false, placementPicture(), placementRows())
-    h.click(PLACEMENT)
-    const table = h.view.container.querySelector('table')!
-    h.click(CELL, table)
-    fireEvent.change(h.find('hilos-table-search')!, { target: { value: '99' } })
-    act(() => vi.advanceTimersByTime(1000))
-    expect(h.find(PANEL)).toBeNull()
-    act(() =>
-      h.window(
-        placementRows(['chat_room:99']),
-        h.sendViewport.mock.calls.at(-1)?.[2].requestId,
-      ),
-    )
-    expect(h.find(PANEL)).toBeNull()
-    expect(h.find(CELL, table)?.getAttribute('aria-expanded')).toBe('false')
-    expect(h.find('hilos-daemon-placement-instances')?.textContent).toBe('27')
-    expect(h.find('hilos-daemon-placement-types')?.textContent).toBe('12')
-    expect(h.find('hilos-daemon-placement-cluster-types')?.textContent).toBe(
-      '4',
-    )
-    expect(h.find('hilos-daemon-placement-unplaced')?.textContent).toBe('2')
-    expect(
-      h.find('hilos-daemon-placement-alerts')?.querySelectorAll('p'),
-    ).toHaveLength(2)
-    h.click(CELL, table)
-    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:99')
-    act(() => h.window(placementRows([])))
-    expect(h.find(PANEL)).toBeNull()
-    expect(h.find(CELL)?.tagName).toBe('SPAN')
-    expect(h.find(CELL)?.textContent).toBe('·')
-    expect(table.querySelector(`button[data-id="${CELL}"]`)).toBeNull()
-  })
-
-  it.each(['silent', 'frozen', 'refused', 'removed'] as const)(
-    'forgets an inadmissible cell on %s',
-    (state) => {
-      const h = harness(false, placementPicture(), placementRows())
-      h.click(PLACEMENT)
-      h.click(CELL)
-      act(() => {
-        if (state === 'silent')
-          h.update({
-            ...placementPicture(),
-            nodes: [node('n1', { online: false, state: 'silent' })],
-          })
-        else if (state === 'removed') h.window([])
-        else
-          h.emit(
-            state === 'frozen' ? 'tableViewportFrozen' : 'tableWindowRefused',
-            {
-              data: {
-                page: HilosPages.DAEMON,
-                tableKey: 'hilosDaemonPlacement',
-                since: 123,
-                errorCode: 'unavailable',
-              },
-            },
-          )
-      })
-      expect(h.find(PANEL)).toBeNull()
-      act(() => {
-        h.update(placementPicture())
-        h.window(placementRows())
-      })
-      expect(h.find(PANEL)).toBeNull()
-    },
-  )
-
-  it('keeps local placement controls available to a view-mode viewer', () => {
-    const h = harness(false, placementPicture(), placementRows())
-    h.scopes.session.data.set('adminViewMode', true)
-    let release = () => {}
-    act(() => {
-      release = bindAdminAccess(h.scopes)
-    })
-    expect(hilosAdminAccess.get()).toBe('view')
-    h.click(PLACEMENT)
-    expect((h.find(CELL) as HTMLButtonElement).disabled).toBe(false)
-    h.click(CELL)
-    expect(h.find(PANEL)).not.toBeNull()
-    h.click('hilos-daemon-placement-collapse')
-    expect(h.find(PANEL)).toBeNull()
-    act(() => release())
-  })
-
   it('keeps root boxes free of Inspector and logs when showLogLinks is false', () => {
     const h = harness(false, picture([node('n1')]), undefined, false)
     expect(h.find('hilos-daemon-inspector')).toBeNull()
@@ -635,5 +458,43 @@ describe('HilosDaemonPage', () => {
     )
     expect(h.find('hilos-daemon-node-n1')?.textContent).toContain('150%')
     expect(h.find('hilos-daemon-node-log')).toBeNull()
+  })
+  it('uses only the selected source ports and resolves its metrics page', () => {
+    const h = harness()
+    const base = picture([node('n1'), node('n2')])
+    for (const source of [
+      { nodeId: 'n2', commandPort: 9014, httpPort: 8082 },
+      { nodeId: 'n1', commandPort: 0, httpPort: null },
+      null,
+    ]) {
+      act(() => h.update({ ...base, entryPoints: source }))
+      expect(h.find('hilos-daemon-entry-command-port')!.textContent).toBe(
+        source?.commandPort == null ? '—' : `:${source.commandPort}`,
+      )
+      expect(h.find('hilos-daemon-entry-http-port')!.textContent).toBe(
+        source?.httpPort == null ? '—' : `:${source.httpPort}`,
+      )
+      const link = h.find('hilos-daemon-entry-metrics')
+      if (source)
+        expect(link?.getAttribute('href')).toBe(
+          `/hilos/daemon/${source.nodeId}/http`,
+        )
+      else expect(link).toBeNull()
+      expect(h.register).not.toHaveBeenCalled()
+    }
+    const resolvePath = h.router.resolvePath.bind(h.router)
+    vi.spyOn(h.router, 'resolvePath').mockImplementation((page, params) =>
+      page === HilosPages.DAEMON_HTTP_SERVER
+        ? undefined
+        : resolvePath(page, params),
+    )
+    act(() =>
+      h.update({
+        ...base,
+        entryPoints: { nodeId: 'n2', commandPort: null, httpPort: 0 },
+      }),
+    )
+    expect(h.find('hilos-daemon-entry-http-port')!.textContent).toBe(':0')
+    expect(h.find('hilos-daemon-entry-metrics')).toBeNull()
   })
 })

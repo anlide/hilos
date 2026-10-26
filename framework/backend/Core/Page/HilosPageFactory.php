@@ -73,6 +73,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_MAINTENANCE => true,
         HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => true,
         HilosPageConstants::HILOS_DAEMON => true,
+        HilosPageConstants::HILOS_DAEMON_PLACEMENT => true,
         HilosPageConstants::HILOS_DAEMON_NODE => true,
         HilosPageConstants::HILOS_DAEMON_WORKERS => true,
         HilosPageConstants::HILOS_DAEMON_AGENTS => true,

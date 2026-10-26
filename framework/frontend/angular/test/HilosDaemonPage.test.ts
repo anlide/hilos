@@ -4,9 +4,8 @@ import {
   DAEMON_DATABASE_DATA,
   HilosPages,
   ScopeManager,
-  type TableRow,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonPage } from '../src/admin/daemon/HilosDaemonPage.js'
 import {
@@ -14,24 +13,6 @@ import {
   daemonNode,
   daemonPicture,
 } from './helpers/hilosDaemon.js'
-
-function placementRow(rowKey = 'room', nodeIds = ['n1', 'n2']): TableRow {
-  return {
-    rowKey,
-    slots: {
-      type: {
-        agentType: rowKey,
-        placement: 'policy',
-        idle: false,
-        nodes: nodeIds.map((nodeId) => ({
-          nodeId,
-          agentIds: [`${rowKey}:${nodeId}`],
-        })),
-        unplacedAgentIds: [],
-      },
-    },
-  }
-}
 
 function harness() {
   return daemonHarness(HilosDaemonPage, HilosPages.DAEMON)
@@ -80,7 +61,7 @@ describe('HilosDaemonPage', () => {
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
-    expect(h.unregister).toHaveBeenCalledTimes(1)
+    expect(h.unregister).not.toHaveBeenCalled()
   })
 
   it('replaces silent metrics with time and restores only a current report', () => {
@@ -189,110 +170,6 @@ describe('HilosDaemonPage', () => {
     h.fixture.destroy()
   })
 
-  it('draws inline details under the selected type and inside its card, keeping tabs mounted', () => {
-    const h = harness()
-    seed(h)
-    h.window('hilosDaemonPlacement', [placementRow(), placementRow('other')])
-    h.el('hilos-daemon-placement-tab')!.click()
-    h.detect()
-    const wide =
-      h.root.querySelector('[data-id="hilos-table-scroll"]') ??
-      h.root.querySelector('table')!
-    const cell = wide.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-daemon-placement-cell-room-n1"]',
-    )!
-    cell.click()
-    h.detect()
-    expect(cell.getAttribute('aria-expanded')).toBe('true')
-    const row = h.root.querySelector('[data-id="hilos-table-row-room"]')!
-    expect(row.nextElementSibling?.getAttribute('data-id')).toBe(
-      'hilos-table-row-detail-room',
-    )
-    expect(
-      row.nextElementSibling?.querySelector(
-        '[data-id="hilos-daemon-placement-selection"]',
-      )?.textContent,
-    ).toContain('room:n1')
-    const cards = h.el('hilos-table-cards')!
-    expect(
-      cards.querySelector(
-        '[data-id="hilos-table-card-room"] [data-id="hilos-daemon-placement-selection"]',
-      ),
-    ).not.toBeNull()
-    h.el('hilos-daemon-nodes-tab')!.click()
-    h.detect()
-    h.el('hilos-daemon-placement-tab')!.click()
-    h.detect()
-    expect(cell.getAttribute('aria-expanded')).toBe('true')
-    wide
-      .querySelector<HTMLButtonElement>(
-        '[data-id="hilos-daemon-placement-cell-room-n2"]',
-      )!
-      .click()
-    h.detect()
-    expect(row.nextElementSibling?.textContent).toContain('room:n2')
-    wide
-      .querySelector<HTMLButtonElement>(
-        '[data-id="hilos-daemon-placement-cell-other-n1"]',
-      )!
-      .click()
-    h.detect()
-    expect(
-      wide.querySelectorAll('[data-id="hilos-daemon-placement-selection"]'),
-    ).toHaveLength(1)
-    expect(row.nextElementSibling?.getAttribute('data-id')).not.toBe(
-      'hilos-table-row-detail-room',
-    )
-    wide
-      .querySelector<HTMLButtonElement>(
-        '[data-id="hilos-daemon-placement-collapse"]',
-      )!
-      .click()
-    h.detect()
-    expect(
-      wide.querySelector('[data-id="hilos-daemon-placement-selection"]'),
-    ).toBeNull()
-    h.fixture.destroy()
-    expect(h.listeners()).toBe(0)
-  })
-
-  it('refreshes dynamic node cells and closes details when a node falls silent or disappears', () => {
-    const h = harness()
-    seed(h)
-    h.window('hilosDaemonPlacement', [placementRow()])
-    h.el('hilos-daemon-placement-tab')!.click()
-    h.detect()
-    h.el('hilos-daemon-placement-cell-room-n1')!.click()
-    h.detect()
-    h.scope.data.set(
-      DAEMON_OVERVIEW_DATA,
-      daemonPicture([
-        daemonNode('n1', { state: 'silent', online: false }),
-        daemonNode('n3'),
-      ]),
-    )
-    h.detect()
-    expect(h.el('hilos-daemon-placement-selection')).toBeNull()
-    expect(h.el('hilos-daemon-placement-cell-room-n2')).toBeNull()
-    expect(
-      [...h.root.querySelectorAll('th')].some((header) =>
-        header.textContent?.includes('n3'),
-      ),
-    ).toBe(true)
-    expect(h.el('hilos-daemon-placement-instances')?.textContent).toContain('7')
-    const current = daemonPicture([daemonNode('n1'), daemonNode('n3')])
-    h.scope.data.set(DAEMON_OVERVIEW_DATA, {
-      ...current,
-      placement: { ...current.placement, instances: 11 },
-    })
-    h.detect()
-    expect(h.el('hilos-daemon-placement-instances')?.textContent).toContain(
-      '11',
-    )
-    h.fixture.destroy()
-    expect(h.listeners()).toBe(0)
-  })
-
   it('disposes the old context and follows only the new scopes', () => {
     const h = harness()
     seed(h)
@@ -304,7 +181,7 @@ describe('HilosDaemonPage', () => {
     )
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
-    expect(h.unregister).toHaveBeenCalledTimes(1)
+    expect(h.unregister).not.toHaveBeenCalled()
     expect(h.el('hilos-daemon-node-solo')?.textContent).toContain(
       'Single installation',
     )
@@ -314,7 +191,46 @@ describe('HilosDaemonPage', () => {
     expect(h.el('hilos-daemon-node-solo')).not.toBeNull()
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
-    expect(h.unregister).toHaveBeenCalledTimes(2)
+    expect(h.unregister).not.toHaveBeenCalled()
     TestBed.resetTestingModule()
+  })
+  it('uses only the selected source ports and resolves its metrics page', () => {
+    const h = harness()
+    const base = daemonPicture([daemonNode('n1'), daemonNode('n2')])
+    for (const source of [
+      { nodeId: 'n2', commandPort: 9014, httpPort: 8082 },
+      { nodeId: 'n1', commandPort: 0, httpPort: null },
+      null,
+    ]) {
+      h.scope.data.set(DAEMON_OVERVIEW_DATA, { ...base, entryPoints: source })
+      h.detect()
+      expect(h.el('hilos-daemon-entry-command-port')!.textContent?.trim()).toBe(
+        source?.commandPort == null ? '—' : `:${source.commandPort}`,
+      )
+      expect(h.el('hilos-daemon-entry-http-port')!.textContent?.trim()).toBe(
+        source?.httpPort == null ? '—' : `:${source.httpPort}`,
+      )
+      const link = h.el('hilos-daemon-entry-metrics')
+      if (source)
+        expect(link?.getAttribute('href')).toBe(
+          `/hilos/daemon/${source.nodeId}/http`,
+        )
+      else expect(link).toBeNull()
+      expect(h.register).not.toHaveBeenCalled()
+    }
+    const resolvePath = h.router.resolvePath.bind(h.router)
+    vi.spyOn(h.router, 'resolvePath').mockImplementation((page, params) =>
+      page === HilosPages.DAEMON_HTTP_SERVER
+        ? undefined
+        : resolvePath(page, params),
+    )
+    h.scope.data.set(DAEMON_OVERVIEW_DATA, {
+      ...base,
+      entryPoints: { nodeId: 'n2', commandPort: null, httpPort: 0 },
+    })
+    h.detect()
+    expect(h.el('hilos-daemon-entry-http-port')!.textContent?.trim()).toBe(':0')
+    expect(h.el('hilos-daemon-entry-metrics')).toBeNull()
+    h.fixture.destroy()
   })
 })

@@ -10,7 +10,6 @@ import {
 } from '@angular/core'
 import {
   createHilosDaemonOverview,
-  createHilosDaemonPlacementView,
   daemonMonopolisticCount,
   daemonPercentage,
   daemonProgressWidth,
@@ -34,7 +33,6 @@ import {
   HilosSkeleton,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
-import { HilosDaemonPlacement } from './HilosDaemonPlacement.js'
 import type {
   HilosDaemonOverviewData,
   HilosDaemonDatabaseData,
@@ -45,58 +43,60 @@ import type {
 @Component({
   selector: 'hilos-daemon-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    NgClass,
-    HilosAdminPage,
-    HilosSkeleton,
-    HilosLink,
-    HilosDaemonPlacement,
-  ],
+  imports: [NgClass, HilosAdminPage, HilosSkeleton, HilosLink],
   template: `
     @let picture = overview();
     @let primary = database();
 
-    <hilos-admin-page [page]="page">
-      <div class="nav nav-tabs mb-3" aria-label="Daemon diagrams">
-        <button
-          type="button"
-          class="nav-link"
-          [ngClass]="{ active: !placementActive() }"
-          [attr.aria-pressed]="!placementActive()"
-          data-id="hilos-daemon-nodes-tab"
-          (click)="placementActive.set(false)"
-        >
-          Nodes and processes
-        </button>
-        <button
-          type="button"
-          class="nav-link"
-          [ngClass]="{ active: placementActive() }"
-          [attr.aria-pressed]="placementActive()"
-          data-id="hilos-daemon-placement-tab"
-          (click)="openPlacement()"
-        >
-          Agent placement
-        </button>
-      </div>
-
-      @if (placementOpened()) {
-        <hilos-daemon-placement
-          [class.d-none]="!placementActive()"
-          [view]="placement()"
-          [overview]="picture"
-        ></hilos-daemon-placement>
-      }
-      <div
-        [class.d-none]="!!placementActive()"
-        data-id="hilos-daemon-nodes-view"
-      >
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Daemon pages">
+      <div data-id="hilos-daemon-nodes-view">
         @if (picture === null) {
           <div data-id="hilos-daemon-overview-waiting">
             <p class="text-body-secondary">Waiting for the node picture…</p>
             <hilos-skeleton></hilos-skeleton>
           </div>
         } @else {
+          <div
+            class="d-flex flex-wrap gap-3 small text-body-secondary mb-3"
+            data-id="hilos-daemon-entry-points"
+          >
+            <span
+              ><i class="bi bi-window me-1" aria-hidden="true"></i
+              >Browsers</span
+            >
+            <span
+              ><i class="bi bi-terminal me-1" aria-hidden="true"></i>CLI on
+              <span
+                class="font-monospace"
+                data-id="hilos-daemon-entry-command-port"
+                >{{
+                  picture.entryPoints?.commandPort == null
+                    ? '—'
+                    : ':' + picture.entryPoints!.commandPort
+                }}</span
+              ></span
+            >
+            <span
+              ><i class="bi bi-globe me-1" aria-hidden="true"></i>HTTP
+              <span
+                class="font-monospace"
+                data-id="hilos-daemon-entry-http-port"
+                >{{
+                  picture.entryPoints?.httpPort == null
+                    ? '—'
+                    : ':' + picture.entryPoints!.httpPort
+                }}</span
+              >
+              @if (metricsPath(); as path) {
+                <a
+                  [hilosLink]="path"
+                  class="ms-1"
+                  data-id="hilos-daemon-entry-metrics"
+                  >metrics</a
+                >
+              }
+            </span>
+          </div>
           @if (picture.clustered) {
             <div
               class="d-flex flex-wrap align-items-center gap-2 mb-3 small"
@@ -452,35 +452,30 @@ export class HilosDaemonPage {
   protected readonly daemon = computed(() =>
     createHilosDaemonOverview(this.context()),
   )
-  protected readonly placement = computed(() =>
-    createHilosDaemonPlacementView(this.context(), this.daemon().overview),
-  )
   protected readonly overview = signal<HilosDaemonOverviewData | null>(null)
   protected readonly database = signal<HilosDaemonDatabaseData | null>(null)
-  protected readonly placementActive = signal(false)
-  protected readonly placementOpened = signal(false)
+  protected readonly metricsPath = computed(() => {
+    const source = this.overview()?.entryPoints
+    return source
+      ? this.router.resolvePath(HilosPages.DAEMON_HTTP_SERVER, {
+          nodeId: source.nodeId,
+        })
+      : null
+  })
   constructor() {
     effect((onCleanup) => {
       const daemon = this.daemon()
-      const placement = this.placement()
       const stops = [
         mirrorHilosSignal(daemon.overview, this.overview),
         mirrorHilosSignal(daemon.database, this.database),
       ]
-      placement.start()
       onCleanup(() => {
         stops.forEach((stop) => stop())
-        placement.dispose()
       })
     })
   }
   /** The silent node's own last-known silence boundary. */
   protected formatSilentSince(node: HilosDaemonOverviewNode): string | null {
     return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
-  }
-
-  protected openPlacement(): void {
-    this.placementOpened.set(true)
-    this.placementActive.set(true)
   }
 }

@@ -29,8 +29,8 @@ final class DaemonNodeStateTest extends TestCase
         $picture = $picture->withNode(new ClusterDaemonNodeView('silent', false, null));
         $picture = $picture->withNode($this->node('data', NodeRole::Slave));
         $picture = $picture->withNode($this->node('pending', NodeRole::Master));
-        $picture = $picture->withNode($this->node('standalone', NodeRole::Master, new DaemonNodeStanding(0, 0, false, null)));
-        $picture = $picture->withNode($this->node('bare-master', NodeRole::Master, new DaemonNodeStanding(0, 0, true, null)));
+        $picture = $picture->withNode($this->node('standalone', NodeRole::Master, new DaemonNodeStanding(0, 0, false, null, null)));
+        $picture = $picture->withNode($this->node('bare-master', NodeRole::Master, new DaemonNodeStanding(0, 0, true, null, null)));
 
         self::assertNull($picture->stateOf('unknown'));
         self::assertSame(DaemonNodeState::Silent, $picture->stateOf('silent'));
@@ -91,7 +91,7 @@ final class DaemonNodeStateTest extends TestCase
     private function master(string $id, ConsensusRole $role, int $term): ClusterDaemonNodeView
     {
         return $this->node($id, NodeRole::Master, new DaemonNodeStanding(0, 0, true,
-            new DaemonConsensusPicture($role, $term, $role === ConsensusRole::Leader ? $id : null, 2, 3, 2),
+            new DaemonConsensusPicture($role, $term, $role === ConsensusRole::Leader ? $id : null, 2, 3, 2), null,
         ));
     }
 }
