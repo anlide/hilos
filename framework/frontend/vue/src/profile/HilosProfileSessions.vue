@@ -50,6 +50,19 @@ function dateTime(moment: number | null): string {
   return formatProfileDateTime(moment)
 }
 
+/**
+ * Display form of a tab key.
+ *
+ * Eight characters or fewer stay whole. A longer key keeps four characters
+ * at each end. The list identity stays the full accept key.
+ */
+function tabKeyLabel(acceptKey: string): string {
+  if (acceptKey.length <= 8) {
+    return acceptKey
+  }
+  return `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`
+}
+
 function toggleTabs(sessionId: number): void {
   const next = new Set(expanded.value)
   if (next.has(sessionId)) {
@@ -92,111 +105,134 @@ async function confirmEndOthers(): Promise<void> {
 
 <template>
   <section aria-label="Sessions" data-id="profile-sessions">
-    <p>
+    <p class="small text-body-secondary">
       A session is a browser that signed in. Its open tabs are listed inside it.
       Ending a session takes effect at once.
     </p>
-    <div class="alert alert-info small" role="note">
-      The list of tabs is what is happening right now and can lag behind in a
-      cluster. The list of sessions cannot: it comes from the database.
-    </div>
 
     <div v-if="sessions.length === 0" class="text-body-secondary">
       No sessions.
     </div>
-    <div v-else class="d-flex flex-column gap-3">
+    <div v-else>
       <article
         v-for="session in sessions"
         :key="session.id"
-        class="card"
+        class="border-bottom"
         data-id="profile-session-row"
       >
-        <div class="card-body">
-          <div
-            class="d-flex flex-wrap align-items-start justify-content-between gap-2"
-          >
-            <div>
-              <h3 class="h6 mb-1">Session #{{ session.id }}</h3>
-              <div data-id="profile-session-device">
-                {{ session.deviceName ?? 'Unknown device' }}
-                <span
-                  v-if="session.browserTimeZone !== null"
-                  class="text-body-secondary"
-                  >· {{ session.browserTimeZone }}</span
-                >
-              </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 py-3">
+          <i
+            v-if="session.impersonated"
+            class="bi bi-people-fill fs-5 text-warning-emphasis"
+            aria-hidden="true"
+          ></i>
+          <i
+            v-else
+            class="bi bi-window fs-5 text-body-secondary"
+            aria-hidden="true"
+          ></i>
+          <div class="flex-grow-1 text-break">
+            <h3 class="h6 mb-1">
+              Session #{{ session.id }}
               <span
                 v-if="session.current"
-                class="badge text-bg-primary me-1"
+                class="badge text-bg-success ms-1"
                 data-id="profile-session-this"
                 >this one</span
               >
               <span
                 v-if="session.impersonated"
-                class="badge text-bg-warning"
+                class="badge bg-warning-subtle text-warning-emphasis ms-1"
                 data-id="profile-session-impersonated"
                 >an administrator is working as you</span
               >
+            </h3>
+            <div data-id="profile-session-device">
+              {{ session.deviceName ?? 'Unknown device' }}
+              <span
+                v-if="session.browserTimeZone !== null"
+                class="text-body-secondary"
+                >· {{ session.browserTimeZone }}</span
+              >
             </div>
-            <button
-              v-if="!session.current && !session.impersonated"
-              type="button"
-              class="btn btn-outline-danger btn-sm"
-              data-id="profile-session-revoke"
-              @click="openEnd(session.id)"
-            >
-              Revoke
-            </button>
-          </div>
-          <div class="small text-body-secondary mt-2">
-            created {{ dateTime(session.createdAt) }} · last seen
-            {{ session.tabs.length > 0 ? 'now' : dateTime(session.lastSeenAt) }}
-            · expires {{ dateTime(session.expiresAt) }}
+            <div class="small text-body-secondary">
+              created {{ dateTime(session.createdAt) }} · last seen
+              {{
+                session.tabs.length > 0 ? 'now' : dateTime(session.lastSeenAt)
+              }}
+              · expires {{ dateTime(session.expiresAt) }}
+            </div>
           </div>
           <button
             type="button"
-            class="btn btn-link btn-sm px-0 mt-2"
+            class="btn btn-link btn-sm p-0 text-decoration-none"
             :aria-expanded="expanded.has(session.id)"
             data-id="profile-session-tabs"
             @click="toggleTabs(session.id)"
           >
+            <i
+              class="bi"
+              :class="
+                expanded.has(session.id)
+                  ? 'bi-caret-down-fill'
+                  : 'bi-caret-right-fill'
+              "
+              aria-hidden="true"
+            ></i>
             tabs: {{ session.tabs.length }}
           </button>
-          <div v-if="expanded.has(session.id)" class="mt-2">
-            <p
-              v-if="session.tabs.length === 0"
-              class="text-body-secondary small mb-0"
+          <button
+            v-if="!session.current && !session.impersonated"
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            data-id="profile-session-revoke"
+            @click="openEnd(session.id)"
+          >
+            Revoke
+          </button>
+        </div>
+        <div
+          v-if="expanded.has(session.id)"
+          class="bg-body-tertiary rounded-2 mb-2 px-2 py-1"
+        >
+          <p
+            v-if="session.tabs.length === 0"
+            class="text-body-secondary small mb-0"
+          >
+            No open tabs: the sign-in stays valid, but the browser is closed
+            right now.
+          </p>
+          <ul v-else class="list-unstyled mb-0">
+            <li
+              v-for="tab in session.tabs"
+              :key="tab.acceptKey"
+              class="d-flex flex-wrap align-items-center gap-2 py-1"
+              data-id="profile-session-tab"
             >
-              No open tabs: the sign-in stays valid, but the browser is closed
-              right now.
-            </p>
-            <ul v-else class="list-group list-group-flush">
-              <li
-                v-for="tab in session.tabs"
-                :key="tab.acceptKey"
-                class="list-group-item px-0 d-flex flex-wrap justify-content-between gap-2"
-                data-id="profile-session-tab"
+              <i class="bi bi-plug text-body-secondary" aria-hidden="true"></i>
+              <code>{{ tabKeyLabel(tab.acceptKey) }}</code>
+              <span class="small text-body-secondary">
+                opened {{ dateTime(tab.connectedAt) }}
+              </span>
+              <!-- A newline between the tags is dropped, so the boundary is
+                   its own text node, and only while this tab is shown. -->
+              <template v-if="tab.current"
+                >{{ ' '
+                }}<span
+                  class="small text-body-secondary"
+                  data-id="profile-session-tab-this"
+                  >this tab</span
+                ></template
               >
-                <code>{{ tab.acceptKey.slice(0, 8) }}</code>
-                <span class="small text-body-secondary">
-                  opened {{ dateTime(tab.connectedAt) }}
-                  <span
-                    v-if="tab.current"
-                    class="badge text-bg-primary ms-1"
-                    data-id="profile-session-tab-this"
-                    >this tab</span
-                  >
-                </span>
-              </li>
-            </ul>
-          </div>
+            </li>
+          </ul>
         </div>
       </article>
     </div>
 
     <button
       type="button"
-      class="btn btn-outline-danger mt-3"
+      class="btn btn-outline-danger btn-sm mt-3"
       :disabled="endableCount === 0"
       data-id="profile-sessions-end-others"
       @click="openEndOthers"

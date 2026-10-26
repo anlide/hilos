@@ -61,6 +61,17 @@ function makeSession(
   }
 }
 
+function makeTab(
+  acceptKey: string,
+  options: { current?: boolean; connectedAt?: number } = {},
+): HilosProfileSession['tabs'][number] {
+  return {
+    acceptKey,
+    connectedAt: options.connectedAt ?? 1790762400000,
+    current: options.current ?? false,
+  }
+}
+
 function makeHandle(promise: Promise<unknown>): ActionHandle {
   return {
     requestId: 'req-1',
@@ -550,5 +561,311 @@ describe('HilosProfileSessions (Vue)', () => {
     expect(byId('profile-sessions-end-others').hasAttribute('disabled')).toBe(
       true,
     )
+  })
+
+  it('keeps the intro and drops the cluster lag note', () => {
+    const { wrapper } = setup([])
+    const intro = wrapper.get('p')
+    expect(intro.classes()).toEqual(['small', 'text-body-secondary'])
+    expect(intro.text()).toBe(
+      'A session is a browser that signed in. Its open tabs are listed inside it. Ending a session takes effect at once.',
+    )
+    expect(wrapper.text()).toContain('No sessions.')
+    expect(wrapper.find('[data-id="profile-session-row"]').exists()).toBe(false)
+    expect(wrapper.find('.alert').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('can lag behind')
+    expect(wrapper.get('section').attributes('aria-label')).toBe('Sessions')
+    expect(wrapper.find('h1').exists()).toBe(false)
+    const endOthers = wrapper.get('[data-id="profile-sessions-end-others"]')
+    expect(endOthers.classes()).toEqual([
+      'btn',
+      'btn-outline-danger',
+      'btn-sm',
+      'mt-3',
+    ])
+    expect(endOthers.attributes('disabled')).toBeDefined()
+  })
+
+  it('paints ordinary, current, and impersonated rows from their flags', () => {
+    const { wrapper } = setup([
+      makeSession(1),
+      makeSession(2, { current: true }),
+      makeSession(3, { impersonated: true }),
+      makeSession(4, { current: true, impersonated: true }),
+    ])
+    expect(wrapper.find('.alert-info').exists()).toBe(false)
+    expect(wrapper.find('.card').exists()).toBe(false)
+    expect(wrapper.find('.card-body').exists()).toBe(false)
+    const rows = wrapper.findAll('[data-id="profile-session-row"]')
+    expect(rows).toHaveLength(4)
+
+    const ordinary = rows[0]!
+    expect(ordinary.classes()).toEqual(['border-bottom'])
+    expect(ordinary.attributes('style')).toBeUndefined()
+    expect(ordinary.get('.d-flex').classes()).toEqual([
+      'd-flex',
+      'flex-wrap',
+      'align-items-center',
+      'gap-2',
+      'py-3',
+    ])
+    expect(ordinary.get('i.bi').classes()).toEqual([
+      'bi',
+      'bi-window',
+      'fs-5',
+      'text-body-secondary',
+    ])
+    expect(ordinary.get('i.bi').attributes('aria-hidden')).toBe('true')
+    expect(ordinary.get('.flex-grow-1').classes()).toEqual([
+      'flex-grow-1',
+      'text-break',
+    ])
+    expect(ordinary.get('h3').text()).toBe('Session #1')
+    expect(ordinary.find('[data-id="profile-session-this"]').exists()).toBe(
+      false,
+    )
+    expect(
+      ordinary.find('[data-id="profile-session-impersonated"]').exists(),
+    ).toBe(false)
+    expect(
+      [...ordinary.element.querySelectorAll('button')].map((button) =>
+        button.getAttribute('data-id'),
+      ),
+    ).toEqual(['profile-session-tabs', 'profile-session-revoke'])
+
+    const current = rows[1]!
+    expect(current.get('i.bi').classes()).toContain('bi-window')
+    const thisBadge = current.get('h3').get('[data-id="profile-session-this"]')
+    expect(thisBadge.text()).toBe('this one')
+    expect(thisBadge.classes()).toEqual(['badge', 'text-bg-success', 'ms-1'])
+    expect(
+      current.find('[data-id="profile-session-impersonated"]').exists(),
+    ).toBe(false)
+    expect(current.find('[data-id="profile-session-revoke"]').exists()).toBe(
+      false,
+    )
+
+    const impersonated = rows[2]!
+    expect(impersonated.get('i.bi').classes()).toEqual([
+      'bi',
+      'bi-people-fill',
+      'fs-5',
+      'text-warning-emphasis',
+    ])
+    expect(impersonated.get('i.bi').attributes('aria-hidden')).toBe('true')
+    const adminBadge = impersonated
+      .get('h3')
+      .get('[data-id="profile-session-impersonated"]')
+    expect(adminBadge.text()).toBe('an administrator is working as you')
+    expect(adminBadge.classes()).toEqual([
+      'badge',
+      'bg-warning-subtle',
+      'text-warning-emphasis',
+      'ms-1',
+    ])
+    expect(impersonated.find('[data-id="profile-session-this"]').exists()).toBe(
+      false,
+    )
+    expect(
+      impersonated.find('[data-id="profile-session-revoke"]').exists(),
+    ).toBe(false)
+
+    const both = rows[3]!
+    expect(both.get('i.bi').classes()).toContain('bi-people-fill')
+    expect(
+      both.get('h3').find('[data-id="profile-session-this"]').exists(),
+    ).toBe(true)
+    expect(
+      both.get('h3').find('[data-id="profile-session-impersonated"]').exists(),
+    ).toBe(true)
+    expect(both.find('[data-id="profile-session-revoke"]').exists()).toBe(false)
+  })
+
+  it('toggles one row and keeps the other open when the tab list changes', async () => {
+    const first = {
+      ...makeSession(1),
+      tabs: [makeTab('tab-a')],
+    }
+    const second = {
+      ...makeSession(2),
+      tabs: [makeTab('tab-b'), makeTab('tab-c')],
+    }
+    const { wrapper } = setup([first, second])
+    const button = (index: number) =>
+      wrapper
+        .findAll('[data-id="profile-session-row"]')
+        [index]!.get('[data-id="profile-session-tabs"]')
+
+    expect(button(0).attributes('aria-expanded')).toBe('false')
+    expect(button(0).get('i').classes()).toEqual(['bi', 'bi-caret-right-fill'])
+    expect(button(0).get('i').attributes('aria-hidden')).toBe('true')
+    expect(button(0).text()).toBe('tabs: 1')
+    expect(button(0).classes()).toEqual([
+      'btn',
+      'btn-link',
+      'btn-sm',
+      'p-0',
+      'text-decoration-none',
+    ])
+
+    await button(0).trigger('click')
+    expect(button(0).attributes('aria-expanded')).toBe('true')
+    expect(button(0).get('i').classes()).toEqual(['bi', 'bi-caret-down-fill'])
+    expect(button(1).attributes('aria-expanded')).toBe('false')
+    expect(button(1).get('i').classes()).toContain('bi-caret-right-fill')
+
+    await button(1).trigger('click')
+    expect(button(0).attributes('aria-expanded')).toBe('true')
+    expect(button(1).attributes('aria-expanded')).toBe('true')
+    expect(button(1).text()).toBe('tabs: 2')
+
+    await button(0).trigger('click')
+    expect(button(0).attributes('aria-expanded')).toBe('false')
+    expect(button(0).get('i').classes()).toContain('bi-caret-right-fill')
+    expect(button(1).attributes('aria-expanded')).toBe('true')
+    expect(button(1).get('i').classes()).toContain('bi-caret-down-fill')
+
+    await wrapper.setProps({
+      sessions: [{ ...first, tabs: [...first.tabs, makeTab('tab-d')] }, second],
+    })
+    expect(button(0).attributes('aria-expanded')).toBe('false')
+    expect(button(1).attributes('aria-expanded')).toBe('true')
+    expect(button(0).text()).toBe('tabs: 2')
+    expect(button(1).text()).toBe('tabs: 2')
+    const openTabs = wrapper.findAll('[data-id="profile-session-tab"]')
+    expect(openTabs).toHaveLength(2)
+    expect(openTabs[0]!.get('code').text()).toBe('tab-b')
+    expect(openTabs[1]!.get('code').text()).toBe('tab-c')
+  })
+
+  it('explains an expanded session that has no open tabs', async () => {
+    const { wrapper } = setup([makeSession(4)])
+    await wrapper.get('[data-id="profile-session-tabs"]').trigger('click')
+    const panel = wrapper.get('.bg-body-tertiary')
+    expect(panel.classes()).toEqual([
+      'bg-body-tertiary',
+      'rounded-2',
+      'mb-2',
+      'px-2',
+      'py-1',
+    ])
+    expect(panel.get('p').text()).toBe(
+      'No open tabs: the sign-in stays valid, but the browser is closed right now.',
+    )
+    expect(panel.find('[data-id="profile-session-tab"]').exists()).toBe(false)
+    expect(panel.find('ul').exists()).toBe(false)
+  })
+
+  it('shortens a long tab key for display and keeps each full key', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      'resolvedOptions',
+    ).mockImplementation(() => ({ ...resolved, timeZone: 'Asia/Tokyo' }))
+    releaseTimeZone = bindTimeZoneState({
+      on: () => () => {},
+    } as unknown as HilosConnection)
+    const longKey = 'x3Jb123456789f2a'
+    const sameEdges = 'x3Jb0000000009f2a'
+    const four = 'ab12'
+    const eight = 'abcd1234'
+    const { wrapper } = setup([
+      {
+        ...makeSession(1, { current: true }),
+        tabs: [
+          makeTab(longKey, { current: true, connectedAt: 1767227520000 }),
+          makeTab(sameEdges, { connectedAt: 1767227580000 }),
+          makeTab(four, { connectedAt: 1767227640000 }),
+          makeTab(eight, { connectedAt: 1767227700000 }),
+        ],
+      },
+    ])
+    await wrapper.get('[data-id="profile-session-tabs"]').trigger('click')
+    const tabs = wrapper.findAll('[data-id="profile-session-tab"]')
+    expect(tabs).toHaveLength(4)
+    expect(tabs[0]!.get('code').text()).toBe('x3Jb…9f2a')
+    expect(tabs[1]!.get('code').text()).toBe('x3Jb…9f2a')
+    expect(tabs[2]!.get('code').text()).toBe(four)
+    expect(tabs[3]!.get('code').text()).toBe(eight)
+    expect(tabs[0]!.get('code').text()).not.toContain('2026')
+    expect(tabs[0]!.findAll('span.small.text-body-secondary')[0]!.text()).toBe(
+      'opened 1/1/2026, 9:32:00 AM',
+    )
+    expect(tabs[1]!.findAll('span.small.text-body-secondary')[0]!.text()).toBe(
+      'opened 1/1/2026, 9:33:00 AM',
+    )
+
+    const plug = tabs[0]!.get('i')
+    expect(plug.classes()).toEqual(['bi', 'bi-plug', 'text-body-secondary'])
+    expect(plug.attributes('aria-hidden')).toBe('true')
+    expect(tabs[0]!.classes()).toEqual([
+      'd-flex',
+      'flex-wrap',
+      'align-items-center',
+      'gap-2',
+      'py-1',
+    ])
+    expect(tabs[0]!.classes()).not.toContain('list-group-item')
+    const list = wrapper.get('ul')
+    expect(list.classes()).toEqual(['list-unstyled', 'mb-0'])
+    expect(list.element.parentElement).toBe(
+      wrapper.get('.bg-body-tertiary').element,
+    )
+
+    const thisTab = tabs[0]!.get('[data-id="profile-session-tab-this"]')
+    expect(thisTab.text()).toBe('this tab')
+    expect(tabs[0]!.element.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      'opened 1/1/2026, 9:32:00 AM this tab',
+    )
+    expect(thisTab.classes()).toEqual(['small', 'text-body-secondary'])
+    expect(thisTab.classes()).not.toContain('badge')
+    expect(tabs[1]!.find('[data-id="profile-session-tab-this"]').exists()).toBe(
+      false,
+    )
+    expect(tabs[2]!.find('[data-id="profile-session-tab-this"]').exists()).toBe(
+      false,
+    )
+    expect(tabs[3]!.find('[data-id="profile-session-tab-this"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('opens Revoke without ending the session and leaves it on Cancel', async () => {
+    const { endSession } = setup()
+    byId('profile-session-revoke').click()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="profile-session-end-confirm"]'),
+    ).not.toBeNull()
+    expect(endSession).not.toHaveBeenCalled()
+
+    cancelButton().click()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="profile-session-end-confirm"]'),
+    ).toBeNull()
+    expect(endSession).not.toHaveBeenCalled()
+  })
+
+  it('says the session already ended when it leaves while its window is open', async () => {
+    const { wrapper, endSession } = setup([
+      makeSession(1, { current: true }),
+      makeSession(2),
+    ])
+    byId('profile-session-revoke').click()
+    await nextTick()
+
+    await wrapper.setProps({
+      sessions: [makeSession(1, { current: true })],
+    })
+    expect(byId('profile-session-end-error').textContent).toContain(
+      'This session has already ended',
+    )
+    expect(byId('profile-session-end-confirm').hasAttribute('disabled')).toBe(
+      true,
+    )
+    byId('profile-session-end-confirm').click()
+    await nextTick()
+    expect(endSession).not.toHaveBeenCalled()
   })
 })

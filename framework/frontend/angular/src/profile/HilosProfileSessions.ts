@@ -24,110 +24,129 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
   imports: [HilosFormError, HilosModal, LoadingButton],
   template: `
     <section aria-label="Sessions" data-id="profile-sessions">
-      <p>
+      <p class="small text-body-secondary">
         A session is a browser that signed in. Its open tabs are listed inside
         it. Ending a session takes effect at once.
       </p>
-      <div class="alert alert-info small" role="note">
-        The list of tabs is what is happening right now and can lag behind in a
-        cluster. The list of sessions cannot: it comes from the database.
-      </div>
       @if (sessions().length === 0) {
         <div class="text-body-secondary">No sessions.</div>
       } @else {
-        <div class="d-flex flex-column gap-3">
+        <div>
           @for (session of sessions(); track session.id) {
-            <article class="card" data-id="profile-session-row">
-              <div class="card-body">
-                <div
-                  class="d-flex flex-wrap align-items-start justify-content-between gap-2"
-                >
-                  <div>
-                    <h3 class="h6 mb-1">Session #{{ session.id }}</h3>
-                    <div data-id="profile-session-device">
-                      {{ session.deviceName ?? 'Unknown device' }}
-                    </div>
+            <article class="border-bottom" data-id="profile-session-row">
+              <div class="d-flex flex-wrap align-items-center gap-2 py-3">
+                @if (session.impersonated) {
+                  <i
+                    class="bi bi-people-fill fs-5 text-warning-emphasis"
+                    aria-hidden="true"
+                  ></i>
+                } @else {
+                  <i
+                    class="bi bi-window fs-5 text-body-secondary"
+                    aria-hidden="true"
+                  ></i>
+                }
+                <div class="flex-grow-1 text-break">
+                  <h3 class="h6 mb-1">
+                    Session #{{ session.id }}
                     @if (session.current) {
                       <span
-                        class="badge text-bg-primary me-1"
+                        class="badge text-bg-success ms-1"
                         data-id="profile-session-this"
                         >this one</span
                       >
                     }
                     @if (session.impersonated) {
                       <span
-                        class="badge text-bg-warning"
+                        class="badge bg-warning-subtle text-warning-emphasis ms-1"
                         data-id="profile-session-impersonated"
                         >an administrator is working as you</span
                       >
                     }
+                  </h3>
+                  <div data-id="profile-session-device">
+                    {{ session.deviceName ?? 'Unknown device' }}
                   </div>
-                  @if (!session.current && !session.impersonated) {
-                    <button
-                      type="button"
-                      class="btn btn-outline-danger btn-sm"
-                      data-id="profile-session-revoke"
-                      (click)="openEnd(session.id)"
-                    >
-                      Revoke
-                    </button>
-                  }
-                </div>
-                <div class="small text-body-secondary mt-2">
-                  created {{ date(session.createdAt) }} · last seen
-                  {{
-                    session.tabs.length > 0 ? 'now' : date(session.lastSeenAt)
-                  }}
-                  · expires {{ date(session.expiresAt) }}
+                  <div class="small text-body-secondary">
+                    created {{ date(session.createdAt) }} · last seen
+                    {{
+                      session.tabs.length > 0 ? 'now' : date(session.lastSeenAt)
+                    }}
+                    · expires {{ date(session.expiresAt) }}
+                  </div>
                 </div>
                 <button
                   type="button"
-                  class="btn btn-link btn-sm px-0 mt-2"
+                  class="btn btn-link btn-sm p-0 text-decoration-none"
                   [attr.aria-expanded]="expanded().has(session.id)"
                   data-id="profile-session-tabs"
                   (click)="toggleTabs(session.id)"
                 >
+                  <i
+                    class="bi"
+                    [class.bi-caret-down-fill]="expanded().has(session.id)"
+                    [class.bi-caret-right-fill]="!expanded().has(session.id)"
+                    aria-hidden="true"
+                  ></i>
                   tabs: {{ session.tabs.length }}
                 </button>
-                @if (expanded().has(session.id)) {
-                  <div class="mt-2">
-                    @if (session.tabs.length === 0) {
-                      <p class="text-body-secondary small mb-0">
-                        No open tabs: the sign-in stays valid, but the browser
-                        is closed right now.
-                      </p>
-                    } @else {
-                      <ul class="list-group list-group-flush">
-                        @for (tab of session.tabs; track tab.acceptKey) {
-                          <li
-                            class="list-group-item px-0 d-flex flex-wrap justify-content-between gap-2"
-                            data-id="profile-session-tab"
-                          >
-                            <code>{{ shortKey(tab.acceptKey) }}</code>
-                            <span class="small text-body-secondary">
-                              opened {{ tabDate(tab.connectedAt) }}
-                              @if (tab.current) {
-                                <span
-                                  class="badge text-bg-primary ms-1"
-                                  data-id="profile-session-tab-this"
-                                  >this tab</span
-                                >
-                              }
-                            </span>
-                          </li>
-                        }
-                      </ul>
-                    }
-                  </div>
+                @if (!session.current && !session.impersonated) {
+                  <button
+                    type="button"
+                    class="btn btn-outline-danger btn-sm"
+                    data-id="profile-session-revoke"
+                    (click)="openEnd(session.id)"
+                  >
+                    Revoke
+                  </button>
                 }
               </div>
+              @if (expanded().has(session.id)) {
+                <div class="bg-body-tertiary rounded-2 mb-2 px-2 py-1">
+                  @if (session.tabs.length === 0) {
+                    <p class="text-body-secondary small mb-0">
+                      No open tabs: the sign-in stays valid, but the browser is
+                      closed right now.
+                    </p>
+                  } @else {
+                    <ul class="list-unstyled mb-0">
+                      @for (tab of session.tabs; track tab.acceptKey) {
+                        <li
+                          class="d-flex flex-wrap align-items-center gap-2 py-1"
+                          data-id="profile-session-tab"
+                        >
+                          <i
+                            class="bi bi-plug text-body-secondary"
+                            aria-hidden="true"
+                          ></i>
+                          <code>{{ shortKey(tab.acceptKey) }}</code>
+                          <span class="small text-body-secondary"
+                            >opened {{ tabDate(tab.connectedAt) }}</span
+                          >
+                          @if (tab.current) {
+                            <!-- A newline between the tags is dropped, so the
+                                 boundary is its own text node, and only while
+                                 this tab is shown. -->
+                            {{ ' ' }}
+                            <span
+                              class="small text-body-secondary"
+                              data-id="profile-session-tab-this"
+                              >this tab</span
+                            >
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                </div>
+              }
             </article>
           }
         </div>
       }
       <button
         type="button"
-        class="btn btn-outline-danger mt-3"
+        class="btn btn-outline-danger btn-sm mt-3"
         [disabled]="endableCount() === 0"
         data-id="profile-sessions-end-others"
         (click)="openEndOthers()"
@@ -257,8 +276,17 @@ export class HilosProfileSessions {
     return formatProfileDateTime(connectedAt)
   }
 
+  /**
+   * Display form of a tab key.
+   *
+   * Eight characters or fewer stay whole. A longer key keeps four characters
+   * at each end. The list identity stays the full accept key.
+   */
   protected shortKey(acceptKey: string): string {
-    return acceptKey.slice(0, 8)
+    if (acceptKey.length <= 8) {
+      return acceptKey
+    }
+    return `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`
   }
 
   protected toggleTabs(sessionId: number): void {

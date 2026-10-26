@@ -17,6 +17,19 @@ export interface HilosProfileSessionsProps {
   readonly actions: HilosProfileSessionActions
 }
 
+/**
+ * Display form of a tab key.
+ *
+ * Eight characters or fewer stay whole. A longer key keeps four characters
+ * at each end. The list identity stays the full accept key.
+ */
+function tabKeyLabel(acceptKey: string): string {
+  if (acceptKey.length <= 8) {
+    return acceptKey
+  }
+  return `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`
+}
+
 /** The shared session list, tab disclosure, and end-session controls. */
 export function HilosProfileSessions({
   sessions,
@@ -75,34 +88,39 @@ export function HilosProfileSessions({
 
   return (
     <section aria-label="Sessions" data-id="profile-sessions">
-      <p>
-        A session is a browser that signed in. Its open tabs are listed inside
-        it. Ending a session takes effect at once.
+      <p className="small text-body-secondary">
+        {
+          'A session is a browser that signed in. Its open tabs are listed inside it. Ending a session takes effect at once.'
+        }
       </p>
-      <div className="alert alert-info small" role="note">
-        The list of tabs is what is happening right now and can lag behind in a
-        cluster. The list of sessions cannot: it comes from the database.
-      </div>
       {sessions.length === 0 ? (
         <div className="text-body-secondary">No sessions.</div>
       ) : (
-        <div className="d-flex flex-column gap-3">
+        <div>
           {sessions.map((session) => (
             <article
               key={session.id}
-              className="card"
+              className="border-bottom"
               data-id="profile-session-row"
             >
-              <div className="card-body">
-                <div className="d-flex flex-wrap align-items-start justify-content-between gap-2">
-                  <div>
-                    <h3 className="h6 mb-1">Session #{session.id}</h3>
-                    <div data-id="profile-session-device">
-                      {session.deviceName ?? 'Unknown device'}
-                    </div>
+              <div className="d-flex flex-wrap align-items-center gap-2 py-3">
+                {session.impersonated ? (
+                  <i
+                    className="bi bi-people-fill fs-5 text-warning-emphasis"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <i
+                    className="bi bi-window fs-5 text-body-secondary"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="flex-grow-1 text-break">
+                  <h3 className="h6 mb-1">
+                    {`Session #${session.id}`}
                     {session.current ? (
                       <span
-                        className="badge text-bg-primary me-1"
+                        className="badge text-bg-success ms-1"
                         data-id="profile-session-this"
                       >
                         this one
@@ -110,84 +128,106 @@ export function HilosProfileSessions({
                     ) : null}
                     {session.impersonated ? (
                       <span
-                        className="badge text-bg-warning"
+                        className="badge bg-warning-subtle text-warning-emphasis ms-1"
                         data-id="profile-session-impersonated"
                       >
                         an administrator is working as you
                       </span>
                     ) : null}
+                  </h3>
+                  <div data-id="profile-session-device">
+                    {session.deviceName ?? 'Unknown device'}
                   </div>
-                  {!session.current && !session.impersonated ? (
-                    <button
-                      type="button"
-                      className="btn btn-outline-danger btn-sm"
-                      data-id="profile-session-revoke"
-                      onClick={() => {
-                        endAction.clearError()
-                        setEndingSessionId(session.id)
-                      }}
-                    >
-                      Revoke
-                    </button>
-                  ) : null}
-                </div>
-                <div className="small text-body-secondary mt-2">
-                  created {formatProfileDateTime(session.createdAt)} · last seen{' '}
-                  {session.tabs.length > 0
-                    ? 'now'
-                    : formatProfileDateTime(session.lastSeenAt)}{' '}
-                  · expires {formatProfileDateTime(session.expiresAt)}
+                  <div className="small text-body-secondary">
+                    {`created ${formatProfileDateTime(session.createdAt)} · last seen ${
+                      session.tabs.length > 0
+                        ? 'now'
+                        : formatProfileDateTime(session.lastSeenAt)
+                    } · expires ${formatProfileDateTime(session.expiresAt)}`}
+                  </div>
                 </div>
                 <button
                   type="button"
-                  className="btn btn-link btn-sm px-0 mt-2"
+                  className="btn btn-link btn-sm p-0 text-decoration-none"
                   aria-expanded={expanded.has(session.id)}
                   data-id="profile-session-tabs"
                   onClick={() => toggleTabs(session.id)}
                 >
-                  tabs: {session.tabs.length}
+                  <i
+                    className={`bi ${
+                      expanded.has(session.id)
+                        ? 'bi-caret-down-fill'
+                        : 'bi-caret-right-fill'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  {`tabs: ${session.tabs.length}`}
                 </button>
-                {expanded.has(session.id) ? (
-                  <div className="mt-2">
-                    {session.tabs.length === 0 ? (
-                      <p className="text-body-secondary small mb-0">
-                        No open tabs: the sign-in stays valid, but the browser
-                        is closed right now.
-                      </p>
-                    ) : (
-                      <ul className="list-group list-group-flush">
-                        {session.tabs.map((tab) => (
-                          <li
-                            key={tab.acceptKey}
-                            className="list-group-item px-0 d-flex flex-wrap justify-content-between gap-2"
-                            data-id="profile-session-tab"
-                          >
-                            <code>{tab.acceptKey.slice(0, 8)}</code>
-                            <span className="small text-body-secondary">
-                              opened {formatProfileDateTime(tab.connectedAt)}
-                              {tab.current ? (
-                                <span
-                                  className="badge text-bg-primary ms-1"
-                                  data-id="profile-session-tab-this"
-                                >
-                                  this tab
-                                </span>
-                              ) : null}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
+                {!session.current && !session.impersonated ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline-danger btn-sm"
+                    data-id="profile-session-revoke"
+                    onClick={() => {
+                      endAction.clearError()
+                      setEndingSessionId(session.id)
+                    }}
+                  >
+                    Revoke
+                  </button>
                 ) : null}
               </div>
+              {expanded.has(session.id) ? (
+                <div className="bg-body-tertiary rounded-2 mb-2 px-2 py-1">
+                  {session.tabs.length === 0 ? (
+                    <p className="text-body-secondary small mb-0">
+                      {
+                        'No open tabs: the sign-in stays valid, but the browser is closed right now.'
+                      }
+                    </p>
+                  ) : (
+                    <ul className="list-unstyled mb-0">
+                      {session.tabs.map((tab) => (
+                        <li
+                          key={tab.acceptKey}
+                          className="d-flex flex-wrap align-items-center gap-2 py-1"
+                          data-id="profile-session-tab"
+                        >
+                          <i
+                            className="bi bi-plug text-body-secondary"
+                            aria-hidden="true"
+                          />
+                          <code>{tabKeyLabel(tab.acceptKey)}</code>
+                          <span className="small text-body-secondary">
+                            {`opened ${formatProfileDateTime(tab.connectedAt)}`}
+                          </span>
+                          {/* A newline between the tags is dropped, so the
+                              boundary is its own text node, and only while
+                              this tab is shown. */}
+                          {tab.current ? (
+                            <>
+                              {' '}
+                              <span
+                                className="small text-body-secondary"
+                                data-id="profile-session-tab-this"
+                              >
+                                this tab
+                              </span>
+                            </>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
       )}
       <button
         type="button"
-        className="btn btn-outline-danger mt-3"
+        className="btn btn-outline-danger btn-sm mt-3"
         disabled={endableCount === 0}
         data-id="profile-sessions-end-others"
         onClick={openEndOthers}

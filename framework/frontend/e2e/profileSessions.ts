@@ -118,7 +118,7 @@ export async function expectProfileSessionMoments(
       .sort((left, right) => right.connectedAt - left.connectedAt)
       .map(
         async ({ acceptKey, connectedAt }) =>
-          `${acceptKey.slice(0, 8)} opened ${await format(connectedAt)}${acceptKey === selfAcceptKey ? ' this tab' : ''}`,
+          `${acceptKey.length <= 8 ? acceptKey : `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`} opened ${await format(connectedAt)}${acceptKey === selfAcceptKey ? ' this tab' : ''}`,
       ),
   )
   await expect(row.getByTestId('profile-session-tab')).toHaveText(tabs)

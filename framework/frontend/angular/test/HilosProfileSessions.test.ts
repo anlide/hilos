@@ -26,6 +26,29 @@ function byId(id: string): HTMLElement {
   return found
 }
 
+function classes(element: Element): string[] {
+  return [...element.classList]
+}
+
+function sessionRows(): HTMLElement[] {
+  return [
+    ...document.querySelectorAll<HTMLElement>(
+      '[data-id="profile-session-row"]',
+    ),
+  ]
+}
+
+function makeTab(
+  acceptKey: string,
+  options: { current?: boolean; connectedAt?: number } = {},
+): HilosProfileSession['tabs'][number] {
+  return {
+    acceptKey,
+    connectedAt: options.connectedAt ?? 1790762400000,
+    current: options.current ?? false,
+  }
+}
+
 function makeSession(
   id: number,
   options: { current?: boolean; impersonated?: boolean } = {},
@@ -92,9 +115,11 @@ describe('HilosProfileSessions (Angular)', () => {
     ])
     byId('profile-session-tabs').click()
     await settle(fixture)
+    const tab = byId('profile-session-tab')
+    expect(tab.querySelector('code')?.textContent).toBe('ak-ms')
     expect(
-      byId('profile-session-tab').textContent?.replace(/\s+/g, ' ').trim(),
-    ).toBe(`ak-ms opened ${formatProfileDateTime(1710000000123)}`)
+      tab.querySelector('span.small.text-body-secondary')?.textContent,
+    ).toBe(`opened ${formatProfileDateTime(1710000000123)}`)
   })
 
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {
@@ -348,5 +373,309 @@ describe('HilosProfileSessions (Angular)', () => {
     expect(byId('profile-sessions-end-others').hasAttribute('disabled')).toBe(
       true,
     )
+  })
+
+  it('keeps the intro and drops the cluster lag note', () => {
+    setup([])
+    const section = document.querySelector('section')
+    expect(section?.getAttribute('aria-label')).toBe('Sessions')
+    expect(document.querySelector('h1')).toBeNull()
+    const intro = section?.querySelector('p')
+    expect(classes(intro!)).toEqual(['small', 'text-body-secondary'])
+    expect(intro?.textContent?.trim()).toBe(
+      'A session is a browser that signed in. Its open tabs are listed inside it. Ending a session takes effect at once.',
+    )
+    expect(section?.textContent).toContain('No sessions.')
+    expect(document.querySelector('[data-id="profile-session-row"]')).toBeNull()
+    expect(document.querySelector('.alert')).toBeNull()
+    expect(section?.textContent).not.toContain('can lag behind')
+    const endOthers = byId('profile-sessions-end-others')
+    expect(classes(endOthers)).toEqual([
+      'btn',
+      'btn-outline-danger',
+      'btn-sm',
+      'mt-3',
+    ])
+    expect(endOthers.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('paints ordinary, current, and impersonated rows from their flags', () => {
+    setup([
+      makeSession(1),
+      makeSession(2, { current: true }),
+      makeSession(3, { impersonated: true }),
+      makeSession(4, { current: true, impersonated: true }),
+    ])
+    expect(document.querySelector('.alert-info')).toBeNull()
+    expect(document.querySelector('.card')).toBeNull()
+    expect(document.querySelector('.card-body')).toBeNull()
+    const rows = sessionRows()
+    expect(rows).toHaveLength(4)
+
+    const ordinary = rows[0]!
+    expect(classes(ordinary)).toEqual(['border-bottom'])
+    expect(ordinary.getAttribute('style')).toBeNull()
+    expect(classes(ordinary.querySelector('.d-flex')!)).toEqual([
+      'd-flex',
+      'flex-wrap',
+      'align-items-center',
+      'gap-2',
+      'py-3',
+    ])
+    expect(classes(ordinary.querySelector('i.bi')!)).toEqual([
+      'bi',
+      'bi-window',
+      'fs-5',
+      'text-body-secondary',
+    ])
+    expect(ordinary.querySelector('i.bi')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    expect(classes(ordinary.querySelector('.flex-grow-1')!)).toEqual([
+      'flex-grow-1',
+      'text-break',
+    ])
+    expect(ordinary.querySelector('h3')?.textContent?.trim()).toBe('Session #1')
+    expect(
+      ordinary
+        .querySelector('[data-id="profile-session-device"]')
+        ?.textContent?.trim(),
+    ).toBe('Device 1')
+    expect(
+      ordinary.querySelector('[data-id="profile-session-this"]'),
+    ).toBeNull()
+    expect(
+      ordinary.querySelector('[data-id="profile-session-impersonated"]'),
+    ).toBeNull()
+    expect(
+      [...ordinary.querySelectorAll('button')].map((button) =>
+        button.getAttribute('data-id'),
+      ),
+    ).toEqual(['profile-session-tabs', 'profile-session-revoke'])
+
+    const current = rows[1]!
+    expect(classes(current.querySelector('i.bi')!)).toContain('bi-window')
+    const thisBadge = current
+      .querySelector('h3')
+      ?.querySelector('[data-id="profile-session-this"]')
+    expect(thisBadge?.textContent).toBe('this one')
+    expect(classes(thisBadge!)).toEqual(['badge', 'text-bg-success', 'ms-1'])
+    expect(
+      current.querySelector('[data-id="profile-session-impersonated"]'),
+    ).toBeNull()
+    expect(
+      current.querySelector('[data-id="profile-session-revoke"]'),
+    ).toBeNull()
+
+    const impersonated = rows[2]!
+    expect(classes(impersonated.querySelector('i.bi')!)).toEqual([
+      'bi',
+      'bi-people-fill',
+      'fs-5',
+      'text-warning-emphasis',
+    ])
+    expect(
+      impersonated.querySelector('i.bi')?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    const adminBadge = impersonated
+      .querySelector('h3')
+      ?.querySelector('[data-id="profile-session-impersonated"]')
+    expect(adminBadge?.textContent).toBe('an administrator is working as you')
+    expect(classes(adminBadge!)).toEqual([
+      'badge',
+      'bg-warning-subtle',
+      'text-warning-emphasis',
+      'ms-1',
+    ])
+    expect(
+      impersonated.querySelector('[data-id="profile-session-this"]'),
+    ).toBeNull()
+    expect(
+      impersonated.querySelector('[data-id="profile-session-revoke"]'),
+    ).toBeNull()
+
+    const both = rows[3]!
+    expect(classes(both.querySelector('i.bi')!)).toContain('bi-people-fill')
+    expect(
+      both
+        .querySelector('h3')
+        ?.querySelector('[data-id="profile-session-this"]'),
+    ).not.toBeNull()
+    expect(
+      both
+        .querySelector('h3')
+        ?.querySelector('[data-id="profile-session-impersonated"]'),
+    ).not.toBeNull()
+    expect(both.querySelector('[data-id="profile-session-revoke"]')).toBeNull()
+  })
+
+  it('toggles one row and keeps the other open when the tab list changes', async () => {
+    const first = {
+      ...makeSession(1),
+      tabs: [makeTab('tab-a')],
+    }
+    const second = {
+      ...makeSession(2),
+      tabs: [makeTab('tab-b'), makeTab('tab-c')],
+    }
+    const { fixture } = setup([first, second])
+    const button = (index: number): HTMLButtonElement =>
+      sessionRows()[index]!.querySelector('[data-id="profile-session-tabs"]')!
+
+    expect(button(0).getAttribute('aria-expanded')).toBe('false')
+    expect(classes(button(0).querySelector('i')!)).toEqual([
+      'bi',
+      'bi-caret-right-fill',
+    ])
+    expect(button(0).querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    expect(button(0).textContent?.trim()).toBe('tabs: 1')
+    expect(classes(button(0))).toEqual([
+      'btn',
+      'btn-link',
+      'btn-sm',
+      'p-0',
+      'text-decoration-none',
+    ])
+
+    button(0).click()
+    await settle(fixture)
+    expect(button(0).getAttribute('aria-expanded')).toBe('true')
+    expect(classes(button(0).querySelector('i')!)).toEqual([
+      'bi',
+      'bi-caret-down-fill',
+    ])
+    expect(button(1).getAttribute('aria-expanded')).toBe('false')
+    expect(classes(button(1).querySelector('i')!)).toContain(
+      'bi-caret-right-fill',
+    )
+
+    button(1).click()
+    await settle(fixture)
+    expect(button(0).getAttribute('aria-expanded')).toBe('true')
+    expect(button(1).getAttribute('aria-expanded')).toBe('true')
+    expect(button(1).textContent?.trim()).toBe('tabs: 2')
+
+    button(0).click()
+    await settle(fixture)
+    expect(button(0).getAttribute('aria-expanded')).toBe('false')
+    expect(classes(button(0).querySelector('i')!)).toContain(
+      'bi-caret-right-fill',
+    )
+    expect(button(1).getAttribute('aria-expanded')).toBe('true')
+    expect(classes(button(1).querySelector('i')!)).toContain(
+      'bi-caret-down-fill',
+    )
+
+    fixture.componentRef.setInput('sessions', [
+      { ...first, tabs: [...first.tabs, makeTab('tab-d')] },
+      second,
+    ])
+    await settle(fixture)
+    expect(button(0).getAttribute('aria-expanded')).toBe('false')
+    expect(button(1).getAttribute('aria-expanded')).toBe('true')
+    expect(button(0).textContent?.trim()).toBe('tabs: 2')
+    expect(button(1).textContent?.trim()).toBe('tabs: 2')
+    const openTabs = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-id="profile-session-tab"]',
+      ),
+    ]
+    expect(openTabs).toHaveLength(2)
+    expect(openTabs[0]!.querySelector('code')?.textContent).toBe('tab-b')
+    expect(openTabs[1]!.querySelector('code')?.textContent).toBe('tab-c')
+  })
+
+  it('explains an expanded session that has no open tabs', async () => {
+    const { fixture } = setup([makeSession(4)])
+    byId('profile-session-tabs').click()
+    await settle(fixture)
+    const panel = document.querySelector('.bg-body-tertiary')
+    expect(classes(panel!)).toEqual([
+      'bg-body-tertiary',
+      'rounded-2',
+      'mb-2',
+      'px-2',
+      'py-1',
+    ])
+    expect(panel?.querySelector('p')?.textContent?.trim()).toBe(
+      'No open tabs: the sign-in stays valid, but the browser is closed right now.',
+    )
+    expect(panel?.querySelector('[data-id="profile-session-tab"]')).toBeNull()
+    expect(panel?.querySelector('ul')).toBeNull()
+  })
+
+  it('shortens a long tab key for display and keeps each full key', async () => {
+    const longKey = 'x3Jb123456789f2a'
+    const sameEdges = 'x3Jb0000000009f2a'
+    const four = 'ab12'
+    const eight = 'abcd1234'
+    const { fixture } = setup([
+      {
+        ...makeSession(1, { current: true }),
+        tabs: [
+          makeTab(longKey, { current: true, connectedAt: 1767227520000 }),
+          makeTab(sameEdges, { connectedAt: 1767227580000 }),
+          makeTab(four, { connectedAt: 1767227640000 }),
+          makeTab(eight, { connectedAt: 1767227700000 }),
+        ],
+      },
+    ])
+    byId('profile-session-tabs').click()
+    await settle(fixture)
+    const tabs = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-id="profile-session-tab"]',
+      ),
+    ]
+    expect(tabs).toHaveLength(4)
+    expect(tabs[0]!.querySelector('code')?.textContent).toBe('x3Jb…9f2a')
+    expect(tabs[1]!.querySelector('code')?.textContent).toBe('x3Jb…9f2a')
+    expect(tabs[2]!.querySelector('code')?.textContent).toBe(four)
+    expect(tabs[3]!.querySelector('code')?.textContent).toBe(eight)
+    expect(tabs[0]!.querySelector('code')?.textContent).not.toBe(longKey)
+    expect(
+      tabs[0]!.querySelector('span.small.text-body-secondary')?.textContent,
+    ).toBe(`opened ${formatProfileDateTime(1767227520000)}`)
+    expect(
+      tabs[1]!.querySelector('span.small.text-body-secondary')?.textContent,
+    ).toBe(`opened ${formatProfileDateTime(1767227580000)}`)
+
+    const plug = tabs[0]!.querySelector('i')
+    expect(classes(plug!)).toEqual(['bi', 'bi-plug', 'text-body-secondary'])
+    expect(plug?.getAttribute('aria-hidden')).toBe('true')
+    expect(classes(tabs[0]!)).toEqual([
+      'd-flex',
+      'flex-wrap',
+      'align-items-center',
+      'gap-2',
+      'py-1',
+    ])
+    expect(classes(tabs[0]!)).not.toContain('list-group-item')
+    const list = document.querySelector('ul')
+    expect(classes(list!)).toEqual(['list-unstyled', 'mb-0'])
+    expect(list?.parentElement).toBe(
+      document.querySelector('.bg-body-tertiary'),
+    )
+
+    const thisTab = tabs[0]!.querySelector(
+      '[data-id="profile-session-tab-this"]',
+    )
+    expect(thisTab?.textContent).toBe('this tab')
+    expect(tabs[0]!.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      `opened ${formatProfileDateTime(1767227520000)} this tab`,
+    )
+    expect(classes(thisTab!)).toEqual(['small', 'text-body-secondary'])
+    expect(classes(thisTab!)).not.toContain('badge')
+    expect(
+      tabs[1]!.querySelector('[data-id="profile-session-tab-this"]'),
+    ).toBeNull()
+    expect(
+      tabs[2]!.querySelector('[data-id="profile-session-tab-this"]'),
+    ).toBeNull()
+    expect(
+      tabs[3]!.querySelector('[data-id="profile-session-tab-this"]'),
+    ).toBeNull()
   })
 })
