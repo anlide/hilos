@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
 import { fitsInScrollport } from './geometry.js'
@@ -1584,8 +1585,7 @@ export async function expectDaemonSectionAccessibility(
       .locator('..')
       .getByRole('paragraph'),
   ).toHaveText('All placed')
-  await search.fill('')
-  await search.pressSequentially(DAEMON_PLACEMENT_TYPE, { delay: 10 })
+  await typeInto(search, DAEMON_PLACEMENT_TYPE)
   await expect(
     table.locator(
       'tbody > tr[data-id^="hilos-table-row-"]:not([data-id^="hilos-table-row-detail-"])',
@@ -1632,8 +1632,7 @@ export async function searchDaemonPlacement(
     .allTextContents()
   const search = page.getByTestId('hilos-table-search')
   const searched = await windows.mark()
-  await search.fill('')
-  await search.pressSequentially(ids[0]!, { delay: 10 })
+  await typeInto(search, ids[0]!)
   await windows.renderedSettled(expect, searched, { search: ids[0]! }, [
     DAEMON_PLACEMENT_TYPE,
   ])

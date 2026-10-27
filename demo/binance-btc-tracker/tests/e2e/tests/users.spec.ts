@@ -622,8 +622,7 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   // then proves search reached the whole seeded fixture across pages. The exact-count
   // assertion was dropped by owner decision (HIL-327, 2026-08-02) as it raced 24/25.
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially('seed-', { delay: 10 })
+  await typeInto(search, 'seed-')
   await expect(count).toHaveText(countOf(1, 10))
   await expect
     .poll(async () => totalOf(await count.textContent()), {

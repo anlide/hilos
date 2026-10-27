@@ -28,6 +28,7 @@ import {
   markDocument,
   PAGE_READY,
   grantAdminToSelf,
+  typeInto,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_LEADER,
@@ -201,8 +202,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
               await expectDaemonWorkerAgent(reports, nodePage, RESTART_AGENT)
             } else if (child === 'agents') {
               const search = nodePage.getByTestId('hilos-table-search')
-              await search.fill('')
-              await search.pressSequentially(RESTART_AGENT, { delay: 10 })
+              await typeInto(search, RESTART_AGENT)
               const row = shownByTestId(
                 nodePage,
                 `hilos-table-row-${RESTART_AGENT}`,
@@ -301,16 +301,14 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
               await attention.press('Space')
               await expect(attention).not.toBeChecked()
               const search = nodePage.getByTestId('hilos-table-search')
-              await search.fill('')
-              await search.pressSequentially(remote.envKey, { delay: 10 })
+              await typeInto(search, remote.envKey)
               const value = shownByTestId(
                 nodePage,
                 `hilos-table-row-${remote.envKey}`,
               )
               await expect(value).toContainText(remote.envValue)
               await expect(value).toContainText('Launch environment')
-              await search.fill('')
-              await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+              await typeInto(search, 'DB_PASSWORD')
               await expect(
                 shownByTestId(nodePage, 'hilos-table-row-DB_PASSWORD'),
               ).toContainText(/Set · \d+ chars/)

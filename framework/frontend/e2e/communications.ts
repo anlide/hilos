@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Page } from '@playwright/test'
 import {
   channelSummarySchema,
@@ -238,8 +239,7 @@ export async function saveCommunicationsField(
   await shownByTestId(page, `hilos-channel-field-edit-${field}`).click()
   const input = page.getByTestId('hilos-channel-edit-value')
   await expect(input).toBeVisible()
-  await input.fill('')
-  await input.pressSequentially(value, { delay: 10 })
+  await typeInto(input, value)
   const save = page.getByTestId('hilos-channel-edit-save')
   await save.scrollIntoViewIfNeeded()
   await expect(save).toBeVisible()

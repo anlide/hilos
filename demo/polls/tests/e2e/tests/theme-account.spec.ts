@@ -21,6 +21,7 @@ import {
   gotoPage,
   PAGE_READY,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('registration keeps the guest pick and independent sessions deliver choices in both directions', async ({
@@ -302,8 +303,7 @@ test('both account controls reset independent sessions and follow later site def
     await signUpAdmin(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
+    await typeInto(search, THEME_DEFAULT_KEY)
     await expect(
       admin.getByTestId(`hilos-table-row-${THEME_DEFAULT_KEY}`),
     ).toBeVisible()

@@ -33,6 +33,7 @@ import {
   markDocument,
   grantAdminToSelf,
   sessionToken,
+  typeInto,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_FOLLOWER,
@@ -85,8 +86,7 @@ async function expectInsideMainPage(page: Page): Promise<void> {
  */
 async function presentCode(page: Page, code: string): Promise<void> {
   const field = page.getByTestId('maintenance-pass')
-  await field.fill('')
-  await field.pressSequentially(code, { delay: 10 })
+  await typeInto(field, code)
   const submit = page.getByTestId('maintenance-pass-submit')
   await submit.scrollIntoViewIfNeeded()
   await expect(submit).toBeVisible()

@@ -36,6 +36,7 @@ import {
   markDocument,
   grantAdminToSelf,
   sessionToken,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
@@ -1457,8 +1458,7 @@ test.describe('the maintenance section in the admin view mode', () => {
       await add.click()
       const field = guest.getByTestId('hilos-maintenance-circle-add-field')
       await expect(field).toBeEnabled()
-      await field.fill('')
-      await field.pressSequentially('someone@example.test', { delay: 10 })
+      await typeInto(field, 'someone@example.test')
       const confirm = guest.getByTestId('hilos-maintenance-circle-add-confirm')
       await expect(confirm).toBeDisabled()
       await expect(confirm).toHaveAttribute(

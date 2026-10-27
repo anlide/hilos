@@ -16,6 +16,7 @@ import {
   PAGE_READY,
   PAGE_REFUSED,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
@@ -457,12 +458,10 @@ for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
     const document = await watchClientDocument(page)
     try {
       const search = shownByTestId(page, 'hilos-table-search')
-      await search.fill('')
-      await search.pressSequentially('Explicit text only', { delay: 10 })
+      await typeInto(search, 'Explicit text only')
       await expectModerationOwnRules(expect, page, [declared.ownRules[1]])
 
-      await search.fill('')
-      await search.pressSequentially('no_such_own_rule', { delay: 10 })
+      await typeInto(search, 'no_such_own_rule')
       const empty = shownByTestId(page, 'hilos-table-no-matches')
       await expect(empty).toContainText('Nothing found')
       await expect(
@@ -624,8 +623,7 @@ test('filters moderation kinds by search query and shows empty state when no row
   const search = shownByTestId(page, 'hilos-table-search')
 
   // Search filtering by kind prefix.
-  await search.fill('')
-  await search.pressSequentially('profile', { delay: 10 })
+  await typeInto(search, 'profile')
   await expect(
     shownByTestId(page, 'hilos-moderation-row-hilos_profile_name'),
   ).toBeVisible()
@@ -640,8 +638,7 @@ test('filters moderation kinds by search query and shows empty state when no row
   ).toHaveCount(0)
 
   // Non-matching search displays empty state.
-  await search.fill('')
-  await search.pressSequentially('nonexistent_kind', { delay: 10 })
+  await typeInto(search, 'nonexistent_kind')
   await expect(
     shownByTestId(page, 'hilos-moderation-row-hilos_profile_name'),
   ).toHaveCount(0)
@@ -745,8 +742,7 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
     await expect(banner).toBeVisible()
     await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
     const search = shownByTestId(page, 'hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially('impersonation', { delay: 10 })
+    await typeInto(search, 'impersonation')
     await expectModerationOwnRules(expect, page, [
       DECLARED_KINDS[0].ownRules[0],
       DECLARED_KINDS[0].ownRules[2],

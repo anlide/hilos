@@ -7,6 +7,7 @@ import {
   gotoPage,
   PAGE_READY,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -101,22 +102,19 @@ test('a viewer sees open framework settings while a project key stays hidden', a
   await setAdminViewMode(true)
   await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially('legal.consent_form', { delay: 10 })
+  await typeInto(search, 'legal.consent_form')
   const openRow = shownByTestId(page, 'hilos-table-row-legal.consent_form')
   await expect(openRow).toBeVisible()
   await expect(openRow.getByTestId('setting-value')).toContainText('checkbox')
   await expect(openRow.getByTestId('hilos-hidden')).toHaveCount(0)
 
-  await search.fill('')
-  await search.pressSequentially('default_bot_provider', { delay: 10 })
+  await typeInto(search, 'default_bot_provider')
   const closedRow = shownByTestId(page, 'hilos-table-row-default_bot_provider')
   await expect(closedRow).toBeVisible()
   await expect(closedRow.getByTestId('hilos-hidden').first()).toHaveText(
     'Hidden',
   )
-  await search.fill('')
-  await search.pressSequentially('local', { delay: 10 })
+  await typeInto(search, 'local')
   await expect(closedRow).toHaveCount(0)
 
   await gotoPage(expect, page, '/hilos/legal/settings', PAGE_READY)
@@ -132,14 +130,12 @@ test('a viewer sees open framework settings while a project key stays hidden', a
   )
   await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const adminSearch = page.getByTestId('hilos-table-search')
-  await adminSearch.fill('')
-  await adminSearch.pressSequentially('default_bot_provider', { delay: 10 })
+  await typeInto(adminSearch, 'default_bot_provider')
   const adminRow = shownByTestId(page, 'hilos-table-row-default_bot_provider')
   await expect(adminRow).toBeVisible()
   await expect(adminRow.getByTestId('setting-value')).toContainText('local')
   await expect(adminRow.getByTestId('hilos-hidden')).toHaveCount(0)
-  await adminSearch.fill('')
-  await adminSearch.pressSequentially('legal.consent_form', { delay: 10 })
+  await typeInto(adminSearch, 'legal.consent_form')
   await expect(
     shownByTestId(page, 'hilos-table-row-legal.consent_form').getByTestId(
       'setting-value',

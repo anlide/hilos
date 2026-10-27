@@ -70,6 +70,7 @@ import {
   RESTART_AGENT,
   readRestartWorker,
   withStoppedRestartWorker,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // The live standalone Daemon section: navigation, placement, node reports,
@@ -440,8 +441,7 @@ test.describe('daemon overview', () => {
 
         const search = page.getByTestId('hilos-table-search')
         const searched = await windows.mark()
-        await search.fill('')
-        await search.pressSequentially(ids[0], { delay: 10 })
+        await typeInto(search, ids[0])
         await windows.settled(expect, searched, ids[0], [DAEMON_PLACEMENT_TYPE])
         proof.push(await pressed.fresh(expect))
         await expect(table.locator(ROWS)).toHaveCount(1)
@@ -502,10 +502,7 @@ test.describe('daemon overview', () => {
         await expect(selection).toBeVisible()
 
         const missing = await windows.mark()
-        await search.fill('')
-        await search.pressSequentially('no-such-placement-instance', {
-          delay: 10,
-        })
+        await typeInto(search, 'no-such-placement-instance')
         await windows.settled(expect, missing, 'no-such-placement-instance', [])
         await expect(
           shownByTestId(page, 'hilos-table-no-matches'),
@@ -788,8 +785,7 @@ test.describe('Cron search and ordering', () => {
           const mark = await windows.mark()
           const control = shownByTestId(page, step.control)
           if (step.control === 'hilos-table-search') {
-            await control.fill('')
-            await control.pressSequentially(step.search, { delay: 10 })
+            await typeInto(control, step.search)
           } else {
             await control.focus()
             await expect(control).toBeFocused()
@@ -1360,8 +1356,7 @@ test.describe('daemon node pages', () => {
       const search = page.getByTestId('hilos-table-search')
       await expect(search).toHaveAccessibleName('Search by agent id…')
       const mark = await windows.mark()
-      await search.fill('')
-      await search.pressSequentially(RESTART_AGENT, { delay: 10 })
+      await typeInto(search, RESTART_AGENT)
       try {
         await windows.settled(expect, mark, RESTART_AGENT, [RESTART_AGENT])
       } finally {
@@ -1651,8 +1646,7 @@ test.describe('daemon environment', () => {
     const searchFor = async (key: string): Promise<void> => {
       const mark = await windows.mark()
       try {
-        await search.fill('')
-        await search.pressSequentially(key, { delay: 10 })
+        await typeInto(search, key)
         await windows.settled(expect, mark, key, [key])
       } finally {
         await test.info().attach(`environment-search-${key}`, {
@@ -1805,8 +1799,7 @@ test.describe('daemon environment', () => {
         await expectStandaloneEnvironment(expect, page)
         const search = page.getByTestId('hilos-table-search')
         for (const key of ['DB_HOST', 'DB_PASSWORD']) {
-          await search.fill('')
-          await search.pressSequentially(key, { delay: 10 })
+          await typeInto(search, key)
           const row = shownByTestId(page, `hilos-table-row-${key}`)
           await expect(row).toBeVisible()
           await expect(row.getByTestId('hilos-hidden')).toBeVisible()
@@ -1817,8 +1810,7 @@ test.describe('daemon environment', () => {
         }
         await expect(page.locator('body')).not.toContainText('hilos_pass')
         await expect(page.getByTestId('page-error')).toHaveCount(0)
-        await search.fill('')
-        await search.pressSequentially(DATABASE_HOST, { delay: 10 })
+        await typeInto(search, DATABASE_HOST)
         await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
         await expect(shownByTestId(page, /^hilos-table-row-/)).toHaveCount(0)
       }

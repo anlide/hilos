@@ -25,6 +25,7 @@ import {
   gotoPage,
   PAGE_READY,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
@@ -32,8 +33,7 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 async function restoreSetting(page: Page, key: string): Promise<void> {
   await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially(key, { delay: 10 })
+  await typeInto(search, key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
   await clearCustomSetting(page, key)
 }

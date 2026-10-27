@@ -58,6 +58,7 @@ import {
   RESTART_AGENT,
   readRestartWorker,
   withStoppedRestartWorker,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // The live standalone Daemon section: navigation, placement, node reports,
@@ -230,8 +231,7 @@ test.describe('daemon overview', () => {
       ).toContainText(ids[0])
 
       const search = page.getByTestId('hilos-table-search')
-      await search.fill('')
-      await search.pressSequentially(ids[0], { delay: 10 })
+      await typeInto(search, ids[0])
       await expect(table.locator(ROWS)).toHaveCount(1)
       await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
       await expect(selection).toHaveCount(0)
@@ -258,10 +258,7 @@ test.describe('daemon overview', () => {
       await cell.click()
       await expect(selection).toBeVisible()
 
-      await search.fill('')
-      await search.pressSequentially('no-such-placement-instance', {
-        delay: 10,
-      })
+      await typeInto(search, 'no-such-placement-instance')
       await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
       await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
       await expect(selection).toHaveCount(0)
@@ -630,8 +627,7 @@ test.describe('daemon node pages', () => {
         await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
         const search = page.getByTestId('hilos-table-search')
         await expect(search).toHaveAccessibleName('Search by agent id…')
-        await search.fill('')
-        await search.pressSequentially(RESTART_AGENT, { delay: 10 })
+        await typeInto(search, RESTART_AGENT)
         const row = shownByTestId(page, `hilos-table-row-${RESTART_AGENT}`)
         await expect(row).toBeVisible()
         await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
@@ -860,8 +856,7 @@ test.describe('daemon environment', () => {
     ).toBeVisible()
     const search = page.getByTestId('hilos-table-search')
     await expect(search).toHaveAccessibleName('Key or value')
-    await search.fill('')
-    await search.pressSequentially('APP_ENV', { delay: 10 })
+    await typeInto(search, 'APP_ENV')
     const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
     await expect(app).toContainText('test')
     await expect(app).toContainText('Launch environment')
@@ -881,8 +876,7 @@ test.describe('daemon environment', () => {
     await attention.press('Space')
     await expect(attention).not.toBeChecked()
     await expect(app).toContainText('test')
-    await search.fill('')
-    await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+    await typeInto(search, 'DB_PASSWORD')
     const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
     await expect(secret).toContainText(/Set · \d+ chars/)
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
@@ -967,8 +961,7 @@ test.describe('daemon environment', () => {
         await expectStandaloneEnvironment(expect, page)
         const search = page.getByTestId('hilos-table-search')
         for (const key of ['DB_HOST', 'DB_PASSWORD']) {
-          await search.fill('')
-          await search.pressSequentially(key, { delay: 10 })
+          await typeInto(search, key)
           const row = shownByTestId(page, `hilos-table-row-${key}`)
           await expect(row).toBeVisible()
           await expect(row.getByTestId('hilos-hidden')).toBeVisible()
@@ -979,8 +972,7 @@ test.describe('daemon environment', () => {
         }
         await expect(page.locator('body')).not.toContainText('hilos_pass')
         await expect(page.getByTestId('page-error')).toHaveCount(0)
-        await search.fill('')
-        await search.pressSequentially(DATABASE_HOST, { delay: 10 })
+        await typeInto(search, DATABASE_HOST)
         await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
         await expect(shownByTestId(page, /^hilos-table-row-/)).toHaveCount(0)
       }

@@ -19,6 +19,7 @@ import {
   PAGE_READY,
   PAGE_REFUSED,
   grantAdminToSelf,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 
@@ -1065,11 +1066,9 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
   const confirm = page.getByTestId('hilos-backup-restore-confirm')
   const input = page.getByTestId('hilos-backup-restore-id')
   await expect(confirm).toBeDisabled()
-  await input.fill('')
-  await input.pressSequentially('not-the-id')
+  await typeInto(input, 'not-the-id')
   await expect(confirm).toBeDisabled()
-  await input.fill('')
-  await input.pressSequentially(backupId)
+  await typeInto(input, backupId)
   await expect(confirm).toBeEnabled()
 
   // Cancel rather than confirm — see the note at the top of this test.

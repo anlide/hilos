@@ -16,6 +16,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUp } from '../helpers/session.js'
 
@@ -143,8 +144,7 @@ test('real account choices fan out to independent sessions, preserve picker sear
     await openProfileTimeZone(expect, second)
     await expectProfileTimeZoneSearch(expect, second)
     const search = second.getByTestId('profile-time-zone-search')
-    await search.fill('')
-    await search.pressSequentially('new york', { delay: 10 })
+    await typeInto(search, 'new york')
     await expect(search).toHaveValue('new york')
     const document = await watchClientDocument(second)
     try {

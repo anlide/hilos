@@ -38,6 +38,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   sessionToken,
+  typeInto,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
@@ -292,8 +293,7 @@ async function withThemeProof(
         try {
           await gotoPage(expect, admin.page, '/hilos/settings', PAGE_READY)
           const search = admin.page.getByTestId('hilos-table-search')
-          await search.fill('')
-          await search.pressSequentially(key, { delay: 10 })
+          await typeInto(search, key)
           await expect(
             admin.page.getByTestId(`hilos-table-row-${key}`),
           ).toBeVisible()

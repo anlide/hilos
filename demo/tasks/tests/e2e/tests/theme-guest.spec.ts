@@ -13,6 +13,7 @@ import {
   gotoPage,
   PAGE_READY,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('guest choices synchronize both ways and survive reload and a new tab', async ({
@@ -131,8 +132,7 @@ test('guest reset clears both tabs and follows later site defaults across reload
     await signUpAdmin(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
+    await typeInto(search, THEME_DEFAULT_KEY)
     await expect(
       admin.getByTestId(`hilos-table-row-${THEME_DEFAULT_KEY}`),
     ).toBeVisible()

@@ -34,6 +34,7 @@ import {
   type TableTextPolicy,
   type TableEnvironment,
   type TableGeometryWatch,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Real Chromium layout of the public Vue renderer and shipped SDK Sass.
@@ -85,8 +86,7 @@ async function setTableEnvironment(
 
 async function setNumber(page: Page, id: string, value: number): Promise<void> {
   const input = page.getByTestId(id)
-  await input.fill('')
-  await input.pressSequentially(String(value), { delay: 10 })
+  await typeInto(input, String(value))
 }
 
 async function retired(

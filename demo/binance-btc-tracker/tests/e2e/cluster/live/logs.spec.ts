@@ -13,6 +13,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   tableRowKeys,
+  typeInto,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_MASTERS,
@@ -122,8 +123,7 @@ test.afterEach(async () => {
  */
 async function isolate(tab: Page, key: string): Promise<void> {
   const search = shownByTestId(tab, 'hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially(key, { delay: 10 })
+  await typeInto(search, key)
   await expect(shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)).toBeVisible()
 }
 

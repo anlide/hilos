@@ -26,6 +26,7 @@ import {
   gotoPage,
   PAGE_READY,
   signUpAdmin,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUp } from '../helpers/session.js'
 
@@ -137,8 +138,7 @@ test('independent account sessions synchronize profile and header choices and ke
     await signUpAdmin(expect, admin, { entryId: 'message-signin' })
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
+    await typeInto(search, THEME_DEFAULT_KEY)
     await expect(
       admin.getByTestId(`hilos-table-row-${THEME_DEFAULT_KEY}`),
     ).toBeVisible()
@@ -595,8 +595,7 @@ test('registration keeps the guest pick and switching Off closes the open profil
     await signUpAdmin(expect, admin, { entryId: 'message-signin' })
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially(THEME_SWITCHING_KEY, { delay: 10 })
+    await typeInto(search, THEME_SWITCHING_KEY)
     await expect(
       admin.getByTestId(`hilos-table-row-${THEME_SWITCHING_KEY}`),
     ).toBeVisible()

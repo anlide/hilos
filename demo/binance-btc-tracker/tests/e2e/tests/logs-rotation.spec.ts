@@ -17,6 +17,7 @@ import {
   gotoPage,
   PAGE_READY,
   grantAdminToSelf,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { appendLogLines, logMarker } from '../helpers/logs.js'
 
@@ -119,8 +120,7 @@ test.beforeEach(async ({ page }) => {
  */
 async function isolate(tab: Page, key: string): Promise<void> {
   const search = tab.getByTestId('hilos-table-search')
-  await search.fill('')
-  await search.pressSequentially(key, { delay: 10 })
+  await typeInto(search, key)
   await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toBeVisible()
 }
 
@@ -129,7 +129,7 @@ async function isolate(tab: Page, key: string): Promise<void> {
  *
  * The value is typed rather than filled: a Vue input bound with `v-model` can miss
  * a value that arrives in one assignment, and the project's cure is `fill('')`
- * plus `pressSequentially`.
+ * plus `typeInto`.
  *
  * @param tab The settings tab.
  * @param key Catalog key to write.
@@ -299,8 +299,7 @@ test(
     // successful settings writes themselves never print into the library's log.
     await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
     const search = page.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially(agent, { delay: 10 })
+    await typeInto(search, agent)
     const restart = shownByTestId(page, `hilos-daemon-agent-restart-${agent}`)
     await restart.scrollIntoViewIfNeeded()
     await expect(restart).toBeVisible()
@@ -347,8 +346,7 @@ test(
     await resetSetting(settings, ROTATION_MAX_AGE)
 
     await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
-    await search.fill('')
-    await search.pressSequentially(agent, { delay: 10 })
+    await typeInto(search, agent)
     const log = shownByTestId(page, `hilos-daemon-agent-log-${agent}`)
     await expect(log).toHaveAttribute('href', livePath)
     await log.click()

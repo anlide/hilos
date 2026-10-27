@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import {
@@ -90,8 +91,7 @@ export async function draftCommunicationsFrame(
 ): Promise<void> {
   const html = page.getByTestId('hilos-channel-frame-html')
   await expect(html).toBeVisible()
-  await html.fill('')
-  await html.pressSequentially(value, { delay: 10 })
+  await typeInto(html, value)
   await html.press('Tab')
   await expect(html).toHaveValue(value)
 }

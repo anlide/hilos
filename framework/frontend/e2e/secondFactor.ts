@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Page } from '@playwright/test'
 
 import { nextTotpCode, totpStep } from '../scripts/totp.mjs'
@@ -40,8 +41,7 @@ export async function connectFirstApp(
 
   const passwordField = page.getByTestId('step-up-password')
   await passwordField.waitFor({ state: 'visible' })
-  await passwordField.fill('')
-  await passwordField.pressSequentially(password, { delay: 10 })
+  await typeInto(passwordField, password)
 
   const enrollSubmit = page.getByTestId('profile-2fa-enroll-submit')
   await enrollSubmit.scrollIntoViewIfNeeded()
@@ -54,8 +54,7 @@ export async function connectFirstApp(
 
   const labelField = page.getByTestId('profile-2fa-enroll-label')
   await labelField.waitFor({ state: 'visible' })
-  await labelField.fill('')
-  await labelField.pressSequentially('Work phone', { delay: 10 })
+  await typeInto(labelField, 'Work phone')
 
   await enrollSubmit.scrollIntoViewIfNeeded()
   await enrollSubmit.waitFor({ state: 'visible' })
@@ -75,8 +74,7 @@ export async function connectFirstApp(
   const { code, step } = await nextTotpCode(secret, totpStep() - 1)
   const codeField = page.getByTestId('profile-2fa-enroll-code')
   await codeField.waitFor({ state: 'visible' })
-  await codeField.fill('')
-  await codeField.pressSequentially(code, { delay: 10 })
+  await typeInto(codeField, code)
 
   await enrollSubmit.scrollIntoViewIfNeeded()
   await enrollSubmit.waitFor({ state: 'visible' })

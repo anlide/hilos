@@ -18,6 +18,7 @@ import {
   watchTableModalFocus,
   watchTableNativeLifecycle,
   type TableGeometryWatch,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // spec-owner: demo — Angular AOT fixture consuming the installed SDK and Sass.
@@ -42,8 +43,7 @@ async function press(page: Page, id: string): Promise<void> {
 
 async function number(page: Page, value: number): Promise<void> {
   const input = page.getByTestId('geometry-position')
-  await input.fill('')
-  await input.pressSequentially(String(value), { delay: 10 })
+  await typeInto(input, String(value))
 }
 
 async function retired(page: Page, key: string, reason = 'Removed') {

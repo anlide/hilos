@@ -12,6 +12,7 @@ import {
   shownByTestId,
   gotoPage,
   grantAdminToSelf,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Naming a verifier in Maintenance: the server decides, the row arrives over the
@@ -72,8 +73,7 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   const confirm = dialog.getByTestId('hilos-maintenance-circle-add-confirm')
   const refusal = dialog.getByTestId('hilos-action-error')
   await expect(field).toBeVisible()
-  await field.fill('')
-  await field.pressSequentially(unproven, { delay: 10 })
+  await typeInto(field, unproven)
   await confirm.scrollIntoViewIfNeeded()
   await expect(confirm).toBeVisible()
   await expect(confirm).toBeEnabled()
@@ -98,8 +98,7 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   // The member's address a second time: refused the same two ways. The first card is
   // left standing - under an open dialog the stack takes no clicks - so the second one
   // is told apart by what it says.
-  await field.fill('')
-  await field.pressSequentially(memberEmail, { delay: 10 })
+  await typeInto(field, memberEmail)
   await confirm.scrollIntoViewIfNeeded()
   await expect(confirm).toBeVisible()
   await expect(confirm).toBeEnabled()

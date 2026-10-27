@@ -25,6 +25,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   armViewerSubmit,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
@@ -111,11 +112,9 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     ).toHaveText('Operational')
     await expect(page.getByTestId(/^hilos-table-sort-/)).toHaveCount(0)
     const search = page.getByTestId('hilos-table-search')
-    await search.fill('')
-    await search.pressSequentially('no-status-component', { delay: 10 })
+    await typeInto(search, 'no-status-component')
     await expect(component).toHaveCount(0)
-    await search.fill('')
-    await search.pressSequentially('hilos_settings_library', { delay: 10 })
+    await typeInto(search, 'hilos_settings_library')
     await expect(component).toBeVisible()
     await search.fill('')
     await expect(component).toBeVisible()
@@ -308,8 +307,7 @@ test(
         await dismissToasts(page)
         await page.getByTestId(`hilos-status-add-update-${incidentId}`).click()
         const field = page.getByTestId('hilos-status-update-text')
-        await field.fill('')
-        await field.pressSequentially(text, { delay: 10 })
+        await typeInto(field, text)
         await submitStatusIncident(
           expect,
           page,
@@ -562,8 +560,7 @@ test('published public facts survive lost sockets, real file polling, recovery a
         .getByTestId(`hilos-status-add-update-${incident.incidentId}`)
         .click()
       const field = page.getByTestId('hilos-status-update-text')
-      await field.fill('')
-      await field.pressSequentially(text, { delay: 10 })
+      await typeInto(field, text)
       await submitStatusIncident(
         expect,
         page,

@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { shownByTestId } from './table.js'
@@ -153,8 +154,7 @@ export async function addToMaintenanceCircle(
 
   const field = page.getByTestId('hilos-maintenance-circle-add-field')
   await field.waitFor({ state: 'visible' })
-  await field.fill('')
-  await field.pressSequentially(identifier, { delay: 10 })
+  await typeInto(field, identifier)
 
   const submit = page.getByTestId('hilos-maintenance-circle-add-confirm')
   await submit.scrollIntoViewIfNeeded()
@@ -330,8 +330,7 @@ export async function presentMaintenanceCode(
 ): Promise<void> {
   const field = page.getByTestId('maintenance-pass')
   await field.waitFor({ state: 'visible' })
-  await field.fill('')
-  await field.pressSequentially(code, { delay: 10 })
+  await typeInto(field, code)
   await press(page.getByTestId('maintenance-pass-submit'))
 }
 

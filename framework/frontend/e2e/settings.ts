@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { shownByTestId } from './table.js'
@@ -119,8 +120,7 @@ export async function draftCustomSetting(
       await valueControl.uncheck()
     }
   } else {
-    await valueControl.fill('')
-    await valueControl.pressSequentially(value, { delay: 10 })
+    await typeInto(valueControl, value)
   }
 
   return valueControl

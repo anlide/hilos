@@ -1,3 +1,4 @@
+import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject } from './deliveryFrames.js'
@@ -121,8 +122,7 @@ export async function expectProfileTimeZoneSearch(
 ): Promise<void> {
   const modal = page.getByTestId('profile-time-zone-modal')
   const search = page.getByTestId('profile-time-zone-search')
-  await search.fill('')
-  await search.pressSequentially('new york', { delay: 10 })
+  await typeInto(search, 'new york')
   await expect(search).toHaveValue('new york')
   await expect(
     page.getByTestId('profile-time-zone-option-America/New_York'),
@@ -131,8 +131,7 @@ export async function expectProfileTimeZoneSearch(
   await expect(page.getByTestId('profile-time-zone-automatic')).toBeHidden()
   await expect(modal.getByText('All time zones', { exact: true })).toBeHidden()
   await expect(modal.getByText('Found', { exact: true })).toBeVisible()
-  await search.fill('')
-  await search.pressSequentially('no-such-time-zone', { delay: 10 })
+  await typeInto(search, 'no-such-time-zone')
   await expect(page.getByTestId('profile-time-zone-empty')).toHaveText(
     'No time zones match',
   )

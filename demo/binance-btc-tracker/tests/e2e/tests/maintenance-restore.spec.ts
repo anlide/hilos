@@ -13,6 +13,7 @@ import {
   gotoPage,
   markDocument,
   grantAdminToSelf,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   inspectProtectedMode,
@@ -315,8 +316,7 @@ async function replayBackup(page: Page, backupId: string): Promise<void> {
   await press(shownByTestId(page, `hilos-backup-restore-${backupId}`))
   const input = page.getByTestId('hilos-backup-restore-id')
   await expect(input).toBeVisible()
-  await input.fill('')
-  await input.pressSequentially(backupId, { delay: 10 })
+  await typeInto(input, backupId)
   await press(page.getByTestId('hilos-backup-restore-confirm'))
   await expect(page.getByTestId('hilos-backup-restore-confirm')).toHaveCount(0)
 
