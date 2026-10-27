@@ -5,21 +5,22 @@ import {
   watchLeft,
   watchTop,
   i18nLocaleRow,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
 
 test('switches on a known locale with a still window', async ({ page }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
   const australianRow = i18nLocaleRow(page, 'en-AU')
   const add = australianRow.getByTestId('i18n-locales-add-en-AU')
-  await clickSubmit(add)
+  await clickSubmit(expect, add)
 
   const submit = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
   await expect(
     page
@@ -28,7 +29,7 @@ test('switches on a known locale with a still window', async ({ page }) => {
   ).toBeVisible()
 
   const edit = australianRow.getByTestId('i18n-locales-edit-en-AU')
-  await clickSubmit(edit)
+  await clickSubmit(expect, edit)
 
   const confirm = page.getByTestId('i18n-locale-switch-on-confirm')
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -56,7 +57,7 @@ test('switches on a known locale with a still window', async ({ page }) => {
   await expect(submit).toBeEnabled()
 
   const switchOn = page.getByTestId('i18n-locale-switch-on')
-  await clickSubmit(switchOn)
+  await clickSubmit(expect, switchOn)
   await expect(page.getByTestId('i18n-locale-title')).toHaveText(
     'Switch on locale · English in Australia',
   )
@@ -66,14 +67,14 @@ test('switches on a known locale with a still window', async ({ page }) => {
   for (const bookmark of geometry) await bookmark.unchanged()
 
   const back = page.getByTestId('i18n-locale-switch-on-back')
-  await clickSubmit(back)
+  await clickSubmit(expect, back)
   await expect(date).toBeVisible()
   await expect(date).toHaveValue('YYYY-MM-DD')
   for (const bookmark of geometry) await bookmark.unchanged()
 
   await date.selectOption(savedDate)
   await expect(submit).toBeDisabled()
-  await clickSubmit(switchOn)
+  await clickSubmit(expect, switchOn)
   await expect(page.getByTestId('i18n-locale-title')).toHaveText(
     'Switch on locale · English in Australia',
   )
@@ -81,15 +82,15 @@ test('switches on a known locale with a still window', async ({ page }) => {
   await expect(page.getByTestId('i18n-locale-switch-on-unsaved')).toHaveCount(0)
   for (const bookmark of geometry) await bookmark.unchanged()
 
-  await clickSubmit(back)
+  await clickSubmit(expect, back)
   await expect(date).toBeVisible()
   await expect(submit).toBeDisabled()
   for (const bookmark of geometry) await bookmark.unchanged()
 
-  await clickSubmit(switchOn)
+  await clickSubmit(expect, switchOn)
   await expect(confirm).toBeEnabled()
 
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
   await expect(
     page

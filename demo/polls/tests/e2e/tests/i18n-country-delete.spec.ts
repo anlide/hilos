@@ -8,19 +8,21 @@ import {
   shownByTestId,
   watchI18nLivePages,
   watchPageErrorFrames,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
 
 /** What an edit window says once its row went under it. */
 const DELETED_NOTICE = 'Deleted elsewhere — your text stays to copy.'
 
 /** Create this spec's isolated custom country through both add steps. */
 async function addCountry(page: Page, countryCode: string): Promise<void> {
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
   const open = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(open)
+  await clickSubmit(expect, open)
   for (const [field, value] of [
     ['code', countryCode],
     ['currency-symbol', '¤'],
@@ -35,9 +37,9 @@ async function addCountry(page: Page, countryCode: string): Promise<void> {
     'own',
   )
   const submit = page.getByTestId('i18n-country-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   const confirm = page.getByTestId('i18n-country-confirm-submit')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     `Custom country ${countryCode} added and switched off for now.`,
@@ -48,9 +50,9 @@ async function addCountry(page: Page, countryCode: string): Promise<void> {
 /** Delete the country from its own card's State, where the page stands. */
 async function deleteFromCard(page: Page, countryCode: string): Promise<void> {
   const open = page.getByTestId('country-card-delete')
-  await clickSubmit(open)
+  await clickSubmit(expect, open)
   const confirm = page.getByTestId('i18n-country-delete-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
@@ -70,9 +72,9 @@ async function discardDraft(
   windowId: string,
   cancelId: string,
 ): Promise<void> {
-  await clickSubmit(page.getByTestId(cancelId))
+  await clickSubmit(expect, page.getByTestId(cancelId))
   const discard = page.getByTestId('modal-confirm-discard')
-  await clickSubmit(discard)
+  await clickSubmit(expect, discard)
   await expect(discard).toHaveCount(0)
   await expect(page.getByTestId(windowId)).toHaveCount(0)
 }
@@ -81,7 +83,7 @@ test('deletes a custom country from the list and updates a second subscribed car
   page,
   context,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await addCountry(page, 'qx')
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
@@ -92,9 +94,9 @@ test('deletes a custom country from the list and updates a second subscribed car
 
   const other = await context.newPage()
   const frames = watchPageErrorFrames(other)
-  await gotoPage(other, '/hilos/i18n/countries/qx', PAGE_READY)
+  await gotoPage(expect, other, '/hilos/i18n/countries/qx', PAGE_READY)
   await expect(other.getByTestId('country-card-code')).toHaveText('qx')
-  await clickSubmit(other.getByTestId('country-card-edit'))
+  await clickSubmit(expect, other.getByTestId('country-card-edit'))
   const symbol = other.getByTestId('i18n-country-edit-currency-symbol')
   await expect(symbol).toBeFocused()
   await typeInto(symbol, 'Q$')
@@ -110,7 +112,7 @@ test('deletes a custom country from the list and updates a second subscribed car
     page.getByTestId('modal').filter({ has: window }).locator('.modal-title'),
   ).toHaveText('Delete country · QX')
   const confirm = page.getByTestId('i18n-country-delete-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Country qx deleted.',
@@ -150,12 +152,12 @@ test('deletes a custom country from State and returns to the list after success'
   page,
   context,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await addCountry(page, 'qy')
-  await gotoPage(page, '/hilos/i18n/countries/qy', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/qy', PAGE_READY)
   const other = await context.newPage()
   const frames = watchPageErrorFrames(other)
-  await gotoPage(other, '/hilos/i18n/countries/qy', PAGE_READY)
+  await gotoPage(expect, other, '/hilos/i18n/countries/qy', PAGE_READY)
   await expect(other.getByTestId('country-card-code')).toHaveText('qy')
   await deleteFromCard(page, 'qy')
   await expectDeletedCountryCard(expect, other, frames, 'qy')
@@ -174,14 +176,14 @@ test('deletes a custom country under a second Names tab and keeps its name draft
   page,
   context,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   // No name and no locale: either would stop the deletion.
   await addCountry(page, 'qn')
-  await gotoPage(page, '/hilos/i18n/countries/qn', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/qn', PAGE_READY)
   const other = await context.newPage()
   const frames = watchPageErrorFrames(other)
-  await gotoPage(other, '/hilos/i18n/countries/qn/names', PAGE_READY)
-  await clickSubmit(shownByTestId(other, 'i18n-country-name-add-en'))
+  await gotoPage(expect, other, '/hilos/i18n/countries/qn/names', PAGE_READY)
+  await clickSubmit(expect, shownByTestId(other, 'i18n-country-name-add-en'))
   const input = other.getByTestId('i18n-country-name-input')
   await expect(input).toBeFocused()
   await typeInto(input, 'Draft name')
@@ -222,13 +224,13 @@ test('deletes a custom country under a second Names tab and keeps its name draft
 test('shows accessible blocked deletion for a custom country with a locale and a known country', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await addCountry(page, 'qz')
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
   // The locales table shows every pair in one window and declares no search.
   await expect(i18nLocaleRow(page, 'en-QZ')).toBeVisible()
   const add = shownByTestId(page, 'i18n-locales-add-en-QZ')
-  await clickSubmit(add)
+  await clickSubmit(expect, add)
   for (const [field, value] of [
     ['date', 'YYYY-MM-DD'],
     ['time', 'HH:mm:ss'],
@@ -241,7 +243,7 @@ test('shows accessible blocked deletion for a custom country with a locale and a
     await page.getByTestId(`i18n-locale-field-${field}`).selectOption(value!)
   }
   const submit = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Locale en-QZ added.',
@@ -255,7 +257,7 @@ test('shows accessible blocked deletion for a custom country with a locale and a
       'Cannot delete: the built-in catalog knows this country and the reflow would bring it back; switch it off instead',
     ],
   ]) {
-    await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
     const countrySearch = page.getByTestId('hilos-table-search')
     await countrySearch.fill('')
     await countrySearch.pressSequentially(code!, { delay: 10 })
@@ -278,7 +280,7 @@ test('shows accessible blocked deletion for a custom country with a locale and a
       'aria-describedby',
       (await description.getAttribute('id'))!,
     )
-    await gotoPage(page, `/hilos/i18n/countries/${code}`, PAGE_READY)
+    await gotoPage(expect, page, `/hilos/i18n/countries/${code}`, PAGE_READY)
     await expect(page.getByTestId('country-card-delete-verdict')).toContainText(
       reason!,
     )

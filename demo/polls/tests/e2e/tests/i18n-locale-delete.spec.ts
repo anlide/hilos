@@ -4,23 +4,24 @@ import {
   expectLanguagePageHead,
   shownByTestId,
   watchHeight,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   deleteLocale,
   switchCountryOff,
   switchLanguageOn,
   switchLocaleOn,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 const APP_NAME = 'Hilos Polls'
 
 /** Add this spec's known pair using its seven catalog-prefilled formats. */
 async function addLocale(page: Page, localeCode: string): Promise<void> {
   const add = shownByTestId(page, `i18n-locales-add-${localeCode}`)
-  await clickSubmit(add)
+  await clickSubmit(expect, add)
   for (const field of [
     'date',
     'time',
@@ -35,7 +36,7 @@ async function addLocale(page: Page, localeCode: string): Promise<void> {
     ).not.toHaveValue('')
   }
   const submit = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
   await expect(
     shownByTestId(page, `i18n-locales-code-${localeCode}`),
@@ -50,13 +51,13 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
   page,
   context,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOn('pt')
   await deleteLocale('pt')
-  await gotoPage(page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
   await addLocale(page, 'pt')
   const other = await context.newPage()
-  await gotoPage(other, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+  await gotoPage(expect, other, '/hilos/i18n/languages/pt/locales', PAGE_READY)
   for (const tab of [page, other]) {
     await expect(shownByTestId(tab, 'i18n-locales-code-pt')).toHaveText('pt')
     await expectLanguagePageHead(expect, tab, {
@@ -92,7 +93,7 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
   await trash.press('Enter')
   await expect(modal).toBeFocused()
   const confirm = page.getByTestId('i18n-locale-delete-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(window).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
     'Locale pt deleted.',
@@ -120,16 +121,16 @@ test('deletes a countryless locale and updates both subscribed pairs without rel
 test('keeps the switched-on refusal inside the locale confirmation', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOn('pt')
   await switchLocaleOn('pt')
-  await gotoPage(page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
   const trash = shownByTestId(page, 'i18n-locales-delete-pt')
-  await clickSubmit(trash)
+  await clickSubmit(expect, trash)
   const window = page.getByTestId('i18n-locale-delete-window')
   const room = await watchHeight(window)
   const confirm = page.getByTestId('i18n-locale-delete-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(page.getByTestId('i18n-locale-delete-error')).toContainText(
     "Locale 'pt' is switched on: switch it off before deleting it.",
   )
@@ -142,8 +143,8 @@ test('keeps the switched-on refusal inside the locale confirmation', async ({
 test('refuses the default locale of a switched-off country and preserves its selection', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
   const noLocale = shownByTestId(page, 'i18n-locales-none-en-IE')
   await expect(
     shownByTestId(page, 'i18n-locales-code-en-IE').or(noLocale),
@@ -155,28 +156,28 @@ test('refuses the default locale of a switched-off country and preserves its sel
     shownByTestId(page, 'i18n-locales-enabled-en-IE'),
   ).not.toBeChecked()
   await switchCountryOff('ie')
-  await gotoPage(page, '/hilos/i18n/countries/ie', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/ie', PAGE_READY)
   const defaultLocale = page.getByTestId('country-card-default-locale')
   await expect(defaultLocale).toBeVisible()
   if ((await defaultLocale.textContent()) !== 'en-IE') {
     const edit = page.getByTestId('country-card-edit')
-    await clickSubmit(edit)
+    await clickSubmit(expect, edit)
     await page
       .getByTestId('i18n-country-edit-default-locale')
       .selectOption({ label: 'en-IE — switched off' })
     const save = page.getByTestId('i18n-country-save')
-    await clickSubmit(save)
+    await clickSubmit(expect, save)
     await expect(page.getByTestId('i18n-country-window')).toHaveCount(0)
   }
   await expect(page.getByTestId('country-card-default-locale')).toHaveText(
     'en-IE',
   )
   await dismissToasts(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
   const trash = shownByTestId(page, 'i18n-locales-delete-en-IE')
-  await clickSubmit(trash)
+  await clickSubmit(expect, trash)
   const confirm = page.getByTestId('i18n-locale-delete-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(page.getByTestId('i18n-locale-delete-error')).toContainText(
     "Locale 'en-IE' is the country's default: choose another locale for the country first.",
   )
@@ -189,9 +190,9 @@ test('refuses the default locale of a switched-off country and preserves its sel
     shownByTestId(page, 'i18n-locales-enabled-en-IE'),
   ).not.toBeChecked()
   const cancel = page.getByTestId('i18n-locale-delete-cancel')
-  await clickSubmit(cancel)
+  await clickSubmit(expect, cancel)
   await expect(page.getByTestId('i18n-locale-delete-window')).toHaveCount(0)
-  await gotoPage(page, '/hilos/i18n/countries/ie', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/ie', PAGE_READY)
   await expect(page.getByTestId('country-card-default-locale')).toHaveText(
     'en-IE',
   )

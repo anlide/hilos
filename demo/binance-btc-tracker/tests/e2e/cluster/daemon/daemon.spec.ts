@@ -22,8 +22,13 @@ import {
   watchSocketFrames,
   createSocketFrameReader,
   type SocketFrame,
+  expectDocumentUnchanged,
+  expectPageReady,
+  gotoPage,
+  markDocument,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_LEADER,
   CLUSTER_MASTERS,
@@ -36,13 +41,6 @@ import {
   markDaemonNodeLogs,
   requestLeaderKill,
 } from '../../helpers/daemonCluster.js'
-import {
-  expectDocumentUnchanged,
-  expectPageReady,
-  gotoPage,
-  markDocument,
-  PAGE_READY,
-} from '../../helpers/page.js'
 
 const LEADER_AGENTS = ['hilos_index', 'hilos_daemon']
 const RESTART_AGENT = 'hilos_log_store'
@@ -98,8 +96,8 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       const leaderOverview = observeRecovery(await first.context().newPage())
       const overview = watchDaemonNodeFrames(leaderOverview.page)
       candidates.push({ nodeId, pages, overview, privacy, privacyMark: 0 })
-      await grantAdminToSelf(first)
-      await gotoPage(first, DAEMON_ROOT_PATH, PAGE_READY)
+      await grantAdminToSelf(expect, first)
+      await gotoPage(expect, first, DAEMON_ROOT_PATH, PAGE_READY)
       await expectClusterOverview(reports, first, initialPicture)
       if (nodeId === followers[0]) {
         const nodePage = await first.context().newPage()
@@ -113,7 +111,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             workerFrames.push(frame)
         })
         try {
-          await gotoPage(nodePage, DAEMON_ROOT_PATH, PAGE_READY)
+          await gotoPage(expect, nodePage, DAEMON_ROOT_PATH, PAGE_READY)
           await expectClusterOverview(reports, nodePage, initialPicture)
           // A new worker in an unordered open window arrives as a count only.
           // Open Workers after this exact agent's occupied worker reaches the
@@ -355,7 +353,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
           )
           await nodePage.getByTestId(DAEMON_ROOT_CRUMB).click()
           await expectClusterOverview(reports, nodePage, initialPicture)
-          await gotoPage(nodePage, `${DAEMON_ROOT_PATH}/unknown-node`)
+          await gotoPage(expect, nodePage, `${DAEMON_ROOT_PATH}/unknown-node`)
           await reports
             .poll(() => refusals.at(-1)?.data)
             .toMatchObject({
@@ -401,17 +399,22 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         leaderOverview,
         observeRecovery(await first.context().newPage()),
       )
-      await gotoPage(placement.page, DAEMON_ROOT_PATH, PAGE_READY)
+      await gotoPage(expect, placement.page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectClusterOverview(reports, placement.page, initialPicture)
       await placement.page
         .getByTestId('hilos-page-tab-hilos_daemon_placement')
         .click()
-      await gotoPage(mismatch, `${DAEMON_ROOT_PATH}/env-mismatch`, PAGE_READY)
+      await gotoPage(
+        expect,
+        mismatch,
+        `${DAEMON_ROOT_PATH}/env-mismatch`,
+        PAGE_READY,
+      )
       await expectClusterEnvironmentMismatch(reports, mismatch, {
         key: remote.envKey,
         remoteNodeId: remote.nodeId,
       })
-      await gotoPage(pages[3].page, '/hilos', PAGE_READY)
+      await gotoPage(expect, pages[3].page, '/hilos', PAGE_READY)
       await expect(
         pages[3].page.getByTestId('dashboard-card-hilos_daemon'),
       ).toBeVisible()
@@ -420,6 +423,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         leaderId: CLUSTER_LEADER,
       })
       await gotoPage(
+        expect,
         leaderOverview.page,
         `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,
         PAGE_READY,
@@ -435,6 +439,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         },
       )
       await gotoPage(
+        expect,
         pages[5].page,
         `${DAEMON_ROOT_PATH}/${remote.nodeId}/workers`,
         PAGE_READY,
@@ -532,9 +537,9 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       dashboard.page.getByTestId('dashboard-card-hilos_daemon'),
     ).toBeVisible()
     for (const [index, observation] of survivor.pages.entries()) {
-      await expectPageReady(observation.page)
+      await expectPageReady(expect, observation.page)
       await expect(observation.page.getByTestId('page-error')).toHaveCount(0)
-      await expectDocumentUnchanged(observation.page)
+      await expectDocumentUnchanged(expect, observation.page)
       await reports
         .poll(() => observation.sinceMark().received.length)
         .toBeGreaterThan(0)

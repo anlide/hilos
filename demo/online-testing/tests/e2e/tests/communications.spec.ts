@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  signUp,
   COMMUNICATIONS_FRAME_PATH,
   communicationsFrameHtml,
   draftCommunicationsFrame,
@@ -18,20 +19,20 @@ import {
   expectCommunicationsFrameEditor,
   expectCommunicationsChannelHead,
   shownByTestId,
+  expectPageReady,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { waitForMailTo } from '../helpers/mail.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 
 test('the communications section configures email, sends a test and records delivery', async ({
   page,
 }) => {
-  const email = await signUp(page)
-  await grantAdminToSelf(page)
+  const email = (await signUp(expect, page)).email
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   const emailToggle = shownByTestId(page, 'hilos-channel-enabled-email')
   await expect(emailToggle).toBeVisible()
@@ -46,7 +47,7 @@ test('the communications section configures email, sends a test and records deli
   await expect(page.getByTestId('hilos-channel-test')).toHaveCount(0)
 
   await page.getByTestId('hilos-page-tab-hilos_communications_channel').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsChannelHead(expect, page, 'overview')
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 
@@ -66,7 +67,7 @@ test('the communications section configures email, sends a test and records deli
   await page
     .getByTestId('hilos-page-tab-hilos_communications_deliveries')
     .click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsChannelHead(expect, page, 'deliveries')
   const deliveryRow = page.getByTestId(/^hilos-table-row-/).first()
   await expect(deliveryRow).toBeVisible()
@@ -76,8 +77,8 @@ test('the communications section configures email, sends a test and records deli
 test('the letter frame editor has a dialog name and keyboard focus', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications/email/frame')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications/email/frame')
   await expectCommunicationsAccessibility(expect, page, 'frame', 'Enabled')
   const preview = page.getByTestId('hilos-channel-frame-preview')
   await expect(preview).toHaveAttribute('title', 'Letter frame preview')
@@ -95,9 +96,9 @@ test('letter frame cold entry, reload and history carry one complete saved previ
 }) => {
   const wire = watchDeliveryFrames(page)
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     let after = wire.packets.length
-    await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+    await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     await expectCommunicationsChannelHead(expect, page, 'frame')
     const original = await expectCommunicationsFrameInitial(
       expect,
@@ -110,7 +111,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
 
     after = wire.packets.length
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectCommunicationsChannelHead(expect, page, 'frame')
     expect(
       await expectCommunicationsFrameInitial(expect, page, wire, after),
@@ -119,18 +120,18 @@ test('letter frame cold entry, reload and history carry one complete saved previ
     await page
       .getByTestId('hilos-page-tab-hilos_communications_channel')
       .click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectCommunicationsChannelHead(expect, page, 'overview')
     after = wire.packets.length
     await page.goBack()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectCommunicationsChannelHead(expect, page, 'frame')
     expect(
       await expectCommunicationsFrameInitial(expect, page, wire, after),
     ).toEqual(original)
 
     // This demo registers email only; the SMS frame address must still be refused.
-    await gotoPage(page, '/hilos/communications/sms/frame')
+    await gotoPage(expect, page, '/hilos/communications/sms/frame')
     await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
       'data-state',
       'error',
@@ -167,8 +168,8 @@ for (const [name, invalid, refusal] of [
   }) => {
     const wire = watchDeliveryFrames(page)
     try {
-      await grantAdminToSelf(page)
-      await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
       const original = await expectCommunicationsFrameInitial(
         expect,
         page,
@@ -200,8 +201,8 @@ test('letter frame saves an override and resets only after confirmation', async 
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     original = await expectCommunicationsFrameInitial(expect, page, wire)
     const html = communicationsFrameHtml('frame-saved')
     await page.getByTestId('hilos-channel-frame-edit').click()
@@ -224,7 +225,7 @@ test('letter frame saves an override and resets only after confirmation', async 
         const cleanup = await page.context().newPage()
         const cleanupWire = watchDeliveryFrames(cleanup)
         try {
-          await gotoPage(cleanup, COMMUNICATIONS_FRAME_PATH)
+          await gotoPage(expect, cleanup, COMMUNICATIONS_FRAME_PATH)
           await restoreCommunicationsFrame(
             expect,
             cleanup,
@@ -247,8 +248,8 @@ test('letter frame dirty Escape and Close keep a named discard layer and return 
 }) => {
   const wire = watchDeliveryFrames(page)
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     const original = await expectCommunicationsFrameInitial(expect, page, wire)
     const edit = page.getByTestId('hilos-channel-frame-edit')
     await edit.focus()
@@ -287,7 +288,7 @@ test.describe('letter frame in admin view mode', () => {
     await setAdminViewMode(true)
     const wire = watchDeliveryFrames(page)
     try {
-      await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+      await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
       await expectCommunicationsChannelHead(expect, page, 'frame')
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       const original = await expectCommunicationsFrameInitial(
@@ -339,11 +340,11 @@ test('another person saves into a pristine frame editor, then resolves atomic co
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    const observerId = await grantAdminToSelf(page)
-    const writerId = await grantAdminToSelf(other)
+    const observerId = await grantAdminToSelf(expect, page)
+    const writerId = await grantAdminToSelf(expect, other)
     expect(writerId).not.toBe(observerId)
-    await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
-    await gotoPage(other, COMMUNICATIONS_FRAME_PATH)
+    await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
+    await gotoPage(expect, other, COMMUNICATIONS_FRAME_PATH)
     original = await expectCommunicationsFrameInitial(expect, other, otherWire)
     expect(original.source).toMatch(/^(default|project)$/)
     await page.getByTestId('hilos-channel-frame-edit').click()
@@ -392,7 +393,7 @@ test('another person saves into a pristine frame editor, then resolves atomic co
         const cleanup = await context.newPage()
         const cleanupWire = watchDeliveryFrames(cleanup)
         try {
-          await gotoPage(cleanup, COMMUNICATIONS_FRAME_PATH)
+          await gotoPage(expect, cleanup, COMMUNICATIONS_FRAME_PATH)
           await restoreCommunicationsFrame(
             expect,
             cleanup,
@@ -426,10 +427,10 @@ test('another person resets the frame under pristine and dirty editors without d
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    const observerId = await grantAdminToSelf(page)
-    const writerId = await grantAdminToSelf(other)
+    const observerId = await grantAdminToSelf(expect, page)
+    const writerId = await grantAdminToSelf(expect, other)
     expect(writerId).not.toBe(observerId)
-    await gotoPage(other, COMMUNICATIONS_FRAME_PATH)
+    await gotoPage(expect, other, COMMUNICATIONS_FRAME_PATH)
     original = await expectCommunicationsFrameInitial(expect, other, otherWire)
     await saveCommunicationsFrame(
       expect,
@@ -437,7 +438,7 @@ test('another person resets the frame under pristine and dirty editors without d
       otherWire,
       communicationsFrameHtml('reset-seed'),
     )
-    await gotoPage(page, COMMUNICATIONS_FRAME_PATH)
+    await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     await page.getByTestId('hilos-channel-frame-edit').click()
     await expectCommunicationsFrameEditor(expect, page)
     await resetCommunicationsFrame(expect, other, otherWire, original)
@@ -510,7 +511,7 @@ test('another person resets the frame under pristine and dirty editors without d
         const cleanup = await context.newPage()
         const cleanupWire = watchDeliveryFrames(cleanup)
         try {
-          await gotoPage(cleanup, COMMUNICATIONS_FRAME_PATH)
+          await gotoPage(expect, cleanup, COMMUNICATIONS_FRAME_PATH)
           await restoreCommunicationsFrame(
             expect,
             cleanup,

@@ -8,16 +8,18 @@ import {
   expectLogLineClock,
   expectLogsPageHead,
   type SocketFrame,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   appendLogLines,
   FOLLOWED_STREAM,
   logMarker,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../helpers/logs.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 const READER_ZONE = 'America/Los_Angeles'
 test.use({ timezoneId: READER_ZONE })
@@ -56,11 +58,11 @@ test('follows a live log file: an appended line arrives on its own, and one appe
 
   const frames = watchLogFrames(page)
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, VIEWER_PATH, PAGE_READY)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
     await expectLogsPageHead(expect, page, 'hilos_logs_view')
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectLogsPageHead(expect, page, 'hilos_logs_view')
 
     // Two gates before the first append, and they answer different questions.
@@ -184,7 +186,12 @@ test('follows a live log file: an appended line arrives on its own, and one appe
     // The Follow switch was not touched once in the whole scenario, which is the
     // decision this asserts: scrolling releases the stickiness, not the tail.
     // Now read the SAME record back through the owner's anchored read path.
-    await gotoPage(page, `${VIEWER_PATH}/${Date.parse(arrivingAt)}`, PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `${VIEWER_PATH}/${Date.parse(arrivingAt)}`,
+      PAGE_READY,
+    )
     await expect(
       page.getByTestId('hilos-log-entry').filter({ hasText: `${arriving} #1` }),
     ).toBeVisible({ timeout: TAIL_ARRIVAL_TIMEOUT_MS })
@@ -231,12 +238,12 @@ test.describe('the log viewer in the admin view mode', () => {
     const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
 
     try {
-      await grantAdminToSelf(adminPage)
-      await gotoPage(adminPage, VIEWER_PATH, PAGE_READY)
+      await grantAdminToSelf(expect, adminPage)
+      await gotoPage(expect, adminPage, VIEWER_PATH, PAGE_READY)
       await expect(adminPage.getByTestId('hilos-log-tail-badge')).toBeVisible()
 
       await setAdminViewMode(true)
-      await gotoPage(page, VIEWER_PATH, PAGE_READY)
+      await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
       await expectLogsPageHead(expect, page, 'hilos_logs_view')
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
@@ -279,7 +286,7 @@ test.describe('the log viewer in the admin view mode', () => {
       await expect(newest).toContainText(/\d{2}:\d{2}:\d{2}\.\d{3}/)
       await expect(newest).toContainText('INFO')
 
-      await gotoPage(page, VIEWER_PATH, PAGE_READY)
+      await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible()
       expect(frames.map(({ raw }) => raw).join('\n')).not.toContain(marker)
       await expect(page.locator('body')).not.toContainText(marker)

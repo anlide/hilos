@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  PASSWORD,
   countSentFrames,
   expectTableRowOrder,
   expectUserActivityDisplay,
@@ -10,12 +11,14 @@ import {
   shownByTestId,
   watchClientDocument,
   watchFirstRowTop,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
+  goToLastPage,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session.js'
-import { goToLastPage } from '../helpers/table.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { signUp } from '../helpers/session.js'
 
 test.describe('merge candidate activity in the reader time zone', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Asia/Tokyo' })
@@ -35,17 +38,22 @@ test.describe('merge candidate activity in the reader time zone', () => {
       timezoneId: 'Asia/Tokyo',
     })
     try {
-      const readerId = await signUpAdmin(page)
-      const candidate = await signUp(await candidateContext.newPage())
-      await gotoPage(page, `/hilos/user/${readerId}`)
-      await clickSubmit(page.getByTestId('hilos-user-merge-open'))
+      const readerId = await signUpAdmin(expect, page, {
+        entryId: 'message-signin',
+      })
+      const candidate = await signUp(expect, await candidateContext.newPage())
+      await gotoPage(expect, page, `/hilos/user/${readerId}`)
+      await clickSubmit(expect, page.getByTestId('hilos-user-merge-open'))
       await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-      await clickSubmit(page.getByTestId('hilos-user-merge-step-up-confirm'))
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-user-merge-step-up-confirm'),
+      )
       const choice = shownByTestId(
         page,
         `hilos-user-merge-row-${candidate.userId}`,
       )
-      if (!(await choice.isVisible())) await goToLastPage(page)
+      if (!(await choice.isVisible())) await goToLastPage(expect, page)
       await expect(choice).toBeVisible()
       const moment = expectUserActivityMoment(
         expect,
@@ -122,7 +130,7 @@ test.describe('merge candidate activity in the reader time zone', () => {
       } finally {
         await document.dispose()
       }
-      await clickSubmit(page.getByTestId('hilos-user-merge-cancel'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-merge-cancel'))
       await expect(page.getByTestId('modal')).toHaveCount(0)
     } finally {
       socket.dispose()
@@ -154,20 +162,20 @@ test.describe('in the admin view mode', () => {
     const userBPage = await userBContext.newPage()
 
     try {
-      const { userId: userAId } = await signUp(userAPage)
-      const { userId: userBId } = await signUp(userBPage)
+      const { userId: userAId } = await signUp(expect, userAPage)
+      const { userId: userBId } = await signUp(expect, userBPage)
 
       await setAdminViewMode(true)
 
-      await gotoPage(page, `/hilos/user/${userAId}`)
-      await clickSubmit(page.getByTestId('hilos-user-merge-open'))
+      await gotoPage(expect, page, `/hilos/user/${userAId}`)
+      await clickSubmit(expect, page.getByTestId('hilos-user-merge-open'))
       const mergeChoice = shownByTestId(page, `hilos-user-merge-row-${userBId}`)
       if (!(await mergeChoice.isVisible())) {
-        await goToLastPage(page)
+        await goToLastPage(expect, page)
       }
       await expect(mergeChoice).toBeVisible()
       await mergeChoice.check()
-      await clickSubmit(page.getByTestId('hilos-user-merge-next'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-merge-next'))
 
       const summary = page.getByTestId('hilos-user-merge-summary')
       await expect(summary).toContainText('Hidden')
@@ -179,8 +187,8 @@ test.describe('in the admin view mode', () => {
       await expect(
         page.getByTestId('hilos-user-merge-second-factor-survivor'),
       ).toHaveCount(0)
-      await clickSubmit(page.getByTestId('hilos-user-merge-cancel'))
-      await clickSubmit(page.getByTestId('modal-confirm-discard'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-merge-cancel'))
+      await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
     } finally {
       await userAContext.close()
       await userBContext.close()

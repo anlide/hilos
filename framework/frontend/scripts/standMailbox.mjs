@@ -13,10 +13,9 @@
 // signal to a sharded agent and settles on its own tick, so the wait polls until
 // the letter is there.
 //
-// One read and not the whole reader: the product's own letters, picked out by
-// subject, are read by each demo itself (demo/*/tests/e2e/helpers/mail.ts). Nothing
-// here drives a browser or imports Playwright, so the poll is this module's own
-// rather than expect.poll, on the schedule expect.poll rides by default.
+// Product letters are picked out by subject here; mail.mjs reads their codes and
+// links. Nothing here drives a browser or imports Playwright, so the poll is this
+// module's own rather than expect.poll, on the schedule expect.poll rides by default.
 
 import process from 'node:process'
 
@@ -99,19 +98,27 @@ export async function waitForAnyMailTo(address) {
  *
  * @param {string} address Recipient address, as the gateway addressed it.
  * @param {(mail: InterceptedMail) => boolean} accept Whether a held message is the one waited for.
+ * @param {number} [minimumCount=1] How many accepted letters must have arrived; the newest is read.
  * @returns {Promise<InterceptedMail>} The newest accepted message's subject and plain-text body.
  * @throws {Error} When the runner names no mailbox, when no accepted message
  *   arrives within the wait, or when the interceptor answers anything but 2xx.
  */
-export async function waitForMailToMatching(address, accept) {
+export async function waitForMailToMatching(address, accept, minimumCount = 1) {
   const mailbox = mailboxUrl()
   const deadline = Date.now() + MAIL_WAIT_TIMEOUT
 
   for (let attempt = 0; ; attempt += 1) {
+    /** @type {InterceptedMail | undefined} */
+    let newest
+    let acceptedCount = 0
     for (const entry of await entriesTo(mailbox, address)) {
       const mail = await readMessage(mailbox, entry.ID)
       if (accept(mail)) {
-        return mail
+        newest ??= mail
+        acceptedCount += 1
+        if (acceptedCount >= minimumCount) {
+          return newest
+        }
       }
     }
     const pause = POLL_INTERVALS[Math.min(attempt, POLL_INTERVALS.length - 1)]
@@ -120,6 +127,45 @@ export async function waitForMailToMatching(address, accept) {
     }
     await new Promise((resolve) => globalThis.setTimeout(resolve, pause))
   }
+}
+
+/**
+ * Wait for the newest letter with this recipient and exact subject.
+ *
+ * @param {string} address Recipient address, matched case-insensitively.
+ * @param {string} subject Exact subject line to match.
+ * @param {number} [minimumCount=1] How many matching letters must have arrived; the newest is read.
+ * @returns {Promise<InterceptedMail>} The newest matching letter.
+ */
+export async function waitForMailTo(address, subject, minimumCount = 1) {
+  return waitForMailToMatching(
+    address,
+    (mail) => mail.subject === subject,
+    minimumCount,
+  )
+}
+
+/**
+ * Read every letter currently held for an address without waiting for a delivery.
+ *
+ * @param {string} address Recipient address, matched case-insensitively.
+ * @returns {Promise<InterceptedMail[]>} Held letters, newest first.
+ */
+export async function mailsTo(address) {
+  const mailbox = mailboxUrl()
+  const entries = await entriesTo(mailbox, address)
+
+  return Promise.all(entries.map((entry) => readMessage(mailbox, entry.ID)))
+}
+
+/**
+ * Clear the interceptor once from global setup, before any parallel spec runs.
+ * A mid-run clear would take letters another worker is still waiting for.
+ *
+ * @returns {Promise<void>}
+ */
+export async function clearMail() {
+  await request(mailboxUrl(), '/api/v1/messages', { method: 'DELETE' })
 }
 
 /**
@@ -155,8 +201,9 @@ function mailboxUrl() {
  * @returns {Promise<MailboxEntry[]>} Matching mailbox entries, newest first (the order Mailpit lists in).
  */
 async function entriesTo(mailbox, address) {
+  const response = await request(mailbox, '/api/v1/messages?limit=200')
   /** @type {{ messages: MailboxEntry[] }} */
-  const listing = await request(mailbox, '/api/v1/messages?limit=200')
+  const listing = await response.json()
   const wanted = address.toLowerCase()
 
   return listing.messages.filter((entry) =>
@@ -172,26 +219,27 @@ async function entriesTo(mailbox, address) {
  * @returns {Promise<InterceptedMail>} The message's subject and plain-text body.
  */
 async function readMessage(mailbox, id) {
+  const response = await request(mailbox, `/api/v1/message/${id}`)
   /** @type {{ Subject: string, Text: string }} */
-  const message = await request(mailbox, `/api/v1/message/${id}`)
+  const message = await response.json()
 
   return { subject: message.Subject, text: message.Text }
 }
 
 /**
- * Call one Mailpit endpoint and decode its JSON, refusing anything but a 2xx.
+ * Call one Mailpit endpoint, refusing anything but a 2xx.
  *
- * @template T
  * @param {string} mailbox The mailbox's base URL.
  * @param {string} path API path including its query.
- * @returns {Promise<T>} The decoded body.
+ * @param {RequestInit} [init] Request options for calls other than GET.
+ * @returns {Promise<Response>} The raw response; DELETE need not carry JSON.
  * @throws {Error} When the interceptor answers anything but 2xx.
  */
-async function request(mailbox, path) {
-  const response = await globalThis.fetch(`${mailbox}${path}`)
+async function request(mailbox, path, init) {
+  const response = await globalThis.fetch(`${mailbox}${path}`, init)
   if (!response.ok) {
     throw new Error(`mail interceptor answered ${response.status} for ${path}`)
   }
 
-  return response.json()
+  return response
 }

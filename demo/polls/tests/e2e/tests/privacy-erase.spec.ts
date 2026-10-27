@@ -1,11 +1,15 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
 import {
+  login,
+  openSignIn,
+  signUp,
   isSessionCookie,
   watchClientDocument,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, login, openSignIn, signUp } from '../helpers/session.js'
 
 // The erase on /privacy (HIL-839), and the three things only a real browser can
 // answer for it.
@@ -55,8 +59,8 @@ test('the erase empties this browser and moves it onto a new session', async ({
   page,
   context,
 }) => {
-  const person = await signUp(page)
-  await gotoPage(page, '/privacy', PAGE_READY)
+  const person = await signUp(expect, page)
+  await gotoPage(expect, page, '/privacy', PAGE_READY)
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
@@ -108,7 +112,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
   const arrived = await cookieValue(context, isSessionCookie)
   expect(arrived).not.toBe('')
 
-  await clickSubmit(page.getByTestId('privacy-erase'))
+  await clickSubmit(expect, page.getByTestId('privacy-erase'))
   // The confirmation names what goes, one line per registry entry, so the person
   // agrees to a list rather than to an adjective.
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
@@ -125,7 +129,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
     'Remembered theme settings for this site',
   )
 
-  await clickSubmit(page.getByTestId('privacy-erase-confirm'))
+  await clickSubmit(expect, page.getByTestId('privacy-erase-confirm'))
   await expect(page.getByTestId('privacy-erase-list')).toHaveCount(0)
 
   // Settled: the block has become the outcome, which is what the page promises
@@ -183,8 +187,8 @@ test('the erase empties this browser and moves it onto a new session', async ({
 
   // The account and its acceptance still exist. Signing back in also leaves the
   // erase outcome in place: it belongs to the sweep, not the reader's identity.
-  await openSignIn(page)
-  await login(page, person.email)
+  await openSignIn(expect, page)
+  await login(expect, page, person.email)
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(page.getByTestId('nav-profile-name')).toHaveAttribute(
     'title',

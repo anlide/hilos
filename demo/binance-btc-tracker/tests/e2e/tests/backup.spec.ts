@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { createLegacyBackupFixture } from '../../../../../framework/frontend/scripts/backupFixture.mjs'
 import {
+  signUp,
   dismissToasts,
   enterCalendarDate,
   expectBackupMoments,
@@ -13,11 +14,15 @@ import {
   watchFirstRowTop,
   watchTableFirstLive,
   watchTableSearch,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  PAGE_REFUSED,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant.js'
-import { clickSubmit, signUp } from '../helpers/session.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page.js'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 test.use({ viewport: { width: 1440, height: 1000 } })
 
@@ -36,9 +41,9 @@ test.use({ viewport: { width: 1440, height: 1000 } })
 async function openBackups(
   page: import('@playwright/test').Page,
 ): Promise<void> {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/backup')
+  await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -54,7 +59,7 @@ async function openBackups(
 async function newestArchiveKey(
   page: import('@playwright/test').Page,
 ): Promise<string> {
-  await gotoPage(page, '/hilos/backup')
+  await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const key = await page
     .locator('[data-id^="hilos-table-row-"]')
@@ -181,7 +186,7 @@ test.describe('backup moments and Period in the reader zone', () => {
     try {
       await openBackups(page)
       sourceId = await createNamedBackup(page)
-      await gotoPage(page, '/hilos/backup', PAGE_READY)
+      await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
       const actual = await expectBackupMoments(
         expect,
         page,
@@ -222,11 +227,11 @@ test.describe('backup moments and Period in the reader zone', () => {
       // the current index; it never writes a timestamp or injects a frame.
       await expect
         .poll(async () => {
-          await gotoPage(page, '/hilos/backup', PAGE_READY)
+          await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
           return page.getByTestId(`hilos-table-row-${fixture!.id}`).count()
         })
         .toBe(1)
-      await gotoPage(other, '/hilos/backup', PAGE_READY)
+      await gotoPage(expect, other, '/hilos/backup', PAGE_READY)
       for (const [reader, log, zone] of [
         [page, warsaw, 'Europe/Warsaw'],
         [other, losAngeles, 'America/Los_Angeles'],
@@ -272,7 +277,7 @@ test.describe('backup moments and Period in the reader zone', () => {
       } finally {
         try {
           if (sourceId) {
-            await gotoPage(page, '/hilos/backup', PAGE_READY)
+            await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
             await deleteBackup(page, `hilos-table-row-${sourceId}`)
           }
         } finally {
@@ -428,7 +433,7 @@ async function pageLifeRecord(
 test('closes the backup page to a guest', async ({ page }) => {
   // Anonymous: the ADMIN level denies the subscription with a 401 before any
   // page payload is sent; the auth gate renders sign-in in place of the page.
-  await gotoPage(page, '/hilos/backup')
+  await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
@@ -442,8 +447,8 @@ test('closes the backup page to a guest', async ({ page }) => {
 
 test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
   // Signed in but not admin: 403, the error page replaces the backup surface.
-  await signUp(page)
-  await gotoPage(page, '/hilos/backup')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/hilos/backup')
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
@@ -464,12 +469,12 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   // revoke left the archive list readable until the person reloaded.
   // Revocation requires another administrator, even when this test runs alone.
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(browser, grantAdminToSelf, {
+  await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
     baseURL,
     ignoreHTTPSErrors,
   })
-  const userId = await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/backup')
+  const userId = await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   await setAdmin(userId, false)
@@ -504,13 +509,13 @@ test('opens the refused backup page the moment admin is granted', async ({
   // a person's who holds an account: the grant is the same re-decision either way.
   // This test prepares its own second administrator before revoking the first.
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(browser, grantAdminToSelf, {
+  await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
     baseURL,
     ignoreHTTPSErrors,
   })
-  const userId = await grantAdminToSelf(page)
+  const userId = await grantAdminToSelf(expect, page)
   await setAdmin(userId, false)
-  await gotoPage(page, '/hilos/backup', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos/backup', PAGE_REFUSED)
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
@@ -561,10 +566,10 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
     const key = await stored.first().getAttribute('data-id')
     expect(key).toBeTruthy()
     await deleteBackup(page, key!)
-    await gotoPage(page, '/hilos/backup', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   }
-  await gotoPage(page, '/hilos/backup', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
   await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
   try {
@@ -718,7 +723,7 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
     const remove = shownByTestId(page, `hilos-backup-delete-${backupId}`)
     // Ordinary pointer opens Restore; keyboard reaches Delete in native tab order.
     // Cancel the typed-id barrier: a restore itself would overwrite the stand.
-    await clickSubmit(restore)
+    await clickSubmit(expect, restore)
     await expect(
       page.getByTestId('hilos-backup-restore-confirm'),
     ).toBeDisabled()
@@ -734,8 +739,8 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('hilos-backup-delete-confirm')).toHaveCount(0)
     await expect(remove).toBeFocused()
-    await clickSubmit(remove)
-    await clickSubmit(page.getByTestId('hilos-backup-delete-confirm'))
+    await clickSubmit(expect, remove)
+    await clickSubmit(expect, page.getByTestId('hilos-backup-delete-confirm'))
     await expect(page.getByTestId('hilos-backup-delete-confirm')).toHaveCount(0)
     await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
     // The last archive leaves one data-free slot in each mounted projection.
@@ -928,7 +933,7 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   await openBackups(tabA)
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/')
+  await gotoPage(expect, tabB, '/')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   // The run is started from tab A, which has to be in front for the click. That
@@ -960,7 +965,7 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   // not reach that same tab live today (HIL-432, which is what parks the create
   // test above), and a cleanup must not stand on the defect it is not about.
   await tabA.bringToFront()
-  await gotoPage(tabA, '/hilos/backup')
+  await gotoPage(expect, tabA, '/hilos/backup')
   await expect(tabA.getByTestId('hilos-viewport-table')).toBeVisible()
   const created = tabA.locator('[data-id^="hilos-table-row-"]').first()
   const createdKey = await created.getAttribute('data-id')
@@ -991,7 +996,7 @@ test('keeps the page of another tab standing through a backup that ends', async 
   const floorId = floorKey.replace('hilos-table-row-', '')
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/hilos/backup', PAGE_READY)
+  await gotoPage(expect, tabB, '/hilos/backup', PAGE_READY)
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId(floorKey)).toBeVisible()
   await watchPageLife(tabB)
@@ -1035,7 +1040,7 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
   // names our archive, so an older row cannot satisfy readiness on a retry.
   const backupId = await createNamedBackup(page)
   expect(backupId).toBeTruthy()
-  await gotoPage(page, '/hilos/backup', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId(`hilos-table-row-${backupId}`)).toBeVisible()
 
@@ -1112,7 +1117,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   const deletedInBulk = await createNamedBackup(tabA)
 
   // Both rows are read from a fresh page once both runs are over.
-  await gotoPage(tabA, '/hilos/backup')
+  await gotoPage(expect, tabA, '/hilos/backup')
   const goneFirstRow = tabA.getByTestId(`hilos-table-row-${goneFirst}`)
   const deletedInBulkRow = tabA.getByTestId(`hilos-table-row-${deletedInBulk}`)
   await expect(goneFirstRow).toBeVisible()
@@ -1120,7 +1125,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
 
   // The neighbor deletes one of the two the ordinary way, from a tab of its own.
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/hilos/backup')
+  await gotoPage(expect, tabB, '/hilos/backup')
   await expect(tabB.getByTestId(`hilos-table-row-${goneFirst}`)).toBeVisible()
   await deleteBackup(tabB, `hilos-table-row-${goneFirst}`)
 
@@ -1160,7 +1165,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   await tabA.getByTestId('hilos-table-bulk-delete').click()
   const confirm = tabA.getByTestId('hilos-table-bulk-confirm')
   await watchForBulkBar(tabA)
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   // The bar stood while the run went, and a run that reported has taken it down.
@@ -1202,7 +1207,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
 
   // And the store agrees: a fresh page holds neither archive, so nothing is left for a
   // cleanup to do.
-  await gotoPage(tabA, '/hilos/backup')
+  await gotoPage(expect, tabA, '/hilos/backup')
   await expect(tabA.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(tabA.getByTestId('hilos-table-loading')).toHaveCount(0)
   await expect(
@@ -1322,7 +1327,7 @@ test.describe('the backup section in the admin view mode', () => {
 
     const guestContext = await browser.newContext()
     const guest = await guestContext.newPage()
-    await gotoPage(guest, '/hilos/backup', PAGE_READY)
+    await gotoPage(expect, guest, '/hilos/backup', PAGE_READY)
     await expect(guest.getByTestId('page-error')).toHaveCount(0)
     await expect(guest.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -1380,7 +1385,7 @@ test.describe('the backup section in the admin view mode', () => {
       row.getByTestId(`hilos-table-select-${backupId}`),
     ).not.toBeChecked()
 
-    await gotoPage(page, '/hilos/backup')
+    await gotoPage(expect, page, '/hilos/backup')
     await expect(page.getByTestId(`hilos-table-row-${backupId}`)).toBeVisible()
 
     await deleteBackup(page, `hilos-table-row-${backupId}`)

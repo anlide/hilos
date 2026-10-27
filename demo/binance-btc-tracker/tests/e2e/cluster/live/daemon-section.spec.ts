@@ -14,8 +14,10 @@ import {
   expectDaemonPlacementOwnership,
   readDaemonSectionOverview,
   watchDeliveryFrames,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -23,7 +25,6 @@ import {
   expectLeaderUnmoved,
   newMasterPage,
 } from '../../helpers/cluster.js'
-import { gotoPage, PAGE_READY } from '../../helpers/page.js'
 
 // Live browser proof of the section on a follower, independent of the parked
 // daemon fault scenario. The host keeps every node alive throughout this test.
@@ -39,8 +40,8 @@ test('daemon section navigation: follower entry points name the live leader and 
   const rootLog = watchDeliveryFrames(follower)
   let placementLog: ReturnType<typeof watchDeliveryFrames> | undefined
   try {
-    await grantAdminToSelf(follower)
-    await gotoPage(follower, DAEMON_ROOT_PATH, PAGE_READY)
+    await grantAdminToSelf(expect, follower)
+    await gotoPage(expect, follower, DAEMON_ROOT_PATH, PAGE_READY)
     await expectDaemonSectionHead(expect, follower, 'hilos_daemon', true)
     const rootReplies = () =>
       rootLog.packets
@@ -117,7 +118,7 @@ test('daemon section navigation: follower entry points name the live leader and 
     )
     const placement = await follower.context().newPage()
     placementLog = watchDeliveryFrames(placement)
-    await gotoPage(placement, DAEMON_PLACEMENT_PATH, PAGE_READY)
+    await gotoPage(expect, placement, DAEMON_PLACEMENT_PATH, PAGE_READY)
     const initial = await expectDaemonPlacementAnswer(
       expect,
       placement,

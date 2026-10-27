@@ -16,10 +16,12 @@ import {
   watchPublicStatus,
   watchStatusFrames,
   watchTableSearch,
+  gotoPage,
+  gotoPublicStatus,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage, gotoPublicStatus, PAGE_READY } from '../helpers/page.js'
 import { withStatusAgentLoss } from '../helpers/status.js'
 
 test.use({ colorScheme: 'light' })
@@ -31,7 +33,7 @@ test('prepare an accepted public archive through real loss, publication and reso
 }) => {
   test.slow() // Real collector loss, publication and resolved file projection.
   const control = standaloneStatusControl()
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
   const context = await browser.newContext({
     baseURL,
     ignoreHTTPSErrors: true,
@@ -62,7 +64,7 @@ test('prepare an accepted public archive through real loss, publication and reso
     // Overview and Workers read the same Daemon page agent's picture mirror.
     // Wait for its real roster before opening a viewport: the cold first
     // window has no previous address for Back to the rows to return to.
-    await gotoPage(workers, DAEMON_ROOT_PATH, PAGE_READY)
+    await gotoPage(expect, workers, DAEMON_ROOT_PATH, PAGE_READY)
     await expectStandaloneOverview(
       expect,
       workers,
@@ -70,7 +72,7 @@ test('prepare an accepted public archive through real loss, publication and reso
     )
     preparation.mirrorReadyAt = performance.now()
     preparation.workersOpeningAt = performance.now()
-    await gotoPage(workers, DAEMON_WORKERS_PATH, PAGE_READY)
+    await gotoPage(expect, workers, DAEMON_WORKERS_PATH, PAGE_READY)
     await expect
       .poll(async () =>
         (await workerTable.read()).frames
@@ -134,8 +136,8 @@ test('prepare an accepted public archive through real loss, publication and reso
     await expectStandaloneWorkers(expect, workers)
     preparation.rows = await workerTable.rowKeys()
     preparation.settledAt = performance.now()
-    await gotoPage(page, STATUS_PATH, PAGE_READY)
-    await gotoPublicStatus(guest)
+    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+    await gotoPublicStatus(expect, guest)
     await expectPublicStatusPair(expect, guest, log)
     let detectedAt = 0
     await withStatusAgentLoss(workers, admin, async () => {

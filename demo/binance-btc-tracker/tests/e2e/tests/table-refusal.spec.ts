@@ -8,11 +8,12 @@ import {
   shownByTestId,
   watchSocketFrames,
   type SocketFrame,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage, PAGE_READY } from '../helpers/page'
-import { typeInto } from '../helpers/session'
 import { clearTableRefusal, refuseTableWindow } from '../helpers/tableRefusal'
 
 // HIL-1131: a table whose window the server cannot build shows "List unavailable"
@@ -51,10 +52,10 @@ test('a table refused on the way in shows it is unavailable while its page stand
     sockets += 1
   })
 
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
   // Before the page opens, so the refusal rides the page's own answer.
   await refuseTableWindow('settings')
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
 
   // The refusal is a tile in the table's body rather than an error over the
   // whole page.
@@ -84,8 +85,8 @@ test('a table refused on the way in shows it is unavailable while its page stand
 test('a window the server cannot build turns the rows into the unavailable tile, and the next window brings them back', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   await expect(page.locator(ROWS).first()).toBeVisible()
 
   // With the rows on screen, so the refusal answers the changed window.
@@ -129,9 +130,9 @@ test('a refused table gets its rows back on the first change to its own data, wi
     fullLoads += 1
   })
 
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
   await refuseTableWindow('settings')
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
 
   await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
   await expect(page.locator(ROWS)).toHaveCount(0)
@@ -144,7 +145,7 @@ test('a refused table gets its rows back on the first change to its own data, wi
   // other tab's search, send nothing; the tile stays until the source is written.
   const tabB = await page.context().newPage()
   try {
-    await gotoPage(tabB, '/hilos/settings')
+    await gotoPage(expect, tabB, '/hilos/settings')
     await expect.poll(() => settingsAnswers).toBeGreaterThan(answersAfterOpen)
     await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
 

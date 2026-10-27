@@ -8,15 +8,18 @@ import {
   watchHeight,
   watchI18nLivePages,
   watchTop,
+  clickSubmit,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   clearCountryNamesFixture,
   seedCountryNamesFixture,
-} from '../helpers/i18n.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 const APP_NAME = 'Hilos Tasks'
 const UNNAMED = 'Unnamed country'
@@ -34,7 +37,7 @@ const DELETE_WINDOW = 'i18n-country-name-delete-window'
 const DELETE_CONFIRM = 'i18n-country-name-delete-confirm'
 /** Open the fixture without creating the env-language name or the FR correction. */
 async function openNames(page: Page): Promise<void> {
-  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await gotoPage(expect, page, NAMES_PATH, PAGE_READY)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'Unnamed country',
   )
@@ -46,6 +49,7 @@ async function openNames(page: Page): Promise<void> {
 /** Expand the writing language through the table's native chevron. */
 async function expandCorrections(page: Page): Promise<void> {
   await clickSubmit(
+    expect,
     i18nNameRow(page, 'country', 'qk').getByTestId(/^hilos-table-expand-/),
   )
   await expect(shownByTestId(page, 'i18n-names-inherit-qk-FR')).toHaveText(
@@ -56,7 +60,7 @@ async function expandCorrections(page: Page): Promise<void> {
 /** Open from either table projection and wait for the modal's autofocus. */
 async function openName(page: Page, control: string): Promise<void> {
   await dismissToasts(page)
-  await clickSubmit(shownByTestId(page, `i18n-country-name-${control}`))
+  await clickSubmit(expect, shownByTestId(page, `i18n-country-name-${control}`))
   await expect(page.getByTestId(WINDOW)).toBeVisible()
   await expect(page.getByTestId(INPUT)).toBeFocused()
   await expect(page.getByTestId(INPUT)).toHaveAccessibleName('Name')
@@ -64,7 +68,7 @@ async function openName(page: Page, control: string): Promise<void> {
 
 /** Wait for the tracked success before reading the live row in either tab. */
 async function saveName(page: Page, message: string): Promise<void> {
-  await clickSubmit(page.getByTestId(SUBMIT))
+  await clickSubmit(expect, page.getByTestId(SUBMIT))
   await expect(page.getByTestId(WINDOW)).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toast-success').filter({ hasText: message }),
@@ -101,7 +105,7 @@ test('writes country names and corrections live in two tabs, including literal e
   const observer = await context.newPage()
   try {
     await seedCountryNamesFixture()
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     for (const tab of [page, observer]) await openNames(tab)
 
     await openName(page, 'add-en')
@@ -206,14 +210,14 @@ for (const correction of [false, true]) {
       const observer = await context.newPage()
       try {
         await seedCountryNamesFixture()
-        await signUpAdmin(page)
+        await signUpAdmin(expect, page)
         for (const tab of [page, observer]) await openNames(tab)
         // The base form carries the longer catalog hint.
         await openName(page, 'add-en')
         await expect(page.getByTestId(WINDOW)).toContainText('built-in catalog')
         await typeInto(page.getByTestId(INPUT), 'Canceled base')
-        await clickSubmit(page.getByTestId(CANCEL))
-        await clickSubmit(page.getByTestId('modal-confirm-discard'))
+        await clickSubmit(expect, page.getByTestId(CANCEL))
+        await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
         await expect(page.getByTestId(WINDOW)).toHaveCount(0)
         for (const tab of [page, observer]) {
           await expect(shownByTestId(tab, 'i18n-names-none-en')).toHaveText(
@@ -307,7 +311,10 @@ for (const correction of [false, true]) {
         await expect(observer.getByTestId(WINDOW)).toBeVisible()
         await expectName(page, key, theirs)
         if (choice === 'mine' || choice === 'theirs') {
-          await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+          await clickSubmit(
+            expect,
+            observer.getByTestId(`conflict-accept-${choice}`),
+          )
           await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
           await errorRoom.unchanged()
           await noticeRoom.unchanged()
@@ -330,7 +337,7 @@ for (const correction of [false, true]) {
           }
         }
         if (choice !== 'mine') {
-          await clickSubmit(observer.getByTestId(CANCEL))
+          await clickSubmit(expect, observer.getByTestId(CANCEL))
           await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
           for (const tab of [page, observer]) await expectName(tab, key, theirs)
         }
@@ -354,7 +361,7 @@ for (const correction of [false, true]) {
     const observer = await context.newPage()
     try {
       await seedCountryNamesFixture()
-      await signUpAdmin(page)
+      await signUpAdmin(expect, page)
       for (const tab of [page, observer]) {
         await openNames(tab)
         if (correction) await expandCorrections(tab)
@@ -386,7 +393,10 @@ for (const correction of [false, true]) {
         await expectName(observer, key, theirs)
         await observer.getByTestId(INPUT).press('Enter')
         await expect(observer.getByTestId('conflict-choices')).toBeVisible()
-        await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+        await clickSubmit(
+          expect,
+          observer.getByTestId(`conflict-accept-${choice}`),
+        )
         await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
         await noticeRoom.unchanged()
         if (choice === 'mine') {
@@ -439,8 +449,8 @@ test('lets a viewer open, draft and cancel every country name form without writi
       )
       await page.getByTestId(INPUT).press('Enter')
       await expect(page.getByTestId(WINDOW)).toBeVisible()
-      await clickSubmit(page.getByTestId(CANCEL))
-      await clickSubmit(page.getByTestId('modal-confirm-discard'))
+      await clickSubmit(expect, page.getByTestId(CANCEL))
+      await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
       await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     }
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
@@ -486,9 +496,9 @@ async function writeName(
  */
 async function deleteName(page: Page): Promise<void> {
   await dismissToasts(page)
-  await clickSubmit(shownByTestId(page, 'i18n-names-delete-en'))
+  await clickSubmit(expect, shownByTestId(page, 'i18n-names-delete-en'))
   await expect(page.getByTestId(DELETE_WINDOW)).toBeVisible()
-  await clickSubmit(page.getByTestId(DELETE_CONFIRM))
+  await clickSubmit(expect, page.getByTestId(DELETE_CONFIRM))
   await expect(page.getByTestId(DELETE_WINDOW)).toHaveCount(0)
   await expect(
     page
@@ -538,9 +548,9 @@ test('keeps one live country name on Names and Overview through add, rename, emp
   const overview = await context.newPage()
   try {
     await seedCountryNamesFixture()
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
-    await gotoPage(overview, OVERVIEW_PATH, PAGE_READY)
+    await gotoPage(expect, overview, OVERVIEW_PATH, PAGE_READY)
     await expectBothHeads(page, overview, UNNAMED)
 
     for (const step of [
@@ -594,7 +604,7 @@ test('keeps one live country name on Names and Overview through add, rename, emp
 
       for (const tab of [page, overview]) {
         await tab.reload()
-        await expectPageReady(tab)
+        await expectPageReady(expect, tab)
       }
       await expectBothHeads(page, overview, step.name)
     }

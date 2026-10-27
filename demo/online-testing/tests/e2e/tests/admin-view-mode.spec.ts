@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test'
 
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import {
+  gotoPage,
+  PAGE_READY,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // HIL-1273: the operations side of the Angular admin view mode — the area moved
 // here from polls by HIL-1226. On every operations screen a viewer — a guest
@@ -39,7 +42,7 @@ test('a guest reads the view-mode strip on every operations screen', async ({
   page,
 }) => {
   await setAdminViewMode(true)
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -48,7 +51,7 @@ test('a guest reads the view-mode strip on every operations screen', async ({
   await expect(page.getByTestId('view-mode-banner')).toHaveCount(0)
 
   for (const path of OPERATIONS_SCREENS) {
-    await gotoPage(page, path, PAGE_READY)
+    await gotoPage(expect, page, path, PAGE_READY)
     const strip = page.getByTestId('view-mode-banner')
     await expect(strip).toBeVisible()
     await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)

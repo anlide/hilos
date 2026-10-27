@@ -3,11 +3,12 @@ import {
   dismissToasts,
   i18nLocaleRow,
   watchI18nLivePages,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { expect, test, type Page } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
 
 const LOCALES_PATH = '/hilos/i18n/languages/en/locales'
 const ADD_TITLE = 'Add locale · English in United Kingdom'
@@ -31,9 +32,12 @@ async function clearBritishLocale(page: Page): Promise<void> {
   await expect(row).toBeVisible()
   const view = row.getByTestId('i18n-locales-view-en-GB')
   if (await view.isVisible()) {
-    await clickSubmit(view)
-    await clickSubmit(page.getByTestId('i18n-locale-switch-off'))
-    await clickSubmit(page.getByTestId('i18n-locale-switch-off-confirm'))
+    await clickSubmit(expect, view)
+    await clickSubmit(expect, page.getByTestId('i18n-locale-switch-off'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('i18n-locale-switch-off-confirm'),
+    )
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(
       row.getByTestId('i18n-locales-enabled-en-GB'),
@@ -42,8 +46,8 @@ async function clearBritishLocale(page: Page): Promise<void> {
   }
   const remove = row.getByTestId('i18n-locales-delete-en-GB')
   if (await remove.isVisible()) {
-    await clickSubmit(remove)
-    await clickSubmit(page.getByTestId('i18n-locale-delete-confirm'))
+    await clickSubmit(expect, remove)
+    await clickSubmit(expect, page.getByTestId('i18n-locale-delete-confirm'))
     await expect(page.getByTestId('i18n-locale-delete-window')).toHaveCount(0)
   }
   await expect(row.getByTestId('i18n-locales-add-en-GB')).toBeVisible()
@@ -53,6 +57,7 @@ async function clearBritishLocale(page: Page): Promise<void> {
 async function openBritishAdd(page: Page): Promise<void> {
   await dismissToasts(page)
   await clickSubmit(
+    expect,
     i18nLocaleRow(page, 'en-GB').getByTestId('i18n-locales-add-en-GB'),
   )
   await expect(page.getByTestId('i18n-locale-title')).toHaveText(ADD_TITLE)
@@ -65,19 +70,19 @@ async function openBritishAdd(page: Page): Promise<void> {
 
 /** Wait for the tracked success, rather than just the table's incoming row. */
 async function saveLocale(page: Page): Promise<void> {
-  await clickSubmit(page.getByTestId(SUBMIT))
+  await clickSubmit(expect, page.getByTestId(SUBMIT))
   await expect(page.getByTestId(WINDOW)).toHaveCount(0)
 }
 
 test('adds a known locale and edits its formats from the language table', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
   const britishRow = i18nLocaleRow(page, 'en-GB')
   const add = britishRow.getByTestId('i18n-locales-add-en-GB')
-  await clickSubmit(add)
+  await clickSubmit(expect, add)
 
   await expect(page.getByTestId('i18n-locale-title')).toHaveText(
     'Add locale · English in United Kingdom',
@@ -86,7 +91,7 @@ test('adds a known locale and edits its formats from the language table', async 
     'DD/MM/YYYY',
   )
   const submit = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
   await expect(
     page
@@ -101,10 +106,10 @@ test('adds a known locale and edits its formats from the language table', async 
   ).not.toBeChecked()
 
   const edit = britishRow.getByTestId('i18n-locales-edit-en-GB')
-  await clickSubmit(edit)
+  await clickSubmit(expect, edit)
   await page.getByTestId('i18n-locale-field-date').selectOption('YYYY-MM-DD')
   const save = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
   await expect(
     page
@@ -112,7 +117,7 @@ test('adds a known locale and edits its formats from the language table', async 
       .filter({ hasText: 'Locale en-GB saved.' }),
   ).toBeVisible()
 
-  await clickSubmit(edit)
+  await clickSubmit(expect, edit)
   await expect(page.getByTestId('i18n-locale-field-date')).toHaveValue(
     'YYYY-MM-DD',
   )
@@ -121,11 +126,11 @@ test('adds a known locale and edits its formats from the language table', async 
 test('opens a switched-on countryless locale only to view its formats', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
   const view = i18nLocaleRow(page, 'en').getByTestId('i18n-locales-view-en')
-  await clickSubmit(view)
+  await clickSubmit(expect, view)
 
   await expect(page.getByTestId('i18n-locale-title')).toHaveText(
     'Locale · English without a country',
@@ -153,12 +158,12 @@ for (const draft of ['untouched', 'prefill', 'equal'] as const) {
     page,
     context,
   }) => {
-    await signUpAdmin(page)
-    await gotoPage(page, LOCALES_PATH, PAGE_READY)
+    await signUpAdmin(expect, page)
+    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
     await clearBritishLocale(page)
     const observer = await context.newPage()
     try {
-      await gotoPage(observer, LOCALES_PATH, PAGE_READY)
+      await gotoPage(expect, observer, LOCALES_PATH, PAGE_READY)
       const livePages = await watchI18nLivePages(expect, [page, observer])
       for (const tab of [page, observer]) await openBritishAdd(tab)
       const incoming = draft === 'prefill' ? 'DD/MM/YYYY' : 'YYYY-MM-DD'
@@ -185,11 +190,11 @@ for (const draft of ['untouched', 'prefill', 'equal'] as const) {
       ).toBeVisible()
       await expect(observer.getByTestId('hilos-table-apply')).toHaveCount(0)
       await livePages.unchanged()
-      await clickSubmit(observer.getByTestId('i18n-locale-cancel'))
+      await clickSubmit(expect, observer.getByTestId('i18n-locale-cancel'))
       await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
     } finally {
       await observer.close()
-      await gotoPage(page, LOCALES_PATH, PAGE_READY)
+      await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
       await clearBritishLocale(page)
     }
   })
@@ -200,14 +205,14 @@ for (const choice of ['mine', 'theirs'] as const) {
     page,
     context,
   }) => {
-    await signUpAdmin(page)
-    await gotoPage(page, LOCALES_PATH, PAGE_READY)
+    await signUpAdmin(expect, page)
+    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
     await clearBritishLocale(page)
     const observer = await context.newPage()
     const adds = countSentFrames(observer, 'hilos_i18n_locale_add')
     const updates = countSentFrames(observer, 'hilos_i18n_locale_update')
     try {
-      await gotoPage(observer, LOCALES_PATH, PAGE_READY)
+      await gotoPage(expect, observer, LOCALES_PATH, PAGE_READY)
       const livePages = await watchI18nLivePages(expect, [page, observer])
       for (const tab of [page, observer]) await openBritishAdd(tab)
       await observer
@@ -239,7 +244,10 @@ for (const choice of ['mine', 'theirs'] as const) {
       await expect(observer.getByTestId(WINDOW)).toBeVisible()
       expect(adds()).toBe(0)
       expect(updates()).toBe(0)
-      await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+      await clickSubmit(
+        expect,
+        observer.getByTestId(`conflict-accept-${choice}`),
+      )
       await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
       await expect(observer.getByTestId('i18n-locale-title')).toHaveText(
         ADD_TITLE,
@@ -256,13 +264,14 @@ for (const choice of ['mine', 'theirs'] as const) {
         expect(updates()).toBe(1)
       } else {
         await expect(observer.getByTestId(SUBMIT)).toBeDisabled()
-        await clickSubmit(observer.getByTestId('i18n-locale-cancel'))
+        await clickSubmit(expect, observer.getByTestId('i18n-locale-cancel'))
         await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
         expect(updates()).toBe(0)
       }
       expect(adds()).toBe(0)
       await dismissToasts(page)
       await clickSubmit(
+        expect,
         i18nLocaleRow(page, 'en-GB').getByTestId('i18n-locales-edit-en-GB'),
       )
       await expect(page.getByTestId('i18n-locale-field-date')).toHaveValue(date)
@@ -270,13 +279,13 @@ for (const choice of ['mine', 'theirs'] as const) {
         'HH:mm:ss',
       )
       await expect(page.getByTestId(SUBMIT)).toBeDisabled()
-      await clickSubmit(page.getByTestId('i18n-locale-cancel'))
+      await clickSubmit(expect, page.getByTestId('i18n-locale-cancel'))
       await expect(page.getByTestId(WINDOW)).toHaveCount(0)
       await expect(observer.getByTestId('hilos-table-apply')).toHaveCount(0)
       await livePages.unchanged()
     } finally {
       await observer.close()
-      await gotoPage(page, LOCALES_PATH, PAGE_READY)
+      await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
       await clearBritishLocale(page)
     }
   })
@@ -286,13 +295,13 @@ test('preserves the Add draft and sends no Save or Enter action after the locale
   page,
   context,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, LOCALES_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
   await clearBritishLocale(page)
   const observer = await context.newPage()
   const actions = countSentFrames(observer, '"type":"action"')
   try {
-    await gotoPage(observer, LOCALES_PATH, PAGE_READY)
+    await gotoPage(expect, observer, LOCALES_PATH, PAGE_READY)
     const livePages = await watchI18nLivePages(expect, [page, observer])
     for (const tab of [page, observer]) await openBritishAdd(tab)
     await observer
@@ -309,10 +318,11 @@ test('preserves the Add draft and sends no Save or Enter action after the locale
 
     await dismissToasts(page)
     await clickSubmit(
+      expect,
       i18nLocaleRow(page, 'en-GB').getByTestId('i18n-locales-edit-en-GB'),
     )
-    await clickSubmit(page.getByTestId('i18n-locale-switch-on'))
-    await clickSubmit(page.getByTestId('i18n-locale-switch-on-confirm'))
+    await clickSubmit(expect, page.getByTestId('i18n-locale-switch-on'))
+    await clickSubmit(expect, page.getByTestId('i18n-locale-switch-on-confirm'))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(observer.getByTestId(NOTICE)).toHaveText(
       'Switched on elsewhere just now.',
@@ -345,13 +355,13 @@ test('preserves the Add draft and sends no Save or Enter action after the locale
     await expect(observer.getByTestId('hilos-table-apply')).toHaveCount(0)
     await livePages.unchanged()
     expect(actions()).toBe(0)
-    await clickSubmit(observer.getByTestId('i18n-locale-cancel'))
-    await clickSubmit(observer.getByTestId('modal-confirm-discard'))
+    await clickSubmit(expect, observer.getByTestId('i18n-locale-cancel'))
+    await clickSubmit(expect, observer.getByTestId('modal-confirm-discard'))
     await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
     expect(actions()).toBe(0)
   } finally {
     await observer.close()
-    await gotoPage(page, LOCALES_PATH, PAGE_READY)
+    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
     await clearBritishLocale(page)
   }
 })

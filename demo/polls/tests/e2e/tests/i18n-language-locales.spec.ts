@@ -1,7 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { expectLanguagePageHead } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectLanguagePageHead,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 const APP_NAME = 'Hilos Polls'
 const OVERVIEW = 'hilos_i18n_language'
@@ -10,8 +14,8 @@ const LOCALES = 'hilos_i18n_language_locales'
 test('opens the locales of the default language directly with its own locale on and a view control', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
   // The default language from env and its locale with no country are set up and
   // switched on at start (HIL-1471): the row of the language alone shows both.
@@ -47,7 +51,7 @@ test('opens the locales of the default language directly with its own locale on 
 
   await mainTab.click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -58,7 +62,7 @@ test('opens the locales of the default language directly with its own locale on 
 
   await page.getByTestId(`hilos-page-tab-${LOCALES}`).click()
   await expect(page).toHaveURL(/\/locales$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',

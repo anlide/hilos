@@ -1,11 +1,13 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  uniqueEmail,
   abandonConsent,
   denyConsent,
   signInAs,
   signUpAs,
   waitForProviderWindow,
+  gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import {
@@ -14,8 +16,6 @@ import {
   type StandOAuthAccount,
   type StandOAuthProfile,
 } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
-import { gotoPage } from '../helpers/page'
-import { uniqueEmail } from '../helpers/session'
 
 test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   page,
@@ -40,7 +40,7 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   // somebody else's or landing in linking by address (HIL-282).
   const account = await declareOAuthAccount('google', { email: uniqueEmail() })
 
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
@@ -60,7 +60,7 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
 
   // The upgraded session persists: the gated profile now resolves in place, with the
   // OAuth identity bound to the freshly created account.
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
@@ -101,7 +101,7 @@ async function signInThroughProvider(
   account: StandOAuthAccount,
   newAccount = false,
 ): Promise<void> {
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   const signingIn = newAccount
@@ -202,7 +202,7 @@ test('returns quietly to the field when the person refuses at the provider', asy
   page,
 }) => {
   await declareOAuthAccount('github', { email: uniqueEmail() })
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   const providerWindow = waitForProviderWindow(page)
@@ -220,7 +220,7 @@ test('returns quietly to the field when the person closes the provider window', 
   page,
 }) => {
   await declareOAuthAccount('google', { email: uniqueEmail() })
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   const providerWindow = waitForProviderWindow(page)

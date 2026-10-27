@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
+  signUp,
   CIRCLE_OFFLINE,
   CIRCLE_ONLINE,
   MAINTENANCE_PATH,
@@ -26,10 +27,6 @@ import {
   turnOnMaintenance,
   watchClientDocument,
   watchDeliveryFrames,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import {
   PAGE_READY,
   expectPageReady,
   expectSelfReload,
@@ -37,8 +34,11 @@ import {
   gotoMaintenance,
   gotoPage,
   markDocument,
-} from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
+  grantAdminToSelf,
+  sessionToken,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+
 import {
   closeProtectedMode,
   enableManualMaintenance,
@@ -49,7 +49,7 @@ import {
   mintManualMaintenancePass,
   openProtectedMode,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode.js'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // Protected-mode e2e (HIL-344): the debt HIL-268 and HIL-522 were closed with —
 // the freeze and its browser stub had never been driven from a browser at all,
@@ -101,7 +101,7 @@ test.afterEach(async ({ page }) => {
       // Command-only cases have no document yet. A live socket must observe the
       // lift too: inactive reaches the command caller before the resumed roster
       // broadcasts the frame that reloads every connected browser.
-      if (page.url() === 'about:blank') await gotoMaintenance(page, '/')
+      if (page.url() === 'about:blank') await gotoMaintenance(expect, page, '/')
       await markDocument(page)
     }
   } catch (error) {
@@ -116,7 +116,8 @@ test.afterEach(async ({ page }) => {
   if (errors.length === 1) throw errors[0]
   if (errors.length > 1)
     throw new AggregateError(errors, 'Protected-mode teardown failed')
-  if (frozen) await expectSelfReload(page)
+  if (frozen)
+    await expectSelfReload(page, test.info().project.use.navigationTimeout)
 })
 
 test.describe('maintenance moments in the reader zone', () => {
@@ -139,12 +140,12 @@ test.describe('maintenance moments in the reader zone', () => {
       const other = await otherContext.newPage()
       const losAngeles = watchDeliveryFrames(other)
       try {
-        await grantAdminToSelf(page)
-        await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+        await grantAdminToSelf(expect, page)
+        await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
         await clearMaintenanceCircle(page)
-        await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
-        await grantAdminToSelf(other)
-        await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+        await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+        await grantAdminToSelf(expect, other)
+        await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
         if (manual) {
           await turnOnMaintenance(page)
           await expectManualMaintenanceOn(expect, page)
@@ -158,7 +159,7 @@ test.describe('maintenance moments in the reader zone', () => {
           ).toBe('active')
           expect(await leaveProtectedMode()).toBe('verifying')
           await presentMaintenanceCode(other, await mintProtectedModePass())
-          await expectPageReady(other)
+          await expectPageReady(expect, other)
         }
         const start = await expectMaintenanceMoment(
           expect,
@@ -186,8 +187,11 @@ test.describe('maintenance moments in the reader zone', () => {
         if (manual) await turnOffMaintenance(other)
         else expect(await openProtectedMode()).toBe('inactive')
         for (const reader of [page, other]) {
-          await expectSelfReload(reader)
-          await expectPageReady(reader)
+          await expectSelfReload(
+            reader,
+            test.info().project.use.navigationTimeout,
+          )
+          await expectPageReady(expect, reader)
           await expectMaintenanceOpen(expect, reader)
         }
       } finally {
@@ -213,8 +217,8 @@ test('Maintenance Overview and Circle share one head through links, history, dir
   // No circle request can leave Overview: viewport, focus and rendered frames
   // all name the existing table key. Arm before the first socket opens.
   const circleRequests = countSentFrames(page, 'hilosVerifierCircle')
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
   await expectMaintenanceOpen(expect, page)
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toHaveCount(
@@ -229,7 +233,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
   await expect(circle).toBeFocused()
   await circle.press('Enter')
   await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
   const table = page.getByTestId('hilos-maintenance-circle-table')
   await expect(table).toBeVisible()
@@ -245,32 +249,32 @@ test('Maintenance Overview and Circle share one head through links, history, dir
   await document.dispose()
 
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
   await expect(table).toBeVisible()
 
   const reloadedDocument = await watchClientDocument(page)
   await overview.click()
   await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
   await expectMaintenanceOpen(expect, page)
   await expect(table).toHaveCount(0)
 
   await page.goBack()
   await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
   await expect(table).toBeVisible()
   await page.goForward()
   await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
   await expect(table).toHaveCount(0)
   await reloadedDocument.unchanged()
   await reloadedDocument.dispose()
 
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
   await expect(table).toBeVisible()
 })
@@ -280,16 +284,16 @@ test('two administrators close the system by hand, one lets the other in with a 
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
-    await grantAdminToSelf(other)
-    await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+    await grantAdminToSelf(expect, other)
+    await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)
@@ -322,10 +326,10 @@ test('a code issued in Maintenance admits two independent browsers and is shown 
   browser,
 }) => {
   test.slow() // Three independent sessions enter through the production manual window and its code reply.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   await clearMaintenanceCircle(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   const secondContext = await browser.newContext()
   const thirdContext = await browser.newContext()
   const second = await secondContext.newPage()
@@ -333,8 +337,8 @@ test('a code issued in Maintenance admits two independent browsers and is shown 
   try {
     // Administrators outside the captured circle still need the code to enter.
     for (const other of [second, third]) {
-      await grantAdminToSelf(other)
-      await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+      await grantAdminToSelf(expect, other)
+      await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
     }
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)
@@ -418,16 +422,16 @@ test('another admitted admin turns off CLI maintenance and every page reloads it
 }) => {
   // Two administrator sessions and the visitor must already exist when the door closes.
   test.slow() // Three browser sessions, production entry/admission and three independent reloads.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   const adminContext = await browser.newContext()
   const publicContext = await browser.newContext()
   const otherAdmin = await adminContext.newPage()
   const visitor = await publicContext.newPage()
   try {
-    await grantAdminToSelf(otherAdmin)
-    await gotoPage(otherAdmin, MAINTENANCE_PATH, PAGE_READY)
-    await gotoPage(visitor, '/')
+    await grantAdminToSelf(expect, otherAdmin)
+    await gotoPage(expect, otherAdmin, MAINTENANCE_PATH, PAGE_READY)
+    await gotoPage(expect, visitor, '/')
     await expect(visitor.getByTestId('conn-state')).toHaveText('connected')
     expect(await enableManualMaintenance()).toBe('verifying')
     await expect(page.getByTestId('maintenance')).toBeVisible()
@@ -445,8 +449,11 @@ test('another admitted admin turns off CLI maintenance and every page reloads it
     await turnOffMaintenance(otherAdmin)
     // Lift may precede the action ack: no toast or local navigation is needed to complete it.
     for (const openPage of [page, otherAdmin, visitor]) {
-      await expectSelfReload(openPage)
-      await expectPageReady(openPage)
+      await expectSelfReload(
+        openPage,
+        test.info().project.use.navigationTimeout,
+      )
+      await expectPageReady(expect, openPage)
       await expect(openPage.getByTestId('maintenance')).toBeHidden()
       await expect(openPage.getByTestId('conn-state')).toHaveText('connected')
     }
@@ -461,7 +468,7 @@ test('another admitted admin turns off CLI maintenance and every page reloads it
 test('a live window shows the maintenance stub while the mode is on', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
@@ -511,7 +518,7 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
   // A cold connection first — the session cookie is minted on the first 101, and it
   // is the only handle a browser has on its own identity here: the welcome frame
   // carries no accept key, so nothing in the page can name the socket it arrived on.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const operatorSession = await sessionToken(page)
 
@@ -527,7 +534,7 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
 
   // The reload. A brand new accept key, the same cookie, and the same person — and
   // the same screen as before it, which is the whole point: F5 changes nothing.
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
   await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
 
   // The second tab, which the freeze was never told about at all — it did not exist
@@ -535,13 +542,13 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
   // register it anywhere. The master recognizes it off its own connection list and
   // answers it exactly as it answered the reload.
   const secondTab = await context.newPage()
-  await gotoMaintenance(secondTab, ADMIN_URL)
+  await gotoMaintenance(expect, secondTab, ADMIN_URL)
 
   // A stranger is held too, and was all along — this leaf changed nothing for them.
   // What it changed is that the three screens now say the same thing.
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
-  await gotoMaintenance(stranger, '/')
+  await gotoMaintenance(expect, stranger, '/')
   await expect(stranger.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
   await strangerContext.close()
 
@@ -573,7 +580,7 @@ test('the verification window waits for a code before it offers a field', async 
   // A public url in the window looks exactly like the active phase, in both
   // states of the window. That is HIL-615 untouched: a visitor holds no code, and
   // a field would announce to him that a window is open at all.
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
   await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
   await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
@@ -581,7 +588,7 @@ test('the verification window waits for a code before it offers a field', async 
   // The same phase, the same freeze, an administrative url — and no code minted
   // yet. The verifier is told to wait rather than handed a box that can take
   // nothing, which is the whole of HIL-616.
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await expect(page.getByTestId('maintenance-pass-pending')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
 
@@ -609,7 +616,7 @@ test('the verification window waits for a code before it offers a field', async 
   // A public url still shows neither, now that a code is standing: the surface
   // type decides, not what the window holds.
   const publicTab = await page.context().newPage()
-  await gotoMaintenance(publicTab, '/')
+  await gotoMaintenance(expect, publicTab, '/')
   await expect(publicTab.getByTestId('maintenance-pass-form')).toBeHidden()
   await expect(publicTab.getByTestId('maintenance-pass-pending')).toBeHidden()
   await publicTab.close()
@@ -626,7 +633,7 @@ test('a wrong code leaves the connection frozen and says so', async ({
   expect(await leaveProtectedMode()).toBe('verifying')
   await mintProtectedModePass()
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await presentMaintenanceCode(page, 'not-the-code-that-was-minted')
 
   await expect(page.getByTestId('maintenance-pass-error')).toBeVisible()
@@ -643,7 +650,7 @@ test('the minted code admits the verifier while everyone else keeps the stub', a
   const pass = await mintProtectedModePass()
   expect(pass).not.toBe('')
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await presentMaintenanceCode(page, pass)
 
   // The verifier sees the product; the freeze is still on for everybody else,
@@ -656,7 +663,7 @@ test('the minted code admits the verifier while everyone else keeps the stub', a
   // with it. "Everybody else" begins at the next cookie.
   const bystanderContext = await browser.newContext()
   const bystander = await bystanderContext.newPage()
-  await gotoMaintenance(bystander, ADMIN_URL)
+  await gotoMaintenance(expect, bystander, ADMIN_URL)
   await expect(bystander.getByTestId('maintenance-pass-form')).toBeVisible()
   await bystanderContext.close()
 })
@@ -678,9 +685,9 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
   // somebody who is already looking at the maintenance screen. The waiting tab stands
   // on the main page, the surface that came up blank behind a live admission until a
   // reload (HIL-912).
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   const waiting = await page.context().newPage()
-  await gotoMaintenance(waiting, '/')
+  await gotoMaintenance(expect, waiting, '/')
 
   await presentMaintenanceCode(page, pass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
@@ -693,20 +700,20 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
   await expectInsideMainPage(waiting)
 
   // An F5 lands on the same page, which is the criterion: a reload changes nothing.
-  await gotoAdmitted(waiting, '/')
+  await gotoAdmitted(expect, waiting, '/')
   await expectInsideMainPage(waiting)
 
   // And a tab opened afterwards is inside without ever being shown the field: it
   // arrives with the same cookie and an accept key the row has never seen.
   const later = await page.context().newPage()
-  await gotoAdmitted(later, ADMIN_URL)
+  await gotoAdmitted(expect, later, ADMIN_URL)
   await expect(later.getByTestId('maintenance')).toBeHidden()
 
   // The admission belongs to one browser and not to everybody: another one keeps
   // the stub, and the field, for the whole window.
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
-  await gotoMaintenance(stranger, ADMIN_URL)
+  await gotoMaintenance(expect, stranger, ADMIN_URL)
   await expect(stranger.getByTestId('maintenance-pass-form')).toBeVisible()
   await strangerContext.close()
 
@@ -726,12 +733,12 @@ test('the tabs the operator already had open are raised and lowered together', a
   // actually wanted: the operator's tabs never disagree with each other. They all go
   // to the stub when the freeze lands, and they all come off it when the window
   // opens — by the frame, without an F5, which is what the old defect needed.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const operatorSession = await sessionToken(page)
 
   const otherTab = await context.newPage()
-  await gotoPage(otherTab, '/')
+  await gotoPage(expect, otherTab, '/')
   await expect(otherTab.getByTestId('maintenance')).toBeHidden()
 
   expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
@@ -751,7 +758,7 @@ test('the tabs the operator already had open are raised and lowered together', a
   // shown at all — a public surface shows neither of the two (HIL-615).
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
-  await gotoMaintenance(stranger, ADMIN_URL)
+  await gotoMaintenance(expect, stranger, ADMIN_URL)
 
   // The window frame is a second broadcast, and this time it spares the operator's
   // session — which is addressed by a frame of its own saying the opposite.
@@ -775,7 +782,7 @@ test('leaving the window takes the field and the sentence away together', async 
   expect(await leaveProtectedMode()).toBe('verifying')
   await mintProtectedModePass()
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
 
   expect(await openProtectedMode()).toBe('inactive')
@@ -788,7 +795,7 @@ test('leaving the window takes the field and the sentence away together', async 
 test('a public page live through the switch gains no code field', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
   expect(await enterProtectedMode(OPERATION)).toBe('active')
@@ -801,7 +808,7 @@ test('a public page live through the switch gains no code field', async ({
   // code standing, so the assertion below is about the surface type and not about
   // a frame still in flight.
   const verifierTab = await page.context().newPage()
-  await gotoMaintenance(verifierTab, ADMIN_URL)
+  await gotoMaintenance(expect, verifierTab, ADMIN_URL)
   await expect(verifierTab.getByTestId('maintenance-pass-form')).toBeVisible()
   await verifierTab.close()
 
@@ -874,7 +881,7 @@ test('closing the window puts the admitted verifier back behind the stub', async
   expect(await leaveProtectedMode()).toBe('verifying')
   const pass = await mintProtectedModePass()
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await presentMaintenanceCode(page, pass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
@@ -882,7 +889,7 @@ test('closing the window puts the admitted verifier back behind the stub', async
   // with the first one: the close voids the admission itself, not one socket's copy
   // of it.
   const secondTab = await page.context().newPage()
-  await gotoAdmitted(secondTab, ADMIN_URL)
+  await gotoAdmitted(expect, secondTab, ADMIN_URL)
   await expect(secondTab.getByTestId('maintenance')).toBeHidden()
 
   expect(await closeProtectedMode()).toBe('active')
@@ -907,7 +914,7 @@ test('a repeat enter under the verification window re-enters active and voids ex
   expect(await leaveProtectedMode()).toBe('verifying')
   const pass = await mintProtectedModePass()
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await presentMaintenanceCode(page, pass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
@@ -936,7 +943,7 @@ test('a code from a closed window opens no later one', async ({
   expect(await leaveProtectedMode()).toBe('verifying')
   const closedWindowPass = await mintProtectedModePass()
 
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await presentMaintenanceCode(page, closedWindowPass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
@@ -958,7 +965,7 @@ test('a code from a closed window opens no later one', async ({
   // The current code, so the refusal above is about the code and not about a
   // window that had stopped admitting anyone.
   const verifier = await context.newPage()
-  await gotoMaintenance(verifier, ADMIN_URL)
+  await gotoMaintenance(expect, verifier, ADMIN_URL)
   await presentMaintenanceCode(verifier, openWindowPass)
   await expect(verifier.getByTestId('maintenance')).toBeHidden()
   await verifier.close()
@@ -1002,7 +1009,7 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
   await watchFirstFrame(page)
   expect(await enterProtectedMode(OPERATION)).toBe('active')
 
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
 
   const watch = await readFirstFrameWatch(page)
   expect(watch).not.toBeNull()
@@ -1025,8 +1032,8 @@ test('the operator and the admitted verifier both see the verification banner, a
   // that says so. What has to hold is that it survives everything the operator
   // does next - a reload, a second tab - because a state indicator built out of
   // anything but the connection would not.
-  await grantAdminToSelf(page)
-  await gotoPage(page, ADMIN_URL)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, ADMIN_URL)
   const operatorSession = await sessionToken(page)
 
   // Entered for the operator's browser and then ended, which is what leaves the
@@ -1044,7 +1051,7 @@ test('the operator and the admitted verifier both see the verification banner, a
   )
 
   // The reload, which is where a banner living in a toast or a store would end.
-  await gotoAdmitted(page, ADMIN_URL)
+  await gotoAdmitted(expect, page, ADMIN_URL)
   await expect(page.getByTestId('protected-mode-banner')).toContainText(
     BANNER_MESSAGE,
   )
@@ -1052,7 +1059,7 @@ test('the operator and the admitted verifier both see the verification banner, a
   // And a second tab of the same profile, which never saw the frame at all and
   // learns the whole state from its own welcome.
   const secondTab = await page.context().newPage()
-  await gotoAdmitted(secondTab, '/')
+  await gotoAdmitted(expect, secondTab, '/')
   await expect(secondTab.getByTestId('protected-mode-banner')).toContainText(
     BANNER_MESSAGE,
   )
@@ -1062,7 +1069,7 @@ test('the operator and the admitted verifier both see the verification banner, a
   const verifierContext = await browser.newContext()
   const verifier = await verifierContext.newPage()
   const pass = await mintProtectedModePass()
-  await gotoMaintenance(verifier, ADMIN_URL)
+  await gotoMaintenance(expect, verifier, ADMIN_URL)
   await presentMaintenanceCode(verifier, pass)
   await expect(verifier.getByTestId('maintenance')).toBeHidden()
   await expect(verifier.getByTestId('protected-mode-banner')).toContainText(
@@ -1073,7 +1080,7 @@ test('the operator and the admitted verifier both see the verification banner, a
   // application they are not being shown would be a banner over nothing.
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
-  await gotoMaintenance(stranger, ADMIN_URL)
+  await gotoMaintenance(expect, stranger, ADMIN_URL)
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
 
   // The lift, and the banner goes with the mode it describes - for everybody at
@@ -1086,14 +1093,14 @@ test('the operator and the admitted verifier both see the verification banner, a
   await markDocument(page)
   await markDocument(stranger)
   expect(await openProtectedMode()).toBe('inactive')
-  await expectSelfReload(page)
-  await expectPageReady(page)
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
   // The stranger is steered afterwards rather than instead: they were held on an
   // administrative url they have no right to, so the document they reload into is a
   // refusal. Once that reload has landed there is nothing left to collide with.
-  await expectSelfReload(stranger)
-  await gotoPage(stranger, '/')
+  await expectSelfReload(stranger, test.info().project.use.navigationTimeout)
+  await gotoPage(expect, stranger, '/')
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
 
   await secondTab.close()
@@ -1112,15 +1119,15 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // The circle member needs a PROVEN address: naming somebody resolves the address
   // against the confirmed identities. Registering proves it - the code the
   // registration mails out confirms the address it was sent to (HIL-825).
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
   await clearMaintenanceCircle(page)
   const operatorSession = await sessionToken(page)
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = await signUp(member)
+  const memberEmail = (await signUp(expect, member)).email
 
   // Named through the modal, which is the only way an operator has: no test backdoor
   // writes this row, so a broken action surface fails here rather than silently
@@ -1133,12 +1140,12 @@ test('the named circle walks in with the tab it already had open, and nobody els
 
   // The member has to be HERE when the node freezes: what is photographed is the set
   // of live connections, so a tab opened afterwards is a tab that was never in it.
-  await gotoPage(member, '/')
+  await gotoPage(expect, member, '/')
   await expect(member.getByTestId('conn-state')).toHaveText('connected')
 
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
-  await gotoPage(stranger, '/')
+  await gotoPage(expect, stranger, '/')
   await expect(stranger.getByTestId('conn-state')).toHaveText('connected')
 
   // The freeze, entered for the operator's browser and then ended - the same two moves
@@ -1175,9 +1182,9 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // An F5 changes nothing for either of them: the 101 admits by the same photograph the
   // push was addressed by, so the member reloads into the same page and the stranger
   // reloads into the same stub.
-  await gotoAdmitted(member, '/')
+  await gotoAdmitted(expect, member, '/')
   await expectInsideMainPage(member)
-  await gotoMaintenance(stranger, '/')
+  await gotoMaintenance(expect, stranger, '/')
   await expect(stranger.getByTestId('maintenance')).toBeVisible()
 
   // The operator now mints a code for somebody outside the circle, with the member
@@ -1188,7 +1195,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // so what is then asserted about the member is not a race won by being early. The
   // window stamp proves no reload; the attribute on the page node proves no remount - a
   // tab that got active:true and then active:false would come back with a new node.
-  await gotoMaintenance(stranger, ADMIN_URL)
+  await gotoMaintenance(expect, stranger, ADMIN_URL)
   await expect(stranger.getByTestId('maintenance-pass-pending')).toBeVisible()
   await member.evaluate(() => {
     ;(window as Window & { hil1082Stamp?: boolean }).hil1082Stamp = true
@@ -1219,8 +1226,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   const closed = await inspectProtectedMode()
   expect(closed.circleSize).toBe(0)
   expect(closed.circleAdmitted).toBe(0)
-  await gotoMaintenance(member, '/')
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, member, '/')
+  await gotoMaintenance(expect, page, '/')
 
   // The membership outlived the freeze it was named for - a test drive replaces no
   // database, so the row is still the one the operator typed.
@@ -1231,8 +1238,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // waited for instead is the document itself being replaced.
   await markDocument(page)
   expect(await openProtectedMode()).toBe('inactive')
-  await expectSelfReload(page)
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await clearMaintenanceCircle(page)
 
@@ -1248,17 +1255,17 @@ test('a circle member who was away when the node froze is named and still outsid
   // tab that was open, so being on the list is not by itself a way in. Without this the
   // leaf could quietly start letting anybody named through on a later connection, which
   // is a session resolved against a database the restore has already replaced.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
   await clearMaintenanceCircle(page)
   const operatorSession = await sessionToken(page)
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = await signUp(member)
+  const memberEmail = (await signUp(expect, member)).email
   await addToMaintenanceCircle(page, memberEmail)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
-  await gotoPage(member, '/')
+  await gotoPage(expect, member, '/')
   await expect(member.getByTestId('conn-state')).toHaveText('connected')
   await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(
     CIRCLE_ONLINE,
@@ -1290,7 +1297,7 @@ test('a circle member who was away when the node froze is named and still outsid
 
   const returning = await browser.newContext()
   const returned = await returning.newPage()
-  await gotoMaintenance(returned, '/')
+  await gotoMaintenance(expect, returned, '/')
   await expect(returned.getByTestId('maintenance')).toBeVisible()
 
   await returning.close()
@@ -1313,7 +1320,7 @@ async function expectInsideMainPage(page: Page): Promise<void> {
   await expect(page.getByTestId('protected-mode-banner')).toContainText(
     BANNER_MESSAGE,
   )
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(
     page.getByTestId('self-user').or(page.getByTestId('self-anonymous')),
   ).toBeVisible()
@@ -1419,8 +1426,8 @@ test.describe('the maintenance section in the admin view mode', () => {
     'a guest opens both circle dialogs and has nothing to send from either',
     { tag: '@quarantine:F-026' },
     async ({ page, browser }) => {
-      await grantAdminToSelf(page)
-      await gotoPage(page, MAINTENANCE_CIRCLE_PATH)
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
       await expect(
         page.getByTestId('hilos-maintenance-circle-table'),
       ).toBeVisible()
@@ -1428,7 +1435,7 @@ test.describe('the maintenance section in the admin view mode', () => {
 
       const memberContext = await browser.newContext()
       const member = await memberContext.newPage()
-      const memberEmail = await signUp(member)
+      const memberEmail = (await signUp(expect, member)).email
       await addToMaintenanceCircle(page, memberEmail)
       await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
 
@@ -1436,7 +1443,7 @@ test.describe('the maintenance section in the admin view mode', () => {
 
       const guestContext = await browser.newContext()
       const guest = await guestContext.newPage()
-      await gotoPage(guest, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+      await gotoPage(expect, guest, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
       await expect(
         guest.getByTestId('hilos-maintenance-circle-table'),
       ).toBeVisible()

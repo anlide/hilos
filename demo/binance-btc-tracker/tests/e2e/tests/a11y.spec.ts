@@ -18,20 +18,18 @@ import {
   expectDaemonPage,
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import {
   expectPageReady,
   gotoPage,
   gotoPublicStatus,
   PAGE_READY,
-} from '../helpers/page.js'
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
 import {
   STATUS_FAULT_COMPONENT,
   withStatusAgentLoss,
 } from '../helpers/status.js'
 
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Status's two pages and incident modal over the real socket. The framework's
 // broader shell/table audit stays with its existing representative demos.
@@ -40,11 +38,11 @@ test.use({ colorScheme: 'light' })
 test('Analytics Person has one entity heading naming its table and a decorative avatar without tabs', async ({
   page,
 }) => {
-  const userId = await grantAdminToSelf(page)
+  const userId = await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('self-user')).toBeVisible()
   const name = await page.getByTestId('self-user').innerText()
   const label = `${name} (#${userId})`
-  await gotoPage(page, `/hilos/analytics/people/${userId}`, PAGE_READY)
+  await gotoPage(expect, page, `/hilos/analytics/people/${userId}`, PAGE_READY)
 
   const carrier = page.getByTestId('hilos-admin-page')
   await expect(carrier).toHaveAttribute('data-page', 'hilos_analytics_person')
@@ -86,8 +84,8 @@ test('Analytics Person has one entity heading naming its table and a decorative 
 test('Logs pages expose named navigation, one heading and ordinary keyboard links', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/logs', PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
   await expectLogsPageHead(expect, page, 'hilos_logs')
   const overview = page.getByTestId('hilos-page-tab-hilos_logs')
   const keys = page.getByTestId('hilos-page-tab-hilos_logs_keys')
@@ -96,7 +94,7 @@ test('Logs pages expose named navigation, one heading and ordinary keyboard link
   await page.keyboard.press('Tab')
   await expect(keys).toBeFocused()
   await keys.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/logs\/keys$/)
   await expectLogsPageHead(expect, page, 'hilos_logs_keys')
   await keys.focus()
@@ -104,7 +102,7 @@ test('Logs pages expose named navigation, one heading and ordinary keyboard link
   const workers = page.getByTestId('hilos-page-tab-hilos_logs_workers')
   await expect(workers).toBeFocused()
   await workers.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/logs\/workers$/)
   await expectLogsPageHead(expect, page, 'hilos_logs_workers')
 })
@@ -112,8 +110,8 @@ test('Logs pages expose named navigation, one heading and ordinary keyboard link
 test('Status pages expose the shared heading, current tab, title, named table and keyboard navigation', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, STATUS_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
   await expectStatusHead(expect, page)
   await expect(page).toHaveTitle('Status · BTC Tracker')
   await expect(page.getByTestId('page-title')).toHaveText(
@@ -127,7 +125,7 @@ test('Status pages expose the shared heading, current tab, title, named table an
   const tab = page.getByTestId('hilos-page-tab-hilos_status_components')
   await tab.focus()
   await tab.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectStatusHead(expect, page, true)
   await expect(page).toHaveTitle('Status · BTC Tracker')
   await expect(page.getByTestId('page-title')).toHaveText(
@@ -153,7 +151,7 @@ test('Status pages expose the shared heading, current tab, title, named table an
   const overview = page.getByTestId('hilos-page-tab-hilos_status')
   await overview.focus()
   await overview.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectStatusHead(expect, page)
 })
 
@@ -162,7 +160,7 @@ test('public Status exposes file-backed semantics, shell landmarks and keyboard 
 }) => {
   const log = watchPublicStatus(page)
   try {
-    await gotoPublicStatus(page)
+    await gotoPublicStatus(expect, page)
     await expectPublicStatusPair(expect, page, log, ({ status }) =>
       status.components.every((component) => component.state === 'operational'),
     )
@@ -190,11 +188,11 @@ test(
   async ({ page }) => {
     // The real roster/collector observation and recovery are part of this modal proof.
     test.slow()
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const workers = await page.context().newPage()
     const log = watchStatusFrames(page)
     try {
-      await gotoPage(page, STATUS_PATH, PAGE_READY)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await withStatusAgentLoss(workers, log, async () => {
         await expect
@@ -230,8 +228,8 @@ test(
 test('language pages expose one named head, current link and named table through keyboard navigation', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -256,7 +254,7 @@ test('language pages expose one named head, current link and named table through
     await link.focus()
     await expect(link).toBeFocused()
     await link.press('Enter')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectLanguagePageHead(expect, page, {
       code: 'en',
       nativeName: 'English',
@@ -270,8 +268,8 @@ test('language pages expose one named head, current link and named table through
 test('the default language deletion explanation is named, keyboard readable and returns focus', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
   const row = shownByTestId(page, /^hilos-table-row-/).filter({
     has: page.getByTestId('i18n-languages-delete-en'),
   })
@@ -308,13 +306,13 @@ test('the default language deletion explanation is named, keyboard readable and 
 test('the Env orphans tab names its one table through the heading from the keyboard', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, DAEMON_NODE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
   const link = page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans')
   await link.focus()
   await expect(link).toBeFocused()
   await link.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(`${DAEMON_NODE_PATH}/env/orphans`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expectDaemonNodeTableName(expect, page)
@@ -328,8 +326,8 @@ test.describe('Daemon section accessibility', () => {
       page,
     }) => {
       await setAdminViewMode(viewer)
-      if (!viewer) await grantAdminToSelf(page)
-      await gotoPage(page, DAEMON_ROOT_PATH)
+      if (!viewer) await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, DAEMON_ROOT_PATH)
       await expectDaemonPage(expect, page, 'hilos_daemon')
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
       const placement = page.getByTestId(

@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test'
 
-import { setAdmin } from '../helpers/adminGrant'
-import { gotoPage, PAGE_REFUSED } from '../helpers/page'
-import { signUpPerson } from '../helpers/session'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import {
+  signUp,
+  gotoPage,
+  PAGE_REFUSED,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // Admin-gating e2e: the framework people page /hilos/users is closed to a person
 // who is not an administrator with a 403, and a CLI-style grant over the daemon
@@ -18,11 +21,11 @@ test('gates the people page for a non-admin, then opens it after a grant', async
 }) => {
   // Register a user (the durable id feeds the grant); the account is not admin
   // yet, so the page's level still refuses it until the grant lands.
-  const { userId } = await signUpPerson(page)
+  const { userId } = await signUp(expect, page)
 
   // Not an admin: the subscription is refused with a 403 error page in place of
   // the admin view.
-  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
@@ -31,7 +34,7 @@ test('gates the people page for a non-admin, then opens it after a grant', async
 
   // Grant admin over the command channel, then reconnect with the same cookie.
   await setAdmin(userId, true)
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
 
   // The now-admin user passes the level: the live table renders, no error page.
   await expect(page.getByTestId('conn-state')).toHaveText('connected')

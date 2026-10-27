@@ -3,11 +3,14 @@ import { test, expect } from '@playwright/test'
 import {
   leaveSecondAdmin,
   shownByTestId,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { setAdmin, signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page'
-import { signUp } from '../helpers/session'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { signUp } from '../helpers/session.js'
 
 // HIL-1253: the browser knows the node's admin view mode from the session
 // response, so the shell draws the admin gear for a viewer who may look — a
@@ -32,13 +35,13 @@ test.afterEach(() => setAdminViewMode(false))
 test('a guest without an account sees the admin gear and opens the admin section in the view mode', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 
   await setAdminViewMode(true)
   // The flip is not sent to the open tab; the next handshake carries it.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toBeVisible()
   await expect(gear).toHaveAttribute('data-access', 'view')
@@ -49,7 +52,7 @@ test('a guest without an account sees the admin gear and opens the admin section
   await expect(gear.locator('.bi-eye')).toBeVisible()
 
   await gear.click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
@@ -62,11 +65,11 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
   // An account of this test's own: the acceptances and the users then hold at
   // least one person whose name is kept from the guest.
   const someone = await browser.newContext()
-  await signUp(await someone.newPage())
+  await signUp(expect, await someone.newPage())
   await someone.close()
 
   await setAdminViewMode(true)
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -80,7 +83,7 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
     { path: '/hilos/users', hidden: 'hilos-viewport-table' },
   ]
   for (const screen of screens) {
-    await gotoPage(page, screen.path, PAGE_READY)
+    await gotoPage(expect, page, screen.path, PAGE_READY)
     const strip = page.getByTestId('view-mode-banner')
     await expect(strip).toBeVisible()
     await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
@@ -96,7 +99,7 @@ test('a viewer sees open framework settings while a project key stays hidden', a
   page,
 }) => {
   await setAdminViewMode(true)
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('legal.consent_form', { delay: 10 })
@@ -116,18 +119,18 @@ test('a viewer sees open framework settings while a project key stays hidden', a
   await search.pressSequentially('local', { delay: 10 })
   await expect(closedRow).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/legal/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/legal/settings', PAGE_READY)
   await expect(
     shownByTestId(page, 'legal-setting-value-legal.consent_form'),
   ).toContainText('Checkbox')
 
-  const { userId } = await signUp(page)
+  const { userId } = await signUp(expect, page)
   await setAdmin(userId, true)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
   )
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const adminSearch = page.getByTestId('hilos-table-search')
   await adminSearch.fill('')
   await adminSearch.pressSequentially('default_bot_provider', { delay: 10 })
@@ -153,12 +156,16 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   // Made before the people open, that one's row is in the table from its first
   // answer rather than arriving live in the middle of the scenario.
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(browser, signUpAdmin, { baseURL, ignoreHTTPSErrors })
-  const { userId } = await signUp(page)
+  await leaveSecondAdmin(
+    browser,
+    (page) => signUpAdmin(expect, page, { entryId: 'message-signin' }),
+    { baseURL, ignoreHTTPSErrors },
+  )
+  const { userId } = await signUp(expect, page)
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toHaveAttribute('data-access', 'view')
 
-  await gotoPage(page, '/hilos/users', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/users', PAGE_READY)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   const strip = page.getByTestId('view-mode-banner')
@@ -168,7 +175,7 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   // and the page is answered again, now the full one; the strip leaves.
   await setAdmin(userId, true)
   await expect(gear).toHaveAttribute('data-access', 'full')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(strip).toHaveCount(0)
 
@@ -176,7 +183,7 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   // tab waits for it instead of drawing the refusal ahead of the server.
   await setAdmin(userId, false)
   await expect(gear).toHaveAttribute('data-access', 'view')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(strip).toBeVisible()

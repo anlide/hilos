@@ -1,14 +1,17 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test('adds a custom country after confirming its upkeep', async ({ page }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
 
   const open = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(open)
+  await clickSubmit(expect, open)
 
   const code = page.getByTestId('i18n-country-add-code')
   await code.fill('')
@@ -25,7 +28,7 @@ test('adds a custom country after confirming its upkeep', async ({ page }) => {
     'own',
   )
   const submit = page.getByTestId('i18n-country-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
 
   const confirmation = page.getByTestId('i18n-country-confirm')
   await expect(confirmation).toBeVisible()
@@ -35,7 +38,7 @@ test('adds a custom country after confirming its upkeep', async ({ page }) => {
   )
   await expect(page.getByTestId('i18n-country-confirm-code')).toHaveText('gg')
   const confirm = page.getByTestId('i18n-country-confirm-submit')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
@@ -53,11 +56,11 @@ test('adds a custom country after confirming its upkeep', async ({ page }) => {
 })
 
 test('refuses an already listed catalog country', async ({ page }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
 
   const open = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(open)
+  await clickSubmit(expect, open)
 
   const code = page.getByTestId('i18n-country-add-code')
   await code.fill('')
@@ -74,7 +77,7 @@ test('refuses an already listed catalog country', async ({ page }) => {
     'known',
   )
   const submit = page.getByTestId('i18n-country-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(page.getByTestId('i18n-country-add-error')).toContainText(
     "Country 'us' already exists.",
   )

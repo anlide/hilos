@@ -1,17 +1,20 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { switchCountryOn } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { switchCountryOn } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('switches off a known country from its card', async ({ page }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchCountryOn('it')
-  await gotoPage(page, '/hilos/i18n/countries/it', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/it', PAGE_READY)
   await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
 
   const opener = page.getByTestId('country-card-switch-off')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   await expect(page.getByTestId('country-card-switch-off-counts')).toBeVisible()
   await expect(
@@ -22,7 +25,7 @@ test('switches off a known country from its card', async ({ page }) => {
   ).toHaveText(/^\d+$/)
 
   const confirm = page.getByTestId('country-card-switch-off-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(

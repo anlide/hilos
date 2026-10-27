@@ -1,22 +1,25 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { switchLanguageOn } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { switchLanguageOn } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('switches off a known language from its card', async ({ page }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOn('fr')
-  await gotoPage(page, '/hilos/i18n/languages/fr', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/fr', PAGE_READY)
   await expect(page.getByTestId('language-card-enabled')).toHaveText(
     'Language switched on',
   )
 
   const opener = page.getByTestId('language-card-switch-off')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   const confirm = page.getByTestId('language-card-switch-off-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(

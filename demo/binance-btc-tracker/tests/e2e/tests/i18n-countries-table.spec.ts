@@ -1,13 +1,17 @@
 import { expect, test } from '@playwright/test'
-import { expectI18nPageHead } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectI18nPageHead,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test('opens the countries list after reflow, pages it and searches it', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
   await expectI18nPageHead(expect, page, {
     currentPage: 'hilos_i18n_countries',
     appName: 'BTC Tracker',
@@ -66,7 +70,7 @@ test('opens the countries list after reflow, pages it and searches it', async ({
   await expect(row).toHaveCount(0)
   await expect(legend).toBeVisible()
 
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
   await expectI18nPageHead(expect, page, {
     currentPage: 'hilos_i18n',
     appName: 'BTC Tracker',
@@ -75,7 +79,7 @@ test('opens the countries list after reflow, pages it and searches it', async ({
   const sectionTab = page.getByTestId('hilos-page-tab-hilos_i18n_countries')
   await sectionTab.click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/countries$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectI18nPageHead(expect, page, {
     currentPage: 'hilos_i18n_countries',
     appName: 'BTC Tracker',

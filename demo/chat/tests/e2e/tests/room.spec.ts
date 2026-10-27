@@ -1,18 +1,18 @@
 import { test, expect, type Page } from '@playwright/test'
-
-import { signUpAdmin } from '../helpers/adminGrant'
-import { openBotEdit, watchBotSearch } from '../helpers/bots'
 import {
-  clickSubmit,
-  logout,
   nameFromEmail,
   register,
-  signUp,
-  typeInto,
   uniqueEmail,
-} from '../helpers/session'
-import { expectPageReady, gotoPage } from '../helpers/page'
-import { tableRowKeyByText } from '../helpers/table'
+  clickSubmit,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
+  tableRowKeyByText,
+} from '../../../../../framework/frontend/e2e/index.js'
+
+import { openBotEdit, watchBotSearch } from '../helpers/bots'
+import { logout, signUp } from '../helpers/session.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 
@@ -28,7 +28,7 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 test('renders the connected user in the participant roster', async ({
   page,
 }) => {
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
 
   await expect(
     page.getByTestId('participant').filter({ hasText: user.name }),
@@ -42,7 +42,7 @@ test('renders the connected user in the participant roster', async ({
 test('renders the own registration notice in the event stream', async ({
   page,
 }) => {
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
 
   await expect(
     page
@@ -56,7 +56,7 @@ test('renders the own registration notice in the event stream', async ({
 // bots seeded the section still renders with its empty state, proving the list
 // is wired end-to-end.
 test('renders the bot list section', async ({ page }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await expect(page.getByTestId('bots-header')).toBeVisible()
@@ -81,7 +81,7 @@ test('sends a message action and starts the re-send lockout', async ({
 
   // The composer is gated for anonymous, so sign in first; the send then rides
   // the same live connection.
-  await signUp(page)
+  await signUp(expect, page)
 
   // The stand's model answers only what a spec dictated, so the permission
   // is ordered up front under a key the text carries; with none the text
@@ -92,7 +92,7 @@ test('sends a message action and starts the re-send lockout', async ({
   await dictateModerationVerdict(key, true, 'ok')
 
   await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect
     .poll(() =>
@@ -128,14 +128,14 @@ test('sends a message action and starts the re-send lockout', async ({
 test('renders a sent message in the event stream after moderation', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const text = `hello from e2e ${key}`
   await dictateModerationVerdict(key, true, 'ok')
 
   await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(
     page.getByTestId('event-text').filter({ hasText: text }),
@@ -147,7 +147,7 @@ test('renders a sent message in the event stream after moderation', async ({
 // region (the min-h-0 flex chain), so messages scroll inside the card rather
 // than growing the document.
 test('the event stream is its own scroll region', async ({ page }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   const overflowY = await page
@@ -170,7 +170,7 @@ test('gates sending behind the surface, and returns the identity line to anonymo
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // Anonymous read: the live event stream renders without a session.
@@ -190,7 +190,7 @@ test('gates sending behind the surface, and returns the identity line to anonymo
 
   // Registering through the modal upgrades the session; the gate closes the modal
   // off the session upgrade and the composer un-gates in place.
-  await register(page, email)
+  await register(expect, page, email)
   await expect(modal).toBeHidden()
   await expect(page.getByTestId('message-input')).toBeEnabled()
   await expect(page.getByTestId('message-signin')).toHaveCount(0)
@@ -204,7 +204,7 @@ test('gates sending behind the surface, and returns the identity line to anonymo
   // session scope drops the user, and the line re-renders off that ref the same
   // way the shell drops the profile link. What the line must not do is keep the
   // "Signed in as" sentence with the name gone from it.
-  await logout(page)
+  await logout(expect, page)
 
   await expect(page.getByTestId('self-anonymous')).toHaveText(
     'Browsing anonymously',
@@ -234,7 +234,7 @@ async function setBotActive(
 ): Promise<void> {
   await openBotEdit(page, name, windows)
   await page.getByTestId('admin-bots-active').setChecked(active)
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
@@ -268,7 +268,7 @@ async function expectSameDocument(
   loads: () => number,
   baseline: number,
 ): Promise<void> {
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(loads()).toBe(baseline)
 }
@@ -338,18 +338,20 @@ test.describe('home links', () => {
     let quinnActive = false
 
     try {
-      const userId = await signUpAdmin(page)
+      const userId = await signUpAdmin(expect, page, {
+        entryId: 'message-signin',
+      })
       const name = (await page.getByTestId('self-user').innerText()).trim()
       await setBotActive(page, QUIET_BOT, true, windows)
       quinnActive = true
-      const rowKey = await tableRowKeyByText(page, QUIET_BOT)
+      const rowKey = await tableRowKeyByText(expect, page, QUIET_BOT)
 
       const guestPage = await guestContext.newPage()
-      await gotoPage(page, '/')
-      await expectPageReady(page)
+      await gotoPage(expect, page, '/')
+      await expectPageReady(expect, page)
       const adminLoads = countLaterLoads(page)
-      await gotoPage(guestPage, '/')
-      await expectPageReady(guestPage)
+      await gotoPage(expect, guestPage, '/')
+      await expectPageReady(expect, guestPage)
       const guestLoads = countLaterLoads(guestPage)
 
       await followHomeLinks(page, userId, name, rowKey, adminLoads)

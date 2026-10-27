@@ -2,15 +2,17 @@ import { expect, test } from '@playwright/test'
 import {
   expectLanguagePageHead,
   expectNoOtherLanguageNames,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('opens the names of the default language directly as a table that says no other language is added', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/names', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/names', PAGE_READY)
 
   // The stand knows one language, the default one from env, and a language has no
   // row of its own in its names table: the table stands empty and says why.
@@ -41,11 +43,11 @@ test('opens the names of the default language directly as a table that says no o
 
   await mainTab.click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('language-card-main')).toBeVisible()
 
   await page.getByTestId('hilos-page-tab-hilos_i18n_language_names').click()
   await expect(page).toHaveURL(/\/names$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectNoOtherLanguageNames(expect, page)
 })

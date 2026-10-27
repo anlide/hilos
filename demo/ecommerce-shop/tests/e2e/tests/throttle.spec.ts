@@ -1,22 +1,21 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  watchSocketFrames,
-  type SocketFrame,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from '../helpers/page'
-import {
   PASSWORD,
-  clickSubmit,
   enterIdentifierAndPassword,
   logout,
   nameFromEmail,
   openSignIn,
   register,
-  typeInto,
   uniqueEmail,
   waitAuthSettled,
-} from '../helpers/session'
+  watchSocketFrames,
+  type SocketFrame,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
+
 import { resetThrottle } from '../helpers/throttle'
 
 // The anti-abuse guard seen from a browser (HIL-1280). The unit and integration
@@ -69,17 +68,17 @@ test('a run of wrong passwords is refused, and the block holds the right one too
   await resetThrottle()
   try {
     const email = uniqueEmail()
-    await gotoPage(page, '/')
-    await openSignIn(page)
-    await register(page, email)
+    await gotoPage(expect, page, '/')
+    await openSignIn(expect, page)
+    await register(expect, page, email)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-    await logout(page)
+    await logout(expect, page)
     await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
     // The address is typed once. Looking it up is a guarded door of its own,
     // and typing it again on every round would spend that budget too.
-    await openSignIn(page)
-    await enterIdentifierAndPassword(page, email, WRONG_PASSWORD)
+    await openSignIn(expect, page)
+    await enterIdentifierAndPassword(expect, page, email, WRONG_PASSWORD)
     const error = page.getByTestId('auth-error')
     const password = page.getByTestId('auth-password')
     const submit = page.getByTestId('auth-submit')
@@ -88,8 +87,8 @@ test('a run of wrong passwords is refused, and the block holds the right one too
       if (attempt > 1) {
         await typeInto(password, WRONG_PASSWORD)
       }
-      await clickSubmit(submit)
-      await waitAuthSettled(page)
+      await clickSubmit(expect, submit)
+      await waitAuthSettled(expect, page)
       await expect(error).toBeVisible()
       await expect(page.getByTestId('self-anonymous')).toBeVisible()
     }
@@ -99,7 +98,7 @@ test('a run of wrong passwords is refused, and the block holds the right one too
 
     // One past the limit: the guard answers, not the password check.
     await typeInto(password, WRONG_PASSWORD)
-    await clickSubmit(submit)
+    await clickSubmit(expect, submit)
     await expect.poll(() => refusals).toBeGreaterThan(0)
     expect(refusalReason).toBe(REFUSED_REASON)
     await expect(error).toContainText(REFUSED)
@@ -107,7 +106,7 @@ test('a run of wrong passwords is refused, and the block holds the right one too
     // The key is blocked now, and the block holds whatever is typed.
     const refusedBefore = refusals
     await typeInto(password, PASSWORD)
-    await clickSubmit(submit)
+    await clickSubmit(expect, submit)
     await expect.poll(() => refusals).toBeGreaterThan(refusedBefore)
     expect(refusalReason).toBe(REFUSED_REASON)
     await expect(error).toContainText(REFUSED)

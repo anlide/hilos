@@ -2,16 +2,14 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   countSentFrames,
   expectCountryPageHead,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import {
+  clickSubmit,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
   markDocument,
   PAGE_READY,
-} from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 const APP_NAME = 'Hilos Polls'
 const OVERVIEW = 'hilos_i18n_country'
@@ -77,8 +75,8 @@ test('opens a reflowed country card directly with read-only details under the sh
   page,
 }) => {
   const deleteRequests = countSentFrames(page, 'hilos_i18n_country_delete')
-  await signUpAdmin(page)
-  await gotoPage(page, OVERVIEW_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, OVERVIEW_PATH, PAGE_READY)
 
   await expectCountryHead(page, OVERVIEW)
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
@@ -119,22 +117,22 @@ test('opens a reflowed country card directly with read-only details under the sh
   await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
 
-  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await gotoPage(expect, page, NAMES_PATH, PAGE_READY)
   await expectCountryHead(page, NAMES)
   await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
   await expect(page.getByTestId('country-names')).toBeVisible()
   await expectNamesTableNamed(page)
 
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
   expect(deleteRequests()).toBe(0)
 })
 
 test('moves between Overview and Names in place on the shared head row and keeps it through a reload', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, OVERVIEW_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, OVERVIEW_PATH, PAGE_READY)
   await expectCountryHead(page, OVERVIEW)
   const tabs = page.getByTestId('hilos-page-tabs')
   const overview = tabs.getByTestId(`hilos-page-tab-${OVERVIEW}`)
@@ -142,14 +140,14 @@ test('moves between Overview and Names in place on the shared head row and keeps
 
   // A tab is a native link the router takes over: no new document on a switch.
   await markDocument(page)
-  await clickSubmit(names)
+  await clickSubmit(expect, names)
   await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCountryHead(page, NAMES)
   await expect(page.getByTestId('country-names')).toBeVisible()
   await expect(page.getByTestId('country-card-main')).toHaveCount(0)
   await expectNamesTableNamed(page)
-  await expectDocumentUnchanged(page)
+  await expectDocumentUnchanged(expect, page)
 
   // The way back from the keyboard: the row is plain links in the tab order,
   // not a tab widget, and a link answers Enter.
@@ -158,24 +156,24 @@ test('moves between Overview and Names in place on the shared head row and keeps
   await expect(overview).toBeFocused()
   await overview.press('Enter')
   await expect(page).toHaveURL(new RegExp(`${OVERVIEW_PATH}$`))
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCountryHead(page, OVERVIEW)
   await expect(page.getByTestId('country-card-main')).toBeVisible()
   await expect(page.getByTestId('country-names')).toHaveCount(0)
-  await expectDocumentUnchanged(page)
+  await expectDocumentUnchanged(expect, page)
 
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(new RegExp(`${OVERVIEW_PATH}$`))
   await expectCountryHead(page, OVERVIEW)
   await expect(page.getByTestId('country-card-main')).toBeVisible()
 
-  await clickSubmit(names)
+  await clickSubmit(expect, names)
   await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCountryHead(page, NAMES)
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
   await expectCountryHead(page, NAMES)
   await expect(page.getByTestId('country-names')).toBeVisible()

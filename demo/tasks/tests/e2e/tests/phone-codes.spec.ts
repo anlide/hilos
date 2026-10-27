@@ -1,4 +1,18 @@
 import { test, expect, type Locator } from '@playwright/test'
+import {
+  continueFromDone,
+  logout,
+  openSignIn,
+  PASSWORD,
+  signInByPhone,
+  submitFirstPassword,
+  submitRegistration,
+  submitRegistrationCode,
+  uniqueEmail,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import {
@@ -9,21 +23,7 @@ import {
   setTelegramReachable,
   waitForTelegramCode,
 } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
-import { readRegisterCode } from '../helpers/mail'
-import { gotoPage } from '../helpers/page'
-import {
-  clickSubmit,
-  continueFromDone,
-  logout,
-  openSignIn,
-  PASSWORD,
-  signInByPhone,
-  submitFirstPassword,
-  submitRegistration,
-  submitRegistrationCode,
-  typeInto,
-  uniqueEmail,
-} from '../helpers/session'
+import { readRegisterCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 
 // Code channels (HIL-492). Delivery of a login code became a registry, so what is
 // exercised here is what a registry is FOR: the same number reaches its account
@@ -45,18 +45,18 @@ test('signs in with the code delivered over Telegram', async ({ page }) => {
   // the other workers share.
   const phone = uniquePhone()
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(page)
+  await openSignIn(expect, page)
   await typeInto(page.getByTestId('auth-identifier'), phone)
 
   // A number reveals its channels instead of a password: choosing one IS the send,
   // and there is no separate send button behind the icon. For a number with no
   // account the choice is only STORED — an account is never made by a click that
   // never showed the terms — so the terms screen is what sends.
-  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-telegram'))
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // The code screen opens on the agent's outcome signal, not on the click, and it
   // names the channel the code actually went over.
@@ -69,8 +69,8 @@ test('signs in with the code delivered over Telegram', async ({ page }) => {
     page.getByTestId('auth-code'),
     await waitForTelegramCode(phone),
   )
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await continueFromDone(page)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await continueFromDone(expect, page)
 
   await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 })
@@ -81,13 +81,13 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
   const phone = uniquePhone()
   await setTelegramReachable(phone, false)
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(page)
+  await openSignIn(expect, page)
   await typeInto(page.getByTestId('auth-identifier'), phone)
-  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-telegram'))
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // The refusal says so where the send was made from, and the code screen never
   // opens: nothing was minted, so there is no code to enter.
@@ -101,15 +101,15 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
 
   // The whole point of probing before minting: SMS still has this number's first
   // code to give, because the refused channel spent no cooldown.
-  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-sms'))
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('auth-delivered-channel')).toContainText('SMS')
 
   await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await continueFromDone(page)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await continueFromDone(expect, page)
 
   await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 })
@@ -125,13 +125,13 @@ test('says the code could not be sent when the Telegram gateway fails the send',
     status: 500,
   })
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(page)
+  await openSignIn(expect, page)
   await typeInto(page.getByTestId('auth-identifier'), phone)
-  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-telegram'))
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   await expect(page.getByTestId('auth-error')).toContainText(
     'Could not send the code',
@@ -144,12 +144,12 @@ test('comes back to the phone code screen after a reload, and finishes there', a
 }) => {
   const phone = uniquePhone()
 
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await typeInto(page.getByTestId('auth-identifier'), phone)
-  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-sms'))
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   await expect(page.getByTestId('auth-code')).toBeVisible()
   const code = await waitForSmsCode(phone)
@@ -171,8 +171,8 @@ test('comes back to the phone code screen after a reload, and finishes there', a
   // And it is the same registration: the code texted before the reload is the one
   // this screen still accepts, and accepting it makes the account.
   await typeInto(page.getByTestId('auth-code'), code)
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await continueFromDone(page)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await continueFromDone(expect, page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
@@ -181,14 +181,14 @@ test('opens the code screen of a new send with an empty field, even after a code
 }) => {
   const phone = uniquePhone()
 
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await signInByPhone(page, phone)
-  await logout(page)
-  await gotoPage(page, '/profile')
+  await signInByPhone(expect, page, phone)
+  await logout(expect, page)
+  await gotoPage(expect, page, '/profile')
 
   await typeInto(page.getByTestId('auth-identifier'), phone)
-  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-sms'))
   await expect(page.getByTestId('auth-code')).toBeVisible()
 
   await typeInto(page.getByTestId('auth-code'), '000000')
@@ -197,7 +197,7 @@ test('opens the code screen of a new send with an empty field, even after a code
   await page.getByTestId('auth-restart').click()
   await expect(page.getByTestId('auth-identifier')).toHaveValue(phone)
 
-  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await clickSubmit(expect, page.getByTestId('auth-channel-sms'))
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('auth-code')).toHaveValue('')
 })
@@ -228,8 +228,8 @@ test('counts the code down and comes back to it, still counting, after a reload'
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/profile')
-  await submitRegistration(page, email)
+  await gotoPage(expect, page, '/profile')
+  await submitRegistration(expect, page, email)
   await expect(page.getByTestId('auth-code')).toBeVisible()
 
   // The screen says how long the code it is asking for is still good for, and the
@@ -255,8 +255,8 @@ test('counts the code down and comes back to it, still counting, after a reload'
 
   // And it is the same registration: the code mailed before the reload is the one
   // this screen still accepts.
-  await submitRegistrationCode(page, await readRegisterCode(email))
-  await submitFirstPassword(page, PASSWORD)
-  await continueFromDone(page)
+  await submitRegistrationCode(expect, page, await readRegisterCode(email))
+  await submitFirstPassword(expect, page, PASSWORD)
+  await continueFromDone(expect, page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })

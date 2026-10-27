@@ -3,15 +3,15 @@ import { expect, test } from '@playwright/test'
 import {
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
 
 test('opens the empty Analytics overview from the admin dashboard and follows users', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos')
 
   await expectAnalyticsDashboardCard(expect, page)
   await page.getByTestId('dashboard-card-hilos_analytics').click()

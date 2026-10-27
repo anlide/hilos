@@ -1,7 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { expectLanguagePageHead } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectLanguagePageHead,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 const APP_NAME = 'Hilos Polls'
 const OVERVIEW = 'hilos_i18n_language'
@@ -12,8 +16,8 @@ const LANGUAGE_PATH = '/hilos/i18n/languages/en'
 test('opens the default language directly with read-only details and its shared head tabs', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, LANGUAGE_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, LANGUAGE_PATH, PAGE_READY)
 
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -89,7 +93,7 @@ test('opens the default language directly with read-only details and its shared 
 
   await page.getByTestId(`hilos-page-tab-${NAMES}`).click()
   await expect(page).toHaveURL(`${LANGUAGE_PATH}/names`)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -99,7 +103,7 @@ test('opens the default language directly with read-only details and its shared 
 
   await page.goBack()
   await expect(page).toHaveURL(`${LANGUAGE_PATH}`)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -109,9 +113,9 @@ test('opens the default language directly with read-only details and its shared 
 
   await page.getByTestId(`hilos-page-tab-${LOCALES}`).click()
   await expect(page).toHaveURL(`${LANGUAGE_PATH}/locales`)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -119,6 +123,6 @@ test('opens the default language directly with read-only details and its shared 
     appName: APP_NAME,
   })
 
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
 })

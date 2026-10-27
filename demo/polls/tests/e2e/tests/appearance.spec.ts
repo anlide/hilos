@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 
 import {
+  signUp,
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,
   THEME_PICK_STORAGE_KEY,
@@ -20,15 +21,16 @@ import {
   saveAppearanceDefaultTheme,
   saveAppearanceSwitching,
   shownByTestId,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 /** Restore one theme setting through this installation's existing settings page. */
 async function restoreSetting(page: Page, key: string): Promise<void> {
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially(key, { delay: 10 })
@@ -44,13 +46,13 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
   baseURL,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos', PAGE_READY)
   await expect(
     page.getByTestId('dashboard-card-hilos_appearance'),
   ).toBeVisible()
   await page.getByTestId('dashboard-card-hilos_appearance').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe(APPEARANCE_PATH)
   await expectAppearanceRows(expect, page)
 
@@ -77,7 +79,7 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
       viewer,
       'appearance_default_theme_set',
     )
-    await gotoPage(viewer, APPEARANCE_PATH, PAGE_READY)
+    await gotoPage(expect, viewer, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, viewer)
     await expect(
       viewer.getByTestId(`hilos-settings-edit-${THEME_DEFAULT_KEY}`),
@@ -160,10 +162,10 @@ test('Appearance default theme reaches guests and accounts without overriding a 
   // Two registrations plus three visitors and live setting delivery.
   test.slow()
   await emulateSystemTheme(admin, 'light')
-  await signUpAdmin(admin)
+  await signUpAdmin(expect, admin)
   const contexts: BrowserContext[] = []
   try {
-    await gotoPage(admin, APPEARANCE_PATH, PAGE_READY)
+    await gotoPage(expect, admin, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, admin)
     const visitors: Page[] = []
     const loads = new Map<Page, number>()
@@ -181,11 +183,11 @@ test('Appearance default theme reaches guests and accounts without overriding a 
       visitor.on('load', () => {
         loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
       })
-      await gotoPage(visitor, '/', PAGE_READY)
+      await gotoPage(expect, visitor, '/', PAGE_READY)
     }
     const [, person, lightGuest] = visitors
     await chooseHeaderTheme(expect, lightGuest, 'light')
-    await signUp(person)
+    await signUp(expect, person)
     for (const visitor of visitors) {
       await expectThemeMode(expect, visitor, 'light')
       expect(
@@ -244,10 +246,10 @@ test('Appearance switching restores guest and account Dark choices without reloa
   // Two registrations, two observers and both live switching transitions.
   test.slow()
   await emulateSystemTheme(admin, 'light')
-  await signUpAdmin(admin)
+  await signUpAdmin(expect, admin)
   const contexts: BrowserContext[] = []
   try {
-    await gotoPage(admin, APPEARANCE_PATH, PAGE_READY)
+    await gotoPage(expect, admin, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, admin)
     const visitors: Page[] = []
     const loads = new Map<Page, number>()
@@ -265,13 +267,13 @@ test('Appearance switching restores guest and account Dark choices without reloa
       visitor.on('load', () => {
         loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
       })
-      await gotoPage(visitor, '/', PAGE_READY)
+      await gotoPage(expect, visitor, '/', PAGE_READY)
       await chooseHeaderTheme(expect, visitor, 'dark')
     }
     const [, person] = visitors
     // Registration carries the real guest control's Dark pick into the account.
-    await signUp(person)
-    await gotoPage(person, '/profile', PAGE_READY)
+    await signUp(expect, person)
+    await gotoPage(expect, person, '/profile', PAGE_READY)
     await expectProfileTheme(expect, person, 'dark')
     for (const visitor of visitors) {
       await expectThemeMode(expect, visitor, 'dark')
@@ -325,10 +327,10 @@ test('both Appearance windows support keyboard, focus and discard', async ({
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await gotoPage(page, '/', PAGE_READY)
+  await gotoPage(expect, page, '/', PAGE_READY)
   await chooseHeaderTheme(expect, page, 'light')
-  await signUpAdmin(page)
-  await gotoPage(page, APPEARANCE_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, APPEARANCE_PATH, PAGE_READY)
   await expectThemeMode(expect, page, 'light')
   await expectAppearanceRows(expect, page)
   await dismissToasts(page)

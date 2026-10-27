@@ -17,8 +17,14 @@ import {
   watchDeliveryFrames,
   type DeliveryFrameLog,
   type DeliverySettingMutation,
+  typeInto,
+  expectDocumentUnchanged,
+  expectPageReady,
+  gotoPage,
+  markDocument,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -35,14 +41,6 @@ import {
   logMarker,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../../helpers/logs.js'
-import {
-  expectDocumentUnchanged,
-  expectPageReady,
-  gotoPage,
-  markDocument,
-  PAGE_READY,
-} from '../../helpers/page.js'
-import { typeInto } from '../../helpers/session.js'
 
 // A worker fault is destructive and cannot be replayed on a dirty stand.
 test.describe.configure({ mode: 'default', retries: 0 })
@@ -62,7 +60,7 @@ const control = deliveryClusterControl()
 const stand = readClusterBrowserStand()
 
 async function openSettings(page: Page, key: string): Promise<void> {
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   await typeInto(page.getByTestId('hilos-table-search'), key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
@@ -163,7 +161,8 @@ test(
     let configured = false
     try {
       const before = await clusterInspect(CLUSTER_FOLLOWER)
-      for (const page of [writerPage, tabA, tabB]) await grantAdminToSelf(page)
+      for (const page of [writerPage, tabA, tabB])
+        await grantAdminToSelf(expect, page)
       await openSettings(configPage, WINDOW_KEY)
       await openSettings(writerPage, SOURCE_KEY)
       await setCustomSetting(writerPage, SOURCE_KEY, 'remote-seed')
@@ -531,7 +530,7 @@ test(
         await expect(
           page.getByTestId(`hilos-table-row-${SOURCE_KEY}`),
         ).toContainText(changed.at(-1)!.value)
-        await expectDocumentUnchanged(page)
+        await expectDocumentUnchanged(expect, page)
         expect([a, b][index]!.sockets()).toBe(sockets[index])
       }
       expect(
@@ -595,17 +594,17 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
   try {
     const before = await clusterInspect(CLUSTER_FOLLOWER)
     for (const tab of [page, healthyPage, configPage])
-      await grantAdminToSelf(tab)
+      await grantAdminToSelf(expect, tab)
     await openSettings(configPage, WINDOW_KEY)
     await openSettings(healthyPage, SOURCE_KEY)
-    await gotoPage(page, '/hilos/logs/keys', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/logs/keys', PAGE_READY)
     await expect
       .poll(() => page.locator(ROWS).count(), {
         timeout: TAIL_ARRIVAL_TIMEOUT_MS,
       })
       .toBeGreaterThan(0)
     await page.getByTestId('hilos-page-tab-hilos_logs').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(
       page.getByTestId('hilos-page-tab-hilos_logs_keys'),
     ).toBeVisible()
@@ -741,7 +740,7 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
           raw === answer.raw,
       ),
     ).toBe(true)
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect
       .poll(() => page.locator(ROWS).count(), {
         timeout: TAIL_ARRIVAL_TIMEOUT_MS,
@@ -843,8 +842,8 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
         .flatMap(({ frames }) => frames)
         .filter(({ wire }) => object(wire).type === 'page_resubscribe'),
     ).toEqual([])
-    await expectDocumentUnchanged(page)
-    await expectDocumentUnchanged(healthyPage)
+    await expectDocumentUnchanged(expect, page)
+    await expectDocumentUnchanged(expect, healthyPage)
     for (const frames of [log, healthy]) noInternalFrames(frames)
     for (const upgrade of upgrades) await upgrade.assert()
     await expectLeaderUnmoved(before)

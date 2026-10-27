@@ -18,7 +18,10 @@ it('reads the code off the subject of the letter to the number at sms.stand', as
   )
 
   await expect(waitForSmsCode(PHONE)).resolves.toBe('482913')
-  expect(fetch).toHaveBeenLastCalledWith(`${MAILBOX}/api/v1/message/sms`)
+  expect(fetch).toHaveBeenLastCalledWith(
+    `${MAILBOX}/api/v1/message/sms`,
+    undefined,
+  )
 })
 
 it('fails when the text carries no code', async () => {

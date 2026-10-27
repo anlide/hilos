@@ -1,17 +1,15 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
 import {
-  isRotateCookie,
-  isSessionCookie,
-} from '../../../../../framework/frontend/e2e/index.js'
-import {
   logout,
   nameFromEmail,
   openSignIn,
   register,
   uniqueEmail,
-} from '../helpers/session'
-import { gotoPage } from '../helpers/page'
+  isRotateCookie,
+  isSessionCookie,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // Session-fixation e2e (HIL-582): the leg of the rotation that only a real browser
 // can show. The parts before it are covered elsewhere — the seam's rotate-and-promote
@@ -48,7 +46,7 @@ test('a login moves the live session onto a new cookie value', async ({
   page,
   context,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The anonymous session the visitor already has: this is the value an attacker
@@ -57,8 +55,8 @@ test('a login moves the live session onto a new cookie value', async ({
   expect(planted).not.toBe('')
 
   const email = uniqueEmail()
-  await openSignIn(page)
-  await register(page, email)
+  await openSignIn(expect, page)
+  await register(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   // The new value arrives on the 101 of the reconnect the ticket triggers, which is a
@@ -83,14 +81,14 @@ test('a second tab of the same browser comes back into the rotated session', asy
 }) => {
   const tabA = await context.newPage()
   const tabB = await context.newPage()
-  await gotoPage(tabA, '/')
-  await gotoPage(tabB, '/')
+  await gotoPage(expect, tabA, '/')
+  await gotoPage(expect, tabB, '/')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   const email = uniqueEmail()
-  await openSignIn(tabA)
-  await register(tabA, email)
+  await openSignIn(expect, tabA)
+  await register(expect, tabA, email)
   await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   // Tab B's connection was deliberately left anonymous by the login — promoting it is
@@ -109,16 +107,16 @@ test('a sign-out moves the browser onto a new cookie, and a second tab comes bac
 }) => {
   const tabA = await context.newPage()
   const tabB = await context.newPage()
-  await gotoPage(tabA, '/')
-  await gotoPage(tabB, '/')
+  await gotoPage(expect, tabA, '/')
+  await gotoPage(expect, tabB, '/')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   const anonymousToken = await cookieValue(context, isSessionCookie)
   expect(anonymousToken).not.toBe('')
   const email = uniqueEmail()
-  await openSignIn(tabA)
-  await register(tabA, email)
+  await openSignIn(expect, tabA)
+  await register(expect, tabA, email)
   await expect(async () => {
     expect(await cookieValue(context, isSessionCookie)).not.toBe(anonymousToken)
     expect(await cookieValue(context, isRotateCookie)).toBe('')
@@ -129,7 +127,7 @@ test('a sign-out moves the browser onto a new cookie, and a second tab comes bac
   expect(signedInToken).not.toBe('')
 
   const siblingReconnect = tabB.waitForEvent('websocket')
-  await logout(tabA)
+  await logout(expect, tabA)
 
   await expect(async () => {
     const signedOutToken = await cookieValue(context, isSessionCookie)

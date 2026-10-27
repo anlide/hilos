@@ -7,18 +7,19 @@ import {
 } from '@playwright/test'
 
 import {
+  signUp,
   clearCustomSetting,
   enableEmailChannel,
   openBell,
   setCustomSetting,
   shownByTestId,
   unreadBadge,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { waitForMailTo } from '../helpers/mail.js'
-import { emitNotification } from '../helpers/notifications.js'
-import { gotoPage } from '../helpers/page.js'
-import { signUp, typeInto } from '../helpers/session.js'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
 
 // Notification-center e2e for this demo (HIL-558), the React half of the
 // same center coverage binance-btc-tracker and online-testing carry. A notification
@@ -52,8 +53,8 @@ function emailPreference(page: Page): Locator {
 async function signInAddressableAdmin(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const email = await signUp(page)
-  const userId = await grantAdminToSelf(page)
+  const email = (await signUp(expect, page)).email
+  const userId = await grantAdminToSelf(expect, page)
 
   return { email, userId }
 }
@@ -81,7 +82,7 @@ async function signInAddressableAdmin(
  * @returns The recipient's durable user id.
  */
 async function openJoined(page: Page): Promise<number> {
-  const userId = await grantAdminToSelf(page)
+  const userId = await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('self-user')).not.toBeEmpty()
 
   return userId
@@ -175,7 +176,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
   tabB.on('load', () => {
     tabBLoads += 1
   })
-  await gotoPage(tabB, '/')
+  await gotoPage(expect, tabB, '/')
   const loadsAfterColdLoad = tabBLoads
 
   const { notificationId } = await emitNotification(userId, {
@@ -210,8 +211,8 @@ test('saving a setting raises a toast the close button dismisses', async ({
   // nearest surface that raises one for real. example_boolean is this spec's own
   // catalog key (settings.spec.ts mutates example_integer), and it is reset to
   // the catalog default afterwards so the suite stays idempotent.
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/settings')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
   await expect(
@@ -259,7 +260,7 @@ test('muting the email channel keeps the next emit off it', async ({
 }) => {
   const { userId } = await signInAddressableAdmin(page)
 
-  await gotoPage(page, '/profile/notifications')
+  await gotoPage(expect, page, '/profile/notifications')
   const toggle = emailPreference(page)
   await expect(toggle).toBeEnabled()
   await expect(toggle).toBeChecked()
@@ -271,13 +272,13 @@ test('muting the email channel keeps the next emit off it', async ({
   expect(allowed.queuedChannels).toContain('email')
 
   const tabB = await page.context().newPage()
-  await gotoPage(tabB, '/profile/notifications')
+  await gotoPage(expect, tabB, '/profile/notifications')
   await expect(emailPreference(tabB)).toBeChecked()
 
   await toggle.click()
   await expect(emailPreference(tabB)).not.toBeChecked()
 
-  await gotoPage(page, '/profile/notifications')
+  await gotoPage(expect, page, '/profile/notifications')
   await expect(emailPreference(page)).not.toBeChecked()
 
   const muted = await emitNotification(userId, {
@@ -292,8 +293,8 @@ test('muting the email channel keeps the next emit off it', async ({
 test('disabling the email channel globally persists across page reload and can be re-enabled', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 
   // Ensure channel is enabled at start.
@@ -307,14 +308,14 @@ test('disabling the email channel globally persists across page reload and can b
   await toggle.click()
   await expect(toggle).not.toBeChecked()
 
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   const reloadedToggle = shownByTestId(page, 'hilos-channel-enabled-email')
   await expect(reloadedToggle).toBeVisible()
   await expect(reloadedToggle).not.toBeChecked()
 
   // Clean up: restore the channel to enabled so other tests see email=true.
   await enableEmailChannel(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await expect(shownByTestId(page, 'hilos-channel-enabled-email')).toBeChecked()
 })
 
@@ -351,10 +352,10 @@ test('an administrator renaming somebody reaches the renamed visitor', async ({
   const userId = await openJoined(page)
 
   const adminPage = await openSecondVisitor(browser)
-  await grantAdminToSelf(adminPage)
+  await grantAdminToSelf(expect, adminPage)
   // Straight to the detail page: the users list pages, and this account is not
   // guaranteed to be on the first page of a database every test writes to.
-  await gotoPage(adminPage, `/hilos/user/${userId}`)
+  await gotoPage(expect, adminPage, `/hilos/user/${userId}`)
   await expect(adminPage.getByTestId('hilos-user-detail')).toBeVisible()
 
   const newName = `Renamed visitor ${userId}`

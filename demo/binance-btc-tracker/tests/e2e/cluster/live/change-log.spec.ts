@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  signUp,
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_PATH,
   DAEMON_ROOT_PATH,
@@ -17,8 +18,12 @@ import {
   watchSocketFrames,
   type MonopolisticWorker,
   type SocketFrame,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { setAdmin, signUpAdmin } from '../../helpers/adminGrant.js'
+import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -31,8 +36,6 @@ import {
   placementNode,
   type ClusterView,
 } from '../../helpers/cluster.js'
-import { gotoPage } from '../../helpers/page.js'
-import { clickSubmit, signUpPerson, typeInto } from '../../helpers/session.js'
 
 interface ReceiptRead {
   master: string
@@ -101,10 +104,10 @@ test(
       status: 'notRun',
     }))
     try {
-      const adminId = await signUpAdmin(adminPage)
+      const adminId = await signUpAdmin(expect, adminPage)
       const actorLabel = await adminPage.getByTestId('self-user').innerText()
       const workersPath = `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}/workers`
-      await gotoPage(adminPage, workersPath)
+      await gotoPage(expect, adminPage, workersPath)
       await expect(adminPage).toHaveURL(workersPath)
       await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
         CLUSTER_LEADER,
@@ -130,7 +133,7 @@ test(
       // An initially unknown roster has no previous window to return to.
       // Read Workers once afresh after its independent node report is known.
       if (deliveryObject(processReports()[0]).processesReported !== true) {
-        await gotoPage(adminPage, workersPath)
+        await gotoPage(expect, adminPage, workersPath)
         bootstrap.freshWorkersRead = true
       }
       await expectClusterDaemonNodePage(expect, adminPage, {
@@ -142,19 +145,19 @@ test(
       bootstrap.worker = await readMonopolisticWorker(
         adminPage,
         'hilos_change_log',
-        (page) => gotoPage(page, workersPath),
+        (page) => gotoPage(expect, page, workersPath),
         async (predicate) => {
           await expect.poll(predicate).toBe(true)
         },
       )
 
       personPage = await newMasterPage(browser, CLUSTER_FOLLOWER)
-      const person = await signUpPerson(personPage)
+      const person = await signUp(expect, personPage)
       // Address the lazy owner without changing this normal account's admin flag (P-612).
       await setAdmin(person.userId, false)
       writerId = `hilos_user:${person.userId}`
 
-      await gotoPage(adminPage, `/hilos/user/${person.userId}`)
+      await gotoPage(expect, adminPage, `/hilos/user/${person.userId}`)
       // hilos_index has LEADER placement and no POLICY placement row.
       const pageHost = await clusterInspect(CLUSTER_LEADER)
       await expectLeaderUnmoved(pageHost)
@@ -176,9 +179,12 @@ test(
       expect(CLUSTER_SLAVES).toContain(writerNode)
       expect(writerNode).not.toBe(pageHostLeaderId)
 
-      await clickSubmit(adminPage.getByTestId('hilos-user-block-open'))
+      await clickSubmit(expect, adminPage.getByTestId('hilos-user-block-open'))
       await expect(adminPage.getByTestId('modal')).toBeVisible()
-      await clickSubmit(adminPage.getByTestId('hilos-user-lifecycle-confirm'))
+      await clickSubmit(
+        expect,
+        adminPage.getByTestId('hilos-user-lifecycle-confirm'),
+      )
       await expect(adminPage.getByTestId('modal')).toBeHidden()
 
       await expect
@@ -283,7 +289,7 @@ async function readBlockReceipt(
   pinned?: ReceiptRead,
 ): Promise<void> {
   read.status = 'reading'
-  await gotoPage(page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_PATH)
   await chooseChangeLogFeedTable(page, 'hilos_user')
   await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
   read.receipt = await expectChangeLogFeedRow(

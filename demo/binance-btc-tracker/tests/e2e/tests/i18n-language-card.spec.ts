@@ -4,16 +4,18 @@ import {
   expectLanguagePageHead,
   shownByTestId,
   watchI18nLivePages,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { typeInto } from '../helpers/session.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('opens the default language card directly with read-only details and staged tabs', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
 
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -113,8 +115,8 @@ test('opens the default language card directly with read-only details and staged
     page.getByTestId('language-card-state').locator('input'),
   ).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
 })
 
 /** Drive a new control through its visible, enabled and focused states.
@@ -138,7 +140,7 @@ async function addLanguage(
   code: string,
   nativeName: string,
 ): Promise<void> {
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
   await submit(page.getByTestId('hilos-table-main-action'))
   await typeInto(page.getByTestId('i18n-language-add-code'), code)
   await typeInto(page.getByTestId('i18n-language-add-native-name'), nativeName)
@@ -156,7 +158,12 @@ async function addLanguage(
  * @param code The custom language created by this scenario.
  */
 async function removeLanguage(page: Page, code: string): Promise<void> {
-  await gotoPage(page, `/hilos/i18n/languages/${code}/locales`, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/languages/${code}/locales`,
+    PAGE_READY,
+  )
   await expect(
     shownByTestId(page, `i18n-locales-country-${code}`),
   ).toBeVisible()
@@ -175,12 +182,12 @@ async function removeLanguage(page: Page, code: string): Promise<void> {
     await submit(page.getByTestId('i18n-locale-delete-confirm'))
     await expect(page.getByTestId('i18n-locale-delete-window')).toHaveCount(0)
   }
-  await gotoPage(page, `/hilos/i18n/languages/${code}`, PAGE_READY)
+  await gotoPage(expect, page, `/hilos/i18n/languages/${code}`, PAGE_READY)
   await dismissToasts(page)
   await submit(page.getByTestId('language-card-delete'))
   await submit(page.getByTestId('i18n-language-delete-confirm'))
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages$/)
 }
 
@@ -214,8 +221,8 @@ async function expectCounts(
 test('keeps code-based addresses, one live head and current tabs through tile links, Back and F5', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -223,7 +230,7 @@ test('keeps code-based addresses, one live head and current tabs through tile li
     appName: 'BTC Tracker',
   })
   await submit(page.getByTestId('language-overview-name-count'))
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/en\/names$/)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -233,7 +240,7 @@ test('keeps code-based addresses, one live head and current tabs through tile li
   })
   await expect(page.getByRole('table')).toHaveAccessibleName('English')
   await page.goBack()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -241,7 +248,7 @@ test('keeps code-based addresses, one live head and current tabs through tile li
     appName: 'BTC Tracker',
   })
   await submit(page.getByTestId('language-overview-locale-count'))
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/en\/locales$/)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -251,7 +258,7 @@ test('keeps code-based addresses, one live head and current tabs through tile li
   })
   await expect(page.getByRole('table')).toHaveAccessibleName('English')
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -266,7 +273,7 @@ test('locale lifecycle updates its subscribed Overview and leaves the other lang
 }) => {
   // Custom-language setup, four locale writes and cleanup exercise three live pages.
   test.slow()
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const own = await context.newPage()
   const foreign = await context.newPage()
   const created: string[] = []
@@ -275,9 +282,9 @@ test('locale lifecycle updates its subscribed Overview and leaves the other lang
     created.push('qx')
     await addLanguage(page, 'qy', 'Scope QY')
     created.push('qy')
-    await gotoPage(page, '/hilos/i18n/languages/qx/locales', PAGE_READY)
-    await gotoPage(own, '/hilos/i18n/languages/qx', PAGE_READY)
-    await gotoPage(foreign, '/hilos/i18n/languages/qy', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages/qx/locales', PAGE_READY)
+    await gotoPage(expect, own, '/hilos/i18n/languages/qx', PAGE_READY)
+    await gotoPage(expect, foreign, '/hilos/i18n/languages/qy', PAGE_READY)
     await expectLanguagePageHead(expect, own, {
       code: 'qx',
       nativeName: 'Scope QX',

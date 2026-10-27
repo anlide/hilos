@@ -9,19 +9,21 @@ import {
   expectThemeHeader,
   expectThemeMode,
   setCustomSetting,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('guest choices synchronize both ways and survive reload and a new tab', async ({
   context,
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await gotoPage(page, '/', PAGE_READY)
+  await gotoPage(expect, page, '/', PAGE_READY)
   const other = await context.newPage()
   await emulateSystemTheme(other, 'light')
-  await gotoPage(other, '/', PAGE_READY)
+  await gotoPage(expect, other, '/', PAGE_READY)
 
   // The fresh browser follows the catalog default. Choosing that same row is
   // still a choice, and native Enter activation must close and return focus.
@@ -72,13 +74,13 @@ test('guest choices synchronize both ways and survive reload and a new tab', asy
     ),
   ).toBe('dark')
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectThemeMode(expect, page, 'dark')
   await expectThemeHeader(expect, page, 'dark')
 
   const newlyOpened = await context.newPage()
   await emulateSystemTheme(newlyOpened, 'light')
-  await gotoPage(newlyOpened, '/', PAGE_READY)
+  await gotoPage(expect, newlyOpened, '/', PAGE_READY)
   await expectThemeMode(expect, newlyOpened, 'dark')
   await expectThemeHeader(expect, newlyOpened, 'dark')
 })
@@ -105,8 +107,8 @@ test('guest reset clears both tabs and follows later site defaults across reload
     const other = await context.newPage()
     await emulateSystemTheme(page, 'light')
     await emulateSystemTheme(other, 'dark')
-    await gotoPage(page, '/', PAGE_READY)
-    await gotoPage(other, '/', PAGE_READY)
+    await gotoPage(expect, page, '/', PAGE_READY)
+    await gotoPage(expect, other, '/', PAGE_READY)
     await chooseHeaderTheme(expect, page, 'dark')
     await expectThemeMode(expect, page, 'dark')
     await expectThemeHeader(expect, page, 'dark')
@@ -126,8 +128,8 @@ test('guest reset clears both tabs and follows later site defaults across reload
       ).toBeNull()
     }
 
-    await signUpAdmin(admin)
-    await gotoPage(admin, '/hilos/settings', PAGE_READY)
+    await signUpAdmin(expect, admin)
+    await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await search.fill('')
     await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
@@ -141,7 +143,7 @@ test('guest reset clears both tabs and follows later site defaults across reload
     await expectThemeMode(expect, other, 'dark')
     await expectThemeHeader(expect, other, 'dark', true)
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectThemeMode(expect, page, 'dark')
     await expectThemeHeader(expect, page, 'dark', true)
     await chooseHeaderTheme(expect, other, null)
@@ -177,10 +179,10 @@ test('System follows each guest tab media while explicit choices ignore it', asy
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await gotoPage(page, '/', PAGE_READY)
+  await gotoPage(expect, page, '/', PAGE_READY)
   const other = await context.newPage()
   await emulateSystemTheme(other, 'dark')
-  await gotoPage(other, '/', PAGE_READY)
+  await gotoPage(expect, other, '/', PAGE_READY)
 
   await chooseHeaderTheme(expect, page, 'system')
   await expectThemeMode(expect, page, 'light')
@@ -214,7 +216,7 @@ test('System follows each guest tab media while explicit choices ignore it', asy
 })
 
 test('a guest can choose and reset from the header menu', async ({ page }) => {
-  await gotoPage(page, '/', PAGE_READY)
+  await gotoPage(expect, page, '/', PAGE_READY)
   await page.getByTestId('nav-theme').click()
   await expect(page.getByTestId('nav-theme-menu')).toBeVisible()
   await page.getByTestId('nav-theme-option-dark').click()

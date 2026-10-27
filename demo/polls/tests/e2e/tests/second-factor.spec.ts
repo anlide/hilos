@@ -8,24 +8,24 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
 import {
+  PASSWORD,
+  enterIdentifierAndPassword,
+  logout,
+  signUp,
   connectFirstApp,
   shownByTestId,
+  clickSubmit,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   nextTotpCode,
   totpStep,
 } from '../../../../../framework/frontend/scripts/totp.mjs'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import {
-  PASSWORD,
-  clickSubmit,
-  enterIdentifierAndPassword,
-  logout,
-  signUp,
-  typeInto,
-} from '../helpers/session.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 /**
  * Sign in with a password and stop where the surface asks for the second factor.
@@ -34,10 +34,10 @@ import {
  * @param email The account's address.
  */
 async function signInToCodeStep(page: Page, email: string): Promise<void> {
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await enterIdentifierAndPassword(page, email, PASSWORD)
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await enterIdentifierAndPassword(expect, page, email, PASSWORD)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Two-step verification',
   )
@@ -49,9 +49,9 @@ async function signInToCodeStep(page: Page, email: string): Promise<void> {
  * @param page The page standing on the code step.
  */
 async function submitCodeStep(page: Page): Promise<void> {
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
 }
 
 /**
@@ -75,13 +75,14 @@ async function setRequired(
   value: string,
   shown: string,
 ): Promise<void> {
-  await gotoPage(page, '/hilos/security/2fa')
+  await gotoPage(expect, page, '/hilos/security/2fa')
   // The table draws a row and its card; the one on screen is the one to press.
   await clickSubmit(
+    expect,
     shownByTestId(page, 'hilos-2fa-edit-auth.second_factor.required'),
   )
   await page.getByTestId('hilos-2fa-input').selectOption(value)
-  await clickSubmit(page.getByTestId('hilos-2fa-save'))
+  await clickSubmit(expect, page.getByTestId('hilos-2fa-save'))
   await expect(
     shownByTestId(page, 'hilos-2fa-value-auth.second_factor.required'),
   ).toHaveText(shown)
@@ -98,11 +99,11 @@ test.describe('two-step verification', () => {
     'asks the code on the next sign-in, and not again on a trusted browser',
     { tag: '@quarantine:F-010' },
     async ({ page }) => {
-      const user = await signUp(page)
-      await gotoPage(page, '/profile/security')
+      const user = await signUp(expect, page)
+      await gotoPage(expect, page, '/profile/security')
       const app = await connectFirstApp(page, PASSWORD)
 
-      await logout(page)
+      await logout(expect, page)
       await signInToCodeStep(page, user.email)
       const { code, step } = await nextTotpCode(app.secret, app.spent)
       await typeInto(page.getByTestId('auth-code'), code)
@@ -111,17 +112,17 @@ test.describe('two-step verification', () => {
       expect(step).toBeGreaterThan(app.spent)
 
       // The browser is trusted now: the same password lets it straight in.
-      await logout(page)
-      await gotoPage(page, '/profile')
-      await enterIdentifierAndPassword(page, user.email, PASSWORD)
-      await clickSubmit(page.getByTestId('auth-submit'))
+      await logout(expect, page)
+      await gotoPage(expect, page, '/profile')
+      await enterIdentifierAndPassword(expect, page, user.email, PASSWORD)
+      await clickSubmit(expect, page.getByTestId('auth-submit'))
       await expect(page.getByTestId('auth-surface')).toHaveCount(0)
     },
   )
 
   test('takes a backup code once', async ({ page, browser }) => {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile/security')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile/security')
     const app = await connectFirstApp(page, PASSWORD)
     const backupCode = app.backupCodes[0] ?? ''
 
@@ -135,7 +136,7 @@ test.describe('two-step verification', () => {
     await signInToCodeStep(second, user.email)
     await second.getByTestId('auth-backup-toggle').click()
     await typeInto(second.getByTestId('auth-code'), backupCode)
-    await clickSubmit(second.getByTestId('auth-submit'))
+    await clickSubmit(expect, second.getByTestId('auth-submit'))
     await expect(second.getByTestId('auth-error')).toHaveText('Invalid code')
   })
 
@@ -144,17 +145,17 @@ test.describe('two-step verification', () => {
     browser,
   }) => {
     const member = await freshPage(browser)
-    const user = await signUp(member)
-    await logout(member)
+    const user = await signUp(expect, member)
+    await logout(expect, member)
 
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await setRequired(page, 'everyone', 'Everyone')
     // The policy outlives this test on the shared stand, so it goes back
     // whatever happens in between.
     try {
-      await gotoPage(member, '/profile')
-      await enterIdentifierAndPassword(member, user.email, PASSWORD)
-      await clickSubmit(member.getByTestId('auth-submit'))
+      await gotoPage(expect, member, '/profile')
+      await enterIdentifierAndPassword(expect, member, user.email, PASSWORD)
+      await clickSubmit(expect, member.getByTestId('auth-submit'))
       await expect(member.getByTestId('auth-setup-lead')).toBeVisible()
       const secret = (
         await member.getByTestId('auth-setup-secret').textContent()
@@ -162,7 +163,7 @@ test.describe('two-step verification', () => {
       expect(secret).toBeTruthy()
       const { code } = await nextTotpCode(secret ?? '', totpStep() - 1)
       await typeInto(member.getByTestId('auth-code'), code)
-      await clickSubmit(member.getByTestId('auth-submit'))
+      await clickSubmit(expect, member.getByTestId('auth-submit'))
 
       await expect(
         member.getByTestId('backup-codes-list').locator('li'),
@@ -185,14 +186,17 @@ const ENABLED_SWITCH = 'hilos-2fa-switch-auth.second_factor.enabled'
  * @param page An administrator's page whose account holds a password.
  */
 async function turnSecondFactorOff(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/security/2fa')
+  await gotoPage(expect, page, '/hilos/security/2fa')
   const on = shownByTestId(page, ENABLED_SWITCH)
   await expect(on).toBeChecked()
-  await clickSubmit(on)
+  await clickSubmit(expect, on)
   await expect(page.getByTestId('hilos-2fa-disable-window')).toBeVisible()
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('hilos-2fa-disable-step-up-confirm'))
-  await clickSubmit(page.getByTestId('hilos-2fa-disable-confirm'))
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-2fa-disable-step-up-confirm'),
+  )
+  await clickSubmit(expect, page.getByTestId('hilos-2fa-disable-confirm'))
   await expect(page.getByTestId('hilos-2fa-disable-window')).toHaveCount(0)
   await expect(shownByTestId(page, ENABLED_SWITCH)).not.toBeChecked()
 }
@@ -204,7 +208,7 @@ async function turnSecondFactorOff(page: Page): Promise<void> {
  */
 async function turnSecondFactorOn(page: Page): Promise<void> {
   const off = shownByTestId(page, ENABLED_SWITCH)
-  await clickSubmit(off)
+  await clickSubmit(expect, off)
   await expect(off).toBeChecked()
 }
 
@@ -214,30 +218,30 @@ test.describe('turned off for everyone', () => {
     browser,
   }) => {
     const member = await freshPage(browser)
-    const user = await signUp(member)
-    await gotoPage(member, '/profile/security')
+    const user = await signUp(expect, member)
+    await gotoPage(expect, member, '/profile/security')
     await connectFirstApp(member, PASSWORD)
-    await logout(member)
+    await logout(expect, member)
 
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     try {
       await turnSecondFactorOff(page)
 
-      await gotoPage(member, '/profile')
+      await gotoPage(expect, member, '/profile')
       await expect(member.getByTestId('auth-surface')).toBeVisible()
-      await enterIdentifierAndPassword(member, user.email, PASSWORD)
-      await clickSubmit(member.getByTestId('auth-submit'))
+      await enterIdentifierAndPassword(expect, member, user.email, PASSWORD)
+      await clickSubmit(expect, member.getByTestId('auth-submit'))
       await expect(member.getByTestId('auth-surface')).toHaveCount(0)
-      await gotoPage(member, '/profile/security')
+      await gotoPage(expect, member, '/profile/security')
       await expect(member.getByTestId('hilos-2fa-turned-off')).toBeVisible()
 
       await turnSecondFactorOn(page)
-      await logout(member)
+      await logout(expect, member)
       await signInToCodeStep(member, user.email)
     } finally {
       // The policy outlives this test on the shared stand, so it goes back on
       // whatever happens in between.
-      await gotoPage(page, '/hilos/security/2fa')
+      await gotoPage(expect, page, '/hilos/security/2fa')
       if (!(await shownByTestId(page, ENABLED_SWITCH).isChecked())) {
         await turnSecondFactorOn(page)
       }
@@ -252,8 +256,9 @@ test.describe('in the admin view mode', () => {
     page,
   }) => {
     await setAdminViewMode(true)
-    await gotoPage(page, '/hilos/security/2fa', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/security/2fa', PAGE_READY)
     await clickSubmit(
+      expect,
       shownByTestId(page, 'hilos-2fa-edit-auth.second_factor.required'),
     )
     await expect(page.getByTestId('hilos-2fa-input')).toBeVisible()

@@ -1,15 +1,15 @@
 import { readFile } from 'node:fs/promises'
-import { expect, test } from '@playwright/test'
-
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoAdmitted, gotoPage } from '../helpers/page.js'
 import {
-  clickSubmit,
   login,
   openSignIn,
   PASSWORD,
   signUp,
-} from '../helpers/session.js'
+  clickSubmit,
+  gotoAdmitted,
+  gotoPage,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { expect, test } from '@playwright/test'
 
 test('a blocked account prepares and downloads its data after a credited password sign-in', async ({
   browser,
@@ -23,19 +23,22 @@ test('a blocked account prepares and downloads its data after a credited passwor
   })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(page)
-    const person = await signUp(personPage)
-    await gotoPage(page, `/hilos/user/${person.userId}`)
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
 
     // This sign-in supplies the fresh proof; a card raised by session loss alone must ask again.
-    await clickSubmit(personPage.getByTestId('account-blocked-sign-out'))
+    await clickSubmit(
+      expect,
+      personPage.getByTestId('account-blocked-sign-out'),
+    )
     await expect(personPage.getByTestId('account-blocked')).toHaveCount(0)
-    await openSignIn(personPage)
-    await login(personPage, person.email, PASSWORD)
+    await openSignIn(expect, personPage)
+    await login(expect, personPage, person.email, PASSWORD)
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
     await expect(personPage.getByTestId('data-export')).toContainText(
       'Your data',
@@ -43,15 +46,15 @@ test('a blocked account prepares and downloads its data after a credited passwor
 
     const otherTab = await personContext.newPage()
     // The block card replaces the page outlet, so there is no page-ready marker to await.
-    await gotoAdmitted(otherTab, '/')
+    await gotoAdmitted(expect, otherTab, '/')
     await expect(otherTab.getByTestId('account-blocked')).toBeVisible()
-    await clickSubmit(personPage.getByTestId('data-export-prepare'))
+    await clickSubmit(expect, personPage.getByTestId('data-export-prepare'))
     await expect(personPage.getByTestId('data-export-ready')).toBeVisible()
     await expect(personPage.getByTestId('data-export-step-up')).toHaveCount(0)
     await expect(otherTab.getByTestId('data-export-ready')).toBeVisible()
 
     const downloading = personPage.waitForEvent('download')
-    await clickSubmit(personPage.getByTestId('data-export-download'))
+    await clickSubmit(expect, personPage.getByTestId('data-export-download'))
     const download = await downloading
     expect(download.suggestedFilename()).toMatch(
       /^your-data-\d{4}-\d{2}-\d{2}\.zip$/,

@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  PASSWORD,
+  signUp,
   advanceTableToRow,
   controlSocketReconnect,
   countSentFrames,
@@ -26,21 +28,16 @@ import {
   watchHeight,
   watchSocketFrames,
   type SocketFrame,
-} from '../../../../../framework/frontend/e2e/index.js'
-import {
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
   grantAdminToSelf,
   sessionToken,
-  setAdmin,
   signUpAdmin,
-} from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import {
-  clickSubmit,
-  PASSWORD,
-  signUpPerson,
-  typeInto,
-} from '../helpers/session.js'
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // A fixture owns the second context's teardown, so closing it after a timeout
 // cannot replace the test's original failure or prevent the afterEach mode reset.
@@ -99,8 +96,8 @@ test('lists users in the framework table and opens a detail page', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -121,10 +118,10 @@ test('lists users in the framework table and opens a detail page', async ({
 test('user Overview has no empty project section and supports keyboard rename', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page)
   const name = await page.getByTestId('nav-profile-name').getAttribute('title')
   expect(name).toBeTruthy()
-  await gotoPage(page, `/hilos/user/${userId}`)
+  await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expectHilosUserOverview(expect, page, userId, name!, 'BTC Tracker')
   // With no project slot, only the framework sections exist; no empty panel or
   // project heading is rendered beside them.
@@ -170,12 +167,12 @@ test.describe('people time zones and numeric activity', () => {
     const cardPageRequests = countSentFrames(card, '"type":"page_')
     const cardTableRequests = countSentFrames(card, '"type":"table_')
     try {
-      const readerId = await signUpAdmin(page)
-      await gotoPage(page, `/hilos/user/${readerId}`)
+      const readerId = await signUpAdmin(expect, page)
+      await gotoPage(expect, page, `/hilos/user/${readerId}`)
       await expectUserTimeZone(expect, page, null)
       expect(userTableRows(listSocket.frames).at(-1)?.user.timeZone).toBeNull()
 
-      await gotoPage(page, '/hilos/users')
+      await gotoPage(expect, page, '/hilos/users')
       await typeInto(page.getByTestId('hilos-table-search'), chosenName)
       const chosenId = Number(await tableRowKeyByText(expect, page, chosenName))
       expect(chosenId).toBeGreaterThan(0)
@@ -205,7 +202,7 @@ test.describe('people time zones and numeric activity', () => {
         'list',
       )
 
-      await gotoPage(card, `/hilos/user/${chosenId}`)
+      await gotoPage(expect, card, `/hilos/user/${chosenId}`)
       await expectUserTimeZone(expect, card, chosenZone)
       expect(userTableRows(cardSocket.frames).at(-1)?.user.timeZone).toBe(
         chosenZone,
@@ -347,27 +344,27 @@ test.describe('people time zones and numeric activity', () => {
           frames.push(frame),
         )
         try {
-          const automaticId = await signUpAdmin(page)
-          await gotoPage(page, `/hilos/user/${automaticId}`)
+          const automaticId = await signUpAdmin(expect, page)
+          await gotoPage(expect, page, `/hilos/user/${automaticId}`)
           await expectUserTimeZone(expect, page, null)
           expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBeNull()
-          await gotoPage(page, '/hilos/users')
+          await gotoPage(expect, page, '/hilos/users')
           await typeInto(page.getByTestId('hilos-table-search'), chosenName)
           const chosenId = Number(
             await tableRowKeyByText(expect, page, chosenName),
           )
-          await gotoPage(page, `/hilos/user/${chosenId}`)
+          await gotoPage(expect, page, `/hilos/user/${chosenId}`)
           await expectUserTimeZone(expect, page, chosenZone)
           expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBe(
             chosenZone,
           )
-          if (viewer === 'person') await signUpPerson(viewerPage)
+          if (viewer === 'person') await signUp(expect, viewerPage)
           await setAdminViewMode(true)
 
           // Viewer names are hidden. Address real fixtures by the ids the admin
           // resolved, never by a search over a hidden name or a replacement row.
           for (const userId of [chosenId, automaticId]) {
-            await gotoPage(viewerPage, `/hilos/user/${userId}`)
+            await gotoPage(expect, viewerPage, `/hilos/user/${userId}`)
             await expect(
               viewerPage.getByTestId('view-mode-banner'),
             ).toBeVisible()
@@ -387,7 +384,7 @@ test.describe('people time zones and numeric activity', () => {
               'card',
             )
           }
-          await gotoPage(viewerPage, '/hilos/users')
+          await gotoPage(expect, viewerPage, '/hilos/users')
           await expect
             .poll(() => viewerPage.locator(ROWS).count())
             .toBeGreaterThan(1)
@@ -430,8 +427,8 @@ test.describe('people time zones and numeric activity', () => {
 })
 
 test('filters the users table from the search box', async ({ page }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
     page.locator('[data-id^="hilos-users-open-"]').first(),
@@ -450,8 +447,8 @@ test('filters the users table from the search box', async ({ page }) => {
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
@@ -459,7 +456,7 @@ test('renames a user from the detail page and re-renders live', async ({
   const newName = 'E2E Renamed User'
   await page.getByTestId('hilos-user-edit').click()
   await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-  await clickSubmit(page.getByTestId('hilos-user-save'))
+  await clickSubmit(expect, page.getByTestId('hilos-user-save'))
 
   // The committed name returns over the live table and the edit form closes.
   await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
@@ -473,10 +470,10 @@ test('renames a user from the detail page and re-renders live', async ({
 test('an open rename follows the other tab, then conflicts and takes theirs', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
-  await gotoPage(page, `/hilos/user/${userId}`)
-  await gotoPage(tabB, `/hilos/user/${userId}`)
+  await gotoPage(expect, page, `/hilos/user/${userId}`)
+  await gotoPage(expect, tabB, `/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
@@ -536,7 +533,7 @@ test('an open rename follows the other tab, then conflicts and takes theirs', as
 async function renameUser(tab: Page, name: string): Promise<void> {
   await tab.getByTestId('hilos-user-edit').click()
   await typeInto(tab.getByTestId('hilos-user-name-input'), name)
-  await clickSubmit(tab.getByTestId('hilos-user-save'))
+  await clickSubmit(expect, tab.getByTestId('hilos-user-save'))
   await expect(tab.getByTestId('hilos-user-name-input')).toHaveCount(0)
   await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(name)
 }
@@ -547,9 +544,9 @@ test('shows the connected user as online with a live session', async ({
   // Register the client and take its own id, then open its detail directly.
   // Robust against how many users the shared DB has accumulated: the self row
   // need not be on the first viewport page of /hilos/users.
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page)
 
-  await gotoPage(page, `/hilos/user/${userId}`)
+  await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
@@ -571,8 +568,8 @@ test('shows the connected user as online with a live session', async ({
 // deterministic `seed-###` users on stand bring-up, so window paging and server search
 // run against more than one page — the case a single registered user can never reach.
 test('windows, paginates, and searches the seeded users', async ({ page }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // The window holds exactly one page of rows regardless of how large the table is.
@@ -662,9 +659,9 @@ test('takes a person over from their card and shows the shell banner', async ({
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(page)
-    const person = await signUpPerson(personPage)
-    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
     // The impersonation step is declared off (step-up.md), so the window opens at once.
@@ -727,17 +724,17 @@ test("shows a person's standing on the card and in the takeover strip", async ({
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
   try {
-    const adminId = await signUpAdmin(page)
-    const person = await signUpPerson(personPage)
-    await gotoPage(page, `/hilos/user/${person.userId}`)
+    const adminId = await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     const badge = page.getByTestId('user-standing-badge')
     await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
       'Not frozen',
     )
     await expect(badge).toHaveCount(0)
 
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(badge).toHaveText('Blocked')
     await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
@@ -749,14 +746,17 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     // in the shell's name slot. A blocked person may be taken over by default
     // (HIL-1170), so the card's button stays live.
     await dismissToasts(page)
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-open'))
     let sockets = 0
     page.on('websocket', () => {
       sockets += 1
     })
     const strip = page.getByTestId('impersonation-banner')
     await expectSessionRotation(expect, page, async () => {
-      await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-user-impersonate-confirm'),
+      )
       await expect(strip).toHaveClass(/\balert-danger\b/)
       await expect(
         page.getByTestId('nav-profile-name').getByTestId('avatar-mark'),
@@ -768,7 +768,7 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     const cookieBeforeStop = await sessionToken(page)
     await expectSessionRotation(expect, page, async () => {
       await reconnect.hold()
-      await clickSubmit(page.getByTestId('impersonation-stop'))
+      await clickSubmit(expect, page.getByTestId('impersonation-stop'))
       await expect(strip).toBeHidden()
       await expect(page.getByTestId('nav-admin')).toBeVisible()
       // Reproduce the former navigation boundary: the old socket already
@@ -814,13 +814,16 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     rotationEvidence.credentialRotated = true
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-    await gotoPage(page, `/hilos/user/${person.userId}`, PAGE_READY)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`, PAGE_READY)
     await expect(page.getByTestId('nav-admin')).toBeVisible()
-    await clickSubmit(page.getByTestId('hilos-user-deletion-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-deletion-open'))
     // Scheduling someone else's deletion is the administrator's to confirm (HIL-1275).
     await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
+    )
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(page.getByTestId('hilos-user-deletion-open')).toHaveText(
       'Cancel deletion',
@@ -828,8 +831,8 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     await expect(badge).toHaveText('Blocked')
 
     await dismissToasts(page)
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(badge).toHaveText('Deletion scheduled')
   } finally {
@@ -856,30 +859,30 @@ test('closes an idle block confirmation when another tab changes the block', asy
   const pageB = await page.context().newPage()
 
   try {
-    await grantAdminToSelf(page)
-    const targetId = await grantAdminToSelf(personPage)
+    await grantAdminToSelf(expect, page)
+    const targetId = await grantAdminToSelf(expect, personPage)
     await setAdmin(targetId, false)
 
-    await gotoPage(page, `/hilos/user/${targetId}`)
-    await gotoPage(pageB, `/hilos/user/${targetId}`)
+    await gotoPage(expect, page, `/hilos/user/${targetId}`)
+    await gotoPage(expect, pageB, `/hilos/user/${targetId}`)
 
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
     await expect(pageB.getByTestId('modal')).toBeVisible()
 
-    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
     await expectHilosUserBlockSettled(expect, pageB, true)
     await expectHilosUserBlockSettled(expect, page, true)
 
     await dismissToasts(pageB)
 
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
     await expect(pageB.getByTestId('modal')).toBeVisible()
 
-    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
     await expectHilosUserBlockSettled(expect, pageB, false)
     await expectHilosUserBlockSettled(expect, page, false)
   } finally {
@@ -914,21 +917,21 @@ test.describe('the people section in the admin view mode', () => {
     const userBPage = await userBContext.newPage()
 
     try {
-      const { userId: userAId } = await signUpPerson(userAPage)
-      const { userId: userBId } = await signUpPerson(userBPage)
+      const { userId: userAId } = await signUp(expect, userAPage)
+      const { userId: userBId } = await signUp(expect, userBPage)
 
       await setAdminViewMode(true)
 
       // This demo has no impersonation catalog keys, so the viewer sees no takeover section.
-      await gotoPage(page, `/hilos/user/${userBId}`)
+      await gotoPage(expect, page, `/hilos/user/${userBId}`)
       await expect(page.getByTestId('hilos-user-impersonate-open')).toHaveCount(
         0,
       )
 
       // 1. User card: lifecycle modals (admin, block, deletion)
-      await gotoPage(page, `/hilos/user/${userAId}`)
+      await gotoPage(expect, page, `/hilos/user/${userAId}`)
       for (const key of ['admin', 'block', 'deletion'] as const) {
-        await clickSubmit(page.getByTestId(`hilos-user-${key}-open`))
+        await clickSubmit(expect, page.getByTestId(`hilos-user-${key}-open`))
         await expect(
           page.getByTestId('hilos-user-lifecycle-step-up'),
         ).toHaveCount(0)
@@ -940,13 +943,16 @@ test.describe('the people section in the admin view mode', () => {
           'aria-describedby',
           /(^| )hilos-view-mode-strip-text( |$)/,
         )
-        await clickSubmit(page.getByTestId('hilos-user-lifecycle-cancel'))
+        await clickSubmit(
+          expect,
+          page.getByTestId('hilos-user-lifecycle-cancel'),
+        )
       }
 
       // 2. User card: rename modal
-      await clickSubmit(page.getByTestId('hilos-user-edit'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-edit'))
       await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
-      await clickSubmit(page.getByTestId('hilos-user-cancel'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-cancel'))
     } finally {
       await userAContext.close()
       await userBContext.close()

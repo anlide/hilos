@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { PROFILE_ADD_SMS_REQUEST_ACTION } from '../../../../../framework/frontend/core/src/base/index.js'
 
 import {
+  PASSWORD,
   SESSION_COOKIE_PREFIX,
   armSocketDrop,
   clickUnavailableControl,
@@ -18,16 +19,13 @@ import {
   isSessionCookie,
   watchHandshakeFrames,
   type HandshakeFrameLog,
-} from '../../../../../framework/frontend/e2e/index.js'
-import {
-  PASSWORD,
   clickSubmit,
-  orphanSessionToken,
-  signUp,
   typeInto,
-} from '../helpers/session.js'
+  expectPageReady,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { orphanSessionToken, signUp } from '../helpers/session.js'
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
@@ -39,7 +37,7 @@ test('websocket transport reaches connected', async ({ page }) => {
   await armSocketDrop(page)
   const welcomes = watchHandshakeFrames(page)
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect
     .poll(() => welcomes.map(welcomeProjectTimeZone))
@@ -60,7 +58,7 @@ test('websocket transport reaches connected', async ({ page }) => {
 // anonymous, so the user is established by registering; the session upgrade rides
 // the same connection and the current user renders in place.
 test('session bootstrap resolves the current user', async ({ page }) => {
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
 })
 
@@ -71,7 +69,7 @@ test('session bootstrap resolves the current user', async ({ page }) => {
 test('renders the anonymous identity line for a visitor with no account', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
 
   await expect(page.getByTestId('self-anonymous')).toHaveText(
     'Browsing anonymously',
@@ -92,7 +90,7 @@ test('renders the anonymous identity line when the cookie names no session', asy
   page,
   context,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
 
   const session = (await context.cookies()).find((cookie) =>
     isSessionCookie(cookie.name),
@@ -102,7 +100,7 @@ test('renders the anonymous identity line when the cookie names no session', asy
   }
   await context.addCookies([{ ...session, value: orphanSessionToken() }])
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
 
   await expect(page.getByTestId('self-anonymous')).toHaveText(
     'Browsing anonymously',
@@ -123,7 +121,7 @@ test('subscribes the URL page on load', async ({ page }) => {
     })
   })
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await expect
@@ -167,9 +165,9 @@ test('holds page and modal interaction until the real reconnect', async ({
   const smsRequests = countSentFrames(page, PROFILE_ADD_SMS_REQUEST_ACTION)
   const watches: { dispose(): Promise<void> }[] = []
   try {
-    await signUp(page)
-    await gotoPage(page, '/profile/sign-in')
-    await expectPageReady(page)
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile/sign-in')
+    await expectPageReady(expect, page)
     const document = await watchClientDocument(page)
     watches.push(document)
     const view = page.getByTestId('profile-sign-in-view')
@@ -215,7 +213,7 @@ test('holds page and modal interaction until the real reconnect', async ({
     await control.release()
     await expectWelcomedSockets(expect, sockets, ++socketCount)
     await expectConnectedInteraction(expect, page, mainControls)
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(add).toBeEnabled()
     await mainNodes.unchanged()
     await document.unchanged()
@@ -223,15 +221,18 @@ test('holds page and modal interaction until the real reconnect', async ({
     expect(sentActions()).toBe(mainActions)
 
     // Open the ordinary protected flow; no SMS request is ever submitted.
-    await clickSubmit(add)
+    await clickSubmit(expect, add)
     const password = page.getByTestId('step-up-password')
     const choosePhone = page.getByTestId('profile-sign-in-choose-phone')
     await expect(password.or(choosePhone)).toBeVisible()
     if (await password.isVisible()) {
       await typeInto(password, PASSWORD)
-      await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
+      await clickSubmit(
+        expect,
+        page.getByTestId('profile-sign-in-add-step-up-confirm'),
+      )
     }
-    await clickSubmit(choosePhone)
+    await clickSubmit(expect, choosePhone)
     const dialog = page.getByTestId('modal')
     const field = page.getByTestId('profile-add-sms-phone')
     const submit = page.getByTestId('profile-add-sms-request')
@@ -287,7 +288,7 @@ test('holds page and modal interaction until the real reconnect', async ({
     await control.release()
     await expectWelcomedSockets(expect, sockets, ++socketCount)
     await expectConnectedInteraction(expect, page, modalControls)
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await nextClientPaint(page)
     await modalNodes.unchanged()
     await document.unchanged()
@@ -299,13 +300,13 @@ test('holds page and modal interaction until the real reconnect', async ({
     expect(sentActions()).toBe(modalActions)
 
     // Only a new explicit close gesture can raise the existing dirty guard.
-    await clickSubmit(cancel)
+    await clickSubmit(expect, cancel)
     await expect(page.getByTestId('modal-confirm')).toBeVisible()
-    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-cancel'))
     await expect(page.getByTestId('modal-confirm')).toBeHidden()
     await expect(field).toHaveValue(draft)
-    await clickSubmit(cancel)
-    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await clickSubmit(expect, cancel)
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
     await expect(dialog).toBeHidden()
     await expectConnectedInteraction(expect, page, mainControls)
     await expect(add).toBeEnabled()
@@ -318,7 +319,7 @@ test('holds page and modal interaction until the real reconnect', async ({
     await control.release()
     await expectWelcomedSockets(expect, sockets, ++socketCount)
     await expectConnectedInteraction(expect, page, mainControls)
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(add).toBeEnabled()
     await expect(identities).toHaveText(originalIdentities, {
       useInnerText: true,

@@ -1,8 +1,13 @@
 import { expect, test } from '@playwright/test'
+import {
+  logout,
+  signUp,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 import { holdLegalRevision } from '../helpers/legalHold.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, logout, signUp } from '../helpers/session.js'
 
 // The public Terms page (HIL-501): its body is the text of the Terms revision in
 // force, read from polls's legal catalog, with the reader's standing above it and
@@ -20,7 +25,7 @@ const HELD_TERMS = '2026-09-17'
 test('a guest reads the revision in force and opens an older one from the history', async ({
   page,
 }) => {
-  await gotoPage(page, '/terms', PAGE_READY)
+  await gotoPage(expect, page, '/terms', PAGE_READY)
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'guest')
   await expect(reader).toContainText('in force since 7 October 2026')
@@ -45,6 +50,7 @@ test('a guest reads the revision in force and opens an older one from the histor
 
   // An older revision opens through the page's own read, open to a guest.
   await clickSubmit(
+    expect,
     page
       .locator(
         `[data-id="terms-history-revision"][data-revision="${OLDER_TERMS}"]`,
@@ -58,15 +64,15 @@ test('a guest reads the revision in force and opens an older one from the histor
   await expect(
     opened.getByTestId('legal-revision-clause-deviation'),
   ).toHaveCount(1)
-  await clickSubmit(page.getByTestId('terms-revision-close'))
+  await clickSubmit(expect, page.getByTestId('terms-revision-close'))
   await expect(opened).toBeHidden()
 })
 
 test('a person who accepted at sign-up sees the revision in force as theirs', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/terms', PAGE_READY)
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/terms', PAGE_READY)
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(reader).toContainText(
@@ -82,7 +88,7 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
   await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
   // Signing out in the tab turns the line back into a guest's, without a reload.
-  await logout(page)
+  await logout(expect, page)
   await expect(reader).toHaveAttribute('data-state', 'guest')
   await expect(page.getByTestId('terms-history-accepted')).toHaveCount(0)
 })
@@ -90,8 +96,8 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
 test('the page follows a revision moved under it, and accepting there lifts the freeze', async ({
   page,
 }) => {
-  const person = await signUp(page)
-  await gotoPage(page, '/terms', PAGE_READY)
+  const person = await signUp(expect, page)
+  await gotoPage(expect, page, '/terms', PAGE_READY)
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
 
@@ -107,14 +113,14 @@ test('the page follows a revision moved under it, and accepting there lifts the 
   )
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
 
-  await clickSubmit(reader.getByTestId('legal-document-changes-open'))
+  await clickSubmit(expect, reader.getByTestId('legal-document-changes-open'))
   const comparison = page.getByTestId('terms-changes-modal')
   await expect(comparison).toBeVisible()
   const wide = comparison.getByTestId('legal-changes-wide')
   await expect(wide.getByTestId('legal-change-row')).toHaveCount(1)
   await expect(wide.getByTestId('legal-change-kind')).toHaveText('changed')
 
-  await clickSubmit(page.getByTestId('terms-changes-accept'))
+  await clickSubmit(expect, page.getByTestId('terms-changes-accept'))
   await expect(comparison).toHaveCount(0)
   await expect(reader).toHaveAttribute('data-state', 'covered')
 

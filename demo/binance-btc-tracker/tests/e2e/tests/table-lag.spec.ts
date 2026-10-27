@@ -3,10 +3,10 @@ import {
   ROWS,
   shownByTestId,
   TABLE,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
 import { clearTableLag, setTableLag } from '../helpers/tableLag'
 
 // HIL-1020: the two states a slow table answer produces, made visible with the
@@ -33,8 +33,8 @@ test.afterEach(clearTableLag)
 test('a held window change draws the row skeleton, and the window it was waiting for takes it down', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/settings')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId(TABLE)).toBeVisible()
 
   // The count is read, not written down: the catalog grows with every leaf that
@@ -74,8 +74,8 @@ test('facet counts held back leave the options bare while the table stands, and 
   // those are the ones held.
   await setTableLag({ facetsMs: HELD_FOR_GOOD_MS })
 
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/backup')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 

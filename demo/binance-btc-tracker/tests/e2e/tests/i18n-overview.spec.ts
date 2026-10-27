@@ -12,12 +12,14 @@ import {
   watchClientDocument,
   watchI18nLivePages,
   watchSocketFrames,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { switchLanguageOff } from '../helpers/i18n.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { switchLanguageOff } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 // The Vue overview's two tiles, first complete answer and live summary. Section
 // navigation in React and Angular stays in their list/card specs until their
@@ -125,9 +127,9 @@ function watchOverview(page: Page) {
 test('waits for the first whole response without invented zero tiles', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const answer = await holdPageReply(page, ROOT)
-  const navigation = gotoPage(page, ROOT_PATH, PAGE_READY)
+  const navigation = gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   const completed = navigation.catch((error: unknown) => error)
   try {
     await answer.received
@@ -160,10 +162,10 @@ test('updates the whole overview in its existing window after language and custo
   page,
   context,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOff('de')
   const frames = watchOverview(page)
-  await gotoPage(page, ROOT_PATH, PAGE_READY)
+  await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expectHead(page)
   await expect.poll(() => frames.replies.length).toBeGreaterThan(0)
   const initial = frames.read()[0]!
@@ -176,7 +178,7 @@ test('updates the whole overview in its existing window after language and custo
   const live = await watchI18nLivePages(expect, [page])
   const editor = await context.newPage()
   try {
-    await gotoPage(editor, `${ROOT_PATH}/languages/de`, PAGE_READY)
+    await gotoPage(expect, editor, `${ROOT_PATH}/languages/de`, PAGE_READY)
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
       'Language switched off',
     )
@@ -212,7 +214,7 @@ test('updates the whole overview in its existing window after language and custo
     await live.unchanged()
     await document.unchanged()
 
-    await gotoPage(editor, `${ROOT_PATH}/countries`, PAGE_READY)
+    await gotoPage(expect, editor, `${ROOT_PATH}/countries`, PAGE_READY)
     await submit(editor.getByTestId('hilos-table-main-action'))
     await typeInto(editor.getByTestId('i18n-country-add-code'), 'qx')
     await typeInto(editor.getByTestId('i18n-country-add-currency-symbol'), '¤')
@@ -241,7 +243,7 @@ test('updates the whole overview in its existing window after language and custo
     await live.unchanged()
     await document.unchanged()
 
-    await gotoPage(editor, `${ROOT_PATH}/countries/qx`, PAGE_READY)
+    await gotoPage(expect, editor, `${ROOT_PATH}/countries/qx`, PAGE_READY)
     await expect(editor.getByTestId('country-card-enabled')).toHaveText(
       'Disabled',
     )
@@ -249,7 +251,7 @@ test('updates the whole overview in its existing window after language and custo
     const remove = editor.getByTestId('i18n-country-delete-confirm')
     await submit(remove)
     await expect(remove).toHaveCount(0)
-    await expectPageReady(editor)
+    await expectPageReady(expect, editor)
     await expect(editor).toHaveURL(/\/hilos\/i18n\/countries$/)
     await expect(editor.getByTestId('hilos-toast-success')).toContainText(
       'Country qx deleted.',
@@ -277,8 +279,8 @@ test('updates the whole overview in its existing window after language and custo
 test('opens each tile, uses Back and the page row, and keeps all three direct URLs through F5', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, ROOT_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expectHead(page)
   const document = await watchClientDocument(page)
   try {
@@ -287,12 +289,12 @@ test('opens each tile, uses Back and the page row, and keeps all three direct UR
         tab.key === 'hilos_i18n_languages' ? 'languages' : 'countries'
       await submit(page.getByTestId(`i18n-overview-${subject}-count`))
       await expect(page).toHaveURL(new RegExp(`${tab.path}$`))
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expectHead(page, tab.key)
       await expect(page.getByTestId(tab.body)).toBeVisible()
       await page.goBack()
       await expect(page).toHaveURL(new RegExp(`${ROOT_PATH}$`))
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expectHead(page)
       await expect(
         page.getByTestId('i18n-overview').getByRole('link'),
@@ -304,7 +306,7 @@ test('opens each tile, uses Back and the page row, and keeps all three direct UR
       await link.focus()
       await link.press('Enter')
       await expect(page).toHaveURL(new RegExp(`${tab.path}$`))
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expectHead(page, tab.key)
       await document.unchanged()
     }
@@ -312,11 +314,11 @@ test('opens each tile, uses Back and the page row, and keeps all three direct UR
     await document.dispose()
   }
   for (const tab of SECTION) {
-    await gotoPage(page, tab.path, PAGE_READY)
+    await gotoPage(expect, page, tab.path, PAGE_READY)
     await expectHead(page, tab.key)
     await expect(page.getByTestId(tab.body)).toBeVisible()
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(new RegExp(`${tab.path}$`))
     await expectHead(page, tab.key)
     await expect(page.getByTestId(tab.body)).toBeVisible()
@@ -327,9 +329,9 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
   page,
   browser,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const frames = watchOverview(page)
-  await gotoPage(page, ROOT_PATH, PAGE_READY)
+  await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expect.poll(() => frames.replies.length).toBeGreaterThan(0)
   const initial = frames.read()[0]!
   await expectOverview(page, initial)
@@ -339,7 +341,7 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
   const viewer = await viewerContext.newPage()
   const writes = countSentFrames(viewer, '"type":"action"')
   try {
-    await gotoPage(viewer, ROOT_PATH, PAGE_READY)
+    await gotoPage(expect, viewer, ROOT_PATH, PAGE_READY)
     await expect(viewer.getByTestId('nav-admin')).toHaveAttribute(
       'data-access',
       'view',
@@ -354,11 +356,11 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
           tab.key === 'hilos_i18n_languages' ? 'languages' : 'countries'
         await submit(viewer.getByTestId(`i18n-overview-${subject}-count`))
         await expect(viewer).toHaveURL(new RegExp(`${tab.path}$`))
-        await expectPageReady(viewer)
+        await expectPageReady(expect, viewer)
         await expectHead(viewer, tab.key)
         await expect(viewer.getByTestId(tab.body)).toBeVisible()
         await submit(viewer.getByTestId(`hilos-page-tab-${ROOT}`))
-        await expectPageReady(viewer)
+        await expectPageReady(expect, viewer)
         await expectHead(viewer)
         await expectOverview(viewer, initial)
         await document.unchanged()

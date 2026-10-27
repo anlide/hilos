@@ -6,8 +6,9 @@ import {
   emulateSystemTheme,
   expectThemeFirstFrame,
   expectThemeMode,
+  gotoPage,
+  PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('remembered Dark paints the shell and prerendered page before application JS', async ({
   page,
@@ -37,7 +38,7 @@ test('remembered Dark paints the shell and prerendered page before application J
     await expectThemeFirstFrame(expect, page, '/about', 'dark')
     expect(scripts).toBe(0)
     expect(sockets).toBe(0)
-    await gotoPage(page, '/', PAGE_READY)
+    await gotoPage(expect, page, '/', PAGE_READY)
     await expectThemeMode(expect, page, 'dark')
     expect(scripts).toBeGreaterThan(0)
     expect(sockets).toBeGreaterThan(0)
@@ -72,7 +73,7 @@ test('fresh System dark paints both entrypoints without a browser pick or cache'
       ).toEqual([null, null])
     }
     expect(sockets).toBe(0)
-    await gotoPage(page, '/', PAGE_READY)
+    await gotoPage(expect, page, '/', PAGE_READY)
     await expectThemeMode(expect, page, 'dark')
   } finally {
     await context.close()

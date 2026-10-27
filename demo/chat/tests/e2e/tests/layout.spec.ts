@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
-import { watchClientDocument } from '../../../../../framework/frontend/e2e/index.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
+import {
+  watchClientDocument,
+  expectPageReady,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 const PUBLIC_PAGES = [
   {
@@ -44,7 +47,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
     fullLoads += 1
   })
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const loadsAfterColdLoad = fullLoads
   const document = await watchClientDocument(page)
@@ -59,7 +62,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
 
     for (const publicPage of PUBLIC_PAGES) {
       await page.getByTestId(`footer-link-${publicPage.page}`).click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
 
       const head = page.getByTestId('hilos-page-head')
       await expect(head).toHaveCount(1)

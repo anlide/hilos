@@ -1,6 +1,6 @@
 // Read the one protected-mode snapshot fetched after a drive command went unanswered.
-// The rule is shared by the three demo e2e helpers so a lost reply means the same thing
-// in every frontend stack. It deliberately knows no socket, host, command name or retry:
+// The shared command wrapper uses this rule in every frontend stack. It deliberately
+// knows no socket, host, command name or retry:
 // the caller supplies one inspect function, and this module invokes it at most once.
 
 /**

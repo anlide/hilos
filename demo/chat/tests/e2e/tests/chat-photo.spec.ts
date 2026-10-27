@@ -1,12 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
+import {
+  clickSubmit,
+  openAndSelectPhoto,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { gotoPage } from '../helpers/page.js'
-import { nameForPhoto, picture, selectPhoto } from '../helpers/profilePhoto.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
+import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
 
 // spec-owner: demo — the feed, Participants and /user/{id} are chat's own screens.
 
@@ -46,7 +50,7 @@ async function setBotActive(
 ): Promise<void> {
   await openBotEdit(page, name, windows)
   await page.getByTestId('admin-bots-active').setChecked(active)
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
@@ -66,7 +70,7 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     // after a message never spends the photo's verdict.
     const key = modelKey()
     const name = await nameForPhoto(page, key)
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     await expect(page.getByTestId('self-user')).toHaveText(name)
     const userId = Number(await page.getByTestId('self-user-id').textContent())
 
@@ -75,14 +79,14 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     const first = `the first of a series ${firstKey}`
     await dictateModerationVerdict(firstKey, true, 'ok')
     await typeInto(page.getByTestId('message-input'), first)
-    await clickSubmit(page.getByTestId('message-send'))
+    await clickSubmit(expect, page.getByTestId('message-send'))
     await expect(
       page.getByTestId('event-text').filter({ hasText: first }),
     ).toBeVisible()
 
     // The guest opens the feed and the person's page while the re-send lockout runs.
-    await gotoPage(guestPage, '/')
-    await gotoPage(guestUserPage, `/user/${userId}`)
+    await gotoPage(expect, guestPage, '/')
+    await gotoPage(expect, guestUserPage, `/user/${userId}`)
     await expect(guestUserPage.getByTestId('user-name')).toHaveText(name)
 
     const secondKey = modelKey()
@@ -93,7 +97,7 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     await expect(page.getByTestId('message-send')).toBeEnabled({
       timeout: 20_000,
     })
-    await clickSubmit(page.getByTestId('message-send'))
+    await clickSubmit(expect, page.getByTestId('message-send'))
 
     const head = guestPage.getByTestId('event').filter({
       has: guestPage.getByTestId('event-text').filter({ hasText: first }),
@@ -136,10 +140,15 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     }
 
     // The person sets a photo: the guest's open screens show it without a reload.
-    await gotoPage(page, '/profile')
+    await gotoPage(expect, page, '/profile')
     await dictateModerationVerdict(key, true, 'ok')
-    await selectPhoto(page, await picture(page, 'image/jpeg'), 'image/jpeg')
-    await clickSubmit(page.getByTestId('profile-photo-save'))
+    await openAndSelectPhoto(
+      expect,
+      page,
+      await picture(page, 'image/jpeg'),
+      'image/jpeg',
+    )
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
     await expect(page.getByTestId('modal')).toBeHidden()
     for (const photo of photos) {
       await expect(photo).toBeVisible()
@@ -148,8 +157,8 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     await expect(continuation.getByTestId('hilos-avatar-photo')).toHaveCount(0)
 
     // The person removes it: the initials come back.
-    await clickSubmit(page.getByTestId('profile-photo-open'))
-    await clickSubmit(page.getByTestId('profile-photo-remove'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
     await expect(page.getByTestId('modal')).toBeHidden()
     for (const photo of photos) {
       await expect(photo).toHaveCount(0)
@@ -170,11 +179,11 @@ test('a guest sees the circles of a series, the roster and the user page follow 
 // test switches a quiet one on to have a bot row at all, and off again after.
 test('a bot row wears the circle of its initials', async ({ page }) => {
   const windows = await watchBotSearch(page)
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
 
   try {
     await setBotActive(page, QUIET_BOT, true, windows)
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     const bot = page.getByTestId('bot').filter({
       has: page.getByTestId('bot-name').filter({ hasText: QUIET_BOT }),
     })

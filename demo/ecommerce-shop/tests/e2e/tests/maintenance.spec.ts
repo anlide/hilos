@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  signUp,
+  uniqueEmail,
   MAINTENANCE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
@@ -8,10 +10,9 @@ import {
   expectToastPlacement,
   maintenanceCircleRow,
   shownByTestId,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { signUp, uniqueEmail } from '../helpers/session.js'
 
 // Naming a verifier in Maintenance: the server decides, the row arrives over the
 // live table, and a refusal is said twice - in the dialog and in the corner.
@@ -30,8 +31,8 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   page,
   browser,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 
   // The registration code proves the address (HIL-825). This demo signs in by
@@ -39,7 +40,7 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   // refuses.
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = await signUp(member)
+  const memberEmail = (await signUp(expect, member)).email
 
   await addToMaintenanceCircle(page, memberEmail)
 
@@ -119,6 +120,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await dismissToasts(page)
   await memberContext.close()
 
-  await gotoPage(page, MAINTENANCE_PATH)
+  await gotoPage(expect, page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 })

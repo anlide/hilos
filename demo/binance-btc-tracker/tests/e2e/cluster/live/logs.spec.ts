@@ -9,8 +9,11 @@ import {
   expectLogBatchViewer,
   expectLogEpochMoment,
   logBatchDirectory,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
+  tableRowKeys,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
@@ -25,9 +28,6 @@ import {
   ROTATION_ARRIVAL_TIMEOUT_MS,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../../helpers/logs.js'
-import { gotoPage, PAGE_READY } from '../../helpers/page.js'
-import { tableRowKeys } from '../../helpers/table.js'
-
 // Red on the first attempt once in the 80 runs after HIL-1506 (0982, one lane) and
 // green on its retry: hilos-logs-node-m1 did not show within 5 s. The journals of
 // every node of that run are kept in
@@ -40,8 +40,8 @@ test(
   async ({ browser }) => {
     const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
     try {
-      await grantAdminToSelf(page)
-      await gotoPage(page, '/hilos/logs', PAGE_READY)
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
       for (const node of [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]) {
         await expect(page.getByTestId(`hilos-logs-node-${node}`)).toBeVisible()
       }
@@ -60,8 +60,9 @@ test('a slave live file followed from a follower master receives a line appended
     // The command round trip and remote artifact delivery outlive the base cap.
     test.slow()
     const slave = CLUSTER_SLAVES[0]
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await gotoPage(
+      expect,
       page,
       `/hilos/logs/view/${slave}/live/${FOLLOWED_STREAM}`,
       PAGE_READY,
@@ -278,7 +279,7 @@ async function expectClusterTable(
     prepare?: () => Promise<void>
   },
 ): Promise<void> {
-  await gotoPage(page, options.path, PAGE_READY)
+  await gotoPage(expect, page, options.path, PAGE_READY)
   await options.prepare?.()
 
   const filter = shownByTestId(page, 'hilos-table-filter-node')
@@ -306,7 +307,7 @@ test('cluster logs keys: shows node column and filters by every cluster member',
 }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await expectClusterTable(page, {
       path: '/hilos/logs/keys',
       searchPlaceholder: 'Search by key (agent-*) or node…',
@@ -322,7 +323,7 @@ test('cluster logs workers: shows node column and filters by every cluster membe
 }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await expectClusterTable(page, {
       path: '/hilos/logs/workers',
       searchPlaceholder: 'Search by key or node…',
@@ -348,8 +349,8 @@ test(
     const members = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
     let slaveBatch: Record<string, unknown> | undefined
     try {
-      await grantAdminToSelf(page)
-      await gotoPage(control, '/hilos/settings', PAGE_READY)
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, control, '/hilos/settings', PAGE_READY)
 
       await expectClusterTable(page, {
         path: '/hilos/logs/rotations',
@@ -410,6 +411,7 @@ test(
         expect.stringContaining(logBatchDirectory(batchAt)),
       )
       await gotoPage(
+        expect,
         viewer,
         `/hilos/logs/view/${slaveBatch.node}/${batchAt}/daemon.log`,
         PAGE_READY,

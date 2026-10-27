@@ -6,14 +6,16 @@ import {
   shownByTestId,
   watchHeight,
   watchTop,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   clearLanguageNamesFixture,
   seedLanguageNamesFixture,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 const NAMES_PATH = '/hilos/i18n/languages/qw/names'
 const WINDOW = 'i18n-language-name-window'
@@ -29,7 +31,7 @@ const CORRECTION_EDIT = 'i18n-language-name-locale-edit-qv-GB'
 
 /** Open the unseeded reverse pair; all of its writes belong to the UI. */
 async function openNames(page: Page): Promise<void> {
-  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await gotoPage(expect, page, NAMES_PATH, PAGE_READY)
   await expect(shownByTestId(page, 'i18n-names-none-qv')).toHaveText('No name')
   await expect(shownByTestId(page, BASE_ADD)).toBeVisible()
   await expect(page.getByTestId(CORRECTION_ADD)).toHaveCount(0)
@@ -38,7 +40,7 @@ async function openNames(page: Page): Promise<void> {
 /** Open the name window through its visible wide or narrow control. */
 async function openName(page: Page, control: string): Promise<void> {
   await dismissToasts(page)
-  await clickSubmit(shownByTestId(page, control))
+  await clickSubmit(expect, shownByTestId(page, control))
   await expect(page.getByTestId(WINDOW)).toBeVisible()
   await expect(page.getByTestId(INPUT)).toBeFocused()
   await expect(page.getByTestId(INPUT)).toHaveAccessibleName('Name')
@@ -46,13 +48,14 @@ async function openName(page: Page, control: string): Promise<void> {
 
 /** Await the tracked success before inspecting either tab's live table. */
 async function saveName(page: Page): Promise<void> {
-  await clickSubmit(page.getByTestId(SUBMIT))
+  await clickSubmit(expect, page.getByTestId(SUBMIT))
   await expect(page.getByTestId(WINDOW)).toHaveCount(0)
 }
 
 /** Expand the writing language's country locale through the native chevron. */
 async function expandCorrections(page: Page): Promise<void> {
   await clickSubmit(
+    expect,
     i18nNameRow(page, 'language', 'qv').getByTestId(/^hilos-table-expand-/),
   )
   await expect(shownByTestId(page, 'i18n-names-inherit-qv-GB')).toHaveText(
@@ -79,7 +82,7 @@ async function expectName(
 /** The shared fixture must leave the env-language empty-state spec independent. */
 async function clearNames(page: Page): Promise<void> {
   await clearLanguageNamesFixture()
-  await gotoPage(page, '/hilos/i18n/languages/en/names', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/names', PAGE_READY)
   await expectNoOtherLanguageNames(expect, page)
 }
 
@@ -93,7 +96,7 @@ test('creates and edits a base and correction live, preserving literal empty val
   const observer = await context.newPage()
   try {
     await seedLanguageNamesFixture()
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
     await openNames(observer)
 
@@ -153,7 +156,7 @@ test('creates and edits a base and correction live, preserving literal empty val
       await openName(tab, CORRECTION_EDIT)
       await expect(tab.getByTestId(INPUT)).toHaveValue('')
       await expect(tab.getByTestId(SUBMIT)).toBeDisabled()
-      await clickSubmit(tab.getByTestId(CANCEL))
+      await clickSubmit(expect, tab.getByTestId(CANCEL))
       await expect(tab.getByTestId(WINDOW)).toHaveCount(0)
     }
   } finally {
@@ -174,7 +177,7 @@ for (const correction of [false, true]) {
       const observer = await context.newPage()
       try {
         await seedLanguageNamesFixture()
-        await signUpAdmin(page)
+        await signUpAdmin(expect, page)
         for (const tab of [page, observer]) await openNames(tab)
         if (correction) {
           await openName(page, BASE_ADD)
@@ -252,7 +255,10 @@ for (const correction of [false, true]) {
         await expect(observer.getByTestId(WINDOW)).toBeVisible()
         await expectName(page, correction, theirs)
         if (choice === 'mine' || choice === 'theirs') {
-          await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+          await clickSubmit(
+            expect,
+            observer.getByTestId(`conflict-accept-${choice}`),
+          )
           await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
           await errorRoom.unchanged()
           await noticeRoom.unchanged()
@@ -271,7 +277,7 @@ for (const correction of [false, true]) {
           }
         }
         if (choice !== 'mine') {
-          await clickSubmit(observer.getByTestId(CANCEL))
+          await clickSubmit(expect, observer.getByTestId(CANCEL))
           await expect(observer.getByTestId(WINDOW)).toHaveCount(0)
           for (const tab of [page, observer])
             await expectName(tab, correction, theirs)
@@ -296,7 +302,7 @@ for (const correction of [false, true]) {
     const observer = await context.newPage()
     try {
       await seedLanguageNamesFixture()
-      await signUpAdmin(page)
+      await signUpAdmin(expect, page)
       await openNames(page)
       await openNames(observer)
       await openName(page, BASE_ADD)
@@ -335,7 +341,10 @@ for (const correction of [false, true]) {
         await observer.getByTestId(INPUT).press('Enter')
         await expect(observer.getByTestId(WINDOW)).toBeVisible()
         await expect(observer.getByTestId('conflict-choices')).toBeVisible()
-        await clickSubmit(observer.getByTestId(`conflict-accept-${choice}`))
+        await clickSubmit(
+          expect,
+          observer.getByTestId(`conflict-accept-${choice}`),
+        )
         await expect(observer.getByTestId('conflict-choices')).toHaveCount(0)
         await noticeRoom.unchanged()
         if (choice === 'mine') {
@@ -392,7 +401,7 @@ test('sends captured name IDs and refuses an old ID after recreating the same te
   await clearLanguageNamesFixture()
   try {
     await seedLanguageNamesFixture()
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
     await openName(page, BASE_ADD)
     await typeInto(page.getByTestId(INPUT), 'Same text')
@@ -409,8 +418,11 @@ test('sends captured name IDs and refuses an old ID after recreating the same te
     expect(Number.isInteger(writes[0].data.inLanguageId)).toBe(true)
     expect(writes[0].data.inLanguageId).toBeGreaterThan(0)
     await dismissToasts(page)
-    await clickSubmit(shownByTestId(page, 'i18n-names-delete-qv'))
-    await clickSubmit(page.getByTestId('i18n-language-name-delete-confirm'))
+    await clickSubmit(expect, shownByTestId(page, 'i18n-names-delete-qv'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('i18n-language-name-delete-confirm'),
+    )
     await expect(
       page.getByTestId('i18n-language-name-delete-window'),
     ).toHaveCount(0)
@@ -427,7 +439,7 @@ test('sends captured name IDs and refuses an old ID after recreating the same te
       page.getByTestId('i18n-language-name-error'),
     )
     const bodyRoom = await watchHeight(page.getByTestId(WINDOW))
-    await clickSubmit(page.getByTestId(SUBMIT))
+    await clickSubmit(expect, page.getByTestId(SUBMIT))
     await expect(page.getByTestId('i18n-language-name-error')).toContainText(
       'The name no longer exists.',
     )
@@ -438,11 +450,11 @@ test('sends captured name IDs and refuses an old ID after recreating the same te
       'aria-live',
       'assertive',
     )
-    await clickSubmit(page.getByTestId('hilos-action-error-details'))
+    await clickSubmit(expect, page.getByTestId('hilos-action-error-details'))
     await expect(page.getByTestId('hilos-action-error-full')).toContainText(
       'The name no longer exists.',
     )
-    await clickSubmit(page.getByTestId('hilos-action-error-close'))
+    await clickSubmit(expect, page.getByTestId('hilos-action-error-close'))
     await expect(page.getByTestId('hilos-action-error-details')).toBeFocused()
     await expectName(page, false, 'Same text')
     expect(writes[3].data).toEqual({

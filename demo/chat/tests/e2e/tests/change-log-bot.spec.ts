@@ -9,11 +9,12 @@ import {
   expectChangeLogValues,
   expectTrackedTableRecord,
   shownByTestId,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
+  tableRowKeyByText,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
-import { tableRowKeyByText } from '../helpers/table.js'
 
 // spec-owner: demo — a bot description is chat's product and the only long text under the journal
 
@@ -23,7 +24,7 @@ import { tableRowKeyByText } from '../helpers/table.js'
 test("keeps a bot description's full old and new values in its receipt and leaves them out of its record's history", async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const name = `AAA journal ${Date.now()}`
   // The bot form trims boundary whitespace before saving. Keep the inputs in
   // that saved form so the journal assertions below remain byte-for-byte.
@@ -33,22 +34,22 @@ test("keeps a bot description's full old and new values in its receipt and leave
   const after =
     'After: the complete new description.\n' +
     'The receipt renders every word and line. '.repeat(6).trimEnd()
-  await gotoPage(page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/app/bots')
   await page.getByTestId('hilos-table-main-action').click()
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await typeInto(page.getByTestId('admin-bots-description'), before)
   await page.getByTestId('admin-bots-active').uncheck()
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
-  const botKey = await tableRowKeyByText(page, name)
+  const botKey = await tableRowKeyByText(expect, page, name)
   await dismissToasts(page)
   await shownByTestId(page, `admin-bots-edit-${botKey}`).click()
   await typeInto(page.getByTestId('admin-bots-description'), after)
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
   await dismissToasts(page)
 
-  await gotoPage(page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_PATH)
   await chooseChangeLogFeedTable(page, 'bot')
   await typeInto(page.getByTestId('hilos-table-search'), `#${userId}`)
   const { rowKey, receiptId } = await expectChangeLogFeedRow(
@@ -75,7 +76,7 @@ test("keeps a bot description's full old and new values in its receipt and leave
   await record.click()
   await expect(page.getByTestId('modal')).toHaveCount(0)
   await expectTrackedTableRecord(expect, page, 'bot', botKey)
-  const editKey = await tableRowKeyByText(page, 'updated')
+  const editKey = await tableRowKeyByText(expect, page, 'updated')
   const edit = shownByTestId(page, `hilos-table-row-${editKey}`)
   await expect(edit).toContainText(`#${botKey}`)
   await expect(edit).toContainText('description: Value omitted')

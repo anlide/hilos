@@ -1,21 +1,17 @@
 import { test, expect } from '@playwright/test'
+import {
+  clickSubmit,
+  openAndSelectPhoto,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
 
+import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { gotoPage } from '../helpers/page.js'
-import { nameForPhoto, picture, selectPhoto } from '../helpers/profilePhoto.js'
-import { clickSubmit, signUp } from '../helpers/session.js'
+import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
+import { signUp } from '../helpers/session.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
-
-/** Add EXIF orientation 6 (90° clockwise) before the JPEG's first segment. */
-function rotatedJpeg(jpeg: Buffer): Buffer {
-  const orientationSix = Buffer.from(
-    'ffe1002245786966000049492a0008000000010012010300010000000600000000000000',
-    'hex',
-  )
-  return Buffer.concat([jpeg.subarray(0, 2), orientationSix, jpeg.subarray(2)])
-}
 
 test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', async ({
   page,
@@ -25,11 +21,12 @@ test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', 
   const name = await nameForPhoto(page, key)
   const second = await page.context().newPage()
   try {
-    await gotoPage(second, '/profile')
+    await gotoPage(expect, second, '/profile')
     await expect(second.getByTestId('profile-name')).toHaveText(name)
 
     await dictateModerationVerdict(key, true, 'ok')
-    await selectPhoto(
+    await openAndSelectPhoto(
+      expect,
       page,
       rotatedJpeg(await picture(page, 'image/jpeg')),
       'image/jpeg',
@@ -40,7 +37,7 @@ test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', 
     await expect(zoom).toHaveValue('4')
     await page.getByTestId('profile-photo-preview').focus()
     await page.getByTestId('profile-photo-preview').press('ArrowRight')
-    await clickSubmit(page.getByTestId('profile-photo-save'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
     await expect(page.getByTestId('modal')).toBeHidden()
 
     const navPhoto = page
@@ -64,8 +61,8 @@ test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', 
     const publicPhoto = await request.get(src)
     expect(publicPhoto.headers()['content-type']).toContain('image/webp')
 
-    await clickSubmit(page.getByTestId('profile-photo-open'))
-    await clickSubmit(page.getByTestId('profile-photo-remove'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(navPhoto).toHaveCount(0)
     await expect(profilePhoto).toHaveCount(0)
@@ -89,8 +86,13 @@ test('a photo rejected for nudity stays in the crop window and initials remain',
   const key = modelKey()
   await nameForPhoto(page, key)
   await dictateModerationVerdict(key, false, 'nudity')
-  await selectPhoto(page, await picture(page, 'image/jpeg'), 'image/jpeg')
-  await clickSubmit(page.getByTestId('profile-photo-save'))
+  await openAndSelectPhoto(
+    expect,
+    page,
+    await picture(page, 'image/jpeg'),
+    'image/jpeg',
+  )
+  await clickSubmit(expect, page.getByTestId('profile-photo-save'))
   await expect(page.getByTestId('profile-photo-error')).toHaveText(
     'This photo was not accepted: it looks like nudity or sexual content.',
   )
@@ -104,8 +106,13 @@ test('a transparent PNG is accepted as a cropped photo', async ({ page }) => {
   const key = modelKey()
   await nameForPhoto(page, key)
   await dictateModerationVerdict(key, true, 'ok')
-  await selectPhoto(page, await picture(page, 'image/png'), 'image/png')
-  await clickSubmit(page.getByTestId('profile-photo-save'))
+  await openAndSelectPhoto(
+    expect,
+    page,
+    await picture(page, 'image/png'),
+    'image/png',
+  )
+  await clickSubmit(expect, page.getByTestId('profile-photo-save'))
   await expect(page.getByTestId('modal')).toBeHidden()
   await expect(
     page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
@@ -115,9 +122,9 @@ test('a transparent PNG is accepted as a cropped photo', async ({ page }) => {
 test('a picture over 40 MB is refused before an upload begins', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile')
-  await clickSubmit(page.getByTestId('profile-photo-open'))
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
+  await clickSubmit(expect, page.getByTestId('profile-photo-open'))
   await page.getByTestId('profile-photo-input').setInputFiles({
     name: 'too-large.png',
     mimeType: 'image/png',

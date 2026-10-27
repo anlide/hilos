@@ -6,12 +6,15 @@ import {
 } from '../../../../../framework/frontend/core/src/legal/legalAgreements.js'
 import { pageResponseSchema } from '../../../../../framework/frontend/core/src/protocol/scopePayload.js'
 import {
+  logout,
+  signUp,
   watchClientDocument,
   watchSocketFrames,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { holdLegalRevision } from '../helpers/legalHold.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, logout, signUp } from '../helpers/session.js'
 
 // Privacy uses polls's existing substantial analytics revision. Holds change the
 // real acceptance records; page replies and the reader follow over the socket.
@@ -24,7 +27,7 @@ const CONSENT_REVISED =
 test('a guest reads the published policy without an acceptance action', async ({
   page,
 }) => {
-  await gotoPage(page, '/privacy', PAGE_READY)
+  await gotoPage(expect, page, '/privacy', PAGE_READY)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'guest')
   await expect(reader.getByTestId('legal-document-reader-line')).toHaveText(
@@ -46,8 +49,8 @@ test('a guest reads the published policy without an acceptance action', async ({
 test('sign-up coverage becomes a guest reader on sign-out in the same page', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/privacy', PAGE_READY)
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/privacy', PAGE_READY)
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
@@ -56,7 +59,7 @@ test('sign-up coverage becomes a guest reader on sign-out in the same page', asy
   )
   await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
-  await logout(page)
+  await logout(expect, page)
   await expect(reader).toHaveAttribute('data-state', 'guest')
   await expect(reader).not.toContainText('You accepted')
   await expect(page.getByTestId('privacy-changes-modal')).toHaveCount(0)
@@ -83,8 +86,8 @@ test('an open policy follows a hold and accepts only Privacy through its compari
     if (agreements !== undefined)
       snapshots.push(legalAgreementsStateSchema.parse(agreements))
   })
-  const person = await signUp(page)
-  await gotoPage(page, '/privacy', PAGE_READY)
+  const person = await signUp(expect, page)
+  await gotoPage(expect, page, '/privacy', PAGE_READY)
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
@@ -121,7 +124,7 @@ test('an open policy follows a hold and accepts only Privacy through its compari
     ?.documents.find((item) => item.document === 'terms')
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
 
-  await clickSubmit(reader.getByTestId('legal-document-changes-open'))
+  await clickSubmit(expect, reader.getByTestId('legal-document-changes-open'))
   const comparison = page.getByTestId('privacy-changes-modal')
   await expect(comparison).toBeVisible()
   const wide = comparison.getByTestId('legal-changes-wide')
@@ -135,7 +138,7 @@ test('an open policy follows a hold and accepts only Privacy through its compari
     'numbered analytics events and network addresses',
   )
 
-  await clickSubmit(page.getByTestId('privacy-changes-accept'))
+  await clickSubmit(expect, page.getByTestId('privacy-changes-accept'))
   await expect(comparison).toHaveCount(0)
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect
@@ -189,13 +192,13 @@ test('a stale revision is refused without optimistic coverage and can be retried
       })
     },
   )
-  const person = await signUp(page)
-  await gotoPage(page, '/privacy', PAGE_READY)
+  const person = await signUp(expect, page)
+  await gotoPage(expect, page, '/privacy', PAGE_READY)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await holdLegalRevision(person.userId, 'privacy', HELD_PRIVACY)
   await expect(reader).toHaveAttribute('data-state', 'due')
-  await clickSubmit(reader.getByTestId('legal-document-changes-open'))
+  await clickSubmit(expect, reader.getByTestId('legal-document-changes-open'))
   const comparison = page.getByTestId('privacy-changes-modal')
   await expect(comparison).toBeVisible()
   const refusalSlot = comparison.getByTestId('privacy-changes-refusal-slot')
@@ -206,7 +209,7 @@ test('a stale revision is refused without optimistic coverage and can be retried
   ).toHaveAttribute('aria-hidden', 'true')
 
   const accept = page.getByTestId('privacy-changes-accept')
-  await clickSubmit(accept)
+  await clickSubmit(expect, accept)
   await expect.poll(() => requests.length).toBe(1)
   expect(requests).toEqual([
     { acceptedRevisions: { privacy: CURRENT_PRIVACY } },
@@ -238,13 +241,13 @@ test('a stale revision is refused without optimistic coverage and can be retried
   await expect(comparison).toBeVisible()
   // Closing retains the refusal beside the direct accept. Only the next press
   // clears it; neither the refusal nor the refresh turns the line green.
-  await clickSubmit(page.getByTestId('privacy-changes-close'))
+  await clickSubmit(expect, page.getByTestId('privacy-changes-close'))
   await expect(comparison).toHaveCount(0)
   await expect(reader.getByTestId('legal-document-accept-refusal')).toHaveText(
     CONSENT_REVISED,
   )
   stale = false
-  await clickSubmit(reader.getByTestId('legal-document-accept'))
+  await clickSubmit(expect, reader.getByTestId('legal-document-accept'))
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(reader.getByTestId('legal-document-accept-refusal')).toHaveCount(
     0,

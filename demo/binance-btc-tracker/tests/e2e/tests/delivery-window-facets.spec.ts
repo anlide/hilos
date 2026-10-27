@@ -8,15 +8,13 @@ import {
   shownByTestId,
   type SocketFrame,
   watchDeliveryFrames,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import {
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
   markDocument,
   PAGE_READY,
-} from '../helpers/page.js'
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test.describe.configure({ retries: 0 })
 
@@ -27,8 +25,8 @@ test('logs initial answers keep own state, response and declared facets in one p
   await armSocketDrop(page)
   const log = watchDeliveryFrames(page)
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, '/hilos/logs', PAGE_READY)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
     await expect(page.getByTestId('hilos-logs-tile-daemon')).toBeVisible()
     const overview = log.packets.find((packet) =>
       packet.frames.some(
@@ -49,7 +47,7 @@ test('logs initial answers keep own state, response and declared facets in one p
     expect(overview.raw).toMatch(/^\{"type":"signal_batch"/)
 
     await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect.poll(() => page.locator(ROWS).count()).toBeGreaterThan(0)
     await expect
       .poll(() =>
@@ -168,7 +166,7 @@ test('logs initial answers keep own state, response and declared facets in one p
       exact: object(window).totalExact,
     })
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     // Byte totals and ordering can change while disconnected, and keep changing
     // after the reconnect: the table is live, and viewing it grows the owner's
     // own log. The visible rows must therefore match the latest window the
@@ -279,7 +277,7 @@ test('logs initial answers keep own state, response and declared facets in one p
           : { shown, expected }
       })
       .toBeNull()
-    await expectDocumentUnchanged(page)
+    await expectDocumentUnchanged(expect, page)
     expect(log.sockets()).toBe(socket + 1)
     expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
       'hilos_delivery_complete',

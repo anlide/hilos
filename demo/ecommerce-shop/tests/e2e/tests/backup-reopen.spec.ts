@@ -1,12 +1,15 @@
 import { test, expect } from '@playwright/test'
 
-import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
+import {
+  gotoPage,
+  grantAdminToSelf,
+  sessionToken,
+} from '../../../../../framework/frontend/e2e/index.js'
 import {
   enterProtectedMode,
   leaveProtectedMode,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // HIL-911: the reopen block reaches a backup page that was already open when the
 // verification window opened. The operator's tab stays subscribed through the
@@ -41,8 +44,8 @@ test.afterEach(async () => {
 test('an open backup page offers the reopen block when the window opens, without a reload', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, BACKUP_URL)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, BACKUP_URL)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   // Answered while nothing is frozen: the block is not on the page yet, which is
   // what makes its arrival below the thing under test.
@@ -57,7 +60,9 @@ test('an open backup page offers the reopen block when the window opens, without
   // Entered for this browser, exactly as a restore started from this page enters
   // it, and then ended - which is what leaves the node in the verification window
   // with the operator's tab still open on the backup page.
-  expect(await enterProtectedMode(OPERATION, operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // The same document, answered again: the block and its button draw themselves.

@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  signUp,
   watchThemeFrames,
   type ThemeFrameLog,
+  gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
 
 // The live handshake carries the stored personal time zone. Registration has
 // no time-zone choice yet, so a new account must carry an explicit null.
@@ -36,7 +36,7 @@ test('account handshake keeps an explicit null time zone after reload', async ({
   page,
 }) => {
   const frames = watchThemeFrames(page)
-  await signUp(page)
+  await signUp(expect, page)
 
   await expect
     .poll(() =>
@@ -77,7 +77,7 @@ test('guest handshake carries an explicit null current user', async ({
   page,
 }) => {
   const frames = watchThemeFrames(page)
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
 
   await expect
     .poll(

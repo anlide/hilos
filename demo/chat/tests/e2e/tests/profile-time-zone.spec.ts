@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext } from '@playwright/test'
 
 import {
+  login,
   chooseProfileTimeZone,
   expectProfileTimeZone,
   expectProfileTimeZoneCatalog,
@@ -11,9 +12,12 @@ import {
   watchClientDocument,
   watchSocketFrames,
   type SocketFrame,
+  clickSubmit,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, login, signUp } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 test.use({ timezoneId: 'Europe/Warsaw' })
 
@@ -23,8 +27,8 @@ test('displays automatic browser time zone with Change before Theme and receives
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
     await expect(page.getByTestId('profile-name')).toBeVisible()
     await expectProfileTimeZoneCatalog(expect, frames)
     await expect(page.getByTestId('profile-time-zone-row')).toBeVisible()
@@ -62,8 +66,8 @@ test('renders delivered own time zone and updates reactively on session restate 
 
   const socket = await forwardSessionTimeZone(page, 'Asia/Tokyo')
   try {
-    await signUp(page)
-    await gotoPage(page, '/profile')
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toBeVisible()
 
     const timeZone = page.getByTestId('profile-time-zone')
@@ -96,8 +100,8 @@ test('real account choices fan out to independent sessions, preserve picker sear
   test.slow()
   const contexts: BrowserContext[] = []
   try {
-    const person = await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    const person = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
     const secondContext = await browser.newContext({
       baseURL,
       ignoreHTTPSErrors: true,
@@ -106,9 +110,9 @@ test('real account choices fan out to independent sessions, preserve picker sear
     })
     contexts.push(secondContext)
     const second = await secondContext.newPage()
-    await gotoPage(second, '/profile')
-    await login(second, person.email)
-    await expectPageReady(second)
+    await gotoPage(expect, second, '/profile')
+    await login(expect, second, person.email)
+    await expectPageReady(expect, second)
     await expect(second.getByTestId('profile-name')).toHaveText(person.name)
     const firstSession = (await context.cookies()).find((cookie) =>
       isSessionCookie(cookie.name),
@@ -128,9 +132,9 @@ test('real account choices fan out to independent sessions, preserve picker sear
     })
     contexts.push(strangerContext)
     const stranger = await strangerContext.newPage()
-    const otherPerson = await signUp(stranger)
+    const otherPerson = await signUp(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
-    await gotoPage(stranger, '/profile', PAGE_READY)
+    await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
     await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
     await openProfileTimeZone(expect, stranger)
@@ -164,7 +168,7 @@ test('real account choices fan out to independent sessions, preserve picker sear
 
       // Check persistence after the live delivery was already observed.
       await page.reload()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expectProfileTimeZone(
         expect,
         page,
@@ -180,7 +184,7 @@ test('real account choices fan out to independent sessions, preserve picker sear
       await search.fill('')
       await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
       await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
-      await clickSubmit(second.getByTestId('profile-time-zone-close'))
+      await clickSubmit(expect, second.getByTestId('profile-time-zone-close'))
       await expect(second.getByTestId('profile-time-zone-modal')).toBeHidden()
       await expect(second.getByTestId('profile-time-zone-change')).toBeFocused()
     } finally {
@@ -188,10 +192,10 @@ test('real account choices fan out to independent sessions, preserve picker sear
     }
 
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
     await second.reload()
-    await expectPageReady(second)
+    await expectPageReady(expect, second)
     await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
     await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
   } finally {

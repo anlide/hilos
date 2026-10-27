@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  signUp,
   APPEARANCE_PATH,
   THEME_PICK_STORAGE_KEY,
   chooseHeaderTheme,
@@ -8,11 +9,12 @@ import {
   expectAppearanceRows,
   expectThemeHeader,
   expectThemeMode,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // spec-owner: demo — proves the shop shell mounts theme controls and Appearance.
 
@@ -23,7 +25,7 @@ test('a guest picks Light, Dark and System in the header and returns to the defa
   page,
 }) => {
   await emulateSystemTheme(page, 'dark')
-  await gotoPage(page, '/', PAGE_READY)
+  await gotoPage(expect, page, '/', PAGE_READY)
   await expectThemeMode(expect, page, 'dark')
   await expectThemeHeader(expect, page, 'system', true)
 
@@ -60,7 +62,7 @@ test('an account keeps its header pick across a reload and returns to the defaul
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await signUp(page)
+  await signUp(expect, page)
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
 
@@ -68,7 +70,7 @@ test('an account keeps its header pick across a reload and returns to the defaul
   await expectThemeMode(expect, page, 'dark')
   await expectThemeHeader(expect, page, 'dark')
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectThemeMode(expect, page, 'dark')
   await expectThemeHeader(expect, page, 'dark')
 
@@ -76,7 +78,7 @@ test('an account keeps its header pick across a reload and returns to the defaul
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
 })
@@ -85,12 +87,12 @@ test('the Appearance card opens the mounted section with both live settings rows
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos', PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos', PAGE_READY)
   const card = page.getByTestId('dashboard-card-hilos_appearance')
   await expect(card).toBeVisible()
   await card.click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe(APPEARANCE_PATH)
   await expectAppearanceRows(expect, page)
   await expectThemeMode(expect, page, 'light')

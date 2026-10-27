@@ -15,9 +15,9 @@ import {
   expectPublicStatusStale,
   watchPublicStatus,
   type DisplayedStatusPair,
+  gotoPublicStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
-import { gotoPublicStatus } from '../helpers/page.js'
 
 test.use({ colorScheme: 'light', timezoneId: 'Europe/Warsaw' })
 
@@ -47,7 +47,7 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
   const coldLog = watchPublicStatus(page)
   const events: Record<string, unknown> = { timeOrigin: performance.timeOrigin }
   try {
-    await gotoPublicStatus(guest)
+    await gotoPublicStatus(expect, guest)
     const before = await expectPublicStatusPair(
       expect,
       guest,
@@ -110,7 +110,7 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(reloaded.heartbeat).toEqual(frozen.heartbeat)
     await expectPublicStatusStale(expect, guest, frozen)
     await expectPublicStatusArchive(expect, guest, archive)
-    await gotoPublicStatus(page)
+    await gotoPublicStatus(expect, page)
     const cold = await expectPublicStatusPair(expect, page, coldLog)
     expect(cold.status).toEqual(frozen.status)
     expect(cold.heartbeat).toEqual(frozen.heartbeat)

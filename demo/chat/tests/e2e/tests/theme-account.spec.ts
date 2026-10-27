@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 import {
+  login,
   armSocketDrop,
   clearCustomSetting,
   THEME_DEFAULT_KEY,
@@ -20,10 +21,13 @@ import {
   setCustomSetting,
   watchSocketFrames,
   type SocketFrame,
+  clickSubmit,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, login, signUp } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 test('independent account sessions synchronize profile and header choices and keep their first frame', async ({
   browser,
@@ -58,15 +62,15 @@ test('independent account sessions synchronize profile and header choices and ke
     contexts.push(adminContext)
     admin = await adminContext.newPage()
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    const person = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
 
     // Login creates a separate session and storage; neither is copied from the
     // registered browser, so browser storage events cannot supply this proof.
     const second = await secondContext.newPage()
     await emulateSystemTheme(second, 'dark')
-    await gotoPage(second, '/profile')
-    await login(second, person.email)
+    await gotoPage(expect, second, '/profile')
+    await login(expect, second, person.email)
     await expect(second.getByTestId('profile-name')).toHaveText(person.name)
     const firstSession = (await context.cookies()).find((cookie) =>
       isSessionCookie(cookie.name),
@@ -80,8 +84,8 @@ test('independent account sessions synchronize profile and header choices and ke
 
     const stranger = await strangerContext.newPage()
     await emulateSystemTheme(stranger, 'light')
-    await signUp(stranger)
-    await gotoPage(stranger, '/profile', PAGE_READY)
+    await signUp(expect, stranger)
+    await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, stranger, 'light')
 
     await expectThemeMode(expect, page, 'light')
@@ -100,7 +104,7 @@ test('independent account sessions synchronize profile and header choices and ke
     ).toBeVisible()
     // Picking the marked default is a personal write, although the position
     // stays System. Its default badge must leave both independent sessions.
-    await clickSubmit(page.getByTestId('profile-theme-option-system'))
+    await clickSubmit(expect, page.getByTestId('profile-theme-option-system'))
     await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
     await expect(page.getByTestId('profile-theme-change')).toBeFocused()
     await expectThemeMode(expect, page, 'light')
@@ -118,7 +122,7 @@ test('independent account sessions synchronize profile and header choices and ke
     await expect(
       second.getByTestId('profile-theme-option-system'),
     ).not.toHaveAttribute('aria-current', 'true')
-    await clickSubmit(second.getByTestId('profile-theme-close'))
+    await clickSubmit(expect, second.getByTestId('profile-theme-close'))
     await expect(second.getByTestId('profile-theme-modal')).toBeHidden()
     await expectThemeMode(expect, page, 'dark')
     await expectThemeHeader(expect, page, 'dark')
@@ -130,8 +134,8 @@ test('independent account sessions synchronize profile and header choices and ke
     await expectThemeHeader(expect, stranger, 'light')
     await expectProfileTheme(expect, stranger, 'light')
 
-    await signUpAdmin(admin)
-    await gotoPage(admin, '/hilos/settings', PAGE_READY)
+    await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+    await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await search.fill('')
     await search.pressSequentially(THEME_DEFAULT_KEY, { delay: 10 })
@@ -152,7 +156,7 @@ test('independent account sessions synchronize profile and header choices and ke
     await expect(
       second.getByTestId('profile-theme-default'),
     ).not.toHaveAttribute('aria-current')
-    await clickSubmit(second.getByTestId('profile-theme-close'))
+    await clickSubmit(expect, second.getByTestId('profile-theme-close'))
     await expect(second.getByTestId('profile-theme-modal')).toBeHidden()
     await expectThemeMode(expect, page, 'light')
     await expectThemeHeader(expect, page, 'system', true)
@@ -196,7 +200,7 @@ test('independent account sessions synchronize profile and header choices and ke
     await expect(
       page.getByTestId('profile-theme-option-light').locator('.badge'),
     ).toBeVisible()
-    await clickSubmit(page.getByTestId('profile-theme-close'))
+    await clickSubmit(expect, page.getByTestId('profile-theme-close'))
     await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
     await expectThemeMode(expect, page, 'light')
     await expectThemeHeader(expect, page, 'light', true)
@@ -265,13 +269,13 @@ test('independent account sessions synchronize profile and header choices and ke
     await expectThemeHeader(expect, second, 'system')
     await expectProfileTheme(expect, second, 'system')
     await second.reload()
-    await expectPageReady(second)
+    await expectPageReady(expect, second)
     await expectThemeMode(expect, second, 'dark')
     await expectThemeHeader(expect, second, 'system')
     await expectProfileTheme(expect, second, 'system')
     const systemTab = await secondContext.newPage()
     await emulateSystemTheme(systemTab, 'light')
-    await gotoPage(systemTab, '/profile', PAGE_READY)
+    await gotoPage(expect, systemTab, '/profile', PAGE_READY)
     await expectThemeMode(expect, systemTab, 'light')
     await expectThemeHeader(expect, systemTab, 'system')
     await expectProfileTheme(expect, systemTab, 'system')
@@ -297,14 +301,14 @@ test('independent account sessions synchronize profile and header choices and ke
       ),
     ).toBe('dark')
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectThemeMode(expect, page, 'dark')
     await expectThemeHeader(expect, page, 'dark')
     await expectProfileTheme(expect, page, 'dark')
 
     const newTab = await context.newPage()
     await emulateSystemTheme(newTab, 'light')
-    await gotoPage(newTab, '/profile', PAGE_READY)
+    await gotoPage(expect, newTab, '/profile', PAGE_READY)
     await expect(newTab.getByTestId('profile-name')).toHaveText(person.name)
     await expectThemeMode(expect, newTab, 'dark')
     await expectThemeHeader(expect, newTab, 'dark')
@@ -339,8 +343,8 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
   const frames: SocketFrame[] = []
   try {
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    const person = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, page, 'dark')
     const second = await secondContext.newPage()
     await armSocketDrop(second)
@@ -370,8 +374,8 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
         }
       }
     })
-    await gotoPage(second, '/profile')
-    await login(second, person.email)
+    await gotoPage(expect, second, '/profile')
+    await login(expect, second, person.email)
     await expectThemeMode(expect, second, 'dark')
     await expectThemeHeader(expect, second, 'dark')
     await expectProfileTheme(expect, second, 'dark')
@@ -393,7 +397,7 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
     await secondContext.setOffline(false)
     await reconnected
     await expect(second.getByTestId('conn-state')).toHaveText('connected')
-    await expectPageReady(second)
+    await expectPageReady(expect, second)
     await expect
       .poll(() => accountTheme)
       .toEqual({ themePick: null, themePickInitialized: true })
@@ -411,7 +415,7 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
     await expectThemeHeader(expect, page, 'system', true)
     await expectProfileTheme(expect, page, 'system', true)
     await second.reload()
-    await expectPageReady(second)
+    await expectPageReady(expect, second)
     await expectThemeMode(expect, second, 'light')
     await expectThemeHeader(expect, second, 'system', true)
     await expectProfileTheme(expect, second, 'system', true)
@@ -439,18 +443,18 @@ test('a never-chosen account still adopts a guest Dark choice on first login', a
   })
   try {
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    const person = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
     await expectThemeMode(expect, page, 'light')
     await expectThemeHeader(expect, page, 'system', true)
     await expectProfileTheme(expect, page, 'system', true)
     const guest = await guestContext.newPage()
     await emulateSystemTheme(guest, 'light')
     const adoptions = countSentFrames(guest, 'hilos_theme_adopt')
-    await gotoPage(guest, '/')
+    await gotoPage(expect, guest, '/')
     await chooseHeaderTheme(expect, guest, 'dark')
-    await gotoPage(guest, '/profile')
-    await login(guest, person.email)
+    await gotoPage(expect, guest, '/profile')
+    await login(expect, guest, person.email)
     await expectThemeMode(expect, guest, 'dark')
     await expectThemeHeader(expect, guest, 'dark')
     await expectProfileTheme(expect, guest, 'dark')
@@ -466,8 +470,8 @@ test('a never-chosen account still adopts a guest Dark choice on first login', a
 test('profile and header work by keyboard and return focus', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile', PAGE_READY)
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile', PAGE_READY)
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
   await expectProfileTheme(expect, page, 'system', true)
@@ -504,7 +508,7 @@ test('profile and header work by keyboard and return focus', async ({
   await expectThemeHeader(expect, page, 'dark')
   await expectProfileTheme(expect, page, 'dark')
   await openProfileTheme(expect, page)
-  await clickSubmit(page.getByTestId('profile-theme-close'))
+  await clickSubmit(expect, page.getByTestId('profile-theme-close'))
   await expect(page.getByTestId('profile-theme-modal')).toBeHidden()
   await expect(change).toBeFocused()
   await expectThemeMode(expect, page, 'dark')
@@ -579,17 +583,17 @@ test('registration keeps the guest pick and switching Off closes the open profil
   let adminReady = false
   try {
     await emulateSystemTheme(page, 'light')
-    await gotoPage(page, '/', PAGE_READY)
+    await gotoPage(expect, page, '/', PAGE_READY)
     await chooseHeaderTheme(expect, page, 'dark')
-    await signUp(page)
-    await gotoPage(page, '/profile', PAGE_READY)
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
     await expectThemeMode(expect, page, 'dark')
     await expectThemeHeader(expect, page, 'dark')
     await expectProfileTheme(expect, page, 'dark')
 
     admin = await adminContext.newPage()
-    await signUpAdmin(admin)
-    await gotoPage(admin, '/hilos/settings', PAGE_READY)
+    await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+    await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await search.fill('')
     await search.pressSequentially(THEME_SWITCHING_KEY, { delay: 10 })

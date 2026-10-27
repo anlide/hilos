@@ -4,10 +4,11 @@ import {
   shownByTestId,
   watchTableModalFocus,
   watchTableSearch,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  tableRowKeyByText,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from './page.js'
-import { clickSubmit, typeInto } from './session.js'
-import { tableRowKeyByText } from './table.js'
 
 /** Observe every document before a seeded-bot search starts. */
 export function watchBotSearch(page: Page) {
@@ -20,7 +21,7 @@ export async function openBotEdit(
   name: string,
   windows: Awaited<ReturnType<typeof watchBotSearch>>,
 ): Promise<void> {
-  await gotoPage(page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/app/bots')
   const mark = await windows.mark()
   let target: Awaited<ReturnType<typeof watchTableModalFocus>> | undefined
   const event: Record<string, unknown> = { name, mark }
@@ -28,7 +29,7 @@ export async function openBotEdit(
     await typeInto(page.getByTestId('hilos-table-search'), name)
     // A semantic seeded-name lookup addresses the record. The searched window
     // must contain exactly this one key, with every typing reply processed.
-    const rowKey = await tableRowKeyByText(page, name)
+    const rowKey = await tableRowKeyByText(expect, page, name)
     await windows.settled(expect, mark, name, [rowKey])
     const trigger = shownByTestId(page, `admin-bots-edit-${rowKey}`)
     target = await watchTableModalFocus(trigger)
@@ -38,7 +39,7 @@ export async function openBotEdit(
       sameTrigger: true,
       visibleTriggers: 1,
     })
-    await clickSubmit(trigger)
+    await clickSubmit(expect, trigger)
     await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
     event.opened = await target.read()
     expect(event.opened).toMatchObject({

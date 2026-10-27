@@ -7,9 +7,10 @@ import {
   readAnalyticsOverviewSnapshot,
   watchSocketFrames,
   type SocketFrame,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
 
 test.use({ timezoneId: 'Asia/Kathmandu' })
 
@@ -19,8 +20,8 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
   const frames: SocketFrame[] = []
   const observer = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUpAdmin(page)
-    await gotoPage(page, '/hilos')
+    await signUpAdmin(expect, page)
+    await gotoPage(expect, page, '/hilos')
 
     await expectAnalyticsDashboardCard(expect, page)
     const browserTimeZone = await page.evaluate(
@@ -28,7 +29,7 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
     )
     const opening = frames.length
     await page.getByTestId('dashboard-card-hilos_analytics').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectAnalyticsOverview(expect, page, 'tiles')
 
     await test.info().attach('analytics-overview-frames', {

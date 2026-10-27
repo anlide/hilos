@@ -1,8 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
+import {
+  clickSubmit,
+  typeInto,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — the pictures a chat message carries pass the moderator
 
@@ -65,7 +69,7 @@ async function attachPngs(
 test('a picture refused for nudity stays out of the room and on its chip', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const filename = `${key}.png`
@@ -74,7 +78,7 @@ test('a picture refused for nudity stays out of the room and on its chip', async
 
   await attachPngs(page, [{ name: filename, buffer: PICTURE_PNG }])
   await typeInto(page.getByTestId('message-input'), key)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Message rejected: attachment 1 (' +
@@ -94,7 +98,7 @@ test('a picture refused for nudity stays out of the room and on its chip', async
 test('the second picture refused for violence names that attachment', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const first = `${key}-a.png`
@@ -108,7 +112,7 @@ test('the second picture refused for violence names that attachment', async ({
     { name: second, buffer: OTHER_PNG },
   ])
   await typeInto(page.getByTestId('message-input'), key)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Message rejected: attachment 2 (' + second + ') looks violent.',
@@ -121,7 +125,7 @@ test('the second picture refused for violence names that attachment', async ({
 test('a picture the model does not answer comes back as moderation unavailable', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const filename = `${key}.png`
@@ -131,7 +135,7 @@ test('a picture the model does not answer comes back as moderation unavailable',
 
   await attachPngs(page, [{ name: filename, buffer: PICTURE_PNG }])
   await typeInto(page.getByTestId('message-input'), key)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Moderation is unavailable right now. Your message is still here.',
@@ -144,7 +148,7 @@ test('a picture the model does not answer comes back as moderation unavailable',
 test('a truncated picture is refused as one that cannot be checked', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const filename = `${key}.png`
@@ -152,7 +156,7 @@ test('a truncated picture is refused as one that cannot be checked', async ({
 
   await attachPngs(page, [{ name: filename, buffer: TRUNCATED_PNG }])
   await typeInto(page.getByTestId('message-input'), key)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Message rejected: attachment 1 (' +

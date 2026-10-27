@@ -1,13 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { readFile, rm, stat, writeFile } from 'node:fs/promises'
-import type { watchStatusFrames } from '../../../../../framework/frontend/e2e/index.js'
-import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import {
+  type watchStatusFrames,
   RESTART_AGENT,
   readRestartWorker,
   withStoppedRestartWorker,
-} from './daemonRestart.js'
+} from '../../../../../framework/frontend/e2e/index.js'
+
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 
 /** The e2e-only catalog binds this component to the existing isolated worker. */
 export const STATUS_FAULT_COMPONENT = 'settings'
@@ -30,7 +31,7 @@ export async function withStatusAgentLoss(
   log: ReturnType<typeof watchStatusFrames>,
   run: () => Promise<void>,
 ): Promise<void> {
-  const worker = await readRestartWorker(workers)
+  const worker = await readRestartWorker(expect, workers)
   // Operational is meaningful only with known, fresh Status observations. The
   // Workers identity above comes from the same real collector pipeline; neither
   // a mounted page nor an empty incident list alone proves source readiness.

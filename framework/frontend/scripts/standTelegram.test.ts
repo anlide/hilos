@@ -20,7 +20,10 @@ it('reads the code off the subject of the letter to the number at telegram.stand
   const fetch = deliver(`${PHONE}@telegram.stand`, '731904')
 
   await expect(waitForTelegramCode(PHONE)).resolves.toBe('731904')
-  expect(fetch).toHaveBeenLastCalledWith(`${MAILBOX}/api/v1/message/telegram`)
+  expect(fetch).toHaveBeenLastCalledWith(
+    `${MAILBOX}/api/v1/message/telegram`,
+    undefined,
+  )
 })
 
 it('fails when the message carries no code', async () => {

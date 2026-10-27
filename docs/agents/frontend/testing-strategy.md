@@ -913,7 +913,7 @@ asserting exactly that. Pass `PAGE_REFUSED` (or `PAGE_READY`) as the third
 argument only when the spec is about which answer came. **Never call Playwright's
 `goto` directly**; `E2E-PAGE-GOTO`
 (`framework/frontend/codestyle/e2eGoto.ts`) reports every direct call outside the
-`helpers/page.ts` that owns the wrappers.
+`framework/frontend/e2e/page.ts` that owns the wrappers.
 
 One address is not a page of the product, and `goto` is right for it: the screen of
 a stand resident, which a spec opens in the provider's place — the OAuth consent
@@ -962,9 +962,9 @@ against itself, which reads as a browser oddity rather than as the race it is. T
 signature was 16 first-attempt failures of the chat suite across a single week.
 
 What the spec does instead is mark the document before the action and wait for the
-mark to be gone after it (`markDocument` / `expectSelfReload` in the demo's
-`helpers/page.ts`). A mark is indifferent to order: it is equally true if the reload
-has already come and gone, where an event subscription armed a moment too late waits
+mark to be gone after it (`markDocument` / `expectSelfReload` in
+`framework/frontend/e2e/page.ts`). A mark is indifferent to order: it is equally true
+if the reload has already come and gone, where an event subscription armed a moment too late waits
 out the whole test ceiling. A replaced document says only that the reload finished, so
 a spec that then asserts what is on screen adds `expectPageReady` — and one that needs
 a DIFFERENT address navigates there afterwards, once the reload has landed and there

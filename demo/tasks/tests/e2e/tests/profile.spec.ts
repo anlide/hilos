@@ -1,23 +1,23 @@
 import { expect, test, type Page } from '@playwright/test'
-
 import {
+  PASSWORD,
+  nameFromEmail,
+  openSignIn,
+  register,
+  uniqueEmail,
+  clickSubmit,
+  typeInto,
+  gotoPage,
   countSentFrames,
   deliveryObject,
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { waitForMailCode, waitForMailTo } from '../helpers/mail.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import {
-  PASSWORD,
-  clickSubmit,
-  nameFromEmail,
-  openSignIn,
-  register,
+  expectPageReady,
   signUp,
-  typeInto,
-  uniqueEmail,
-} from '../helpers/session.js'
+} from '../../../../../framework/frontend/e2e/index.js'
+
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 
 // spec-owner: demo — tasks' React profile mounts the shared name edit flow.
 
@@ -31,7 +31,7 @@ import {
 /** Confirm a password-backed operation inside the open profile dialog. */
 async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId(confirmId))
+  await clickSubmit(expect, page.getByTestId(confirmId))
 }
 
 test('the header avatar leads to the profile root and its sections', async ({
@@ -44,13 +44,13 @@ test('the header avatar leads to the profile root and its sections', async ({
 
   const email = uniqueEmail()
   const name = nameFromEmail(email)
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(name)
   const loadsAfterSignIn = fullLoads
 
-  await clickSubmit(page.getByTestId('nav-profile-name'))
+  await clickSubmit(expect, page.getByTestId('nav-profile-name'))
   await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(name)
@@ -75,10 +75,13 @@ test('the header avatar leads to the profile root and its sections', async ({
     'profile-data-open',
   ])
   for (const section of sections) {
-    await clickSubmit(page.getByTestId(`profile-${section}-open`))
+    await clickSubmit(expect, page.getByTestId(`profile-${section}-open`))
     await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    await clickSubmit(page.getByTestId('hilos-breadcrumb-hilos_profile'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+    )
     await expect(page.getByTestId('profile-name')).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/profile')
   }
@@ -89,18 +92,18 @@ test('renames the profile name without moderation', async ({ page }) => {
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     await expectProfileNameSnapshot(expect, wire, user.userId, null)
     expect(sends()).toBe(0)
 
-    await clickSubmit(page.getByTestId('profile-edit'))
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     const newName = `${user.name} Updated`
     await typeInto(page.getByTestId('profile-name-input'), newName)
-    await clickSubmit(page.getByTestId('profile-rename-save'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
@@ -149,11 +152,11 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
-    await clickSubmit(page.getByTestId('profile-edit'))
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     await typeInto(page.getByTestId('profile-name-input'), 'X')
     const beforeReload = await expectProfileNameSnapshot(
@@ -171,16 +174,16 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
       null,
       beforeReload.socket,
     )
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('modal')).toBeVisible()
     await expect(page.getByTestId('profile-name-input')).toHaveValue('X')
     await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
-    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
     await expect(page.getByTestId('modal-confirm')).toHaveRole('alertdialog')
-    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
     await expect(page.getByTestId('modal')).toHaveCount(0)
     const closed = wire.snapshots.at(-1)!
 
@@ -192,7 +195,7 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
       null,
       closed.socket,
     )
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('modal')).toHaveCount(0)
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     expect(sends()).toBe(0)
@@ -212,29 +215,29 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
   })
 
   const was = uniqueEmail()
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, was)
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, was)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-email')).toContainText(was)
   const loadsBeforeChange = fullLoads
 
   await page.getByTestId('profile-email-change').click()
   await confirmStepUp(page, 'profile-email-step-up-confirm')
-  await clickSubmit(page.getByTestId('profile-email-send-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-send-current'))
   const currentCode = await waitForMailCode(
     was,
     'Confirm it is you to change your email address',
   )
   await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
-  await clickSubmit(page.getByTestId('profile-email-confirm-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-confirm-current'))
 
   const now = uniqueEmail()
   await typeInto(page.getByTestId('profile-email-new'), now)
-  await clickSubmit(page.getByTestId('profile-email-send-new'))
+  await clickSubmit(expect, page.getByTestId('profile-email-send-new'))
   const newCode = await waitForMailCode(now, 'Confirm your new email address')
   await typeInto(page.getByTestId('profile-email-code-new'), newCode)
-  await clickSubmit(page.getByTestId('profile-email-confirm-new'))
+  await clickSubmit(expect, page.getByTestId('profile-email-confirm-new'))
 
   await expect(page.getByTestId('profile-email-was')).toHaveText(was)
   await expect(page.getByTestId('profile-email-now')).toHaveText(now)

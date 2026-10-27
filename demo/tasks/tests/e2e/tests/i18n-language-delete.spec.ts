@@ -2,31 +2,32 @@ import { expect, test } from '@playwright/test'
 import {
   settleRemovedRow,
   shownByTestId,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   deleteLanguage,
   deleteLocale,
   switchLanguageOff,
   switchLocaleOn,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('creates a free language and deletes it from the languages table', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   try {
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     const add = page.getByTestId('hilos-table-main-action')
-    await clickSubmit(add)
+    await clickSubmit(expect, add)
 
     const code = page.getByTestId('i18n-language-add-code')
     await code.fill('')
     await code.pressSequentially('uk', { delay: 10 })
     const create = page.getByTestId('i18n-language-add-submit')
-    await clickSubmit(create)
+    await clickSubmit(expect, create)
     await expect(create).toHaveCount(0)
     const freshRow = page
       .getByTestId(/^hilos-table-row-/)
@@ -45,7 +46,7 @@ test('creates a free language and deletes it from the languages table', async ({
       "Deleting it also removes the built-in catalog's country names written in it.",
     )
     const confirm = page.getByTestId('i18n-language-delete-confirm')
-    await clickSubmit(confirm)
+    await clickSubmit(expect, confirm)
     await expect(confirm).toHaveCount(0)
     await expect(
       page
@@ -59,7 +60,7 @@ test('creates a free language and deletes it from the languages table', async ({
   } finally {
     await deleteLanguage('uk')
     // A fresh snapshot proves cleanup for the names-table empty-state spec that follows.
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     await expect(
       page
         .getByTestId(/^hilos-table-row-/)
@@ -71,11 +72,11 @@ test('creates a free language and deletes it from the languages table', async ({
 test('explains a disabled trash through its accessible description and native question button', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   try {
     await switchLanguageOff('es')
     await switchLocaleOn('es')
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     const row = shownByTestId(page, /^hilos-table-row-/).filter({
       has: page.getByTestId('i18n-languages-delete-es'),
     })
@@ -129,7 +130,8 @@ test('explains a disabled trash through its accessible description and native qu
         page.getByTestId(/^hilos-toast-(success|info|error|warning)$/),
       ).toHaveCount(0)
       if (gesture === 'Enter') await modal.press('Escape')
-      else await clickSubmit(page.getByTestId('hilos-action-reason-close'))
+      else
+        await clickSubmit(expect, page.getByTestId('hilos-action-reason-close'))
       await expect(modal).toHaveCount(0)
       await expect(why).toBeFocused()
       await expect(opener).toBeDisabled()
@@ -138,7 +140,7 @@ test('explains a disabled trash through its accessible description and native qu
   } finally {
     await deleteLocale('es')
     await deleteLanguage('es')
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     await expect(
       page
         .getByTestId(/^hilos-table-row-/)

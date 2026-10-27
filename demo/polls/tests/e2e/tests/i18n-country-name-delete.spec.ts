@@ -3,14 +3,15 @@ import {
   dismissToasts,
   i18nNameRow,
   shownByTestId,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   clearCountryNamesFixture,
   seedCountryNamesFixture,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 const NAMES_PATH = '/hilos/i18n/countries/qj/names'
 const WINDOW = 'i18n-country-name-delete-window'
@@ -19,12 +20,13 @@ const CANCEL = 'i18n-country-name-delete-cancel'
 
 /** Open the fixture's names and its corrections through the native row chevron. */
 async function openNames(page: Page): Promise<void> {
-  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await gotoPage(expect, page, NAMES_PATH, PAGE_READY)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
     'Unnamed country',
   )
   await expect(i18nNameRow(page, 'country', 'qk')).toContainText('Fixture base')
   await clickSubmit(
+    expect,
     i18nNameRow(page, 'country', 'qk').getByTestId(/^hilos-table-expand-/),
   )
   await expect(
@@ -35,7 +37,7 @@ async function openNames(page: Page): Promise<void> {
 
 /** Wait for the tracked reply before inspecting the subscription's live values. */
 async function confirmDelete(page: Page, message: string): Promise<void> {
-  await clickSubmit(page.getByTestId(CONFIRM))
+  await clickSubmit(expect, page.getByTestId(CONFIRM))
   await expect(page.getByTestId(WINDOW)).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toast-success').filter({ hasText: message }),
@@ -52,7 +54,7 @@ test('removes country name corrections and their base live in two windows, inclu
   const observer = await context.newPage()
   try {
     await seedCountryNamesFixture()
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
     await openNames(observer)
 
@@ -60,7 +62,7 @@ test('removes country name corrections and their base live in two windows, inclu
     await expect(correctionTrash).toHaveAccessibleName(
       'Remove locale correction qk-GB',
     )
-    await clickSubmit(correctionTrash)
+    await clickSubmit(expect, correctionTrash)
     await expect(page.getByTestId('modal')).toBeFocused()
     await expect(page.getByTestId(WINDOW)).toHaveCount(1)
     await expect(page.getByTestId(WINDOW)).toContainText('Fixture correction')
@@ -77,7 +79,7 @@ test('removes country name corrections and their base live in two windows, inclu
       shownByTestId(observer, 'i18n-names-correction-qk-GB'),
     ).toContainText('Fixture correction')
 
-    await clickSubmit(correctionTrash)
+    await clickSubmit(expect, correctionTrash)
     await confirmDelete(page, 'Correction qk-GB of the name of qj removed.')
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-inherit-qk-GB')).toHaveText(
@@ -91,7 +93,7 @@ test('removes country name corrections and their base live in two windows, inclu
     }
 
     await dismissToasts(page)
-    await clickSubmit(shownByTestId(page, 'i18n-names-delete-qk-US'))
+    await clickSubmit(expect, shownByTestId(page, 'i18n-names-delete-qk-US'))
     await expect(page.getByTestId(WINDOW)).toContainText('Empty value')
     await expect(page.getByTestId(WINDOW)).toContainText(
       'A saved empty string, not an absent name.',
@@ -108,7 +110,7 @@ test('removes country name corrections and their base live in two windows, inclu
 
     await dismissToasts(page)
     const baseTrash = shownByTestId(page, 'i18n-names-delete-qk')
-    await clickSubmit(baseTrash)
+    await clickSubmit(expect, baseTrash)
     await expect(page.getByTestId(WINDOW)).toContainText(
       'All locale corrections of this base name will also be deleted.',
     )
@@ -116,7 +118,7 @@ test('removes country name corrections and their base live in two windows, inclu
       'If the built-in catalog knows this name, it returns immediately as an unlocked name. Otherwise, there will be no name in this language.',
     )
     await expect(page.getByTestId(WINDOW)).not.toContainText(/36|hours/)
-    await clickSubmit(page.getByTestId(CANCEL))
+    await clickSubmit(expect, page.getByTestId(CANCEL))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(baseTrash).toBeFocused()
     for (const tab of [page, observer]) {
@@ -127,8 +129,8 @@ test('removes country name corrections and their base live in two windows, inclu
     }
 
     // The other window keeps its confirmation and explains the disappeared source.
-    await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qk'))
-    await clickSubmit(baseTrash)
+    await clickSubmit(expect, shownByTestId(observer, 'i18n-names-delete-qk'))
+    await clickSubmit(expect, baseTrash)
     await confirmDelete(page, 'Name of qj in HIL-1501 writing (qk) removed.')
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-none-qk')).toHaveText(
@@ -148,7 +150,7 @@ test('removes country name corrections and their base live in two windows, inclu
     await expect(
       observer.getByTestId('i18n-country-name-delete-notice'),
     ).toContainText('The name no longer exists.')
-    await clickSubmit(observer.getByTestId(CANCEL))
+    await clickSubmit(expect, observer.getByTestId(CANCEL))
   } finally {
     await observer.close()
     await clearCountryNamesFixture()

@@ -3,10 +3,11 @@ import {
   countSentFrames,
   i18nNameRow,
   shownByTestId,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
 
 // The Names tab's own table of the built-in United States. The shared head and
 // the Overview · Names row above it are read by i18n-country-card.spec.ts on
@@ -17,8 +18,8 @@ test('opens the names of a reflowed country directly with the names table and se
   page,
 }) => {
   const actionRequests = countSentFrames(page, '"type":"action"')
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/countries/us/names', PAGE_READY)
   const actionsBeforeReading = actionRequests()
 
   const enRow = i18nNameRow(page, 'country', 'en')
@@ -56,7 +57,7 @@ test('opens the names of a reflowed country directly with the names table and se
   let correctionTexts: string[] = []
   if (hasCorrections) {
     await expect(expand).toHaveAttribute('aria-expanded', 'false')
-    await clickSubmit(expand)
+    await clickSubmit(expect, expand)
     await expect(expand).toHaveAttribute('aria-expanded', 'true')
     const detail = shownByTestId(section, `hilos-table-row-detail-${enKey}`)
     await expect(detail).toBeVisible()
@@ -84,13 +85,13 @@ test('opens the names of a reflowed country directly with the names table and se
     ).toHaveCount(0)
   }
 
-  await gotoPage(page, '/hilos/i18n/countries/us/names', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/us/names', PAGE_READY)
   await expect(enRow).toContainText('English')
   await expect(enRow).toContainText('United States')
   await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
   await expect(inlineForms).toHaveCount(0)
   if (hasCorrections) {
-    await clickSubmit(expand)
+    await clickSubmit(expect, expand)
     await expect(expand).toHaveAttribute('aria-expanded', 'true')
     expect(
       await shownByTestId(section, /^i18n-names-correction-/).allTextContents(),

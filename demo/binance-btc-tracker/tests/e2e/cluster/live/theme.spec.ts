@@ -7,6 +7,9 @@ import {
 } from '@playwright/test'
 
 import {
+  login,
+  openSignIn,
+  signUp,
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,
   THEME_PICK_STORAGE_KEY,
@@ -31,12 +34,12 @@ import {
   type ThemeFrameLog,
   type ThemeTestPick,
   type ThemeTestPosition,
-} from '../../../../../../framework/frontend/e2e/index.js'
-import {
+  gotoPage,
+  PAGE_READY,
   grantAdminToSelf,
   sessionToken,
-  setAdmin,
-} from '../../helpers/adminGrant.js'
+} from '../../../../../../framework/frontend/e2e/index.js'
+import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -45,8 +48,6 @@ import {
   expectLeaderUnmoved,
   newMasterPage,
 } from '../../helpers/cluster.js'
-import { gotoPage, PAGE_READY } from '../../helpers/page.js'
-import { login, openSignIn, signUpPerson } from '../../helpers/session.js'
 
 interface ThemeSettings {
   switchingEnabled: boolean
@@ -289,7 +290,7 @@ async function withThemeProof(
     if (admin) {
       for (const key of [THEME_DEFAULT_KEY, THEME_SWITCHING_KEY]) {
         try {
-          await gotoPage(admin.page, '/hilos/settings', PAGE_READY)
+          await gotoPage(expect, admin.page, '/hilos/settings', PAGE_READY)
           const search = admin.page.getByTestId('hilos-table-search')
           await search.fill('')
           await search.pressSequentially(key, { delay: 10 })
@@ -368,8 +369,8 @@ test('cluster theme settings reach every master without reloading', async ({
   await withThemeProof(browser, async (proof) => {
     const { fresh, clients, third } = proof
     const admin = await fresh(CLUSTER_FOLLOWER, 'light')
-    admin.userId = await grantAdminToSelf(admin.page)
-    await gotoPage(admin.page, APPEARANCE_PATH, PAGE_READY)
+    admin.userId = await grantAdminToSelf(expect, admin.page)
+    await gotoPage(expect, admin.page, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, admin.page)
     proof.admin = admin
     clients.push(admin)
@@ -381,7 +382,7 @@ test('cluster theme settings reach every master without reloading', async ({
     ] as const) {
       const guest = await fresh(node, system)
       clients.push(guest)
-      await gotoPage(guest.page, '/', PAGE_READY)
+      await gotoPage(expect, guest.page, '/', PAGE_READY)
       if (node === CLUSTER_FOLLOWER) {
         await chooseHeaderTheme(expect, guest.page, 'dark')
         guest.pick = 'dark'
@@ -395,13 +396,13 @@ test('cluster theme settings reach every master without reloading', async ({
       // Registration is preparation on a disposable browser. Each recipient then
       // signs in by password with its own cookie and StorageArea, never a copy.
       const seed = await fresh(CLUSTER_FOLLOWER, 'light')
-      const person = await signUpPerson(seed.page)
+      const person = await signUp(expect, seed.page)
       await proof.close(seed, true)
       const account = await fresh(node, system)
       clients.push(account)
-      await gotoPage(account.page, '/', PAGE_READY)
-      await openSignIn(account.page)
-      await login(account.page, person.email)
+      await gotoPage(expect, account.page, '/', PAGE_READY)
+      await openSignIn(expect, account.page)
+      await login(expect, account.page, person.email)
       await expect(account.page.getByTestId('self-user')).toHaveText(
         person.name,
       )
@@ -490,7 +491,7 @@ test('cluster theme settings reach every master without reloading', async ({
         // the pair in its first handshake, with no cached settings as evidence.
         for (const node of CLUSTER_MASTERS) {
           const tab = await fresh(node, 'dark')
-          await gotoPage(tab.page, '/', PAGE_READY)
+          await gotoPage(expect, tab.page, '/', PAGE_READY)
           await expect.poll(() => tab.frames.length).toBeGreaterThan(0)
           expect(tab.frames[0].type).toBe('handshake_response')
           expectIdentity(tab.frames[0], tab)
@@ -542,7 +543,7 @@ async function expectAccountTabs(
 ): Promise<void> {
   for (const account of accounts) {
     const tab = await proof.tab(account)
-    await gotoPage(tab.page, '/', PAGE_READY)
+    await gotoPage(expect, tab.page, '/', PAGE_READY)
     await expect.poll(() => tab.frames.length).toBeGreaterThan(0)
     expect(tab.frames[0].type).toBe('handshake_response')
     expectIdentity(tab.frames[0], tab)
@@ -567,7 +568,7 @@ test('cluster theme account choices and reset reach independent sessions on ever
     }
     const first = await fresh(CLUSTER_FOLLOWER, 'light')
     clients.push(first)
-    const person = await signUpPerson(first.page)
+    const person = await signUp(expect, first.page)
     first.userId = person.userId
     first.initialized = false
     const accounts = [first]
@@ -578,9 +579,9 @@ test('cluster theme account choices and reset reach independent sessions on ever
       const account = await fresh(node, system)
       clients.push(account)
       accounts.push(account)
-      await gotoPage(account.page, '/', PAGE_READY)
-      await openSignIn(account.page)
-      await login(account.page, person.email)
+      await gotoPage(expect, account.page, '/', PAGE_READY)
+      await openSignIn(expect, account.page)
+      await login(expect, account.page, person.email)
       await expect(account.page.getByTestId('self-user')).toHaveText(
         person.name,
       )
@@ -589,7 +590,7 @@ test('cluster theme account choices and reset reach independent sessions on ever
     }
     const stranger = await fresh(third, 'dark')
     clients.push(stranger)
-    stranger.userId = (await signUpPerson(stranger.page)).userId
+    stranger.userId = (await signUp(expect, stranger.page)).userId
     expect(stranger.userId).not.toBe(person.userId)
     await chooseHeaderTheme(expect, stranger.page, 'light')
     stranger.pick = 'light'
@@ -599,13 +600,13 @@ test('cluster theme account choices and reset reach independent sessions on ever
       'data-access',
       'full',
     )
-    await gotoPage(stranger.page, APPEARANCE_PATH, PAGE_READY)
+    await gotoPage(expect, stranger.page, APPEARANCE_PATH, PAGE_READY)
     await expectAppearanceRows(expect, stranger.page)
     proof.admin = stranger
 
     const guest = await fresh(CLUSTER_LEADER, 'dark')
     clients.push(guest)
-    await gotoPage(guest.page, '/', PAGE_READY)
+    await gotoPage(expect, guest.page, '/', PAGE_READY)
     const tokens = await Promise.all(
       clients.map((client) => sessionToken(client.page)),
     )
@@ -704,7 +705,7 @@ test('cluster theme stale Dark session reconnects after remote reset without ado
     }
     const first = await proof.fresh(CLUSTER_FOLLOWER, 'light')
     proof.clients.push(first)
-    const person = await signUpPerson(first.page)
+    const person = await signUp(expect, first.page)
     first.userId = person.userId
     first.pick = 'dark'
     first.initialized = true
@@ -716,9 +717,9 @@ test('cluster theme stale Dark session reconnects after remote reset without ado
     proof.clients.push(stale)
     await armSocketDrop(stale.page)
     const adoptions = countSentFrames(stale.page, 'hilos_theme_adopt')
-    await gotoPage(stale.page, '/', PAGE_READY)
-    await openSignIn(stale.page)
-    await login(stale.page, person.email)
+    await gotoPage(expect, stale.page, '/', PAGE_READY)
+    await openSignIn(expect, stale.page)
+    await login(expect, stale.page, person.email)
     await expect(stale.page.getByTestId('self-user')).toHaveText(person.name)
     stale.userId = person.userId
     stale.pick = 'dark'

@@ -12,10 +12,12 @@ import {
   watchTableSearch,
   watchTopWithin,
   type TableGeometryWatch,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
+  expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
 
 // Hilos settings admin e2e for the online-testing demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
@@ -33,15 +35,15 @@ import { clickSubmit, typeInto } from '../helpers/session.js'
 test('lists settings in the framework table and filters from the search box', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expectSettingsPageHead(expect, page)
 
   // Direct entry and F5 keep the same head without a single Overview tab.
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectSettingsPageHead(expect, page)
 
   // A cataloged table has no free "add a setting" entry point.
@@ -94,14 +96,14 @@ test('lists settings in the framework table and filters from the search box', as
 test('sets a custom value on a catalog key from its row and resets it, live', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
   })
 
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
@@ -145,7 +147,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
     await value.evaluate((node, original) => node === original, input),
   ).toBe(true)
   const save = page.getByTestId('hilos-settings-edit-save')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
 
   // The custom value returns over the live table and the edit dialog closes.
@@ -160,7 +162,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await custom.uncheck()
   await expect(value).toHaveAttribute('disabled', '')
   await expect(value).toHaveValue('43')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
   await expect(integerRow).toContainText('default')
   await expect(integerRow).not.toContainText('custom')
@@ -204,14 +206,14 @@ for (const origin of ['own', 'foreign'] as const) {
       : sourceWindows
     let geometry: TableGeometryWatch | undefined
     try {
-      await grantAdminToSelf(page)
+      await grantAdminToSelf(expect, page)
       for (const view of tabB
         ? [
             { page, windows: sourceWindows },
             { page: tabB, windows },
           ]
         : [{ page, windows }]) {
-        await gotoPage(view.page, '/hilos/settings')
+        await gotoPage(expect, view.page, '/hilos/settings')
         await expect(
           view.page.getByTestId('hilos-viewport-table'),
         ).toBeVisible()
@@ -239,12 +241,15 @@ for (const origin of ['own', 'foreign'] as const) {
         lastKey: key,
       })
 
-      await clickSubmit(shownByTestId(page, `hilos-settings-delete-${key}`))
+      await clickSubmit(
+        expect,
+        shownByTestId(page, `hilos-settings-delete-${key}`),
+      )
       await expect(page.getByTestId('modal')).toHaveAccessibleName(
         `Delete · ${key}`,
       )
       const confirm = page.getByTestId('hilos-settings-delete-confirm')
-      await clickSubmit(confirm)
+      await clickSubmit(expect, confirm)
       await expect(confirm).toHaveCount(0)
       await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
 
@@ -267,7 +272,7 @@ for (const origin of ['own', 'foreign'] as const) {
         await geometry.check()
         await height.unchanged()
         await footer.unchanged()
-        await clickSubmit(target.getByTestId('hilos-table-apply'))
+        await clickSubmit(expect, target.getByTestId('hilos-table-apply'))
       }
       await expectDataFreeDeparture(expect, target, key, 'Removed', [
         `hilos-settings-edit-${key}`,

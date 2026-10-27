@@ -14,14 +14,16 @@ import {
   presentMaintenanceCode,
   turnOffMaintenance,
   turnOnMaintenance,
+  PAGE_READY,
+  gotoMaintenance,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { PAGE_READY, gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   inspectProtectedMode,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // The React half of HIL-613: a browser that has met this node's maintenance
 // before must not see the ordinary application for even one frame when it loads
@@ -53,7 +55,7 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
 }) => {
   // The ordinary layout first, so the case says what it is denying: this is the
   // navbar that must not appear on the load below.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('nav-brand')).toBeVisible()
 
   // The watcher goes in before the app does, because the frame it is about has
@@ -62,7 +64,7 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
   await watchFirstFrame(page)
   expect(await enterProtectedMode(OPERATION)).toBe('active')
 
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
 
   const watch = await readFirstFrameWatch(page)
   expect(watch).not.toBeNull()
@@ -81,15 +83,15 @@ test('two administrators close the system by hand, one lets the other in with a 
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
-    await grantAdminToSelf(other)
-    await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+    await grantAdminToSelf(expect, other)
+    await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)

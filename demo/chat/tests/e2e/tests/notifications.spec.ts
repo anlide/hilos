@@ -3,12 +3,14 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
 import {
   openBell,
   unreadBadge,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { signUpAdmin } from '../helpers/adminGrant'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { gotoPage } from '../helpers/page'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — notifications raised by chat's own events
 
@@ -42,14 +44,14 @@ test('a mention reaches the named user in another window', async ({
   page,
   browser,
 }) => {
-  const author = await signUp(page)
+  const author = await signUp(expect, page)
 
   // The recipient signs in and joins its notification group BEFORE the message is
   // published, so the mention arrives over the live signal (see signUpJoined in
   // helpers/notifications.ts for why a cold load is what makes the join waitable).
   const recipient = await openSecondPerson(browser)
-  const { name: recipientName } = await signUp(recipient)
-  await gotoPage(recipient, '/')
+  const { name: recipientName } = await signUp(expect, recipient)
+  await gotoPage(expect, recipient, '/')
 
   // The message is moderated by the stand's model, which answers only what a spec
   // dictated: the key rides in the text, and the permission is ordered up front.
@@ -60,7 +62,7 @@ test('a mention reaches the named user in another window', async ({
     page.getByTestId('message-input'),
     `@${recipientName} could you look at this? ${key}`,
   )
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   // The message is published only once moderation allows it, and the mention is
   // raised inside that same write - so the author's own feed row and the
@@ -87,14 +89,14 @@ test('an administrator renaming somebody reaches the renamed person and the room
   // This browser is the account about to be renamed; its socket joins the
   // notification group first, so the row arrives over the live signal (the cold
   // load after the sign-up is what signUpJoined makes waitable).
-  const { userId, name: oldName } = await signUp(page)
-  await gotoPage(page, '/')
+  const { userId, name: oldName } = await signUp(expect, page)
+  await gotoPage(expect, page, '/')
 
   const adminPage = await openSecondPerson(browser)
-  await signUpAdmin(adminPage)
+  await signUpAdmin(expect, adminPage, { entryId: 'message-signin' })
   // Straight to the detail page: the users list pages, and this account is not
   // guaranteed to be on the first page of a database every test writes to.
-  await gotoPage(adminPage, `/hilos/user/${userId}`)
+  await gotoPage(expect, adminPage, `/hilos/user/${userId}`)
   await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
     oldName,
   )
@@ -102,7 +104,7 @@ test('an administrator renaming somebody reaches the renamed person and the room
   const newName = `Renamed person ${userId}`
   await adminPage.getByTestId('hilos-user-edit').click()
   await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
-  await clickSubmit(adminPage.getByTestId('hilos-user-save'))
+  await clickSubmit(expect, adminPage.getByTestId('hilos-user-save'))
   await expect(adminPage.getByTestId('hilos-user-name-input')).toHaveCount(0)
   // The rename settles when the committed name returns over the live table.
   await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
@@ -119,7 +121,7 @@ test('an administrator renaming somebody reaches the renamed person and the room
   // The room shows the rename as before: the feed line now reads the journal row
   // it is linked to. A cold load proves the event stream holds it; the filter
   // isolates the event-notice row, as the author label carries the current name.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(
     page.getByTestId('event-notice').filter({ hasText: newName }),
   ).toHaveText(`renamed by admin from ${oldName} to ${newName}`)

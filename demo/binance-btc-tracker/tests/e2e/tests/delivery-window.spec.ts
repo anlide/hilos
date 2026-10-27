@@ -16,15 +16,14 @@ import {
   watchDeliveryFrames,
   type DeliveryFrameLog,
   type DeliveryPacket,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import {
+  typeInto,
   expectDocumentUnchanged,
   gotoPage,
   markDocument,
   PAGE_READY,
-} from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
+
 import { clearTableLag, setTableLag } from '../helpers/tableLag.js'
 
 // Real Settings writes exercise the production sender. Values are inline row
@@ -64,7 +63,7 @@ function lastUpdate(log: DeliveryFrameLog): Update {
 }
 
 async function openSettings(page: Page, search: string): Promise<void> {
-  await gotoPage(page, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
   await typeInto(page.getByTestId('hilos-table-search'), search)
   await expect(page.getByTestId(`hilos-table-row-${search}`)).toBeVisible()
 }
@@ -172,7 +171,7 @@ test(
     const write = () => mutate(page, writer, mutations, nextValue())
 
     try {
-      await grantAdminToSelf(page)
+      await grantAdminToSelf(expect, page)
       await openSettings(configPage, WINDOW_KEY)
       const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
       await expect(configRow).toContainText('1000')
@@ -473,8 +472,8 @@ test(
       await sourceVisible(tabB, finalValue)
       expect(a.sockets()).toBe(aSocket)
       expect(b.sockets()).toBe(bSocket)
-      await expectDocumentUnchanged(tabA)
-      await expectDocumentUnchanged(tabB)
+      await expectDocumentUnchanged(expect, tabA)
+      await expectDocumentUnchanged(expect, tabB)
       phases.documentsUnchanged = { a: true, b: true }
       expect(
         a.sent.filter(({ at, raw }) => at > click.at && raw !== 'ping'),
@@ -539,8 +538,8 @@ test('logs overview keeps own state and response in one physical delivery', asyn
   test.slow() // Includes the log owner's normal reporting tick.
   const log = watchDeliveryFrames(page)
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, '/hilos/logs', PAGE_READY)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
     await expect(page.getByTestId('hilos-logs-tile-daemon')).toBeVisible()
     const overview = log.packets.find((packet) =>
       packet.frames.some(
@@ -616,7 +615,7 @@ test('a deliberately delayed window response opens a fresh fixed grace window on
 
   try {
     await clearTableLag()
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await openSettings(configPage, WINDOW_KEY)
     await openSettings(page, SOURCE_KEY)
     await setCustomSetting(page, SOURCE_KEY, 'held-seed')
@@ -800,8 +799,8 @@ test('a deliberately delayed window response opens a fresh fixed grace window on
     ).toEqual([])
     expect(a.sockets()).toBe(aSocket)
     expect(b.sockets()).toBe(bSocket)
-    await expectDocumentUnchanged(tabA)
-    await expectDocumentUnchanged(tabB)
+    await expectDocumentUnchanged(expect, tabA)
+    await expectDocumentUnchanged(expect, tabB)
     for (const log of [writer, a, b]) {
       expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
         'hilos_delivery_complete',
@@ -851,7 +850,7 @@ test('a new socket records bootstrap before subscribe separately from immediate 
   const cold = watchDeliveryFrames(coldPage)
   const phases: Record<string, unknown> = {}
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await openSettings(page, WINDOW_KEY)
     await setCustomSetting(page, WINDOW_KEY, String(WINDOW_MS))
     await expect(
@@ -861,6 +860,7 @@ test('a new socket records bootstrap before subscribe separately from immediate 
     // Local only: allow two ordinary bootstrap deliveries at the selected window
     // plus the normal tick/transport allowance. No acceptance budget is raised.
     await gotoPage(
+      expect,
       coldPage,
       '/hilos/settings',
       PAGE_READY,

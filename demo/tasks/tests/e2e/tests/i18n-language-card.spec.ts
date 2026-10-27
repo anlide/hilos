@@ -1,13 +1,17 @@
 import { expect, test } from '@playwright/test'
-import { expectLanguagePageHead } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
+import {
+  expectLanguagePageHead,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test('opens the default language card directly with read-only details and staged tabs', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
 
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -84,7 +88,7 @@ test('opens the default language card directly with read-only details and staged
 
   await page.getByTestId('hilos-page-tab-hilos_i18n_language_names').click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en\/names$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -94,7 +98,7 @@ test('opens the default language card directly with read-only details and staged
 
   await page.goBack()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -104,9 +108,9 @@ test('opens the default language card directly with read-only details and staged
 
   await page.getByTestId('hilos-page-tab-hilos_i18n_language_locales').click()
   await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en\/locales$/)
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
     nativeName: 'English',
@@ -114,6 +118,6 @@ test('opens the default language card directly with read-only details and staged
     appName: 'Hilos Tasks',
   })
 
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
 })

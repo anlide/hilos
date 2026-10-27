@@ -11,16 +11,16 @@
 // The code-sent step of the window belongs to the session (HIL-1183): its
 // tabs move together, and a reload resumes it when the person opens the window.
 import { expect, test } from '@playwright/test'
-
-import { waitForMailCode } from '../helpers/mail'
-import { gotoPage } from '../helpers/page'
 import {
   PASSWORD,
-  clickSubmit,
   registerEmailOnly,
-  signUp,
+  clickSubmit,
   typeInto,
-} from '../helpers/session'
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
+
+import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
+import { signUp } from '../helpers/session.js'
 
 /** The subject AccountDeletionMailTemplate sends the code under. */
 const SUBJECT = 'Confirm deleting your account'
@@ -29,29 +29,29 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
   context,
   page,
 }) => {
-  const email = await registerEmailOnly(page)
+  const email = await registerEmailOnly(expect, page)
   const other = await context.newPage()
-  await gotoPage(other, '/profile')
+  await gotoPage(expect, other, '/profile')
   await expect(other.getByTestId('account-deletion-open')).toBeVisible()
 
-  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await expect(page.getByTestId('account-deletion-modal')).toContainText(
     '30 days',
   )
   await expect(page.getByTestId('step-up')).toHaveCount(0)
-  await clickSubmit(page.getByTestId('account-deletion-continue'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-continue'))
   const code = await waitForMailCode(email, SUBJECT)
 
   await typeInto(page.getByTestId('account-deletion-code'), '000000')
-  await clickSubmit(page.getByTestId('account-deletion-start'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-start'))
   await expect(page.getByTestId('account-deletion-error')).toHaveText(
     'Invalid or expired code',
   )
 
   await typeInto(page.getByTestId('account-deletion-code'), code)
-  await clickSubmit(page.getByTestId('account-deletion-start'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-start'))
   await expect(page.getByTestId('account-deletion-keep')).toBeVisible()
-  await clickSubmit(page.getByTestId('account-deletion-close'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-close'))
   await expect(page.getByTestId('account-deletion-scheduled')).toContainText(
     'days left',
   )
@@ -65,7 +65,7 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
     .textContent()
   const date = /deleted on (.+?) —/.exec(zone ?? '')?.[1]
   expect(date).toBeTruthy()
-  await gotoPage(other, '/')
+  await gotoPage(expect, other, '/')
   await expect(other.getByTestId('account-deletion-strip-text')).toHaveText(
     `Your account will be deleted on ${date} — 30 days left`,
   )
@@ -75,7 +75,7 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
 
   // Keep in the strip calls the deletion off: the strip and the ring leave, and
   // the profile in the first tab is back to the plain danger zone.
-  await clickSubmit(other.getByTestId('account-deletion-strip-keep'))
+  await clickSubmit(expect, other.getByTestId('account-deletion-strip-keep'))
   await expect(other.getByTestId('account-deletion-strip')).toHaveCount(0)
   await expect(ring).toHaveCount(0)
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
@@ -85,17 +85,17 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
 test('asks the password of a password account before anything else', async ({
   page,
 }) => {
-  const user = await signUp(page)
-  await gotoPage(page, '/profile')
+  const user = await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
 
-  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('account-deletion-confirm'))
-  await clickSubmit(page.getByTestId('account-deletion-continue'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-confirm'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-continue'))
   await waitForMailCode(user.email, SUBJECT)
 
   await expect(page.getByTestId('account-deletion-code')).toBeFocused()
-  await clickSubmit(page.getByTestId('account-deletion-cancel'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-cancel'))
   await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
 })
@@ -104,27 +104,27 @@ test('shares the deletion code step and closes other open windows on start and c
   context,
   page,
 }) => {
-  const email = await registerEmailOnly(page)
+  const email = await registerEmailOnly(expect, page)
   const other = await context.newPage()
-  await gotoPage(other, '/profile')
+  await gotoPage(expect, other, '/profile')
 
-  await clickSubmit(page.getByTestId('account-deletion-open'))
-  await clickSubmit(other.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, other.getByTestId('account-deletion-open'))
   await expect(page.getByTestId('account-deletion-continue')).toBeVisible()
   await expect(other.getByTestId('account-deletion-continue')).toBeVisible()
 
-  await clickSubmit(other.getByTestId('account-deletion-continue'))
+  await clickSubmit(expect, other.getByTestId('account-deletion-continue'))
   await expect(page.getByTestId('account-deletion-code')).toBeVisible()
   const code = await waitForMailCode(email, SUBJECT)
   await typeInto(page.getByTestId('account-deletion-code'), code)
-  await clickSubmit(page.getByTestId('account-deletion-start'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-start'))
   await expect(page.getByTestId('account-deletion-keep')).toBeVisible()
   await expect(other.getByTestId('account-deletion-modal')).toHaveCount(0)
   await expect(other.getByTestId('account-deletion-scheduled')).toBeVisible()
 
-  await clickSubmit(other.getByTestId('account-deletion-manage'))
+  await clickSubmit(expect, other.getByTestId('account-deletion-manage'))
   await expect(other.getByTestId('account-deletion-keep')).toBeVisible()
-  await clickSubmit(other.getByTestId('account-deletion-keep'))
+  await clickSubmit(expect, other.getByTestId('account-deletion-keep'))
   await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
   await expect(other.getByTestId('account-deletion-open')).toBeVisible()
@@ -133,19 +133,19 @@ test('shares the deletion code step and closes other open windows on start and c
 test('resumes the deletion code step after reload and discards it on Cancel', async ({
   page,
 }) => {
-  await registerEmailOnly(page)
-  await clickSubmit(page.getByTestId('account-deletion-open'))
-  await clickSubmit(page.getByTestId('account-deletion-continue'))
+  await registerEmailOnly(expect, page)
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-continue'))
   await expect(page.getByTestId('account-deletion-code')).toBeVisible()
 
   await page.reload()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
-  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await expect(page.getByTestId('account-deletion-code')).toBeVisible()
-  await clickSubmit(page.getByTestId('account-deletion-cancel'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-cancel'))
   await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
 
-  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await expect(page.getByTestId('account-deletion-continue')).toBeVisible()
 })

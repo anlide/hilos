@@ -1,7 +1,17 @@
 import { expect, test } from '@playwright/test'
 
-import { leaveSecondAdmin } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin } from '../../helpers/adminGrant.js'
+import {
+  logout,
+  nameFromEmail,
+  openSignIn,
+  register,
+  uniqueEmail,
+  leaveSecondAdmin,
+  gotoPage,
+  PAGE_REFUSED,
+  grantAdminToSelf,
+} from '../../../../../../framework/frontend/e2e/index.js'
+import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -11,14 +21,6 @@ import {
   newMasterPage,
   onMaster,
 } from '../../helpers/cluster.js'
-import { gotoPage, PAGE_REFUSED } from '../../helpers/page.js'
-import {
-  logout,
-  nameFromEmail,
-  openSignIn,
-  register,
-  uniqueEmail,
-} from '../../helpers/session.js'
 
 test("a sign-in and a sign-out on a follower master reach the same person's tab on another master", async ({
   browser,
@@ -34,18 +36,18 @@ test("a sign-in and a sign-out on a follower master reach the same person's tab 
     throw new Error('The cluster browser stand needs a third master')
   const tabA = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
-    await gotoPage(tabA, '/')
+    await gotoPage(expect, tabA, '/')
     await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
     await onMaster(tabA, otherMaster)
     const tabB = await tabA.context().newPage()
-    await gotoPage(tabB, '/')
+    await gotoPage(expect, tabB, '/')
     await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
     // Only future sockets follow this cookie. B is still connected to the other master.
     await onMaster(tabA, CLUSTER_FOLLOWER)
 
     const email = uniqueEmail()
-    await openSignIn(tabA)
-    await register(tabA, email)
+    await openSignIn(expect, tabA)
+    await register(expect, tabA, email)
     await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
@@ -58,7 +60,7 @@ test("a sign-in and a sign-out on a follower master reach the same person's tab 
     await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
     await onMaster(tabA, CLUSTER_FOLLOWER)
     const siblingReconnect = tabB.waitForEvent('websocket')
-    await logout(tabA)
+    await logout(expect, tabA)
     await siblingReconnect
     await expect(tabB.getByTestId('nav-profile')).toHaveCount(0)
     await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
@@ -81,13 +83,13 @@ test('a change of rights reaches an admin page open on a follower master: a gran
       browser,
       async (secondPage) => {
         await onMaster(secondPage, CLUSTER_FOLLOWER)
-        return grantAdminToSelf(secondPage)
+        return grantAdminToSelf(expect, secondPage)
       },
       { baseURL, ignoreHTTPSErrors },
     )
-    const userId = await grantAdminToSelf(page)
+    const userId = await grantAdminToSelf(expect, page)
     await setAdmin(userId, false)
-    await gotoPage(page, '/hilos/backup', PAGE_REFUSED)
+    await gotoPage(expect, page, '/hilos/backup', PAGE_REFUSED)
     const error = page.getByTestId('page-error')
     await expect(error).toHaveAttribute('data-error-code', '403')
 

@@ -1,17 +1,20 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { grantAdminToSelf, signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+
 import {
+  PASSWORD,
+  signUp,
+  downloadBytes,
+  shownByTestId,
+  clickSubmit,
+  typeInto,
   expectPageReady,
   gotoPage,
   PAGE_READY,
   PAGE_REFUSED,
-} from '../helpers/page.js'
-import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session.js'
-import {
-  downloadBytes,
-  shownByTestId,
+  grantAdminToSelf,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 /** The header line of a file of acceptance records (HIL-1234). */
@@ -38,8 +41,8 @@ async function exportedLinesOf(page: Page, userId: number): Promise<string[]> {
 test('reads the legal catalog, deviations and revision comparison', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/legal')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/legal')
   await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
   // The suite keeps earlier accounts; each document now has at least this administrator's acceptance.
   await expect(shownByTestId(page, 'legal-count-covered')).toHaveText([
@@ -52,6 +55,7 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page.getByTestId('legal-count-lapsed-link')).toHaveCount(0)
   await expect(shownByTestId(page, 'legal-check-row')).toHaveCount(4)
   await clickSubmit(
+    expect,
     shownByTestId(page, 'legal-document-open').and(
       page.locator('[data-document="terms"]'),
     ),
@@ -62,6 +66,7 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page.getByTestId('legal-deviation-row')).toHaveCount(1)
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
   await clickSubmit(
+    expect,
     shownByTestId(page, 'legal-revision-open').and(
       page.locator('[data-revision="2026-10-07"]'),
     ),
@@ -74,10 +79,10 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
     /^\s*[1-9]\d* acceptances\s*$/,
   )
-  await gotoPage(page, '/hilos/legal/terms')
+  await gotoPage(expect, page, '/hilos/legal/terms')
   await expect(page.getByTestId('legal-set')).toBeVisible()
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
-  await gotoPage(page, '/hilos/legal')
+  await gotoPage(expect, page, '/hilos/legal')
   await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
 })
 
@@ -87,15 +92,15 @@ async function setLegalSetting(
   key: string,
   value: string,
 ): Promise<void> {
-  await gotoPage(page, '/hilos/legal/settings')
-  await clickSubmit(shownByTestId(page, `legal-setting-edit-${key}`))
+  await gotoPage(expect, page, '/hilos/legal/settings')
+  await clickSubmit(expect, shownByTestId(page, `legal-setting-edit-${key}`))
   const input = page.getByTestId('legal-setting-input')
   await expect(input).toBeVisible()
   if ((await input.inputValue()) === value) {
-    await clickSubmit(page.getByTestId('legal-setting-cancel'))
+    await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
   } else {
     await input.selectOption(value)
-    await clickSubmit(page.getByTestId('legal-setting-save'))
+    await clickSubmit(expect, page.getByTestId('legal-setting-save'))
   }
   await expect(input).toBeHidden()
 }
@@ -103,8 +108,8 @@ async function setLegalSetting(
 test('offers complete acceptance filters and merges legal setting changes across tabs', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
-  await gotoPage(page, '/hilos/legal/acceptances')
+  const userId = await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/legal/acceptances')
   const table = page.getByTestId('legal-acceptances-table')
   await expect(
     shownByTestId(table, 'legal-acceptance-person').and(
@@ -112,25 +117,29 @@ test('offers complete acceptance filters and merges legal setting changes across
     ),
   ).toHaveCount(2)
   const documentFilter = table.getByTestId('hilos-table-filter-document')
-  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-toggle'))
+  await clickSubmit(expect, documentFilter.getByTestId('hilos-dropdown-toggle'))
   await expect(
     documentFilter.getByTestId('hilos-dropdown-option-0'),
   ).toContainText('Terms')
   await expect(
     documentFilter.getByTestId('hilos-dropdown-option-1'),
   ).toContainText('Privacy policy')
-  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-option-0'))
+  await clickSubmit(
+    expect,
+    documentFilter.getByTestId('hilos-dropdown-option-0'),
+  )
   const revisionFilter = table.getByTestId('hilos-table-filter-revision')
-  await clickSubmit(revisionFilter.getByTestId('hilos-dropdown-toggle'))
+  await clickSubmit(expect, revisionFilter.getByTestId('hilos-dropdown-toggle'))
   await expect(
     revisionFilter.getByTestId('hilos-dropdown-option-0'),
   ).toContainText('2026-10-07')
-  await clickSubmit(revisionFilter.getByTestId('hilos-dropdown-toggle'))
+  await clickSubmit(expect, revisionFilter.getByTestId('hilos-dropdown-toggle'))
 
   const other = await page.context().newPage()
   try {
-    await gotoPage(page, '/hilos/legal/settings')
+    await gotoPage(expect, page, '/hilos/legal/settings')
     await clickSubmit(
+      expect,
       shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
     )
     await expect(page.getByTestId('legal-setting-input')).toHaveValue(
@@ -143,9 +152,9 @@ test('offers complete acceptance filters and merges legal setting changes across
       'Updated just now',
     )
     await expect(page.getByTestId('legal-setting-save')).toBeDisabled()
-    await clickSubmit(page.getByTestId('legal-setting-cancel'))
+    await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(
       shownByTestId(page, 'legal-setting-value-legal.consent_form'),
     ).toHaveText('Line below the button')
@@ -154,11 +163,12 @@ test('offers complete acceptance filters and merges legal setting changes across
       shownByTestId(other, 'legal-setting-value-legal.refusal_after_deadline'),
     ).toHaveText('Keep reminding')
     await clickSubmit(
+      expect,
       shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
     )
     await expect(page.getByTestId('legal-setting-input')).toHaveValue('line')
     await expect(page.getByTestId('legal-setting-save')).toBeDisabled()
-    await clickSubmit(page.getByTestId('legal-setting-cancel'))
+    await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
   } finally {
     const cleanup = await page.context().newPage()
     try {
@@ -174,9 +184,9 @@ test('offers complete acceptance filters and merges legal setting changes across
 test("previews the re-consent screen through the previous revision's holder", async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/legal/terms')
-  await clickSubmit(page.getByTestId('legal-preview-reconsent'))
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/legal/terms')
+  await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
   const preview = page.getByTestId('legal-reconsent-preview')
   await expect(preview).toBeVisible()
   await expect(preview.getByTestId('legal-reconsent-badge')).toHaveText(
@@ -193,11 +203,11 @@ test("previews the re-consent screen through the previous revision's holder", as
   )
   await expect(preview.getByTestId('legal-reconsent-accept')).toBeDisabled()
   await expect(preview.getByTestId('legal-reconsent-later')).toBeDisabled()
-  await clickSubmit(page.getByTestId('legal-reconsent-preview-close'))
+  await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
   await expect(preview).toBeHidden()
 
-  await gotoPage(page, '/hilos/legal/privacy')
-  await clickSubmit(page.getByTestId('legal-preview-reconsent'))
+  await gotoPage(expect, page, '/hilos/legal/privacy')
+  await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
   const privacyPreview = page.getByTestId('legal-reconsent-preview')
   await expect(privacyPreview.getByTestId('legal-reconsent-badge')).toHaveText(
     'No window · in force since 9 October 2026',
@@ -212,23 +222,26 @@ test("previews the re-consent screen through the previous revision's holder", as
   ).toContainText(
     'Account deletion leaves numbered analytics events and network addresses',
   )
-  await clickSubmit(page.getByTestId('legal-reconsent-preview-close'))
+  await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
 })
 
 test('exports the acceptance records the table shows, confirming once', async ({
   page,
 }) => {
-  const admin = await signUp(page)
-  await grantAdminToSelf(page)
+  const admin = await signUp(expect, page)
+  await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
   )
-  await gotoPage(page, '/hilos/legal/acceptances')
+  await gotoPage(expect, page, '/hilos/legal/acceptances')
 
-  await clickSubmit(page.getByTestId('legal-acceptances-export'))
+  await clickSubmit(expect, page.getByTestId('legal-acceptances-export'))
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('legal-acceptances-export-confirm'))
+  await clickSubmit(
+    expect,
+    page.getByTestId('legal-acceptances-export-confirm'),
+  )
   await expect(page.getByTestId('legal-acceptances-export-ready')).toBeVisible()
   await expect(page.getByTestId('legal-acceptances-export-filter')).toHaveText(
     'All records',
@@ -245,10 +258,13 @@ test('exports the acceptance records the table shows, confirming once', async ({
   const documentFilter = page
     .getByTestId('legal-acceptances-table')
     .getByTestId('hilos-table-filter-document')
-  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-toggle'))
-  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-option-0'))
+  await clickSubmit(expect, documentFilter.getByTestId('hilos-dropdown-toggle'))
+  await clickSubmit(
+    expect,
+    documentFilter.getByTestId('hilos-dropdown-option-0'),
+  )
   // The confirmation is still alive, so the second order leaves without a step.
-  await clickSubmit(page.getByTestId('legal-acceptances-export'))
+  await clickSubmit(expect, page.getByTestId('legal-acceptances-export'))
   await expect(page.getByTestId('legal-acceptances-export-filter')).toHaveText(
     'Terms',
   )
@@ -261,12 +277,12 @@ test('exports the acceptance records the table shows, confirming once', async ({
 test('unknown legal documents and revisions are not-found subscription refusals', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   for (const path of [
     '/hilos/legal/missing-document',
     '/hilos/legal/terms/missing-revision',
   ]) {
-    await gotoPage(page, path, PAGE_REFUSED)
+    await gotoPage(expect, page, path, PAGE_REFUSED)
     await expect(page.getByTestId('page-error')).toHaveAttribute(
       'data-error-code',
       '404',
@@ -282,7 +298,7 @@ test.describe('in the admin view mode', () => {
     page,
   }) => {
     await setAdminViewMode(true)
-    await gotoPage(page, '/hilos/legal/acceptances', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/legal/acceptances', PAGE_READY)
     const exportButton = page.getByTestId('legal-acceptances-export')
     await expect(exportButton).toBeDisabled()
     await expect(exportButton).toHaveAttribute(

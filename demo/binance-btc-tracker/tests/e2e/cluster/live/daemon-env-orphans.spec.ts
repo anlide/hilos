@@ -5,8 +5,10 @@ import {
   deliveryObject,
   watchSocketFrames,
   type SocketFrame,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_MASTERS,
@@ -14,7 +16,6 @@ import {
   newMasterPage,
   placementNode,
 } from '../../helpers/cluster.js'
-import { gotoPage, PAGE_READY } from '../../helpers/page.js'
 
 const ORPHANS_PAGE = 'hilos_daemon_env_orphans'
 const ORPHANS_WINDOW = 'hilosDaemonEnvOrphans'
@@ -46,7 +47,12 @@ async function readLiveOrphans(
 ): Promise<void> {
   const before = received.length
   const sent = actions()
-  await gotoPage(page, `/hilos/daemon/${nodeId}/env/orphans`, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/daemon/${nodeId}/env/orphans`,
+    PAGE_READY,
+  )
   await expect(page).toHaveURL(
     new RegExp(`/hilos/daemon/${nodeId}/env/orphans$`),
   )
@@ -81,7 +87,7 @@ test('env orphans on known live nodes arrive in the first page response', async 
   })
   const actions = countSentFrames(page, '"type":"action"')
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     for (const nodeId of nodes) {
       await readLiveOrphans(page, nodeId, received, actions)
     }

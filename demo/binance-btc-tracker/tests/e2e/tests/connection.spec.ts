@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { gotoPage } from '../helpers/page'
+import { gotoPage } from '../../../../../framework/frontend/e2e/index.js'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
 // Connection machine — running through the Vue adapter — reports `connected`
 // on the page.
 test('websocket transport reaches connected', async ({ page }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
@@ -15,7 +15,7 @@ test('websocket transport reaches connected', async ({ page }) => {
 // handshake_response answers that there is no account. This demo hands a
 // visitor no name, so the line says the visit is anonymous.
 test('session bootstrap leaves the visitor anonymous', async ({ page }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('self-anonymous')).toHaveText(
     'Browsing anonymously',
   )

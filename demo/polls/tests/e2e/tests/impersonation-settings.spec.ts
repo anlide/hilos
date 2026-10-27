@@ -8,12 +8,13 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  signUp,
   dismissToasts,
   shownByTestId,
+  clickSubmit,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, signUp } from '../helpers/session.js'
 
 /** The settings page this spec drives. */
 const SETTINGS_PATH = '/hilos/security/impersonation'
@@ -28,7 +29,7 @@ const ALLOWED_SWITCH = 'hilos-impersonation-switch-auth.impersonation.allowed'
  * @param on The position the switch is to reach.
  */
 async function setAllowed(page: Page, on: boolean): Promise<void> {
-  await gotoPage(page, SETTINGS_PATH)
+  await gotoPage(expect, page, SETTINGS_PATH)
   const allowed = shownByTestId(page, ALLOWED_SWITCH)
   if (on) {
     await expect(allowed).not.toBeChecked()
@@ -57,12 +58,12 @@ test('switching impersonation off takes the takeover off the card, and on brings
     cardLoads += 1
   })
   try {
-    await signUpAdmin(page)
-    const person = await signUp(personPage)
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
     const card = `/hilos/user/${person.userId}`
     const open = page.getByTestId('hilos-user-impersonate-open')
 
-    await gotoPage(page, card)
+    await gotoPage(expect, page, card)
     await expect(open).toBeVisible()
     const loadsBeforeSettings = cardLoads
 
@@ -111,12 +112,15 @@ test('switching impersonation off returns an administrator from a takeover witho
     loads += 1
   })
   try {
-    await signUpAdmin(page)
-    const person = await signUp(await personContext.newPage())
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, await personContext.newPage())
 
-    await gotoPage(page, `/hilos/user/${person.userId}`)
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
-    await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-open'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-user-impersonate-confirm'),
+    )
     await expect(strip).toBeVisible()
     await expect(strip).toContainText(person.name)
     await expect(gear).toHaveCount(0)
@@ -124,7 +128,7 @@ test('switching impersonation off returns an administrator from a takeover witho
     await dismissToasts(page)
     const loadsBeforeSwitch = loads
 
-    await signUpAdmin(switcherPage)
+    await signUpAdmin(expect, switcherPage)
     await setAllowed(switcherPage, false)
     switchedOff = true
     await expect(strip).toBeHidden()

@@ -5,10 +5,12 @@ import {
   expectSettingsPageHead,
   openSettingEdit,
   shownByTestId,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
+  expectPageReady,
+  clickSubmit,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
 
 // Hilos settings admin e2e for this demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
@@ -26,15 +28,15 @@ import { clickSubmit, typeInto } from '../helpers/session.js'
 test('lists settings in the framework table and filters from the search box', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expectSettingsPageHead(expect, page)
 
   // Direct entry and F5 keep the same head without a single Overview tab.
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectSettingsPageHead(expect, page)
 
   // A cataloged table has no free "add a setting" entry point.
@@ -87,14 +89,14 @@ test('lists settings in the framework table and filters from the search box', as
 test('sets a custom value on a catalog key from its row and resets it, live', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
   })
 
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
@@ -138,7 +140,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
     await value.evaluate((node, original) => node === original, input),
   ).toBe(true)
   const save = page.getByTestId('hilos-settings-edit-save')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
 
   // The custom value returns over the live table and the edit dialog closes.
@@ -153,7 +155,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await custom.uncheck()
   await expect(value).toHaveAttribute('disabled', '')
   await expect(value).toHaveValue('43')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
   await expect(integerRow).toContainText('default')
   await expect(integerRow).not.toContainText('custom')

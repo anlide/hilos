@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
 
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_SLAVES,
   CLUSTER_FOLLOWER,
@@ -8,7 +7,10 @@ import {
   placementNode,
   requestNodeStop,
 } from '../../helpers/cluster.js'
-import { gotoPage } from '../../helpers/page.js'
+import {
+  gotoPage,
+  grantAdminToSelf,
+} from '../../../../../../framework/frontend/e2e/index.js'
 
 const READY_CARD = /Backup "([^"]+)" is ready\./
 
@@ -19,8 +21,8 @@ test('a backup made through a follower master lands as a completed row, and its 
   try {
     // The command round trip and remote artifact delivery outlive the base cap.
     test.slow()
-    await grantAdminToSelf(page)
-    await gotoPage(page, '/hilos/backup')
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos/backup')
     await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
     await page.getByTestId('hilos-table-main-action').click()

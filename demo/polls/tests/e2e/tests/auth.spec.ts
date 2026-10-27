@@ -1,23 +1,14 @@
 import { test, expect } from '@playwright/test'
 
+import { mailsTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import {
-  mailsTo,
   readMagicLinkCode,
   readMagicLinkUrl,
   readPasswordResetCode,
   readRegisterCode,
-} from '../helpers/mail'
-import { signUpAs } from '../../../../../framework/frontend/e2e/index.js'
-import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
-import {
-  uniquePhone,
-  waitForSmsCode,
-} from '../../../../../framework/frontend/scripts/standSms.mjs'
-import { waitForTelegramCode } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
-import { PAGE_REFUSED, gotoAuthReturn, gotoPage } from '../helpers/page'
+} from '../../../../../framework/frontend/scripts/mail.mjs'
 import {
   PASSWORD,
-  clickSubmit,
   continueFromDone,
   enterIdentifierAndPassword,
   login,
@@ -27,10 +18,21 @@ import {
   register,
   submitFirstPassword,
   submitRegistrationCode,
-  typeInto,
   uniqueEmail,
   waitAuthSettled,
-} from '../helpers/session'
+  signUpAs,
+  clickSubmit,
+  typeInto,
+  PAGE_REFUSED,
+  gotoAuthReturn,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
+import { waitForTelegramCode } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
 
 // Sign-in e2e for the polls demo (HIL-634). This demo had no auth handler
 // at all until the AUTH feature was declared; nothing about the machine is this
@@ -68,11 +70,11 @@ test('holds the address in a modal over the page, and signs the session in on th
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('self-user')).not.toBeEmpty()
 
-  await openSignIn(page)
+  await openSignIn(expect, page)
 
   // A modal, not a replacement: the page underneath is still mounted and still
   // showing the guest's own identity line. The dialog's name is asserted on the
@@ -86,28 +88,28 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('self-user')).toBeVisible()
 
-  await openSignIn(page)
+  await openSignIn(expect, page)
   await typeInto(page.getByTestId('auth-identifier'), email)
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Create your account',
   )
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
   await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(2)
   await expect(page.getByTestId('legal-consent-direction')).toHaveText([
     'stricter',
     'stricter',
   ])
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // The surface is on the code step and the session is still a guest: the
   // submit reserved the address, it did not create an account (HIL-415).
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
-  await submitRegistrationCode(page, await readRegisterCode(email))
-  await submitFirstPassword(page)
-  await continueFromDone(page)
+  await submitRegistrationCode(expect, page, await readRegisterCode(email))
+  await submitFirstPassword(expect, page)
+  await continueFromDone(expect, page)
 
   // The account exists in this demo's own users table and the session carries
   // it: the identity line switches from the guest branch to the account one.
@@ -128,21 +130,21 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await logout(page)
+  await logout(expect, page)
   // Signing out puts the visitor back on the guest branch, which is the state
   // the header's Sign in button belongs to.
   await expect(page.getByTestId('nav-signin')).toBeVisible()
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
-  await openSignIn(page)
-  await enterIdentifierAndPassword(page, email, 'not the password')
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await waitAuthSettled(page)
+  await openSignIn(expect, page)
+  await enterIdentifierAndPassword(expect, page, email, 'not the password')
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await waitAuthSettled(expect, page)
 
   await expect(page.getByTestId('auth-error')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
@@ -150,7 +152,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 
   // The surface is still standing, so the right password goes into the same
   // form the wrong one was refused on.
-  await login(page, email)
+  await login(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
@@ -160,15 +162,15 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
-  await logout(page)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
+  await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,
   // reveals the password, and the key beside it asks for a code instead.
-  await openSignIn(page)
-  await enterIdentifierAndPassword(page, email, PASSWORD)
+  await openSignIn(expect, page)
+  await enterIdentifierAndPassword(expect, page, email, PASSWORD)
   await page.getByTestId('auth-recovery').click()
   await expect(page.getByTestId('auth-code')).toBeVisible()
 
@@ -176,27 +178,27 @@ test('recovers a forgotten password and signs in with the new one', async ({
     page.getByTestId('auth-code'),
     await readPasswordResetCode(email),
   )
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // An accepted recovery code does not sign anybody in: it opens the step that
   // chooses the new password, and only that ends the ceremony.
   const newPasswordField = page.getByTestId('auth-new-password')
   await expect(newPasswordField).toBeVisible()
   await typeInto(newPasswordField, newPassword)
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await continueFromDone(page)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await continueFromDone(expect, page)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await logout(page)
-  await openSignIn(page)
-  await login(page, email, newPassword)
+  await logout(expect, page)
+  await openSignIn(expect, page)
+  await login(expect, page, email, newPassword)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
 test('shows the surface in place of an admin page a guest is refused', async ({
   page,
 }) => {
-  await gotoPage(page, '/hilos/settings', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos/settings', PAGE_REFUSED)
 
   // In place of the page, not over it: the refusal IS the reason the surface is
   // on screen, so there is no dialog and no second copy of the machine.
@@ -209,7 +211,7 @@ test('shows the surface in place of an admin page a guest is refused', async ({
   // hands out that flag - so the settings page answers forbidden rather than
   // opening; what matters here is that the 401 is gone and the surface with it.
   const email = uniqueEmail()
-  await register(page, email)
+  await register(expect, page, email)
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('page-error')).toHaveAttribute(
     'data-error-code',
@@ -262,7 +264,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
   // the same address for a minute, so a shared address would leave a step
   // waiting for mail nobody sent. And every step starts from a guest, which is
   // why the signed-in legs end with a sign-out.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
 
   await test.step('code from the letter', async () => {
     const email = uniqueEmail()
@@ -270,12 +272,12 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // An account first. The envelope stands where it still stands after HIL-1008
     // — beside the password field of an account that has one, as the way past
     // that password — and a free address no longer offers it at all.
-    await openSignIn(page)
-    await register(page, email)
+    await openSignIn(expect, page)
+    await register(expect, page, email)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-    await logout(page)
+    await logout(expect, page)
 
-    await openSignIn(page)
+    await openSignIn(expect, page)
     await typeInto(page.getByTestId('auth-identifier'), email)
     await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
@@ -293,26 +295,26 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
       page.getByTestId('auth-code'),
       await readMagicLinkCode(email),
     )
-    await clickSubmit(page.getByTestId('auth-submit'))
-    await continueFromDone(page)
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await continueFromDone(expect, page)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
     // Three letters: the code the account was made with, the magic link,
     // and the mandatory new sign-in security notice.
     expect(await mailsTo(email)).toHaveLength(3)
 
-    await logout(page)
+    await logout(expect, page)
   })
 
   await test.step('click from a cold load', async () => {
     const email = uniqueEmail()
 
-    await openSignIn(page)
-    await register(page, email)
+    await openSignIn(expect, page)
+    await register(expect, page, email)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-    await logout(page)
+    await logout(expect, page)
 
-    await openSignIn(page)
+    await openSignIn(expect, page)
     await typeInto(page.getByTestId('auth-identifier'), email)
     await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
@@ -322,6 +324,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // one navigation this demo's App serves without HilosView at all — the relay
     // replaces the outlet while the path matches.
     await gotoAuthReturn(
+      expect,
       page,
       returnPath(await readMagicLinkUrl(email)),
       'auth-magic',
@@ -339,19 +342,19 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // The click signed the session in, so the surface says what was achieved
     // and waits for Continue (HIL-422) — over the shell, in the way of the
     // sign-out the next leg starts from.
-    await continueFromDone(page)
-    await logout(page)
+    await continueFromDone(expect, page)
+    await logout(expect, page)
   })
 
   await test.step('tampered token', async () => {
     const email = uniqueEmail()
 
-    await openSignIn(page)
-    await register(page, email)
+    await openSignIn(expect, page)
+    await register(expect, page, email)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-    await logout(page)
+    await logout(expect, page)
 
-    await openSignIn(page)
+    await openSignIn(expect, page)
     await typeInto(page.getByTestId('auth-identifier'), email)
     await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
@@ -362,7 +365,12 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // look exactly the same.
     const tampered = new URL(await readMagicLinkUrl(email))
     tampered.searchParams.set('token', 'not-the-token-that-was-mailed')
-    await gotoAuthReturn(page, returnPath(tampered.toString()), 'auth-magic')
+    await gotoAuthReturn(
+      expect,
+      page,
+      returnPath(tampered.toString()),
+      'auth-magic',
+    )
 
     await expect(page.getByTestId('auth-magic-error')).toBeVisible()
     await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
@@ -381,22 +389,22 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
 test('signs in by a phone code over every channel the demo registers', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await test.step('SMS', async () => {
     const phone = uniquePhone()
 
-    await openSignIn(page)
+    await openSignIn(expect, page)
     await typeInto(page.getByTestId('auth-identifier'), phone)
 
     // A number reveals its channels instead of a password: choosing one IS the
     // send, and there is no separate send button behind the icon. For a number
     // with no account the choice is only STORED — an account is never made by a
     // click that never showed the terms — so the terms screen is what sends.
-    await clickSubmit(page.getByTestId('auth-channel-sms'))
+    await clickSubmit(expect, page.getByTestId('auth-channel-sms'))
     await page.getByTestId('auth-consent-accept').check()
-    await clickSubmit(page.getByTestId('auth-submit'))
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
 
     // The code screen opens on the agent's outcome signal, not on the click, and
     // it names the channel the code actually went over.
@@ -406,13 +414,13 @@ test('signs in by a phone code over every channel the demo registers', async ({
     )
 
     await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
-    await clickSubmit(page.getByTestId('auth-submit'))
-    await continueFromDone(page)
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await continueFromDone(expect, page)
 
     await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 
     // The next leg starts from a guest.
-    await logout(page)
+    await logout(expect, page)
   })
 
   await test.step('Telegram', async () => {
@@ -421,12 +429,12 @@ test('signs in by a phone code over every channel the demo registers', async ({
     // a store the other workers share.
     const phone = uniquePhone()
 
-    await openSignIn(page)
+    await openSignIn(expect, page)
     await typeInto(page.getByTestId('auth-identifier'), phone)
 
-    await clickSubmit(page.getByTestId('auth-channel-telegram'))
+    await clickSubmit(expect, page.getByTestId('auth-channel-telegram'))
     await page.getByTestId('auth-consent-accept').check()
-    await clickSubmit(page.getByTestId('auth-submit'))
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
 
     await expect(page.getByTestId('auth-code')).toBeVisible()
     await expect(page.getByTestId('auth-delivered-channel')).toContainText(
@@ -437,8 +445,8 @@ test('signs in by a phone code over every channel the demo registers', async ({
       page.getByTestId('auth-code'),
       await waitForTelegramCode(phone),
     )
-    await clickSubmit(page.getByTestId('auth-submit'))
-    await continueFromDone(page)
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await continueFromDone(expect, page)
 
     await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
   })
@@ -460,12 +468,12 @@ test('signs in by a phone code over every channel the demo registers', async ({
 test('signs in through every OAuth provider the demo offers', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await test.step('GitHub', async () => {
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
-    await openSignIn(page)
+    await openSignIn(expect, page)
 
     const account = await declareOAuthAccount('github', {
       email: uniqueEmail(),
@@ -482,12 +490,12 @@ test('signs in through every OAuth provider the demo offers', async ({
 
     // Each provider signs in its own account, so the second trip must start from a
     // guest — on a signed session it would prove something else.
-    await logout(page)
+    await logout(expect, page)
   })
 
   await test.step('Google', async () => {
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
-    await openSignIn(page)
+    await openSignIn(expect, page)
 
     const account = await declareOAuthAccount('google', {
       email: uniqueEmail(),

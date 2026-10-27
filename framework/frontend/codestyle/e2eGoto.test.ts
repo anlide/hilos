@@ -61,11 +61,24 @@ it('stays silent on the look-alikes the good fixture seeds', () => {
 
 it('lets the wrapper owner call goto, since it owns the wrappers', () => {
   expect(
-    checkSource(
-      'demo/chat/tests/e2e/helpers/page.ts',
-      'await page.goto(path)\n',
-    ),
+    checkSource('framework/frontend/e2e/page.ts', 'await page.goto(path)\n'),
   ).toEqual([])
+})
+
+it('reports goto in the former demo helpers and look-alike owner paths', () => {
+  for (const path of [
+    'demo/chat/tests/e2e/helpers/page.ts',
+    'demo/tasks/tests/e2e/helpers/page.ts',
+    'demo/polls/tests/e2e/helpers/page.ts',
+    'demo/binance-btc-tracker/tests/e2e/helpers/page.ts',
+    'demo/ecommerce-shop/tests/e2e/helpers/page.ts',
+    'demo/online-testing/tests/e2e/helpers/page.ts',
+    'demo/chat/tests/e2e/framework/frontend/e2e/page.ts',
+  ]) {
+    expect(checkSource(path, 'await page.goto(path)\n')).toEqual([
+      `E2E-PAGE-GOTO ${path}:1${REASON}`,
+    ])
+  }
 })
 
 it('reads the stand base from the shared gateway module', () => {

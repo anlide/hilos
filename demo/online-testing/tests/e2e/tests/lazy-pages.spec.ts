@@ -1,5 +1,8 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import {
+  login,
+  logout,
+  signUp,
   armSocketDrop,
   bundleFiles,
   chooseHeaderTheme,
@@ -26,10 +29,12 @@ import {
   watchPagePresentation,
   watchPageReplies,
   watchTop,
+  expectPageReady,
+  gotoPage,
+  PAGE_REFUSED,
+  grantAdminToSelf,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_REFUSED } from '../helpers/page.js'
-import { login, logout, signUp } from '../helpers/session.js'
 
 // The production artifact supplies the graph and the real server supplies every
 // access verdict. Angular's AOT-linked entries and static modulepreloads are
@@ -38,16 +43,6 @@ const SETTINGS_MODULE = '/views/hilos/settings/settings.ts'
 const APPEARANCE_MODULE = '/views/hilos/appearance/appearance.ts'
 const SETTINGS_KEY = 'hilos_settings'
 const SETTINGS_PATH = '/hilos/settings'
-
-/**
- * Give the online-testing registered password account the existing command-channel grant.
- *
- * @param page The fresh page whose account will open the lazy admin section.
- */
-async function signUpAdmin(page: Page): Promise<void> {
-  await signUp(page)
-  await grantAdminToSelf(page)
-}
 
 let bundles: ReturnType<typeof watchClientBundles>
 let replies: ReturnType<typeof watchPageReplies>
@@ -91,7 +86,7 @@ test('cold public footer, home and history stay eager', async ({ page }) => {
     body: JSON.stringify(report),
     contentType: 'application/json',
   })
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expectThemeMode(expect, page, 'light')
   await expect(page.getByTestId('nav-brand')).toHaveAccessibleName(/\S/)
   await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
@@ -101,20 +96,20 @@ test('cold public footer, home and history stay eager', async ({ page }) => {
   const document = await watchClientDocument(page)
   try {
     await page.getByTestId('footer-link-hilos_about').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await page.getByTestId('nav-brand').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await page.goBack()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/about$/)
     await page.goForward()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/$/)
     for (const footer of ['hilos_terms', 'hilos_privacy', 'hilos_license']) {
       await page.getByTestId(`footer-link-${footer}`).click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await page.getByTestId('nav-brand').click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
     }
     await expectThemeMode(expect, page, 'light')
     // The menu remains keyboard accessible after the footer and history trip.
@@ -130,9 +125,9 @@ test('cold public footer, home and history stay eager', async ({ page }) => {
 test('holds selected project code after the server answer, then reuses it through history', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   // A new document discards registration's module map before selecting any admin page.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
   const sibling = selectLazyBundle(report, APPEARANCE_MODULE)
@@ -146,7 +141,7 @@ test('holds selected project code after the server answer, then reuses it throug
   // The previous page can still report ready immediately after the SPA click.
   // Observe the dashboard itself before bookmarking its departure.
   await expect(page.getByTestId('dashboard-card-hilos_settings')).toBeVisible()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   const held = await holdClientBundle(page, selected.entry)
   const presentation = await watchPagePresentation(page)
   const header = await watchTop(page.getByTestId('nav-theme'))
@@ -174,7 +169,7 @@ test('holds selected project code after the server answer, then reuses it throug
     const finished = waitClientBundle(page, selected.entry, 'success')
     held.release()
     await finished
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectLazyAdminPage(expect, page, 'Settings')
     await header.unchanged()
     expectBundleRequests(expect, bundles.requests, [
@@ -189,14 +184,14 @@ test('holds selected project code after the server answer, then reuses it throug
     ).toEqual([])
     const downloaded = bundles.requests.length
     await page.getByTestId('nav-brand').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await page.goBack()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectSettingsPageHead(expect, page)
     await page.goForward()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await page.goBack()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
     expect(bundles.requests.length).toBe(downloaded)
     await test.info().attach('selected-and-sibling-closures', {
@@ -213,18 +208,18 @@ for (const outcome of ['success', 'failure'] as const) {
   test(`late ${outcome} of an abandoned module keeps home current`, async ({
     page,
   }) => {
-    await signUpAdmin(page)
-    await gotoPage(page, '/')
+    await signUpAdmin(expect, page)
+    await gotoPage(expect, page, '/')
     const report = await readClientBundleReport(page)
     const selected = selectLazyBundle(report, APPEARANCE_MODULE)
     await page.getByTestId('nav-admin').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     const held = await holdClientBundle(page, selected.entry)
     try {
       await page.getByTestId('dashboard-card-hilos_appearance').click()
       await held.requested
       await page.getByTestId('nav-brand').click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       const settled = waitClientBundle(
         page,
         selected.entry,
@@ -233,7 +228,7 @@ for (const outcome of ['success', 'failure'] as const) {
       held.release(outcome)
       await settled
       await settleClientBundles(expect, page, bundles.requests, selected)
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(/\/$/)
       await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
       await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
@@ -247,12 +242,12 @@ for (const outcome of ['success', 'failure'] as const) {
 test('a real chunk failure gives a safe local 503 and SPA home recovery', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/')
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
   await page.getByTestId('nav-admin').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   const document = await watchClientDocument(page)
   const held = await holdClientBundle(page, selected.entry)
   try {
@@ -263,7 +258,7 @@ test('a real chunk failure gives a safe local 503 and SPA home recovery', async 
     await failed
     await expectLazyPageFailure(expect, page, selected.entry)
     await page.getByTestId('page-error-home').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/$/)
     await document.unchanged()
     // Remove the network fault before revisiting. Chromium may retain failed ESM
@@ -274,7 +269,7 @@ test('a real chunk failure gives a safe local 503 and SPA home recovery', async 
     await expect(
       page.getByTestId('dashboard-card-hilos_settings'),
     ).toBeVisible()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     const answers = replies.replies.filter(
       (reply) => reply.page === SETTINGS_KEY && reply.type === 'page_response',
     ).length
@@ -318,12 +313,12 @@ test('a real chunk failure gives a safe local 503 and SPA home recovery', async 
 test('cold allowed admin deep link waits for the real permitting response', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
   const answer = await holdPageReply(page, SETTINGS_KEY)
   // Start the normal settled-navigation helper without awaiting it until both gates open.
-  const navigation = gotoPage(page, SETTINGS_PATH)
+  const navigation = gotoPage(expect, page, SETTINGS_PATH)
   const completed = navigation.catch((error: unknown) => error)
   try {
     await answer.received
@@ -361,7 +356,7 @@ for (const visitor of ['guest', 'non-admin'] as const) {
     test(`cold ${visitor} refusal wins over module ${outcome}`, async ({
       page,
     }) => {
-      if (visitor === 'non-admin') await signUp(page)
+      if (visitor === 'non-admin') await signUp(expect, page)
       const report = await readClientBundleReport(page)
       const selected = selectLazyBundle(report, SETTINGS_MODULE)
       const held = await holdClientBundle(page, selected.entry)
@@ -369,7 +364,7 @@ for (const visitor of ['guest', 'non-admin'] as const) {
         outcome === 'failure-first'
           ? await holdPageReply(page, SETTINGS_KEY)
           : undefined
-      const navigation = gotoPage(page, SETTINGS_PATH, PAGE_REFUSED)
+      const navigation = gotoPage(expect, page, SETTINGS_PATH, PAGE_REFUSED)
       const completed = navigation.catch((error: unknown) => error)
       const status = visitor === 'guest' ? 401 : 403
       try {
@@ -420,17 +415,17 @@ for (const visitor of ['guest', 'non-admin'] as const) {
 test('signing in after a guest refusal uses the loaded descriptor without another download', async ({
   page,
 }) => {
-  const email = await signUp(page)
-  await grantAdminToSelf(page)
+  const email = (await signUp(expect, page)).email
+  await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
   )
-  await logout(page)
-  await gotoPage(page, '/')
+  await logout(expect, page)
+  await gotoPage(expect, page, '/')
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
-  await gotoPage(page, SETTINGS_PATH, PAGE_REFUSED)
+  await gotoPage(expect, page, SETTINGS_PATH, PAGE_REFUSED)
   await expectServerRefusal(expect, page, 401)
   await expect
     .poll(
@@ -446,8 +441,8 @@ test('signing in after a guest refusal uses the loaded descriptor without anothe
   const downloaded = bundles.requests.length
   const document = await watchClientDocument(page)
   try {
-    await login(page, email)
-    await expectPageReady(page)
+    await login(expect, page, email)
+    await expectPageReady(expect, page)
     await expectLazyAdminPage(expect, page, 'Settings')
     expect(bundles.requests.length).toBe(downloaded)
     await document.unchanged()
@@ -461,8 +456,8 @@ test('reconnect retains the mounted admin page and uses its loaded section', asy
 }) => {
   await armSocketDrop(page)
   const handshakes = watchHandshakeFrames(page)
-  await signUpAdmin(page)
-  await gotoPage(page, SETTINGS_PATH)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, SETTINGS_PATH)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const mounted = await page.getByTestId('hilos-viewport-table').elementHandle()
   const document = await watchClientDocument(page)
@@ -485,7 +480,7 @@ test('reconnect retains the mounted admin page and uses its loaded section', asy
       )
       .toBe(true)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectLazyAdminPage(expect, page, 'Settings')
     expect(await mounted?.evaluate((node) => node.isConnected)).toBe(true)
     expect(

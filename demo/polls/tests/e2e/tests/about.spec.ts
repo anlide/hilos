@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test'
 import {
   watchHeight,
   watchTop,
+  gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from '../helpers/page'
 
 // The support block at the end of /about (HIL-840), as a guest: no session is
 // needed because the block has no per-reader part at all.
@@ -18,7 +18,7 @@ import { gotoPage } from '../helpers/page'
 test('a tier can be chosen and Subscribe answers with the honest refusal', async ({
   page,
 }) => {
-  await gotoPage(page, '/about')
+  await gotoPage(expect, page, '/about')
   await expect(page.getByTestId('hilos-about-support')).toBeVisible()
 
   await page.getByTestId('hilos-about-support-open').click()

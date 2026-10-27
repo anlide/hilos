@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test'
-
-import { readPasswordResetCode, readRegisterCode } from '../helpers/mail'
-import { PAGE_REFUSED, gotoPage } from '../helpers/page'
 import {
   PASSWORD,
-  clickSubmit,
   continueFromDone,
   enterIdentifierAndPassword,
   login,
@@ -14,10 +10,18 @@ import {
   register,
   submitFirstPassword,
   submitRegistrationCode,
-  typeInto,
   uniqueEmail,
   waitAuthSettled,
-} from '../helpers/session'
+  clickSubmit,
+  typeInto,
+  PAGE_REFUSED,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
+
+import {
+  readPasswordResetCode,
+  readRegisterCode,
+} from '../../../../../framework/frontend/scripts/mail.mjs'
 
 // Sign-in e2e for the ecommerce-shop demo. Nothing about the machine is
 // this demo's, so what is proved here is the ACTIVATION — that the framework
@@ -38,11 +42,11 @@ test('holds the address in a modal over the page, and signs the session in on th
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-  await openSignIn(page)
+  await openSignIn(expect, page)
 
   // A modal, not a replacement: the page underneath is still mounted and still
   // showing the guest's own identity line. The dialog's name is asserted on the
@@ -56,27 +60,27 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-  await openSignIn(page)
+  await openSignIn(expect, page)
   await typeInto(page.getByTestId('auth-identifier'), email)
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Create your account',
   )
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
   await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(1)
   await expect(page.getByTestId('legal-consent-direction')).toHaveText(
     'stricter',
   )
   await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // The surface is on the code step and the session is still a guest: the
   // submit reserved the address, it did not create an account (HIL-415).
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-  await submitRegistrationCode(page, await readRegisterCode(email))
-  await submitFirstPassword(page)
-  await continueFromDone(page)
+  await submitRegistrationCode(expect, page, await readRegisterCode(email))
+  await submitFirstPassword(expect, page)
+  await continueFromDone(expect, page)
 
   // The account exists and the session carries it: the identity line switches
   // from the anonymous branch to the account one.
@@ -97,21 +101,21 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await logout(page)
+  await logout(expect, page)
   // Signing out puts the visitor back on the anonymous branch, which is the
   // state the header's Sign in button belongs to.
   await expect(page.getByTestId('nav-signin')).toBeVisible()
   await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-  await openSignIn(page)
-  await enterIdentifierAndPassword(page, email, 'not the password')
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await waitAuthSettled(page)
+  await openSignIn(expect, page)
+  await enterIdentifierAndPassword(expect, page, email, 'not the password')
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await waitAuthSettled(expect, page)
 
   await expect(page.getByTestId('auth-error')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
@@ -119,7 +123,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 
   // The surface is still standing, so the right password goes into the same
   // form the wrong one was refused on.
-  await login(page, email)
+  await login(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
@@ -129,15 +133,15 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
-  await logout(page)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
+  await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,
   // reveals the password, and the key beside it asks for a code instead.
-  await openSignIn(page)
-  await enterIdentifierAndPassword(page, email, PASSWORD)
+  await openSignIn(expect, page)
+  await enterIdentifierAndPassword(expect, page, email, PASSWORD)
   await page.getByTestId('auth-recovery').click()
   await expect(page.getByTestId('auth-code')).toBeVisible()
 
@@ -145,27 +149,27 @@ test('recovers a forgotten password and signs in with the new one', async ({
     page.getByTestId('auth-code'),
     await readPasswordResetCode(email),
   )
-  await clickSubmit(page.getByTestId('auth-submit'))
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
 
   // An accepted recovery code does not sign anybody in: it opens the step that
   // chooses the new password, and only that ends the ceremony.
   const newPasswordField = page.getByTestId('auth-new-password')
   await expect(newPasswordField).toBeVisible()
   await typeInto(newPasswordField, newPassword)
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await continueFromDone(page)
+  await clickSubmit(expect, page.getByTestId('auth-submit'))
+  await continueFromDone(expect, page)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await logout(page)
-  await openSignIn(page)
-  await login(page, email, newPassword)
+  await logout(expect, page)
+  await openSignIn(expect, page)
+  await login(expect, page, email, newPassword)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
 test('shows the surface in place of an admin page a guest is refused', async ({
   page,
 }) => {
-  await gotoPage(page, '/hilos', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos', PAGE_REFUSED)
 
   // In place of the page, not over it: the refusal IS the reason the surface is
   // on screen, so there is no dialog and no second copy of the machine.
@@ -178,7 +182,7 @@ test('shows the surface in place of an admin page a guest is refused', async ({
   // hands out that flag - so the dashboard answers forbidden rather than
   // opening; what matters here is that the 401 is gone and the surface with it.
   const email = uniqueEmail()
-  await register(page, email)
+  await register(expect, page, email)
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('page-error')).toHaveAttribute(
     'data-error-code',

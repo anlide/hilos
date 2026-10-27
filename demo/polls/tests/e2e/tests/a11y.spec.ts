@@ -1,18 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { holdLegalRevision } from '../helpers/legalHold.js'
+
 import {
-  clickSubmit,
   enterIdentifierAndPassword,
   logout,
   openSignIn,
   PASSWORD,
   signUp,
-  typeInto,
-} from '../helpers/session.js'
-import {
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -27,10 +21,15 @@ import {
   expectDaemonPage,
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
+  clickSubmit,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  grantAdminToSelf,
   watchProfileRenameStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -42,7 +41,7 @@ import { setAdminViewMode } from '../helpers/adminViewMode.js'
 
 /** Open the users admin and wait for the live table. */
 async function openUsers(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -50,7 +49,7 @@ async function openUsers(page: Page): Promise<void> {
 test('the viewport table has an accessible name and a labelled search', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   await openUsers(page)
 
@@ -67,9 +66,9 @@ test('the viewport table has an accessible name and a labelled search', async ({
 test('the language Names table takes its name from the shared head', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/names')
-  await expectPageReady(page)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/names')
+  await expectPageReady(expect, page)
 
   await expectLanguagePageHead(expect, page, {
     code: 'en',
@@ -84,7 +83,7 @@ test('the language Names table takes its name from the shared head', async ({
 test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   await openUsers(page)
 
@@ -112,7 +111,7 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
 test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {
-  await gotoPage(page, '/hilos')
+  await gotoPage(expect, page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The skip link targets the main landmark.
@@ -130,20 +129,20 @@ test('the shell exposes a skip link and marks the active nav item', async ({
   // Granted, the same shell grows the entry — and marks it as the active nav
   // item, which is the half of this test's subject the gear had to arrive for:
   // aria-current is how assistive tech reads "you are here" off a nav.
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos')
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'aria-current',
     'page',
   )
 
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   const build = await expectDesktopShell(expect, page, 'nav-profile-name')
   const document = await watchClientDocument(page)
   try {
     await page.getByTestId('nav-brand').click()
     await expect(page).toHaveURL('/')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await document.unchanged()
     expect(await expectDesktopShell(expect, page, 'nav-profile-name')).toBe(
       build,
@@ -156,7 +155,7 @@ test('the shell exposes a skip link and marks the active nav item', async ({
 test('each page titles the tab and announces the page on navigation', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   await openUsers(page)
 
@@ -173,7 +172,7 @@ test('each page titles the tab and announces the page on navigation', async ({
 })
 
 test('the home page exposes a single top-level heading', async ({ page }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
 })
@@ -185,9 +184,9 @@ test('the sign-in card holds room for a refusal before there is one', async ({
   // somewhere to land without moving the form (HIL-647). Angular has no
   // component world of its own yet (HIL-848), so this is where its copy of the
   // component is proved.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(page)
+  await openSignIn(expect, page)
 
   await expect(page.getByTestId('auth-error-slot')).toBeAttached()
   await expect(page.getByTestId('auth-error-idle')).toHaveAttribute(
@@ -206,9 +205,9 @@ test('an admin screen holds the refusal region before there is a refusal', async
   // which is why it has to be there first. Angular has no component world of
   // its own yet (HIL-848), so this is where its copy of the component is
   // proved.
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/logs/settings')
+  await gotoPage(expect, page, '/hilos/logs/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(
     page.getByTestId('hilos-setting-preset-settings-link'),
@@ -228,11 +227,11 @@ test('an admin screen holds the refusal region before there is a refusal', async
 test('password visibility toggle operates from keyboard on sign-in', async ({
   page,
 }) => {
-  const user = await signUp(page)
-  await logout(page)
-  await openSignIn(page)
+  const user = await signUp(expect, page)
+  await logout(expect, page)
+  await openSignIn(expect, page)
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await enterIdentifierAndPassword(page, user.email, PASSWORD)
+  await enterIdentifierAndPassword(expect, page, user.email, PASSWORD)
   await expectPasswordVisibility(
     expect,
     page,
@@ -246,8 +245,8 @@ test('password visibility toggle operates from keyboard on sign-in', async ({
 test('Privacy comparison and erase expose names, keyboard focus and live regions', async ({
   page,
 }) => {
-  const person = await signUp(page)
-  await gotoPage(page, '/privacy')
+  const person = await signUp(expect, page)
+  await gotoPage(expect, page, '/privacy')
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(reader.getByTestId('legal-document-reader-line')).toContainText(
@@ -304,12 +303,12 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
 
     await open.press('Enter')
     await expect(dialog).toBeVisible()
-    await clickSubmit(dialog.getByTestId('privacy-changes-close'))
+    await clickSubmit(expect, dialog.getByTestId('privacy-changes-close'))
     await expect(dialog).toHaveCount(0)
     await expect(open).toBeFocused()
     await open.press('Enter')
     await expect(dialog).toBeVisible()
-    await clickSubmit(dialog.getByTestId('modal-close'))
+    await clickSubmit(expect, dialog.getByTestId('modal-close'))
     await expect(dialog).toHaveCount(0)
     await expect(open).toBeFocused()
 
@@ -332,7 +331,7 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
     await expect(erase).toBeFocused()
     await erase.press('Enter')
     await expect(confirmation).toBeVisible()
-    await clickSubmit(page.getByTestId('privacy-erase-confirm'))
+    await clickSubmit(expect, page.getByTestId('privacy-erase-confirm'))
     await expect(confirmation).toHaveCount(0)
     await expect(page.getByTestId('privacy-erase-done')).toBeVisible()
     await expect(reader).toHaveAttribute('data-state', 'guest')
@@ -354,8 +353,8 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
 test('Communications exposes one named head and keyboard links between channel pages', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications/email')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications/email')
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -370,7 +369,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await configuration.focus()
   await expect(configuration).toBeFocused()
   await configuration.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -385,7 +384,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await deliveries.focus()
   await expect(deliveries).toBeFocused()
   await deliveries.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -400,7 +399,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await overview.focus()
   await expect(overview).toBeFocused()
   await overview.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -413,9 +412,9 @@ test('Communications exposes one named head and keyboard links between channel p
 test('the default language deletion explanation is named, keyboard readable and returns focus', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/i18n/languages')
-  await expectPageReady(page)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages')
+  await expectPageReady(expect, page)
   const row = shownByTestId(page, /^hilos-table-row-/).filter({
     has: page.getByTestId('i18n-languages-delete-en'),
   })
@@ -452,18 +451,18 @@ test('the default language deletion explanation is named, keyboard readable and 
 test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
   page,
 }) => {
-  const user = await signUp(page)
-  await gotoPage(page, '/profile')
+  const user = await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
   const opener = page.getByTestId('profile-edit')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
   await expect(page.getByTestId('modal')).toHaveAccessibleName(
     "Confirm it's you",
   )
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
+  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
 
   const dialog = page.getByTestId('modal')
   const field = page.getByTestId('profile-name-input')
@@ -501,26 +500,26 @@ test('the profile name dialog exposes accessible focus and dirty-close behavior'
   await expect(confirmation).toHaveRole('alertdialog')
   await expect(confirmation).toHaveAccessibleName('Discard changes?')
   await expect(confirmation).toBeFocused()
-  await clickSubmit(keepEditing)
+  await clickSubmit(expect, keepEditing)
   await expect(confirmation).toHaveCount(0)
   await expect(field).toHaveValue(draft)
 
-  await clickSubmit(cancel)
+  await clickSubmit(expect, cancel)
   await expect(confirmation).toBeVisible()
-  await clickSubmit(keepEditing)
+  await clickSubmit(expect, keepEditing)
   await expect(confirmation).toHaveCount(0)
   await expect(field).toHaveValue(draft)
 
-  await clickSubmit(close)
+  await clickSubmit(expect, close)
   await expect(confirmation).toBeVisible()
-  await clickSubmit(keepEditing)
+  await clickSubmit(expect, keepEditing)
   await expect(confirmation).toHaveCount(0)
   await expect(field).toHaveValue(draft)
   await status.unchanged(false)
 
   await dialog.click({ position: { x: 2, y: 2 } })
   await expect(confirmation).toBeVisible()
-  await clickSubmit(discard)
+  await clickSubmit(expect, discard)
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
 })
@@ -530,8 +529,8 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 }) => {
   // Each addressed page has a real subscription and keyboard navigation.
   test.slow()
-  await grantAdminToSelf(page)
-  await gotoPage(page, DAEMON_NODE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, DAEMON_NODE_PATH)
   await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
   for (const tab of DAEMON_NODE_TABS.slice(1)) {
     const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
@@ -555,8 +554,8 @@ test.describe('Daemon section accessibility', () => {
       page,
     }) => {
       await setAdminViewMode(viewer)
-      if (!viewer) await grantAdminToSelf(page)
-      await gotoPage(page, DAEMON_ROOT_PATH)
+      if (!viewer) await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, DAEMON_ROOT_PATH)
       await expectDaemonPage(expect, page, 'hilos_daemon')
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
       const placement = page.getByTestId(

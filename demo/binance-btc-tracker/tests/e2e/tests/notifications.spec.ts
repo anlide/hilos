@@ -1,6 +1,9 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import {
+  login,
+  logout,
+  openSignIn,
   clearCustomSetting,
   enableEmailChannel,
   expectCommunicationsChannelHead,
@@ -8,13 +11,15 @@ import {
   setCustomSetting,
   shownByTestId,
   unreadBadge,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
+  signUpJoined,
+  tableRowKeys,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
-import { waitForMailTo } from '../helpers/mail'
-import { emitNotification, signUpJoined } from '../helpers/notifications'
-import { gotoPage } from '../helpers/page'
-import { login, logout, openSignIn, typeInto } from '../helpers/session'
-import { tableRowKeys } from '../helpers/table'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
 
 // Notification-center e2e (HIL-558), moved here from chat with the communications
 // section it drives (HIL-1224); chat keeps only the product half, a mention and a
@@ -39,9 +44,9 @@ import { tableRowKeys } from '../helpers/table'
 test('the seeded recipient sees the bounded menu and full unread badge', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await login(page, 'seed-001@example.test')
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await login(expect, page, 'seed-001@example.test')
 
   // 22 seeded unread rows plus the one the sign-in itself raises
   // (security.signed_in, HIL-294); the badge assertion polls, so the extra row is
@@ -75,7 +80,7 @@ function emailPreference(page: Page): Locator {
 async function signInAddressableAdmin(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const { email, userId } = await signUpJoined(page)
+  const { email, userId } = await signUpJoined(expect, page)
   await setAdmin(userId, true)
   // The daemon re-sends the handshake response to the granted user's live
   // connections, so the admin entry appearing is the grant reaching this page.
@@ -96,7 +101,7 @@ async function signInAddressableAdmin(
  */
 async function expectJournalSent(page: Page, title: string): Promise<void> {
   await expect(async () => {
-    await gotoPage(page, '/hilos/communications/email/deliveries')
+    await gotoPage(expect, page, '/hilos/communications/email/deliveries')
     await typeInto(page.getByTestId('hilos-table-search'), title)
     const row = page.getByTestId(/^hilos-table-row-/)
     await expect(row).toHaveCount(1, { timeout: JOURNAL_READ_MS })
@@ -107,7 +112,7 @@ async function expectJournalSent(page: Page, title: string): Promise<void> {
 test('an emitted notification reaches the bell as an unread row', async ({
   page,
 }) => {
-  const { userId } = await signUpJoined(page)
+  const { userId } = await signUpJoined(expect, page)
 
   const { notificationId } = await emitNotification(userId, {
     type: 'e2e_center',
@@ -129,7 +134,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 })
 
 test('marking a row read clears the badge', async ({ page }) => {
-  const { userId } = await signUpJoined(page)
+  const { userId } = await signUpJoined(expect, page)
   const { notificationId } = await emitNotification(userId, {
     type: 'e2e_mark_read',
     title: 'One to read',
@@ -154,7 +159,7 @@ test('marking a row read clears the badge', async ({ page }) => {
 })
 
 test('mark-all read clears a badge carrying several', async ({ page }) => {
-  const { userId } = await signUpJoined(page)
+  const { userId } = await signUpJoined(expect, page)
   const first = await emitNotification(userId, {
     type: 'e2e_mark_all',
     title: 'First',
@@ -182,7 +187,7 @@ test('mark-all read clears a badge carrying several', async ({ page }) => {
 test('a read in one tab reaches the other tab of the same user', async ({
   page,
 }) => {
-  const { userId } = await signUpJoined(page)
+  const { userId } = await signUpJoined(expect, page)
 
   // Tab B joins the group before the emit, so it receives the notification live
   // rather than picking it up from a reconnect snapshot.
@@ -191,7 +196,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
   tabB.on('load', () => {
     tabBLoads += 1
   })
-  await gotoPage(tabB, '/')
+  await gotoPage(expect, tabB, '/')
   const loadsAfterColdLoad = tabBLoads
 
   const { notificationId } = await emitNotification(userId, {
@@ -226,8 +231,8 @@ test('saving a setting raises a toast the close button dismisses', async ({
   // nearest surface that raises one for real. example_boolean is this spec's own
   // catalog key (settings.spec.ts owns the other example_* keys), and it is reset
   // to the catalog default afterwards so the suite stays idempotent.
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/settings')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
   await expect(
@@ -258,10 +263,10 @@ test('muting the email channel keeps the next emit off it', async ({
   page,
 }) => {
   const { email, userId } = await signInAddressableAdmin(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
-  await gotoPage(page, '/profile/notifications')
+  await gotoPage(expect, page, '/profile/notifications')
   const toggle = emailPreference(page)
   await expect(
     page.getByTestId('hilos-notification-preference-subtitle-email'),
@@ -290,7 +295,7 @@ test('muting the email channel keeps the next emit off it', async ({
   // of the user, so tab B flipping IS the write landing. Without that wait the
   // emit below would be racing it.
   const tabB = await page.context().newPage()
-  await gotoPage(tabB, '/profile/notifications')
+  await gotoPage(expect, tabB, '/profile/notifications')
   await expect(emailPreference(tabB)).toBeChecked()
 
   await toggle.click()
@@ -305,7 +310,7 @@ test('muting the email channel keeps the next emit off it', async ({
   await expect(emailPreference(tabB)).toHaveAccessibleDescription(email)
 
   // Durable, not merely live: a cold load reads the preference back from the DB.
-  await gotoPage(page, '/profile/notifications')
+  await gotoPage(expect, page, '/profile/notifications')
   await expect(emailPreference(page)).not.toBeChecked()
   await expect(
     page.getByTestId('hilos-notification-preference-subtitle-email'),
@@ -328,7 +333,7 @@ test('an emitted notification is mailed out and journaled as sent', async ({
   page,
 }) => {
   const { email, userId } = await signInAddressableAdmin(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
   // The title doubles as the journal's search term and as the subject the
@@ -358,15 +363,15 @@ test('a sign-in is mailed to the person', async ({ page }) => {
   // hub is one setting for the whole stand, and the account signInAddressableAdmin
   // registers already has the proven address the mail channel writes to.
   const { email } = await signInAddressableAdmin(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
   // Registration announces no sign-in, so a letter under this subject can only
   // come from the password sign-in below.
-  await gotoPage(page, '/')
-  await logout(page)
-  await openSignIn(page)
-  await login(page, email)
+  await gotoPage(expect, page, '/')
+  await logout(expect, page)
+  await openSignIn(expect, page)
+  await login(expect, page, email)
 
   // GenericNotificationMailTemplate makes the notification's title the subject
   // and its body the text; the body points at the way out of a stranger's
@@ -379,7 +384,7 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
   page,
 }) => {
   const { userId } = await signInAddressableAdmin(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
   const title = `Expandable delivery for user ${userId}`
@@ -437,8 +442,8 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
 }) => {
   // Configure opens the fields tab; Deliveries is reached through the same
   // channel head without typing an address past the hub.
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications')
 
   // The hub is a table drawn both as rows and as cards, so the button
   // is aimed at through the copy on screen.
@@ -464,8 +469,8 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
 test('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications/email/deliveries')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
 
   const count = page.getByTestId('hilos-table-count')
   const prev = page.getByTestId('hilos-table-prev')
@@ -503,7 +508,7 @@ test('keeps an exact delivery window in place until Show after a live arrival ab
   test.slow()
 
   const { userId } = await signInAddressableAdmin(page)
-  await gotoPage(page, '/hilos/communications')
+  await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
   const searchTerm = `window_delivery_${userId}`
@@ -515,7 +520,7 @@ test('keeps an exact delivery window in place until Show after a live arrival ab
     expect(emitted.queuedChannels).toContain('email')
   }
 
-  await gotoPage(page, '/hilos/communications/email/deliveries')
+  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
   await typeInto(page.getByTestId('hilos-table-search'), searchTerm)
   const count = page.getByTestId('hilos-table-count')
   const next = page.getByTestId('hilos-table-next')
@@ -636,9 +641,9 @@ test.describe('notifications in Pacific/Honolulu', () => {
     })
 
     const { userId } = await signInAddressableAdmin(page)
-    await gotoPage(page, '/hilos/communications')
+    await gotoPage(expect, page, '/hilos/communications')
     await enableEmailChannel(page)
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
 
     const title = `Pacific timezone delivery for user ${userId}`
     const { notificationId, queuedChannels } = await emitNotification(userId, {

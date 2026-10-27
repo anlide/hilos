@@ -5,79 +5,78 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  PASSWORD,
+  registerEmailOnly,
+  signUp,
   addVirtualAuthenticator,
   dismissToasts,
   shownByTestId,
+  clickSubmit,
+  typeInto,
+  connectFirstApp,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { connectFirstApp } from '../../../../../framework/frontend/e2e/index.js'
 import {
   nextTotpCode,
   totpStep,
 } from '../../../../../framework/frontend/scripts/totp.mjs'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { waitForMailCode } from '../helpers/mail'
-import { gotoPage, PAGE_READY } from '../helpers/page'
-import {
-  PASSWORD,
-  clickSubmit,
-  registerEmailOnly,
-  signUp,
-  typeInto,
-} from '../helpers/session'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 
 test('confirms an email change with the account password', async ({ page }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile')
-  await clickSubmit(page.getByTestId('profile-email-change'))
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
+  await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
   await typeInto(page.getByTestId('step-up-password'), 'wrong password')
-  await clickSubmit(page.getByTestId('profile-email-step-up-confirm'))
+  await clickSubmit(expect, page.getByTestId('profile-email-step-up-confirm'))
   await expect(page.getByTestId('step-up-error')).toHaveText(
     'Incorrect password',
   )
 
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-email-step-up-confirm'))
+  await clickSubmit(expect, page.getByTestId('profile-email-step-up-confirm'))
   await expect(page.getByTestId('profile-email-send-current')).toBeVisible()
 })
 
 test('confirms data export with a code sent to the verified email', async ({
   page,
 }) => {
-  const email = await registerEmailOnly(page)
-  await gotoPage(page, '/profile/data')
+  const email = await registerEmailOnly(expect, page)
+  await gotoPage(expect, page, '/profile/data')
   await expect(page.getByTestId('profile-data-view')).toBeVisible()
-  await clickSubmit(page.getByTestId('data-export-prepare'))
+  await clickSubmit(expect, page.getByTestId('data-export-prepare'))
 
   await typeInto(
     page.getByTestId('step-up-code'),
     await waitForMailCode(email, 'Confirm it is you'),
   )
-  await clickSubmit(page.getByTestId('data-export-confirm'))
+  await clickSubmit(expect, page.getByTestId('data-export-confirm'))
   await expect(page.getByTestId('data-export-ready')).toBeVisible()
 })
 
 test('confirms an email change with the connected authenticator app', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile/security')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/security')
   const app = await connectFirstApp(page, PASSWORD)
-  await gotoPage(page, '/profile')
-  await clickSubmit(page.getByTestId('profile-email-change'))
+  await gotoPage(expect, page, '/profile')
+  await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
   const { code } = await nextTotpCode(app.secret, app.spent)
   await typeInto(page.getByTestId('step-up-code'), code)
-  await clickSubmit(page.getByTestId('profile-email-step-up-confirm'))
+  await clickSubmit(expect, page.getByTestId('profile-email-step-up-confirm'))
   await expect(page.getByTestId('profile-email-send-current')).toBeVisible()
 })
 
 test('does not ask twice when email change starts with its own address code', async ({
   page,
 }) => {
-  await registerEmailOnly(page)
-  await clickSubmit(page.getByTestId('profile-email-change'))
+  await registerEmailOnly(expect, page)
+  await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
   await expect(page.getByTestId('step-up')).toHaveCount(0)
   await expect(page.getByTestId('profile-email-send-current')).toBeVisible()
@@ -87,16 +86,19 @@ test('confirms adding a way in once and lets the next add through without a step
   page,
 }) => {
   await addVirtualAuthenticator(page)
-  await signUp(page)
-  await gotoPage(page, '/profile/sign-in')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/sign-in')
 
   // Adding a way in is a protected operation (HIL-1138): the dialog opens on
   // the confirmation step, and the device key is offered only past it.
-  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
   await expect(page.getByTestId('profile-passkey-add')).toHaveCount(0)
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
-  await clickSubmit(page.getByTestId('profile-passkey-add'))
+  await clickSubmit(
+    expect,
+    page.getByTestId('profile-sign-in-add-step-up-confirm'),
+  )
+  await clickSubmit(expect, page.getByTestId('profile-passkey-add'))
   await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toasts').getByText('Passkey added.'),
@@ -104,7 +106,7 @@ test('confirms adding a way in once and lets the next add through without a step
 
   // The confirmation lives on the operation for its lifetime: the next add in
   // this browser opens straight at the chooser.
-  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
   await expect(page.getByTestId('profile-sign-in-choose-phone')).toBeVisible()
   await expect(page.getByTestId('step-up')).toHaveCount(0)
 })
@@ -112,43 +114,43 @@ test('confirms adding a way in once and lets the next add through without a step
 test('confirms the first authenticator app with the password and lets a second prove itself', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile/security')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/security')
 
   // The first app is the operation's own step (HIL-1138): the password first,
   // then the name.
-  await clickSubmit(page.getByTestId('profile-2fa-add'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-add'))
   await expect(page.getByTestId('profile-2fa-enroll-label')).toHaveCount(0)
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Work phone')
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   const secret = (
     await page.getByTestId('profile-2fa-enroll-secret').textContent()
   )?.trim()
   const { code } = await nextTotpCode(secret ?? '', totpStep() - 1)
   await typeInto(page.getByTestId('profile-2fa-enroll-code'), code)
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   await page.getByTestId('backup-codes-saved').check()
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   await expect(page.getByTestId('profile-2fa-enroll-more')).toBeVisible()
 
   // "Connect another": the app just connected is the proof the operation's own
   // step asks for, so no confirmation stands before the name - and after the
   // name comes that app's code, as before.
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   await expect(page.getByTestId('profile-2fa-enroll-label')).toBeVisible()
   await expect(page.getByTestId('step-up')).toHaveCount(0)
   await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Tablet')
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-enroll-submit'))
   await expect(page.getByTestId('profile-2fa-proof')).toBeVisible()
 })
 
 test('opens the add-a-way-in dialog at the chooser once an administrator switched its operation off', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/security/2fa/step-up')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/security/2fa/step-up')
   await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(1)
   const operation = shownByTestId(
     page,
@@ -161,13 +163,13 @@ test('opens the add-a-way-in dialog at the chooser once an administrator switche
     switched = true
     await expect(operation).not.toBeChecked()
 
-    await gotoPage(page, '/profile/sign-in')
-    await clickSubmit(page.getByTestId('profile-sign-in-add'))
+    await gotoPage(expect, page, '/profile/sign-in')
+    await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
     await expect(page.getByTestId('profile-sign-in-choose-phone')).toBeVisible()
     await expect(page.getByTestId('step-up')).toHaveCount(0)
   } finally {
     if (switched) {
-      await gotoPage(page, '/hilos/security/2fa/step-up')
+      await gotoPage(expect, page, '/hilos/security/2fa/step-up')
       await operation.click()
       await expect(operation).toBeChecked()
     }
@@ -177,10 +179,10 @@ test('opens the add-a-way-in dialog at the chooser once an administrator switche
 test('skips a protected operation disabled by an administrator', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   // The list lives on its own page under two-factor (HIL-1204): the way in is
   // the child card the two-factor page draws from the catalog.
-  await gotoPage(page, '/hilos/security/2fa')
+  await gotoPage(expect, page, '/hilos/security/2fa')
   await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(0)
   await page.getByTestId('hilos-admin-child-hilos_security_step_up').click()
   await expect(page.getByTestId('hilos-admin-title')).toHaveText(
@@ -201,14 +203,14 @@ test('skips a protected operation disabled by an administrator', async ({
     switched = true
     await expect(operation).not.toBeChecked()
 
-    await gotoPage(page, '/profile/data')
+    await gotoPage(expect, page, '/profile/data')
     await expect(page.getByTestId('profile-data-view')).toBeVisible()
-    await clickSubmit(page.getByTestId('data-export-prepare'))
+    await clickSubmit(expect, page.getByTestId('data-export-prepare'))
     await expect(page.getByTestId('data-export-step-up')).toHaveCount(0)
     await expect(page.getByTestId('data-export-ready')).toBeVisible()
   } finally {
     if (switched) {
-      await gotoPage(page, '/hilos/security/2fa/step-up')
+      await gotoPage(expect, page, '/hilos/security/2fa/step-up')
       await operation.click()
       await expect(operation).toBeChecked()
     }
@@ -232,33 +234,39 @@ test('asks before removing rights once the administrator switches it on', async 
   const revokeSwitch = shownByTestId(page, 'hilos-step-up-switch-revoke_admin')
   let switched = false
   try {
-    await signUpAdmin(page)
-    const person = await signUp(personPage)
-    await gotoPage(page, '/hilos/security/2fa/step-up')
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    await gotoPage(expect, page, '/hilos/security/2fa/step-up')
     await expect(revokeSwitch).not.toBeChecked()
     await revokeSwitch.click()
     switched = true
     await expect(revokeSwitch).toBeChecked()
 
-    await gotoPage(page, `/hilos/user/${person.userId}`)
-    await clickSubmit(page.getByTestId('hilos-user-admin-open'))
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-admin-open'))
     await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
+    )
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
 
     await dismissToasts(page)
-    await clickSubmit(page.getByTestId('hilos-user-admin-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-admin-open'))
     await expect(page.getByTestId('modal')).toContainText("Confirm it's you")
     await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
+    )
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('hilos-toast-success')).toContainText(
       'Admin rights removed',
     )
   } finally {
     if (switched) {
-      await gotoPage(page, '/hilos/security/2fa/step-up')
+      await gotoPage(expect, page, '/hilos/security/2fa/step-up')
       await revokeSwitch.click()
       await expect(revokeSwitch).not.toBeChecked()
     }
@@ -273,7 +281,7 @@ test.describe('in the admin view mode', () => {
     page,
   }) => {
     await setAdminViewMode(true)
-    await gotoPage(page, '/hilos/security/2fa/step-up', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/security/2fa/step-up', PAGE_READY)
     const enabled = shownByTestId(
       page,
       'hilos-step-up-switch-add_sign_in_method',

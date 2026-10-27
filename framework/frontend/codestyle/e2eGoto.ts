@@ -40,10 +40,10 @@ const DEMO_DIRECTORY = 'demo'
 const DEMO_E2E_ROOT = 'tests/e2e'
 
 /**
- * The file that owns the wrappers, and so the one place `goto` is called. Held
- * as a path suffix because each demo carries its own copy of the helper.
+ * Repository-relative path of the shared file that owns the wrappers, and so
+ * the one place `goto` is called.
  */
-const WRAPPER_OWNER = 'helpers/page.ts'
+const WRAPPER_OWNER = 'framework/frontend/e2e/page.ts'
 
 /** The export holding the stand gateway's base address. */
 const STAND_BASE_EXPORT = 'STAND_GATEWAY_URL'
@@ -69,7 +69,7 @@ const SKIPPED_DIRECTORY = 'node_modules'
  * @returns One finished report line per offending call
  */
 export function checkSource(relativePath: string, source: string): string[] {
-  if (relativePath.endsWith(WRAPPER_OWNER)) {
+  if (relativePath === WRAPPER_OWNER) {
     return []
   }
 

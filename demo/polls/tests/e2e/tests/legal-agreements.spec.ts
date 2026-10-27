@@ -1,17 +1,19 @@
 import { test, expect } from '@playwright/test'
-
-import { clickSubmit, signUp } from '../helpers/session.js'
-import { gotoPage } from '../helpers/page.js'
+import {
+  signUp,
+  clickSubmit,
+  gotoPage,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test('reads personal agreements and compares published revisions', async ({
   page,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
     'Terms and privacy accepted',
   )
-  await clickSubmit(page.getByTestId('profile-agreements-open'))
+  await clickSubmit(expect, page.getByTestId('profile-agreements-open'))
   await expect(page.getByTestId('profile-agreements-view')).toBeVisible()
   await expect(page.getByTestId('legal-agreement-row')).toHaveCount(2)
   const terms = page.locator(
@@ -20,17 +22,17 @@ test('reads personal agreements and compares published revisions', async ({
   await expect(terms.getByTestId('legal-agreement-state')).toHaveText(
     /^\s*Revision of 7 October 2026 · accepted /,
   )
-  await clickSubmit(terms.getByTestId('legal-agreement-open'))
+  await clickSubmit(expect, terms.getByTestId('legal-agreement-open'))
   const text = page.getByTestId('legal-revision-text-modal')
   await expect(text).toBeVisible()
   await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(text.getByTestId('legal-revision-clause-deviation')).toHaveCount(
     1,
   )
-  await clickSubmit(page.getByTestId('legal-text-close'))
+  await clickSubmit(expect, page.getByTestId('legal-text-close'))
   await expect(text).toBeHidden()
 
-  await clickSubmit(page.getByTestId('profile-agreements-history-open'))
+  await clickSubmit(expect, page.getByTestId('profile-agreements-history-open'))
   await expect(
     page.getByTestId('profile-agreements-history-view'),
   ).toBeVisible()
@@ -81,7 +83,7 @@ test('reads personal agreements and compares published revisions', async ({
     'current',
   )
 
-  await clickSubmit(substantial.getByTestId('legal-history-compare'))
+  await clickSubmit(expect, substantial.getByTestId('legal-history-compare'))
   const comparison = page.getByTestId('legal-changes-modal')
   await expect(comparison).toBeVisible()
   await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
@@ -95,15 +97,15 @@ test('reads personal agreements and compares published revisions', async ({
   await expect(wide).toContainText('Project deviation')
   await expect(wide).toContainText('This is a demo: its data may be wiped')
 
-  await clickSubmit(page.getByTestId('legal-history-close'))
+  await clickSubmit(expect, page.getByTestId('legal-history-close'))
   await expect(comparison).toBeHidden()
 
   // History text is a separate on-demand action, including old revisions.
-  await clickSubmit(first.getByTestId('legal-history-open'))
+  await clickSubmit(expect, first.getByTestId('legal-history-open'))
   await expect(text).toBeVisible()
   await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
   await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(text).toContainText('kept for 12 months and then deleted')
-  await clickSubmit(page.getByTestId('legal-history-close'))
+  await clickSubmit(expect, page.getByTestId('legal-history-close'))
   await expect(text).toBeHidden()
 })

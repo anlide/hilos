@@ -15,10 +15,6 @@ import {
   submitStatusIncident,
   watchPublicStatus,
   watchStatusFrames,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { armViewerSubmit, setAdminViewMode } from '../helpers/adminViewMode.js'
-import {
   expectDocumentUnchanged,
   expectPageReady,
   expectSelfReload,
@@ -27,7 +23,10 @@ import {
   gotoPublicStatus,
   markDocument,
   PAGE_READY,
-} from '../helpers/page.js'
+  grantAdminToSelf,
+  armViewerSubmit,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   STATUS_FAULT_COMPONENT,
   withPrivateStatusFiles,
@@ -37,7 +36,7 @@ import {
   enterProtectedMode,
   inspectProtectedMode,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode.js'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // Real browser/daemon Status contract. The stand's test-only catalog observes
 // the settings library; production still uses its ordinary Service fallback.
@@ -47,10 +46,10 @@ test.afterEach(() => setAdminViewMode(false))
 test('Status direct load, F5, Dashboard, shared head and Components use complete real page answers', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
   const log = watchStatusFrames(page)
   try {
-    await gotoPage(page, STATUS_PATH, PAGE_READY)
+    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
     await expectStatusHead(expect, page)
     expect(log.overviews.length).toBeGreaterThan(0)
     expect(log.overviews[0]).toMatchObject({
@@ -77,19 +76,19 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     })
     const beforeReload = log.overviews.length
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectStatusHead(expect, page)
     expect(log.overviews.length).toBeGreaterThan(beforeReload)
 
-    await gotoPage(page, '/hilos', PAGE_READY)
+    await gotoPage(expect, page, '/hilos', PAGE_READY)
     const card = page.getByTestId('dashboard-card-hilos_status')
     await expect(card).toContainText(STATUS_LEAD)
     await expect(card).toHaveAttribute('href', STATUS_PATH)
     await card.click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectStatusHead(expect, page)
     await page.getByTestId('hilos-status-components-link').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(new RegExp(`${STATUS_COMPONENTS_PATH}$`))
     await expectStatusHead(expect, page, true)
     expect(log.components[0]).toHaveProperty('rows')
@@ -124,10 +123,10 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     await filter.getByTestId('hilos-dropdown-option-0').click()
     await expect(component).toBeVisible()
     await page.getByTestId('hilos-page-tab-hilos_status').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
     await page.getByTestId('hilos-status-settings-link').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/hilos\/settings$/)
   } finally {
     log.stop()
@@ -141,7 +140,7 @@ test(
   async ({ page, browser, baseURL }) => {
     // Two independent administrator sessions, the real roster fanout and recovery.
     test.slow()
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const otherContext = await browser.newContext({
       baseURL,
       ignoreHTTPSErrors: true,
@@ -152,9 +151,9 @@ test(
     const log = watchStatusFrames(page)
     const echo = watchStatusFrames(other)
     try {
-      await grantAdminToSelf(other)
-      await gotoPage(page, STATUS_PATH, PAGE_READY)
-      await gotoPage(other, STATUS_PATH, PAGE_READY)
+      await grantAdminToSelf(expect, other)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await gotoPage(expect, other, STATUS_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await markDocument(other)
       await withStatusAgentLoss(workers, log, async () => {
@@ -221,7 +220,7 @@ test(
           publishedAt: null,
           suppressedAt: expect.any(Number),
         })
-        await expectDocumentUnchanged(other)
+        await expectDocumentUnchanged(expect, other)
       })
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await expect(other.getByTestId('hilos-status-operational')).toBeVisible()
@@ -250,7 +249,7 @@ test(
   async ({ page, browser, baseURL }) => {
     // The real stop/collector path, mutation acks, viewer delivery and recovery.
     test.slow()
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     await setAdminViewMode(true)
     const viewerContext = await browser.newContext({
       baseURL,
@@ -265,8 +264,8 @@ test(
     const text = `<b>Status ${Date.now()}</b> & plain text`
     let incidentId: number | undefined
     try {
-      await gotoPage(page, STATUS_PATH, PAGE_READY)
-      await gotoPage(viewer, STATUS_PATH, PAGE_READY)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await gotoPage(expect, viewer, STATUS_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
       await markDocument(viewer)
@@ -371,8 +370,8 @@ test(
         expect(deliveryObject(wire.data)).not.toHaveProperty('errorType')
       }
       expect(log.latest()).toEqual(before)
-      await expectDocumentUnchanged(viewer)
-      await gotoPage(viewer, STATUS_COMPONENTS_PATH, PAGE_READY)
+      await expectDocumentUnchanged(expect, viewer)
+      await gotoPage(expect, viewer, STATUS_COMPONENTS_PATH, PAGE_READY)
       await expectStatusHead(expect, viewer, true)
       await expect(
         shownByTestId(
@@ -405,7 +404,7 @@ test(
   { tag: '@quarantine:F-040' },
   async ({ page, browser, baseURL }) => {
     test.slow() // Independent guest, real worker pause/collector and recovery.
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const guestContext = await browser.newContext({
       baseURL,
       ignoreHTTPSErrors: true,
@@ -416,8 +415,8 @@ test(
     const admin = watchStatusFrames(page)
     const log = watchPublicStatus(guest)
     try {
-      await gotoPage(page, STATUS_PATH, PAGE_READY)
-      await gotoPublicStatus(guest)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await gotoPublicStatus(expect, guest)
       const before = await expectPublicStatusPair(
         expect,
         guest,
@@ -511,7 +510,7 @@ test(
   { tag: '@quarantine:F-041' },
   async ({ page, browser, baseURL }) => {
     test.slow() // Real loss/publication, heartbeat polling and two independent guests.
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const guestContext = await browser.newContext({
       baseURL,
       ignoreHTTPSErrors: true,
@@ -535,8 +534,8 @@ test(
     let detectedAt: number | undefined
     const recovery: Record<string, number> = {}
     try {
-      await gotoPage(page, STATUS_PATH, PAGE_READY)
-      await gotoPublicStatus(guest)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await gotoPublicStatus(expect, guest)
       await expect(guest.getByTestId('conn-state')).toHaveText('connected')
       await expectPublicStatusPair(
         expect,
@@ -673,7 +672,7 @@ test(
           useInnerText: true,
         },
       )
-      await expectDocumentUnchanged(guest)
+      await expectDocumentUnchanged(expect, guest)
 
       // Release just after a completed poll. A new GET before that poll's next
       // eligibility proves the usable-socket transition triggered the reread.
@@ -692,7 +691,7 @@ test(
       await expect(guest.getByTestId('public-status-connection')).toHaveCount(0)
 
       await coldSocket.hold()
-      await gotoPublicStatus(cold)
+      await gotoPublicStatus(expect, cold)
       await expectPublicStatusPair(expect, cold, coldLog, ({ status }) =>
         status.outages.some(
           (outage) =>
@@ -758,7 +757,7 @@ test(
     const evidence: Array<Record<string, unknown>> = []
     let enteredAt = 0
     try {
-      await gotoPublicStatus(page)
+      await gotoPublicStatus(expect, page)
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
       const initial = await expectPublicStatusPair(
         expect,
@@ -786,14 +785,14 @@ test(
       expect(active.stoppedAgents).not.toContain('hilos_status')
       evidence.push({ at: enteredAt, phase: active })
 
-      await gotoMaintenance(guarded, '/hilos')
+      await gotoMaintenance(expect, guarded, '/hilos')
       const link = guarded.getByTestId('maintenance-service-status')
       await expect(link).toHaveAttribute('href', '/status')
       await expect(link).toHaveText('Service status')
       await markDocument(guarded)
       await guardedSocket.drop()
       await link.click()
-      await expectSelfReload(guarded)
+      await expectSelfReload(guarded, test.info().project.use.navigationTimeout)
       await expect(guarded).toHaveURL(/\/status$/)
       await expect(guarded.getByTestId('maintenance')).toHaveCount(0)
       await expectPublicStatusPair(expect, guarded, guardedLog, ({ status }) =>
@@ -850,7 +849,7 @@ test(
 
       // Independent, never-welcomed visitor arrives after the stale boundary.
       await coldSocket.hold()
-      await gotoPublicStatus(cold)
+      await gotoPublicStatus(expect, cold)
       await expectPublicStatusPair(
         expect,
         cold,
@@ -882,7 +881,11 @@ test(
         } finally {
           await openProtectedModeIfAny()
         }
-        if (frozen) await expectSelfReload(page)
+        if (frozen)
+          await expectSelfReload(
+            page,
+            test.info().project.use.navigationTimeout,
+          )
         expect((await inspectProtectedMode()).phase).toBe('inactive')
         await expectPublicStatusPair(expect, page, log, ({ status }) =>
           status.components.every(

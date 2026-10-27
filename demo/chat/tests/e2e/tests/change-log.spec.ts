@@ -20,16 +20,18 @@ import {
   forwardSessionTimeZone,
   shownByTestId,
   watchChangeLogDisplay,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, signUp, typeInto } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 test('opens Change Log from the admin dashboard with its overview and feed', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos')
 
   await expectChangeLogDashboardCard(expect, page)
   await page.getByTestId('dashboard-card-hilos_change_log').click()
@@ -48,16 +50,21 @@ test(
     })
     const personPage = await personContext.newPage()
     try {
-      const adminId = await signUpAdmin(page)
-      const person = await signUp(personPage)
-      await gotoPage(page, `/hilos/user/${person.userId}`)
-      await clickSubmit(page.getByTestId('hilos-user-block-open'))
+      const adminId = await signUpAdmin(expect, page, {
+        entryId: 'message-signin',
+      })
+      const person = await signUp(expect, personPage)
+      await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+      await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
       await expect(page.getByTestId('modal')).toBeVisible()
-      await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-user-lifecycle-confirm'),
+      )
       await expect(page.getByTestId('modal')).toBeHidden()
       await dismissToasts(page)
 
-      await gotoPage(page, CHANGE_LOG_PATH)
+      await gotoPage(expect, page, CHANGE_LOG_PATH)
       await chooseChangeLogFeedTable(page, 'hilos_user')
       await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
       const { rowKey, receiptId } = await expectChangeLogFeedRow(
@@ -90,13 +97,13 @@ test(
 test('its registration receipt shows person and identity creation as facts without personal values', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   // The zone the browser names at sign-up rides the registration's receipt, so
   // the feed sums the person's entries without a key: the history names it.
-  await gotoPage(page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
+  await gotoPage(expect, page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
   await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId))
   const receiptId = await expectRegistrationHistory(expect, page)
-  await gotoPage(page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_PATH)
   const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
   await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
   await expectChangeLogReceiptOpen(expect, page, receiptId)
@@ -115,10 +122,16 @@ test.describe('Change Log reader time zone', () => {
     // still supplies the receipt and feed; backend zone writes are HIL-1580.
     const socket = await forwardSessionTimeZone(page, 'Europe/Kyiv')
     try {
-      const userId = await signUpAdmin(page)
-      await gotoPage(page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
+      const userId = await signUpAdmin(expect, page, {
+        entryId: 'message-signin',
+      })
+      await gotoPage(
+        expect,
+        page,
+        `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`,
+      )
       const receiptId = await expectRegistrationHistory(expect, page)
-      await gotoPage(page, CHANGE_LOG_PATH)
+      await gotoPage(expect, page, CHANGE_LOG_PATH)
       const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
       await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
       await expectChangeLogReceiptOpen(expect, page, receiptId)

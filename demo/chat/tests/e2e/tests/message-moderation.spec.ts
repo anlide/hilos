@@ -5,13 +5,15 @@ import {
   openBell,
   setCustomSetting,
   unreadBadge,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
+  signUpJoined,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { signUpAdmin } from '../helpers/adminGrant'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { signUpJoined } from '../helpers/notifications'
-import { gotoPage } from '../helpers/page'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — chat's moderator judging a message
 
@@ -34,14 +36,14 @@ test('a rejected message stays out of the room and its author is told', async ({
 }) => {
   // A cold load after sign-up, so the socket has joined the author's notification
   // group before the verdict raises the notification (see signUpJoined).
-  await signUpJoined(page)
+  await signUpJoined(expect, page, { entryId: 'message-signin' })
 
   const key = modelKey()
   const text = `a message the model refuses ${key}`
   await dictateModerationVerdict(key, false, 'spam')
 
   await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   // The banner is the settled state: the verdict is applied in one step, and the
   // refusal branch publishes nothing — so the room is judged only after it.
@@ -66,7 +68,7 @@ test('a rejected message stays out of the room and its author is told', async ({
 test('a message nobody dictated a verdict for comes back as moderation unavailable', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   // No verdict is dictated: the model refuses the call with a 503, which for the
   // product is a model that is not answering.
@@ -74,7 +76,7 @@ test('a message nobody dictated a verdict for comes back as moderation unavailab
   const text = `a message nobody moderates ${key}`
 
   await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Moderation is unavailable right now. Your message is still here.',
@@ -88,14 +90,14 @@ test('a message nobody dictated a verdict for comes back as moderation unavailab
 test('a message refused without a reason shows generic message rejection and preserves draft', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
   const key = modelKey()
   const text = `a message blocked without category ${key}`
   await dictateModerationVerdict(key, false, 'blocked')
 
   await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
+  await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
     'Message rejected.',
@@ -112,14 +114,14 @@ test('a saved invalid moderation model is refused then a restored model handles 
 }) => {
   // Registration, two settings writes, and two moderation rounds outlive the base test cap.
   test.slow()
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const settingKey = 'chat_moderation_model'
   const key = modelKey()
   const text = `moderation after changing the model ${key}`
   let changed = false
 
   try {
-    await gotoPage(page, '/hilos/settings')
+    await gotoPage(expect, page, '/hilos/settings')
     await typeInto(page.getByTestId('hilos-table-search'), settingKey)
     await expect(
       page.getByTestId(`hilos-table-row-${settingKey}`),
@@ -131,9 +133,9 @@ test('a saved invalid moderation model is refused then a restored model handles 
     changed = true
     await dictateModerationVerdict(key, true, 'ok')
 
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     await typeInto(page.getByTestId('message-input'), text)
-    await clickSubmit(page.getByTestId('message-send'))
+    await clickSubmit(expect, page.getByTestId('message-send'))
     await expect(page.getByTestId('moderation-text')).toHaveText(
       'Moderation is unavailable right now. Your message is still here.',
     )
@@ -141,7 +143,7 @@ test('a saved invalid moderation model is refused then a restored model handles 
       page.getByTestId('event-text').filter({ hasText: key }),
     ).toHaveCount(0)
 
-    await gotoPage(page, '/hilos/settings')
+    await gotoPage(expect, page, '/hilos/settings')
     await typeInto(page.getByTestId('hilos-table-search'), settingKey)
     await expect(
       page.getByTestId(`hilos-table-row-${settingKey}`),
@@ -149,19 +151,19 @@ test('a saved invalid moderation model is refused then a restored model handles 
     await clearCustomSetting(page, settingKey)
     changed = false
 
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     await typeInto(page.getByTestId('message-input'), text)
     // The first submit's re-send lockout survives navigation; await its control state.
     await expect(page.getByTestId('message-send')).toBeEnabled({
       timeout: 20_000,
     })
-    await clickSubmit(page.getByTestId('message-send'))
+    await clickSubmit(expect, page.getByTestId('message-send'))
     await expect(
       page.getByTestId('event-text').filter({ hasText: key }),
     ).toHaveCount(1)
   } finally {
     if (changed) {
-      await gotoPage(page, '/hilos/settings')
+      await gotoPage(expect, page, '/hilos/settings')
       await typeInto(page.getByTestId('hilos-table-search'), settingKey)
       await expect(
         page.getByTestId(`hilos-table-row-${settingKey}`),

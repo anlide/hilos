@@ -3,13 +3,16 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
 import {
+  PASSWORD,
   connectFirstApp,
   enableEmailChannel,
+  clickSubmit,
+  gotoAuthReturn,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { waitForMailTo } from '../helpers/mail.js'
-import { gotoAuthReturn, gotoPage } from '../helpers/page.js'
-import { clickSubmit, PASSWORD, signUp } from '../helpers/session.js'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import { signUp } from '../helpers/session.js'
 
 /** The subject of the notice that a removal was asked for. */
 const RESET_REQUESTED_SUBJECT = 'Removal of two-step verification requested'
@@ -34,15 +37,15 @@ test('announces a removal by mail, and its link cancels it without signing in', 
   // The notice is mandatory, yet it still rides only a channel the stand has
   // switched on, to an address the person has proven there.
   const admin = await freshPage(browser)
-  await signUpAdmin(admin)
-  await gotoPage(admin, '/hilos/communications')
+  await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+  await gotoPage(expect, admin, '/hilos/communications')
   await enableEmailChannel(admin)
-  const user = await signUp(page)
-  await gotoPage(page, '/profile/security')
+  const user = await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/security')
   await connectFirstApp(page, PASSWORD)
 
-  await clickSubmit(page.getByTestId('profile-2fa-reset-request'))
-  await clickSubmit(page.getByTestId('profile-2fa-reset-submit'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-reset-request'))
+  await clickSubmit(expect, page.getByTestId('profile-2fa-reset-submit'))
   await expect(page.getByTestId('profile-2fa-reset-pending')).toBeVisible()
 
   const mail = await waitForMailTo(user.email, RESET_REQUESTED_SUBJECT)
@@ -52,6 +55,7 @@ test('announces a removal by mail, and its link cancels it without signing in', 
 
   const stranger = await freshPage(browser)
   await gotoAuthReturn(
+    expect,
     stranger,
     `${url.pathname}${url.search}`,
     'auth-second-factor-cancel',

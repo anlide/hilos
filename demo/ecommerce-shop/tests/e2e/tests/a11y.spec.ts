@@ -5,17 +5,17 @@ import {
   DAEMON_NODE_TABS,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({
   page,
 }) => {
   // Each addressed page is a real subscription opened from the keyboard.
   test.slow()
-  await grantAdminToSelf(page)
-  await gotoPage(page, DAEMON_NODE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, DAEMON_NODE_PATH)
   await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', 'standalone', {
     showLogLinks: false,
   })

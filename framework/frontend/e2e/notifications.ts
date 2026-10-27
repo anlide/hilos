@@ -1,12 +1,13 @@
-import type { Locator, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 
+import { gotoPage } from './page.js'
+import { signUp } from './session.js'
 import { shownByTestId } from './table.js'
 
 // Notification steps shared by all three SDKs, whose data-id controls match. They
 // drive the framework's own screens — the bell a demo mounts in its header slot
 // (HilosNotificationBell) and the communications hub — so they read the same in
-// any demo. What stays with a demo is how a notification is made to exist (the
-// emit over its daemon's command channel) and how somebody signs in.
+// any demo. The scenario that raises and receives a notification stays in its spec.
 
 /** `data-id` of the bell's toggle, which opens its dropdown. */
 const BELL_TOGGLE = 'hilos-notification-toggle'
@@ -19,6 +20,30 @@ const BELL_BADGE = 'hilos-notification-badge'
 
 /** `data-id` of the email channel's switch on the communications hub. */
 const EMAIL_CHANNEL_SWITCH = 'hilos-channel-enabled-email'
+
+/**
+ * Sign up and reload onto a page whose socket has joined the notification group.
+ *
+ * On a cold load bootHilos binds the notification scope before the page scope
+ * and holds the page subscribe until the handshake answers. The group join is
+ * therefore written ahead of the page subscribe, so its settled answer proves
+ * the daemon processed the join. Registration also proves the email address.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page Page starting anonymous.
+ * @param options The entry control used to open sign-in.
+ * @returns The registered address and the account's durable user id.
+ */
+export async function signUpJoined(
+  expect: Expect,
+  page: Page,
+  options: { entryId?: string } = {},
+): Promise<{ email: string; userId: number }> {
+  const { email, userId } = await signUp(expect, page, options)
+  await gotoPage(expect, page, '/')
+
+  return { email, userId }
+}
 
 /**
  * Opens the bell's dropdown so its rows are on screen.

@@ -1,19 +1,25 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { switchLanguageOff, switchLocaleOn } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import {
+  switchLanguageOff,
+  switchLocaleOn,
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('switches on a language without a countryless locale', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOff('de')
-  await gotoPage(page, '/hilos/i18n/languages/de', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/de', PAGE_READY)
   await expect(page.getByTestId('language-card-enabled')).toHaveText('Disabled')
 
   const opener = page.getByTestId('language-card-switch-on')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   await expect(page.getByTestId('language-card-switch-on-locale')).toHaveText(
     'not created',
@@ -23,7 +29,7 @@ test('switches on a language without a countryless locale', async ({
   ).toBeVisible()
 
   const confirm = page.getByTestId('language-card-switch-on-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
@@ -37,14 +43,14 @@ test('switches on a language without a countryless locale', async ({
 test('switches on a language with its countryless locale on', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchLanguageOff('es')
   await switchLocaleOn('es')
-  await gotoPage(page, '/hilos/i18n/languages/es', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/es', PAGE_READY)
   await expect(page.getByTestId('language-card-enabled')).toHaveText('Disabled')
 
   const opener = page.getByTestId('language-card-switch-on')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   await expect(page.getByTestId('language-card-switch-on-locale')).toHaveText(
     'switched on',
@@ -54,7 +60,7 @@ test('switches on a language with its countryless locale on', async ({
   )
 
   const confirm = page.getByTestId('language-card-switch-on-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('language-card-enabled')).toHaveText('Enabled')

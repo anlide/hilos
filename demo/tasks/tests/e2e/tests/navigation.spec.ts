@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { grantAdminToSelf } from '../helpers/adminGrant'
+import { grantAdminToSelf } from '../../../../../framework/frontend/e2e/index.js'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
 // and the brand moves back home through the core navigator (HilosRouter),
@@ -14,7 +14,7 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
   // leaves the browser on the main page with the socket up — where this walk
   // begins — so the load counter starts right after it and every later
   // transition has to stay inside that same document.
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   let fullLoads = 0
   page.on('load', () => {

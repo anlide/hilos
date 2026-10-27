@@ -8,10 +8,12 @@ import {
   shownByTestId,
   watchSocketFrames,
   type SocketFrame,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
 import { FOLLOWED_STREAM } from '../helpers/logs.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 /** Wire key of the framework users table, the one table of the `/hilos/users` page. */
 const HILOS_USERS_TABLE = 'hilosUsers'
@@ -31,8 +33,8 @@ test('navigates the admin tree with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(page)
-  await gotoPage(page, '/')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const loadsAfterColdLoad = fullLoads
 
@@ -104,19 +106,19 @@ test('navigates the admin tree with no reload or reconnect', async ({
   expect(fullLoads).toBe(loadsAfterColdLoad)
 
   // Cold entry, F5 and history use the same owner without extending its crumbs.
-  await gotoPage(page, viewerPath, PAGE_READY)
+  await gotoPage(expect, page, viewerPath, PAGE_READY)
   await expectLogsPageHead(expect, page, 'hilos_logs_view')
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectLogsPageHead(expect, page, 'hilos_logs_view')
   await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
   await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
   await page.goBack()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
   await expectLogsPageHead(expect, page, 'hilos_logs_view')
   await page.goForward()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
   await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
 })
@@ -126,8 +128,8 @@ test('navigates the admin tree with no reload or reconnect', async ({
 test('cold-loads a parametrized admin page through the framework shell', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/communications/email/deliveries')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expectCommunicationsChannelHead(expect, page, 'deliveries')
 
@@ -178,8 +180,8 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   }
   const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
 
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(

@@ -6,26 +6,27 @@ import {
   expectChangeLogReference,
   expectTrackedTablesPage,
   shownByTestId,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
 
 test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos')
   await page.getByTestId('dashboard-card-hilos_change_log').click()
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Change Log')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   // Section cards belong to HilosAdminPage; dashboard-card names only root cards.
   const card = page.getByTestId('hilos-admin-child-hilos_change_log_tables')
   await expect(card).toBeVisible()
   await expect(card).toContainText(CHANGE_LOG_TABLES_LEAD)
   await card.focus()
   await page.keyboard.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectTrackedTablesPage(expect, page)
   const search = shownByTestId(page, 'hilos-table-search')
   // The live table set is paginated; search by its complete name to reach the row.
@@ -39,14 +40,14 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     '/hilos/change-log/tables/hilos_user',
   )
   await open.click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('hilos-admin-title')).toHaveText(
     'Tracked table',
   )
   await expect(page.getByTestId('hilos-change-log-table-header')).toContainText(
     'hilos_user',
   )
-  await gotoPage(page, CHANGE_LOG_TABLES_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_TABLES_PATH)
 
   await expectChangeLogReference(expect, page)
   const noiseTable = page.getByRole('table', {

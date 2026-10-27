@@ -1,17 +1,20 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { switchCountryOff } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { switchCountryOff } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('switches on a known country from its card', async ({ page }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchCountryOff('ca')
-  await gotoPage(page, '/hilos/i18n/countries/ca', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/ca', PAGE_READY)
   await expect(page.getByTestId('country-card-enabled')).toHaveText('Disabled')
 
   const opener = page.getByTestId('country-card-switch-on')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   await expect(page.locator('.modal-title')).toHaveText(
     'Switch on country · Canada',
@@ -21,7 +24,7 @@ test('switches on a known country from its card', async ({ page }) => {
   )
 
   const confirm = page.getByTestId('country-card-switch-on-confirm')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(

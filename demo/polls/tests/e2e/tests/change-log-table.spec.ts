@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  signUp,
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_PATH,
   chooseChangeLogFeedTable,
@@ -12,10 +13,11 @@ import {
   expectTrackedTableWhole,
   shownByTestId,
   tableRowKeyByText,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, signUp, typeInto } from '../helpers/session.js'
 
 test('follows a block receipt to the history of its record and back to the whole table', async ({
   browser,
@@ -28,16 +30,16 @@ test('follows a block receipt to the history of its record and back to the whole
   })
   const personPage = await personContext.newPage()
   try {
-    const adminId = await signUpAdmin(page)
-    const person = await signUp(personPage)
-    await gotoPage(page, `/hilos/user/${person.userId}`)
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    const adminId = await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await dismissToasts(page)
 
-    await gotoPage(page, CHANGE_LOG_PATH)
+    await gotoPage(expect, page, CHANGE_LOG_PATH)
     await chooseChangeLogFeedTable(page, 'hilos_user')
     await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
     const { rowKey, receiptId } = await expectChangeLogFeedRow(

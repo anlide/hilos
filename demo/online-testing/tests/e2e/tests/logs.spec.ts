@@ -3,10 +3,10 @@ import { test, expect } from '@playwright/test'
 import {
   setCustomSetting,
   shownByTestId,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
 
 // Hilos logs admin e2e for the online-testing demo: activating the framework logs feature
 // (six pages, the section agent with the per-node store and the cluster
@@ -24,11 +24,11 @@ import { typeInto } from '../helpers/session.js'
 test('renders every screen of the logs section over the live socket', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   // The section root: the shell's cards to the child pages plus the overview's own
   // tiles beneath them.
-  await gotoPage(page, '/hilos/logs')
+  await gotoPage(expect, page, '/hilos/logs')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
   await expect(page.getByTestId('hilos-admin-children')).toBeVisible()
@@ -38,7 +38,7 @@ test('renders every screen of the logs section over the live socket', async ({
   // The three windowed lists. Each is served by its own browser table, registered
   // against its page on the backend; the rows depend on what the stand has logged,
   // so the assertion is on the table and not on its contents.
-  await gotoPage(page, '/hilos/logs/keys')
+  await gotoPage(expect, page, '/hilos/logs/keys')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By key')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-table-title')).toHaveText('Log streams')
@@ -47,7 +47,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
   await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
 
-  await gotoPage(page, '/hilos/logs/workers')
+  await gotoPage(expect, page, '/hilos/logs/workers')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By worker')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-table-title')).toHaveText(
@@ -63,7 +63,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await page.getByTestId('hilos-table-filter-reset').click()
   await expect(page.getByTestId('hilos-table-filter-reset')).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/logs/rotations')
+  await gotoPage(expect, page, '/hilos/logs/rotations')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Rotations')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-rotation-settings')).toBeVisible()
@@ -93,7 +93,7 @@ test('renders every screen of the logs section over the live socket', async ({
 
   // The viewer: the address is three slots, the stream is never guessed, and the
   // pane is there with the read controls around it.
-  await gotoPage(page, '/hilos/logs/view')
+  await gotoPage(expect, page, '/hilos/logs/view')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Viewer')
   await expect(page.getByTestId('hilos-log-source')).toBeVisible()
   await expect(page.getByTestId('hilos-log-stream')).toBeVisible()
@@ -109,7 +109,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-log-empty-unchosen')).toBeVisible()
 
   // The logging modes screen and the way out of it into the general settings.
-  await gotoPage(page, '/hilos/logs/settings')
+  await gotoPage(expect, page, '/hilos/logs/settings')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
   await expect(
     page.getByTestId('hilos-setting-preset-settings-link'),
@@ -135,7 +135,7 @@ test('renders every screen of the logs section over the live socket', async ({
   // the mode is edited by hand on the general settings screen, as the mockup has it —
   // the retention age, which only changes which batches are suggested for takeout.
   const retentionKey = 'logs.archive_retention.max_age_seconds'
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await typeInto(page.getByTestId('hilos-table-search'), retentionKey)
   await expect(
     page.getByTestId(`hilos-table-row-${retentionKey}`),
@@ -143,7 +143,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await setCustomSetting(page, retentionKey, '1209600')
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/logs/settings')
+  await gotoPage(expect, page, '/hilos/logs/settings')
   await expect(
     page.getByTestId('hilos-setting-preset-differences'),
   ).toBeVisible()

@@ -6,14 +6,15 @@ import {
   expectNoOtherLanguageNames,
   i18nNameRow,
   shownByTestId,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   clearLanguageNamesFixture,
   seedLanguageNamesFixture,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 const NAMES_PATH = '/hilos/i18n/languages/qv/names'
 const WINDOW = 'i18n-language-name-delete-window'
@@ -22,7 +23,7 @@ const CANCEL = 'i18n-language-name-delete-cancel'
 
 /** Open the fixture's names and its corrections using the native row chevron. */
 async function openNames(page: Page): Promise<void> {
-  await gotoPage(page, NAMES_PATH, PAGE_READY)
+  await gotoPage(expect, page, NAMES_PATH, PAGE_READY)
   await expectLanguagePageHead(expect, page, {
     code: 'qv',
     nativeName: 'HIL-1490 target',
@@ -33,6 +34,7 @@ async function openNames(page: Page): Promise<void> {
     'Fixture base',
   )
   await clickSubmit(
+    expect,
     i18nNameRow(page, 'language', 'qw').getByTestId(/^hilos-table-expand-/),
   )
   await expect(
@@ -43,7 +45,7 @@ async function openNames(page: Page): Promise<void> {
 
 /** Confirm through the UI and await the tracked reply before checking the subscription. */
 async function confirmDelete(page: Page, message: string): Promise<void> {
-  await clickSubmit(page.getByTestId(CONFIRM))
+  await clickSubmit(expect, page.getByTestId(CONFIRM))
   await expect(page.getByTestId(WINDOW)).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toast-success').filter({ hasText: message }),
@@ -53,7 +55,7 @@ async function confirmDelete(page: Page, message: string): Promise<void> {
 /** Prove cleanup before the empty names spec follows this fixture. */
 async function clearNames(page: Page): Promise<void> {
   await clearLanguageNamesFixture()
-  await gotoPage(page, '/hilos/i18n/languages/en/names', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/names', PAGE_READY)
   await expectNoOtherLanguageNames(expect, page)
 }
 
@@ -66,10 +68,10 @@ test('cancels then deletes a base name and all corrections live in both windows'
   const observer = await context.newPage()
   const overview = await context.newPage()
   try {
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
     await openNames(observer)
-    await gotoPage(overview, '/hilos/i18n/languages/qv', PAGE_READY)
+    await gotoPage(expect, overview, '/hilos/i18n/languages/qv', PAGE_READY)
     await expect(
       overview.getByTestId('language-overview-name-count'),
     ).toHaveText('1')
@@ -81,13 +83,13 @@ test('cancels then deletes a base name and all corrections live in both windows'
     await expect(trash).toHaveAccessibleName(
       'Delete language name in HIL-1490 writing',
     )
-    await clickSubmit(trash)
+    await clickSubmit(expect, trash)
     await expect(page.getByTestId('modal')).toBeFocused()
     await expect(page.getByTestId(WINDOW)).toContainText(
       'All locale corrections of this base name will also be deleted.',
     )
     await expect(page.getByTestId(WINDOW)).toContainText('HIL-1490 target')
-    await clickSubmit(page.getByTestId(CANCEL))
+    await clickSubmit(expect, page.getByTestId(CANCEL))
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(trash).toBeFocused()
     await expect(i18nNameRow(page, 'language', 'qw')).toContainText(
@@ -98,8 +100,8 @@ test('cancels then deletes a base name and all corrections live in both windows'
     ).toContainText('Fixture correction')
 
     // Both dialogs hold the same row before the first window deletes it.
-    await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qw'))
-    await clickSubmit(trash)
+    await clickSubmit(expect, shownByTestId(observer, 'i18n-names-delete-qw'))
+    await clickSubmit(expect, trash)
     await confirmDelete(
       page,
       'Name of HIL-1490 target (qv) in HIL-1490 writing (qw) deleted.',
@@ -129,7 +131,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
     await expect(
       observer.getByTestId('i18n-language-name-delete-notice'),
     ).toContainText('The name no longer exists.')
-    await clickSubmit(observer.getByTestId(CANCEL))
+    await clickSubmit(expect, observer.getByTestId(CANCEL))
   } finally {
     await overview.close()
     await observer.close()
@@ -148,10 +150,10 @@ test('removes one correction and then the saved empty correction, with a live mi
   const observer = await context.newPage()
   const overview = await context.newPage()
   try {
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openNames(page)
     await openNames(observer)
-    await gotoPage(overview, '/hilos/i18n/languages/qv', PAGE_READY)
+    await gotoPage(expect, overview, '/hilos/i18n/languages/qv', PAGE_READY)
     await expect(
       overview.getByTestId('language-overview-name-count'),
     ).toHaveText('1')
@@ -161,7 +163,7 @@ test('removes one correction and then the saved empty correction, with a live mi
     const live = await watchI18nLivePages(expect, [page, observer, overview])
     const trash = shownByTestId(page, 'i18n-names-delete-qw-GB')
     await expect(trash).toHaveAccessibleName('Remove locale correction qw-GB')
-    await clickSubmit(trash)
+    await clickSubmit(expect, trash)
     await expect(page.getByTestId('modal')).toBeFocused()
     await expect(page.getByTestId(WINDOW)).toContainText('Fixture correction')
     await expect(page.getByTestId(WINDOW)).toContainText(
@@ -170,7 +172,7 @@ test('removes one correction and then the saved empty correction, with a live mi
     await page.getByTestId('modal').press('Escape')
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
     await expect(trash).toBeFocused()
-    await clickSubmit(trash)
+    await clickSubmit(expect, trash)
     await confirmDelete(
       page,
       'Correction qw-GB of the name of HIL-1490 target (qv) removed.',
@@ -190,12 +192,15 @@ test('removes one correction and then the saved empty correction, with a live mi
       await live.unchanged()
     }
     await dismissToasts(page)
-    await clickSubmit(shownByTestId(page, 'i18n-names-delete-qw-US'))
+    await clickSubmit(expect, shownByTestId(page, 'i18n-names-delete-qw-US'))
     await expect(page.getByTestId(WINDOW)).toContainText('Empty value')
     await expect(page.getByTestId(WINDOW)).toContainText(
       'A saved empty string, not an absent name.',
     )
-    await clickSubmit(shownByTestId(observer, 'i18n-names-delete-qw-US'))
+    await clickSubmit(
+      expect,
+      shownByTestId(observer, 'i18n-names-delete-qw-US'),
+    )
     await confirmDelete(
       observer,
       'Correction qw-US of the name of HIL-1490 target (qv) removed.',
@@ -209,15 +214,17 @@ test('removes one correction and then the saved empty correction, with a live mi
       page.getByTestId('i18n-language-name-delete-notice-slot'),
     ).toHaveAttribute('aria-live', 'polite')
     await clickSubmit(
+      expect,
       page.getByTestId('i18n-language-name-delete-notice-details'),
     )
     await expect(
       page.getByTestId('i18n-language-name-delete-notice-full'),
     ).toContainText('The name no longer exists.')
     await clickSubmit(
+      expect,
       page.getByTestId('i18n-language-name-delete-notice-close'),
     )
-    await clickSubmit(page.getByTestId(CANCEL))
+    await clickSubmit(expect, page.getByTestId(CANCEL))
     for (const tab of [page, observer]) {
       await expect(shownByTestId(tab, 'i18n-names-inherit-qw-US')).toHaveText(
         'as in “HIL-1490 writing”',

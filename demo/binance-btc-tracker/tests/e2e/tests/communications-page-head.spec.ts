@@ -11,10 +11,12 @@ import {
   shownByTestId,
   watchDeliveryFrames,
   watchTableSearch,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  grantAdminToSelf,
+  sessionToken,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { typeInto } from '../helpers/session.js'
 
 const OVERVIEW = 'hilos_communications_channel'
 const CONFIGURATION = 'hilos_communications_channel_configuration'
@@ -23,15 +25,15 @@ const DELIVERIES = 'hilos_communications_deliveries'
 test('Configure opens Configuration and channel links bind the real Email and Sms names', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications')
   for (const [channel, label] of [
     ['email', 'Email'],
     ['sms', 'Sms'],
     ['email', 'Email'],
   ] as const) {
     await shownByTestId(page, `hilos-channel-configure-${channel}`).click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(
       `/hilos/communications/${channel}/configuration`,
     )
@@ -46,7 +48,7 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
     await expect(page.getByTestId('hilos-channel-test')).toHaveCount(0)
 
     await page.getByTestId(`hilos-page-tab-${OVERVIEW}`).click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(`/hilos/communications/${channel}`)
     await expectCommunicationsChannelHead(
       expect,
@@ -58,7 +60,7 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
     await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 
     await page.getByTestId(`hilos-page-tab-${DELIVERIES}`).click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(`/hilos/communications/${channel}/deliveries`)
     await expectCommunicationsChannelHead(
       expect,
@@ -69,7 +71,7 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
     )
     await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
     await page.getByTestId('hilos-breadcrumb-hilos_communications').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
   }
 })
 
@@ -79,17 +81,17 @@ for (const tab of ['configuration', 'deliveries'] as const) {
   }) => {
     const wire = watchDeliveryFrames(page)
     try {
-      await grantAdminToSelf(page)
+      await grantAdminToSelf(expect, page)
       for (const [channel, label] of [
         ['email', 'Email'],
         ['sms', 'Sms'],
       ] as const) {
-        await gotoPage(page, `/hilos/communications/${channel}/${tab}`)
+        await gotoPage(expect, page, `/hilos/communications/${channel}/${tab}`)
         await expectCommunicationsChannelHead(expect, page, tab, channel, label)
         await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
         const beforeReload = wire.packets.length
         await page.reload()
-        await expectPageReady(page)
+        await expectPageReady(expect, page)
         await expectCommunicationsChannelHead(expect, page, tab, channel, label)
         const pageKey = tab === 'configuration' ? CONFIGURATION : DELIVERIES
         const replies = communicationsChannelReplies(
@@ -138,13 +140,17 @@ test('a different admin session changes the open summary while Deliveries keeps 
       tableKey: 'hilosNotificationDeliveries',
     })
     try {
-      const observerId = await grantAdminToSelf(overview)
-      const mutatorId = await grantAdminToSelf(configuration)
+      const observerId = await grantAdminToSelf(expect, overview)
+      const mutatorId = await grantAdminToSelf(expect, configuration)
       expect(mutatorId).not.toBe(observerId)
       expect(await sessionToken(configuration)).not.toBe(
         await sessionToken(overview),
       )
-      await gotoPage(configuration, '/hilos/communications/sms/configuration')
+      await gotoPage(
+        expect,
+        configuration,
+        '/hilos/communications/sms/configuration',
+      )
       await expectCommunicationsChannelHead(
         expect,
         configuration,
@@ -167,7 +173,7 @@ test('a different admin session changes the open summary while Deliveries keeps 
         CONFIGURATION,
       ).at(-1)!.summary
 
-      await gotoPage(overview, '/hilos/communications/sms')
+      await gotoPage(expect, overview, '/hilos/communications/sms')
       await expectCommunicationsChannelHead(
         expect,
         overview,
@@ -187,7 +193,7 @@ test('a different admin session changes the open summary while Deliveries keeps 
         }),
       ).toEqual([])
 
-      await gotoPage(journal, '/hilos/communications/sms/deliveries')
+      await gotoPage(expect, journal, '/hilos/communications/sms/deliveries')
       await expectCommunicationsChannelHead(
         expect,
         journal,

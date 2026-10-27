@@ -1,30 +1,29 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import {
-  countSentFrames,
-  deliveryObject,
-  expectProfileNameSnapshot,
-  watchProfileRenameFrames,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { waitForMailCode, waitForMailTo } from '../helpers/mail.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 import { endResendPause } from '../helpers/resendPause.js'
+
 import {
   PASSWORD,
   changePassword,
-  clickSubmit,
   login,
   nameFromEmail,
   openSignIn,
   register,
   signUp,
-  typeInto,
   uniqueEmail,
-} from '../helpers/session.js'
-import {
   addVirtualAuthenticator,
   expectAccessLossNotice,
   signInAs,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  countSentFrames,
+  deliveryObject,
+  expectProfileNameSnapshot,
+  watchProfileRenameFrames,
+  expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 import {
@@ -44,7 +43,7 @@ import {
 /** Confirm a password-backed operation inside the open profile dialog. */
 async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId(confirmId))
+  await clickSubmit(expect, page.getByTestId(confirmId))
 }
 
 test('the header avatar leads to the profile root and its sections', async ({
@@ -57,13 +56,13 @@ test('the header avatar leads to the profile root and its sections', async ({
 
   const email = uniqueEmail()
   const name = nameFromEmail(email)
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, email)
   await expect(page.getByTestId('self-user')).toHaveText(name)
   const loadsAfterSignIn = fullLoads
 
-  await clickSubmit(page.getByTestId('nav-profile-name'))
+  await clickSubmit(expect, page.getByTestId('nav-profile-name'))
   await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(name)
@@ -84,10 +83,13 @@ test('the header avatar leads to the profile root and its sections', async ({
       ),
   ).toEqual(sections.map((section) => `profile-${section}-open`))
   for (const section of sections) {
-    await clickSubmit(page.getByTestId(`profile-${section}-open`))
+    await clickSubmit(expect, page.getByTestId(`profile-${section}-open`))
     await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    await clickSubmit(page.getByTestId('hilos-breadcrumb-hilos_profile'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+    )
     await expect(page.getByTestId('profile-name')).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/profile')
   }
@@ -98,18 +100,18 @@ test('renames the profile name without moderation', async ({ page }) => {
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     await expectProfileNameSnapshot(expect, wire, user.userId, null)
     expect(sends()).toBe(0)
 
-    await clickSubmit(page.getByTestId('profile-edit'))
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     const newName = `${user.name} Updated`
     await typeInto(page.getByTestId('profile-name-input'), newName)
-    await clickSubmit(page.getByTestId('profile-rename-save'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
@@ -158,11 +160,11 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
-    await clickSubmit(page.getByTestId('profile-edit'))
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     await typeInto(page.getByTestId('profile-name-input'), 'X')
     const beforeReload = await expectProfileNameSnapshot(
@@ -180,16 +182,16 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
       null,
       beforeReload.socket,
     )
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('modal')).toBeVisible()
     await expect(page.getByTestId('profile-name-input')).toHaveValue('X')
     await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
-    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
     await expect(page.getByTestId('modal-confirm')).toHaveRole('alertdialog')
-    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
     await expect(page.getByTestId('modal')).toHaveCount(0)
     const closed = wire.snapshots.at(-1)!
 
@@ -201,7 +203,7 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
       null,
       closed.socket,
     )
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('modal')).toHaveCount(0)
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     expect(sends()).toBe(0)
@@ -221,16 +223,16 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
   })
 
   const was = uniqueEmail()
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, was)
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await register(expect, page, was)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-email')).toContainText(was)
   const loadsBeforeChange = fullLoads
 
   await page.getByTestId('profile-email-change').click()
   await confirmStepUp(page, 'profile-email-step-up-confirm')
-  await clickSubmit(page.getByTestId('profile-email-send-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-send-current'))
   await expect(
     page.getByTestId('profile-email-current-send-line'),
   ).toContainText(`Sent to ${was}`)
@@ -239,17 +241,17 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
     'Confirm it is you to change your email address',
   )
   await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
-  await clickSubmit(page.getByTestId('profile-email-confirm-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-confirm-current'))
 
   const now = uniqueEmail()
   await typeInto(page.getByTestId('profile-email-new'), now)
-  await clickSubmit(page.getByTestId('profile-email-send-new'))
+  await clickSubmit(expect, page.getByTestId('profile-email-send-new'))
   await expect(page.getByTestId('profile-email-new-send-line')).toContainText(
     `Sent to ${now}`,
   )
   const newCode = await waitForMailCode(now, 'Confirm your new email address')
   await typeInto(page.getByTestId('profile-email-code-new'), newCode)
-  await clickSubmit(page.getByTestId('profile-email-confirm-new'))
+  await clickSubmit(expect, page.getByTestId('profile-email-confirm-new'))
 
   await expect(page.getByTestId('profile-email-was')).toHaveText(was)
   await expect(page.getByTestId('profile-email-now')).toHaveText(now)
@@ -273,11 +275,11 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
     fullLoads += 1
   })
 
-  await signUp(page)
-  await gotoPage(page, '/profile/sign-in')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/sign-in')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-identities-list')).toBeVisible()
-  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
   await confirmStepUp(page, 'profile-sign-in-add-step-up-confirm')
   const loadsBeforeLink = fullLoads
 
@@ -309,14 +311,14 @@ for (const signOutOthers of [true, false]) {
     page,
     browser,
   }) => {
-    const { email } = await signUp(page)
+    const { email } = await signUp(expect, page)
     const otherContext = await browser.newContext()
     try {
       const other = await otherContext.newPage()
-      await gotoPage(other, '/profile/sign-in')
-      await login(other, email)
+      await gotoPage(expect, other, '/profile/sign-in')
+      await login(expect, other, email)
       await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
-      await changePassword(page, {
+      await changePassword(expect, page, {
         email,
         currentPassword: PASSWORD,
         newPassword: 'a-fresh-passphrase',
@@ -334,17 +336,17 @@ for (const signOutOthers of [true, false]) {
       )
       if (signOutOthers) {
         await expect(other.getByTestId('auth-surface')).toBeVisible()
-        await login(other, email, PASSWORD)
+        await login(expect, other, email, PASSWORD)
         await expect(other.getByTestId('auth-error')).toContainText(
           'Incorrect password',
         )
-        await login(other, email, 'a-fresh-passphrase')
+        await login(expect, other, email, 'a-fresh-passphrase')
         await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
       } else {
         await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
         await expect(other.getByTestId('auth-surface')).toHaveCount(0)
       }
-      await clickSubmit(page.getByTestId('profile-password-done'))
+      await clickSubmit(expect, page.getByTestId('profile-password-done'))
       await expect(page.getByTestId('profile-password-modal')).toHaveCount(0)
     } finally {
       await otherContext.close()
@@ -355,47 +357,47 @@ for (const signOutOthers of [true, false]) {
 test('keeps password-change input after a wrong code and a common password (HIL-300)', async ({
   page,
 }) => {
-  const { email } = await signUp(page)
-  await gotoPage(page, '/profile/sign-in')
-  await clickSubmit(page.getByTestId('profile-password-change'))
+  const { email } = await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/sign-in')
+  await clickSubmit(expect, page.getByTestId('profile-password-change'))
   await confirmStepUp(page, 'profile-password-step-up-confirm')
-  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await clickSubmit(expect, page.getByTestId('profile-password-send-code'))
   await expect(page.getByTestId('profile-password-code')).toBeVisible()
   const code = await waitForMailCode(email, 'Confirm changing your password')
   const wrongCode = (code.startsWith('0') ? '1' : '0') + code.slice(1)
   await typeInto(page.getByTestId('profile-password-code'), wrongCode)
-  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await clickSubmit(expect, page.getByTestId('profile-password-confirm-code'))
   await expect(page.getByTestId('profile-password-error')).toContainText(
     'Invalid or expired code',
   )
   await expect(page.getByTestId('profile-password-code')).toHaveValue(wrongCode)
   await typeInto(page.getByTestId('profile-password-code'), code)
-  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await clickSubmit(expect, page.getByTestId('profile-password-confirm-code'))
   await expect(page.getByTestId('profile-password-new')).toBeVisible()
   await typeInto(page.getByTestId('profile-password-new'), '12345678')
-  await clickSubmit(page.getByTestId('profile-password-save'))
+  await clickSubmit(expect, page.getByTestId('profile-password-save'))
   await expect(page.getByTestId('profile-password-error')).toContainText(
     'That password is too common and easy to guess, choose a different one',
   )
   await expect(page.getByTestId('profile-password-new')).toHaveValue('12345678')
   await typeInto(page.getByTestId('profile-password-new'), 'a-fresh-passphrase')
-  await clickSubmit(page.getByTestId('profile-password-save'))
+  await clickSubmit(expect, page.getByTestId('profile-password-save'))
   await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
 })
 
 test('says the last code was used, and sends a new one once the pause is over (HIL-1186)', async ({
   page,
 }) => {
-  const { email } = await signUp(page)
-  await changePassword(page, {
+  const { email } = await signUp(expect, page)
+  await changePassword(expect, page, {
     email,
     currentPassword: PASSWORD,
     newPassword: 'first-fresh-passphrase',
   })
 
-  await clickSubmit(page.getByTestId('profile-password-again'))
+  await clickSubmit(expect, page.getByTestId('profile-password-again'))
   await expect(page.getByTestId('profile-password-send-code')).toBeVisible()
-  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await clickSubmit(expect, page.getByTestId('profile-password-send-code'))
   await expect(page.getByTestId('profile-password-code')).toBeVisible()
   await expect(page.getByTestId('profile-password-send-line')).toContainText(
     'already used',
@@ -406,19 +408,19 @@ test('says the last code was used, and sends a new one once the pause is over (H
   await endResendPause(page, email)
   await expect(page.getByTestId('profile-password-send-again')).toBeVisible()
   await expect(page.getByTestId('profile-password-send-again')).toBeEnabled()
-  await clickSubmit(page.getByTestId('profile-password-send-again'))
+  await clickSubmit(expect, page.getByTestId('profile-password-send-again'))
   await expect(page.getByTestId('profile-password-send-line')).toContainText(
     'Sent to',
   )
   const code = await waitForMailCode(email, 'Confirm changing your password', 2)
   await typeInto(page.getByTestId('profile-password-code'), code)
-  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await clickSubmit(expect, page.getByTestId('profile-password-confirm-code'))
   await expect(page.getByTestId('profile-password-new')).toBeVisible()
   await typeInto(
     page.getByTestId('profile-password-new'),
     'second-fresh-passphrase',
   )
-  await clickSubmit(page.getByTestId('profile-password-save'))
+  await clickSubmit(expect, page.getByTestId('profile-password-save'))
   await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
 })
 
@@ -426,35 +428,35 @@ test('continues the email change in another tab of the same session (HIL-1182)',
   context,
 }) => {
   const tabA = await context.newPage()
-  const { email: was } = await signUp(tabA)
-  await gotoPage(tabA, '/profile')
+  const { email: was } = await signUp(expect, tabA)
+  await gotoPage(expect, tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await tabA.getByTestId('profile-email-change').click()
   await confirmStepUp(tabA, 'profile-email-step-up-confirm')
-  await clickSubmit(tabA.getByTestId('profile-email-send-current'))
+  await clickSubmit(expect, tabA.getByTestId('profile-email-send-current'))
   const currentCode = await waitForMailCode(
     was,
     'Confirm it is you to change your email address',
   )
   await typeInto(tabA.getByTestId('profile-email-code-current'), currentCode)
-  await clickSubmit(tabA.getByTestId('profile-email-confirm-current'))
+  await clickSubmit(expect, tabA.getByTestId('profile-email-confirm-current'))
   await expect(tabA.getByTestId('profile-email-new')).toBeVisible()
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/profile')
+  await gotoPage(expect, tabB, '/profile')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await tabB.getByTestId('profile-email-change').click()
   await expect(tabB.getByTestId('profile-email-new')).toBeVisible()
 
   const now = uniqueEmail()
   await typeInto(tabB.getByTestId('profile-email-new'), now)
-  await clickSubmit(tabB.getByTestId('profile-email-send-new'))
+  await clickSubmit(expect, tabB.getByTestId('profile-email-send-new'))
   await expect(tabB.getByTestId('profile-email-code-new')).toBeVisible()
   await expect(tabA.getByTestId('profile-email-code-new')).toBeVisible()
 
   const newCode = await waitForMailCode(now, 'Confirm your new email address')
   await typeInto(tabB.getByTestId('profile-email-code-new'), newCode)
-  await clickSubmit(tabB.getByTestId('profile-email-confirm-new'))
+  await clickSubmit(expect, tabB.getByTestId('profile-email-confirm-new'))
 
   await expect(tabB.getByTestId('profile-email-now')).toHaveText(now)
   await expect(tabA.getByTestId('modal')).toBeHidden()
@@ -466,12 +468,12 @@ test('continues the email change in another tab of the same session (HIL-1182)',
 test('opens the email change on the step reached before a reload (HIL-1182)', async ({
   page,
 }) => {
-  const { email: was } = await signUp(page)
-  await gotoPage(page, '/profile')
+  const { email: was } = await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('profile-email-change').click()
   await confirmStepUp(page, 'profile-email-step-up-confirm')
-  await clickSubmit(page.getByTestId('profile-email-send-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-send-current'))
   await expect(page.getByTestId('profile-email-code-current')).toBeVisible()
   const currentCode = await waitForMailCode(
     was,
@@ -485,7 +487,7 @@ test('opens the email change on the step reached before a reload (HIL-1182)', as
   await expect(page.getByTestId('profile-email-code-current')).toBeVisible()
 
   await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
-  await clickSubmit(page.getByTestId('profile-email-confirm-current'))
+  await clickSubmit(expect, page.getByTestId('profile-email-confirm-current'))
   await expect(page.getByTestId('profile-email-new')).toBeVisible()
 })
 
@@ -493,24 +495,24 @@ test('saves the new password from another tab of the same session (HIL-1182)', a
   context,
 }) => {
   const tabA = await context.newPage()
-  const { email } = await signUp(tabA)
-  await gotoPage(tabA, '/profile/sign-in')
+  const { email } = await signUp(expect, tabA)
+  await gotoPage(expect, tabA, '/profile/sign-in')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(tabA.getByTestId('profile-password-change'))
+  await clickSubmit(expect, tabA.getByTestId('profile-password-change'))
   await confirmStepUp(tabA, 'profile-password-step-up-confirm')
-  await clickSubmit(tabA.getByTestId('profile-password-send-code'))
+  await clickSubmit(expect, tabA.getByTestId('profile-password-send-code'))
   const code = await waitForMailCode(email, 'Confirm changing your password')
   await typeInto(tabA.getByTestId('profile-password-code'), code)
-  await clickSubmit(tabA.getByTestId('profile-password-confirm-code'))
+  await clickSubmit(expect, tabA.getByTestId('profile-password-confirm-code'))
   await expect(tabA.getByTestId('profile-password-new')).toBeVisible()
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/profile/sign-in')
+  await gotoPage(expect, tabB, '/profile/sign-in')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(tabB.getByTestId('profile-password-change'))
+  await clickSubmit(expect, tabB.getByTestId('profile-password-change'))
   await expect(tabB.getByTestId('profile-password-new')).toBeVisible()
   await typeInto(tabB.getByTestId('profile-password-new'), 'a-fresh-passphrase')
-  await clickSubmit(tabB.getByTestId('profile-password-save'))
+  await clickSubmit(expect, tabB.getByTestId('profile-password-save'))
 
   await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
   await expect(tabA.getByTestId('profile-password-modal')).toHaveCount(0)
@@ -520,21 +522,21 @@ test('adds a phone from another tab of the same session (HIL-1184)', async ({
   context,
 }) => {
   const tabA = await context.newPage()
-  await signUp(tabA)
-  await gotoPage(tabA, '/profile/sign-in')
+  await signUp(expect, tabA)
+  await gotoPage(expect, tabA, '/profile/sign-in')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(tabA.getByTestId('profile-sign-in-add'))
+  await clickSubmit(expect, tabA.getByTestId('profile-sign-in-add'))
   await confirmStepUp(tabA, 'profile-sign-in-add-step-up-confirm')
-  await clickSubmit(tabA.getByTestId('profile-sign-in-choose-phone'))
+  await clickSubmit(expect, tabA.getByTestId('profile-sign-in-choose-phone'))
   const phone = uniquePhone()
   await typeInto(tabA.getByTestId('profile-add-sms-phone'), phone)
-  await clickSubmit(tabA.getByTestId('profile-add-sms-request'))
+  await clickSubmit(expect, tabA.getByTestId('profile-add-sms-request'))
   await expect(tabA.getByTestId('profile-add-sms-code')).toBeVisible()
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/profile/sign-in')
+  await gotoPage(expect, tabB, '/profile/sign-in')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(tabB.getByTestId('profile-sign-in-add'))
+  await clickSubmit(expect, tabB.getByTestId('profile-sign-in-add'))
   await expect(tabB.getByTestId('profile-add-sms-code')).toBeVisible()
   await expect(tabB.getByTestId('step-up')).toHaveCount(0)
 
@@ -542,7 +544,7 @@ test('adds a phone from another tab of the same session (HIL-1184)', async ({
     tabB.getByTestId('profile-add-sms-code'),
     await waitForSmsCode(phone),
   )
-  await clickSubmit(tabB.getByTestId('profile-add-sms-confirm'))
+  await clickSubmit(expect, tabB.getByTestId('profile-add-sms-confirm'))
   await expect(tabB.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(tabA.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(
@@ -560,22 +562,22 @@ test('ends one other browser session from the sessions page', async ({
   const contextB = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(pageA)
+    const account = await signUp(expect, pageA)
     const pageB = await contextB.newPage()
-    await gotoPage(pageB, '/profile/sessions')
-    await login(pageB, account.email)
+    await gotoPage(expect, pageB, '/profile/sessions')
+    await login(expect, pageB, account.email)
     await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
 
-    await gotoPage(pageB, '/profile/sign-in')
-    await clickSubmit(pageB.getByTestId('profile-sign-in-add'))
+    await gotoPage(expect, pageB, '/profile/sign-in')
+    await clickSubmit(expect, pageB.getByTestId('profile-sign-in-add'))
     await confirmStepUp(pageB, 'profile-sign-in-add-step-up-confirm')
-    await clickSubmit(pageB.getByTestId('profile-sign-in-choose-phone'))
+    await clickSubmit(expect, pageB.getByTestId('profile-sign-in-choose-phone'))
     const phone = uniquePhone()
     await typeInto(pageB.getByTestId('profile-add-sms-phone'), phone)
     await expect(pageB.getByTestId('profile-add-sms-phone')).toHaveValue(phone)
 
     const publicTabB = await contextB.newPage()
-    await gotoPage(publicTabB, '/')
+    await gotoPage(expect, publicTabB, '/')
     await expect(publicTabB.getByTestId('self-user-id')).toHaveText(
       String(account.userId),
     )
@@ -588,7 +590,7 @@ test('ends one other browser session from the sessions page', async ({
       })),
     )
 
-    await gotoPage(pageA, '/profile/sessions')
+    await gotoPage(expect, pageA, '/profile/sessions')
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
     await expect(pageA.getByTestId('profile-session-this')).toHaveCount(1)
     await expect(
@@ -596,7 +598,7 @@ test('ends one other browser session from the sessions page', async ({
     ).not.toHaveText('Unknown device')
 
     await pageA.getByTestId('profile-session-revoke').click()
-    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await clickSubmit(expect, pageA.getByTestId('profile-session-end-confirm'))
     await expect(pageA.getByTestId('modal')).toBeHidden()
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
     for (const document of documents) {
@@ -630,13 +632,13 @@ test('signs out every other browser session at once', async ({ browser }) => {
   const contextB = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(pageA)
+    const account = await signUp(expect, pageA)
     const pageB = await contextB.newPage()
-    await gotoPage(pageB, '/profile/sessions')
-    await login(pageB, account.email)
+    await gotoPage(expect, pageB, '/profile/sessions')
+    await login(expect, pageB, account.email)
     await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
 
-    await gotoPage(pageA, '/profile/sessions')
+    await gotoPage(expect, pageA, '/profile/sessions')
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
 
     await pageA.getByTestId('profile-sessions-end-others').click()
@@ -652,7 +654,10 @@ test('signs out every other browser session at once', async ({ browser }) => {
 
     await pageA.getByTestId('profile-sessions-end-others').click()
     await expect(modal).toBeVisible()
-    await clickSubmit(pageA.getByTestId('profile-sessions-end-others-confirm'))
+    await clickSubmit(
+      expect,
+      pageA.getByTestId('profile-sessions-end-others-confirm'),
+    )
     await expect(modal).toBeHidden()
 
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
@@ -671,30 +676,30 @@ test('ends sessions of closed browsers without a reload (HIL-1180)', async ({
   const contextC = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(pageA)
+    const account = await signUp(expect, pageA)
     const pageB = await contextB.newPage()
-    await gotoPage(pageB, '/profile/sessions')
-    await login(pageB, account.email)
+    await gotoPage(expect, pageB, '/profile/sessions')
+    await login(expect, pageB, account.email)
     await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
 
     const pageC = await contextC.newPage()
-    await gotoPage(pageC, '/profile/sessions')
-    await login(pageC, account.email)
+    await gotoPage(expect, pageC, '/profile/sessions')
+    await login(expect, pageC, account.email)
     await expect(pageC.getByTestId('profile-sessions')).toBeVisible()
 
     await contextB.close()
     await contextC.close()
 
-    await gotoPage(pageA, '/profile/sessions')
+    await gotoPage(expect, pageA, '/profile/sessions')
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(3)
 
     await pageA.getByTestId('profile-session-revoke').first().click()
-    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await clickSubmit(expect, pageA.getByTestId('profile-session-end-confirm'))
     await expect(pageA.getByTestId('modal')).toBeHidden()
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
 
     await pageA.getByTestId('profile-session-revoke').first().click()
-    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await clickSubmit(expect, pageA.getByTestId('profile-session-end-confirm'))
     await expect(pageA.getByTestId('modal')).toBeHidden()
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
   } finally {
@@ -708,8 +713,8 @@ test('updates the sign-in summary when another tab adds a device key', async ({
   page,
   context,
 }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
     'Password',
   )
@@ -719,10 +724,10 @@ test('updates the sign-in summary when another tab adds a device key', async ({
   })
   const other = await context.newPage()
   await addVirtualAuthenticator(other)
-  await gotoPage(other, '/profile/sign-in')
-  await clickSubmit(other.getByTestId('profile-sign-in-add'))
+  await gotoPage(expect, other, '/profile/sign-in')
+  await clickSubmit(expect, other.getByTestId('profile-sign-in-add'))
   await confirmStepUp(other, 'profile-sign-in-add-step-up-confirm')
-  await clickSubmit(other.getByTestId('profile-passkey-add'))
+  await clickSubmit(expect, other.getByTestId('profile-passkey-add'))
   await expect(other.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(other.getByTestId('identity-passkey-added')).toHaveCount(1)
   await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(

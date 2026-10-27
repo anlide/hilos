@@ -1,16 +1,19 @@
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import {
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 test('adds a known language switched off from the built-in catalog', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
 
   const opener = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   const code = page.getByTestId('i18n-language-add-code')
   await expect(code).toHaveValue('')
@@ -24,7 +27,7 @@ test('adds a known language switched off from the built-in catalog', async ({
   await expect(plate).toHaveAttribute('data-kind', 'known')
 
   const submit = page.getByTestId('i18n-language-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
@@ -40,11 +43,11 @@ test('adds a known language switched off from the built-in catalog', async ({
 test('adds a custom language switched off after confirmation', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
 
   const opener = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   const code = page.getByTestId('i18n-language-add-code')
   await expect(code).toHaveValue('')
@@ -59,7 +62,7 @@ test('adds a custom language switched off after confirmation', async ({
   await nativeName.pressSequentially('Cymraeg', { delay: 10 })
 
   const submit = page.getByTestId('i18n-language-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
 
   await expect(page.getByTestId('i18n-language-confirm')).toBeVisible()
@@ -72,7 +75,7 @@ test('adds a custom language switched off after confirmation', async ({
   await expect(confirmCode).toHaveCSS('text-transform', 'uppercase')
 
   const confirm = page.getByTestId('i18n-language-confirm-submit')
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-toast-success')).toContainText(
@@ -88,11 +91,11 @@ test('adds a custom language switched off after confirmation', async ({
 test('keeps the add form open when the language already exists', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
 
   const opener = page.getByTestId('hilos-table-main-action')
-  await clickSubmit(opener)
+  await clickSubmit(expect, opener)
 
   const code = page.getByTestId('i18n-language-add-code')
   await expect(code).toHaveValue('')
@@ -103,7 +106,7 @@ test('keeps the add form open when the language already exists', async ({
   )
 
   const submit = page.getByTestId('i18n-language-add-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(page.getByTestId('i18n-language-add-error')).toContainText(
     "Language 'en' already exists.",
   )

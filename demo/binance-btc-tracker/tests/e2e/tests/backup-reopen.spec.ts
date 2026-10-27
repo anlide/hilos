@@ -1,14 +1,18 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
-import { gotoMaintenance, gotoPage } from '../helpers/page'
+import {
+  gotoMaintenance,
+  gotoPage,
+  grantAdminToSelf,
+  sessionToken,
+} from '../../../../../framework/frontend/e2e/index.js'
 import {
   enterProtectedMode,
   leaveProtectedMode,
   mintProtectedModePass,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // The backup page's block in the verification window (HIL-676): the operator who
 // started the restore is offered the lever that reopens the system, and nobody
@@ -43,15 +47,15 @@ test('the verification window offers the reopen block to the operator, and to no
   // the whole decision lives on the session behind the connection.
   //
   // Both accounts are made BEFORE the freeze: under it there is no signing up.
-  await grantAdminToSelf(page)
-  await gotoPage(page, BACKUP_URL)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, BACKUP_URL)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const operatorSession = await sessionToken(page)
 
   const verifierContext = await browser.newContext()
   const verifier = await verifierContext.newPage()
-  await grantAdminToSelf(verifier)
-  await gotoPage(verifier, BACKUP_URL)
+  await grantAdminToSelf(expect, verifier)
+  await gotoPage(expect, verifier, BACKUP_URL)
   await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // Entered for the operator's BROWSER, exactly as a restore started from this page
@@ -62,7 +66,7 @@ test('the verification window offers the reopen block to the operator, and to no
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // The operator, back on the page. The block is there and it carries its button.
-  await gotoPage(page, BACKUP_URL)
+  await gotoPage(expect, page, BACKUP_URL)
   await expect(page.getByTestId('hilos-backup-reopen-panel')).toBeVisible()
   await expect(page.getByTestId('hilos-backup-reopen')).toBeVisible()
 
@@ -70,7 +74,7 @@ test('the verification window offers the reopen block to the operator, and to no
   // that is what the window is for - and they do not get the lever: the pass names a
   // session the node let in, not the session that asked for the operation.
   const pass = await mintProtectedModePass()
-  await gotoMaintenance(verifier, BACKUP_URL)
+  await gotoMaintenance(expect, verifier, BACKUP_URL)
   await presentCode(verifier, pass)
   await expect(verifier.getByTestId('maintenance')).toBeHidden()
   await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()

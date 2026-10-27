@@ -1,21 +1,20 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  signUp,
   watchClientDocument,
   watchUploadFrames,
   watchSocketFrames,
   type SocketFrame,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import {
-  picture,
-  readPublicPicture,
-  rotatedJpeg,
+  clickSubmit,
   selectPhoto,
-} from '../helpers/profilePhoto.js'
-import { clickSubmit, signUp } from '../helpers/session.js'
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { picture, readPublicPicture } from '../helpers/profilePhoto.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
 // Both JPEG and WebP are lossy. Interior samples tolerate compression, while
@@ -41,10 +40,10 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
   const second = await page.context().newPage()
   const documents: Awaited<ReturnType<typeof watchClientDocument>>[] = []
   try {
-    const { name, userId } = await signUp(page)
+    const { name, userId } = await signUp(expect, page)
     const initials = name.charAt(0).toUpperCase()
-    await gotoPage(page, '/profile', PAGE_READY)
-    await gotoPage(second, '/profile', PAGE_READY)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
+    await gotoPage(expect, second, '/profile', PAGE_READY)
     for (const tab of [page, second]) {
       await expect(tab.getByTestId('profile-name')).toHaveText(name)
       documents.push(await watchClientDocument(tab))
@@ -56,16 +55,17 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     for (const avatar of avatars) await expect(avatar).toHaveText(initials)
 
     const admin = await adminContext.newPage()
-    await grantAdminToSelf(admin)
-    await gotoPage(admin, `/hilos/user/${userId}`, PAGE_READY)
+    await grantAdminToSelf(expect, admin)
+    await gotoPage(expect, admin, `/hilos/user/${userId}`, PAGE_READY)
     const adminCard = admin.getByTestId('hilos-user-detail')
     await expect(adminCard.getByTestId('hilos-user-name')).toHaveText(name)
     const adminAvatar = adminCard.getByTestId('hilos-avatar')
     await expect(adminAvatar).toHaveText(initials)
     documents.push(await watchClientDocument(admin))
 
-    await clickSubmit(page.getByTestId('profile-photo-open'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
     await selectPhoto(
+      expect,
       page,
       rotatedJpeg(await picture(page, 'image/jpeg')),
       'image/jpeg',
@@ -86,7 +86,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     for (const avatar of avatars) {
       await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
     }
-    await clickSubmit(page.getByTestId('profile-photo-save'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
     await expect(page.getByTestId('modal')).toBeHidden()
 
     const firstPhoto = avatars[0].getByTestId('hilos-avatar-photo')
@@ -136,7 +136,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     const viewer = await viewerContext.newPage()
     const viewerFrames: SocketFrame[] = []
     watchSocketFrames(viewer, (frame) => viewerFrames.push(frame))
-    await gotoPage(viewer, `/hilos/user/${userId}`, PAGE_READY)
+    await gotoPage(expect, viewer, `/hilos/user/${userId}`, PAGE_READY)
     await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
     const viewerCard = viewer.getByTestId('hilos-user-detail')
     await expect(
@@ -150,10 +150,10 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     documents.push(await watchClientDocument(viewer))
 
     const sentBeforeReplacement = uploads.sentBytes()
-    await clickSubmit(page.getByTestId('profile-photo-open'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
     const replacement = await picture(page, 'image/png')
     const chooser = page.waitForEvent('filechooser')
-    await clickSubmit(page.getByTestId('profile-photo-upload-another'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-upload-another'))
     await (
       await chooser
     ).setFiles({
@@ -172,7 +172,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
         firstSrc,
       )
     }
-    await clickSubmit(page.getByTestId('profile-photo-save'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(firstPhoto).not.toHaveAttribute('src', firstSrc)
     const replacementSrc = await firstPhoto.getAttribute('src')
@@ -222,8 +222,8 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     expect(uploads.errors).toEqual([])
     await expect(viewerCard.getByTestId('hilos-avatar-photo')).toHaveCount(0)
 
-    await clickSubmit(page.getByTestId('profile-photo-open'))
-    await clickSubmit(page.getByTestId('profile-photo-remove'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+    await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
     await expect(page.getByTestId('modal')).toBeHidden()
     // The live admin browser table is also empty again: neither former file
     // remains the active photo, regardless of the file registry's retention.
@@ -252,9 +252,9 @@ test('a picture over 40 MB is refused before any upload begins', async ({
   page,
 }) => {
   const uploads = watchUploadFrames(page, 'oversize', () => {})
-  await signUp(page)
-  await gotoPage(page, '/profile', PAGE_READY)
-  await clickSubmit(page.getByTestId('profile-photo-open'))
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile', PAGE_READY)
+  await clickSubmit(expect, page.getByTestId('profile-photo-open'))
   await page.getByTestId('profile-photo-input').setInputFiles({
     name: 'too-large.png',
     mimeType: 'image/png',
@@ -274,6 +274,6 @@ test('a picture over 40 MB is refused before any upload begins', async ({
   expect(uploads.uploads.size).toBe(0)
   expect(uploads.sentBytes()).toBe(0)
   expect(uploads.errors).toEqual([])
-  await clickSubmit(page.getByTestId('profile-photo-cancel'))
+  await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
   await expect(page.getByTestId('modal')).toBeHidden()
 })

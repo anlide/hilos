@@ -11,15 +11,13 @@ import {
   watchClientDocument,
   watchDeliveryFrames,
   watchPageReplies,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
   PAGE_REFUSED,
-} from '../helpers/page.js'
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Framework moderation kinds, read-only Overview and Rules, carried by chat.
 // Expectations come from the kind declarations, moderation profile defaults
@@ -116,9 +114,9 @@ test.afterEach(async () => {
 test('opens moderation kinds from dashboard, supports direct navigation, reload and history', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos')
-  await expectPageReady(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos')
+  await expectPageReady(expect, page)
 
   // Navigate to Moderation from the People group on the admin dashboard.
   const card = page
@@ -128,7 +126,7 @@ test('opens moderation kinds from dashboard, supports direct navigation, reload 
     .first()
   await expect(card).toBeVisible()
   await card.click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
 
   // Table and declared kind rows are visible.
@@ -141,30 +139,30 @@ test('opens moderation kinds from dashboard, supports direct navigation, reload 
 
   // Browser navigation: Back to /hilos, Forward to /hilos/moderation.
   await page.goBack()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/hilos')
 
   await page.goForward()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
   // Page reload (F5) keeps table state over the live socket.
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
   // Direct URL navigation.
-  await gotoPage(page, '/hilos/moderation', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 })
 
 test('opens each declared kind Overview and keeps its head, data and history in the SPA', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/moderation', PAGE_READY)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
   const document = await watchClientDocument(page)
@@ -180,7 +178,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       )
       await expect(openLink).toHaveAttribute('aria-label', `Open ${title}`)
       await openLink.click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
 
       const heading = page.getByRole('heading', { level: 1 })
@@ -250,7 +248,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       await page
         .getByTestId('hilos-page-tab-hilos_moderation_kind_rules')
         .click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${kind}/rules`)
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expect(page).toHaveTitle(`${title} · Hilos Chat`)
@@ -289,7 +287,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       }
       await document.unchanged()
       await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expect(overview).toBeVisible()
@@ -305,7 +303,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       await document.unchanged()
 
       await crumbs.getByTestId('hilos-breadcrumb-hilos_moderation').click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL('/hilos/moderation')
       await expect(
         page.getByTestId('hilos-moderation-kinds-table'),
@@ -319,13 +317,13 @@ test('opens each declared kind Overview and keeps its head, data and history in 
     // Back to the last kind, then skip its Rules and Overview history entries:
     // the same detail component must replace picture data with text data.
     await page.goBack()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
       'chat_message_picture',
     )
     await page.evaluate(() => window.history.go(-4))
     await expect(page).toHaveURL('/hilos/moderation/chat_message')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
       'chat_message',
     )
@@ -343,7 +341,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
 
     await page.evaluate(() => window.history.go(4))
     await expect(page).toHaveURL('/hilos/moderation/chat_message_picture')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
       'chat_message_picture',
     )
@@ -359,7 +357,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
     )
 
     await page.getByTestId('hilos-breadcrumb-hilos').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL('/hilos')
     await document.unchanged()
   } finally {
@@ -370,7 +368,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
 test('loads a kind Overview directly and after F5 with the same resolved data', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
 
   for (const {
     kind,
@@ -381,13 +379,13 @@ test('loads a kind Overview directly and after F5 with the same resolved data', 
     profile,
     rules,
   } of DECLARED_KINDS) {
-    await gotoPage(page, `/hilos/moderation/${kind}`, PAGE_READY)
+    await gotoPage(expect, page, `/hilos/moderation/${kind}`, PAGE_READY)
     const overview = page.getByTestId('hilos-moderation-kind-overview')
     await expect(overview).toBeVisible()
     const directText = await overview.innerText()
 
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(title)
     await expect(page).toHaveTitle(`${title} · Hilos Chat`)
@@ -409,10 +407,11 @@ test('loads Rules directly and after F5 from one reply with both canonical windo
   page,
 }) => {
   const log = watchDeliveryFrames(page)
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   try {
     for (const declared of DECLARED_KINDS) {
       await gotoPage(
+        expect,
         page,
         `/hilos/moderation/${declared.kind}/rules`,
         PAGE_READY,
@@ -431,7 +430,7 @@ test('loads Rules directly and after F5 from one reply with both canonical windo
       const directText = await table.innerText()
 
       await page.reload()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expect(table).toHaveText(directText, { useInnerText: true })
@@ -447,8 +446,13 @@ for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
     page,
   }) => {
     const log = watchDeliveryFrames(page)
-    await signUpAdmin(page)
-    await gotoPage(page, `/hilos/moderation/${declared.kind}/rules`, PAGE_READY)
+    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/moderation/${declared.kind}/rules`,
+      PAGE_READY,
+    )
     await expectModerationOwnRules(expect, page, declared.ownRules)
     const document = await watchClientDocument(page)
     try {
@@ -524,18 +528,18 @@ for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
       await expectModerationOwnRules(expect, page, declared.ownRules)
 
       await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expect(
         page.getByTestId('hilos-moderation-rules-table'),
       ).toHaveCount(0)
       await page.goBack()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expectModerationOwnRules(expect, page, declared.ownRules)
       await page.goForward()
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expect(
@@ -553,8 +557,8 @@ test('refuses an unknown kind through the server subscription as 404', async ({
   page,
 }) => {
   const observed = watchPageReplies(page)
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/moderation/unknown_kind', PAGE_REFUSED)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/moderation/unknown_kind', PAGE_REFUSED)
   await expect(page).toHaveURL('/hilos/moderation/unknown_kind')
   await expect(page.getByTestId('page-error')).toHaveAttribute(
     'data-error-code',
@@ -580,8 +584,13 @@ test('refuses an unknown Rules kind through the server subscription as 404', asy
   page,
 }) => {
   const observed = watchPageReplies(page)
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/moderation/unknown_kind/rules', PAGE_REFUSED)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(
+    expect,
+    page,
+    '/hilos/moderation/unknown_kind/rules',
+    PAGE_REFUSED,
+  )
   await expect(page).toHaveURL('/hilos/moderation/unknown_kind/rules')
   await expect(page.getByTestId('page-error')).toHaveAttribute(
     'data-error-code',
@@ -608,8 +617,8 @@ test('refuses an unknown Rules kind through the server subscription as 404', asy
 test('filters moderation kinds by search query and shows empty state when no rows match', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/moderation', PAGE_READY)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
   const search = shownByTestId(page, 'hilos-table-search')
@@ -668,8 +677,8 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
   page,
 }) => {
   await setAdminViewMode(true)
-  await gotoPage(page, '/hilos/moderation', PAGE_READY)
-  await expectPageReady(page)
+  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
+  await expectPageReady(expect, page)
 
   // View-mode strip is visible.
   const banner = page.getByTestId('view-mode-banner')
@@ -692,7 +701,7 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
       page,
       'hilos-moderation-open-hilos_profile_name',
     ).click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name')
     await expect(banner).toBeVisible()
     await expect(
@@ -731,7 +740,7 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
     await document.unchanged()
 
     await page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules').click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectModerationKindHead(expect, page, DECLARED_KINDS[0], 'rules')
     await expect(banner).toBeVisible()
     await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)

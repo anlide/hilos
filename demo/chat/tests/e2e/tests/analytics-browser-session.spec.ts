@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  PASSWORD,
   ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,
@@ -15,11 +16,12 @@ import {
   expectOtherAnalyticsSession,
   readAnalyticsBrowserSession,
   watchAnalyticsFrames,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { PASSWORD, signUp } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
@@ -41,7 +43,7 @@ test('shows real session actions in source order without bodies or another sessi
 }) => {
   // Two registrations and the wait on the journal writer exceed the base cap.
   test.slow()
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
   const browserMajor = await page.evaluate(
     () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
   )
@@ -52,7 +54,9 @@ test('shows real session actions in source order without bodies or another sessi
   try {
     const admin = await adminContext.newPage()
     const frames = watchAnalyticsFrames(admin)
-    const adminId = await signUpAdmin(admin)
+    const adminId = await signUpAdmin(expect, admin, {
+      entryId: 'message-signin',
+    })
 
     const readUser = () => readAnalyticsBrowserSession(sendCommand, user.userId)
     const readAdmin = () => readAnalyticsBrowserSession(sendCommand, adminId)
@@ -81,12 +85,12 @@ test('shows real session actions in source order without bodies or another sessi
     expect(userSession.browserSessionId).not.toBe(adminSession.browserSessionId)
 
     // The way in: the person's admin card, then their sessions in Analytics.
-    await gotoPage(admin, `/hilos/user/${user.userId}`)
+    await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
     await admin.getByTestId('hilos-page-head-action').click()
     await expect(admin).toHaveURL(
       new RegExp(`/hilos/analytics/people/${user.userId}$`),
     )
-    await expectPageReady(admin)
+    await expectPageReady(expect, admin)
     await expectAnalyticsPersonSession(
       expect,
       admin,
@@ -106,7 +110,7 @@ test('shows real session actions in source order without bodies or another sessi
         `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
       ),
     )
-    await expectPageReady(admin)
+    await expectPageReady(expect, admin)
     await expectAnalyticsSessionHeader(
       expect,
       admin,
@@ -139,6 +143,7 @@ test('shows real session actions in source order without bodies or another sessi
     await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 
     await gotoPage(
+      expect,
       admin,
       `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
     )

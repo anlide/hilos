@@ -6,9 +6,12 @@ import {
   profileSessionSnapshot,
   watchSocketFrames,
   type SocketFrame,
+  clickSubmit,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, signUp } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 test.use({ timezoneId: 'Asia/Tokyo', locale: 'en-US' })
 
@@ -19,8 +22,8 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(page)
-    await gotoPage(page, '/profile/sessions', PAGE_READY)
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile/sessions', PAGE_READY)
     await expect.poll(() => profileSessionSnapshot(frames)).toBeDefined()
     const initial = profileSessionSnapshot(frames)!
     const self = deliveryObject(
@@ -28,7 +31,7 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
     )
     expect(self.acceptKey).toEqual(expect.any(String))
     expect(self.connectedAt).toBe(initial.connections[0]?.connectedAt)
-    await clickSubmit(page.getByTestId('profile-session-tabs'))
+    await clickSubmit(expect, page.getByTestId('profile-session-tabs'))
     await expectProfileSessionMoments(
       expect,
       page,
@@ -41,7 +44,7 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
     // Open only after the first snapshot: this must rebuild the first tab's list.
     const liveStart = frames.length
     const second = await context.newPage()
-    await gotoPage(second, '/profile/sessions', PAGE_READY)
+    await gotoPage(expect, second, '/profile/sessions', PAGE_READY)
     await expect
       .poll(
         () =>
@@ -67,7 +70,7 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
 
     const reloadStart = frames.length
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect
       .poll(
         () =>
@@ -88,7 +91,7 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
     )
     expect(reloaded.sessions[0]?.id).toBe(initial.sessions[0]?.id)
     expect(reloaded.sessions[0]?.createdAt).toBe(initial.sessions[0]?.createdAt)
-    await clickSubmit(page.getByTestId('profile-session-tabs'))
+    await clickSubmit(expect, page.getByTestId('profile-session-tabs'))
     await expectProfileSessionMoments(
       expect,
       page,

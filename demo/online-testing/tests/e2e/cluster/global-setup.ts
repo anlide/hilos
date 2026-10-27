@@ -4,10 +4,10 @@ import {
   READY_TIMEOUT_MS,
   probeStatic,
   probeWebSocketUpgrade,
-  readClusterBrowserStand,
   waitUntilReady,
-} from '../../../../../framework/frontend/e2e/cluster.js'
-import { clearMail } from '../helpers/mail.js'
+} from '../../../../../framework/frontend/scripts/standReady.mjs'
+import { readClusterBrowserStand } from '../../../../../framework/frontend/e2e/index.js'
+import { clearMail } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 
 /** Wait for the Angular shell and every master's WebSocket before registration. */
 export default async function globalSetup(): Promise<void> {

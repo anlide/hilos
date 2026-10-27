@@ -1,14 +1,16 @@
 import { test, expect } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page'
 import {
-  clickSubmit,
   openSignIn,
   register,
   uniqueEmail,
-} from '../helpers/session'
+  shownByTestId,
+  clickSubmit,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // HIL-1272: the Angular shell reads the node's admin view mode from the session
 // response, as the Vue one does (HIL-1253, HIL-1260): the gear is drawn for a
@@ -45,19 +47,19 @@ test.afterEach(() => setAdminViewMode(false))
 test('a guest without an account sees the admin gear and opens the admin section in the view mode', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 
   await setAdminViewMode(true)
   // The flip is not sent to the open tab; the next handshake carries it.
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toBeVisible()
   await expect(gear).toHaveAttribute('data-access', 'view')
 
   await gear.click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
@@ -75,13 +77,13 @@ test('a guest reads the view-mode strip on the account screens and the acceptanc
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const someone = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const registrant = await someone.newPage()
-  await gotoPage(registrant, '/')
-  await openSignIn(registrant)
-  await register(registrant, uniqueEmail())
+  await gotoPage(expect, registrant, '/')
+  await openSignIn(expect, registrant)
+  await register(expect, registrant, uniqueEmail())
   await someone.close()
 
   await setAdminViewMode(true)
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -90,7 +92,7 @@ test('a guest reads the view-mode strip on the account screens and the acceptanc
   await expect(page.getByTestId('view-mode-banner')).toHaveCount(0)
 
   for (const path of ACCOUNT_SCREENS) {
-    await gotoPage(page, path, PAGE_READY)
+    await gotoPage(expect, page, path, PAGE_READY)
     const strip = page.getByTestId('view-mode-banner')
     await expect(strip).toBeVisible()
     await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
@@ -111,7 +113,7 @@ test('a guest opens a legal setting, reads its value and cannot save it', async 
   page,
 }) => {
   await setAdminViewMode(true)
-  await gotoPage(page, '/hilos/legal/settings', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/legal/settings', PAGE_READY)
   await expect(
     shownByTestId(page, 'legal-setting-value-legal.consent_form'),
   ).toContainText('Checkbox')
@@ -121,6 +123,7 @@ test('a guest opens a legal setting, reads its value and cannot save it', async 
     ),
   ).toHaveCount(0)
   await clickSubmit(
+    expect,
     shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
   )
   const dialog = page.getByTestId('modal')
@@ -132,6 +135,6 @@ test('a guest opens a legal setting, reads its value and cannot save it', async 
     'aria-describedby',
     /(^| )hilos-view-mode-strip-text( |$)/,
   )
-  await clickSubmit(page.getByTestId('legal-setting-cancel'))
+  await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
   await expect(dialog).toBeHidden()
 })

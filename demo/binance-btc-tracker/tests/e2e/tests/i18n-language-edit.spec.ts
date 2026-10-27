@@ -3,15 +3,16 @@ import {
   shownByTestId,
   expectLanguagePageHead,
   watchI18nLivePages,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
 import {
   deleteLanguage,
   switchLanguageOn,
   switchLanguageOff,
-} from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+} from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('edits a switched-off language from its card and from the languages table', async ({
   page,
@@ -48,24 +49,29 @@ test('edits a switched-off language from its card and from the languages table',
       server.send(message)
     })
   })
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const observer = await context.newPage()
   try {
     await switchLanguageOn('uk')
-    await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
 
     const switchOff = page.getByTestId('language-card-switch-off')
-    await clickSubmit(switchOff)
+    await clickSubmit(expect, switchOff)
 
     const confirm = page.getByTestId('language-card-switch-off-confirm')
-    await clickSubmit(confirm)
+    await clickSubmit(expect, confirm)
     await expect(confirm).toHaveCount(0)
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
       'Language switched off',
     )
     await expect(page.getByTestId('language-card-view')).toHaveCount(0)
 
-    await gotoPage(observer, '/hilos/i18n/languages/uk/names', PAGE_READY)
+    await gotoPage(
+      expect,
+      observer,
+      '/hilos/i18n/languages/uk/names',
+      PAGE_READY,
+    )
     await expectLanguagePageHead(expect, observer, {
       code: 'uk',
       nativeName: 'Українська',
@@ -74,7 +80,7 @@ test('edits a switched-off language from its card and from the languages table',
     })
     const live = await watchI18nLivePages(expect, [page, observer])
     const cardEdit = page.getByTestId('language-card-edit')
-    await clickSubmit(cardEdit)
+    await clickSubmit(expect, cardEdit)
     await expect(page.getByTestId('i18n-language-edit-title')).toContainText(
       'Edit language · ',
     )
@@ -91,7 +97,7 @@ test('edits a switched-off language from its card and from the languages table',
     await nativeName.pressSequentially(cardName, { delay: 10 })
 
     const save = page.getByTestId('i18n-language-edit-submit')
-    await clickSubmit(save)
+    await clickSubmit(expect, save)
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
     await expect(
       page
@@ -115,7 +121,7 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(observer).toHaveURL(/\/hilos\/i18n\/languages\/uk\/names$/)
     await live.unchanged()
 
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     const row = page
       .getByTestId(/^hilos-table-row-/)
       .filter({ has: page.getByTestId('i18n-languages-link-uk') })
@@ -123,13 +129,13 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(page.getByTestId('i18n-languages-view-uk')).toHaveCount(0)
 
     const rowEdit = row.getByTestId('i18n-languages-edit-uk')
-    await clickSubmit(rowEdit)
+    await clickSubmit(expect, rowEdit)
     await expect(nativeName).toHaveValue(cardName)
 
     const tableName = `${cardName} · 2`
     await nativeName.fill('')
     await nativeName.pressSequentially(tableName, { delay: 10 })
-    await clickSubmit(save)
+    await clickSubmit(expect, save)
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
     await expect(
       page
@@ -160,16 +166,16 @@ test('edits a switched-off language from its card and from the languages table',
     staleId = writes[0].languageId
     await deleteLanguage('uk')
     await switchLanguageOff('uk')
-    await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Українська',
     )
-    await clickSubmit(cardEdit)
+    await clickSubmit(expect, cardEdit)
     await nativeName.fill('')
     await nativeName.pressSequentially('Must not reach replacement', {
       delay: 10,
     })
-    await clickSubmit(save)
+    await clickSubmit(expect, save)
     await expect(page.getByTestId('i18n-language-edit-error')).toContainText(
       `Unknown language: ${staleId}`,
     )
@@ -182,7 +188,7 @@ test('edits a switched-off language from its card and from the languages table',
     await expect(nativeName).toHaveValue('Must not reach replacement')
 
     staleId = null
-    await clickSubmit(save)
+    await clickSubmit(expect, save)
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Must not reach replacement',
@@ -194,7 +200,7 @@ test('edits a switched-off language from its card and from the languages table',
     // This scenario owns uk; leave the following names-table empty-state check intact.
     await deleteLanguage('uk')
     // A live removal waits for Apply; check cleanup against a fresh page snapshot.
-    await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     await expect(
       page
         .getByTestId(/^hilos-table-row-/)
@@ -206,12 +212,12 @@ test('edits a switched-off language from its card and from the languages table',
 test('opens a switched-on language read-only and says how to edit it', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
   await expect(page.getByTestId('i18n-languages-edit-en')).toHaveCount(0)
 
   const rowView = shownByTestId(page, 'i18n-languages-view-en')
-  await clickSubmit(rowView)
+  await clickSubmit(expect, rowView)
   await expect(page.getByTestId('i18n-language-edit-title')).toHaveText(
     'Language · English',
   )
@@ -232,16 +238,16 @@ test('opens a switched-on language read-only and says how to edit it', async ({
   await expect(page.getByTestId('i18n-language-edit-submit')).toHaveCount(0)
 
   const close = page.getByTestId('i18n-language-edit-close')
-  await clickSubmit(close)
+  await clickSubmit(expect, close)
   await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/i18n/languages/en', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
   await expect(page.getByTestId('language-card-frozen')).toBeVisible()
   const cardView = page.getByTestId('language-card-view')
-  await clickSubmit(cardView)
+  await clickSubmit(expect, cardView)
   await expect(page.getByTestId('i18n-language-edit-title')).toHaveText(
     'Language · English',
   )
-  await clickSubmit(close)
+  await clickSubmit(expect, close)
   await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
 })

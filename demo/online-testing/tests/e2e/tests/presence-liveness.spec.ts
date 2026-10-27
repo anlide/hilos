@@ -1,9 +1,12 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
-import { openRawWebSocket } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
-import { signUpPerson, typeInto } from '../helpers/session'
+import {
+  signUp,
+  openRawWebSocket,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // Presence over silent sockets (HIL-1566). The master pings a browser socket that
 // has said nothing for the idle span, holds it probably offline from a longer span
@@ -98,12 +101,12 @@ test('says a person probably offline while every socket of theirs is silent', as
     ignoreHTTPSErrors: use.ignoreHTTPSErrors,
   })
   try {
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const personPage = await personContext.newPage()
-    const person = await signUpPerson(personPage)
+    const person = await signUp(expect, personPage)
     // A fresh document spends a rotation the sign-up may have left in flight, so
     // the cookie the raw sockets present is the one the person's session ends on.
-    await gotoPage(personPage, '/')
+    await gotoPage(expect, personPage, '/')
     await expect(personPage.getByTestId('self-user')).toHaveText(person.name)
     // The person's own tab answers every ping; it leaves, and the raw sockets are
     // all of the person the master hears.
@@ -111,9 +114,9 @@ test('says a person probably offline while every socket of theirs is silent', as
     const first = await openRawWebSocket(personContext, use)
     const second = await openRawWebSocket(personContext, use)
 
-    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     const list = await page.context().newPage()
-    await gotoPage(list, '/hilos/users')
+    await gotoPage(expect, list, '/hilos/users')
     await typeInto(list.getByTestId('hilos-table-search'), person.name)
     await expectPresence(page, list, person.userId, 'online', 2)
 

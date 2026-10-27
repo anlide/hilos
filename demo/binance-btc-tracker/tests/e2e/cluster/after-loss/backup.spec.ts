@@ -1,20 +1,22 @@
 import { expect, test } from '@playwright/test'
 
-import { grantAdminToSelf } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   newMasterPage,
   readCarry,
 } from '../../helpers/cluster.js'
-import { gotoPage } from '../../helpers/page.js'
+import {
+  gotoPage,
+  grantAdminToSelf,
+} from '../../../../../../framework/frontend/e2e/index.js'
 
 test('the archive of the stopped slave stays visible but out of reach', async ({
   browser,
 }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, '/hilos/backup')
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos/backup')
     const backupRow = String(readCarry().backupRow)
     const stopped = process.env.CLUSTER_STOPPED
     expect(stopped).toBeTruthy()

@@ -34,10 +34,11 @@ import {
   expectStandaloneOverview,
   expectStandaloneWorkers,
   shownByTestId,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // spec-owner: demo — proves ecommerce-shop mounts the Daemon section without logs.
 
@@ -59,9 +60,9 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   page,
 }) => {
   test.slow()
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos', PAGE_READY)
+  await gotoPage(expect, page, '/hilos', PAGE_READY)
   const card = page.getByTestId('dashboard-card-hilos_daemon')
   await expect(card).toHaveAttribute('href', DAEMON_ROOT_PATH)
   await card.click()
@@ -83,7 +84,7 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   }
 
   // Cold load of the Daemon section root.
-  await gotoPage(page, DAEMON_ROOT_PATH, PAGE_READY)
+  await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
   if (SMOKE_NODES) {
     const masters = SMOKE_NODES.filter((id) => id.startsWith('m'))
     const slaves = SMOKE_NODES.filter((id) => !id.startsWith('m'))
@@ -256,14 +257,14 @@ for (const viewer of [false, true]) {
     // Each tab opens its own live subscription, followed by a full reload.
     test.slow()
     await setAdminViewMode(viewer)
-    if (!viewer) await grantAdminToSelf(page)
+    if (!viewer) await grantAdminToSelf(expect, page)
     const reports = watchDaemonNodeFrames(page)
-    await gotoPage(page, DAEMON_NODE_PATH, PAGE_READY)
+    await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
     await expectStandaloneNodeOverview(expect, page, { showLogLinks: false })
     const beforeLive = reports.frames.length
     const visitor = await context.newPage()
     try {
-      await gotoPage(visitor, '/', PAGE_READY)
+      await gotoPage(expect, visitor, '/', PAGE_READY)
       await expectDaemonNodeLive(expect, page, reports.frames, beforeLive)
       await expectStandaloneNodeOverview(expect, page, { showLogLinks: false })
     } finally {
@@ -312,10 +313,10 @@ for (const viewer of [false, true]) {
     // Held cold reply, reload, a real connection report and history are separate round trips.
     test.slow()
     await setAdminViewMode(viewer)
-    if (!viewer) await grantAdminToSelf(page)
+    if (!viewer) await grantAdminToSelf(expect, page)
     // The source may be null until its first full picture; prepare that fact
     // in the setup tab, leaving the cold document's subscription untouched.
-    await gotoPage(page, DAEMON_PLACEMENT_PATH, PAGE_READY)
+    await gotoPage(expect, page, DAEMON_PLACEMENT_PATH, PAGE_READY)
     await expectDaemonPlacementSourceReady(expect, page)
     const cold = await context.newPage()
     const log = watchDeliveryFrames(cold)
@@ -324,7 +325,7 @@ for (const viewer of [false, true]) {
       tableKey: 'hilosDaemonPlacement',
     })
     const held = await holdPageReply(cold, 'hilos_daemon_placement')
-    const navigation = gotoPage(cold, DAEMON_PLACEMENT_PATH, PAGE_READY)
+    const navigation = gotoPage(expect, cold, DAEMON_PLACEMENT_PATH, PAGE_READY)
     const completed = navigation.catch((error: unknown) => error)
     const frames = () =>
       log.packets
@@ -355,7 +356,7 @@ for (const viewer of [false, true]) {
         ignoreHTTPSErrors: true,
       })
       try {
-        await gotoPage(visitor, '/', PAGE_READY)
+        await gotoPage(expect, visitor, '/', PAGE_READY)
         await live.changed()
       } finally {
         await visitor.context().close()
@@ -387,7 +388,7 @@ for (const viewer of [false, true]) {
       await expect(cold.getByTestId('hilos-daemon-http-address')).toHaveText(
         new RegExp(`:${source.httpPort}\\s*$`),
       )
-      await gotoPage(cold, '/hilos/daemon/env-mismatch', PAGE_READY)
+      await gotoPage(expect, cold, '/hilos/daemon/env-mismatch', PAGE_READY)
       await expectStandaloneMismatch(expect, cold)
       await cold
         .getByTestId('hilos-page-tab-hilos_daemon_placement')

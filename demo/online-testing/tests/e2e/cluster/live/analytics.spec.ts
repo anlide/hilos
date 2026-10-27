@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  PASSWORD,
+  nameFromEmail,
+  signUp,
   ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,
@@ -22,10 +25,10 @@ import {
   readClusterBrowserStand,
   watchClusterMasterUpgrades,
   type ClusterInspection,
+  expectPageReady,
+  gotoPage,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { setAdmin } from '../../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../../helpers/page.js'
-import { PASSWORD, nameFromEmail, signUp } from '../../helpers/session.js'
+import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
@@ -66,7 +69,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       )
       const frames = watchAnalyticsFrames(admin)
 
-      const email = await signUp(source)
+      const email = (await signUp(expect, source)).email
       const userId = Number(
         await source.getByTestId('self-user-id').innerText(),
       )
@@ -80,7 +83,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       const bodies = [email, PASSWORD]
       await sourceUpgrades.assert()
 
-      await signUp(admin)
+      await signUp(expect, admin)
       const adminId = Number(
         await admin.getByTestId('self-user-id').innerText(),
       )
@@ -120,12 +123,12 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       )
 
       // The way in: the person's admin card, then their sessions in Analytics.
-      await gotoPage(admin, `/hilos/user/${user.userId}`)
+      await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
       await admin.getByTestId('hilos-user-analytics-link').click()
       await expect(admin).toHaveURL(
         new RegExp(`/hilos/analytics/people/${user.userId}$`),
       )
-      await expectPageReady(admin)
+      await expectPageReady(expect, admin)
       await expectAnalyticsPersonSession(
         expect,
         admin,
@@ -145,7 +148,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
           `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
         ),
       )
-      await expectPageReady(admin)
+      await expectPageReady(expect, admin)
       await expectAnalyticsSessionHeader(
         expect,
         admin,
@@ -178,6 +181,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 
       await gotoPage(
+        expect,
         admin,
         `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
       )

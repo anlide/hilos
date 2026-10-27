@@ -1,7 +1,13 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import {
+  PASSWORD,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  expectPageReady,
+} from '../../../../../framework/frontend/e2e/index.js'
 
-import { PASSWORD, clickSubmit, signUp } from '../helpers/session.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
+import { signUp } from '../helpers/session.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import {
@@ -10,17 +16,10 @@ import {
   watchProfileRenameFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-// Type into a Vue input the way a user does — clear, then key by key — so the
-// reactivity a bare fill() can miss actually fires (see helpers/session).
-async function typeInto(field: Locator, value: string): Promise<void> {
-  await field.fill('')
-  await field.pressSequentially(value, { delay: 10 })
-}
-
 /** Confirm a password-backed protected operation inside an open profile modal. */
 async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(page.getByTestId(confirmId))
+  await clickSubmit(expect, page.getByTestId(confirmId))
 }
 
 // Profile e2e: the framework-owned profile page (hilos_profile) reached from the
@@ -42,7 +41,7 @@ test('the navbar links the current user to the profile page', async ({
     fullLoads += 1
   })
 
-  const { name } = await signUp(page)
+  const { name } = await signUp(expect, page)
   const loadsAfterColdLoad = fullLoads
 
   await expect(page.getByTestId('nav-profile')).toBeVisible()
@@ -80,13 +79,16 @@ test('the navbar links the current user to the profile page', async ({
       ),
   ).toEqual(sections.map((section) => `profile-${section}-open`))
   for (const section of sections) {
-    await clickSubmit(page.getByTestId(`profile-${section}-open`))
+    await clickSubmit(expect, page.getByTestId(`profile-${section}-open`))
     expect(new URL(page.url()).pathname).toBe(`/profile/${section}`)
     await expect(
       page.getByTestId('hilos-breadcrumb-hilos_profile'),
     ).toBeVisible()
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    await clickSubmit(page.getByTestId('hilos-breadcrumb-hilos_profile'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+    )
     await expect(page.getByTestId('profile-name')).toBeVisible()
   }
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -94,8 +96,8 @@ test('the navbar links the current user to the profile page', async ({
 })
 
 test('renames the current user through the edit modal', async ({ page }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 
@@ -124,9 +126,9 @@ for (const draft of ['Unsent name', 'X']) {
     const wire = watchProfileRenameFrames(page)
     const sends = countSentFrames(page, 'hilos_profile_name_set')
     try {
-      const user = await signUp(page)
-      await gotoPage(page, '/profile')
-      await clickSubmit(page.getByTestId('profile-edit'))
+      const user = await signUp(expect, page)
+      await gotoPage(expect, page, '/profile')
+      await clickSubmit(expect, page.getByTestId('profile-edit'))
       await confirmStepUp(page, 'profile-name-step-up-confirm')
       await typeInto(page.getByTestId('profile-name-input'), draft)
       const before = await expectProfileNameSnapshot(
@@ -143,15 +145,15 @@ for (const draft of ['Unsent name', 'X']) {
         null,
         before.socket,
       )
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page.getByTestId('profile-name-input')).toHaveValue(draft)
       await expect(page.getByTestId('profile-name')).toHaveText(user.name)
       await expect(page.getByTestId('conflict-badge')).toBeHidden()
       if (draft.length === 1)
         await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
       else await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
-      await clickSubmit(page.getByTestId('profile-rename-cancel'))
-      await clickSubmit(page.getByTestId('modal-confirm-discard'))
+      await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
+      await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
       const closed = wire.snapshots.at(-1)!
       await page.reload()
       await expectProfileNameSnapshot(
@@ -161,7 +163,7 @@ for (const draft of ['Unsent name', 'X']) {
         null,
         closed.socket,
       )
-      await expectPageReady(page)
+      await expectPageReady(expect, page)
       await expect(page.getByTestId('modal')).toBeHidden()
       expect(sends()).toBe(0)
     } finally {
@@ -181,14 +183,14 @@ test('surfaces a conflict when the name changes in another tab', async ({
   // registering in the first tab signs both in.
   const tabA = await context.newPage()
   const wireA = watchProfileRenameFrames(tabA)
-  const user = await signUp(tabA)
-  await gotoPage(tabA, '/profile')
+  const user = await signUp(expect, tabA)
+  await gotoPage(expect, tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabA.getByTestId('profile-name')).toBeVisible()
 
   const tabB = await context.newPage()
   const wireB = watchProfileRenameFrames(tabB)
-  await gotoPage(tabB, '/profile')
+  await gotoPage(expect, tabB, '/profile')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('profile-name')).toBeVisible()
 
@@ -245,8 +247,8 @@ test('surfaces a conflict when the name changes in another tab', async ({
 })
 
 test('opens the push devices page', async ({ page }) => {
-  await signUp(page)
-  await gotoPage(page, '/profile/devices')
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile/devices')
 
   await expect(page.getByTestId('profile-devices')).toBeVisible()
   await expect(page.getByTestId('profile-devices-heading')).toHaveText(

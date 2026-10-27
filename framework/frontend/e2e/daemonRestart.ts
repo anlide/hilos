@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import type { Page } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
 import {
   readMonopolisticWorker,
   type MonopolisticWorker,
 } from './daemonWorker.js'
+import { gotoPage, PAGE_READY } from './page.js'
 
 /** The only isolated worker this stand's restart scenario may pause. */
 export const RESTART_AGENT = 'hilos_settings_library'
@@ -19,13 +20,30 @@ export const RESTART_MARK_TIMEOUT_MS = 10_000
 
 export type RestartWorker = MonopolisticWorker
 
-/** Read only the settings worker; this restart API never selects another agent. */
+/**
+ * Read only the settings worker; this restart API never selects another agent.
+ *
+ * @param expect The spec's expect.
+ * @param page The page to navigate to the Workers table.
+ */
 export async function readRestartWorker(
+  expect: Expect,
   page: Page,
-  gotoWorkers: (page: Page) => Promise<void>,
-  waitFor: (predicate: () => boolean) => Promise<void>,
 ): Promise<RestartWorker> {
-  return readMonopolisticWorker(page, RESTART_AGENT, gotoWorkers, waitFor)
+  return readMonopolisticWorker(
+    page,
+    RESTART_AGENT,
+    (workersPage) =>
+      gotoPage(
+        expect,
+        workersPage,
+        '/hilos/daemon/standalone/workers',
+        PAGE_READY,
+      ),
+    async (predicate) => {
+      await expect.poll(predicate).toBe(true)
+    },
+  )
 }
 
 /**

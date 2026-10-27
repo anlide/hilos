@@ -1,17 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { signUpAdmin } from '../helpers/adminGrant.js'
+import { logout, signUp, signUpWithVerifiedEmail } from '../helpers/session.js'
 import {
-  clickSubmit,
   enterIdentifierAndPassword,
-  logout,
   PASSWORD,
-  signUp,
-  signUpWithVerifiedEmail,
-  typeInto,
-} from '../helpers/session.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import {
   ANALYTICS_SESSION_LIST_HANDLE,
   ANALYTICS_SESSION_LIST_PATH,
   expectAnalyticsSessionListAccessibility,
@@ -40,16 +32,21 @@ import {
   expectDaemonPage,
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
+  clickSubmit,
+  typeInto,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
   countSentFrames,
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
   watchProfileRenameStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -63,7 +60,7 @@ test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -71,7 +68,7 @@ async function openSettings(page: Page): Promise<void> {
 test('the viewport table has an accessible name and a labelled search', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   await openSettings(page)
 
   // The page heading is the table's accessible name: a table carries no
@@ -87,7 +84,7 @@ test('the viewport table has an accessible name and a labelled search', async ({
 test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   await openSettings(page)
 
   const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
@@ -116,9 +113,9 @@ test('Analytics People names its table through the heading and sorts Last seen f
 }) => {
   const frames = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(page)
-    await gotoPage(page, '/hilos/analytics/people')
-    await expectPageReady(page)
+    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await gotoPage(expect, page, '/hilos/analytics/people')
+    await expectPageReady(expect, page)
     const today = await expectAnalyticsPeopleWindow(
       expect,
       page,
@@ -162,11 +159,11 @@ test('Analytics People names its table through the heading and sorts Last seen f
 test('Analytics Person has one entity heading naming its table and a decorative avatar without tabs', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const name = await page.getByTestId('self-user').innerText()
   const label = `${name} (#${userId})`
-  await gotoPage(page, `/hilos/analytics/people/${userId}`)
-  await expectPageReady(page)
+  await gotoPage(expect, page, `/hilos/analytics/people/${userId}`)
+  await expectPageReady(expect, page)
 
   const carrier = page.getByTestId('hilos-admin-page')
   await expect(carrier).toHaveAttribute('data-page', 'hilos_analytics_person')
@@ -208,8 +205,8 @@ test('Analytics Person has one entity heading naming its table and a decorative 
 test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The skip link targets the main landmark.
@@ -232,13 +229,13 @@ test('the shell exposes a skip link and marks the active nav item', async ({
     'page',
   )
 
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   const build = await expectDesktopShell(expect, page, 'nav-profile')
   const document = await watchClientDocument(page)
   try {
     await page.getByTestId('nav-brand').click()
     await expect(page).toHaveURL('/')
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
       'href',
       '/',
@@ -257,7 +254,7 @@ test('the shell exposes a skip link and marks the active nav item', async ({
 test('each page titles the tab and announces the page on navigation', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   await openSettings(page)
 
   // The settings page titles the browser tab (framework label + app name), and
@@ -281,7 +278,7 @@ test('the home page exposes a heading and presence as text', async ({
 }) => {
   // Presence is a signed-in property, so establish a user; the register lands on
   // '/' with the self user resolved and online.
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
 
   // Exactly one top-level heading names the page (visually hidden here).
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
@@ -308,12 +305,12 @@ test('the home page exposes a heading and presence as text', async ({
   await link.focus()
   await expect(link).toBeFocused()
   await page.keyboard.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe(`/user/${selfUserId}`)
   await expect(page.getByTestId('user-name')).toHaveText(user.name)
 
   await page.getByTestId('nav-conversations').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Conversations',
@@ -323,9 +320,9 @@ test('the home page exposes a heading and presence as text', async ({
 test('the user Overview exposes a shared heading, named navigation and keyboard rename', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const name = await page.getByTestId('self-user').innerText()
-  await gotoPage(page, `/hilos/user/${userId}`)
+  await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expectHilosUserOverview(expect, page, userId, name, 'Hilos Chat')
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'Profile',
@@ -341,19 +338,19 @@ test('the user Overview exposes a shared heading, named navigation and keyboard 
 test('profile dialogs carry their refusal voice before any refusal', async ({
   page,
 }) => {
-  await signUpWithVerifiedEmail(page)
-  await gotoPage(page, '/profile/sign-in')
+  await signUpWithVerifiedEmail(expect, page)
+  await gotoPage(expect, page, '/profile/sign-in')
   const passwordRow = page
     .getByTestId('profile-identity-item')
     .filter({ has: page.getByTestId('profile-password-change') })
-  await clickSubmit(passwordRow.getByTestId('identity-unlink'))
+  await clickSubmit(expect, passwordRow.getByTestId('identity-unlink'))
   const live = page.getByTestId('profile-unlink-modal').getByRole('alert')
   await expect(live).toHaveAttribute('aria-live', 'assertive')
   await expect(live).toHaveText('')
-  await clickSubmit(page.getByTestId('identity-unlink-cancel'))
+  await clickSubmit(expect, page.getByTestId('identity-unlink-cancel'))
   await expect(page.getByTestId('profile-unlink-modal')).toHaveCount(0)
 
-  await gotoPage(page, '/profile')
+  await gotoPage(expect, page, '/profile')
   await page.getByTestId('profile-edit').click()
   const dialogLive = page.getByTestId('profile-rename-live-assertive')
   await expect(dialogLive).toHaveAttribute('role', 'alert')
@@ -366,14 +363,14 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(page)
-    await gotoPage(page, '/profile')
+    const user = await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
     const opener = page.getByTestId('profile-edit')
     const dialog = page.getByRole('dialog')
-    await clickSubmit(opener)
+    await clickSubmit(expect, opener)
     await expect(dialog).toHaveAccessibleName("Confirm it's you")
     await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-    await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
+    await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
     await expect(dialog).toHaveAccessibleName('Change name')
     const field = page.getByTestId('profile-name-input')
     await expect(field).toBeFocused()
@@ -385,7 +382,7 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
     // The real model holds its response while keyboard and pending semantics are checked.
     await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 2_000 })
     await typeInto(field, name)
-    await clickSubmit(page.getByTestId('profile-rename-save'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
     const accepted = await expectProfileNameSnapshot(
       expect,
       wire,
@@ -411,7 +408,7 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
     await field.press('Enter')
     await field.press('Escape')
     await expect(page.getByTestId('modal-confirm')).toBeFocused()
-    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-cancel'))
     await expect(field).toHaveValue(name)
     await expectProfileNameSnapshot(expect, wire, user.userId, {
       requestId: accepted.state.change!.requestId,
@@ -423,15 +420,15 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
     await status.unchanged(false)
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     // All four dismissal paths pass the same dirty-confirm gate.
-    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
     await expect(page.getByTestId('modal-confirm')).toBeFocused()
-    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
-    await clickSubmit(page.getByTestId('modal-close'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-close'))
     await expect(page.getByTestId('modal-confirm')).toBeFocused()
-    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-cancel'))
     await page.getByTestId('modal').click({ position: { x: 2, y: 2 } })
     await expect(page.getByTestId('modal-confirm')).toBeFocused()
-    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(opener).toBeFocused()
     expect(sends()).toBe(1)
@@ -447,9 +444,9 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
 test('the profile session and device pages expose one named surface', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUp(expect, page)
 
-  await gotoPage(page, '/profile/sessions')
+  await gotoPage(expect, page, '/profile/sessions')
   await expect(page.getByTestId('profile-sessions-heading')).toHaveText(
     'Sessions',
   )
@@ -458,7 +455,7 @@ test('the profile session and device pages expose one named surface', async ({
     'Sessions',
   )
 
-  await gotoPage(page, '/profile/devices')
+  await gotoPage(expect, page, '/profile/devices')
   await expect(page.getByTestId('profile-devices-heading')).toHaveText(
     'Devices',
   )
@@ -471,11 +468,11 @@ test('the profile session and device pages expose one named surface', async ({
 test('password visibility toggle operates from keyboard on sign-in', async ({
   page,
 }) => {
-  const user = await signUp(page)
-  await logout(page)
-  await gotoPage(page, '/profile')
+  const user = await signUp(expect, page)
+  await logout(expect, page)
+  await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await enterIdentifierAndPassword(page, user.email, PASSWORD)
+  await enterIdentifierAndPassword(expect, page, user.email, PASSWORD)
   await expectPasswordVisibility(
     expect,
     page,
@@ -672,8 +669,8 @@ test.describe('SDK reading accessibility, synthetic fixture ingress', () => {
 test('Communications exposes one named head and keyboard links between channel pages', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/communications/email')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/communications/email')
   await expectCommunicationsAccessibility(expect, page, 'overview', 'Enabled')
 
   const configuration = page.getByTestId(
@@ -682,7 +679,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await configuration.focus()
   await expect(configuration).toBeFocused()
   await configuration.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -696,7 +693,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await deliveries.focus()
   await expect(deliveries).toBeFocused()
   await deliveries.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(expect, page, 'deliveries', 'Enabled')
 
   const overview = page.getByTestId(
@@ -705,7 +702,7 @@ test('Communications exposes one named head and keyboard links between channel p
   await overview.focus()
   await expect(overview).toBeFocused()
   await overview.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expectCommunicationsAccessibility(expect, page, 'overview', 'Enabled')
 })
 
@@ -714,8 +711,8 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 }) => {
   // Each addressed page has a real subscription and keyboard navigation.
   test.slow()
-  await signUpAdmin(page)
-  await gotoPage(page, DAEMON_NODE_PATH)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, DAEMON_NODE_PATH)
   await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
   for (const tab of DAEMON_NODE_TABS.slice(1)) {
     const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
@@ -734,9 +731,9 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 test('the moderation kinds root exposes one heading, named table and keyboard open link', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/moderation')
-  await expectPageReady(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/moderation')
+  await expectPageReady(expect, page)
 
   // Exactly one h1 names the page from the shared head.
   const heading = page.getByRole('heading', { level: 1 })
@@ -759,13 +756,13 @@ test('the moderation kinds root exposes one heading, named table and keyboard op
 test('Rules inherits the sole kind heading as its table name and uses keyboard page links', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const declared = {
     kind: 'hilos_profile_name',
     title: 'Profile name',
     owner: 'Framework',
   }
-  await gotoPage(page, '/hilos/moderation/hilos_profile_name/rules')
+  await gotoPage(expect, page, '/hilos/moderation/hilos_profile_name/rules')
   await expectModerationKindHead(expect, page, declared, 'rules')
   const table = page
     .getByTestId('hilos-moderation-rules-table')
@@ -791,7 +788,7 @@ test('Rules inherits the sole kind heading as its table name and uses keyboard p
   await page.keyboard.press('Shift+Tab')
   await expect(overview).toBeFocused()
   await overview.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name')
   await expectModerationKindHead(expect, page, declared, 'overview')
   await expect(page.getByTestId('hilos-moderation-rules-table')).toHaveCount(0)
@@ -799,7 +796,7 @@ test('Rules inherits the sole kind heading as its table name and uses keyboard p
   await page.keyboard.press('Tab')
   await expect(rules).toBeFocused()
   await rules.press('Enter')
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name/rules')
   await expectModerationKindHead(expect, page, declared, 'rules')
   await expect(table).toHaveAccessibleName('Profile name')
@@ -813,8 +810,9 @@ test.describe('Daemon section accessibility', () => {
       page,
     }) => {
       await setAdminViewMode(viewer)
-      if (!viewer) await signUpAdmin(page)
-      await gotoPage(page, DAEMON_ROOT_PATH)
+      if (!viewer)
+        await signUpAdmin(expect, page, { entryId: 'message-signin' })
+      await gotoPage(expect, page, DAEMON_ROOT_PATH)
       await expectDaemonPage(expect, page, 'hilos_daemon')
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
       const placement = page.getByTestId(
@@ -842,8 +840,8 @@ test('Analytics Browser sessions names its table through one heading and operate
 }) => {
   const frames = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(page)
-    await gotoPage(page, ANALYTICS_SESSION_LIST_PATH)
+    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await gotoPage(expect, page, ANALYTICS_SESSION_LIST_PATH)
     const today = await expectAnalyticsSessionListWindow(
       expect,
       page,

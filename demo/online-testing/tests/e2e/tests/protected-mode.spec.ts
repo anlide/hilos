@@ -14,16 +14,18 @@ import {
   presentMaintenanceCode,
   turnOffMaintenance,
   turnOnMaintenance,
+  PAGE_READY,
+  gotoMaintenance,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { PAGE_READY, gotoMaintenance, gotoPage } from '../helpers/page.js'
 import {
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
   mintProtectedModePass,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode.js'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // The Angular half of HIL-615 and HIL-616: the verifier's code field belongs to
 // administrative surfaces and to nowhere else, and only once a code exists to type
@@ -67,14 +69,14 @@ test('the verification window waits for a code before it offers a field', async 
   // A public url in the window looks exactly like the active phase. That is the
   // point of the leaf: a visitor holds no code, and a field would announce to
   // him that a window is open at all.
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
   await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 
   // The same phase, the same freeze, an administrative url — and nothing minted
   // yet. The verifier is told to wait rather than handed a box that can take
   // nothing.
-  await gotoMaintenance(page, ADMIN_URL)
+  await gotoMaintenance(expect, page, ADMIN_URL)
   await expect(page.getByTestId('maintenance-pass-pending')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
 
@@ -93,7 +95,7 @@ test('the verification window waits for a code before it offers a field', async 
 test('a public page live through the switch gains no code field', async ({
   page,
 }) => {
-  await gotoPage(page, '/')
+  await gotoPage(expect, page, '/')
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
   expect(await enterProtectedMode(OPERATION)).toBe('active')
@@ -106,7 +108,7 @@ test('a public page live through the switch gains no code field', async ({
   // assertion below is about the surface type and not about a frame still in
   // flight.
   const verifierTab = await page.context().newPage()
-  await gotoMaintenance(verifierTab, ADMIN_URL)
+  await gotoMaintenance(expect, verifierTab, ADMIN_URL)
   await expect(verifierTab.getByTestId('maintenance-pass-form')).toBeVisible()
   await verifierTab.close()
 
@@ -127,7 +129,7 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
   await watchFirstFrame(page)
   expect(await enterProtectedMode(OPERATION)).toBe('active')
 
-  await gotoMaintenance(page, '/')
+  await gotoMaintenance(expect, page, '/')
 
   const watch = await readFirstFrameWatch(page)
   expect(watch).not.toBeNull()
@@ -146,15 +148,15 @@ test('two administrators close the system by hand, one lets the other in with a 
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH, PAGE_READY)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
-    await grantAdminToSelf(other)
-    await gotoPage(other, MAINTENANCE_PATH, PAGE_READY)
+    await grantAdminToSelf(expect, other)
+    await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)

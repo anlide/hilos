@@ -1,16 +1,18 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { holdLegalRevision } from '../helpers/legalHold.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
+
 import {
-  clickSubmit,
   login,
   logout,
   openSignIn,
   signUp,
-} from '../helpers/session.js'
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+  shownByTestId,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // "The terms have changed" (HIL-500). Polls's second terms revision is substantial
 // and took effect the day it was published, so a person the test:legal:hold
@@ -29,17 +31,18 @@ const HELD_TERMS = '2026-09-17'
  * @param value 'freeze' or 'remind'.
  */
 async function setRefusal(admin: Page, value: string): Promise<void> {
-  await gotoPage(admin, '/hilos/legal/settings')
+  await gotoPage(expect, admin, '/hilos/legal/settings')
   await clickSubmit(
+    expect,
     shownByTestId(admin, 'legal-setting-edit-legal.refusal_after_deadline'),
   )
   const input = admin.getByTestId('legal-setting-input')
   await expect(input).toBeVisible()
   if ((await input.inputValue()) === value) {
-    await clickSubmit(admin.getByTestId('legal-setting-cancel'))
+    await clickSubmit(expect, admin.getByTestId('legal-setting-cancel'))
   } else {
     await input.selectOption(value)
-    await clickSubmit(admin.getByTestId('legal-setting-save'))
+    await clickSubmit(expect, admin.getByTestId('legal-setting-save'))
   }
   await expect(input).toBeHidden()
 }
@@ -47,7 +50,7 @@ async function setRefusal(admin: Page, value: string): Promise<void> {
 test('a person past the deadline is frozen until they accept, and keeps their data', async ({
   page,
 }) => {
-  const person = await signUp(page)
+  const person = await signUp(expect, page)
 
   const held = await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
   expect(held.standing).toBe('lapsed')
@@ -74,7 +77,7 @@ test('a person past the deadline is frozen until they accept, and keeps their da
   // Back through the shell's own link: a frozen page shows no outlet to wait on.
   await page.getByTestId('nav-brand').click()
   await expect(screen).toBeVisible()
-  await clickSubmit(screen.getByTestId('legal-reconsent-accept'))
+  await clickSubmit(expect, screen.getByTestId('legal-reconsent-accept'))
 
   // Accepting opens the product at once, without a reload.
   await expect(screen).toHaveCount(0)
@@ -84,17 +87,17 @@ test('a person past the deadline is frozen until they accept, and keeps their da
 test('under "remind" the window rises on sign-in and the header icon keeps the reminder', async ({
   page,
 }) => {
-  const admin = await signUp(page)
-  await grantAdminToSelf(page)
+  const admin = await signUp(expect, page)
+  await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
   )
   try {
     await setRefusal(page, 'remind')
-    await logout(page)
+    await logout(expect, page)
 
-    const person = await signUp(page)
+    const person = await signUp(expect, page)
     const held = await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
     expect(held.standing).toBe('lapsed')
     expect(held.frozen).toBe(false)
@@ -110,9 +113,9 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     await expect(page.getByTestId('legal-reconsent-modal')).toHaveCount(0)
 
     // A sign-in in this tab raises the window by itself.
-    await logout(page)
-    await openSignIn(page)
-    await login(page, person.email)
+    await logout(expect, page)
+    await openSignIn(expect, page)
+    await login(expect, page, person.email)
     const window = page.getByTestId('legal-reconsent-modal')
     await expect(window).toBeVisible()
     await expect(window.getByTestId('legal-reconsent-badge')).toContainText(
@@ -126,37 +129,37 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     )
 
     // Later closes it and records nothing: the icon stays.
-    await clickSubmit(window.getByTestId('legal-reconsent-later'))
+    await clickSubmit(expect, window.getByTestId('legal-reconsent-later'))
     await expect(window).toHaveCount(0)
     await expect(icon).toBeVisible()
 
     await icon.click()
     await expect(window).toBeVisible()
-    await clickSubmit(window.getByTestId('legal-reconsent-refuse'))
+    await clickSubmit(expect, window.getByTestId('legal-reconsent-refuse'))
     const step = window.getByTestId('legal-reconsent-refuse-step')
     await expect(step).toContainText(
       'Nothing changes: this reminder will keep coming back.',
     )
     await expect(step.getByTestId('legal-reconsent-data-link')).toBeVisible()
     await expect(step.getByTestId('legal-reconsent-delete-link')).toBeVisible()
-    await clickSubmit(window.getByTestId('legal-reconsent-close'))
+    await clickSubmit(expect, window.getByTestId('legal-reconsent-close'))
     await expect(window).toHaveCount(0)
 
     await icon.click()
     await expect(window).toBeVisible()
     await expect(window.getByTestId('legal-reconsent-accept')).toBeEnabled()
-    await clickSubmit(window.getByTestId('legal-reconsent-accept'))
+    await clickSubmit(expect, window.getByTestId('legal-reconsent-accept'))
     await expect(window).toHaveCount(0)
     await expect(icon).toHaveCount(0)
   } finally {
     const cleanup = await page.context().newPage()
     try {
-      await gotoPage(cleanup, '/')
+      await gotoPage(expect, cleanup, '/')
       if ((await cleanup.getByTestId('nav-logout').count()) > 0) {
-        await logout(cleanup)
+        await logout(expect, cleanup)
       }
-      await openSignIn(cleanup)
-      await login(cleanup, admin.email)
+      await openSignIn(expect, cleanup)
+      await login(expect, cleanup, admin.email)
       await setRefusal(cleanup, 'freeze')
     } finally {
       await cleanup.close()
@@ -167,11 +170,11 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
 test('a person frozen elsewhere sees the screen on every page but the open ones', async ({
   page,
 }) => {
-  const person = await signUp(page)
+  const person = await signUp(expect, page)
   await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
   await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
 
-  await gotoPage(page, '/profile/agreements', PAGE_READY)
+  await gotoPage(expect, page, '/profile/agreements', PAGE_READY)
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
   await page.getByTestId('nav-profile-name').click()
   await expect(page).toHaveURL(/\/profile$/)
@@ -179,6 +182,7 @@ test('a person frozen elsewhere sees the screen on every page but the open ones'
 
   // Accept, so the suite's later specs meet no frozen account.
   await clickSubmit(
+    expect,
     page
       .getByTestId('legal-frozen-screen')
       .getByTestId('legal-reconsent-accept'),

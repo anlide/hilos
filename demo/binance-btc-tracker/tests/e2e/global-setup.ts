@@ -1,12 +1,12 @@
 import https from 'node:https'
 
-import { clearMail } from './helpers/mail'
+import { clearMail } from '../../../../framework/frontend/scripts/standMailbox.mjs'
 import {
   READY_TIMEOUT_MS,
   probeStatic,
   probeWebSocketUpgrade,
   waitUntilReady,
-} from './helpers/standReady.js'
+} from '../../../../framework/frontend/scripts/standReady.mjs'
 
 /**
  * Blocks until the test stack is fully ready — nginx serves the built

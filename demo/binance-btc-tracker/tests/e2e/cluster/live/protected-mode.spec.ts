@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  signUp,
   CIRCLE_ONLINE,
   MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
@@ -25,8 +26,14 @@ import {
   watchClusterMasterUpgrades,
   watchSocketFrames,
   type SocketFrame,
+  expectPageReady,
+  expectSelfReload,
+  gotoMaintenance,
+  gotoPage,
+  markDocument,
+  grantAdminToSelf,
+  sessionToken,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, sessionToken } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -38,13 +45,6 @@ import {
   onMaster,
 } from '../../helpers/cluster.js'
 import {
-  expectPageReady,
-  expectSelfReload,
-  gotoMaintenance,
-  gotoPage,
-  markDocument,
-} from '../../helpers/page.js'
-import {
   closeProtectedMode,
   enterProtectedMode,
   inspectProtectedMode,
@@ -52,8 +52,7 @@ import {
   mintProtectedModePass,
   openProtectedMode,
   openProtectedModeIfAny,
-} from '../../helpers/protectedMode.js'
-import { signUp, signUpPerson } from '../../helpers/session.js'
+} from '../../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 const OPERATION = 'cluster-e2e-freeze'
 const STUB_TITLE = 'Maintenance in progress'
@@ -76,7 +75,7 @@ async function expectInsideMainPage(page: Page): Promise<void> {
   await expect(page.getByTestId('protected-mode-banner')).toContainText(
     BANNER_MESSAGE,
   )
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('self-user')).toBeVisible()
 }
 
@@ -117,12 +116,12 @@ test(
     )
     try {
       for (const page of pages) {
-        await gotoPage(page, '/')
+        await gotoPage(expect, page, '/')
         await expect(page.getByTestId('conn-state')).toHaveText('connected')
         await expect(page.getByTestId('maintenance')).toBeHidden()
       }
       const follower = pages[CLUSTER_MASTERS.indexOf(CLUSTER_FOLLOWER)]
-      const person = await signUpPerson(follower)
+      const person = await signUp(expect, follower)
       expect(await enterProtectedMode(OPERATION)).toBe('active')
       for (const page of pages) {
         await expect(page.getByTestId('maintenance')).toBeVisible()
@@ -137,7 +136,7 @@ test(
       }
       expect(await openProtectedMode()).toBe('inactive')
       for (const page of pages) {
-        await expectSelfReload(page)
+        await expectSelfReload(page, test.info().project.use.navigationTimeout)
         await expect(page.getByTestId('maintenance')).toBeHidden()
         await expect(page.getByTestId('conn-state')).toHaveText('connected')
       }
@@ -165,21 +164,21 @@ test(
     const member = await newMasterPage(browser, CLUSTER_FOLLOWER)
     const bystander = await newMasterPage(browser, CLUSTER_FOLLOWER)
     try {
-      await grantAdminToSelf(operator)
-      await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
+      await grantAdminToSelf(expect, operator)
+      await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
       await clearMaintenanceCircle(operator)
       const operatorSession = await sessionToken(operator)
 
-      const memberEmail = await signUp(member)
+      const memberEmail = (await signUp(expect, member)).email
       await addToMaintenanceCircle(operator, memberEmail)
       await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
       await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
         CIRCLE_ONLINE,
       )
-      await gotoPage(operator, '/')
-      await gotoPage(member, '/')
+      await gotoPage(expect, operator, '/')
+      await gotoPage(expect, member, '/')
       await expect(member.getByTestId('conn-state')).toHaveText('connected')
-      await gotoPage(bystander, '/')
+      await gotoPage(expect, bystander, '/')
       await expect(bystander.getByTestId('conn-state')).toHaveText('connected')
 
       expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
@@ -206,10 +205,16 @@ test(
       await markDocument(member)
       await markDocument(bystander)
       expect(await openProtectedMode()).toBe('inactive')
-      await expectSelfReload(operator)
-      await expectSelfReload(member)
-      await expectSelfReload(bystander)
-      await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
+      await expectSelfReload(
+        operator,
+        test.info().project.use.navigationTimeout,
+      )
+      await expectSelfReload(member, test.info().project.use.navigationTimeout)
+      await expectSelfReload(
+        bystander,
+        test.info().project.use.navigationTimeout,
+      )
+      await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
       await clearMaintenanceCircle(operator)
     } finally {
       await operator.context().close()
@@ -238,7 +243,7 @@ test('a minted code lets a tab on a follower master in, it stays in after a relo
     expect(await enterProtectedMode(OPERATION)).toBe('active')
     expect(await leaveProtectedMode()).toBe('verifying')
     const pass = await mintProtectedModePass()
-    await gotoMaintenance(verifier, '/hilos')
+    await gotoMaintenance(expect, verifier, '/hilos')
     await presentCode(verifier, pass)
     await expect(verifier.getByTestId('maintenance')).toBeHidden()
     await expect(verifier.getByTestId('conn-state')).toHaveText('connected')
@@ -247,14 +252,14 @@ test('a minted code lets a tab on a follower master in, it stays in after a relo
     await expect(verifier.getByTestId('maintenance')).toBeHidden()
     await expect(verifier.getByTestId('maintenance-pass-form')).toHaveCount(0)
     await expect(verifier.getByTestId('conn-state')).toHaveText('connected')
-    await gotoMaintenance(bystander, '/hilos')
+    await gotoMaintenance(expect, bystander, '/hilos')
     await expect(bystander.getByTestId('maintenance-pass-form')).toBeVisible()
 
     await markDocument(verifier)
     await markDocument(bystander)
     expect(await openProtectedMode()).toBe('inactive')
-    await expectSelfReload(verifier)
-    await expectSelfReload(bystander)
+    await expectSelfReload(verifier, test.info().project.use.navigationTimeout)
+    await expectSelfReload(bystander, test.info().project.use.navigationTimeout)
   } finally {
     await verifier.context().close()
     await bystander.context().close()
@@ -314,18 +319,18 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       })
     }
     const [operator, otherAdmin, member, ...visitors] = pages
-    const operatorId = await grantAdminToSelf(operator)
-    const otherAdminId = await grantAdminToSelf(otherAdmin)
+    const operatorId = await grantAdminToSelf(expect, operator)
+    const otherAdminId = await grantAdminToSelf(expect, otherAdmin)
     expect(otherAdminId).not.toBe(operatorId)
     for (const admin of [operator, otherAdmin]) {
-      await gotoPage(admin, MAINTENANCE_PATH)
+      await gotoPage(expect, admin, MAINTENANCE_PATH)
       await expectMaintenanceOpen(expect, admin)
     }
-    await gotoPage(operator, MAINTENANCE_CIRCLE_PATH)
+    await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
     circlePrepared = true
-    const memberEmail = await signUp(member)
-    await gotoPage(member, '/')
+    const memberEmail = (await signUp(expect, member)).email
+    await gotoPage(expect, member, '/')
     const memberName = await member.getByTestId('self-user').innerText()
     const memberId = await member.getByTestId('self-user-id').innerText()
     await addToMaintenanceCircle(operator, memberEmail)
@@ -333,7 +338,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
       CIRCLE_ONLINE,
     )
-    for (const visitor of visitors) await gotoPage(visitor, '/')
+    for (const visitor of visitors) await gotoPage(expect, visitor, '/')
     for (const page of pages) {
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
     }
@@ -341,7 +346,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
     for (const watcher of upgrades) await watcher.assert()
 
-    await gotoPage(operator, MAINTENANCE_PATH)
+    await gotoPage(expect, operator, MAINTENANCE_PATH)
     const navigations = new Map<Page, number>()
     for (const page of [operator, member]) {
       await markDocument(page)
@@ -355,7 +360,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     const marks = markClusterNodeLogs(stand, CLUSTER_MASTERS)
     await turnOnMaintenance(operator)
     await expectManualMaintenanceOn(expect, operator)
-    await expectPageReady(member)
+    await expectPageReady(expect, member)
     await expect(member.getByTestId('self-user')).toHaveText(memberName)
     await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
     await expect(member.getByTestId('conn-state')).toHaveText('connected')
@@ -419,8 +424,8 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await dismissToasts(otherAdmin)
     await turnOffMaintenance(otherAdmin)
     for (const page of pages) {
-      await expectSelfReload(page)
-      await expectPageReady(page)
+      await expectSelfReload(page, test.info().project.use.navigationTimeout)
+      await expectPageReady(expect, page)
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
       await expect(page.getByTestId('maintenance')).toHaveCount(0)
       await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
@@ -466,7 +471,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
             })
         }
         if (circlePrepared) {
-          await gotoPage(pages[0], MAINTENANCE_CIRCLE_PATH)
+          await gotoPage(expect, pages[0], MAINTENANCE_CIRCLE_PATH)
           await dismissToasts(pages[0])
           await clearMaintenanceCircle(pages[0])
         }

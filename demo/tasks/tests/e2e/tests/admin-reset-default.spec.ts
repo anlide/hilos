@@ -3,16 +3,17 @@ import { expect, test } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
 
 test('channel reset applies the env value shown in Back to', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/communications/email/configuration')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/communications/email/configuration')
 
   const row = shownByTestId(
     page,
@@ -24,7 +25,7 @@ test('channel reset applies the env value shown in Back to', async ({
     page.getByTestId('hilos-channel-edit-value'),
     'override.example',
   )
-  await clickSubmit(page.getByTestId('hilos-channel-edit-save'))
+  await clickSubmit(expect, page.getByTestId('hilos-channel-edit-save'))
   await expect(page.getByTestId('modal')).toHaveCount(0)
   await expect(row).toContainText('override.example')
   await expect(reset).toBeEnabled()
@@ -38,7 +39,7 @@ test('channel reset applies the env value shown in Back to', async ({
   await expect(page.getByTestId('hilos-channel-reset-now')).toHaveText(
     'override.example',
   )
-  await clickSubmit(page.getByTestId('hilos-channel-reset-confirm'))
+  await clickSubmit(expect, page.getByTestId('hilos-channel-reset-confirm'))
   await expect(page.getByTestId('modal')).toHaveCount(0)
   await expect(row).toContainText(preview)
   await expect(row.locator(':scope > td > .badge')).toHaveText('From env')
@@ -49,9 +50,9 @@ test('channel reset applies the env value shown in Back to', async ({
 test('provider resets apply env credentials and the recipe scope without exposing secrets', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
   // TasksOAuthProviderDirectory uses OAuthProviderPreset::GITHUB (oauth:github).
-  await gotoPage(page, '/hilos/security/oauth/oauth:github')
+  await gotoPage(expect, page, '/hilos/security/oauth/oauth:github')
 
   for (const field of [
     {
@@ -78,7 +79,7 @@ test('provider resets apply env credentials and the recipe scope without exposin
     const reset = shownByTestId(page, `hilos-oauth-field-reset-${field.key}`)
     await shownByTestId(page, `hilos-oauth-field-edit-${field.key}`).click()
     await typeInto(page.getByTestId('hilos-oauth-field-input'), field.override)
-    await clickSubmit(page.getByTestId('hilos-oauth-field-save'))
+    await clickSubmit(expect, page.getByTestId('hilos-oauth-field-save'))
     await expect(page.getByTestId('modal')).toHaveCount(0)
     await expect(value).toHaveText(
       field.key === 'client_secret' ? 'Set' : field.override,
@@ -101,7 +102,10 @@ test('provider resets apply env credentials and the recipe scope without exposin
       )
       await expect(page.getByTestId('modal')).not.toContainText(field.override)
     }
-    await clickSubmit(page.getByTestId('hilos-oauth-field-reset-confirm'))
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-oauth-field-reset-confirm'),
+    )
     await expect(page.getByTestId('modal')).toHaveCount(0)
     await expect(value).toHaveText(preview)
     await expect(reset).toBeDisabled()
@@ -115,8 +119,8 @@ test('provider resets apply env credentials and the recipe scope without exposin
 test('return address reset applies the env address shown in Back to', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/security/oauth')
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/security/oauth')
 
   const value = page.getByTestId('hilos-oauth-redirect-value')
   const reset = page.getByTestId('hilos-oauth-redirect-reset')
@@ -125,7 +129,7 @@ test('return address reset applies the env address shown in Back to', async ({
     page.getByTestId('hilos-oauth-redirect-input'),
     'https://override.example/auth/callback',
   )
-  await clickSubmit(page.getByTestId('hilos-oauth-redirect-save'))
+  await clickSubmit(expect, page.getByTestId('hilos-oauth-redirect-save'))
   await expect(page.getByTestId('modal')).toHaveCount(0)
   await expect(value).toHaveText('https://override.example/auth/callback')
   await expect(reset).toBeEnabled()
@@ -138,7 +142,10 @@ test('return address reset applies the env address shown in Back to', async ({
   )
   await expect(back.locator('.badge')).toHaveText('From env')
   const preview = (await back.innerText()).replace('From env', '').trim()
-  await clickSubmit(page.getByTestId('hilos-oauth-redirect-reset-confirm'))
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-oauth-redirect-reset-confirm'),
+  )
   await expect(page.getByTestId('modal')).toHaveCount(0)
   await expect(value).toHaveText(preview)
   await expect(reset).toBeDisabled()

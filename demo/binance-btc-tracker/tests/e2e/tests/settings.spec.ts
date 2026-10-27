@@ -14,11 +14,13 @@ import {
   watchLeft,
   watchTop,
   watchTableSearch,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
+  expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { setAdminViewMode } from '../helpers/adminViewMode'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
@@ -39,7 +41,7 @@ test.describe.configure({ mode: 'default' })
 
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -55,13 +57,13 @@ test(
   'lists settings in the server window and filters from the search box',
   { tag: '@quarantine:F-029' },
   async ({ page }) => {
-    await signUpAdmin(page)
+    await signUpAdmin(expect, page)
     await openSettings(page)
     await expectSettingsPageHead(expect, page)
 
     // Direct entry and F5 keep the same head without a single Overview tab.
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectSettingsPageHead(expect, page)
 
     // A cataloged table has no free "add a setting" entry point.
@@ -101,7 +103,7 @@ test(
 test('paginates the server window by its page numbers and its neighbors', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
 
   // Compare the windows themselves: catalog additions legitimately move a
@@ -142,7 +144,7 @@ test('paginates the server window by its page numbers and its neighbors', async 
 test('a third click on a sorted header returns the table to its initial order', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
 
   // The catalog opens sorted by Key ascending: that is the order the third
@@ -182,7 +184,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
   const loadsAfterColdLoad = fullLoads
   await isolate(page, 'example_integer')
@@ -222,7 +224,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
     await value.evaluate((node, original) => node === original, input),
   ).toBe(true)
   const save = page.getByTestId('hilos-settings-edit-save')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
 
   // The success sentence is the backend's own, naming the key it saved: the
@@ -245,7 +247,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await custom.uncheck()
   await expect(value).toHaveAttribute('disabled', '')
   await expect(value).toHaveValue('43')
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
   await expect(row).toContainText('default')
   await expect(row).not.toContainText('custom')
@@ -273,7 +275,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
 test('an edit in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -316,7 +318,7 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
 test('the edit dialog opens on the value the other tab just wrote', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -351,7 +353,7 @@ test('an open pristine edit reloads when the other tab saves', async ({
   // A string with no catalog rule; the file runs in order, so sharing it with the
   // other two-tab tests is safe.
   const key = 'example_string'
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -388,7 +390,7 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
   page,
 }) => {
   const key = 'example_string'
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -428,7 +430,7 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   page,
 }) => {
   const key = 'example_string'
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -462,7 +464,7 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
     await mark.unchanged()
   }
   await expect(save).toBeEnabled()
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'mine-provider',
   )
@@ -485,7 +487,7 @@ test('an open edit follows its row past the window edge, and the conflict after 
   // always did. (This table cannot say whether a row left a search, so a search
   // never takes a row off the screen; an order does.)
   const key = 'example_string'
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -548,7 +550,7 @@ test('an open edit follows its row past the window edge, and the conflict after 
   await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
   const save = page.getByTestId('hilos-settings-edit-save')
   await expect(save).toBeEnabled()
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(save).toHaveCount(0)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'mine-follow',
@@ -572,7 +574,7 @@ test('deletes an orphan setting through the confirm modal', async ({
     page: 'hilos_settings',
     tableKey: 'settings',
   })
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
   const mark = await windows.mark()
   await typeInto(page.getByTestId('hilos-table-search'), orphanKey)
@@ -623,12 +625,12 @@ test('deletes an orphan setting through the confirm modal', async ({
 
   // Own deletion applies immediately. This window keeps exactly one data-free
   // slot in each mounted projection until an explicit replacement is requested.
-  await clickSubmit(deleteButton)
+  await clickSubmit(expect, deleteButton)
   const confirm = page.getByTestId('hilos-settings-delete-confirm')
   await expect(page.getByTestId('modal')).toHaveAccessibleName(
     `Delete · ${orphanKey}`,
   )
-  await clickSubmit(confirm)
+  await clickSubmit(expect, confirm)
   await expect(confirm).toHaveCount(0)
   await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
   await expectDataFreeDeparture(expect, page, orphanKey, 'Removed', [
@@ -692,7 +694,7 @@ test('resets a custom setting to its catalog default through the confirm modal',
   // test ends on the catalog default, which is its own cleanup.
   const key = 'notifications.delivery_log.retention_days'
 
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
   await isolate(page, key)
   await setCustomSetting(page, key, '30')
@@ -724,7 +726,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   // of the journey, in the frontend driver.
   const key = 'logs.archive_retention.keep_batches'
 
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await openSettings(page)
   await isolate(page, key)
 
@@ -755,7 +757,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   const valueTop = await watchTop(value)
 
   await save.focus()
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
 
   // The dialog stays open with the refusal above the field, and the value the
   // person typed is still there for them to correct.
@@ -788,7 +790,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(save).toBeVisible()
   await expect(save).toBeEnabled()
   await save.focus()
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(toast.getByTestId('hilos-toast-repeats')).toHaveText('×2')
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('Value must be an integer of 0 or more')
@@ -849,7 +851,7 @@ test.describe('in the admin view mode', () => {
       /(^| )hilos-view-mode-strip-text( |$)/,
     )
 
-    await clickSubmit(page.getByTestId('hilos-settings-edit-cancel'))
+    await clickSubmit(expect, page.getByTestId('hilos-settings-edit-cancel'))
     await expect(page.getByTestId('modal-confirm-discard')).toHaveCount(0)
     await expect(modal).toBeHidden()
   })

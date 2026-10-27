@@ -8,19 +8,17 @@ import {
   MAINTENANCE_PATH,
   presentMaintenanceCode,
   shownByTestId,
-} from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import {
   expectPageReady,
   expectSelfReload,
   gotoPage,
   markDocument,
-} from '../helpers/page'
+  grantAdminToSelf,
+} from '../../../../../framework/frontend/e2e/index.js'
 import {
   inspectProtectedMode,
   openProtectedModeIfAny,
   ProtectedModeCommandRefused,
-} from '../helpers/protectedMode'
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // A real restore through the Backups screen (HIL-1679), on the demo that carries
 // the backup area. The freeze is the one the backup agent asks for when an
@@ -103,14 +101,14 @@ test('a real restore lets the initiating browser open the system from Maintenanc
   }
 
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, BACKUP_PATH)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, BACKUP_PATH)
     const backupId = await captureFullBackup(page)
     await replayBackup(page, backupId)
 
     // The window is open. The section is a navigation of its own: the backup
     // page is what the freeze covered, and the ladder lives on Maintenance.
-    await gotoPage(page, MAINTENANCE_PATH)
+    await gotoPage(expect, page, MAINTENANCE_PATH)
     await expectInitiatorLadder(page)
 
     const code = await mintRestoreCode(page)
@@ -124,7 +122,7 @@ test('a real restore lets the initiating browser open the system from Maintenanc
     await expect(waiting.getByTestId('maintenance-pass-form')).toBeVisible()
     await presentMaintenanceCode(admitted, code)
     await expect(admitted.getByTestId('maintenance')).toBeHidden()
-    await expectPageReady(admitted)
+    await expectPageReady(expect, admitted)
     await expectOtherBrowser(admitted)
     await expectInitiatorLadder(page)
 
@@ -141,8 +139,11 @@ test('a real restore lets the initiating browser open the system from Maintenanc
     await press(page.getByTestId('hilos-maintenance-restore-open-confirm'))
 
     for (const openPage of [page, admitted, waiting]) {
-      await expectSelfReload(openPage)
-      await expectPageReady(openPage)
+      await expectSelfReload(
+        openPage,
+        test.info().project.use.navigationTimeout,
+      )
+      await expectPageReady(expect, openPage)
       await expect(openPage.getByTestId('maintenance')).toBeHidden()
       await expect(openPage.getByTestId('maintenance-pass-form')).toHaveCount(0)
       await expect(openPage.getByTestId('conn-state')).toHaveText('connected')
@@ -165,17 +166,17 @@ test('closing the restore window from Maintenance takes the page and the dialog 
   }
 
   try {
-    await grantAdminToSelf(page)
-    await gotoPage(page, BACKUP_PATH)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, BACKUP_PATH)
     const backupId = await captureFullBackup(page)
     await replayBackup(page, backupId)
-    await gotoPage(page, MAINTENANCE_PATH)
+    await gotoPage(expect, page, MAINTENANCE_PATH)
     await expectInitiatorLadder(page)
 
     const code = await mintRestoreCode(page)
     await presentMaintenanceCode(admitted, code)
     await expect(admitted.getByTestId('maintenance')).toBeHidden()
-    await expectPageReady(admitted)
+    await expectPageReady(expect, admitted)
     await expectOtherBrowser(admitted)
 
     await dismissToasts(page)
@@ -240,8 +241,8 @@ async function openOutsiders(
       contexts.push(context)
       const outsider = await context.newPage()
       pages.push(outsider)
-      await grantAdminToSelf(outsider)
-      await gotoPage(outsider, MAINTENANCE_PATH)
+      await grantAdminToSelf(expect, outsider)
+      await gotoPage(expect, outsider, MAINTENANCE_PATH)
     }
 
     return {
@@ -285,7 +286,7 @@ async function captureFullBackup(page: Page): Promise<string> {
   await expect
     .poll(
       async () => {
-        await gotoPage(page, BACKUP_PATH)
+        await gotoPage(expect, page, BACKUP_PATH)
         return page
           .locator(`[data-id="hilos-backup-restore-${backupId}"]`)
           .count()
@@ -450,7 +451,8 @@ async function openOperatorProtectedModeIfAny(page: Page): Promise<void> {
     )
     .toBe('opened')
 
-  if (caused) await expectSelfReload(page)
+  if (caused)
+    await expectSelfReload(page, test.info().project.use.navigationTimeout)
 }
 
 /**
@@ -462,7 +464,7 @@ async function deleteLeftoverBackup(page: Page): Promise<void> {
   const backupId = leftoverBackupId
   if (backupId === '') return
 
-  await gotoPage(page, BACKUP_PATH)
+  await gotoPage(expect, page, BACKUP_PATH)
   await dismissToasts(page)
   const remove = shownByTestId(page, `hilos-backup-delete-${backupId}`)
   await expect(remove).toBeVisible({ timeout: ARCHIVE_MS })

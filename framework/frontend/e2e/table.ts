@@ -28,6 +28,73 @@ export const ROW_PREFIX = 'hilos-table-row-'
  */
 export const ROWS = `tbody [data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
 
+/** The footer's count: `${start} – ${end} of ${total}` (or `${total}+` at the ceiling). */
+const COUNT = 'hilos-table-count'
+
+/** The control that turns to the next page, disabled exactly when there is none. */
+const NEXT = 'hilos-table-next'
+
+/** The control that turns one page back, disabled exactly when there is none. */
+const PREV = 'hilos-table-prev'
+
+/**
+ * Read the total the footer shows.
+ *
+ * Waits only for the footer to show a count at all; a spec that expects a
+ * particular number waits for it with {@link expectTableTotal}.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ * @returns The leading number of the count.
+ */
+export async function tableTotal(expect: Expect, page: Page): Promise<number> {
+  const count = page.getByTestId(COUNT)
+  await expect(count).toHaveText(/^\s*\d+ – \d+ of \d+\+?\s*$/)
+  const text = (await count.textContent()) ?? ''
+  const match = text.match(/of\s+(\d+)/)
+
+  return match ? Number.parseInt(match[1], 10) : 0
+}
+
+/**
+ * Wait until the footer shows exactly this total.
+ *
+ * The count is the one thing every live frame about a new row moves — an
+ * append, an announcement and a bare count alike — so waiting for it is waiting
+ * for the frame. A spec asserting that something did NOT change waits for this
+ * first, or its assertion passes only because the frame has not come yet.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ * @param total The exact total expected.
+ */
+export async function expectTableTotal(
+  expect: Expect,
+  page: Page,
+  total: number,
+): Promise<void> {
+  await expect(page.getByTestId(COUNT)).toHaveText(
+    new RegExp(`of ${total}\\s*$`),
+  )
+}
+
+/**
+ * Read the row keys of the window, in the order the rows are drawn.
+ *
+ * @param page The Playwright page showing the table.
+ * @returns The row keys, first row first.
+ */
+export async function tableRowKeys(page: Page): Promise<string[]> {
+  const ids = await page
+    .getByTestId(TABLE)
+    .locator(ROWS)
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-id') ?? ''),
+    )
+
+  return ids.map((id) => id.slice(ROW_PREFIX.length))
+}
+
 /**
  * The copies of an element that are on screen, for an element a table
  * draws in both its branches.
@@ -148,6 +215,119 @@ export async function tableRowKeyByText(
   await expect(row).toHaveCount(1)
 
   return ((await row.getAttribute('data-id')) ?? '').slice(ROW_PREFIX.length)
+}
+
+/**
+ * Read the page number the footer shows.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ * @returns The 1-based page number.
+ */
+async function captionPage(expect: Expect, page: Page): Promise<number> {
+  const activePage = page.locator(
+    '[data-id^="hilos-table-page-"][aria-current="page"]',
+  )
+  const next = page.getByTestId(NEXT)
+
+  // Wait until either a numbered page button, next control, or a table row
+  // arrives so we do not read an unmounted or settling footer.
+  await expect
+    .poll(async () => {
+      if ((await activePage.count()) > 0) {
+        return true
+      }
+      if ((await next.count()) > 0) {
+        return true
+      }
+
+      return (await tableRowKeys(page)).length > 0
+    })
+    .toBe(true)
+
+  if ((await activePage.count()) > 0) {
+    return Number.parseInt(((await activePage.textContent()) ?? '').trim(), 10)
+  }
+
+  return 1
+}
+
+/**
+ * Turn one page back, waiting for the window to arrive rather than for the number.
+ *
+ * The same discipline {@link goToLastPage} keeps for Next, and for the same reason:
+ * the number moves on the press while the rows of the window before stay on screen
+ * until the answer comes. So this waits for a first row that is not the one this
+ * window began with — two windows of one order that share a first row are one window.
+ *
+ * The page number is deliberately not waited on here. Where a window is taken from
+ * a place rather than from a page boundary, two neighbouring windows can sit on one
+ * page number (HIL-1093): the window at rows 2-11 of a page of ten and the window at
+ * rows 1-10 both read as page one, and waiting for the number to change would wait
+ * for something that never happens.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ */
+export async function pageBackOnce(expect: Expect, page: Page): Promise<void> {
+  const firstKeyBefore = (await tableRowKeys(page))[0]
+  await page.getByTestId(PREV).click()
+  await expect
+    .poll(async () => {
+      const keys = await tableRowKeys(page)
+
+      return keys.length > 0 && keys[0] !== firstKeyBefore
+    })
+    .toBe(true)
+}
+
+/**
+ * Turn pages until there is no next one, waiting for each window to arrive.
+ *
+ * The page number alone does not say a window arrived: the controller moves the
+ * page number the moment Next is pressed, and the rows of the page before stay on
+ * screen until the answer comes (TableViewportController.nextPage). A test that
+ * trusted the number read the old rows, and one that pressed Next again paged
+ * from a boundary the server had not answered yet. So after every press this
+ * waits for the number AND for a first row that is not the one the page before
+ * began with — two pages of one order share no row, so a different first row is
+ * the new window and nothing else.
+ *
+ * @param expect The spec's expect.
+ * @param page The Playwright page showing the table.
+ * @returns The 1-based number of the page reached.
+ */
+export async function goToLastPage(
+  expect: Expect,
+  page: Page,
+): Promise<number> {
+  const next = page.getByTestId(NEXT)
+  let reached = await captionPage(expect, page)
+
+  if ((await next.count()) === 0) {
+    return reached
+  }
+
+  while (await next.isEnabled()) {
+    const firstKeyBefore = (await tableRowKeys(page))[0]
+    await next.click()
+    reached += 1
+    const active = page.locator(
+      `[data-id="hilos-table-page-${reached}"][aria-current="page"]`,
+    )
+    if ((await active.count()) > 0) {
+      await expect(active).toHaveText(String(reached))
+    }
+    await expect
+      .poll(async () => {
+        const keys = await tableRowKeys(page)
+
+        return keys.length > 0 && keys[0] !== firstKeyBefore
+      })
+      .toBe(true)
+  }
+
+  return reached
 }
 
 /**

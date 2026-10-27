@@ -9,7 +9,7 @@ const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The reply comes from an agent, not from the master, so the caller waits the
 // MIDDLE of the command channel's three windows — a hand-kept copy of
-// CommandChannelWindows::CALLER_WAIT_SECONDS, as in helpers/protectedMode.ts.
+// CommandChannelWindows::CALLER_WAIT_SECONDS, as in the shared protectedMode.mjs.
 const REPLY_TIMEOUT_MS = 15_000
 
 const THROTTLE_RESET_COMMAND = 'test:throttle:reset'

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoPage } from '../helpers/page'
+import { gotoPage } from '../../../../../framework/frontend/e2e/index.js'
 
 // The /license inventory e2e: the build-time snapshot generated from this
 // project's own lockfiles reaches the framework page as a prop, and the page's
@@ -10,7 +10,7 @@ import { gotoPage } from '../helpers/page'
 // truth.
 
 test('the search narrows the list to what it asks for', async ({ page }) => {
-  await gotoPage(page, '/license')
+  await gotoPage(expect, page, '/license')
   const rows = page.getByTestId('license-row')
   await expect(rows.first()).toBeVisible()
   const wholeBuild = await rows.count()
@@ -31,7 +31,7 @@ test('the search narrows the list to what it asks for', async ({ page }) => {
 test('an unmatched filter says so, and the export stays live', async ({
   page,
 }) => {
-  await gotoPage(page, '/license')
+  await gotoPage(expect, page, '/license')
   await expect(page.getByTestId('license-row').first()).toBeVisible()
 
   const search = page.getByTestId('license-search')
@@ -51,7 +51,7 @@ test('an unmatched filter says so, and the export stays live', async ({
 test("a row opens that package's own license text and closes again", async ({
   page,
 }) => {
-  await gotoPage(page, '/license')
+  await gotoPage(expect, page, '/license')
   const search = page.getByTestId('license-search')
   await search.fill('')
   await search.pressSequentially('bootstrap', { delay: 10 })

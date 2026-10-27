@@ -3,16 +3,17 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModelAnswer,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { signUpAdmin } from '../helpers/adminGrant'
 import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { gotoPage } from '../helpers/page'
-import { clickSubmit, typeInto } from '../helpers/session'
 
 // spec-owner: demo — chat's live bot agents and the replies they publish
 
@@ -25,7 +26,7 @@ interface ActivatedBot {
 
 /** Open the settings table with one key in its live window. */
 async function openSetting(page: Page, key: string): Promise<void> {
-  await gotoPage(page, '/hilos/settings')
+  await gotoPage(expect, page, '/hilos/settings')
   await typeInto(page.getByTestId('hilos-table-search'), key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
@@ -48,7 +49,7 @@ async function activateBot(
     `${description} ${key}`,
   )
   await page.getByTestId('admin-bots-active').check()
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
@@ -61,7 +62,7 @@ async function restoreBot(
   await openBotEdit(page, bot.name, windows)
   await typeInto(page.getByTestId('admin-bots-description'), bot.description)
   await page.getByTestId('admin-bots-active').uncheck()
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
@@ -72,7 +73,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
   // another real context change if all three decline an earlier one.
   test.setTimeout(test.info().timeout * 5)
   const windows = await watchBotSearch(page)
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const settingKey = 'chat_bot_model'
   const botKey = modelKey()
   const answer = `bot recovered ${botKey}`
@@ -91,13 +92,13 @@ test('a saved invalid bot model logs an error and a later request uses the resto
       await activateBot(page, name, botKey, activated, windows)
     }
 
-    await gotoPage(page, '/hilos/logs')
+    await gotoPage(expect, page, '/hilos/logs')
     const error = page
       .getByTestId('hilos-logs-recent-row')
       .filter({ hasText: 'Model is required for Ollama' })
       .filter({ hasText: 'agent-bot_' })
     await expect(error.first()).toBeVisible({ timeout: 60_000 })
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     await expect(
       page.getByTestId('event-text').filter({ hasText: answer }),
     ).toHaveCount(0)
@@ -106,7 +107,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
     await clearCustomSetting(page, settingKey)
     changed = false
 
-    await gotoPage(page, '/')
+    await gotoPage(expect, page, '/')
     const botReply = page.getByTestId('event-text').filter({ hasText: answer })
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const messageKey = modelKey()
@@ -126,7 +127,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
       await expect(page.getByTestId('message-send')).toBeEnabled({
         timeout: 20_000,
       })
-      await clickSubmit(page.getByTestId('message-send'))
+      await clickSubmit(expect, page.getByTestId('message-send'))
       await expect(
         page.getByTestId('event-text').filter({ hasText: messageKey }),
       ).toHaveCount(1)

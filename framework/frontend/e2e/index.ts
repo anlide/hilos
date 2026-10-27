@@ -143,7 +143,24 @@ export {
   turnOffMaintenance,
   turnOnMaintenance,
 } from './maintenance.js'
-export { enableEmailChannel, openBell, unreadBadge } from './notifications.js'
+export {
+  enableEmailChannel,
+  openBell,
+  signUpJoined,
+  unreadBadge,
+} from './notifications.js'
+export { grantAdminToSelf, signUpAdmin } from './adminGrant.js'
+export { armViewerSubmit, expectViewerRestartRefused } from './adminViewMode.js'
+export {
+  selectPhoto,
+  openAndSelectPhoto,
+  drawPhotoFixture,
+  samplePhotoPixels,
+  type PhotoFixtureRectangle,
+  type PhotoFixtureRecipe,
+  type PhotoSamplePoint,
+  type PhotoPixelSamples,
+} from './profilePhoto.js'
 export {
   clearCustomSetting,
   draftCustomSetting,
@@ -160,6 +177,11 @@ export {
   tableTextToggle,
   expectTableTextControl,
   tableRowKeyByText,
+  tableRowKeys,
+  tableTotal,
+  expectTableTotal,
+  pageBackOnce,
+  goToLastPage,
   advanceTableToRow,
   openTableFixture,
   expectDataFreeDeparture,
@@ -187,6 +209,7 @@ export {
   ROTATE_COOKIE_SUFFIX,
   isSessionCookie,
   isRotateCookie,
+  sessionToken,
 } from './sessionCookie.js'
 export {
   ANALYTICS_SIGN_UP_LAST_ACTION,
@@ -431,6 +454,22 @@ export {
 export { watchUploadFrames } from './uploadFrames.js'
 export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'
+export { typeInto, clickSubmit } from './input.js'
+export {
+  PAGE_READY,
+  PAGE_REFUSED,
+  gotoPage,
+  expectPageReady,
+  expectPageRefused,
+  gotoAuthReturn,
+  gotoMaintenance,
+  gotoAdmitted,
+  gotoPublicStatus,
+  markDocument,
+  expectDocumentUnchanged,
+  expectSelfReload,
+  type PageOutcome,
+} from './page.js'
 export { watchDaemonSource } from './daemonSource.js'
 export {
   expectLogsPageHead,
@@ -545,3 +584,27 @@ export {
   submitCommunicationsFrame,
   expectCommunicationsFrameEditor,
 } from './communicationsFrame.js'
+
+export {
+  PASSWORD,
+  uniqueEmail,
+  nameFromEmail,
+  waitAuthSettled,
+  waitDoneSettled,
+  enterIdentifierAndPassword,
+  continueFromDone,
+  submitRegistration,
+  submitRegistrationCode,
+  submitFirstPassword,
+  finishWithoutPassword,
+  registerWithoutPassword,
+  register,
+  login,
+  openSignIn,
+  logout,
+  registerEmailOnly,
+  signInByPhone,
+  type SignedInUser,
+  signUp,
+  changePassword,
+} from './session.js'

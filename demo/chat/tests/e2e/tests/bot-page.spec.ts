@@ -1,10 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
-import { tableRowKeyByText } from '../helpers/table.js'
+import {
+  shownByTestId,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+  tableRowKeyByText,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // spec-owner: demo — chat's bot detail page
 
@@ -27,7 +31,7 @@ import { tableRowKeyByText } from '../helpers/table.js'
  */
 async function deleteBot(page: Page, rowKey: string): Promise<void> {
   await shownByTestId(page, `admin-bots-delete-${rowKey}`).click()
-  await clickSubmit(page.getByTestId('admin-bots-delete-confirm'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-delete-confirm'))
   await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
   await expect(page.getByTestId(`admin-bots-delete-${rowKey}`)).toHaveCount(0)
 }
@@ -40,8 +44,8 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
   // the guest outlive the single-client cap.
   test.slow()
 
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/app/bots')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await gotoPage(expect, page, '/hilos/app/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -61,11 +65,11 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
   await typeInto(page.getByTestId('admin-bots-topics'), topics)
   await typeInto(page.getByTestId('admin-bots-personality'), personality)
   await page.getByTestId('admin-bots-active').uncheck()
-  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 
   await typeInto(page.getByTestId('hilos-table-search'), name)
-  const rowKey = await tableRowKeyByText(page, name)
+  const rowKey = await tableRowKeyByText(expect, page, name)
 
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const guestContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
@@ -78,7 +82,7 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
       guestLoads += 1
     })
 
-    await gotoPage(guestPage, `/bot/${rowKey}`, PAGE_READY)
+    await gotoPage(expect, guestPage, `/bot/${rowKey}`, PAGE_READY)
     const loadsAfterCold = guestLoads
 
     const botHead = guestPage.getByTestId('bot-head')
@@ -109,7 +113,7 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
     const renamed = `Beacon ${stamp} Guide`
     await shownByTestId(page, `admin-bots-edit-${rowKey}`).click()
     await typeInto(page.getByTestId('admin-bots-name'), renamed)
-    await clickSubmit(page.getByTestId('admin-bots-save'))
+    await clickSubmit(expect, page.getByTestId('admin-bots-save'))
     await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 
     await expect(botName).toHaveText(renamed)
@@ -124,7 +128,7 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
     await typeInto(page.getByTestId('admin-bots-personality'), '')
     await typeInto(page.getByTestId('admin-bots-style'), '')
     await typeInto(page.getByTestId('admin-bots-topics'), '')
-    await clickSubmit(page.getByTestId('admin-bots-save'))
+    await clickSubmit(expect, page.getByTestId('admin-bots-save'))
     await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 
     const botDetail = guestPage.getByTestId('bot-detail')

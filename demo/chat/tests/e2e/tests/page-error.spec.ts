@@ -4,7 +4,7 @@ import {
   expectPageRefused,
   gotoPage,
   PAGE_REFUSED,
-} from '../helpers/page'
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // spec-owner: demo — a missing user is chat's own /user page
 
@@ -18,7 +18,7 @@ import {
 // returns that shell (HTTP 200) with the screen still in place.
 
 test('shows the 404 error page for a non-existent user', async ({ page }) => {
-  await gotoPage(page, '/user/999999', PAGE_REFUSED)
+  await gotoPage(expect, page, '/user/999999', PAGE_REFUSED)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   const error = page.getByTestId('page-error')
@@ -36,7 +36,7 @@ test('clears the error page when navigating home in place', async ({
     fullLoads += 1
   })
 
-  await gotoPage(page, '/user/999999', PAGE_REFUSED)
+  await gotoPage(expect, page, '/user/999999', PAGE_REFUSED)
   await expect(page.getByTestId('page-error')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
@@ -52,7 +52,7 @@ test('shows Page Not Found for an address no route claims', async ({
   page,
 }) => {
   for (const path of ['/nope', '/hilos/xyz', '/hilos/app/moderator']) {
-    await gotoPage(page, path, PAGE_REFUSED)
+    await gotoPage(expect, page, path, PAGE_REFUSED)
     expect(new URL(page.url()).pathname).toBe(path)
 
     const error = page.getByTestId('page-error')
@@ -77,18 +77,18 @@ test('returns home from an unknown address and restores it from history', async 
   // This address used to open the chat home with no error. Leaving it is the
   // home link; back and forward only traverse that entry.
   const missed = '/hilos/app/moderator'
-  await gotoPage(page, missed, PAGE_REFUSED)
+  await gotoPage(expect, page, missed, PAGE_REFUSED)
   await expect(page.getByTestId('page-error')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
   await page.getByTestId('page-error-home').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   expect(fullLoads).toBe(loadsAfterColdLoad)
 
   await page.goBack()
-  await expectPageRefused(page)
+  await expectPageRefused(expect, page)
   expect(new URL(page.url()).pathname).toBe(missed)
   const error = page.getByTestId('page-error')
   await expect(error).toHaveCount(1)
@@ -100,7 +100,7 @@ test('returns home from an unknown address and restores it from history', async 
   expect(fullLoads).toBe(loadsAfterColdLoad)
 
   await page.goForward()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   expect(fullLoads).toBe(loadsAfterColdLoad)
@@ -133,7 +133,7 @@ test('reloads a cold unknown public path as Page Not Found and walks history in 
   })
 
   const missed = '/nope'
-  await gotoPage(page, missed, PAGE_REFUSED)
+  await gotoPage(expect, page, missed, PAGE_REFUSED)
   expect(new URL(page.url()).pathname).toBe(missed)
   await expectUnknownAddress(page)
 
@@ -142,25 +142,25 @@ test('reloads a cold unknown public path as Page Not Found and walks history in 
   const document = await page.reload()
   expect(document).not.toBeNull()
   expect(document?.status()).toBe(200)
-  await expectPageRefused(page)
+  await expectPageRefused(expect, page)
   expect(new URL(page.url()).pathname).toBe(missed)
   await expectUnknownAddress(page)
   const loadsAfterReload = fullLoads
 
   await page.getByTestId('page-error-home').click()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   expect(fullLoads).toBe(loadsAfterReload)
 
   await page.goBack()
-  await expectPageRefused(page)
+  await expectPageRefused(expect, page)
   expect(new URL(page.url()).pathname).toBe(missed)
   await expectUnknownAddress(page)
   expect(fullLoads).toBe(loadsAfterReload)
 
   await page.goForward()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   expect(fullLoads).toBe(loadsAfterReload)

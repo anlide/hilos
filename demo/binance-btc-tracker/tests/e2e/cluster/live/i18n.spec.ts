@@ -9,8 +9,12 @@ import {
   shownByTestId,
   watchClusterMasterUpgrades,
   watchI18nLivePages,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../../helpers/adminGrant.js'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -29,9 +33,7 @@ import {
   switchCountryOff,
   switchLanguageOff,
   switchLocaleOn,
-} from '../../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../../helpers/page.js'
-import { clickSubmit, typeInto } from '../../helpers/session.js'
+} from '../../../../../../framework/frontend/scripts/i18n.mjs'
 
 const stand = readClusterBrowserStand()
 const test = baseTest.extend<{ masters: [Page, Page] }>({
@@ -53,7 +55,7 @@ const test = baseTest.extend<{ masters: [Page, Page] }>({
         upgrades.push(
           await watchClusterMasterUpgrades(expect, page, stand, node),
         )
-        await signUpAdmin(page)
+        await signUpAdmin(expect, page)
       }
       expect(pages[0].context()).not.toBe(pages[1].context())
       for (const upgrade of upgrades) await upgrade.assert()
@@ -84,7 +86,7 @@ test(
     try {
       await switchLanguageOff('uk')
       for (const page of [first, second]) {
-        await gotoPage(page, '/hilos/i18n/languages/uk', PAGE_READY)
+        await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
         await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
           'Українська',
         )
@@ -95,7 +97,7 @@ test(
         [second, 'Українська on second master'],
       ] as const) {
         await dismissToasts(writer)
-        await clickSubmit(writer.getByTestId('language-card-edit'))
+        await clickSubmit(expect, writer.getByTestId('language-card-edit'))
         await expect(writer.getByTestId('i18n-language-edit-code')).toHaveValue(
           'uk',
         )
@@ -103,7 +105,10 @@ test(
           writer.getByTestId('i18n-language-edit-native-name'),
           value,
         )
-        await clickSubmit(writer.getByTestId('i18n-language-edit-submit'))
+        await clickSubmit(
+          expect,
+          writer.getByTestId('i18n-language-edit-submit'),
+        )
         await expect(
           writer.getByTestId('i18n-language-edit-window'),
         ).toHaveCount(0)
@@ -135,19 +140,19 @@ test(
     const locale = writer.getByTestId('i18n-country-edit-default-locale')
     try {
       await switchCountryOff('ie')
-      await gotoPage(writer, '/hilos/i18n/countries', PAGE_READY)
+      await gotoPage(expect, writer, '/hilos/i18n/countries', PAGE_READY)
       await typeInto(writer.getByTestId('hilos-table-search'), 'ie')
       await expect(
         shownByTestId(writer, 'i18n-countries-edit-ie'),
       ).toBeVisible()
-      await gotoPage(observer, '/hilos/i18n/countries/ie', PAGE_READY)
+      await gotoPage(expect, observer, '/hilos/i18n/countries/ie', PAGE_READY)
       originalLine = (
         await observer.getByTestId('country-head-description').innerText()
       )
         .replace(/\s+/g, ' ')
         .trim()
       const live = await watchI18nLivePages(expect, [writer, observer])
-      await clickSubmit(shownByTestId(writer, 'i18n-countries-edit-ie'))
+      await clickSubmit(expect, shownByTestId(writer, 'i18n-countries-edit-ie'))
       original = {
         symbol: await symbol.inputValue(),
         currency: await currency.inputValue(),
@@ -160,7 +165,7 @@ test(
       const value = original.symbol === 'IE-live' ? 'IE-other' : 'IE-live'
       await typeInto(symbol, value)
       changed = true
-      await clickSubmit(writer.getByTestId('i18n-country-save'))
+      await clickSubmit(expect, writer.getByTestId('i18n-country-save'))
       await expect(writer.getByTestId('i18n-country-window')).toHaveCount(0)
       await expect(
         observer.getByTestId('country-head-description'),
@@ -170,11 +175,14 @@ test(
       if (changed && original) {
         await dismissToasts(writer)
         if ((await writer.getByTestId('i18n-country-window').count()) === 0)
-          await clickSubmit(shownByTestId(writer, 'i18n-countries-edit-ie'))
+          await clickSubmit(
+            expect,
+            shownByTestId(writer, 'i18n-countries-edit-ie'),
+          )
         await typeInto(symbol, original.symbol)
         await typeInto(currency, original.currency)
         await locale.selectOption(original.locale)
-        await clickSubmit(writer.getByTestId('i18n-country-save'))
+        await clickSubmit(expect, writer.getByTestId('i18n-country-save'))
         await expect(writer.getByTestId('i18n-country-window')).toHaveCount(0)
         await expect(
           observer.getByTestId('country-head-description'),
@@ -193,15 +201,23 @@ test(
       await switchLanguageOff('pt')
       await switchLocaleOn('pt')
       for (const page of [first, second]) {
-        await gotoPage(page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+        await gotoPage(
+          expect,
+          page,
+          '/hilos/i18n/languages/pt/locales',
+          PAGE_READY,
+        )
         await expect(
           i18nLocaleRow(page, 'pt').getByTestId('i18n-locales-enabled-pt'),
         ).toBeChecked()
       }
       const live = await watchI18nLivePages(expect, [first, second])
-      await clickSubmit(shownByTestId(first, 'i18n-locales-view-pt'))
-      await clickSubmit(first.getByTestId('i18n-locale-switch-off'))
-      await clickSubmit(first.getByTestId('i18n-locale-switch-off-confirm'))
+      await clickSubmit(expect, shownByTestId(first, 'i18n-locales-view-pt'))
+      await clickSubmit(expect, first.getByTestId('i18n-locale-switch-off'))
+      await clickSubmit(
+        expect,
+        first.getByTestId('i18n-locale-switch-off-confirm'),
+      )
       await expect(first.getByTestId('i18n-locale-window')).toHaveCount(0)
       for (const page of [first, second]) {
         await expect(
@@ -211,9 +227,12 @@ test(
       }
       await live.unchanged()
 
-      await clickSubmit(shownByTestId(second, 'i18n-locales-edit-pt'))
-      await clickSubmit(second.getByTestId('i18n-locale-switch-on'))
-      await clickSubmit(second.getByTestId('i18n-locale-switch-on-confirm'))
+      await clickSubmit(expect, shownByTestId(second, 'i18n-locales-edit-pt'))
+      await clickSubmit(expect, second.getByTestId('i18n-locale-switch-on'))
+      await clickSubmit(
+        expect,
+        second.getByTestId('i18n-locale-switch-on-confirm'),
+      )
       await expect(second.getByTestId('i18n-locale-window')).toHaveCount(0)
       for (const page of [first, second])
         await expect(
@@ -241,7 +260,12 @@ test(
       await seedLanguageNamesFixture()
       const keys: (string | null)[] = []
       for (const page of [first, second]) {
-        await gotoPage(page, '/hilos/i18n/languages/qw/names', PAGE_READY)
+        await gotoPage(
+          expect,
+          page,
+          '/hilos/i18n/languages/qw/names',
+          PAGE_READY,
+        )
         await expect(shownByTestId(page, 'i18n-names-none-qv')).toHaveText(
           'No name',
         )
@@ -260,10 +284,14 @@ test(
       ] as const) {
         await dismissToasts(writer)
         await clickSubmit(
+          expect,
           shownByTestId(writer, `i18n-language-name-${control}`),
         )
         await typeInto(writer.getByTestId('i18n-language-name-input'), value)
-        await clickSubmit(writer.getByTestId('i18n-language-name-submit'))
+        await clickSubmit(
+          expect,
+          writer.getByTestId('i18n-language-name-submit'),
+        )
         await expect(
           writer.getByTestId('i18n-language-name-window'),
         ).toHaveCount(0)
@@ -275,6 +303,7 @@ test(
           )
           if (control === 'add-qv') {
             await clickSubmit(
+              expect,
               i18nNameRow(page, 'language', 'qv').getByTestId(
                 /^hilos-table-expand-/,
               ),
@@ -302,12 +331,18 @@ test(
       await seedCountryNamesFixture()
       const keys: (string | null)[] = []
       for (const page of [first, second]) {
-        await gotoPage(page, '/hilos/i18n/countries/qj/names', PAGE_READY)
+        await gotoPage(
+          expect,
+          page,
+          '/hilos/i18n/countries/qj/names',
+          PAGE_READY,
+        )
         await expectI18nName(expect, page, 'country', 'qk', 'Fixture base')
         keys.push(
           await i18nNameRow(page, 'country', 'qk').getAttribute('data-id'),
         )
         await clickSubmit(
+          expect,
           i18nNameRow(page, 'country', 'qk').getByTestId(
             /^hilos-table-expand-/,
           ),
@@ -336,9 +371,15 @@ test(
         ],
       ] as const) {
         await dismissToasts(writer)
-        await clickSubmit(shownByTestId(writer, `i18n-country-name-${control}`))
+        await clickSubmit(
+          expect,
+          shownByTestId(writer, `i18n-country-name-${control}`),
+        )
         await typeInto(writer.getByTestId('i18n-country-name-input'), value)
-        await clickSubmit(writer.getByTestId('i18n-country-name-submit'))
+        await clickSubmit(
+          expect,
+          writer.getByTestId('i18n-country-name-submit'),
+        )
         await expect(
           writer.getByTestId('i18n-country-name-window'),
         ).toHaveCount(0)

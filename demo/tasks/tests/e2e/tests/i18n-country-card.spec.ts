@@ -4,10 +4,12 @@ import {
   expectCountryPageHead,
   expectI18nPageHead,
   watchClientDocument,
+  clickSubmit,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
 
 // The React country tabs on the shared page head: the built-in United States on
 // Overview and Names, opened directly, reloaded, and switched in place from the
@@ -130,31 +132,31 @@ test('opens both country tabs directly under the shared head, reads the card and
   page,
 }) => {
   const deleteRequests = countSentFrames(page, 'hilos_i18n_country_delete')
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
 
   for (const tab of [
     { path: OVERVIEW_PATH, key: OVERVIEW, body: 'country-card-main' },
     { path: NAMES_PATH, key: NAMES, body: 'country-names' },
   ]) {
-    await gotoPage(page, tab.path, PAGE_READY)
+    await gotoPage(expect, page, tab.path, PAGE_READY)
     await expectCountryHead(page, tab.key)
     await expect(page.getByTestId(tab.body)).toBeVisible()
     if (tab.key === OVERVIEW) await expectReadOnlyCard(page)
 
     await page.reload()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(new RegExp(`${tab.path}$`))
     await expectCountryHead(page, tab.key)
     await expect(page.getByTestId(tab.body)).toBeVisible()
   }
 
   // The entity keeps its own row; the containing section has three page links.
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
   await expectI18nPageHead(expect, page, {
     currentPage: 'hilos_i18n_countries',
     appName: APP_NAME,
   })
-  await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n', PAGE_READY)
   await expectI18nPageHead(expect, page, {
     currentPage: 'hilos_i18n',
     appName: APP_NAME,
@@ -165,17 +167,17 @@ test('opens both country tabs directly under the shared head, reads the card and
 test('moves between Overview and Names in place from the pointer and the keyboard', async ({
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, OVERVIEW_PATH, PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, OVERVIEW_PATH, PAGE_READY)
   await expectCountryHead(page, OVERVIEW)
   await expectSilentCrumbs(page)
   const tabs = page.getByTestId('hilos-page-tabs')
   const clientDocument = await watchClientDocument(page)
   try {
     // A tab is a native link the router takes over: no new document on a switch.
-    await clickSubmit(tabs.getByTestId(`hilos-page-tab-${NAMES}`))
+    await clickSubmit(expect, tabs.getByTestId(`hilos-page-tab-${NAMES}`))
     await expect(page).toHaveURL(new RegExp(`${NAMES_PATH}$`))
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectCountryHead(page, NAMES)
     await expectSilentCrumbs(page)
     await expect(page.getByTestId('country-names')).toBeVisible()
@@ -186,7 +188,7 @@ test('moves between Overview and Names in place from the pointer and the keyboar
     await overview.focus()
     await overview.press('Enter')
     await expect(page).toHaveURL(new RegExp(`${OVERVIEW_PATH}$`))
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expectCountryHead(page, OVERVIEW)
     await expect(page.getByTestId('country-card-main')).toBeVisible()
     await expect(page.getByTestId('country-names')).toHaveCount(0)

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  signUp,
   MAINTENANCE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
@@ -8,10 +9,9 @@ import {
   dismissToasts,
   maintenanceCircleRow,
   shownByTestId,
+  gotoPage,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
-import { gotoPage } from '../helpers/page.js'
-import { signUp } from '../helpers/session.js'
 
 // Taking a verifier out in Maintenance: the row leaves over the live table, and a
 // dialog open over a row removed in another tab says so before anybody presses
@@ -31,19 +31,19 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
   page,
   browser,
 }) => {
-  await grantAdminToSelf(page)
-  await gotoPage(page, MAINTENANCE_PATH)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const email = await signUp(member)
+  const email = (await signUp(expect, member)).email
   await addToMaintenanceCircle(page, email)
   await dismissToasts(page)
 
   // A second tab of the same administrator, on the same section and the same row.
   const tabB = await page.context().newPage()
-  await gotoPage(tabB, MAINTENANCE_PATH)
+  await gotoPage(expect, tabB, MAINTENANCE_PATH)
   await expect(maintenanceCircleRow(tabB, email)).toBeVisible()
 
   // A opens the dialog over the row: it names the address and Remove is live.

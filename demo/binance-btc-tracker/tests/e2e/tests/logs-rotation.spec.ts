@@ -13,10 +13,12 @@ import {
   logMomentLabel,
   watchLogFrames,
   type LogFrameLog,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { appendLogLines, logMarker } from '../helpers/logs.js'
-import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 const READER_ZONE = 'America/Los_Angeles'
 test.use({ timezoneId: READER_ZONE })
@@ -286,16 +288,16 @@ test(
     const stream = `agent-${agent}.log`
     const livePath = `/hilos/logs/view/standalone/live/${stream}`
 
-    await grantAdminToSelf(page)
+    await grantAdminToSelf(expect, page)
     const settings = await page.context().newPage()
     control = settings
-    await gotoPage(settings, '/hilos/settings', PAGE_READY)
+    await gotoPage(expect, settings, '/hilos/settings', PAGE_READY)
     await setSetting(settings, ROTATION_MAX_AGE, '0')
 
     // A previous attempt may already have archived this quiet writer's startup.
     // Restart through the real Daemon dialog to get a live file on every attempt;
     // successful settings writes themselves never print into the library's log.
-    await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
     const search = page.getByTestId('hilos-table-search')
     await search.fill('')
     await search.pressSequentially(agent, { delay: 10 })
@@ -319,7 +321,7 @@ test(
     ).toBeVisible()
     await dismissToasts(page)
 
-    await gotoPage(page, livePath, PAGE_READY)
+    await gotoPage(expect, page, livePath, PAGE_READY)
     await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
     await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
     const entry = page.getByTestId('hilos-log-entry').first()
@@ -327,7 +329,7 @@ test(
     const liveEntry = (await entry.textContent()) ?? ''
     expect(liveEntry).not.toBe('')
 
-    await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
     const before = await rowKeys(page)
     await setSetting(settings, ROTATION_MAX_AGE, '1')
@@ -344,13 +346,13 @@ test(
     expect(batch).toBeGreaterThan(0)
     await resetSetting(settings, ROTATION_MAX_AGE)
 
-    await gotoPage(page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
     await search.fill('')
     await search.pressSequentially(agent, { delay: 10 })
     const log = shownByTestId(page, `hilos-daemon-agent-log-${agent}`)
     await expect(log).toHaveAttribute('href', livePath)
     await log.click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
 
     // A new viewer has no retained lines from before rotation. Its completed read
     // must prove this exact live file is missing: a new batch alone does not prove
@@ -367,7 +369,7 @@ test(
     const latestBatch = page.getByTestId('hilos-log-latest-batch')
     await expect(latestBatch).toHaveAttribute('href', archivePath)
     await latestBatch.click()
-    await expectPageReady(page)
+    await expectPageReady(expect, page)
     await expect(page).toHaveURL(archivePath)
     await expect(page.getByTestId('hilos-log-source')).toHaveValue(
       String(batch),
@@ -396,11 +398,11 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // walk; the default cap would expire in the middle of the first one.
   test.slow()
 
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   // The observer opens first and never leaves: everything it is asked about
   // afterwards has to arrive by push, on a page that did not navigate.
-  await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-table-title')).toHaveText(
     'Rotation batches',
@@ -421,7 +423,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // registration of its own.
   const tabB = await page.context().newPage()
   control = tabB
-  await gotoPage(tabB, '/hilos/settings', PAGE_READY)
+  await gotoPage(expect, tabB, '/hilos/settings', PAGE_READY)
   await expect(tabB.getByTestId('hilos-viewport-table')).toBeVisible()
 
   const overview = await page.context().newPage()
@@ -429,7 +431,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   const viewer = await page.context().newPage()
   const viewerFrames = watchLogFrames(viewer)
   try {
-    await gotoPage(overview, '/hilos/logs', PAGE_READY)
+    await gotoPage(expect, overview, '/hilos/logs', PAGE_READY)
 
     // The three preparatory keys, none of which starts a clock. Both retention
     // criteria are needed together: they are joined by "and", and the count one —
@@ -521,6 +523,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     )
 
     await gotoPage(
+      expect,
       viewer,
       `/hilos/logs/view/${batch.node}/${batchAt}/daemon.log`,
       PAGE_READY,
@@ -567,7 +570,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     // Another tab of the same session visits rotations and leaves just before the
     // confirmation. The reply must still reach this dialog and close it on success.
     const tabC = await page.context().newPage()
-    await gotoPage(tabC, '/hilos/logs/rotations', PAGE_READY)
+    await gotoPage(expect, tabC, '/hilos/logs/rotations', PAGE_READY)
     await expect(tabC.getByTestId('hilos-table-loading')).toHaveCount(0)
     await tabC.close()
     await page.bringToFront()
@@ -706,31 +709,31 @@ test('rotates on the configured threshold, carries a batch off on the operator c
 test('resets the rotations filter wherever the address put it, after a reload too', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   // The general address, with the filter switched on by hand.
-  await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   await shownByTestId(page, 'hilos-table-filter-state').click()
   await resetRotationFilters(page)
 
   // The filtered address, opened directly: the filter is the address's, and the
   // reset used to hand it back.
-  await gotoPage(page, '/hilos/logs/rotations/due', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/logs/rotations/due', PAGE_READY)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   await resetRotationFilters(page)
 
   // The same address after a reload, which rebuilds the screen from the address
   // alone.
-  await gotoPage(page, '/hilos/logs/rotations/due', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/logs/rotations/due', PAGE_READY)
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   await resetRotationFilters(page)
 
   // The reset wrote the general address, so a reload stays unfiltered.
   await page.reload()
-  await expectPageReady(page)
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
   await expect(
     shownByTestId(page, 'hilos-table-filter-state'),

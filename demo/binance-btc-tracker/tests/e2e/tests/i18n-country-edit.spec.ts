@@ -1,9 +1,12 @@
-import { i18nLocaleRow } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  i18nLocaleRow,
+  clickSubmit,
+  gotoPage,
+  PAGE_READY,
+  signUpAdmin,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { expect, test } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { switchCountryOn } from '../helpers/i18n.js'
-import { gotoPage, PAGE_READY } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import { switchCountryOn } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
 test('edits a switched-off country and saves its suggested default locale', async ({
   page,
@@ -24,14 +27,14 @@ test('edits a switched-off country and saves its suggested default locale', asyn
         writes.push(frame.data)
     }),
   )
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/i18n/languages/en/locales', PAGE_READY)
+  await signUpAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/i18n/languages/en/locales', PAGE_READY)
 
   const add = i18nLocaleRow(page, 'en-IE').getByTestId('i18n-locales-add-en-IE')
-  await clickSubmit(add)
+  await clickSubmit(expect, add)
 
   const submit = page.getByTestId('i18n-locale-submit')
-  await clickSubmit(submit)
+  await clickSubmit(expect, submit)
   await expect(submit).toHaveCount(0)
   await expect(
     page
@@ -39,7 +42,7 @@ test('edits a switched-off country and saves its suggested default locale', asyn
       .filter({ hasText: 'Locale en-IE added.' }),
   ).toBeVisible()
 
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries', PAGE_READY)
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('ie', { delay: 10 })
@@ -47,7 +50,7 @@ test('edits a switched-off country and saves its suggested default locale', asyn
     .getByTestId(/^hilos-table-row-/)
     .filter({ has: page.getByTestId('i18n-countries-link-ie') })
   const edit = row.getByTestId('i18n-countries-edit-ie')
-  await clickSubmit(edit)
+  await clickSubmit(expect, edit)
 
   await expect(page.getByTestId('i18n-country-title')).toHaveText(
     'Edit country · Ireland',
@@ -72,7 +75,7 @@ test('edits a switched-off country and saves its suggested default locale', asyn
   await symbol.fill('')
   await symbol.pressSequentially('IE€', { delay: 10 })
 
-  await clickSubmit(save)
+  await clickSubmit(expect, save)
   await expect(page.getByTestId('i18n-country-window')).toHaveCount(0)
   await expect(
     page
@@ -100,12 +103,12 @@ test('edits a switched-off country and saves its suggested default locale', asyn
 test('opens a switched-on country from its card only to view its fields', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await signUpAdmin(expect, page)
   await switchCountryOn('nz')
-  await gotoPage(page, '/hilos/i18n/countries/nz', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/i18n/countries/nz', PAGE_READY)
 
   const view = page.getByTestId('country-card-view')
-  await clickSubmit(view)
+  await clickSubmit(expect, view)
 
   await expect(page.getByTestId('i18n-country-title')).toHaveText(
     'Country · New Zealand',
@@ -124,6 +127,6 @@ test('opens a switched-on country from its card only to view its fields', async 
   await expect(page.getByTestId('i18n-country-save')).toHaveCount(0)
 
   const close = page.getByTestId('i18n-country-close')
-  await clickSubmit(close)
+  await clickSubmit(expect, close)
   await expect(page.getByTestId('i18n-country-window')).toHaveCount(0)
 })

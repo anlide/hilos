@@ -5,10 +5,12 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { signUp } from '../helpers/session.js'
 
 /** The settings page this spec drives. */
 const SETTINGS_PATH = '/hilos/security/impersonation'
@@ -25,12 +27,15 @@ const VIEW_ONLY_REFUSAL =
  * @param scope The value to choose.
  */
 async function setScope(page: Page, scope: 'view' | 'act'): Promise<void> {
-  await gotoPage(page, SETTINGS_PATH)
-  await clickSubmit(shownByTestId(page, 'hilos-impersonation-scope-edit'))
+  await gotoPage(expect, page, SETTINGS_PATH)
+  await clickSubmit(
+    expect,
+    shownByTestId(page, 'hilos-impersonation-scope-edit'),
+  )
   const choice = page.getByTestId(`hilos-impersonation-scope-${scope}`)
   await expect(choice).toBeVisible()
   await choice.check()
-  await clickSubmit(page.getByTestId('hilos-impersonation-scope-save'))
+  await clickSubmit(expect, page.getByTestId('hilos-impersonation-scope-save'))
   await expect(page.getByTestId('modal')).toBeHidden()
   await expect(
     shownByTestId(page, 'hilos-impersonation-scope-value'),
@@ -58,8 +63,8 @@ test(
     const strip = page.getByTestId('impersonation-banner')
     let viewOnly = false
     try {
-      await signUpAdmin(page)
-      const person = await signUp(personPage)
+      await signUpAdmin(expect, page, { entryId: 'message-signin' })
+      const person = await signUp(expect, personPage)
 
       await setScope(page, 'view')
       viewOnly = true
@@ -70,13 +75,16 @@ test(
 
       // The takeover rotates the session token, and the client reopens its socket
       // for it; the proof the reopen happened is the next socket.
-      await gotoPage(page, `/hilos/user/${person.userId}`)
+      await gotoPage(expect, page, `/hilos/user/${person.userId}`)
       let sockets = 0
       page.on('websocket', () => {
         sockets += 1
       })
-      await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
-      await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+      await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-open'))
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-user-impersonate-confirm'),
+      )
       await expect(strip).toBeVisible()
       await expect(strip).toContainText(person.name)
       await expect(strip).toContainText('view only')
@@ -84,19 +92,19 @@ test(
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
       // Reading is open; writing is refused before it reaches the chat.
-      await gotoPage(page, '/')
+      await gotoPage(expect, page, '/')
       await expect(strip).toContainText('view only')
       await typeInto(
         page.getByTestId('message-input'),
         `a message that must not be published ${Date.now()}`,
       )
-      await clickSubmit(page.getByTestId('message-send'))
+      await clickSubmit(expect, page.getByTestId('message-send'))
       await expect(page.getByTestId('message-error')).toHaveText(
         VIEW_ONLY_REFUSAL,
       )
 
       // Stop is the shell's and stays live inside a takeover that only looks.
-      await clickSubmit(page.getByTestId('impersonation-stop'))
+      await clickSubmit(expect, page.getByTestId('impersonation-stop'))
       await expect(strip).toBeHidden()
       await expect(page.getByTestId('nav-admin')).toBeVisible()
 
@@ -105,7 +113,7 @@ test(
     } finally {
       if (viewOnly) {
         if (await strip.isVisible()) {
-          await clickSubmit(page.getByTestId('impersonation-stop'))
+          await clickSubmit(expect, page.getByTestId('impersonation-stop'))
           await expect(strip).toBeHidden()
         }
         await setScope(page, 'act')

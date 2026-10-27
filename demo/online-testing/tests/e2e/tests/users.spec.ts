@@ -5,10 +5,13 @@ import {
   leaveSecondAdmin,
   shownByTestId,
   watchTableModalFocus,
+  clickSubmit,
+  typeInto,
+  gotoPage,
+  PAGE_REFUSED,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_REFUSED } from '../helpers/page.js'
-import { clickSubmit, typeInto } from '../helpers/session.js'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own granted row is present, search filters the client
@@ -36,7 +39,7 @@ async function openSecondVisitor(browser: Browser): Promise<Page> {
 
 /** Open the users admin and wait for the live table's first row. */
 async function openUsers(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -51,7 +54,7 @@ test('refuses the users admin to a visitor without the grant', async ({
   // without a user at all — and so holds no grant either. The access gate refuses
   // the subscription outright rather than rendering an empty table, and the shell
   // offers no way in: no gear to click.
-  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
@@ -60,14 +63,14 @@ test('refuses the users admin to a visitor without the grant', async ({
 test('lists users in the framework table and opens a detail page', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
   })
 
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -86,9 +89,9 @@ test('lists users in the framework table and opens a detail page', async ({
 })
 
 test('filters the users table from the search box', async ({ page }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
     page.locator('[data-id^="hilos-users-open-"]').first(),
@@ -107,9 +110,9 @@ test('filters the users table from the search box', async ({ page }) => {
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
-  await gotoPage(page, '/hilos/users')
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
@@ -139,9 +142,9 @@ test(
     // its detail directly. Robust against how many users the shared DB has
     // accumulated: the self row need not be on the first viewport page of
     // /hilos/users (which shows only the first 10 by ascending id).
-    const userId = await grantAdminToSelf(page)
+    const userId = await grantAdminToSelf(expect, page)
 
-    await gotoPage(page, `/hilos/user/${userId}`)
+    await gotoPage(expect, page, `/hilos/user/${userId}`)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
@@ -162,7 +165,7 @@ test(
 test('a rename in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
-  await grantAdminToSelf(page)
+  await grantAdminToSelf(expect, page)
 
   const newName = `E2E Pending Rename ${Date.now()}`
 
@@ -191,9 +194,9 @@ test('a rename in one tab lands at once in another, raising no Apply', async ({
     // live contents may rewrap; a rename is not a departure or a height freeze.
     await shownByTestId(page, controlId!).click()
     await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-    await clickSubmit(page.getByTestId('hilos-user-edit'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-edit'))
     await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-    await clickSubmit(page.getByTestId('hilos-user-save'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-save'))
     await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
     await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
 
@@ -236,12 +239,12 @@ test('a revoked admin loses the gear and the door', async ({
   // and differ only by the boolean, pinned by a framework unit test.
   // Revocation requires another administrator, even when this test runs alone.
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(browser, grantAdminToSelf, {
+  await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
     baseURL,
     ignoreHTTPSErrors,
   })
-  const userId = await grantAdminToSelf(page)
-  await gotoPage(page, '/hilos/users')
+  const userId = await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   await setAdmin(userId, false)
@@ -253,7 +256,7 @@ test('a revoked admin loses the gear and the door', async ({
 
   // And the page itself is shut again, not merely unlinked: the access gate
   // refuses the subscription on the next visit.
-  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 })
 
@@ -270,15 +273,15 @@ test('takes a person over from the framework card that is not your own', async (
   // A second visitor, so there is a card other than the admin's own: on your own card the
   // control stands switched off, since taking yourself over is refused server-side.
   const other = await openSecondVisitor(browser)
-  const otherId = await grantAdminToSelf(other)
+  const otherId = await grantAdminToSelf(expect, other)
 
-  await grantAdminToSelf(page)
-  await gotoPage(page, `/hilos/user/${otherId}`)
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, `/hilos/user/${otherId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The impersonation step is declared off (step-up.md), so the window opens at once.
-  await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
-  await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+  await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-open'))
+  await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-confirm'))
 
   await expect(page.getByTestId('impersonation-banner')).toBeVisible()
 })
@@ -296,30 +299,30 @@ test('closes an idle block confirmation when another tab changes the block', asy
   const pageB = await page.context().newPage()
 
   try {
-    await grantAdminToSelf(page)
-    const targetId = await grantAdminToSelf(personPage)
+    await grantAdminToSelf(expect, page)
+    const targetId = await grantAdminToSelf(expect, personPage)
     await setAdmin(targetId, false)
 
-    await gotoPage(page, `/hilos/user/${targetId}`)
-    await gotoPage(pageB, `/hilos/user/${targetId}`)
+    await gotoPage(expect, page, `/hilos/user/${targetId}`)
+    await gotoPage(expect, pageB, `/hilos/user/${targetId}`)
 
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
     await expect(pageB.getByTestId('modal')).toBeVisible()
 
-    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
     await expectHilosUserBlockSettled(expect, pageB, true)
     await expectHilosUserBlockSettled(expect, page, true)
 
     await dismissToasts(pageB)
 
-    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(pageB.getByTestId('hilos-user-block-open'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
     await expect(pageB.getByTestId('modal')).toBeVisible()
 
-    await clickSubmit(pageB.getByTestId('hilos-user-lifecycle-confirm'))
+    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
     await expectHilosUserBlockSettled(expect, pageB, false)
     await expectHilosUserBlockSettled(expect, page, false)
   } finally {

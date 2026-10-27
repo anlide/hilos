@@ -12,9 +12,10 @@ import {
   watchPageReplies,
   watchSocketFrames,
   type SocketFrame,
+  expectPageReady,
+  gotoPage,
+  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant.js'
-import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — the Overview's project slot opens the real chat participant card.
@@ -24,7 +25,7 @@ test.use({ locale: 'en-GB', timezoneId: 'Asia/Tokyo' })
 test('cold user Overview and F5 retain the shared head and open the same chat participant', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(page)
+  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   const name = await page.getByTestId('self-user').innerText()
   // A fresh document has never subscribed to the users list or either card.
   // Only its session cookie is shared with the administrator's first window.
@@ -33,7 +34,7 @@ test('cold user Overview and F5 retain the shared head and open the same chat pa
   const frames: SocketFrame[] = []
   const wire = watchSocketFrames(card, (frame) => frames.push(frame))
   try {
-    await gotoPage(card, `/hilos/user/${userId}`)
+    await gotoPage(expect, card, `/hilos/user/${userId}`)
     await expectHilosUserOverview(expect, card, userId, name, 'Hilos Chat')
     await expectUserTimeZone(expect, card, null)
     expect(
@@ -56,7 +57,7 @@ test('cold user Overview and F5 retain the shared head and open the same chat pa
     expect(replies.replies.map((reply) => reply.page)).toEqual(['hilos_user'])
 
     await card.reload()
-    await expectPageReady(card)
+    await expectPageReady(expect, card)
     await expectHilosUserOverview(expect, card, userId, name, 'Hilos Chat')
     await expectUserTimeZone(expect, card, null)
     await expectUserActivityDisplay(
@@ -81,7 +82,7 @@ test('cold user Overview and F5 retain the shared head and open the same chat pa
       await expect(participant).toBeFocused()
       await card.keyboard.press('Enter')
       await expect(card).toHaveURL(`/user/${userId}`)
-      await expectPageReady(card)
+      await expectPageReady(expect, card)
       await expect(card.getByTestId('user-detail')).toBeVisible()
       await expect(card.getByTestId('user-name')).toHaveText(name)
       await expect(card.getByRole('heading', { level: 1 })).toHaveText(name)
@@ -103,7 +104,7 @@ test('a guest sees the public participant activity in the non-UTC browser zone f
   browser,
   page,
 }) => {
-  const user = await signUp(page)
+  const user = await signUp(expect, page)
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const guestContext = await browser.newContext({
     baseURL,
@@ -115,7 +116,7 @@ test('a guest sees the public participant activity in the non-UTC browser zone f
   const frames: SocketFrame[] = []
   const wire = watchSocketFrames(guest, (frame) => frames.push(frame))
   try {
-    await gotoPage(guest, `/user/${user.userId}`)
+    await gotoPage(expect, guest, `/user/${user.userId}`)
     await expect(guest.getByTestId('conn-state')).toHaveText('connected')
     await expect(guest.getByTestId('nav-profile')).toHaveCount(0)
     await expect(guest.getByTestId('self-user')).toHaveCount(0)
