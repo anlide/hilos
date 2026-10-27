@@ -833,6 +833,7 @@ final class PageCatalogResolverTest extends TestCase
         ], $head->pageTabs);
     }
 
+    /** Rules is intentionally unserved in this fixture. */
     public function testModerationKindOwnsItsSingletonOverviewOutsideTheSectionRow(): void
     {
         ModerationKindPageHeadTestHilos::initBrowser();
@@ -860,6 +861,41 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_MODERATION_KIND,
             PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_MODERATION_KIND),
         );
+        $root = PageCatalogResolver::head(HilosPageConstants::HILOS_MODERATION, $params);
+        self::assertNotNull($root);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_MODERATION, 'label' => 'Overview'],
+        ], $root->pageTabs);
+        self::assertSame([], $root->toArray()['pageChildren']);
+    }
+
+    public function testModerationKindAndRulesShareTheOwnerBreadcrumbAndTwoTabs(): void
+    {
+        ModerationKindRulesPageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams(['kind' => 'project_kind']);
+        foreach ([HilosPageConstants::HILOS_MODERATION_KIND, HilosPageConstants::HILOS_MODERATION_KIND_RULES] as $page) {
+            $head = PageCatalogResolver::head($page, $params);
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_MODERATION_KIND,
+                    'label' => 'Kind',
+                    'lead' => 'One declared check and the rules in force.',
+                    'icon' => 'bi-shield-check',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_MODERATION, 'label' => 'Moderation'],
+                    ['page' => HilosPageConstants::HILOS_MODERATION_KIND, 'label' => 'Kind'],
+                ],
+                'pageTabs' => [
+                    ['page' => HilosPageConstants::HILOS_MODERATION_KIND, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_MODERATION_KIND_RULES, 'label' => 'Rules'],
+                ],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame(HilosPageConstants::HILOS_MODERATION_KIND, PageCatalogResolver::rowOwner($page));
+        }
         $root = PageCatalogResolver::head(HilosPageConstants::HILOS_MODERATION, $params);
         self::assertNotNull($root);
         self::assertSame([
@@ -1779,12 +1815,22 @@ abstract class OnlineTestingCommunicationsPageHeadTestHilos extends LegacyCommun
     protected const string PAGE_CATALOG = OnlineTestingPageCatalog::class;
 }
 
-/** A served moderation section and its independently owned kind overview. */
+/** A served moderation section and kind overview with Rules intentionally unserved. */
 abstract class ModerationKindPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
         HilosPageConstants::HILOS_MODERATION => PageHeadTestPage::class,
         HilosPageConstants::HILOS_MODERATION_KIND => PageHeadTestPage::class,
+    ];
+}
+
+/** Both kind tabs served without making either one a tab of the section. */
+abstract class ModerationKindRulesPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_MODERATION => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_MODERATION_KIND => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_MODERATION_KIND_RULES => PageHeadTestPage::class,
     ];
 }
 

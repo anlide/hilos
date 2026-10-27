@@ -45,6 +45,7 @@ export const HilosPages = {
   ROLES: 'hilos_roles',
   MODERATION: 'hilos_moderation',
   MODERATION_KIND: 'hilos_moderation_kind',
+  MODERATION_KIND_RULES: 'hilos_moderation_kind_rules',
   BACKUP: 'hilos_backup',
   MAINTENANCE: 'hilos_maintenance',
   MAINTENANCE_CIRCLE: 'hilos_maintenance_circle',
@@ -190,6 +191,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.MODERATION]: { path: '/hilos/moderation', admin: true },
   [HilosPages.MODERATION_KIND]: {
     path: '/hilos/moderation/{kind}',
+    admin: true,
+  },
+  [HilosPages.MODERATION_KIND_RULES]: {
+    path: '/hilos/moderation/{kind}/rules',
     admin: true,
   },
   [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },

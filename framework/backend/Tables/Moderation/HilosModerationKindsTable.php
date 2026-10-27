@@ -172,6 +172,7 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
             HilosModerationKindTableRow::ownRuleCount => WireField::notPersonal(),
             HilosModerationKindTableRow::profile => WireField::notPersonal(),
             HilosModerationKindTableRow::reasons => WireField::notPersonal(),
+            HilosModerationKindTableRow::defaultRules => WireField::notPersonal(),
         ];
     }
 
@@ -295,6 +296,7 @@ final class HilosModerationKindsTable extends TableDefinition implements MultiRo
             ownRuleCount: count(Hilos::$db->moderationRules->whereColumnIs(ObjectModerationRule::kind, $kind->key)),
             profile: $kind->input === ModerationInput::IMAGE ? ModerationLlmConstants::PROFILE_IMAGE : ModerationLlmConstants::PROFILE_TEXT,
             reasons: $kind->reasons,
+            defaultRules: $kind->defaultRules,
         );
     }
 }

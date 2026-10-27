@@ -168,6 +168,7 @@ final class HilosModerationKindPageIntegrationTest extends FrameworkIntegrationT
         self::assertSame([
             'kind' => 'test_note', 'title' => 'Project note', 'owner' => 'project', 'input' => 'text_with_files',
             'model' => 'text-default', 'ownRuleCount' => 0, 'profile' => 'hilos.moderation.text', 'reasons' => ['rude'],
+            'defaultRules' => ['Polite notes.'],
         ], $this->assertSelectedWindow($payload, 'test_note'));
         self::assertSame([], AbstractHilosModerationKindPage::ACTIONS);
         self::assertSame([], AbstractHilosModerationKindPage::SIGNALS);
@@ -304,6 +305,7 @@ final class HilosModerationKindPageIntegrationTest extends FrameworkIntegrationT
         self::assertSame([
             'kind' => 'test_note', 'title' => 'Project note', 'owner' => 'project', 'input' => 'text_with_files',
             'model' => HiddenValue::mark(), 'ownRuleCount' => 0, 'profile' => 'hilos.moderation.text', 'reasons' => ['rude'],
+            'defaultRules' => ['Polite notes.'],
         ], $text);
         $image = $this->assertSelectedWindow($this->subscribe('viewer', ['kind' => 'test_picture']), 'test_picture');
         self::assertSame('vision-default', $image['model']);
@@ -425,7 +427,9 @@ final class HilosModerationKindPageIntegrationTest extends FrameworkIntegrationT
         self::assertNull($viewport->anchor);
         self::assertNull($viewport->pageIndex);
         self::assertSame(TableAnchorDirection::After, $viewport->anchorDirection);
-        self::assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], $viewport->rendered);
+        self::assertSame([
+            'kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons', 'defaultRules',
+        ], $viewport->rendered);
     }
 
     /** @return list<array{target: string, name: string, data: array<string, mixed>}> Addressed browser frames */

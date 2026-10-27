@@ -78,7 +78,7 @@ const typeSource = `
   import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
   import { HilosPublicStatusPage } from '@hilos/vue'
   import type { HilosConnection } from '@hilos/core/base'
-  import { HilosModerationPage } from '@hilos/vue/admin/moderation'
+  import { HilosModerationPage, HilosModerationKindRulesPage } from '@hilos/vue/admin/moderation'
   import type { HilosStatusContext, HilosStatusIncidentController } from '@hilos/core/admin/status'
   import type { HilosModerationContext } from '@hilos/core/admin/moderation'
   import type { Hideable } from '@hilos/core/base'
@@ -86,10 +86,13 @@ const typeSource = `
   type ComponentsProps = InstanceType<typeof HilosStatusComponentsPage>['$props']
   type ModalProps = InstanceType<typeof HilosStatusIncidentModal>['$props']
   type ModerationProps = InstanceType<typeof HilosModerationPage>['$props']
+  type RulesProps = InstanceType<typeof HilosModerationKindRulesPage>['$props']
   type Props = InstanceType<typeof HilosTableText>['$props']
   type PublicProps = InstanceType<typeof PublicStatusPage>['$props']
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
+  const rulesContext: Same<RulesProps['context'], HilosModerationContext> = true
+  void rulesContext
   const exactValue: Same<Props['value'], Hideable<string>> = true
   const statusContext: Same<StatusProps['context'], HilosStatusContext> = true
   const componentsContext: Same<ComponentsProps['context'], HilosStatusContext> = true

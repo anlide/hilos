@@ -181,7 +181,44 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { kind: 'project/kind with spaces' },
       admin: true,
     })
-    expect(router.match('/hilos/moderation/profile_name/rules').page).toBeNull()
+    expect(router.match('/hilos/moderation/profile_name/rules')).toEqual({
+      page: HilosPages.MODERATION_KIND_RULES,
+      params: { kind: 'profile_name' },
+      admin: true,
+    })
+  })
+
+  it('addresses moderation kind Rules with its PHP key and encoded kind parameter', () => {
+    const page = HilosPages.MODERATION_KIND_RULES
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_moderation_kind_rules')
+    expect(php).toContain(`HILOS_MODERATION_KIND_RULES = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/moderation/{kind}/rules',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, { kind: 'project/kind with spaces' })).toBe(
+      '/hilos/moderation/project%2Fkind%20with%20spaces/rules',
+    )
+    expect(
+      router.match('/hilos/moderation/project%2Fkind%20with%20spaces/rules'),
+    ).toEqual({
+      page,
+      params: { kind: 'project/kind with spaces' },
+      admin: true,
+    })
+    expect(resolveHilosPath(page)).toBe('/hilos')
+    expect(
+      router.match('/hilos/moderation/profile_name/rules/extra').page,
+    ).toBeNull()
   })
 
   it('addresses Circle without params under Maintenance with the PHP key', () => {

@@ -1,8 +1,15 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  deliveryObject,
+  expectModerationKindHead,
+  expectModerationKindTabs,
+  expectModerationOwnRules,
+  expectModerationRulesOpening,
+  ROWS,
   shownByTestId,
   watchClientDocument,
+  watchDeliveryFrames,
   watchPageReplies,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
@@ -14,7 +21,7 @@ import {
   PAGE_REFUSED,
 } from '../helpers/page.js'
 
-// Framework moderation kinds and their read-only Overview, carried by chat.
+// Framework moderation kinds, read-only Overview and Rules, carried by chat.
 // Expectations come from the kind declarations, moderation profile defaults
 // and seed 006_framework_moderation_rules; no Rules mutations are needed.
 
@@ -37,6 +44,16 @@ const DECLARED_KINDS = [
       'impersonation',
     ],
     rules: '3 rules of your own',
+    ownRules: [
+      'Allow benign display names. Block: insults, threats, hate speech, sexual, spam, impersonation.',
+      'Explicit text only; no inference. Uncertain→allow.',
+      'Reasons: ok, insult, threat, hate_speech, sexual, spam, impersonation.',
+    ],
+    defaultRules: [
+      'Default policy: allow benign display names.',
+      'Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.',
+      'If uncertain, return allow=true.',
+    ],
   },
   {
     kind: 'hilos_profile_photo',
@@ -47,6 +64,12 @@ const DECLARED_KINDS = [
     profile: 'hilos.moderation.image',
     reasons: ['nudity', 'violence', 'hate'],
     rules: 'Built-in until you add a rule of your own',
+    ownRules: [],
+    defaultRules: [
+      'Default policy: allow ordinary photos, drawings and logos.',
+      'Block only nudity or sexual content, graphic violence, and hate symbols.',
+      'If uncertain, return allow=true.',
+    ],
   },
   {
     kind: 'chat_message',
@@ -57,6 +80,16 @@ const DECLARED_KINDS = [
     profile: 'hilos.moderation.text',
     reasons: ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
     rules: '3 rules of your own',
+    ownRules: [
+      "Allow benign. Block: insults, threats, hate speech, sexual, spam. Don't block greetings, names, neutral.",
+      'Explicit text only; no inference. Uncertain→allow. Attachments never cause a block.',
+      'Reasons: ok, insult, threat, hate_speech, sexual, spam.',
+    ],
+    defaultRules: [
+      'Default policy: allow benign messages.',
+      'Block only explicit insults, threats, hate speech, sexual content, and obvious spam.',
+      'If uncertain, return allow=true.',
+    ],
   },
   {
     kind: 'chat_message_picture',
@@ -67,6 +100,12 @@ const DECLARED_KINDS = [
     profile: 'hilos.moderation.image',
     reasons: ['nudity', 'violence', 'hate'],
     rules: 'Built-in until you add a rule of your own',
+    ownRules: [],
+    defaultRules: [
+      'Default policy: allow ordinary pictures, screenshots and drawings.',
+      'Block only nudity or sexual content, graphic violence, and hate symbols.',
+      'If uncertain, return allow=true.',
+    ],
   },
 ] as const
 
@@ -199,12 +238,69 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       await expect(
         page.getByTestId('hilos-moderation-kind-loading'),
       ).toHaveCount(0)
-      await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+      await expectModerationKindTabs(expect, page, kind, 'overview')
       await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
       await expect(
         page
           .getByTestId('hilos-admin-page')
           .locator('button, input, select, textarea, table, [role="tablist"]'),
+      ).toHaveCount(0)
+      await document.unchanged()
+
+      await page
+        .getByTestId('hilos-page-tab-hilos_moderation_kind_rules')
+        .click()
+      await expectPageReady(page)
+      await expect(page).toHaveURL(`/hilos/moderation/${kind}/rules`)
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      await expect(page).toHaveTitle(`${title} · Hilos Chat`)
+      await expect(
+        page.getByTestId('hilos-moderation-kind-overview'),
+      ).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-moderation-rules-table'),
+      ).toBeVisible()
+      if (declared.ownRules.length > 0) {
+        await expectModerationOwnRules(expect, page, declared.ownRules)
+      } else {
+        const empty = shownByTestId(page, 'hilos-table-empty')
+        await expect(empty.locator('p')).toHaveText([
+          'No rules of your own yet',
+          `${title} is checked by its built-in rules below.`,
+        ])
+        const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
+        await expect(builtIn).toBeVisible()
+        await expect(builtIn).toHaveClass(/bg-body-tertiary/)
+        await expect(builtIn.getByRole('heading', { level: 2 })).toHaveText(
+          'Built-in rules',
+        )
+        await expect(builtIn.locator('.badge')).toHaveText('Built-in')
+        await expect(builtIn.locator('p')).toHaveText(
+          'They come with the kind and apply until you add a rule of your own. Your first rule replaces them all.',
+        )
+        await expect(builtIn.locator('ul')).toHaveClass(/text-body-secondary/)
+        await expect(builtIn.locator('li')).toHaveText([
+          ...declared.defaultRules,
+        ])
+        await expect(
+          page.getByTestId('hilos-moderation-rules-table').locator(ROWS),
+        ).toHaveCount(0)
+        await expect(page.getByTestId('hilos-table-no-matches')).toHaveCount(0)
+      }
+      await document.unchanged()
+      await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
+      await expectPageReady(page)
+      await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expect(overview).toBeVisible()
+      await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
+        rules,
+      )
+      await expect(
+        page.getByTestId('hilos-moderation-rules-table'),
+      ).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-moderation-rules-built-in'),
       ).toHaveCount(0)
       await document.unchanged()
 
@@ -220,14 +316,14 @@ test('opens each declared kind Overview and keeps its head, data and history in 
       await document.unchanged()
     }
 
-    // Back to the last kind, then skip the list entry in browser history:
+    // Back to the last kind, then skip its Rules and Overview history entries:
     // the same detail component must replace picture data with text data.
     await page.goBack()
     await expectPageReady(page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
       'chat_message_picture',
     )
-    await page.evaluate(() => window.history.go(-2))
+    await page.evaluate(() => window.history.go(-4))
     await expect(page).toHaveURL('/hilos/moderation/chat_message')
     await expectPageReady(page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
@@ -245,7 +341,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
     )
     await document.unchanged()
 
-    await page.evaluate(() => window.history.go(2))
+    await page.evaluate(() => window.history.go(4))
     await expect(page).toHaveURL('/hilos/moderation/chat_message_picture')
     await expectPageReady(page)
     await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
@@ -309,6 +405,150 @@ test('loads a kind Overview directly and after F5 with the same resolved data', 
   }
 })
 
+test('loads Rules directly and after F5 from one reply with both canonical windows', async ({
+  page,
+}) => {
+  const log = watchDeliveryFrames(page)
+  await signUpAdmin(page)
+  try {
+    for (const declared of DECLARED_KINDS) {
+      await gotoPage(
+        page,
+        `/hilos/moderation/${declared.kind}/rules`,
+        PAGE_READY,
+      )
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      const table = page.getByTestId('hilos-moderation-rules-table')
+      await expect(table).toBeVisible()
+      if (declared.ownRules.length > 0) {
+        await expectModerationOwnRules(expect, page, declared.ownRules)
+      } else {
+        await expect(
+          page.getByTestId('hilos-moderation-rules-built-in').locator('li'),
+        ).toHaveText([...declared.defaultRules])
+      }
+      await expectModerationRulesOpening(expect, log, declared)
+      const directText = await table.innerText()
+
+      await page.reload()
+      await expectPageReady(page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      await expect(table).toHaveText(directText, { useInnerText: true })
+      await expectModerationRulesOpening(expect, log, declared)
+    }
+  } finally {
+    log.stop()
+  }
+})
+
+for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
+  test(`reads, searches and sorts ${declared.kind} own rules without showing built-ins`, async ({
+    page,
+  }) => {
+    const log = watchDeliveryFrames(page)
+    await signUpAdmin(page)
+    await gotoPage(page, `/hilos/moderation/${declared.kind}/rules`, PAGE_READY)
+    await expectModerationOwnRules(expect, page, declared.ownRules)
+    const document = await watchClientDocument(page)
+    try {
+      const search = shownByTestId(page, 'hilos-table-search')
+      await search.fill('')
+      await search.pressSequentially('Explicit text only', { delay: 10 })
+      await expectModerationOwnRules(expect, page, [declared.ownRules[1]])
+
+      await search.fill('')
+      await search.pressSequentially('no_such_own_rule', { delay: 10 })
+      const empty = shownByTestId(page, 'hilos-table-no-matches')
+      await expect(empty).toContainText('Nothing found')
+      await expect(
+        shownByTestId(page, 'hilos-table-no-matches-terms'),
+      ).toHaveText('No rows match “no_such_own_rule”')
+      await expect(
+        page.getByTestId('hilos-moderation-rules-built-in'),
+      ).toHaveCount(0)
+      await expect(page.getByTestId('hilos-table-empty')).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-moderation-rules-table').locator(ROWS),
+      ).toHaveCount(0)
+      await shownByTestId(page, 'hilos-table-no-matches-reset').click()
+      await expect(search).toHaveValue('')
+      await expectModerationOwnRules(expect, page, declared.ownRules)
+
+      const sort = page.getByTestId('hilos-table-sort-rule')
+      const header = page.locator('th:has([data-id="hilos-table-sort-rule"])')
+      await expect(header).toHaveAttribute('aria-sort', 'none')
+      await sort.click()
+      await expect(header).toHaveAttribute('aria-sort', 'ascending')
+      // Ascending matches the seed order, so DOM text alone cannot prove its reply.
+      await expect
+        .poll(() => {
+          const request = log.sent
+            .map((frame) => deliveryObject(frame.wire))
+            .filter(
+              (wire) =>
+                wire.type === 'table_viewport' &&
+                wire.tableKey === 'hilosModerationRules',
+            )
+            .at(-1)
+          const replies = log.packets
+            .flatMap((packet) => packet.frames)
+            .map((frame) => deliveryObject(frame.wire))
+            .filter((wire) => wire.type === 'table_window')
+            .map((wire) => deliveryObject(wire.data))
+            .filter(
+              (data) =>
+                data.tableKey === 'hilosModerationRules' &&
+                data.requestId === request?.requestId,
+            )
+          return {
+            sort: request?.sort,
+            kind: deliveryObject(request?.filter).kind,
+            replies: replies.length,
+          }
+        })
+        .toEqual({
+          sort: [{ field: 'rule', direction: 'asc' }],
+          kind: declared.kind,
+          replies: 1,
+        })
+      await sort.click()
+      await expect(header).toHaveAttribute('aria-sort', 'descending')
+      await expectModerationOwnRules(
+        expect,
+        page,
+        [...declared.ownRules].reverse(),
+      )
+      await sort.click()
+      await expect(header).toHaveAttribute('aria-sort', 'none')
+      await expectModerationOwnRules(expect, page, declared.ownRules)
+
+      await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
+      await expectPageReady(page)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expect(
+        page.getByTestId('hilos-moderation-rules-table'),
+      ).toHaveCount(0)
+      await page.goBack()
+      await expectPageReady(page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      await expectModerationOwnRules(expect, page, declared.ownRules)
+      await page.goForward()
+      await expectPageReady(page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expect(
+        page.getByTestId('hilos-moderation-rules-table'),
+      ).toHaveCount(0)
+      await document.unchanged()
+    } finally {
+      log.stop()
+      await document.dispose()
+    }
+  })
+}
+
 test('refuses an unknown kind through the server subscription as 404', async ({
   page,
 }) => {
@@ -334,6 +574,35 @@ test('refuses an unknown kind through the server subscription as 404', async ({
   )
   await expect(page.getByTestId('hilos-moderation-kind-loading')).toHaveCount(0)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
+})
+
+test('refuses an unknown Rules kind through the server subscription as 404', async ({
+  page,
+}) => {
+  const observed = watchPageReplies(page)
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/moderation/unknown_kind/rules', PAGE_REFUSED)
+  await expect(page).toHaveURL('/hilos/moderation/unknown_kind/rules')
+  await expect(page.getByTestId('page-error')).toHaveAttribute(
+    'data-error-code',
+    '404',
+  )
+  await expect(page.getByTestId('page-error')).toContainText('Page Not Found')
+  expect(
+    observed.replies.filter(
+      (reply) => reply.page === 'hilos_moderation_kind_rules',
+    ),
+  ).toEqual([
+    expect.objectContaining({ type: 'subscription_page_error', httpCode: 404 }),
+  ])
+  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-moderation-rules-table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-moderation-rules-built-in')).toHaveCount(
+    0,
+  )
+  await expect(page.getByTestId('hilos-moderation-rules-loading')).toHaveCount(
+    0,
+  )
 })
 
 test('filters moderation kinds by search query and shows empty state when no rows match', async ({
@@ -448,12 +717,42 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
     await expect(
       page.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
     ).toHaveCount(0)
-    await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+    await expectModerationKindTabs(
+      expect,
+      page,
+      'hilos_profile_name',
+      'overview',
+    )
     await expect(
       page
         .getByTestId('hilos-admin-page')
         .locator('button, input, select, textarea, table'),
     ).toHaveCount(0)
+    await document.unchanged()
+
+    await page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules').click()
+    await expectPageReady(page)
+    await expectModerationKindHead(expect, page, DECLARED_KINDS[0], 'rules')
+    await expect(banner).toBeVisible()
+    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
+    const search = shownByTestId(page, 'hilos-table-search')
+    await search.fill('')
+    await search.pressSequentially('impersonation', { delay: 10 })
+    await expectModerationOwnRules(expect, page, [
+      DECLARED_KINDS[0].ownRules[0],
+      DECLARED_KINDS[0].ownRules[2],
+    ])
+    await search.fill('')
+    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
+    await expect(
+      page.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-admin-page').locator('input, select, textarea'),
+    ).toHaveCount(1)
+    await expect(
+      page.getByTestId('hilos-admin-page').locator('input'),
+    ).toHaveAttribute('type', 'search')
     await document.unchanged()
   } finally {
     await document.dispose()

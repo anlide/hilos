@@ -180,6 +180,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
+        HilosPageConstants::HILOS_MODERATION_KIND_RULES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Rules',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Your own rules for this kind.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MODERATION_KIND,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Rules',
+        ],
         HilosPageConstants::HILOS_I18N => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Internationalization',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Languages, countries, locales, and translation screens.',

@@ -390,6 +390,13 @@ export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
 
 export {
+  expectModerationKindHead,
+  expectModerationKindTabs,
+  expectModerationOwnRules,
+  expectModerationRulesOpening,
+} from './moderation.js'
+
+export {
   readClusterBrowserStand,
   newClusterMasterPage,
   setClusterMaster,

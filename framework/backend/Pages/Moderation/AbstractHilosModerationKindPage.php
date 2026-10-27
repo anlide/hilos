@@ -74,6 +74,7 @@ abstract class AbstractHilosModerationKindPage extends AbstractHilosPage
                 HilosModerationKindTableRow::ownRuleCount,
                 HilosModerationKindTableRow::profile,
                 HilosModerationKindTableRow::reasons,
+                HilosModerationKindTableRow::defaultRules,
             ],
         ));
     }

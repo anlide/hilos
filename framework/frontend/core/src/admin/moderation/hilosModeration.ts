@@ -32,6 +32,7 @@ export interface HilosModerationKindRow {
   readonly ownRuleCount: number
   readonly profile: string
   readonly reasons: readonly string[]
+  readonly defaultRules: readonly string[]
 }
 
 /** Table key for moderation kinds. */
@@ -50,6 +51,7 @@ export const HilosModerationKindRowKey = {
   ownRuleCount: 'ownRuleCount',
   profile: 'profile',
   reasons: 'reasons',
+  defaultRules: 'defaultRules',
 } as const
 
 /** Shared copy for the moderation kinds administration table. */
@@ -72,6 +74,7 @@ export function resolveHilosModerationKindRow(
       ? (slot as Record<string, unknown>)
       : {}
   const reasons = record[HilosModerationKindRowKey.reasons]
+  const defaultRules = record[HilosModerationKindRowKey.defaultRules]
 
   return {
     kind:
@@ -86,6 +89,11 @@ export function resolveHilosModerationKindRow(
       Array.isArray(reasons) &&
       reasons.every((reason): reason is string => typeof reason === 'string')
         ? reasons
+        : [],
+    defaultRules:
+      Array.isArray(defaultRules) &&
+      defaultRules.every((rule): rule is string => typeof rule === 'string')
+        ? defaultRules
         : [],
   }
 }

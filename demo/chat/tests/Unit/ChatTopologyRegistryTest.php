@@ -51,6 +51,7 @@ use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Chat\Pages\Hilos\Moderation\ModerationPage;
 use Demo\Chat\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\Chat\Pages\Hilos\Moderation\ModerationKindRulesPage;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogReceiptReadActionDTO;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
@@ -1180,6 +1181,20 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(PageReach::ROUTE, ModerationKindPage::REACH);
         self::assertSame([], ModerationKindPage::ACTIONS);
         self::assertSame([], ModerationKindPage::SIGNALS);
+
+        self::assertSame(ModerationKindRulesPage::class, Hilos::PAGES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[ModerationKindRulesPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
+        ], ModerationKindRulesPage::BROWSER);
+        self::assertSame([
+            ChatTableContext::hilosModerationKinds => [],
+            ChatTableContext::hilosModerationRules => [],
+        ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(PageAccessLevel::ADMIN, ModerationKindRulesPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, ModerationKindRulesPage::REACH);
+        self::assertSame([], ModerationKindRulesPage::ACTIONS);
+        self::assertSame([], ModerationKindRulesPage::SIGNALS);
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
         $this->assertSame([

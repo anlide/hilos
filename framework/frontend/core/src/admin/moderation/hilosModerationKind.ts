@@ -31,10 +31,14 @@ export interface HilosModerationKind {
  *
  * @param context The project's connection and page scopes.
  * @param kind The current route's kind key.
+ * @param page The kind page whose metadata window is bound.
  */
 export function createHilosModerationKind(
   context: HilosModerationContext,
   kind: ReadonlySignal<string>,
+  page:
+    | typeof HilosPages.MODERATION_KIND
+    | typeof HilosPages.MODERATION_KIND_RULES = HilosPages.MODERATION_KIND,
 ): HilosModerationKind {
   const controller = new TableViewportController<HilosModerationKindRow>({
     resolve: resolveHilosModerationKindRow,
@@ -48,13 +52,13 @@ export function createHilosModerationKind(
     },
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.MODERATION_KIND,
+        page,
         HILOS_MODERATION_KINDS_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.MODERATION_KIND,
+        page,
         HILOS_MODERATION_KINDS_TABLE,
         rendered,
       ),
@@ -66,7 +70,7 @@ export function createHilosModerationKind(
     return (
       source !== null &&
       source.scope === context.scopes.page() &&
-      source.scope.key === HilosPages.MODERATION_KIND &&
+      source.scope.key === page &&
       source.kind === kind.get()
     )
   })
@@ -99,21 +103,19 @@ export function createHilosModerationKind(
           delivered.set(null)
           // Navigation gathers held windows before the outgoing view unmounts.
           // Release this binding now; a new scope for this same page keeps it.
-          if (scope?.key !== HilosPages.MODERATION_KIND) dispose()
+          if (scope?.key !== page) dispose()
         }),
         subscribeSignal(controller.rows, () => {
           const scope = context.scopes.page()
           delivered.set(
-            scope?.key === HilosPages.MODERATION_KIND
-              ? { scope, kind: kind.get() }
-              : null,
+            scope?.key === page ? { scope, kind: kind.get() } : null,
           )
         }),
         bindTableViewport(
           context.connection,
           context.scopes,
           {
-            page: HilosPages.MODERATION_KIND,
+            page,
             tableKey: HILOS_MODERATION_KINDS_TABLE,
           },
           controller,

@@ -154,16 +154,28 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         $this->assertSame([], $table->bulkActions());
         $this->assertSame([
             ['hilos_profile_name', 'Profile name', 'framework', 'text', 'text-default', 0,
-                'hilos.moderation.text', ['insult', 'threat', 'hate_speech', 'sexual', 'spam', 'impersonation']],
+                'hilos.moderation.text', ['insult', 'threat', 'hate_speech', 'sexual', 'spam', 'impersonation'], [
+                    'Default policy: allow benign display names.',
+                    'Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.',
+                    'If uncertain, return allow=true.',
+                ]],
             ['hilos_profile_photo', 'Profile photo', 'framework', 'image', 'vision-default', 0,
-                'hilos.moderation.image', ['nudity', 'violence', 'hate']],
-            ['test_note', 'Project note', 'project', 'text_with_files', 'text-default', 0, 'hilos.moderation.text', ['rude']],
-            ['test_picture', 'Project picture', 'project', 'image', 'vision-default', 0, 'hilos.moderation.image', ['nudity']],
+                'hilos.moderation.image', ['nudity', 'violence', 'hate'], [
+                    'Default policy: allow ordinary photos, drawings and logos.',
+                    'Block only nudity or sexual content, graphic violence, and hate symbols.',
+                    'If uncertain, return allow=true.',
+                ]],
+            ['test_note', 'Project note', 'project', 'text_with_files', 'text-default', 0,
+                'hilos.moderation.text', ['rude'], ['Polite notes.']],
+            ['test_picture', 'Project picture', 'project', 'image', 'vision-default', 0,
+                'hilos.moderation.image', ['nudity'], ['Safe pictures.']],
         ], array_map(static fn (AbstractTableRow $row): array => array_values($row->toArray()), $snapshot->rows));
 
         foreach ($snapshot->rows as $row) {
             $this->assertInstanceOf(HilosModerationKindTableRow::class, $row);
-            $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($row->toArray()));
+            $this->assertSame([
+                'kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons', 'defaultRules',
+            ], array_keys($row->toArray()));
             $this->assertSame($row->getRowKey(), $row->toArray()[HilosModerationKindTableRow::kind]);
             $this->assertSame($row->toArray(), HilosModerationKindTableRow::fromArray($row->toArray())->toArray());
             $this->assertSame([
@@ -208,6 +220,7 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             static fn (HilosModerationKindTableRow $row): int => $row->ownRuleCount,
             $table->getPage(new TableQueryDTO())->rows,
         ));
+        $this->assertSame(['Polite notes.'], $table->findRow(ModerationTablesTestDirectory::NOTE)->defaultRules);
         $this->assertSame(['First note rule.', 'Second note rule.'], Hilos::$db->moderationRules->effectiveForKind(
             ModerationTablesTestDirectory::NOTE,
         ));
@@ -393,8 +406,10 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             [ObjectSetting::id, ObjectSetting::key, ObjectSetting::value],
         ], array_column($configs, BrowserTableFieldKey::FIELDS));
         $origins = $table->wireFields();
-        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($origins));
-        foreach (['kind', 'title', 'owner', 'input', 'ownRuleCount', 'profile', 'reasons'] as $field) {
+        $this->assertSame([
+            'kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons', 'defaultRules',
+        ], array_keys($origins));
+        foreach (['kind', 'title', 'owner', 'input', 'ownRuleCount', 'profile', 'reasons', 'defaultRules'] as $field) {
             $this->assertFalse($origins[$field]->isColumn());
             $this->assertFalse($origins[$field]->isSetting());
             $this->assertNull($origins[$field]->fields);
@@ -410,9 +425,14 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
 
     public function testRowReaderRefusesMissingOrMistypedFieldsAndNegativeCounts(): void
     {
-        $row = new HilosModerationKindTableRow('test_note', 'Note', 'project', 'text', 'model', 0, 'hilos.moderation.text', ['spam', 'rude']);
+        $row = new HilosModerationKindTableRow(
+            'test_note', 'Note', 'project', 'text', 'model', 0, 'hilos.moderation.text', ['spam', 'rude'],
+            ['Allow polite notes.', 'Block threats.'],
+        );
         $this->assertSame(['spam', 'rude'], HilosModerationKindTableRow::fromArray($row->toArray())->reasons);
         $this->assertSame([], HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), ['reasons' => []]))->reasons);
+        $this->assertSame(['Allow polite notes.', 'Block threats.'], HilosModerationKindTableRow::fromArray($row->toArray())->defaultRules);
+        $this->assertSame([], HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), ['defaultRules' => []]))->defaultRules);
         foreach (array_keys($row->toArray()) as $field) {
             $payload = $row->toArray();
             unset($payload[$field]);
@@ -436,10 +456,14 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             ['reasons' => null], ['reasons' => 'spam'], ['reasons' => (object) []],
             ['reasons' => ['name' => 'spam']], ['reasons' => [1 => 'spam']], ['reasons' => ['spam', 1]],
             ['reasons' => [false]], ['reasons' => [null]], ['reasons' => [[]]], ['reasons' => [(object) []]],
+            ['defaultRules' => null], ['defaultRules' => 'Allow notes.'], ['defaultRules' => (object) []],
+            ['defaultRules' => ['rule' => 'Allow notes.']], ['defaultRules' => [1 => 'Allow notes.']],
+            ['defaultRules' => ['Allow notes.', 1]], ['defaultRules' => [false]], ['defaultRules' => [null]],
+            ['defaultRules' => [[]]], ['defaultRules' => [(object) []]],
         ] as $invalid) {
             try {
                 HilosModerationKindTableRow::fromArray(array_replace($row->toArray(), $invalid));
-                $this->fail('A mistyped profile or a non-string reason list must be refused');
+                $this->fail('A mistyped profile or a non-string reason or default rule list must be refused');
             } catch (InvalidFormatException) {
                 $this->addToAssertionCount(1);
             }
@@ -985,7 +1009,9 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             $this->assertSame(self::kindKeys(), array_column($window->rows, 'rowKey'));
             foreach ($window->rows as $row) {
                 $kind = $row['slots']['kind'];
-                $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($kind));
+                $this->assertSame([
+                    'kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons', 'defaultRules',
+                ], array_keys($kind));
                 $this->assertSame($row['rowKey'], $kind['kind']);
                 $this->assertIsString($kind['title']);
                 $this->assertContains($kind['owner'], ['framework', 'project']);
@@ -996,6 +1022,7 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
                     $kind['profile'],
                 );
                 $this->assertSame(Hilos::moderationKinds()[$row['rowKey']]->reasons, $kind['reasons']);
+                $this->assertSame(Hilos::moderationKinds()[$row['rowKey']]->defaultRules, $kind['defaultRules']);
                 $this->assertSame(
                     in_array($row['rowKey'], $openKinds, true) ? Hilos::$setting[$open]->string() : HiddenValue::mark(),
                     $kind['model'],
@@ -1454,7 +1481,9 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         $this->assertSame(['rowKey', 'slots'], array_keys($delta['row']));
         $this->assertSame(['kind'], array_keys($delta['row']['slots']));
         $row = $delta['row']['slots']['kind'];
-        $this->assertSame(['kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons'], array_keys($row));
+        $this->assertSame([
+            'kind', 'title', 'owner', 'input', 'model', 'ownRuleCount', 'profile', 'reasons', 'defaultRules',
+        ], array_keys($row));
         $this->assertSame($kind, $row['kind']);
         $this->assertSame($count, $row['ownRuleCount']);
     }

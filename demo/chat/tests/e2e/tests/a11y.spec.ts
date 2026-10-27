@@ -22,6 +22,7 @@ import {
   expectDaemonNodeTableName,
   expectHilosUserOverview,
   expectHilosUserOverviewAccessibility,
+  expectModerationKindHead,
   expectPasswordVisibility,
   expectTableTextControl,
   expectTableTextGeometry,
@@ -657,6 +658,55 @@ test('the moderation kinds root exposes one heading, named table and keyboard op
   await openLink.focus()
   await expect(openLink).toBeFocused()
   await expect(openLink).toHaveAttribute('aria-label', 'Open Profile name')
+})
+
+test('Rules inherits the sole kind heading as its table name and uses keyboard page links', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  const declared = {
+    kind: 'hilos_profile_name',
+    title: 'Profile name',
+    owner: 'Framework',
+  }
+  await gotoPage(page, '/hilos/moderation/hilos_profile_name/rules')
+  await expectModerationKindHead(expect, page, declared, 'rules')
+  const table = page
+    .getByTestId('hilos-moderation-rules-table')
+    .getByRole('table')
+  await expect(table).toBeVisible()
+  await expect(table).toHaveAccessibleName('Profile name')
+  const headingId = await page
+    .getByTestId('hilos-page-head-title')
+    .getAttribute('id')
+  expect(headingId).toBeTruthy()
+  await expect(table).toHaveAttribute('aria-labelledby', headingId!)
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+  await expect(shownByTestId(page, 'hilos-table-search')).toHaveAccessibleName(
+    'Search rules…',
+  )
+
+  const overview = page.getByTestId('hilos-page-tab-hilos_moderation_kind')
+  const rules = page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules')
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(rules).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(overview).toBeFocused()
+  await overview.press('Enter')
+  await expectPageReady(page)
+  await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name')
+  await expectModerationKindHead(expect, page, declared, 'overview')
+  await expect(page.getByTestId('hilos-moderation-rules-table')).toHaveCount(0)
+  await overview.focus()
+  await page.keyboard.press('Tab')
+  await expect(rules).toBeFocused()
+  await rules.press('Enter')
+  await expectPageReady(page)
+  await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name/rules')
+  await expectModerationKindHead(expect, page, declared, 'rules')
+  await expect(table).toHaveAccessibleName('Profile name')
 })
 
 test.describe('Daemon section accessibility', () => {

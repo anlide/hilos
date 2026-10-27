@@ -36,6 +36,7 @@ function wireRow(kind: string, patch: Record<string, unknown> = {}) {
         ownRuleCount: 0,
         profile: 'hilos.moderation.text',
         reasons: ['spam', 'threat'],
+        defaultRules: ['Allow polite notes.', 'Block threats.'],
         ...patch,
       },
     },
@@ -43,7 +44,12 @@ function wireRow(kind: string, patch: Record<string, unknown> = {}) {
 }
 
 /** Only the socket is a double: parsing, page scope, replay and window binding are real. */
-function setup() {
+function setup(
+  page:
+    | typeof HilosPages.MODERATION_KIND
+    | typeof HilosPages.MODERATION_KIND_RULES = HilosPages.MODERATION_KIND,
+) {
+  const PAGE = page
   const listeners = new Map<string, (event: { data?: unknown }) => void>()
   const sent: Array<Record<string, unknown>> = []
   const socket: WebSocketLike = {
@@ -65,7 +71,10 @@ function setup() {
   pages.subscribe(PAGE, { kind: kind.get() })
   const registered = vi.spyOn(connection, 'registerTableWindow')
   const unregistered = vi.spyOn(connection, 'unregisterTableWindow')
-  const detail = createHilosModerationKind({ connection, scopes }, kind)
+  const detail =
+    page === HilosPages.MODERATION_KIND
+      ? createHilosModerationKind({ connection, scopes }, kind)
+      : createHilosModerationKind({ connection, scopes }, kind, page)
   cleanups.push(() => {
     detail.dispose()
     connection.close()
@@ -142,6 +151,7 @@ describe('moderation kind detail', () => {
         ownRuleCount: 0,
         profile: 'hilos.moderation.text',
         reasons: ['spam', 'threat'],
+        defaultRules: ['Allow polite notes.', 'Block threats.'],
       })
       expect(registered).toHaveBeenCalledTimes(1)
       expect(sent.filter((frame) => frame.type === 'table_viewport')).toEqual(
@@ -161,6 +171,7 @@ describe('moderation kind detail', () => {
             'ownRuleCount',
             'profile',
             'reasons',
+            'defaultRules',
           ],
         },
       ])
@@ -323,6 +334,10 @@ describe('moderation kind detail', () => {
     delta('first', { model: 'new-model', ownRuleCount: 3 })
     expect(detail.row.get()?.model).toBe('new-model')
     expect(detail.row.get()?.ownRuleCount).toBe(3)
+    expect(detail.row.get()?.defaultRules).toEqual([
+      'Allow polite notes.',
+      'Block threats.',
+    ])
     expect(detail.controller.pendingCount.get()).toBe(0)
     delta('first', { model: { _hidden: true }, ownRuleCount: 0 })
     expect(detail.row.get()?.model).toBe(HIDDEN_VALUE)
@@ -405,5 +420,39 @@ describe('moderation kind detail', () => {
     answer()
     expect(detail.row.get()).toBeNull()
     expect(detail.controller.rows.get()).toEqual([])
+  })
+})
+
+describe('moderation kind metadata on Rules', () => {
+  it('uses the selected page for initial/reconnect windows, rendered fields and departure cleanup', () => {
+    const { detail, pages, answer, sent, reopen, receive, connection } = setup(
+      HilosPages.MODERATION_KIND_RULES,
+    )
+    answer()
+    detail.start()
+    expect(detail.row.get()?.kind).toBe('first')
+    expect(sent.filter((frame) => frame.type === 'table_viewport')).toEqual([])
+    expect(
+      sent.filter((frame) => frame.type === 'table_rendered').at(-1)?.page,
+    ).toBe(HilosPages.MODERATION_KIND_RULES)
+    receive('table_window_refused', {
+      page: PAGE,
+      tableKey: TABLE,
+      errorCode: 'unavailable',
+    })
+    expect(detail.row.get()?.kind).toBe('first')
+    reopen()
+    expect(
+      sent.filter((frame) => frame.type === 'page_subscribe').at(-1),
+    ).toMatchObject({
+      page: HilosPages.MODERATION_KIND_RULES,
+      tableWindows: { [TABLE]: { limit: 1 } },
+    })
+    answer()
+    pages.subscribe(PAGE, { kind: 'first' })
+    expect(detail.row.get()).toBeNull()
+    expect(connection.tableWindowDescriptors()).toEqual({})
+    detail.dispose()
+    expect(sent.filter((frame) => frame.type === 'table_viewport')).toEqual([])
   })
 })

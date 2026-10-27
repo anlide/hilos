@@ -35,12 +35,13 @@ const initial: HilosModerationKindRow = {
   ownRuleCount: 0,
   profile: 'hilos.moderation.text',
   reasons: ['spam', 'threat', 'impersonation'],
+  defaultRules: ['Allow polite names.', 'Block threats.'],
 }
 
 /** Real protocol, shared shell, head, name and title consumers; only the socket is scripted. */
 async function harness(
   patch: Partial<HilosModerationKindRow> = {},
-  options: { pending?: boolean; outlet?: boolean } = {},
+  options: { pending?: boolean; outlet?: boolean; rulesServed?: boolean } = {},
 ) {
   const first = { ...initial, ...patch }
   const listeners = new Map<string, (event: { data?: unknown }) => void>()
@@ -107,7 +108,12 @@ async function harness(
             { page: HilosPages.MODERATION, label: 'Moderation' },
             { page: PAGE, label: 'Kind' },
           ],
-          pageTabs: [{ page: PAGE, label: 'Overview' }],
+          pageTabs: [
+            { page: PAGE, label: 'Overview' },
+            ...(options.rulesServed
+              ? [{ page: HilosPages.MODERATION_KIND_RULES, label: 'Rules' }]
+              : []),
+          ],
           pageChildren: [],
         },
         windows: {
@@ -408,4 +414,24 @@ describe('HilosModerationKindPage', () => {
     ).toBe(false)
     expect(view.text()).not.toContain('Built-in')
   })
+})
+
+it('uses the supplied two-tab kind head without changing the Overview body', async () => {
+  const { view } = await harness({}, { rulesServed: true })
+  const tabs = view.get('[aria-label="Kind pages"]')
+  expect(
+    tabs
+      .findAll('a')
+      .map((link) => [link.text(), link.attributes('aria-current')]),
+  ).toEqual([
+    ['Overview', 'page'],
+    ['Rules', undefined],
+  ])
+  expect(tabs.findAll('a')[1].attributes('href')).toBe(
+    '/hilos/moderation/hilos_profile_name/rules',
+  )
+  expect(view.findAll('h1')).toHaveLength(1)
+  expect(
+    view.get('[data-id="hilos-moderation-kind-overview"]').findAll('dt'),
+  ).toHaveLength(3)
 })

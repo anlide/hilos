@@ -616,7 +616,7 @@ order. A missing or inapplicable page removes its branch. `TopologyValidator`
 checks the metadata types and owner/caption constraints after catalog shape,
 parents and cycles validate.
 
-### Moderation Kind owner and Overview
+### Moderation Kind owner, Overview and Rules
 
 The `HILOS_MODERATION_KIND` entry in `HilosPageCatalog::CATALOG` has parent
 `HILOS_MODERATION`, breadcrumb `Kind`, `entity=true` and `pageHead=true`.
@@ -625,9 +625,14 @@ The `HILOS_MODERATION_KIND` entry in `HilosPageCatalog::CATALOG` has parent
 `HilosModerationKindPage.vue` renders the shared entity head and binds the
 selected row's `title` with `bindPageInstanceName()`, so the heading, breadcrumb
 and document title use the live kind name. Overview shows the owner badge and
-key, model and profile, refusal reasons, and rules in force. Overview is the
-only served kind page, so its single tab stays hidden. The Rules page remains
-HIL-1631 work; no empty Rules registration or tab is present.
+key, model and profile, refusal reasons, and rules in force. The catalog's Rules
+entry is a child of this owner with label and breadcrumb `Rules` and lead
+`Your own rules for this kind.` Chat serves both Overview and Rules, so the
+shared owner row is `Overview · Rules` with the current page selected; the Rules
+view binds the live kind name to the same `HILOS_MODERATION_KIND` owner and does
+not declare a separate entity or head. A fixture that leaves Rules unserved
+still hides the singleton Overview row, and the root Moderation page has no kind
+tabs.
 
 `AbstractPage::onSubscribe()` passes the route params to `withPageIdentity()`,
 which adds `pageHeadOwner`, `pageBreadcrumb`, `pageTabs` and an empty

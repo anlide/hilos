@@ -17,3 +17,14 @@ export {
   createHilosModerationKind,
   type HilosModerationKind,
 } from './hilosModerationKind.js'
+
+export {
+  HILOS_MODERATION_RULES_TABLE,
+  HILOS_MODERATION_RULE_SLOT,
+  HilosModerationRuleRowKey,
+  resolveHilosModerationRuleRow,
+  createHilosModerationRules,
+  moderationKindRulesPath,
+  type HilosModerationRuleRow,
+  type HilosModerationRules,
+} from './hilosModerationRules.js'

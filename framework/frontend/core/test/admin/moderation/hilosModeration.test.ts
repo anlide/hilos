@@ -31,6 +31,7 @@ describe('resolveHilosModerationKindRow', () => {
             ownRuleCount: 2,
             profile: 'hilos.moderation.text',
             reasons: ['spam', 'insult', 'threat'],
+            defaultRules: ['Allow polite names.', 'Block threats.'],
           },
         },
       }),
@@ -43,6 +44,7 @@ describe('resolveHilosModerationKindRow', () => {
       ownRuleCount: 2,
       profile: 'hilos.moderation.text',
       reasons: ['spam', 'insult', 'threat'],
+      defaultRules: ['Allow polite names.', 'Block threats.'],
     })
   })
 
@@ -76,6 +78,7 @@ describe('resolveHilosModerationKindRow', () => {
           ownRuleCount: 0,
           profile: 'hilos.moderation.image',
           reasons: ['nudity', 'violence', 'hate'],
+          defaultRules: ['Allow ordinary photos.'],
         },
       },
     })
@@ -83,6 +86,7 @@ describe('resolveHilosModerationKindRow', () => {
     expect(row.model).toBe(HIDDEN_VALUE)
     expect(row.profile).toBe('hilos.moderation.image')
     expect(row.reasons).toStrictEqual(['nudity', 'violence', 'hate'])
+    expect(row.defaultRules).toStrictEqual(['Allow ordinary photos.'])
   })
 
   it.each(
@@ -118,6 +122,40 @@ describe('resolveHilosModerationKindRow', () => {
 
     expect(row.profile).toBe('hilos.moderation.text')
     expect(row.reasons).toStrictEqual([])
+  })
+
+  it.each(
+    [
+      undefined,
+      null,
+      'Allow notes.',
+      1,
+      { rule: 'Allow notes.' },
+      ['Allow notes.', 1],
+      ['Allow notes.', null],
+      ['Allow notes.', false],
+      ['Allow notes.', ['Block threats.']],
+      ['Allow notes.', { rule: 'Block threats.' }],
+    ].map((defaultRules) => ({ defaultRules })),
+  )(
+    'does not coerce malformed default rules into strings: $defaultRules',
+    ({ defaultRules }) => {
+      const row = resolveHilosModerationKindRow({
+        rowKey: 'test_note',
+        slots: { kind: { defaultRules } },
+      })
+
+      expect(row.defaultRules).toStrictEqual([])
+    },
+  )
+
+  it('keeps an empty default rules list', () => {
+    const row = resolveHilosModerationKindRow({
+      rowKey: 'test_note',
+      slots: { kind: { defaultRules: [] } },
+    })
+
+    expect(row.defaultRules).toStrictEqual([])
   })
 
   it('handles zero and positive rule counts correctly', () => {
@@ -167,6 +205,7 @@ describe('resolveHilosModerationKindRow', () => {
       ownRuleCount: 0,
       profile: '',
       reasons: [],
+      defaultRules: [],
     })
   })
 })
@@ -322,6 +361,7 @@ describe('HilosModerationKindRowKey and constants', () => {
       ownRuleCount: 'ownRuleCount',
       profile: 'profile',
       reasons: 'reasons',
+      defaultRules: 'defaultRules',
     })
     expect(HILOS_MODERATION_KINDS_TABLE).toBe('hilosModerationKinds')
     expect(HILOS_MODERATION_KIND_SLOT).toBe('kind')

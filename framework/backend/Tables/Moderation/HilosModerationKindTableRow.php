@@ -18,6 +18,7 @@ final class HilosModerationKindTableRow extends AbstractTableRow
     public const string ownRuleCount = 'ownRuleCount';
     public const string profile = 'profile';
     public const string reasons = 'reasons';
+    public const string defaultRules = 'defaultRules';
 
     /**
      * @param string $kind Published kind key and row key
@@ -28,7 +29,8 @@ final class HilosModerationKindTableRow extends AbstractTableRow
      * @param int $ownRuleCount Number of persisted rules belonging to this kind
      * @param string $profile LLM profile selected by the declared input
      * @param list<string> $reasons Declared refusal reasons in directory order
-     * @throws InvalidFormatException When the count is negative or reasons are not a list of strings
+     * @param list<string> $defaultRules Built-in rules in declaration order, regardless of own rules
+     * @throws InvalidFormatException When the count is negative or reasons or default rules are not lists of strings
      */
     public function __construct(
         public string $kind,
@@ -39,6 +41,7 @@ final class HilosModerationKindTableRow extends AbstractTableRow
         public int $ownRuleCount,
         public string $profile,
         public array $reasons,
+        public array $defaultRules,
     ) {
         if ($ownRuleCount < 0) {
             throw new InvalidFormatException('A moderation kind cannot have a negative rule count');
@@ -49,6 +52,14 @@ final class HilosModerationKindTableRow extends AbstractTableRow
         foreach ($reasons as $reason) {
             if (!is_string($reason)) {
                 throw new InvalidFormatException('Moderation kind reasons must be strings');
+            }
+        }
+        if (!array_is_list($defaultRules)) {
+            throw new InvalidFormatException('Moderation kind default rules must be a list of strings');
+        }
+        foreach ($defaultRules as $rule) {
+            if (!is_string($rule)) {
+                throw new InvalidFormatException('Moderation kind default rules must be strings');
             }
         }
     }
@@ -77,6 +88,7 @@ final class HilosModerationKindTableRow extends AbstractTableRow
             self::ownRuleCount => $this->ownRuleCount,
             self::profile => $this->profile,
             self::reasons => $this->reasons,
+            self::defaultRules => $this->defaultRules,
         ];
     }
 
@@ -96,6 +108,7 @@ final class HilosModerationKindTableRow extends AbstractTableRow
             ownRuleCount: self::requireInt($data, self::ownRuleCount),
             profile: self::requireString($data, self::profile),
             reasons: self::requireArray($data, self::reasons),
+            defaultRules: self::requireArray($data, self::defaultRules),
         );
     }
 }
