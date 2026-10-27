@@ -18,6 +18,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -40,6 +41,11 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Collection\HilosProfileNameChanges as StateHilosProfileNameChanges;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
+use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
+use Hilos\Runtime\View\Actions\Collection\HilosProfileNameChangesActions;
+use Hilos\Runtime\View\Actions\Item\HilosProfileNameChangeActions;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
@@ -120,9 +126,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE,
     ];
 
-    public const string SESSION_TOKEN = 'aa0000000000000000000000000001137';
-    public const string OTHER_SESSION_TOKEN = 'bb0000000000000000000000000001137';
-    public const string ANONYMOUS_SESSION_TOKEN = 'cc0000000000000000000000000001137';
+    public const string SESSION_TOKEN = 'aa000000000000000000000000001137';
+    public const string OTHER_SESSION_TOKEN = 'bb000000000000000000000000001137';
+    public const string ANONYMOUS_SESSION_TOKEN = 'cc000000000000000000000000001137';
     public const string ACCEPT_KEY = 'accept-profile';
     public const string OTHER_ACCEPT_KEY = 'accept-profile-other';
     public const string ANONYMOUS_ACCEPT_KEY = 'accept-profile-anonymous';
@@ -131,7 +137,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     public const string ADMIN_ACCEPT_KEY = 'accept-profile-admin';
 
     /** The administrator's own browser: an administrator's action confirms against it (HIL-1275). */
-    public const string ADMIN_SESSION_TOKEN = 'dd0000000000000000000000000001137';
+    public const string ADMIN_SESSION_TOKEN = 'dd000000000000000000000000001137';
 
     /** Another account, holding what the person under test is refused. */
     protected const int OTHER_USER_ID = 1138;
@@ -557,6 +563,11 @@ class ProfileIntegrationRtContext extends RtContext
      */
     public function configure(): void
     {
+        $this->mountFeatureCollection(HilosProfileNameChange::RT_COLLECTION, StateHilosProfileNameChanges::init());
+        $this->setRepresent(
+            HilosProfileNameChange::RT_COLLECTION, HilosProfileNameChanges::class,
+            HilosProfileNameChangesActions::class, HilosProfileNameChangeActions::class,
+        );
         $this->mountFeatureCollection(StateHilosProfileFlow::RT_COLLECTION, StateHilosProfileFlows::init());
         $this->setRepresent(StateHilosProfileFlow::RT_COLLECTION, HilosProfileFlows::class, HilosProfileFlowsActions::class);
         $this->mountFeatureCollection(StateHilosCodeSendAttempt::RT_COLLECTION, StateHilosCodeSendAttempts::init());
@@ -647,6 +658,12 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
  */
 final class ProfileIntegrationHolder extends AbstractSessionsLibraryAgent
 {
+    public const array OWNS_RT = [
+        HilosProfileNameChange::RT_COLLECTION => TruthSourceOperation::ALL,
+        StateHilosProfileFlow::RT_COLLECTION => TruthSourceOperation::ALL,
+        StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::ALL,
+    ];
+
     public function onStop(): void
     {
     }

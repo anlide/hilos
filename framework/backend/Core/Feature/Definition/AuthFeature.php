@@ -32,22 +32,27 @@ use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Collection\HilosOAuthTrips as StateHilosOAuthTrips;
 use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
+use Hilos\Runtime\State\Collection\HilosProfileNameChanges as StateHilosProfileNameChanges;
 use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaiters;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosOAuthTripsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProfileNameChangesActions;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Runtime\View\Actions\Collection\RegistrationWaitersActions;
 use Hilos\Runtime\View\Actions\Item\HilosOAuthTripActions;
+use Hilos\Runtime\View\Actions\Item\HilosProfileNameChangeActions;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
+use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Context\RtContext;
@@ -179,6 +184,13 @@ final class AuthFeature extends FeatureDefinition
             StateHilosProfileFlow::RT_COLLECTION,
             HilosProfileFlows::class,
             HilosProfileFlowsActions::class,
+        );
+        $context->mountFeatureCollection(StateHilosProfileNameChange::RT_COLLECTION, StateHilosProfileNameChanges::init());
+        $context->setRepresent(
+            StateHilosProfileNameChange::RT_COLLECTION,
+            HilosProfileNameChanges::class,
+            HilosProfileNameChangesActions::class,
+            HilosProfileNameChangeActions::class,
         );
     }
 }

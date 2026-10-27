@@ -25,6 +25,7 @@ import {
   HilosPages,
   type Hideable,
   type ProjectSignal,
+  type TableViewportDescriptor,
   resolveHilosPath,
   ScopeManager,
   createSignal,
@@ -248,11 +249,12 @@ function userContext(
       },
     },
   ]
-  const serveCandidates = (): void => {
+  const serveCandidates = (requestId?: string): void => {
     emit('tableWindow', {
       data: {
         page: HilosPages.USER,
         tableKey: 'mergeCandidates',
+        requestId,
         rows: candidateRows(),
         totalCount: 2,
         totalExact: true,
@@ -306,8 +308,12 @@ function userContext(
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): boolean {
-      serveCandidates()
+    sendTableViewport(
+      _page: string,
+      _tableKey: string,
+      descriptor: TableViewportDescriptor,
+    ): boolean {
+      serveCandidates(descriptor.requestId)
 
       return true
     },

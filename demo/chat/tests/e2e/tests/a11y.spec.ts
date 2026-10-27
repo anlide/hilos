@@ -8,7 +8,8 @@ import {
   PASSWORD,
   signUp,
   signUpWithVerifiedEmail,
-} from '../helpers/session'
+  typeInto,
+} from '../helpers/session.js'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
   ANALYTICS_SESSION_LIST_HANDLE,
@@ -39,9 +40,16 @@ import {
   expectDaemonPage,
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
+  countSentFrames,
+  expectProfileNameSnapshot,
+  watchProfileRenameFrames,
+  watchProfileRenameStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
+import { dictateModerationVerdict } from '../helpers/moderation.js'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -350,6 +358,90 @@ test('profile dialogs carry their refusal voice before any refusal', async ({
   const dialogLive = page.getByTestId('profile-rename-live-assertive')
   await expect(dialogLive).toHaveAttribute('role', 'alert')
   await expect(dialogLive).toHaveText('')
+})
+
+test('the name checking voice keeps its room, editable field, focus trap and dirty close gestures', async ({
+  page,
+}) => {
+  const wire = watchProfileRenameFrames(page)
+  const sends = countSentFrames(page, 'hilos_profile_name_set')
+  try {
+    const user = await signUp(page)
+    await gotoPage(page, '/profile')
+    const opener = page.getByTestId('profile-edit')
+    const dialog = page.getByRole('dialog')
+    await clickSubmit(opener)
+    await expect(dialog).toHaveAccessibleName("Confirm it's you")
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
+    await expect(dialog).toHaveAccessibleName('Change name')
+    const field = page.getByTestId('profile-name-input')
+    await expect(field).toBeFocused()
+    const status = await watchProfileRenameStatus(expect, page)
+    await status.unchanged(false)
+    const key = modelKey()
+    const name = `Accessible ${key}`
+    await dictateModerationVerdict(key, false, 'spam')
+    // The real model holds its response while keyboard and pending semantics are checked.
+    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 2_000 })
+    await typeInto(field, name)
+    await clickSubmit(page.getByTestId('profile-rename-save'))
+    const accepted = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, phase: 'checking' },
+    )
+    await status.unchanged(true)
+    await expect(field).toBeEditable()
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('profile-rename-save')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    await expect(page.getByTestId('modal-close')).toBeEnabled()
+    await expect(page.getByTestId('profile-rename-cancel')).toBeEnabled()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await page.getByTestId('profile-rename-cancel').focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('modal-close')).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(page.getByTestId('profile-rename-cancel')).toBeFocused()
+    await field.focus()
+    await field.press('Enter')
+    await field.press('Escape')
+    await expect(page.getByTestId('modal-confirm')).toBeFocused()
+    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await expect(field).toHaveValue(name)
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      requestId: accepted.state.change!.requestId,
+      phase: 'refused',
+    })
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(
+      'This name was not accepted because it appears to be spam.',
+    )
+    await status.unchanged(false)
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    // All four dismissal paths pass the same dirty-confirm gate.
+    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await expect(page.getByTestId('modal-confirm')).toBeFocused()
+    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await clickSubmit(page.getByTestId('modal-close'))
+    await expect(page.getByTestId('modal-confirm')).toBeFocused()
+    await clickSubmit(page.getByTestId('modal-confirm-cancel'))
+    await page.getByTestId('modal').click({ position: { x: 2, y: 2 } })
+    await expect(page.getByTestId('modal-confirm')).toBeFocused()
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(opener).toBeFocused()
+    expect(sends()).toBe(1)
+  } finally {
+    await test.info().attach('name-accessibility-wire', {
+      body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
+      contentType: 'application/json',
+    })
+    wire.stop()
+  }
 })
 
 test('the profile session and device pages expose one named surface', async ({

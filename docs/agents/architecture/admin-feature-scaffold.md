@@ -753,7 +753,7 @@ stay with their marked leaves:
    Angular/polls receives the section. (not in the code yet — HIL-1637)
 
 The name window's framework wiring and `Checking your name…` line are separate
-from mounting the admin section. (not in the code yet — HIL-1635)
+from mounting the admin section.
 Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
 Profile photos in polls are separate work. (not in the code yet — HIL-1645)
 

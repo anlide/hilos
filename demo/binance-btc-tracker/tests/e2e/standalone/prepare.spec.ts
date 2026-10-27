@@ -55,6 +55,8 @@ test('prepare an accepted public archive through real loss, publication and reso
     windowRequestId?: string
     settledAt?: number
     rows?: readonly string[]
+    restartSettledAt?: number
+    recoveryObservedAt?: number
   } = {}
   try {
     // Overview and Workers read the same Daemon page agent's picture mirror.
@@ -157,6 +159,19 @@ test('prepare an accepted public archive through real loss, publication and reso
         ),
       )
     })
+    preparation.restartSettledAt = performance.now()
+    // The restart reply precedes the collector's next whole node report.
+    // Settle the real recovery before checking its published HTTP/DOM pair;
+    // an intervening heartbeat can still carry the open outage revision.
+    await expect
+      .poll(() => admin.latest())
+      .toMatchObject({
+        healthKnown: true,
+        components: { operationalCount: 1, totalCount: 1 },
+        maintenance: null,
+        incidents: [],
+      })
+    preparation.recoveryObservedAt = performance.now()
     const accepted = await expectPublicStatusPair(
       expect,
       guest,
@@ -199,6 +214,12 @@ test('prepare an accepted public archive through real loss, publication and reso
         admin: admin.frames,
         workers: workerLog,
         preparation,
+        loss: JSON.parse(
+          test
+            .info()
+            .attachments.find(({ name }) => name === 'status-real-loss')
+            ?.body?.toString() ?? 'null',
+        ),
         workerTable: await workerTable.read(),
         workerPage: await workers.locator('body').innerText(),
       }),

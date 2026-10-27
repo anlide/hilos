@@ -73,6 +73,7 @@ const rename =
         props.context,
         props.binding.name,
         props.binding.rename,
+        { remember: true },
       )
 // Change waits while the window asks whether the confirmation is needed.
 const renameOpening = useSignal(
@@ -82,10 +83,13 @@ const email = createHilosProfileEmailChangeFlow(props.context)
 const photoFlow = createHilosProfilePhotoFlow(props.context, root.photo)
 const emailOpening = useSignal(email.busy)
 
-onMounted(() => root.start())
+onMounted(() => {
+  root.start()
+  rename?.start()
+})
 onUnmounted(() => {
-  root.dispose()
   rename?.dispose()
+  root.dispose()
   email.dispose()
   photoFlow.dispose()
   timeZonePicker.dispose()

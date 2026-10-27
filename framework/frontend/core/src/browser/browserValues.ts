@@ -15,6 +15,7 @@ import { OAUTH_PROVIDER_BROWSER_VALUE } from '../auth/oauthLogin.js'
 import { SESSION_ROTATE_BROWSER_VALUE } from '../connection/createHilosConnection.js'
 import { PROTECTED_MODE_HINT_BROWSER_VALUE } from '../connection/maintenanceHint.js'
 import { PROTECTED_MODE_PASS_BROWSER_VALUE } from '../connection/protectedModePass.js'
+import { PROFILE_RENAME_BROWSER_VALUE } from '../profile/profileRenameMemory.js'
 import {
   THEME_PICK_BROWSER_VALUE,
   THEME_SETTINGS_BROWSER_VALUE,
@@ -39,6 +40,7 @@ export const HILOS_BROWSER_VALUES: readonly HilosBrowserValue[] = [
   SESSION_ROTATE_BROWSER_VALUE,
   THEME_PICK_BROWSER_VALUE,
   THEME_SETTINGS_BROWSER_VALUE,
+  PROFILE_RENAME_BROWSER_VALUE,
 ]
 
 /**

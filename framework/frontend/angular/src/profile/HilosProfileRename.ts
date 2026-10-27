@@ -11,7 +11,7 @@ import {
 } from '@angular/core'
 import {
   focusInitial,
-  HILOS_PROFILE_RENAME_COPY,
+  HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
   hilosRowEditIdle,
   type HilosProfileRenameFields,
@@ -46,6 +46,8 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
       [open]="step() !== 'closed'"
       (openChange)="onOpenChange($event)"
       [confirmOnClose]="asksBeforeClosing()"
+      [busy]="stepUpBusy()"
+      [aria-label]="step() === 'form' ? copy.title : stepUpCopy.title"
       initialFocus="inner"
     >
       <h5
@@ -72,7 +74,9 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
             data-id="profile-name-step-up"
             (submit)="$event.preventDefault(); flow().confirmStepUp()"
           >
-            <hilos-step-up-step [controller]="flow().stepUp" />
+            <fieldset class="border-0 m-0 p-0" [disabled]="stepUpBusy()">
+              <hilos-step-up-step [controller]="flow().stepUp" />
+            </fieldset>
           </form>
         } @else {
           <form (submit)="$event.preventDefault(); flow().save()">
@@ -91,6 +95,31 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
               (input)="flow().draft.set(valueOf($event))"
             />
             <div class="form-text">{{ bounds() }}</div>
+            <div class="hilos-stack mb-1">
+              <div
+                class="small text-body-secondary d-flex align-items-center gap-2 invisible"
+                aria-hidden="true"
+              >
+                <span
+                  class="spinner-border spinner-border-sm"
+                  aria-hidden="true"
+                ></span>
+                {{ copy.checking }}
+              </div>
+              <div
+                class="small text-body-secondary d-flex align-items-center gap-2"
+                role="status"
+                aria-live="polite"
+              >
+                @if (checking()) {
+                  <span
+                    class="spinner-border spinner-border-sm"
+                    aria-hidden="true"
+                  ></span>
+                  {{ copy.checking }}
+                }
+              </div>
+            </div>
             <hilos-edit-notice
               [kind]="edit().notice?.kind ?? null"
               [text]="notice()"
@@ -108,6 +137,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="stepUpBusy()"
             data-id="profile-name-step-up-cancel"
             (click)="requestClose()"
           >
@@ -129,7 +159,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
           <div
             hilosConflictActions
             [conflict]="edit().conflict"
-            [disableSave]="!valid() || !edit().dirty || edit().gone"
+            [disableSave]="!canSave()"
             [saveLabel]="saveLabel()"
             (save)="flow().save()"
             (acceptMine)="flow().keepMine()"
@@ -139,7 +169,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
               <button
                 type="button"
                 class="btn btn-outline-secondary"
-                [disabled]="busy()"
+                [disabled]="stepUpBusy()"
                 data-id="profile-rename-cancel"
                 (click)="requestClose()"
               >
@@ -154,7 +184,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
               <button
                 hilosLoadingButton
                 class="btn-primary"
-                [loading]="busy()"
+                [loading]="pending()"
                 [disabled]="disabled"
                 data-id="profile-rename-save"
                 (click)="onSave()"
@@ -170,7 +200,7 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
 })
 export class HilosProfileRename {
   readonly flow = input.required<HilosProfileRenameFlow>()
-  protected readonly copy = HILOS_PROFILE_RENAME_COPY
+  protected readonly copy = COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly step = signal<HilosProfileRenameStep>('closed')
   protected readonly draft = signal('')
@@ -178,8 +208,9 @@ export class HilosProfileRename {
     hilosRowEditIdle<HilosProfileRenameFields>({ name: '' }),
   )
   protected readonly notice = signal('')
-  protected readonly valid = signal(false)
-  protected readonly busy = signal(false)
+  protected readonly pending = signal(false)
+  protected readonly checking = signal(false)
+  protected readonly canSave = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly asksBeforeClosing = signal(false)
   protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
@@ -204,8 +235,9 @@ export class HilosProfileRename {
         mirror(flow.draft, this.draft),
         mirror(flow.edit, this.edit),
         mirror(flow.notice, this.notice),
-        mirror(flow.valid, this.valid),
-        mirror(flow.busy, this.busy),
+        mirror(flow.pending, this.pending),
+        mirror(flow.checking, this.checking),
+        mirror(flow.canSave, this.canSave),
         mirror(flow.refusal, this.refusal),
         mirror(flow.asksBeforeClosing, this.asksBeforeClosing),
         mirror(flow.stepUp.opening, this.stepUpOpening),
@@ -219,7 +251,11 @@ export class HilosProfileRename {
       const step = this.step()
       const from = this.previous
       this.previous = step
-      if (from !== 'step-up' || step !== 'form') return
+      const confirmationReady =
+        step === 'step-up' &&
+        this.stepUpOpening() !== null &&
+        !this.stepUpBusy()
+      if (!confirmationReady && (from !== 'step-up' || step !== 'form')) return
       const dialog =
         this.body()?.nativeElement.closest<HTMLElement>('[role="dialog"]')
       if (dialog) focusInitial(dialog)

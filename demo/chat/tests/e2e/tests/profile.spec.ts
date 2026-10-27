@@ -1,9 +1,14 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
-import { PASSWORD, clickSubmit, signUp } from '../helpers/session'
-import { gotoPage } from '../helpers/page'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import { PASSWORD, clickSubmit, signUp } from '../helpers/session.js'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
+import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import {
+  countSentFrames,
+  expectProfileNameSnapshot,
+  watchProfileRenameFrames,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
 // reactivity a bare fill() can miss actually fires (see helpers/session).
@@ -112,18 +117,77 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await expect(page.getByTestId('profile-name')).toHaveText(newName)
 })
 
+for (const draft of ['Unsent name', 'X']) {
+  test(`F5 restores the unsent ${draft.length === 1 ? 'invalid' : 'valid'} name draft without a name action`, async ({
+    page,
+  }) => {
+    const wire = watchProfileRenameFrames(page)
+    const sends = countSentFrames(page, 'hilos_profile_name_set')
+    try {
+      const user = await signUp(page)
+      await gotoPage(page, '/profile')
+      await clickSubmit(page.getByTestId('profile-edit'))
+      await confirmStepUp(page, 'profile-name-step-up-confirm')
+      await typeInto(page.getByTestId('profile-name-input'), draft)
+      const before = await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+      )
+      await page.reload()
+      await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+        before.socket,
+      )
+      await expectPageReady(page)
+      await expect(page.getByTestId('profile-name-input')).toHaveValue(draft)
+      await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+      await expect(page.getByTestId('conflict-badge')).toBeHidden()
+      if (draft.length === 1)
+        await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+      else await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+      await clickSubmit(page.getByTestId('profile-rename-cancel'))
+      await clickSubmit(page.getByTestId('modal-confirm-discard'))
+      const closed = wire.snapshots.at(-1)!
+      await page.reload()
+      await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+        closed.socket,
+      )
+      await expectPageReady(page)
+      await expect(page.getByTestId('modal')).toBeHidden()
+      expect(sends()).toBe(0)
+    } finally {
+      await test.info().attach('unsent-name-wire', {
+        body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
+        contentType: 'application/json',
+      })
+      wire.stop()
+    }
+  })
+}
+
 test('surfaces a conflict when the name changes in another tab', async ({
   context,
 }) => {
   // Two tabs of the same user share the session cookie within one context, so
   // registering in the first tab signs both in.
   const tabA = await context.newPage()
-  await signUp(tabA)
+  const wireA = watchProfileRenameFrames(tabA)
+  const user = await signUp(tabA)
   await gotoPage(tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabA.getByTestId('profile-name')).toBeVisible()
 
   const tabB = await context.newPage()
+  const wireB = watchProfileRenameFrames(tabB)
   await gotoPage(tabB, '/profile')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('profile-name')).toBeVisible()
@@ -143,6 +207,20 @@ test('surfaces a conflict when the name changes in another tab', async ({
   await typeInto(tabA.getByTestId('profile-name-input'), tabAName)
   await tabA.getByTestId('profile-rename-save').click()
   await expect(tabA.getByTestId('profile-name')).toHaveText(tabAName)
+  const done = await expectProfileNameSnapshot(expect, wireA, user.userId, {
+    name: tabAName,
+    phase: 'done',
+  })
+  await expectProfileNameSnapshot(expect, wireB, user.userId, {
+    requestId: done.state.change!.requestId,
+    phase: 'done',
+  })
+  await test.info().attach('two-tab-name-wire', {
+    body: JSON.stringify({ tabA: wireA, tabB: wireB }, null, 2),
+    contentType: 'application/json',
+  })
+  wireA.stop()
+  wireB.stop()
 
   // Tab B's open modal sees the incoming change, flags a conflict, and says it on
   // its one line of messages; Merge is not offered for a name.

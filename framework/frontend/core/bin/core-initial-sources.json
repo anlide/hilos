@@ -84,20 +84,20 @@
     "outputSha256": "ea159d510e1f14f7f05ad2be4b775e43ab3736ce34102d533725dfe792c2af54"
   },
   "src/auth/stepUp.ts": {
-    "sourceSha256": "3167268b5dbb79ebcf3964e89c3b94e246870158ae94ea19ae81610388299830",
-    "outputSha256": "88dfed33ea9d1fc212965af753ddd3be1fdc9a45324cffd09dd8aef187082ed0"
+    "sourceSha256": "9542e2d8cac9e9a790b50f584167ae2cd2bad8e5769db17e13ae0369de93d610",
+    "outputSha256": "37179f3bfcb5a17a8e8d33ca53efcaa321ef125a83d67a1c6388cb7e12f610b0"
   },
   "src/auth/stepUpConfirmed.ts": {
     "sourceSha256": "57fdf642cab7299a7e1a3921fd782da14a387a4a115c27d451cbbc34f0e11c6b",
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "d493f580c04242acfbca4828768f8c491ceda5a24536d340844416ad5457fce1",
-    "outputSha256": "001d322b3834f4e773219bd35bb29a3c2810f0afbd7d1a225fa69d9b14eca041"
+    "sourceSha256": "04315bf83ab43678e83164c8c3ca3cabf75b6c1f57be538e32c0bd0a5ff31999",
+    "outputSha256": "c83d65469615e4991f60d36aee3be1817795caf6b3920a073b5352ef9c863b14"
   },
   "src/bootstrap/bootHilos.ts": {
-    "sourceSha256": "6dc0f71eb7b1302b61e8716a603427cf3da7a7b5e4f6b05b93434708ab823ef6",
-    "outputSha256": "35710066eefc7469b6a86ab0a782f15095f39abf736cbaad9654cab2c6820ad4"
+    "sourceSha256": "812f2e14ea7c7f7bd550aed89cc945d74858a4961c6d7f506c017094099b0edc",
+    "outputSha256": "8b083c2b3b90cd322487f0e24d05d32487e532ffb5bb43bcd920a4c9853942ba"
   },
   "src/browser/browserStorage.ts": {
     "sourceSha256": "19bc7deba4501b3280bbc9e5f025ee4984f6a9d84ea60a73fccf6e2b014bf919",
@@ -112,16 +112,16 @@
     "outputSha256": "7088ec6c4e928ba0904382490519c65c6b60ef3879b84018e0c8d6315bf54303"
   },
   "src/browser/browserValues.ts": {
-    "sourceSha256": "44627b99d7ce131171bde78db2d9ccd8c8e8d2ba03a718a8e23defd41395c879",
-    "outputSha256": "38f44cc5f1d2fdd2fe0a9fa110ab1adfa4ab2bb39e41713812a1e6247b6faae3"
+    "sourceSha256": "cec849df21c29769db512c1ba161300f0e182349bd7f849399692f1651854273",
+    "outputSha256": "36d4c108c876a375f006eef12cb13590560fbe36ee15deb28f5202e6f23eb3db"
   },
   "src/conflict/rowEdit.ts": {
     "sourceSha256": "ec73717ef24dd5c5edceef4a5a16aede854778532d99d99b4d4250465803fb1a",
     "outputSha256": "1a3c8960f68b3eb7a87b8a432450d266e47e57795b3dc4fe44547c612cabc286"
   },
   "src/conflict/rowEditSession.ts": {
-    "sourceSha256": "b9f85b6cac9297fdc0918c3182b3eb90bef2ebc32503baa36d4afdd1e3b4899d",
-    "outputSha256": "0e2887647d7444db884d746d048b00d6a130971b3ee391ca03df8a5687889106"
+    "sourceSha256": "acec19eb310b4614adbd9a7916334806ea149defb90187fd632e5dcb97868863",
+    "outputSha256": "9f4697f004fe250a69a731bd5a9893851d52cabbe3d82186475da84876b14a75"
   },
   "src/conflict/threeWayMerge.ts": {
     "sourceSha256": "288d65cbb79843173720da523f2e47e1dc3dbad8178e4d286aa6de0d42da267a",
@@ -355,13 +355,21 @@
     "sourceSha256": "f22cf2f4e6c52aa252b318365ca554865e69f0ecaa0f262171eeed70a3e1ae31",
     "outputSha256": "7919185ced4da45f5c5ee3f6cc0ba47f9736cfe34d36421dfd71b265a2aa02cb"
   },
+  "src/profile/profileNameState.ts": {
+    "sourceSha256": "2967664f3f1913c77337a7264a79621d3612a4c9650a25b798fbb541ff75d8aa",
+    "outputSha256": "10c87d029031de3a6a4ee03ff37463acfa24f2cc081d57debd996e4eb0bcf018"
+  },
   "src/profile/profilePhoto.ts": {
     "sourceSha256": "c579adfc09c3a4b64e2cac4aadf97824d4f2deff85bce81aa428ee70920a7b0e",
     "outputSha256": "acb6833f0babe6749b0924c4d87bbdaf72bdfe8c2554babf9341cfeaf0c78795"
   },
   "src/profile/profileRename.ts": {
-    "sourceSha256": "f19b4785d5ffe0dbfbd91f8c1181c9eee839fdab75396cb634f3a751bf0ab7d1",
-    "outputSha256": "c10f9e3a38d1ac6decbfb096780efc16a6a45bb4988d7495f7d95872e4aadeb1"
+    "sourceSha256": "984bed1f2e240af665680dc4f02d662dbf7f02eb013e508410793b1e4155cdd2",
+    "outputSha256": "2a43fbc75de2eaa85034ca2e73ca2933450101cb054994e6fbc11cd0c97595bf"
+  },
+  "src/profile/profileRenameMemory.ts": {
+    "sourceSha256": "1b33005ea35a4f9ff4e16e191e3fab7f5012f64465718a5f77ec462d4d73511d",
+    "outputSha256": "05c95e1e6f65ece04040918e87d3b1b1bcec47342122074868f8aab5ab3d920a"
   },
   "src/profile/profileRoot.ts": {
     "sourceSha256": "3464c035da3f9cca3385885727801006e62d7e0f044241b88e97721991b3b7a4",
@@ -430,6 +438,10 @@
   "src/protocol/parseSignal.ts": {
     "sourceSha256": "d6e3c33f18ed999e4fcd3fd95a3f004acb367e90c88583ec8c5ebabf4fac5ffc",
     "outputSha256": "efbaca161ce06a47ea425adca53306388f54ad3d4096efcffcd25e952bbf1e98"
+  },
+  "src/protocol/profileNameStateSignal.ts": {
+    "sourceSha256": "c523854cef50fc589077ac5706f131086aa8c76b66927718ccf22afd14c568d9",
+    "outputSha256": "9466cd35a3502a249515c088ecefaf1fe2729769ac1f3b9225b61d13b1e10dac"
   },
   "src/protocol/protectedMode.ts": {
     "sourceSha256": "686db88c3d2baecdd6670b9684b400174399f5b08f90f1d31b3981a5943b77b6",
@@ -528,8 +540,8 @@
     "outputSha256": "69be484a6a9dfb5751b76f3f15c92f6d475bf3413bd554115496e1b0012f53f9"
   },
   "src/session/sessionScope.ts": {
-    "sourceSha256": "c7c9ac5798335962b89978b7bbc512ba482cd75de63b3f9f0191fab2062abb4b",
-    "outputSha256": "5cbd1b6e696c8365c911e98817c7175ddbf41f82955982795fa8307628914869"
+    "sourceSha256": "b18fbddb6acf594a990c877d80085f0cea7d9512c01f48ecad1faf169518ad0b",
+    "outputSha256": "3ce1d51875c5148b9c9603e092c4b9549d535bfc32d3d96b65f55c4dbda79d44"
   },
   "src/session/sessionToasts.ts": {
     "sourceSha256": "e849e178f51a939950341f4acc39a46a7d23cf0ec023094128cbf862280ae10d",

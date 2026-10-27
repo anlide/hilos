@@ -6,9 +6,9 @@ moderator or its rules, or activating the Moderation section.
 This is the target architecture of HIL-1569, written ahead of its code and now
 partly in it: the kinds, the rules table and its writer, the check queue, the
 moderator with its models and settings, the profile photo flow (HIL-1623 to
-HIL-1625) and the own-name flow (HIL-1626) are in the code. Each pending rule
-names the leaf that implements it; that leaf clears its markers in the same
-commit, following
+HIL-1625), and the session-held own-name flow are in the code. Each rule still
+ahead of its code names the leaf that implements it; that leaf clears its
+markers in the same commit, following
 [../rule-authoring.md](../rule-authoring.md), *A Rule Written Ahead Of Its
 Code*. *Check Kinds* names the PHP classes that declare kinds, *Rules Per Kind*
 the ones that store and write rules, and *One Door And One Moderator*, *Models
@@ -142,28 +142,40 @@ with the feature.
 
 ## One Door And One Moderator
 
-The initiating agent opens a check row with the kind and the connection; the
-verdict goes to the kind's declared agent. Do not make the moderator a second
-owner of the subject.
+Most initiating agents open a check for the connection that submitted it; the
+verdict goes to the kind's declared agent. The standard own-name flow is the
+scoped exception after admission: the sessions library owns one current rename
+attempt per browser session, while its moderation work still uses this shared
+door and the kind's declared recipient. The moderator reads and judges checks;
+it does not own the subject or write the name.
 
-The door is the runtime collection `hilosModerationChecks`, which
+The moderation door is the runtime collection `hilosModerationChecks`, which
 `ModerationFeature` mounts in every process: rows of
 [HilosModerationCheck](../../../framework/backend/Runtime/State/Item/HilosModerationCheck.php),
 read as `Hilos::$rt->hilosModerationChecks` and found by
-`find($acceptKey, $kind)`. A row is keyed `acceptKey|kind`, so a connection
-waits on one check of a kind at a time, and carries `acceptKey`, `userId`,
-`kind`, `requestId`, `verdictTo`, `text`, `clientUploadId`, `startedAt` and
-`deadlineAt`. Open one with
+`find($acceptKey, $kind)`. A row remains keyed `acceptKey|kind`. Ordinary
+connection-bound checks carry `acceptKey`, `userId`, `kind`, `requestId`,
+`verdictTo`, `text`, `clientUploadId`, `startedAt` and `deadlineAt`; a name
+check also carries its optional `sessionTokenHash`. Thus the original
+connection still gives a name check its queue slot and compatibility-status
+destination, but the accepted session attempt and its `requestId` identify the
+work after that socket disappears. A name check and a photo check from the
+same connection still have separate queue slots. The session holder, not this
+queue, serializes concurrent name requests from tabs of the same session.
+
+Open a `TEXT` check with
 `Hilos::$rt->hilosModerationChecks->actions->open($acceptKey, $userId, $kind, text: …)`
-for a `TEXT` kind, or with `clientUploadId:` naming a complete upload on the
-same connection for an `IMAGE` kind. `open()` refuses a project without
-`MODERATION` (`InvalidStateException`); a person id that is not positive, a
-kind the project does not publish or an input the kind does not look at
+or an `IMAGE` check with `clientUploadId:` naming a complete upload on the same
+connection. Ordinary calls draw a fresh `requestId` and fix `deadlineAt` from
+`moderation.check_timeout_sec` when opened. For an admitted own-name attempt,
+`ProfileNameCommands` passes the session holder's `sessionTokenHash`, the same
+`requestId`, and its already-fixed `deadlineAt`; reconnecting does not extend
+that deadline. `open()` refuses a project without `MODERATION`
+(`InvalidStateException`); a person id that is not positive, a kind the project
+does not publish or an input the kind does not look at
 (`InvalidArgumentException`); a `TEXT_WITH_FILES` kind (`ValidationException`)
 until the moderator can ask about text with files, which is HIL-1627's; and a
-connection already waiting on that kind (`DuplicateValueException`). It draws
-a fresh `requestId`, stamps `startedAt` and fixes `deadlineAt` from
-`moderation.check_timeout_sec` as it reads at that moment.
+connection already waiting on that kind (`DuplicateValueException`).
 
 The collection is cut into sets by `verdictTo` (`SET_VIA`), which the row takes
 from the kind and not from the caller: an initiator writes only the checks
@@ -182,11 +194,14 @@ declares, or `service_unavailable` (`ModerationReason::SERVICE_UNAVAILABLE`),
 which permits nothing and says nothing about the content. A verdict applies
 only while the row still holds the request id it names.
 
-The connection's side of a check is
+The compatibility status for a check is
 `HilosSignalConstants::HILOS_MODERATION_CHECK`, carrying
 [ModerationCheckSignalData](../../../framework/backend/Moderation/DTO/ModerationCheckSignalData.php)
-(`kind`, `checking`): the initiator's frame to one connection, saying whether
-it is waiting on a check of that kind.
+(`kind`, `checking`): a frame to the originating connection, saying whether
+that check is still running. For an own-name check it is only a compatibility
+indicator while that socket is present; `checking: false` ends moderation, not
+the rename. The authoritative name outcome is the session's complete
+`hilos_profile_name_state` snapshot described below.
 
 The initiator sends that frame, and the subject's owner applies the accepted
 result; for the profile photo both are the people library's, which opens the
@@ -204,8 +219,11 @@ under `HilosAgentType::HILOS_MODERATOR`, whose
 [ModerationAgentDaemon](../../../framework/backend/Moderation/ModerationAgentDaemon.php)
 runs it as a monopolistic cluster singleton. It owns and writes nothing: it
 reads the checks, the uploads, the rules, the settings and the people. Among
-the checks whose deadline has not passed and whose connection still carries the
-person who asked, it takes the oldest by `startedAt`, then by row id. Right
+the checks whose deadline has not passed, it takes the oldest by `startedAt`,
+then by row id. Ordinary checks are eligible only while their connection still
+carries the person who asked. A session-bound `hilos_profile_name` check may
+continue without that socket; `ProfileNameCommands` rechecks its current,
+non-stale session attempt before applying any verdict. Right
 before asking it reads the kind, the kind's effective rules and the person's
 current name, and resolves the kind's profile. The policy goes as the system
 message — the kind's title, the two answers the model may give, and the rules —
@@ -221,11 +239,16 @@ no longer than the row's deadline.
 
 Until approval, the previously published photo remains visible.
 
-Closing a dialog does not itself cancel the check. The initiator sweeps its
-checks once a second: it removes a check whose connection ended or now carries
-somebody else, with no publication and no frame, and ends a check whose
-deadline passed as `service_unavailable`. A verdict that arrives for an expired
-check ends it the same way.
+Closing a dialog does not itself cancel a check. For ordinary checks, the
+initiator sweeps its checks once a second: it removes one whose connection
+ended or now carries somebody else, with no publication and no frame, and ends
+one whose deadline passed as `service_unavailable`. A verdict for an expired
+check ends it the same way. For a session-bound own-name check, the initiator
+compares the queue row with the current session attempt; a known orphan is
+removed, while a stale RT source is unknown and is not treated as absence. Its
+fixed checking deadline ends as unavailable. Once approval advances the rename
+to `applying`, moderation has finished: there is no new TTL, and the operation
+waits for the existing person owner's reply.
 
 ## Models And Settings
 
@@ -297,37 +320,67 @@ the photo mechanism's.
 The former project-specific `PROFILE_PHOTO_CHECKER` seam was removed in
 HIL-1625.
 
-A person's own name uses `hilos_profile_name`; the standard `CHANGE_NAME`
-step-up operation moves into the framework. The framework action
-`hilos_profile_name_set` is handled by
-[`ProfileNameCommands`](../../../framework/backend/Auth/Library/Command/ProfileNameCommands.php),
-which opens a `hilos_profile_name` text check in the existing shared
-`hilosModerationChecks` queue. Pending checks are keyed by connection and kind,
-so a name check and a photo check have separate slots. A repeated, late or
-mismatched verdict does not apply a name.
+A person's own name uses `hilos_profile_name`; `CHANGE_NAME` step-up and the
+existing action's other admission checks remain in the framework. The action
+[`ProfileNameCommands::set()`](../../../framework/backend/Auth/Library/Command/ProfileNameCommands.php)
+checks the acting socket, standing, impersonation, addressability, trimmed
+name bounds and confirmation before sending a validated request to the
+sessions library. That library revalidates the current session and person, then
+serializes attempts by the hash of the session token in its owned
+`hilosProfileNameChanges` RT collection, whose row is
+[`HilosProfileNameChange`](../../../framework/backend/Runtime/State/Item/HilosProfileNameChange.php).
+It publishes one fresh `requestId` and a complete
+`hilos_profile_name_state` snapshot to that session on admission, handshake,
+phase change and cleanup. A second tab in the same session joins a checking or
+applying attempt; another browser session has its own attempt. A checked
+same-name no-op also publishes terminal `done`, rather than waiting for a name
+echo that cannot occur.
 
-Without `MODERATION`, the validated name goes to the existing person owner
-after the ordinary confirmation. With moderation, the name stays unchanged
-until approval; the library then sends the existing `HILOS_USER_RENAME` request
-to that owner. [`AbstractUserAgent`](../../../framework/backend/Users/Agent/AbstractUserAgent.php)
-writes the name and its rename journal in one transaction, and the existing
-[users-library completion path](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
-calls `afterUserRenamed()`.
-An administrator's rename is not moderated.
+The accepted attempt has `checking`, `applying`, `refused` or `done` phase. With
+moderation enabled, its checking deadline is fixed from
+`moderation.check_timeout_sec` at admission; a reconnect does not extend it.
+The session attempt's
+`requestId` and deadline are copied into its `hilos_profile_name` queue row.
+Approval removes that check and asks the existing person owner to rename;
+without moderation, the session holder moves directly to `applying`. The
+sessions library accepts only a matching, current transition. It keeps
+`refused` and `done` until the next accepted attempt or session cleanup, then
+replaces the one row rather than keeping a history. End of session or change of
+person removes the row and publishes an empty snapshot. The continue signal is
+a wake-up: source events and the current RT attempt decide whether a phase
+runs.
 
-A content refusal returns an action error with one of the six server sentences
-from [`ProfileNameRefusal`](../../../framework/backend/Users/ProfileNameRefusal.php)
-and best-effort sends the warning notification `Your new name was not
-accepted`. A notification failure does not hide the action error. An unknown,
-incomplete or contradictory verdict, or a check timeout, returns `Names cannot
-be checked right now.` without a notification.
+During `checking` the accepted request survives closing the dialog, a missing
+acting socket and F5. An unavailable or content refusal remains in session
+state when that socket is gone. The model verdict does not write the name: the
+existing [`AbstractUserAgent`](../../../framework/backend/Users/Agent/AbstractUserAgent.php)
+writes the name and rename journal in one transaction, and
+[`AbstractUsersLibraryAgent`](../../../framework/backend/Auth/Library/AbstractUsersLibraryAgent.php)
+reports `done` or `refused` only after the owner reply and completion hook.
+An administrator's rename is not moderated. A stale or repeated verdict and a
+late owner reply cannot complete a newer `requestId`.
 
-The chat profile page already wires its existing form to the framework action
-through the
-[core rename binding](../../../framework/frontend/core/src/profile/profileRename.ts).
-The visible `Checking your name…` line, closing the dialog during a pending
-check, and bindings for tasks and polls remain HIL-1635.
-(not in the code yet — HIL-1635)
+A content refusal carries the server sentence from
+[`ProfileNameRefusal`](../../../framework/backend/Users/ProfileNameRefusal.php)
+and best-effort sends `Your new name was not accepted`; notification failure
+does not replace the outcome. An unknown, incomplete or contradictory verdict,
+an unavailable check or an expired deadline ends as `Names cannot be checked
+right now.` without a notification. A refusal
+before admission can arrive as `action_error`; after admission, the terminal
+refusal is retained in session state and can be shown after the original socket
+is gone.
+
+`hilos_moderation_check` remains a compatibility indicator for the originating
+socket; `checking: false` means only that the check ended. The authoritative
+outcome is the full session `hilos_profile_name_state`, never that indicator.
+The three standard profile SDKs use the shared
+[core rename binding](../../../framework/frontend/core/src/profile/profileRename.ts):
+they show a persistent `Checking your name…` status during checking, leave the
+window closable while the operation continues, and restore that tab's open
+draft after F5 without resending. The tab-local checkpoint and the generic
+edit-window exception are described in
+[conflict-resolution.md](../frontend/conflict-resolution.md). Tasks and polls
+use the same binding; their moderation activation remains separate.
 
 ## Chat Is A Consumer
 

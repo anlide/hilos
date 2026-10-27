@@ -373,8 +373,8 @@ describe('HilosCommunicationsDeliveriesPage in the admin view mode', () => {
     expect(sent).toEqual([])
   })
 
-  it('an admin on a node in the mode retries as today', () => {
-    const { context, sent } = seededContext()
+  it('an admin on a node in the mode retries as today', async () => {
+    const { context, sent, answer } = seededContext()
     bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
     renderPage(context)
 
@@ -384,6 +384,10 @@ describe('HilosCommunicationsDeliveriesPage in the admin view mode', () => {
     fireEvent.click(button)
     expect(sent[0]?.action).toBe('communications_delivery_retry')
     expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
+    await act(async () => {
+      answer(sent[0]?.requestId ?? '')
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+    })
   })
 })
 

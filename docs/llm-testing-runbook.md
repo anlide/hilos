@@ -317,19 +317,26 @@ not publish at once: the people library opens a `hilos_profile_photo` check, the
 cluster's one `hilos_moderator` agent asks the image profile
 `hilos.moderation.image`, and the library publishes or refuses on the verdict.
 The previous photo stays visible until approval. A person's own-name action
-`hilos_profile_name_set` opens a `hilos_profile_name` text check in the same
-queue, and the moderator asks `hilos.moderation.text`. The name stays unchanged
-until the person owner accepts the rename request. Messages and attached
-pictures still use the chat's own moderator pending HIL-1627. The kind rules
-have no administration screen yet.
+`hilos_profile_name_set` uses the same queue for a `hilos_profile_name` text
+check and the moderator asks `hilos.moderation.text`; the sessions library
+holds the accepted name operation for that browser session through checking
+and applying, until it is refused or the person owner replies. Messages and
+attached pictures still use the chat's own moderator, which remains pending
+HIL-1627. The kind rules have no administration screen yet.
 
-For a content refusal, the action returns the server's reason sentence and
-best-effort sends the warning notification *Your new name was not accepted*.
-The action error still reaches the dialog if notification delivery fails. An
-unknown, incomplete or contradictory verdict, or an expired check, returns
-`Names cannot be checked right now.` and sends no notification. The current
-dialog does not show `Checking your name…` while a check is pending; that
-progress line and close-during-check behavior remain HIL-1635.
+A content refusal carries the server's reason sentence and best-effort sends
+the warning notification *Your new name was not accepted*. Unknown, incomplete
+or contradictory verdicts, unavailable checks or expired deadlines show
+`Names cannot be checked right now.` without a notification. A refusal before
+admission may arrive as `action_error`. An accepted refusal remains in session
+state even after the original socket is gone. The standard profile window shows
+`Checking your name…` during checking;
+closing hides it while the operation continues. After F5, only that tab's open
+checkpoint can restore after identity and session state are known, without
+resending the name; a new tab does not open the window. See
+[moderation](agents/architecture/moderation.md) for the
+server lifecycle and [conflict resolution](agents/frontend/conflict-resolution.md)
+for tab restoration and the window lifetime.
 
 | | env (default of the setting) | setting | default |
 |---|---|---|---|

@@ -72,6 +72,62 @@ const ASK_CODE = {
 } as const
 
 describe('createHilosStepUpStep', () => {
+  it.each([true, false])(
+    'disposes an unresolved opening without late mutation (required: %s)',
+    async (required) => {
+      const request = pending()
+      const passed = vi.fn()
+      const step = createHilosStepUpStep(
+        { start: () => request.handle, confirm: () => handle() },
+        passed,
+      )
+      const opening = step.open('change_name')
+      step.dispose()
+      request.answer({ ...ASK_PASSWORD, required })
+      expect(await opening).toBe('refused')
+      expect(step.opening.get()).toBeNull()
+      expect(step.busy.get()).toBe(false)
+      expect(passed).not.toHaveBeenCalled()
+    },
+  )
+
+  it('releases its live confirmation listener and forgets secrets on disposal', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => handle() },
+      passed,
+    )
+    await step.open('change_name')
+    step.password.set('secret')
+    step.code.set('123456')
+    step.dispose()
+    tell(['change_name'])
+    expect(passed).not.toHaveBeenCalled()
+    expect(step.password.get()).toBe('')
+    expect(step.code.get()).toBe('')
+    await step.open('change_name')
+    tell(['change_name'])
+    expect(passed).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores confirmation completion after disposal', async () => {
+    const request = pending()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => request.handle },
+      vi.fn(),
+    )
+    await step.open('change_name')
+    step.password.set('secret')
+    const confirmation = step.confirm()
+    step.dispose()
+    request.answer({})
+    expect(await confirmation).toBe(false)
+    expect(step.opening.get()).toBeNull()
+    expect(step.refusal.get()).toBeNull()
+    expect(step.busy.get()).toBe(false)
+  })
+
   it('restarts a code send without leaving the step and passes an already confirmed operation', async () => {
     const passed = vi.fn()
     const start = vi

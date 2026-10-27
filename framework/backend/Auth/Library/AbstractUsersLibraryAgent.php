@@ -103,6 +103,10 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
+use Hilos\Auth\Library\DTO\ProfileNameContinueSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Auth\Library\DTO\ProfilePhotoRemoveActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
@@ -363,7 +367,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /** @var list<string> */
-    public const array READS_RT = [HilosUpload::RT_COLLECTION];
+    public const array READS_RT = [HilosUpload::RT_COLLECTION, HilosProfileNameChange::RT_COLLECTION];
 
     /**
      * The files library owns the registry row whose owner decides a published photo's person. The
@@ -397,6 +401,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Hold releases reach that same writer when the session holder forgets a browser (HIL-1411).
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
         HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -857,6 +862,56 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Starts checking after the accepted row lands; unrelated runtime collections are ignored.
+     *
+     * @param RtSyncCreatedSignalData $data Runtime creation
+     * @param string $source Source identifier (unused)
+     * @param string $name Runtime signal name
+     * @throws HilosException When the accepted attempt, check or frame fails
+     */
+    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case SignalConstants::RT_SYNC_CREATED:
+                if ($data->collectionKey === HilosProfileNameChange::RT_COLLECTION && Hilos::hasFeature(HilosFeature::AUTH)) {
+                    $change = Hilos::$rt->hilosProfileNameChanges[$data->stateId];
+                    if ($change !== null && $change->requestId === ($data->row[HilosProfileNameChange::requestId] ?? null)) {
+                        $this->profileNameCommands()->resumeChange($data->stateId, $change->requestId, HilosProfileNameChange::PHASE_CHECKING);
+                    }
+                }
+
+                return;
+        }
+    }
+
+    /**
+     * Hands applying to the person only on the holder's transition; wake-up frames cannot repeat it.
+     * Unrelated runtime updates are ignored.
+     *
+     * @param RtSyncUpdatedSignalData $data Runtime phase change
+     * @param string $source Source identifier (unused)
+     * @param string $name Runtime signal name
+     * @throws HilosException When the accepted attempt, guard or owner request fails
+     */
+    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case SignalConstants::RT_SYNC_UPDATED:
+                if ($data->collectionKey === HilosProfileNameChange::RT_COLLECTION
+                    && ($data->row[HilosProfileNameChange::phase] ?? null) === HilosProfileNameChange::PHASE_APPLYING
+                    && Hilos::hasFeature(HilosFeature::AUTH)
+                ) {
+                    $change = Hilos::$rt->hilosProfileNameChanges[$data->stateId];
+                    if ($change !== null && $change->requestId === $data->originRequestId) {
+                        $this->profileNameCommands()->resumeChange($data->stateId, $change->requestId, HilosProfileNameChange::PHASE_APPLYING);
+                    }
+                }
+
+                return;
+        }
+    }
+
+    /**
      * Names the set of the moderation checks this library holds: the checks whose verdicts come
      * to it, which every kind names by its recipient's agent type (HIL-1625).
      *
@@ -1068,6 +1123,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE:
+                if (!$data->data instanceof ProfileNameContinueSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameContinueSignalData::class, $data->data);
+                }
+                $this->profileNameCommands()->continueChange($data->data);
+
+                return;
+
             case HilosSignalConstants::HILOS_AUTH_CODE_MINT:
                 $this->phoneCodeCommands()->mintForSend($data->data);
 
@@ -3540,11 +3603,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * waiting on it.
      *
      * @param UserRenameDoneSignalData $done The agent's answer, carrying the ask back
+     * @throws HilosException When the current own-name operation cannot be read or advanced
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
      */
     private function finishRename(UserRenameDoneSignalData $done): void
     {
         $ask = $done->ask;
+        if ($ask->action === HilosSignalConstants::PROFILE_NAME_SET && $ask->requestId !== null
+            && $this->profileNameCommands()->acceptedRename($ask) === null
+        ) {
+            return;
+        }
         if ($done->renameId !== null) {
             try {
                 $rename = null;
@@ -3562,6 +3631,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             if ($rename !== null) {
                 $this->userRenameCommands()->afterRename($rename);
             }
+        }
+
+        if ($ask->action === HilosSignalConstants::PROFILE_NAME_SET && $ask->requestId !== null) {
+            $this->profileNameCommands()->renamed($done);
+
+            return;
         }
 
         if ($ask->answerSignal !== null) {

@@ -109,7 +109,7 @@ describe('standard profile rename binding', () => {
     errors.dispose()
   })
 
-  it('returns false and keeps the draft available when the connection is unavailable', async () => {
+  it('returns false and keeps the window closed without an authoritative session', async () => {
     const connection = new HilosConnection({ url: 'ws://unused' })
     const errors = new ActionErrorStore(connection)
     const rename = createHilosProfileRename(connection, errors)
@@ -120,7 +120,7 @@ describe('standard profile rename binding', () => {
     flow.draft.set('Bob')
     flow.save()
     expect(flow.busy.get()).toBe(false)
-    expect(flow.step.get()).toBe('form')
+    expect(flow.step.get()).toBe('closed')
     expect(flow.draft.get()).toBe('Bob')
     flow.dispose()
     errors.dispose()
@@ -156,9 +156,17 @@ describe('standard profile rename binding', () => {
     errors.dispose()
   })
 
-  it('clears on open and before each send, preserves the refused draft and waits for its server echo', async () => {
+  it('keeps the legacy custom binding refusal and live-echo lifecycle', async () => {
     const { connection, errors, emit, sendAction } = setupBinding()
-    const rename = createHilosProfileRename(connection, errors)
+    const standard = createHilosProfileRename(connection, errors)
+    const rename: HilosProfileRename = {
+      send: standard.send,
+      refusal: standard.refusal,
+      clearRefusal: standard.clearRefusal,
+      stepUpOperation: standard.stepUpOperation,
+      minLength: standard.minLength,
+      maxLength: standard.maxLength,
+    }
     const { flow, name } = setup(SKIP, true, rename)
     emit(PROFILE_NAME_SET_ACTION, 'An earlier refusal')
 

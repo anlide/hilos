@@ -30,6 +30,13 @@ Cancel and the other `#actions` buttons with the same `busy`, and a footer
 and the initial focus skip what is disabled
 ([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)).
 
+That is the ordinary modal busy contract. The standard framework own-name flow
+is a local exception: its `pending` tracks a session-held operation, including
+checking and applying, and must not become the modal's `busy`. Pending blocks
+Save and Enter while leaving the name field and close paths available. Keep
+step-up busy and the page's independent `interactionBlocked` state separate;
+the name operation does not take ownership of either.
+
 ### Creation in a known place
 
 Use the core row-edit session when the opening button already addresses the
@@ -203,8 +210,8 @@ of an edit window is written once, not once per window.
   the reply of the tracked action for a window over a table. A valid creation
   in an empty place, as reported by `creating(live)`, is excluded from that
   unchanged-edit shortcut and sends even when the draft equals the baseline.
-  `saveLanded(send, refusal)` is the same door for a window whose project answers
-  over the row and not over the action's reply (the person's name): saving until
+  `saveLanded(send, refusal)` is the same door for a row-backed operation whose
+  project answers over the row and not over the action's reply: saving until
   the live fields read as the draft sent — Take theirs in the meantime rewrites
   the draft, not what is waited for — or until the refusal turns non-null. The
   outcome of a save whose window closed in the meantime moves nothing.
@@ -227,14 +234,82 @@ same flag — see `editSaving` in
 - The worked examples are `createHilosSettingEdit` and the three settings
   pages, `framework/frontend/{vue,react,angular}/src/admin/settings/HilosSettingsPage.*`.
 
+### Checkpoints and own-save rebase
+
+`checkpoint()` returns detached row-edit data only for an open, cloneable edit:
+its baseline (saved values and refreshed-field marks), the shown form, and
+whether a known place still awaits its first occupation. It carries no live row,
+source, pending save or permission to call a later echo one's own.
+
+`restore(checkpoint, saved?)` is for a caller that has already validated its
+serialized shape. Open a new edit on a fresh, present source first; then restore
+the checkpoint against that live row. It never opens a window or sends an
+action, and a refusal leaves the current edit unchanged. If the caller has
+separately confirmed an own save, `saved` can advance the restored baseline
+before the first live merge. Take a new checkpoint after a successful restore.
+
+`rebaseAfterSave(saved, checkpoint, publish?)` is a one-use operation for an
+own save confirmed by the caller's live correlation. It accepts only a
+checkpoint issued by the current opening, advances the baseline to the saved
+values and preserves the form as it stands, including a newer draft. The
+optional `publish` callback synchronously delivers the trusted own echo before
+the regular merge can take it as an external change. It belongs to the live
+caller; never serialize or restore a callback or the permission to rebase.
+Ordinary `save`, `saveLanded` and conflict handling remain window-bound.
+
+## The standard own-name window is session-held
+
+The framework's standard profile name binding in
+[`profileRename.ts`](../../../framework/frontend/core/src/profile/profileRename.ts)
+uses the session holder's complete `hilos_profile_name_state`. Unknown state is
+not idle; a known `change: null` is. The submitted operation and its checking,
+applying or terminal outcome live independently of the dialog. Closing hides
+the dialog and writes `open: false`; it does not cancel accepted work. Incoming
+state never opens the dialog by itself.
+
+Each tab stores only its own presentation intent in
+[`profileRenameMemory.ts`](../../../framework/frontend/core/src/profile/profileRenameMemory.ts),
+through `browserStorage` under `hilos.profile.rename.window` and the registered
+session `browserValue` labeled `Name change window`: owner id, open flag, step,
+draft, edit checkpoint and request id. The strict versioned shape is untrusted
+tab data; it does not store a server phase, refusal, permission or step-up
+proof. Explicit close writes `open: false`; dispose and F5 preserve the prior
+open intent. After authoritative handshake and name state, the same tab and
+person may restore its open checkpoint without sending again. A new tab has no
+checkpoint to open. Sign-out, an identity change and browser value erase clear
+the tab data; inaccessible or invalid storage leaves the live window usable.
+
+The restored edit merges against a fresh live name. A tab may rebase a result
+only when its local attempt correlation matches that operation. An already
+open dirty tab that merely observes another tab's session attempt keeps the
+ordinary `Changed elsewhere` conflict. If the locally submitted name succeeds
+while the person has typed a newer draft, success advances the baseline without
+discarding that text; it closes the window only if the same submission is still
+open and unchanged. Explicitly closed windows stay closed. Manual open shows
+the current attempt or refusal, or the current live name when the session is
+ready.
+
+All three SDKs keep the name field editable during pending work and gate both
+Save and Enter with the same operation verdict. They show `Checking your
+name…` only in the checking phase, in a stable `role="status"`,
+`aria-live="polite"` slot; an invisible twin keeps the space when it is idle,
+and the spinner is hidden from assistive technology. Applying remains pending
+without being called a moderation check. These rules apply to the standard
+own-name flow; other edit windows keep the modal lock and their dispose-bound
+save semantics above.
+
 ## Save is authoritative-backend, not Apply
 
-A modal save is **submit → loading → backend echo**, not the tables' pending /
-Apply mechanism (Apply is tables-only — see [table-subscription.md](table-subscription.md)). The save
-emits an action; frontend state changes only when the backend echoes it
-([core-and-connection.md](core-and-connection.md)). Validation is backend-only: field errors return via
-the action's `::fail` ([rules-and-violations.md](rules-and-violations.md)). On a successful echo the store
-updates and the modal closes.
+A normal modal save is **submit → loading → backend echo**, not the tables'
+pending / Apply mechanism (Apply is tables-only — see
+[table-subscription.md](table-subscription.md)). The save emits an action;
+frontend state changes only when the backend echoes it
+([core-and-connection.md](core-and-connection.md)). Validation is backend-only:
+field errors return via the action's `::fail`
+([rules-and-violations.md](rules-and-violations.md)). On a successful echo the
+store updates and the modal closes. The standard own-name flow uses its
+session-held state and owner reply instead of `saveLanded`; its narrow lifetime
+exception is described above.
 
 ### From Add to Save in a known place
 

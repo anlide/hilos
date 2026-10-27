@@ -32,6 +32,9 @@ const MAINTENANCE_HINT_KEY = 'hilos.protectedMode.hint'
 const THEME_PICK_KEY = 'hilos.theme.pick'
 const THEME_SETTINGS_KEY = 'hilos.theme.settings'
 
+/** The framework's tab-local name window. */
+const PROFILE_RENAME_MEMORY_KEY = 'hilos.profile.rename.window'
+
 /**
  * Read one cookie matching a predicate out of the context's jar.
  *
@@ -57,28 +60,49 @@ test('the erase empties this browser and moves it onto a new session', async ({
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
+  const renameMemory = JSON.stringify({
+    version: 1,
+    userId: person.userId,
+    open: false,
+    step: 'closed',
+    draft: 'Privacy erase draft',
+    checkpoint: {
+      baseline: { values: { name: person.name }, refreshed: ['name'] },
+      form: 'Privacy erase draft',
+      awaitingOccupation: false,
+    },
+    requestId: null,
+  })
 
   // Seed one value in each store the registry names, through the very keys the
   // framework declares — a spec that seeded keys of its own would prove the sweep
   // erases what the spec wrote, not what the framework keeps.
-  const serverSettings = await page.evaluate(
-    ([provider, hint, pick, settings]) => {
+  const seededValues = await page.evaluate(
+    ([provider, hint, pick, settings, rename, memory]) => {
       const receivedSettings = localStorage.getItem(settings)
       sessionStorage.setItem(provider, 'github')
       localStorage.setItem(hint, '1')
       localStorage.setItem(pick, 'dark')
       localStorage.setItem(settings, 'stale browser copy')
+      sessionStorage.setItem(rename, memory)
 
-      return receivedSettings
+      return {
+        serverSettings: receivedSettings,
+        renameMemory: sessionStorage.getItem(rename),
+      }
     },
     [
       OAUTH_PROVIDER_KEY,
       MAINTENANCE_HINT_KEY,
       THEME_PICK_KEY,
       THEME_SETTINGS_KEY,
+      PROFILE_RENAME_MEMORY_KEY,
+      renameMemory,
     ],
   )
+  const serverSettings = seededValues.serverSettings
   expect(serverSettings).not.toBeNull()
+  expect(seededValues.renameMemory).toBe(renameMemory)
 
   // The identifier this browser arrived with: what the erase must change.
   const arrived = await cookieValue(context, isSessionCookie)
@@ -90,7 +114,10 @@ test('the erase empties this browser and moves it onto a new session', async ({
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
   await expect(
     page.getByTestId('privacy-erase-list').locator('li'),
-  ).toHaveCount(6)
+  ).toHaveCount(7)
+  await expect(page.getByTestId('privacy-erase-list')).toContainText(
+    'Name change window',
+  )
   await expect(page.getByTestId('privacy-erase-list')).toContainText(
     'Your theme choice in this browser',
   )
@@ -112,14 +139,20 @@ test('the erase empties this browser and moves it onto a new session', async ({
   // The browser half: the guest's choice and the other seeded values are gone.
   // The settings cache is filled again by the new session's handshake below.
   const kept = await page.evaluate(
-    ([provider, hint, pick]) => [
+    ([provider, hint, pick, rename]) => [
       sessionStorage.getItem(provider),
       localStorage.getItem(hint),
       localStorage.getItem(pick),
+      sessionStorage.getItem(rename),
     ],
-    [OAUTH_PROVIDER_KEY, MAINTENANCE_HINT_KEY, THEME_PICK_KEY],
+    [
+      OAUTH_PROVIDER_KEY,
+      MAINTENANCE_HINT_KEY,
+      THEME_PICK_KEY,
+      PROFILE_RENAME_MEMORY_KEY,
+    ],
   )
-  expect(kept).toEqual([null, null, null])
+  expect(kept).toEqual([null, null, null, null])
 
   // The server half: the value arrives on the 101 of the reconnect the rotation
   // ticket triggers, a round trip after the outcome above was drawn.

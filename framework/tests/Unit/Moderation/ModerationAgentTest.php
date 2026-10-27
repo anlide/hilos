@@ -36,6 +36,7 @@ use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationLlmConstants;
 use Hilos\Moderation\ModerationReason;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosModerationCheck;
@@ -397,6 +398,24 @@ final class ModerationAgentTest extends TestCase
 
         self::assertSame([], $this->agent->clients);
         self::assertSame([], $this->router->sent);
+    }
+
+    public function testDetachedSessionNameIsAskedButDetachedLegacyNameAndPhotoAreNot(): void
+    {
+        $this->runtime->disconnect(self::ACCEPT_KEY);
+        $this->runtime->disconnect(self::OTHER_ACCEPT_KEY);
+        $now = TimeHelper::nowMs();
+        $this->runtime->putCheck(HilosModerationCheck::create(
+            self::ACCEPT_KEY, self::USER_ID, ModerationKindKey::PROFILE_NAME, 'session-name', self::INITIATOR,
+            'Grace', null, $now, $now + self::FRESH_FOR_MS, 'browser-hash',
+        ));
+        $this->open(self::OTHER_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME, 'legacy-name', text: 'Legacy');
+        $this->open(self::OTHER_ACCEPT_KEY, ModerationAgentTestDirectory::PHOTO, 'photo', clientUploadId: 'upload');
+
+        $this->agent->onTick();
+
+        self::assertCount(1, $this->client()->requests);
+        self::assertStringEndsWith("Text:\nGrace", $this->client()->requests[0]->messages[1]->content);
     }
 
     public function testReadsRulesAndProfileBeforeEachCheckAndReplacesTheClientOnlyWhenTheProfileChanged(): void

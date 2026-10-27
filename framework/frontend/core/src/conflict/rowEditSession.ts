@@ -18,7 +18,7 @@
 // through their own bridge and keep the markup, nothing else.
 
 import { type ActionHandle } from '../connection/actionLifecycle.js'
-import { isHiddenValue } from '../state/hiddenValue.js'
+import { HIDDEN_VALUE, isHiddenValue } from '../state/hiddenValue.js'
 import {
   computedSignal,
   createSignal,
@@ -235,6 +235,21 @@ export type HilosRowEditOptions<
  */
 export type HilosActionRun = (handle: ActionHandle) => Promise<boolean>
 
+/**
+ * Detached edit data, with no row, source, callbacks or pending save. A caller
+ * persisting it validates its own serialized schema and identity before restore.
+ * Forms must be structured-cloneable data; fields keep the row merge's scalar
+ * contract (including the canonical hidden mark).
+ */
+export interface HilosRowEditCheckpoint<T extends object, F = T> {
+  /** The accepted saved values and the fields taken from the other side. */
+  readonly baseline: RowEditBaseline<T>
+  /** The shown form, including data outside the edited fields. */
+  readonly form: F
+  /** Whether the opening still awaits its known place's first occupation. */
+  readonly awaitingOccupation: boolean
+}
+
 /** One edit window over one row: its state as signals, its moves as methods. */
 export interface HilosRowEdit<R, T extends object, F = T> {
   /** Whether the window is open. */
@@ -276,6 +291,48 @@ export interface HilosRowEdit<R, T extends object, F = T> {
    * @returns False when there is no row to open on or a save is in flight.
    */
   open(key?: string): boolean
+  /**
+   * Copy the open edit's data, or return null while closed or not cloneable.
+   * A checkpoint from this opening also guards an explicit own-save rebase;
+   * serializing it preserves data, not that local permission.
+   */
+  checkpoint(): HilosRowEditCheckpoint<T, F> | null
+  /**
+   * Restore validated edit data onto the already open, present source row,
+   * then merge against its current fields. Never opens or sends. Returns false
+   * without changing the edit while closed, gone, saving, not cloneable or
+   * carrying another set of field keys. The fresh opening supplies the row and
+   * projections; the checkpoint supplies neither identity nor server truth.
+   * Success starts a new local edit round; take a new checkpoint for rebase.
+   * Confirmed own saved fields may advance the baseline before the first live
+   * merge, preserving a restored newer draft even if it equals the old baseline.
+   *
+   * @param checkpoint The caller's validated baseline and shown form.
+   * @param saved Optional own saved fields, correlated and confirmed by the caller.
+   */
+  restore(checkpoint: HilosRowEditCheckpoint<T, F>, saved?: T): boolean
+  /**
+   * Accept confirmed own saved fields without marking them changed elsewhere.
+   * The current form stays, including a newer draft restored after a reload;
+   * only the accepted baseline moves. Later live changes still
+   * merge normally. Never opens, closes, sends or settles an in-flight save.
+   * Each checkpoint may rebase once. Returns false for a checkpoint not issued
+   * by this session's current opening, a gone row, an in-flight save or another
+   * set of field keys. The caller must
+   * correlate the saved operation. Deliver the committed source first, or use
+   * publish to deliver it inside this rebase, before the ordinary merge can
+   * take the echo over a newer draft reverted to its old baseline. This is a
+   * live delivery callback, never part of serialized checkpoint data.
+   *
+   * @param saved The accepted fields, confirmed by the caller's own-save protocol.
+   * @param checkpoint A checkpoint taken in this opening, after any restore.
+   * @param publish Synchronously publish the confirmed row while merge steps are held.
+   */
+  rebaseAfterSave(
+    saved: T,
+    checkpoint: HilosRowEditCheckpoint<T, F>,
+    publish?: () => void,
+  ): boolean
   /**
    * Replace the form.
    *
@@ -366,6 +423,51 @@ function landed<T extends object>(live: T, sent: T): boolean {
   )
 }
 
+/** Copy form data without turning the shared hidden mark into a different value. */
+function copyEditData<V>(value: V): V {
+  const seen = new WeakSet<object>()
+  function canonicalize(value: unknown): unknown {
+    if (isHiddenValue(value)) return HIDDEN_VALUE
+    if (typeof value !== 'object' || value === null || seen.has(value)) {
+      return value
+    }
+    seen.add(value)
+    const data = value as Record<string, unknown>
+    for (const key of Object.keys(data)) {
+      data[key] = canonicalize(data[key])
+    }
+
+    return value
+  }
+
+  return canonicalize(structuredClone(value)) as V
+}
+
+/**
+ * Accept an own commit without rewinding fields whose later live value the
+ * edit already accepted, silently or through a choice. The ordinary merge
+ * still handles fields that have not been accepted yet.
+ */
+function rebaseBaseline<T extends object>(
+  snapshot: RowEditBaseline<T>,
+  saved: T,
+  live: T,
+): RowEditBaseline<T> {
+  const values = copyEditData(saved)
+  const refreshed: (keyof T & string)[] = []
+  for (const key of Object.keys(saved) as (keyof T & string)[]) {
+    if (
+      !Object.is(live[key], saved[key]) &&
+      Object.is(snapshot.values[key], live[key])
+    ) {
+      values[key] = snapshot.values[key]
+      if (snapshot.refreshed.includes(key)) refreshed.push(key)
+    }
+  }
+
+  return { values, refreshed }
+}
+
 /**
  * Create one edit window over a source of rows.
  *
@@ -394,6 +496,10 @@ export function createHilosRowEdit<R, T extends object, F = T>(
   let stop: Unsubscribe | null = null
   let landing: Unsubscribe[] = []
   let awaitingOccupation = false
+  // Permission is local to this session/opening, separate from checkpoint data
+  // that a caller may serialize. Weak keys do not retain discarded snapshots.
+  const checkpoints = new WeakMap<HilosRowEditCheckpoint<T, F>, number>()
+  let replacing = false
   const creating = computedSignal(() => {
     const live = source.live.get()
 
@@ -496,6 +602,24 @@ export function createHilosRowEdit<R, T extends object, F = T>(
   function stopLanding(): void {
     for (const off of landing.splice(0)) off()
   }
+  function settle(): void {
+    const next = state.get()
+    if (!replacing && opened.get() && next.settle !== null) {
+      if (awaitingOccupation && !next.gone && !creating.get()) {
+        // Consume before apply changes the signals and resolves again.
+        awaitingOccupation = false
+      }
+      apply(next.settle)
+    }
+  }
+  function sameFields(values: T, other: T): boolean {
+    const keys = Object.keys(values)
+
+    return (
+      keys.length === Object.keys(other).length &&
+      keys.every((key) => Object.hasOwn(other, key))
+    )
+  }
   function close(): void {
     if (!opened.get()) {
       return
@@ -554,6 +678,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       if (fresh === null) {
         return false
       }
+      round += 1
       awaitingOccupation = options.creating?.(fresh) ?? false
       row.set(fresh)
       baseline.set(openRowEdit(options.fields(fresh)))
@@ -561,6 +686,120 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       opened.set(true)
 
       return true
+    },
+    checkpoint() {
+      const snapshot = baseline.get()
+      if (!opened.get() || snapshot === null) {
+        return null
+      }
+      try {
+        const checkpoint = copyEditData({
+          baseline: snapshot,
+          form: form.get(),
+          awaitingOccupation,
+        })
+        checkpoints.set(checkpoint, round)
+
+        return checkpoint
+      } catch {
+        return null
+      }
+    },
+    restore(checkpoint, saved) {
+      const current = row.get()
+      const live = source.live.get()
+      if (
+        replacing ||
+        !opened.get() ||
+        saving.get() ||
+        current === null ||
+        live === undefined
+      ) {
+        return false
+      }
+      let restored: HilosRowEditCheckpoint<T, F>
+      try {
+        restored = copyEditData(checkpoint)
+        if (saved !== undefined) {
+          if (!sameFields(saved, restored.baseline.values)) {
+            return false
+          }
+          restored = {
+            ...restored,
+            baseline: rebaseBaseline(
+              restored.baseline,
+              saved,
+              options.fields(live),
+            ),
+            awaitingOccupation: false,
+          }
+        }
+        if (
+          !sameFields(restored.baseline.values, options.fields(live)) ||
+          !restored.baseline.refreshed.every((key) =>
+            Object.hasOwn(restored.baseline.values, key),
+          ) ||
+          typeof restored.awaitingOccupation !== 'boolean'
+        ) {
+          return false
+        }
+        // Evaluate the projections before touching the running session.
+        projectDraft(restored.form, current)
+        options.valid?.(restored.form, current)
+      } catch {
+        return false
+      }
+      replacing = true
+      try {
+        round += 1
+        awaitingOccupation = restored.awaitingOccupation
+        form.set(restored.form)
+        baseline.set(restored.baseline)
+      } finally {
+        replacing = false
+      }
+      settle()
+
+      return true
+    },
+    rebaseAfterSave(saved, checkpoint, publish) {
+      const current = row.get()
+      const snapshot = baseline.get()
+      if (
+        replacing ||
+        !opened.get() ||
+        saving.get() ||
+        current === null ||
+        snapshot === null ||
+        source.live.get() === undefined ||
+        checkpoints.get(checkpoint) !== round ||
+        !sameFields(saved, snapshot.values)
+      ) {
+        return false
+      }
+      replacing = true
+      try {
+        publish?.()
+        const live = source.live.get()
+        if (
+          !opened.get() ||
+          checkpoints.get(checkpoint) !== round ||
+          live === undefined
+        ) {
+          return false
+        }
+        awaitingOccupation = false
+        apply({
+          baseline: rebaseBaseline(snapshot, saved, options.fields(live)),
+          take: {},
+        })
+        checkpoints.delete(checkpoint)
+
+        return true
+      } finally {
+        replacing = false
+        settle()
+      }
     },
     setForm(next) {
       form.set(next)
@@ -634,15 +873,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
     close,
     start() {
       stop?.()
-      stop = subscribeSignal(state, (next) => {
-        if (opened.get() && next.settle !== null) {
-          if (awaitingOccupation && !next.gone && !creating.get()) {
-            // Consume before apply changes the signals and resolves again.
-            awaitingOccupation = false
-          }
-          apply(next.settle)
-        }
-      })
+      stop = subscribeSignal(state, settle)
     },
     dispose() {
       stop?.()

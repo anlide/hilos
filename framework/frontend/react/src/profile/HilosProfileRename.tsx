@@ -24,8 +24,9 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
   const draft = useSignal(flow.draft)
   const edit = useSignal(flow.edit)
   const notice = useSignal(flow.notice)
-  const valid = useSignal(flow.valid)
-  const busy = useSignal(flow.busy)
+  const pending = useSignal(flow.pending)
+  const checking = useSignal(flow.checking)
+  const canSave = useSignal(flow.canSave)
   const refusal = useSignal(flow.refusal)
   const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
   const stepUpOpening = useSignal(flow.stepUp.opening)
@@ -38,21 +39,25 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
     .replace('{min}', String(flow.minLength))
     .replace('{max}', String(flow.maxLength))
 
-  // The confirmation's body is replaced by the form: focus its field.
+  // Focus the field when confirmation arrives or gives way to the name form.
   useEffect(() => {
     const from = previous.current
     previous.current = step
-    if (from !== 'step-up' || step !== 'form') return
+    const confirmationReady =
+      step === 'step-up' && stepUpOpening !== null && !stepUpBusy
+    if (!confirmationReady && (from !== 'step-up' || step !== 'form')) return
     const dialog = body.current?.closest<HTMLElement>('[role="dialog"]')
     if (dialog) focusInitial(dialog)
-  }, [step])
+  }, [step, stepUpOpening, stepUpBusy])
 
   return (
     <HilosModal
       open={step !== 'closed'}
       onClose={() => flow.close()}
       confirmOnClose={asksBeforeClosing}
+      busy={stepUpBusy}
       initialFocus="inner"
+      aria-label={step === 'form' ? COPY.title : HILOS_STEP_UP_COPY.title}
       header={
         step !== 'form' ? (
           <h2 className="modal-title h5 mb-0">{HILOS_STEP_UP_COPY.title}</h2>
@@ -67,6 +72,7 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-name-step-up-cancel"
+              disabled={stepUpBusy}
               onClick={requestClose}
             >
               {COPY.cancel}
@@ -86,7 +92,7 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
         ) : (
           <ConflictActions
             conflict={edit.conflict}
-            disableSave={!valid || !edit.dirty || edit.gone}
+            disableSave={!canSave}
             saveLabel={saveLabel}
             onSave={() => flow.save()}
             onAcceptMine={() => flow.keepMine()}
@@ -95,7 +101,7 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
               <button
                 type="button"
                 className="btn btn-outline-secondary"
-                disabled={busy}
+                disabled={stepUpBusy}
                 data-id="profile-rename-cancel"
                 onClick={requestClose}
               >
@@ -105,7 +111,7 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
             saveButton={({ disabled, onSave }) => (
               <LoadingButton
                 className="btn-primary"
-                loading={busy}
+                loading={pending}
                 disabled={disabled}
                 data-id="profile-rename-save"
                 onClick={onSave}
@@ -138,7 +144,9 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
               void flow.confirmStepUp()
             }}
           >
-            <HilosStepUpStep controller={flow.stepUp} />
+            <fieldset className="border-0 m-0 p-0" disabled={stepUpBusy}>
+              <HilosStepUpStep controller={flow.stepUp} />
+            </fieldset>
           </form>
         ) : (
           <form
@@ -162,6 +170,33 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
               onChange={(event) => flow.draft.set(event.target.value)}
             />
             <div className="form-text">{bounds}</div>
+            <div className="hilos-stack mb-1">
+              <div
+                className="small text-body-secondary d-flex align-items-center gap-2 invisible"
+                aria-hidden="true"
+              >
+                <span
+                  className="spinner-border spinner-border-sm"
+                  aria-hidden="true"
+                />
+                {COPY.checking}
+              </div>
+              <div
+                className="small text-body-secondary d-flex align-items-center gap-2"
+                role="status"
+                aria-live="polite"
+              >
+                {checking ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm"
+                      aria-hidden="true"
+                    />
+                    {COPY.checking}
+                  </>
+                ) : null}
+              </div>
+            </div>
             <HilosEditNotice
               kind={edit.notice?.kind ?? null}
               text={notice}

@@ -1,12 +1,17 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  countSentFrames,
+  expectProfileNameSnapshot,
   openBell,
   unreadBadge,
+  watchProfileRenameFrames,
+  type ProfileRenameFrameLog,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { gotoPage } from '../helpers/page.js'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { PASSWORD, clickSubmit, signUp, typeInto } from '../helpers/session.js'
 
 // Framework profile-name moderation on a real call to the stand's model: a
@@ -120,6 +125,334 @@ test('a rename nobody dictated a verdict for comes back as moderation unavailabl
   await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
   await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
   await expect(unreadBadge(page)).toBeHidden()
+})
+
+test.describe('accepted name attempt lifetime', () => {
+  // Four seconds leaves room for F5 and close/reopen, below the stand's
+  // 20-second provider cap and 90-second check deadline. No browser sleep.
+  const MODEL_DELAY_MS = 4_000
+  let wire: ProfileRenameFrameLog
+  let sends: () => number
+  let starts: () => number
+
+  test.beforeEach(({ page }) => {
+    wire = watchProfileRenameFrames(page)
+    sends = countSentFrames(page, 'hilos_profile_name_set')
+    starts = countSentFrames(page, 'hilos_step_up_start')
+  })
+
+  test.afterEach(async () => {
+    await test.info().attach('name-attempt-wire', {
+      body: JSON.stringify(
+        { nameActions: sends(), stepUpStarts: starts(), ...wire },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    wire.stop()
+  })
+
+  test('F5 restores an open checking window and the same attempt closes on owner success', async ({
+    page,
+    context,
+  }) => {
+    const user = await signUp(page)
+    await gotoPage(page, '/profile')
+    const key = modelKey()
+    const name = `Reload ${key}`
+    await dictateModerationVerdict(key, true, 'ok')
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      delayMs: MODEL_DELAY_MS,
+    })
+    await openRename(page)
+    await typeInto(page.getByTestId('profile-name-input'), name)
+    await clickSubmit(page.getByTestId('profile-rename-save'))
+    const accepted = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, phase: 'checking' },
+    )
+    const requestId = accepted.state.change!.requestId
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await page.reload()
+    await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, requestId, phase: 'checking' },
+      accepted.socket,
+    )
+    await expectPageReady(page)
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(name)
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+
+    // A page created by the context has no opener's cloned sessionStorage.
+    const fresh = await context.newPage()
+    const freshWire = watchProfileRenameFrames(fresh)
+    try {
+      await gotoPage(fresh, '/profile')
+      await expectProfileNameSnapshot(expect, freshWire, user.userId, {
+        name,
+        requestId,
+      })
+      await expect(fresh.getByTestId('modal')).toBeHidden()
+      await expectProfileNameSnapshot(expect, wire, user.userId, {
+        name,
+        requestId,
+        phase: 'done',
+      })
+      await expect(page.getByTestId('modal')).toBeHidden()
+      await expect(page.getByTestId('profile-name')).toHaveText(name)
+      await expectProfileNameSnapshot(expect, freshWire, user.userId, {
+        name,
+        requestId,
+        phase: 'done',
+      })
+      await expect(fresh.getByTestId('modal')).toBeHidden()
+      await test.info().attach('new-tab-wire', {
+        body: JSON.stringify(freshWire, null, 2),
+        contentType: 'application/json',
+      })
+    } finally {
+      freshWire.stop()
+      await fresh.close()
+    }
+    expect(sends()).toBe(1)
+    expect(
+      new Set(
+        wire.snapshots.flatMap(({ state }) =>
+          state.change ? [state.change.requestId] : [],
+        ),
+      ).size,
+    ).toBe(1)
+    await gotoPage(page, '/')
+    const notice = page.getByTestId('event-notice').filter({ hasText: key })
+    await expect(notice).toHaveCount(1)
+    await expect(notice).toHaveText(`renamed from ${user.name} to ${name}`)
+    await test.info().attach('rename-event', {
+      body: await notice.innerText(),
+      contentType: 'text/plain',
+    })
+  })
+
+  test('explicit close survives F5, pending reopen skips step-up, and late success stays closed', async ({
+    page,
+  }) => {
+    const user = await signUp(page)
+    await gotoPage(page, '/profile')
+    const key = modelKey()
+    const name = `Closed ${key}`
+    await dictateModerationVerdict(key, true, 'ok')
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      delayMs: MODEL_DELAY_MS,
+    })
+    await openRename(page)
+    await typeInto(page.getByTestId('profile-name-input'), name)
+    await clickSubmit(page.getByTestId('profile-rename-save'))
+    const accepted = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, phase: 'checking' },
+    )
+    const requestId = accepted.state.change!.requestId
+    const stepUpStarts = starts()
+    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await page.reload()
+    await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { requestId, phase: 'checking' },
+      accepted.socket,
+    )
+    await expectPageReady(page)
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await clickSubmit(page.getByTestId('profile-edit'))
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(name)
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('step-up-password')).toHaveCount(0)
+    expect(starts()).toBe(stepUpStarts)
+    await clickSubmit(page.getByTestId('modal-close'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      requestId,
+      phase: 'done',
+    })
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('profile-name')).toHaveText(name)
+    await clickSubmit(page.getByTestId('profile-edit'))
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(name)
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('profile-rename-error')).toBeHidden()
+    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    expect(sends()).toBe(1)
+    await gotoPage(page, '/')
+    const notice = page.getByTestId('event-notice').filter({ hasText: key })
+    await expect(notice).toHaveCount(1)
+    await expect(notice).toHaveText(`renamed from ${user.name} to ${name}`)
+  })
+
+  test('background refusal stays closed and manual error with its requested name survives F5', async ({
+    page,
+  }) => {
+    const user = await signUp(page)
+    await gotoPage(page, '/profile')
+    const key = modelKey()
+    const name = `Refused ${key}`
+    const refusal = 'This name was not accepted because it appears to be spam.'
+    // This path only closes before the answer; unlike the F5 cases it needs no
+    // four-second hold. Leave the existing poll room for async model delivery.
+    const BACKGROUND_REFUSAL_DELAY_MS = 2_000
+    await dictateModerationVerdict(key, false, 'spam')
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      delayMs: BACKGROUND_REFUSAL_DELAY_MS,
+    })
+    await openRename(page)
+    await typeInto(page.getByTestId('profile-name-input'), name)
+    await clickSubmit(page.getByTestId('profile-rename-save'))
+    const accepted = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, phase: 'checking' },
+    )
+    const requestId = accepted.state.change!.requestId
+    const checkingObservedAt = Date.now()
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    const closedObservedAt = Date.now()
+    const closedSnapshotCount = wire.snapshots.length
+    // A fast refusal before closure would miss the background path entirely.
+    expect(wire.snapshots.at(-1)).toEqual(accepted)
+    const refused = await expectProfileNameSnapshot(expect, wire, user.userId, {
+      name,
+      requestId,
+      phase: 'refused',
+      refusal,
+    })
+    const refusalObservedAt = Date.now()
+    expect(wire.snapshots.indexOf(refused)).toBeGreaterThanOrEqual(
+      closedSnapshotCount,
+    )
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await test.info().attach('background-refusal-order', {
+      body: JSON.stringify(
+        {
+          name,
+          requestId,
+          delayMs: BACKGROUND_REFUSAL_DELAY_MS,
+          checkingObservedAt,
+          closedObservedAt,
+          refusalObservedAt,
+          accepted,
+          closedSnapshotCount,
+          refusedSnapshotIndex: wire.snapshots.indexOf(refused),
+          refused,
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    await clickSubmit(page.getByTestId('profile-edit'))
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(name)
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(refusal)
+    await page.reload()
+    const restored = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { requestId, phase: 'refused', refusal },
+      accepted.socket,
+    )
+    await expectPageReady(page)
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(name)
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(refusal)
+    await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await clickSubmit(page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await page.reload()
+    await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { requestId, phase: 'refused', refusal },
+      restored.socket,
+    )
+    await expectPageReady(page)
+    await expect(page.getByTestId('modal')).toBeHidden()
+    expect(sends()).toBe(1)
+    expect([
+      ...new Set(
+        wire.snapshots.flatMap(({ state }) =>
+          state.change ? [state.change.requestId] : [],
+        ),
+      ),
+    ]).toEqual([requestId])
+  })
+
+  test('late own success preserves a newer draft and rebases it without a false conflict', async ({
+    page,
+  }) => {
+    const user = await signUp(page)
+    await gotoPage(page, '/profile')
+    const key = modelKey()
+    const name = `First ${key}`
+    const newer = `Unsent ${key}`
+    await dictateModerationVerdict(key, true, 'ok')
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      delayMs: MODEL_DELAY_MS,
+    })
+    await openRename(page)
+    await typeInto(page.getByTestId('profile-name-input'), name)
+    await clickSubmit(page.getByTestId('profile-rename-save'))
+    const accepted = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { name, phase: 'checking' },
+    )
+    const requestId = accepted.state.change!.requestId
+    await expect(page.getByTestId('profile-name-input')).toBeEditable()
+    await typeInto(page.getByTestId('profile-name-input'), newer)
+    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+    await page.getByTestId('profile-name-input').press('Enter')
+    await page.reload()
+    await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      { requestId, phase: 'checking' },
+      accepted.socket,
+    )
+    await expectPageReady(page)
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(newer)
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      requestId,
+      phase: 'done',
+    })
+    await expect(page.getByTestId('profile-name')).toHaveText(name)
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(newer)
+    await expect(page.getByTestId('conflict-badge')).toBeHidden()
+    await expect(
+      page.getByTestId('profile-edit-notice-slot'),
+    ).not.toContainText('Changed elsewhere')
+    await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+    expect(sends()).toBe(1)
+  })
 })
 
 test('a rename with an invalid model reason is unavailable and preserves the draft without a notification', async ({

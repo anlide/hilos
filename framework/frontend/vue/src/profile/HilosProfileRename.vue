@@ -21,16 +21,14 @@ const step = useSignal(props.flow.step)
 const draft = useSignal(props.flow.draft)
 const edit = useSignal(props.flow.edit)
 const notice = useSignal(props.flow.notice)
-const valid = useSignal(props.flow.valid)
-const busy = useSignal(props.flow.busy)
+const pending = useSignal(props.flow.pending)
+const checking = useSignal(props.flow.checking)
+const canSave = useSignal(props.flow.canSave)
 const refusal = useSignal(props.flow.refusal)
 const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const stepUpOpening = useSignal(props.flow.stepUp.opening)
 const stepUpBusy = useSignal(props.flow.stepUp.busy)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
-// Every request of this window in flight - the rename and its own confirmation:
-// nothing closes the window, its body stays locked and Cancel waits with it.
-const inFlight = computed(() => busy.value || stepUpBusy.value)
 const body = ref<HTMLElement | null>(null)
 const open = computed({
   get: () => step.value !== 'closed',
@@ -58,8 +56,9 @@ watch(step, (next, previous) => {
 <template>
   <HilosModal
     v-model="open"
+    :aria-label="step === 'form' ? COPY.title : HILOS_STEP_UP_COPY.title"
     :confirm-on-close="asksBeforeClosing"
-    :busy="inFlight"
+    :busy="stepUpBusy"
     initial-focus="inner"
   >
     <template #header>
@@ -106,6 +105,31 @@ watch(step, (next, previous) => {
           @input="flow.draft.set(($event.target as HTMLInputElement).value)"
         />
         <div class="form-text">{{ bounds }}</div>
+        <div class="hilos-stack mb-1">
+          <div
+            class="small text-body-secondary d-flex align-items-center gap-2 invisible"
+            aria-hidden="true"
+          >
+            <span
+              class="spinner-border spinner-border-sm"
+              aria-hidden="true"
+            ></span>
+            {{ COPY.checking }}
+          </div>
+          <div
+            class="small text-body-secondary d-flex align-items-center gap-2"
+            role="status"
+            aria-live="polite"
+          >
+            <template v-if="checking">
+              <span
+                class="spinner-border spinner-border-sm"
+                aria-hidden="true"
+              ></span>
+              {{ COPY.checking }}
+            </template>
+          </div>
+        </div>
         <HilosEditNotice
           :kind="edit.notice?.kind ?? null"
           :text="notice"
@@ -120,7 +144,7 @@ watch(step, (next, previous) => {
         <button
           type="button"
           class="btn btn-outline-secondary"
-          :disabled="inFlight"
+          :disabled="stepUpBusy"
           data-id="profile-name-step-up-cancel"
           @click="requestClose"
         >
@@ -140,7 +164,7 @@ watch(step, (next, previous) => {
       <template v-else>
         <ConflictActions
           :conflict="edit.conflict"
-          :disable-save="!valid || !edit.dirty || edit.gone"
+          :disable-save="!canSave"
           :save-label="saveLabel"
           @save="flow.save()"
           @accept-mine="flow.keepMine()"
@@ -150,7 +174,7 @@ watch(step, (next, previous) => {
             <button
               type="button"
               class="btn btn-outline-secondary"
-              :disabled="inFlight"
+              :disabled="stepUpBusy"
               data-id="profile-rename-cancel"
               @click="requestClose"
             >
@@ -160,7 +184,7 @@ watch(step, (next, previous) => {
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"
-              :loading="busy"
+              :loading="pending"
               :disabled="disabled"
               data-id="profile-rename-save"
               @click="onSave"

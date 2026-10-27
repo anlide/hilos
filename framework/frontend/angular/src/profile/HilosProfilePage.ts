@@ -283,6 +283,7 @@ export class HilosProfilePage {
           this.context(),
           binding.name,
           binding.rename,
+          { remember: true },
         )
   })
   protected readonly email = computed(() =>
@@ -313,7 +314,13 @@ export class HilosProfilePage {
     // Take the sections once the inputs are bound; let them go on destroy.
     effect((onCleanup) => {
       const root = this.root()
+      const rename = this.rename()
       root.start()
+      if (rename === null) this.renameOpening.set(false)
+      else {
+        rename.start()
+        this.renameOpening.set(rename.stepUp.busy.get())
+      }
       this.signedIn.set(root.signedIn.get())
       this.photoEnabled.set(root.photoEnabled.get())
       this.photo.set(root.photo.get())
@@ -340,7 +347,15 @@ export class HilosProfilePage {
         ),
         subscribeSignal(root.theme, (value) => this.theme.set(value)),
       ]
+      const stopRenameOpening =
+        rename === null
+          ? () => {}
+          : subscribeSignal(rename.stepUp.busy, (value) =>
+              this.renameOpening.set(value),
+            )
       onCleanup(() => {
+        stopRenameOpening()
+        rename?.dispose()
         off.forEach((stop) => stop())
         root.dispose()
       })
@@ -354,19 +369,6 @@ export class HilosProfilePage {
       const name = this.binding().name
       this.name.set(name.get())
       onCleanup(subscribeSignal(name, (value) => this.name.set(value)))
-    })
-    // Change waits while the window asks whether the confirmation is needed.
-    effect((onCleanup) => {
-      const flow = this.rename()
-      if (flow === null) return
-      this.renameOpening.set(flow.stepUp.busy.get())
-      const off = subscribeSignal(flow.stepUp.busy, (value) =>
-        this.renameOpening.set(value),
-      )
-      onCleanup(() => {
-        off()
-        flow.dispose()
-      })
     })
     effect((onCleanup) => {
       const flow = this.email()

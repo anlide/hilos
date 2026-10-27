@@ -34,6 +34,8 @@ import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
+import * as profileNameState from '../../src/profile/profileNameState.js'
+import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
 const sourceRoot = join(packageRoot, 'src')
@@ -136,6 +138,32 @@ const accessLossTypes = ['AccessLossReason']
 /** The profile picker is one shared base/root implementation and type owner. */
 const timeZonePickerValues = ['createHilosTimeZonePicker']
 const timeZonePickerTypes = ['HilosTimeZonePicker', 'HilosTimeZonePickerRow']
+/** The held name snapshot has one eager owner, shared by root and base. */
+const profileNameStateValues = [
+  'bindProfileNameState',
+  'hilosProfileNameAccess',
+  'hilosProfileNameIdentity',
+  'hilosProfileNameState',
+  'hilosProfileNameStateKnown',
+  'profileNameStateSchema',
+  'SIGNAL_PROFILE_NAME_STATE',
+]
+const profileNameStateTypes = [
+  'HilosProfileNameChange',
+  'HilosProfileNameState',
+]
+/** Tab-local edit data has one owner without a runtime edge to the rename flow. */
+const profileRenameMemoryValues = [
+  'clearProfileRenameMemory',
+  'PROFILE_RENAME_BROWSER_VALUE',
+  'PROFILE_RENAME_MEMORY_STORAGE_KEY',
+  'profileRenameMemorySchema',
+  'readProfileRenameMemory',
+  'writeProfileRenameMemory',
+]
+const profileRenameMemoryTypes = ['HilosProfileRenameMemory']
+/** Detached edit data is shared by root and base, owned by the row session. */
+const rowEditTypes = ['HilosRowEditCheckpoint']
 /** The overview's new API belongs only to the lazy Analytics section. */
 const analyticsOverviewValues = [
   'ANALYTICS_OVERVIEW_SECTION',
@@ -419,6 +447,8 @@ const expectedValues = [
   ...momentValues,
   ...accessLossValues,
   ...timeZonePickerValues,
+  ...profileNameStateValues,
+  ...profileRenameMemoryValues,
   ...tableTextValues,
   ...tableFocusReturnValues,
   ...moderationValues,
@@ -675,6 +705,8 @@ describe('core public entries', () => {
       ...momentValues,
       ...accessLossValues,
       ...timeZonePickerValues,
+      ...profileNameStateValues,
+      ...profileRenameMemoryValues,
       ...tableTextValues,
       ...tableFocusReturnValues,
       ...moderationValues,
@@ -695,6 +727,14 @@ describe('core public entries', () => {
     expect(base.createHilosTimeZonePicker).toBe(
       timeZonePicker.createHilosTimeZonePicker,
     )
+    for (const name of profileNameStateValues) {
+      const owner: Record<string, unknown> = profileNameState
+      expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
+    }
+    for (const name of profileRenameMemoryValues) {
+      const owner: Record<string, unknown> = profileRenameMemory
+      expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
+    }
     for (const api of [core, base]) {
       expect(api).not.toHaveProperty('formatTimeZoneChoiceMoment')
       expect(api).not.toHaveProperty('formatSnapshotMoment')
@@ -837,6 +877,8 @@ describe('core public entries', () => {
     ).toEqual(
       [
         ...legacy.type,
+        'HilosProfileRenameState',
+        'HilosProfileRenameFlowOptions',
         'HilosAnalyticsPerson',
         'HilosDaemonEnvOrphansPageState',
         'HilosDaemonNodeOverviewData',
@@ -847,6 +889,9 @@ describe('core public entries', () => {
         ...momentTypes,
         ...accessLossTypes,
         ...timeZonePickerTypes,
+        ...profileNameStateTypes,
+        ...profileRenameMemoryTypes,
+        ...rowEditTypes,
         ...tableTextTypes,
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
@@ -866,6 +911,13 @@ describe('core public entries', () => {
       ...accessLossValues,
       ...timeZonePickerTypes,
       ...timeZonePickerValues,
+      ...profileNameStateTypes,
+      ...profileNameStateValues,
+      ...profileRenameMemoryTypes,
+      ...profileRenameMemoryValues,
+      'HilosProfileRenameState',
+      'HilosProfileRenameFlowOptions',
+      ...rowEditTypes,
       ...tableTextTypes,
       ...tableTextValues,
       ...tableFocusReturnTypes,
@@ -885,6 +937,14 @@ describe('core public entries', () => {
     const pickerExports = exportsOf('timeZone/timeZonePicker.ts')
     for (const name of [...timeZonePickerValues, ...timeZonePickerTypes]) {
       expect(root.get(name), name).toBe(pickerExports.get(name))
+    }
+    const nameStateExports = exportsOf('profile/profileNameState.ts')
+    for (const name of [...profileNameStateValues, ...profileNameStateTypes]) {
+      expect(root.get(name), name).toBe(nameStateExports.get(name))
+    }
+    const rowEditExports = exportsOf('conflict/rowEditSession.ts')
+    for (const name of rowEditTypes) {
+      expect(root.get(name), name).toBe(rowEditExports.get(name))
     }
     for (const name of ['formatTimeZoneChoiceMoment', 'formatSnapshotMoment']) {
       expect(momentExports.has(name), name).toBe(true)
@@ -1040,6 +1100,19 @@ describe('core public entries', () => {
     expect(closure).toContain('connection/restoreProgress.ts')
     expect(closure).toContain('format/moment.ts')
     expect(closure).toContain('timeZone/timeZonePicker.ts')
+    expect(closure).toContain('profile/profileNameState.ts')
+    expect(runtimeClosure('protocol/profileNameStateSignal.ts')).toEqual([
+      'protocol/profileNameStateSignal.ts',
+    ])
+    expect(runtimeClosure('session/sessionScope.ts')).not.toContain(
+      'profile/profileNameState.ts',
+    )
+    expect(closure).toContain('profile/profileRenameMemory.ts')
+    expect(runtimeClosure('profile/profileRenameMemory.ts')).toEqual([
+      'browser/browserStorage.ts',
+      'browser/browserValue.ts',
+      'profile/profileRenameMemory.ts',
+    ])
     expect(closure).toContain('table/tableTextExpansion.ts')
     expect(runtimeClosure('table/tableTextExpansion.ts')).toEqual([
       'state/signal.ts',
@@ -1072,6 +1145,13 @@ describe('core public entries', () => {
   it.each([
     'base/index.ts',
     'bootstrap/bootHilos.ts',
+    'conflict/rowEditSession.ts',
+    'profile/profileNameState.ts',
+    'profile/profileRename.ts',
+    'auth/stepUp.ts',
+    'profile/profileRenameMemory.ts',
+    'browser/browserValues.ts',
+    'protocol/profileNameStateSignal.ts',
     'routing/bindPageDeparture.ts',
     'session/accessLoss.ts',
     'session/sessionScope.ts',

@@ -17,6 +17,10 @@ import {
   profileFlowsSchema,
 } from '../profile/profileFlows.js'
 import {
+  SIGNAL_PROFILE_NAME_STATE,
+  profileNameStateSchema,
+} from '../protocol/profileNameStateSignal.js'
+import {
   SIGNAL_STEP_UP_CONFIRMED,
   stepUpConfirmedSchema,
 } from '../auth/stepUpConfirmed.js'
@@ -503,6 +507,7 @@ export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
   [SIGNAL_PROFILE_FLOWS]: profileFlowsSchema,
+  [SIGNAL_PROFILE_NAME_STATE]: profileNameStateSchema,
   [SIGNAL_STEP_UP_CONFIRMED]: stepUpConfirmedSchema,
   [SIGNAL_AUTH_METHODS]: authMethodsSchema,
   [SIGNAL_SECOND_FACTOR_POLICY]: secondFactorPolicySchema,

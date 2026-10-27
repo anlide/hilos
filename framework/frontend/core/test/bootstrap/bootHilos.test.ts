@@ -32,6 +32,11 @@ import {
 import { hilosToasts } from '../../src/state/toasts.js'
 import { hilosThemeMode, hilosThemePick } from '../../src/theme/themeState.js'
 import {
+  hilosProfileNameIdentity,
+  hilosProfileNameState,
+  hilosProfileNameStateKnown,
+} from '../../src/profile/profileNameState.js'
+import {
   hilosBrowserTimeZone,
   hilosOwnTimeZone,
   hilosTimeZone,
@@ -394,6 +399,74 @@ describe('bootHilos', () => {
       connection.listenerEvents.filter((event) => event === 'actionError'),
     ).toHaveLength(1)
   })
+
+  it.each([true, false])(
+    'holds synchronous open STATE before mount with configured session identity (STATE first: %s)',
+    (stateFirst) => {
+      const socket = scriptedSocket()
+      const { connection, actions } = createHilosConnection({
+        url: 'ws://test/ws',
+        webSocketFactory: () => socket.socket,
+      })
+      const scopes = new ScopeManager()
+      const change = {
+        requestId: 'before-mount',
+        name: 'New name',
+        phase: 'checking',
+        refusal: null,
+      }
+      const state = {
+        type: 'hilos_profile_name_state',
+        data: { userId: 7, change },
+      }
+      const connect = connection.connect.bind(connection)
+      const open = vi.spyOn(connection, 'connect').mockImplementation(() => {
+        expect(hilosProfileNameStateKnown.get()).toBe(false)
+        connect()
+        socket.open()
+        socket.message({ type: 'handshake', data: { build: 'test' } })
+        if (stateFirst) socket.message(state)
+        socket.message({
+          type: 'handshake_response',
+          data: {
+            data: { accountStanding: null },
+            entities: {
+              currentUser: { id: 99, name: 'Other slot' },
+              me: { id: 7, name: 'Current person' },
+            },
+          },
+        })
+        if (!stateFirst) socket.message(state)
+        expect(hilosProfileNameIdentity.get()).toBe(7)
+        expect(hilosProfileNameState.get()).toEqual({ userId: 7, change })
+        expect(hilosProfileNameStateKnown.get()).toBe(true)
+      })
+      try {
+        bootHilos({
+          connection,
+          actions,
+          scopes,
+          viewLayer: 'vue',
+          router: createAppPageRouter({ main: { path: '/', admin: false } }),
+          session: { currentUserSlot: 'me', currentUserEntityType: 'person' },
+          navigationEnvironment: fakeNavigation('/'),
+        })
+        // Only now could a page mount. It reads the already held answer.
+        expect(hilosProfileNameState.get()).toEqual({ userId: 7, change })
+        expect(scopes.session.data.signal('me').get()).toEqual({
+          type: 'person',
+          id: 7,
+        })
+        expect(open).toHaveBeenCalledOnce()
+        expect(socket.sent).toEqual([
+          { type: 'page_subscribe', page: 'main', params: {} },
+        ])
+      } finally {
+        open.mockRestore()
+        connection.close()
+      }
+    },
+  )
 
   it("binds the reader's zone before connect after session scope, for the configured slot", () => {
     reportZone('Europe/Warsaw')

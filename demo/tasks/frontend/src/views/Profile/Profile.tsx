@@ -1,21 +1,26 @@
 // The profile root (HilosPages.PROFILE, /profile, HIL-1169): a thin project
 // binding of the framework HilosProfilePage to this app's connection, scopes and
 // action lifecycle. The page, its rows and its windows are the framework's; this
-// app hands it the session's name only — the framework list supplies ways in;
-// this app keeps no sessions or devices summary lists.
+// app supplies the session's name and standard rename binding. The framework
+// list supplies ways in; this app keeps no sessions or devices summary lists.
 import {
+  createHilosProfileRename,
   type HilosProfileBinding,
   type HilosProfilePageContext,
 } from '@hilos/core/base'
 import { HilosProfilePage } from '@hilos/react/base'
 
-import { actions, connection } from '../../bootstrap/connection.js'
+import {
+  actionErrors,
+  actions,
+  connection,
+} from '../../bootstrap/connection.js'
 import { currentUserName, scopes } from '../../bootstrap/session.js'
 
 const context: HilosProfilePageContext = { connection, scopes, actions }
 const binding: HilosProfileBinding = {
   name: currentUserName,
-  rename: null,
+  rename: createHilosProfileRename(connection, actionErrors),
   sessionCount: null,
   deviceCount: null,
 }

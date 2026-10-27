@@ -64,6 +64,7 @@ use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Collection\HilosProbeFleetStatuses;
 use Hilos\Runtime\View\Collection\HilosModerationChecks;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
+use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
 use Hilos\Runtime\View\Collection\HilosProbeNotes;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
@@ -101,6 +102,8 @@ use OutOfBoundsException;
  * @property-read HilosCodeSendAttempts $hilosCodeSendAttempts Per-session code send attempts, mounted for a project that declares HilosFeature::AUTH
  * @property-read HilosOAuthTrips $hilosOAuthTrips Provider sign-ins tabs are waiting on, mounted for a project that declares HilosFeature::AUTH
  * @property-read HilosProfileFlows $hilosProfileFlows Profile windows half-way through, mounted for a project that declares HilosFeature::AUTH
+ * @property-read HilosProfileNameChanges $hilosProfileNameChanges Session name-change attempts,
+ *     mounted for a project that declares HilosFeature::AUTH
  * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE
  * @property-read HilosUploads $hilosUploads Files connections are sending or have sent, mounted for a project that declares HilosFeature::UPLOADS
  * @property-read HilosModerationChecks $hilosModerationChecks Checks connections are waiting on, mounted for MODERATION

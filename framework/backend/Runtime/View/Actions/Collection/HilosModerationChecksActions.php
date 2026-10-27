@@ -17,6 +17,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -25,6 +26,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Collection\HilosModerationChecks as StateHilosModerationChecks;
 use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Runtime\View\Actions\Item\HilosModerationCheckActions;
 use Hilos\Runtime\View\Collection\HilosModerationChecks;
 use Hilos\Runtime\View\Item\HilosModerationCheck;
@@ -51,10 +53,9 @@ final class HilosModerationChecksActions extends RtActions
     /**
      * Opens a check of one kind on one connection.
      *
-     * Everything the row carries beyond the call is fixed here: a fresh request id, the opening
-     * moment, the deadline the check timeout setting gives it now, and the verdict recipient the
-     * kind names. The caller hands over what the kind looks at - the text for a text kind, the
-     * complete upload for an image kind - and nothing else.
+     * Connection-bound checks draw a request id and fix their deadline from the current setting.
+     * A session-bound name check keeps the accepted attempt's id and moments, only while its
+     * current, fresh checking row matches. Its origin connection need no longer be live.
      *
      * No check of the whole collection precedes the creation: the creation door judges the new row
      * by the set it is born in, so an initiator brings into being the checks of its own set alone.
@@ -64,10 +65,13 @@ final class HilosModerationChecksActions extends RtActions
      * @param string $kind Moderation kind key
      * @param ?string $text Text to check, for a kind that looks at text
      * @param ?string $clientUploadId Complete upload on the same connection, for a kind that looks at an image
+     * @param ?string $sessionTokenHash Accepted name-change session hash, or null for a connection-bound check
+     * @param ?string $requestId Accepted name-change request id, required with a session hash
+     * @param ?int $deadlineAt Accepted name-change deadline in epoch milliseconds, required with a session hash
      * @return HilosModerationCheck The opened check
-     * @throws InvalidStateException When the project does not declare moderation
+     * @throws InvalidStateException When moderation is off or the accepted name-change row is absent, stale or mismatched
      * @throws InvalidArgumentException When the person is not a positive id, the kind is not one the project declares,
-     *     the input does not match what the kind looks at, or the project's kind directory is malformed
+     *     the input or session correlation does not match, or the project's kind directory is malformed
      * @throws ValidationException When the kind looks at text with files, which a check cannot carry yet
      * @throws DuplicateValueException When the connection already waits on a check of this kind
      * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
@@ -88,6 +92,9 @@ final class HilosModerationChecksActions extends RtActions
         string $kind,
         ?string $text = null,
         ?string $clientUploadId = null,
+        ?string $sessionTokenHash = null,
+        ?string $requestId = null,
+        ?int $deadlineAt = null,
     ): HilosModerationCheck {
         if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
             throw new InvalidStateException('A moderation check is opened only in a project that declares HilosFeature::MODERATION');
@@ -102,19 +109,48 @@ final class HilosModerationChecksActions extends RtActions
             throw new DuplicateValueException('This connection is already waiting on a check of this kind.');
         }
 
-        $settings = Hilos::$setting
-            ?? throw new SettingAccessorUnavailableException('Settings accessor is not initialized');
         $startedAt = TimeHelper::nowMs();
+        if ($sessionTokenHash === null) {
+            if ($requestId !== null || $deadlineAt !== null) {
+                throw new InvalidArgumentException('A correlated name check must name its accepted session attempt.');
+            }
+            $settings = Hilos::$setting
+                ?? throw new SettingAccessorUnavailableException('Settings accessor is not initialized');
+            $requestId = RandomHelper::secureHex(self::REQUEST_ID_BYTES);
+            $deadlineAt = $startedAt + $settings[ModerationSettingsCatalog::CHECK_TIMEOUT_SEC]->int() * TimeConstants::MS_PER_SECOND;
+        } else {
+            if (
+                $sessionTokenHash === '' || $requestId === null || $requestId === '' || $deadlineAt === null
+                || $kind !== ModerationKindKey::PROFILE_NAME || !Hilos::hasFeature(HilosFeature::AUTH)
+            ) {
+                throw new InvalidArgumentException('Only an accepted profile name attempt may open a session-bound check.');
+            }
+            if (
+                Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash] === null
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->staleSince() !== null
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->userId !== $userId
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->requestId !== $requestId
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->name !== $text
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->originAcceptKey !== $acceptKey
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->phase !== HilosProfileNameChange::PHASE_CHECKING
+                || Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->deadlineAt !== $deadlineAt
+                || $deadlineAt <= $startedAt
+            ) {
+                throw new InvalidStateException('The accepted name-change attempt is unavailable or no longer matches this check.');
+            }
+            $startedAt = Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash]->startedAt;
+        }
         $state = StateHilosModerationCheck::create(
             $acceptKey,
             $userId,
             $kind,
-            RandomHelper::secureHex(self::REQUEST_ID_BYTES),
+            $requestId,
             $declared->verdictTo,
             $text,
             $clientUploadId,
             $startedAt,
-            $startedAt + $settings[ModerationSettingsCatalog::CHECK_TIMEOUT_SEC]->int() * TimeConstants::MS_PER_SECOND,
+            $deadlineAt,
+            $sessionTokenHash,
         );
         $this->addStateToCollection($state);
 

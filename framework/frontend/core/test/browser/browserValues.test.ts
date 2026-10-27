@@ -5,6 +5,13 @@ import {
   eraseBrowserValues,
   HILOS_BROWSER_VALUES,
 } from '../../src/browser/browserValues.js'
+import { onBrowserValueErased } from '../../src/browser/browserValueChanges.js'
+import {
+  PROFILE_RENAME_BROWSER_VALUE,
+  PROFILE_RENAME_MEMORY_STORAGE_KEY,
+  readProfileRenameMemory,
+  writeProfileRenameMemory,
+} from '../../src/profile/profileRenameMemory.js'
 import {
   THEME_PICK_STORAGE_KEY,
   THEME_SETTINGS_STORAGE_KEY,
@@ -85,13 +92,27 @@ describe('the framework registry', () => {
   it('is assembled with no browser anywhere in sight', () => {
     // The whole module graph was imported by this file with none of the three
     // globals installed: /privacy is prerendered, and a declaration is data.
-    expect(HILOS_BROWSER_VALUES).toHaveLength(6)
+    expect(HILOS_BROWSER_VALUES).toHaveLength(7)
     expect(HILOS_BROWSER_VALUES.map((value) => value.key)).toContain(
       THEME_PICK_STORAGE_KEY,
     )
     expect(HILOS_BROWSER_VALUES.map((value) => value.key)).toContain(
       THEME_SETTINGS_STORAGE_KEY,
     )
+  })
+
+  it('declares the exact name window key, store and label beside its writer', () => {
+    expect(PROFILE_RENAME_BROWSER_VALUE).toEqual({
+      store: 'session',
+      key: 'hilos.profile.rename.window',
+      label: 'Name change window',
+    })
+    expect(
+      HILOS_BROWSER_VALUES.filter(
+        (value) => value.key === PROFILE_RENAME_MEMORY_STORAGE_KEY,
+      ),
+    ).toEqual([PROFILE_RENAME_BROWSER_VALUE])
+    expect(HILOS_BROWSER_VALUES).toContain(PROFILE_RENAME_BROWSER_VALUE)
   })
 
   it('names every value in a line a person can read', () => {
@@ -134,6 +155,41 @@ describe('eraseBrowserValues', () => {
     ).toBeNull()
     expect(swept).toContain('Your theme choice in this browser')
     expect(swept).toContain('Remembered theme settings for this site')
+  })
+
+  it('erases the name checkpoint and announces its key through the shared channel', () => {
+    writeProfileRenameMemory({
+      version: 1,
+      userId: 42,
+      open: true,
+      step: 'form',
+      draft: 'Unsaved',
+      checkpoint: {
+        baseline: { values: { name: 'Original' }, refreshed: [] },
+        form: 'Unsaved',
+        awaitingOccupation: false,
+      },
+      requestId: 'rename-1',
+    })
+    expect(readProfileRenameMemory()).not.toBeNull()
+    globalThis.localStorage.setItem('project.key', 'untouched')
+    const erased: string[] = []
+    const stop = onBrowserValueErased((key) => erased.push(key))
+    try {
+      const swept = eraseBrowserValues(HILOS_BROWSER_VALUES, noCookieName)
+
+      expect(swept).toContain('Name change window')
+      expect(
+        erased.filter((key) => key === PROFILE_RENAME_MEMORY_STORAGE_KEY),
+      ).toEqual(['hilos.profile.rename.window'])
+      expect(
+        globalThis.sessionStorage.getItem(PROFILE_RENAME_MEMORY_STORAGE_KEY),
+      ).toBeNull()
+      expect(readProfileRenameMemory()).toBeNull()
+      expect(globalThis.localStorage.getItem('project.key')).toBe('untouched')
+    } finally {
+      stop()
+    }
   })
 
   it('takes a session key out of session storage and nowhere else', () => {

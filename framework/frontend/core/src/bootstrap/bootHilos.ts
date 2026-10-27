@@ -33,6 +33,7 @@ import {
 import { isAuthReturnPath } from '../auth/authRoutes.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindProfileFlows } from '../profile/profileFlows.js'
+import { bindProfileNameState } from '../profile/profileNameState.js'
 import { bindStepUpConfirmed } from '../auth/stepUpConfirmed.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindAccessLoss } from '../session/accessLoss.js'
@@ -148,6 +149,9 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // any page mounts its window - a window opened after a reload reads the step it
   // stands on from what was held here.
   bindProfileFlows(config.connection)
+  // Name attempts are complete session snapshots too. Hold the first answer
+  // before a page mounts, against the same configured identity as its session.
+  bindProfileNameState(config.connection, config.scopes, config.session)
   // The identity confirmations of the session (HIL-1330) are told on the
   // handshake as well, before the page has mounted any window: a confirmation
   // step left open while the tab was away passes on the frame that arrives here.

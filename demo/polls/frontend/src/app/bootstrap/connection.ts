@@ -15,7 +15,7 @@ import { createHilosConnection } from '@hilos/core/base'
 
 import { GUEST_SIGNAL_SCHEMAS } from './guest'
 
-export const { connection, actions } = createHilosConnection({
+export const { connection, actions, actionErrors } = createHilosConnection({
   // The one inbound signal this project mounts: the display name of a session
   // that carries no account (HIL-611). The framework's own, sign-in ones
   // included, are merged by createHilosConnection (HIL-1150).

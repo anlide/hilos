@@ -889,10 +889,21 @@ export {
   HILOS_PROFILE_RENAME_COPY,
   PROFILE_NAME_SET_ACTION,
   type HilosProfileRename,
+  type HilosProfileRenameState,
+  type HilosProfileRenameFlowOptions,
   type HilosProfileRenameFields,
   type HilosProfileRenameFlow,
   type HilosProfileRenameStep,
 } from './profile/profileRename.js'
+export {
+  clearProfileRenameMemory,
+  PROFILE_RENAME_BROWSER_VALUE,
+  PROFILE_RENAME_MEMORY_STORAGE_KEY,
+  profileRenameMemorySchema,
+  readProfileRenameMemory,
+  writeProfileRenameMemory,
+  type HilosProfileRenameMemory,
+} from './profile/profileRenameMemory.js'
 export {
   clampHilosPhotoCrop,
   hilosPhotoSourceSquare,
@@ -983,6 +994,17 @@ export {
   SIGNAL_PROFILE_FLOWS,
   type HilosProfileFlowState,
 } from './profile/profileFlows.js'
+export {
+  bindProfileNameState,
+  hilosProfileNameAccess,
+  hilosProfileNameIdentity,
+  hilosProfileNameState,
+  hilosProfileNameStateKnown,
+  profileNameStateSchema,
+  SIGNAL_PROFILE_NAME_STATE,
+  type HilosProfileNameChange,
+  type HilosProfileNameState,
+} from './profile/profileNameState.js'
 export { qrMatrix } from './auth/qrMatrix.js'
 export {
   createBrowserPushEnvironment,
@@ -1465,6 +1487,7 @@ export {
   HILOS_ROW_EDIT_COPY,
   type HilosActionRun,
   type HilosRowEdit,
+  type HilosRowEditCheckpoint,
   type HilosRowEditFormHolder,
   type HilosRowEditNotice,
   type HilosRowEditOptions,

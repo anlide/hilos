@@ -14,7 +14,24 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Item\HilosProfileNameChange;
+use Hilos\Runtime\View\Item\HilosModerationCheck;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\ProfileNameStateSignalData;
+use Hilos\Database\Object\Item\UserRename as ObjectUserRename;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -22,6 +39,9 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -87,6 +107,8 @@ use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
+use ReflectionProperty;
+use SplQueue;
 use Throwable;
 
 /**
@@ -112,6 +134,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?NotificationsLibraryAgent Library the notification tables live in, built on first use */
     private ?NotificationsLibraryAgent $notificationsLibrary = null;
+
+    /** @var ?ChatAgent Socket holder used by the session-name fixture in this case */
+    private ?ChatAgent $profileNameHolder = null;
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -375,9 +400,7 @@ abstract class IntegrationTestCase extends TestCase
             }
         }
 
-        foreach ($rest as $signal) {
-            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
-        }
+        $this->restoreQueuedSignals($rest);
 
         return $outcome;
     }
@@ -477,9 +500,7 @@ abstract class IntegrationTestCase extends TestCase
             $written++;
         }
 
-        foreach ($rest as $signal) {
-            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
-        }
+        $this->restoreQueuedSignals($rest);
 
         return $written;
     }
@@ -495,7 +516,10 @@ abstract class IntegrationTestCase extends TestCase
      * id of the agent it is addressed to. The loop re-reads the queue, so a chain is carried in one
      * pass; everything else goes back in the order it was taken off.
      *
-     * @return int Frames carried
+     * Session-name admission, source callbacks and completion are carried as well when that
+     * fixture is active. They do not count as person frames: checking must still return zero.
+     *
+     * @return int Person ask/reply frames carried
      * @throws HilosException When a frame's handler fails
      * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
      * @throws InvalidArgumentException When a signal put back on the queue has no name
@@ -508,6 +532,49 @@ abstract class IntegrationTestCase extends TestCase
             $name = $signal->signalName->getName();
             $data = $signal->data;
             $frame = $data instanceof AgentSignalData ? $data->data : null;
+            if ($this->profileNameHolder !== null) {
+                if ($data instanceof AgentSignalData && in_array($name, [
+                    HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN,
+                    HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE,
+                    HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE,
+                ], true)) {
+                    $library = $this->sessionsLibrary();
+                    $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+
+                    continue;
+                }
+                if ($data instanceof AgentSignalData && $name === HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE) {
+                    $library = $this->usersLibrary();
+                    $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+
+                    continue;
+                }
+                if ($frame instanceof SessionStateSignalData) {
+                    $this->profileNameHolder->onSignalAgent($data, '', $name);
+
+                    continue;
+                }
+                if (($data instanceof DbSyncUpdatedSignalData || $data instanceof DbSyncDeletedSignalData)
+                    && $data->collectionKey === HilosDbContext::sessions) {
+                    $library = $this->sessionsLibrary();
+                    $this->underAgent($library, static fn () => $data instanceof DbSyncUpdatedSignalData
+                        ? $library->onSignalDbSyncUpdated($data, SignalSource::DB, SignalConstants::DB_SYNC_UPDATED)
+                        : $library->onSignalDbSyncDeleted($data, SignalSource::DB, SignalConstants::DB_SYNC_DELETED));
+
+                    continue;
+                }
+                // Like WorkerManager::dispatchSyncToLocalAgents(), deliver the local source
+                // fact without applying its own echo. The protocol runs from these callbacks.
+                if (($data instanceof RtSyncCreatedSignalData || $data instanceof RtSyncUpdatedSignalData)
+                    && $data->collectionKey === StateHilosProfileNameChange::RT_COLLECTION) {
+                    $library = $this->usersLibrary();
+                    $this->underAgent($library, static fn () => $data instanceof RtSyncCreatedSignalData
+                        ? $library->onSignalRtSyncCreated($data, SignalSource::RT, SignalConstants::RT_SYNC_CREATED)
+                        : $library->onSignalRtSyncUpdated($data, SignalSource::RT, SignalConstants::RT_SYNC_UPDATED));
+
+                    continue;
+                }
+            }
             if (
                 $frame instanceof UserRenameSignalData
                 || $frame instanceof UserAdminWriteSignalData
@@ -572,11 +639,118 @@ abstract class IntegrationTestCase extends TestCase
             $carried++;
         }
 
-        foreach ($rest as $signal) {
-            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
-        }
+        $this->restoreQueuedSignals($rest);
 
         return $carried;
+    }
+
+    /**
+     * Submits an own-name action from a real authenticated browser with CHANGE_NAME proof.
+     *
+     * @param int $userId Person submitting their own name
+     * @param string $acceptKey Origin connection
+     * @param string $name Requested name, including an equal-name no-op
+     * @return HilosProfileNameChange Attempt admitted by the sessions holder
+     */
+    protected function submitProfileNameChange(int $userId, string $acceptKey, string $name): HilosProfileNameChange
+    {
+        $this->profileNameHolder ??= new ChatAgent();
+        Hilos::initBrowser();
+        $token = RandomHelper::hex(16);
+        $this->deliverHandshake($this->profileNameHolder, new WebSocketHandshakeSignalDTO(
+            headers: [], acceptKey: $acceptKey, cookies: [], clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(), sessionToken: $token,
+        ));
+        $this->authenticateSession($this->profileNameHolder, $token, $userId, null);
+        $session = $this->sessionOf($acceptKey);
+        self::assertNotNull($session);
+        $hash = ProtectedModeRuntime::hashSessionToken($session->token);
+        Hilos::$db->stepUps->actions->confirm(
+            $hash, $userId, StepUpOperationKey::CHANGE_NAME, date('Y-m-d H:i:s', time() + 3600),
+        );
+        $this->drainSignals();
+        $oldName = Hilos::$db->users[$userId]->name;
+        $events = count(Hilos::$db->events);
+        $renames = count(Hilos::$db->userRenames->whereColumnIs(ObjectUserRename::userId, $userId));
+        $library = $this->usersLibrary();
+        $previousAcceptKey = ExecutionContext::currentAcceptKey();
+        ExecutionContext::setCurrentAcceptKey($acceptKey);
+        try {
+            $this->underAgent($library, static fn () => $library->onAgentAction(
+                $acceptKey, HilosSignalConstants::PROFILE_NAME_SET, new ProfileNameSetActionDTO($name),
+            ));
+            self::assertSame(0, $this->deliverPersonAgentFrames(), 'Admission sends no person-owner ask');
+        } finally {
+            ExecutionContext::setCurrentAcceptKey($previousAcceptKey);
+        }
+        self::assertSame($oldName, Hilos::$db->users[$userId]->name);
+        self::assertCount($events, Hilos::$db->events);
+        self::assertCount($renames, Hilos::$db->userRenames->whereColumnIs(ObjectUserRename::userId, $userId));
+        $change = Hilos::$rt->hilosProfileNameChanges[$hash];
+        self::assertNotNull($change);
+        self::assertSame($userId, $change->userId);
+        self::assertSame($acceptKey, $change->originAcceptKey);
+        self::assertSame($name, $change->name);
+
+        return $change;
+    }
+
+    /**
+     * Reaches the checking boundary through admission and its committed RT source callback.
+     *
+     * @param int $userId Person submitting their own name
+     * @param string $acceptKey Origin connection
+     * @param string $name Requested different name
+     * @return HilosModerationCheck Actual queue row correlated with the holder's accepted attempt
+     */
+    protected function beginProfileNameCheck(int $userId, string $acceptKey, string $name): HilosModerationCheck
+    {
+        $change = $this->submitProfileNameChange($userId, $acceptKey, $name);
+        self::assertSame(StateHilosProfileNameChange::PHASE_CHECKING, $change->phase);
+        $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_NAME);
+        self::assertNotNull($check);
+        self::assertSame($name, $check->text);
+        self::assertSame($userId, $check->userId);
+        self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $check->verdictTo);
+        self::assertSame($change->sessionTokenHash, $check->sessionTokenHash);
+        self::assertSame($change->requestId, $check->requestId);
+        self::assertNotNull($check->deadlineAt);
+        self::assertSame($change->deadlineAt, $check->deadlineAt);
+        $this->assertProfileNamePhase($acceptKey, StateHilosProfileNameChange::PHASE_CHECKING);
+
+        return $check;
+    }
+
+    /**
+     * @param string $acceptKey Connection whose current session owns the attempt
+     * @param string $phase Expected accepted phase, also delivered to the browser session
+     */
+    protected function assertProfileNamePhase(string $acceptKey, string $phase): void
+    {
+        $session = $this->sessionOf($acceptKey);
+        self::assertNotNull($session);
+        $change = Hilos::$rt->hilosProfileNameChanges[ProtectedModeRuntime::hashSessionToken($session->token)];
+        self::assertNotNull($change);
+        self::assertSame($phase, $change->phase);
+        $signals = [];
+        $lastState = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_PROFILE_NAME_STATE
+                && $signal->data instanceof WebSocketSignalData
+                && $signal->data->targetSessionTokenHash === $change->sessionTokenHash) {
+                $lastState = $signal->data->data;
+            }
+        }
+        $this->restoreQueuedSignals($signals);
+        self::assertInstanceOf(ProfileNameStateSignalData::class, $lastState);
+        self::assertSame($change->userId, $lastState->userId);
+        self::assertSame([
+            ProfileNameStateSignalData::REQUEST_ID => $change->requestId,
+            ProfileNameStateSignalData::NAME => $change->name,
+            ProfileNameStateSignalData::PHASE => $phase,
+            ProfileNameStateSignalData::REFUSAL => $change->refusal,
+        ], $lastState->change);
     }
 
     /**
@@ -683,6 +857,34 @@ abstract class IntegrationTestCase extends TestCase
      */
     protected function tearDown(): void
     {
+        if ($this->profileNameHolder !== null) {
+            $sessions = $this->sessionsLibrary();
+            $this->underAgent($sessions, static function (): void {
+                foreach (Hilos::$rt->hilosProfileNameChanges as $change) {
+                    $change->actions->drop();
+                }
+            });
+            $users = $this->usersLibrary();
+            $this->underAgent($users, static function (): void {
+                foreach (Hilos::$rt->hilosModerationChecks as $check) {
+                    if ($check->kind === ModerationKindKey::PROFILE_NAME) {
+                        $check->actions->forget();
+                    }
+                }
+            });
+            foreach ([$this->usersLibrary, $this->sessionsLibrary, $this->notificationsLibrary, ...$this->personAgents] as $agent) {
+                if ($agent === null) {
+                    continue;
+                }
+                try {
+                    $this->underAgent($agent, static fn () => $agent->onStop());
+                } finally {
+                    TruthSourceRegistry::unregisterAgent($agent->getId());
+                    RtTruthSourceRegistry::unregisterAgent($agent->getId());
+                    SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+                }
+            }
+        }
         $owed = Database::handlerEnd();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
@@ -690,6 +892,25 @@ abstract class IntegrationTestCase extends TestCase
 
         if ($owed !== []) {
             self::fail(implode("\n", array_map(static fn (Throwable $failure): string => $failure->getMessage(), $owed)));
+        }
+    }
+
+    /**
+     * Restores untouched envelopes in order, including analytics metadata and receipt stamps.
+     *
+     * @param list<SignalDTO> $signals Frames this carrier did not consume
+     */
+    private function restoreQueuedSignals(array $signals): void
+    {
+        if ($signals === []) {
+            return;
+        }
+        // The public queueSignal API constructs a new envelope from the current context;
+        // this test harness must put back the original envelope with its original metadata.
+        $queue = new ReflectionProperty(SignalRouter::class, 'queuedSignals')->getValue(Hilos::$sr);
+        self::assertInstanceOf(SplQueue::class, $queue);
+        foreach ($signals as $signal) {
+            $queue->enqueue($signal);
         }
     }
 }

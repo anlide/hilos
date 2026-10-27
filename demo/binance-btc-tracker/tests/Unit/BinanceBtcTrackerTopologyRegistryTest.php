@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\BinanceBtcTracker\Tests\Unit;
 
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\PersonPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionsPage;
@@ -234,6 +236,27 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
+    public function testSessionNameChangesHaveOneAuthSessionOwner(): void
+    {
+        self::assertContains(HilosFeature::AUTH, Hilos::features());
+        $owners = [];
+        foreach (Hilos::AGENTS as $type => $entry) {
+            $workerClass = AgentRegistry::workerClass($entry);
+            if ($workerClass === null) {
+                continue;
+            }
+            $claims = OwnershipDeclaration::rtCollectionsOf($workerClass);
+            if (!array_key_exists(HilosProfileNameChange::RT_COLLECTION, $claims)) {
+                continue;
+            }
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+            $owners[$type] = $claims[HilosProfileNameChange::RT_COLLECTION]->asList();
+        }
+        self::assertSame([
+            HilosAgentType::HILOS_SESSIONS_LIBRARY => TruthSourceOperation::ALL,
+        ], $owners);
+    }
+
     public function testLetterFrameUsesTheExistingIndexOwnerWithoutTablesOrMutations(): void
     {
         self::assertSame(CommunicationsChannelFramePage::class, Hilos::PAGES[CommunicationsChannelFramePage::PAGE]);
@@ -1287,6 +1310,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1328,6 +1353,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,

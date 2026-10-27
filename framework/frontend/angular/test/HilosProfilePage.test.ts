@@ -14,6 +14,8 @@ import {
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
+  PROFILE_RENAME_MEMORY_STORAGE_KEY,
+  readProfileRenameMemory,
   resolveHilosProfileSignInMethods,
   ScopeManager,
   setHilosThemePick,
@@ -27,9 +29,10 @@ import {
   type ThemePick,
   type ThemeSettings,
 } from '@hilos/core'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfilePage } from '../src/profile/HilosProfilePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { profileNameStatus, profileRenameTab } from './profileRenameHarness.js'
 
 const themeActions = {
   dispatch: () => ({
@@ -41,15 +44,21 @@ const themeActions = {
 let releaseTheme: (() => void) | undefined
 let releaseSession: (() => void) | undefined
 let mounted: ComponentFixture<HilosProfilePage> | undefined
+const renameDisposers: Array<() => void> = []
+
+beforeEach(() => sessionStorage.clear())
 
 afterEach(() => {
   mounted?.destroy()
   mounted = undefined
+  for (const stop of renameDisposers.splice(0).reverse()) stop()
   document.body.innerHTML = ''
   releaseTheme?.()
   releaseTheme = undefined
   releaseSession?.()
   releaseSession = undefined
+  sessionStorage.clear()
+  TestBed.resetTestingModule()
   setHilosThemePick(null)
   const restore = bindThemeState(
     { on: () => () => {} } as unknown as HilosConnection,
@@ -236,6 +245,88 @@ function nameOnly(): HilosProfileBinding {
     sessionCount: null,
     deviceCount: null,
   }
+}
+
+function standardRenamePage(
+  known = true,
+  options: Parameters<typeof profileRenameTab>[1] = {},
+) {
+  TestBed.resetTestingModule()
+  const tab = profileRenameTab(known, options)
+  let active = true
+  const dispose = (): void => {
+    if (!active) return
+    active = false
+    tab.dispose()
+  }
+  renameDisposers.push(dispose)
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+  })
+  const fixture = TestBed.createComponent(HilosProfilePage)
+  mounted = fixture
+  fixture.componentRef.setInput('context', tab.context)
+  fixture.componentRef.setInput('binding', tab.binding)
+  fixture.detectChanges()
+  const root = fixture.nativeElement as HTMLElement
+  const query = (id: string): HTMLElement | null =>
+    root.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  const node = (id: string): HTMLElement => {
+    const found = query(id)
+    if (!found) throw new Error(`Missing ${id}`)
+    return found
+  }
+  return {
+    ...tab,
+    fixture,
+    node,
+    exists: (id: string) => query(id) !== null,
+    unmount() {
+      fixture.destroy()
+      if (mounted === fixture) mounted = undefined
+    },
+    dispose,
+  }
+}
+
+async function settleProfile(
+  fixture: ComponentFixture<unknown>,
+): Promise<void> {
+  await fixture.whenStable()
+  fixture.detectChanges()
+}
+
+function editName(
+  node: (id: string) => HTMLElement,
+  fixture: ComponentFixture<unknown>,
+  value: string,
+): void {
+  const field = node('profile-name-input') as HTMLInputElement
+  field.value = value
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+  fixture.detectChanges()
+}
+
+async function openStandardName(page: ReturnType<typeof standardRenamePage>) {
+  page.node('profile-edit').click()
+  await settleProfile(page.fixture)
+}
+
+async function sendStandardName(page: ReturnType<typeof standardRenamePage>) {
+  await openStandardName(page)
+  editName(page.node, page.fixture, 'Bob')
+  page.node('profile-rename-save').click()
+  await settleProfile(page.fixture)
+  expect(page.names()).toHaveLength(1)
+}
+
+async function dismissStandardName(
+  page: ReturnType<typeof standardRenamePage>,
+) {
+  page.node('profile-rename-cancel').click()
+  page.fixture.detectChanges()
+  page.node('modal-confirm-discard').click()
+  await settleProfile(page.fixture)
 }
 
 it('shows the name without Change and the sections in catalog order when the project hands no rename', () => {
@@ -637,3 +728,281 @@ it.each(['off', 'signout', 'impersonation'] as const)(
     expect(document.querySelector('[data-id="profile-theme-modal"]')).toBeNull()
   },
 )
+
+describe('the standard name window tab lifecycle', () => {
+  it('restores an open draft only after this page knows its owner and STATE', async () => {
+    const first = standardRenamePage()
+    await openStandardName(first)
+    editName(first.node, first.fixture, ' x ')
+    first.unmount()
+    expect(readProfileRenameMemory()?.open).toBe(true)
+    expect(readProfileRenameMemory()?.draft).toBe(' x ')
+    first.dispose()
+
+    const second = standardRenamePage(false)
+    await settleProfile(second.fixture)
+    expect(second.exists('modal')).toBe(false)
+    expect(second.exists('profile-view')).toBe(false)
+    expect(readProfileRenameMemory()?.open).toBe(true)
+    second.identity()
+    await settleProfile(second.fixture)
+    expect(second.exists('modal')).toBe(false)
+    second.state(null)
+    await settleProfile(second.fixture)
+
+    expect(second.node('profile-name-input')).toBeDefined()
+    expect((second.node('profile-name-input') as HTMLInputElement).value).toBe(
+      ' x ',
+    )
+    expect(
+      (second.node('profile-rename-save') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(first.names()).toHaveLength(0)
+    expect(second.names()).toHaveLength(0)
+    expect(
+      second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+    ).toHaveLength(1)
+  })
+
+  it.each(['checking', 'applying'] as const)(
+    'restores open %s and a newer draft without another name send or step-up start',
+    async (phase) => {
+      const first = standardRenamePage()
+      await sendStandardName(first)
+      first.state(phase)
+      editName(first.node, first.fixture, 'Carol')
+      first.unmount()
+      first.dispose()
+      expect(readProfileRenameMemory()?.open).toBe(true)
+
+      const second = standardRenamePage(false)
+      second.identity()
+      second.state(phase)
+      await settleProfile(second.fixture)
+      expect(
+        (second.node('profile-name-input') as HTMLInputElement).value,
+      ).toBe('Carol')
+      expect(profileNameStatus().textContent?.trim()).toBe(
+        phase === 'checking' ? 'Checking your name…' : '',
+      )
+      expect(second.node('profile-name').textContent?.trim()).toBe('Ann')
+      expect(
+        (second.node('profile-rename-save') as HTMLButtonElement).disabled,
+      ).toBe(true)
+      expect(second.names()).toHaveLength(0)
+      expect(
+        second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+      ).toHaveLength(0)
+
+      second.identity(1, 'Bob')
+      second.state('done')
+      await settleProfile(second.fixture)
+      expect(
+        (second.node('profile-name-input') as HTMLInputElement).value,
+      ).toBe('Carol')
+      expect(second.exists('profile-edit-notice')).toBe(false)
+      expect(
+        second.node('profile-edit-notice-idle').getAttribute('aria-hidden'),
+      ).toBe('true')
+      expect(
+        (second.node('profile-rename-save') as HTMLButtonElement).disabled,
+      ).toBe(false)
+    },
+  )
+
+  it('restores the exact refusal without sending the name again', async () => {
+    const first = standardRenamePage()
+    await sendStandardName(first)
+    first.state('refused')
+    first.unmount()
+    first.dispose()
+
+    const second = standardRenamePage(false)
+    second.identity()
+    second.state('refused')
+    await settleProfile(second.fixture)
+    expect((second.node('profile-name-input') as HTMLInputElement).value).toBe(
+      'Bob',
+    )
+    expect(
+      second.node('profile-rename-live-assertive').textContent?.trim(),
+    ).toBe('Exact server refusal.\nTry another name.')
+    expect(
+      (second.node('profile-rename-save') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    expect(second.names()).toHaveLength(0)
+  })
+
+  it.each(['refused', 'done'] as const)(
+    'keeps an explicit close through remount and late %s until manual Change',
+    async (phase) => {
+      const first = standardRenamePage()
+      await sendStandardName(first)
+      first.state('checking')
+      await dismissStandardName(first)
+      expect(readProfileRenameMemory()?.open).toBe(false)
+      first.unmount()
+      first.dispose()
+
+      const second = standardRenamePage(false)
+      second.identity()
+      second.state('checking')
+      await settleProfile(second.fixture)
+      expect(second.exists('modal')).toBe(false)
+      second.state(phase)
+      if (phase === 'done') second.identity(1, 'Bob')
+      await settleProfile(second.fixture)
+      expect(second.exists('modal')).toBe(false)
+      expect(readProfileRenameMemory()?.open).toBe(false)
+      expect(
+        second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+      ).toHaveLength(0)
+
+      await openStandardName(second)
+      expect(
+        (second.node('profile-name-input') as HTMLInputElement).value,
+      ).toBe('Bob')
+      expect(
+        (second.node('profile-rename-save') as HTMLButtonElement).disabled,
+      ).toBe(phase === 'done')
+      expect(second.names()).toHaveLength(0)
+      if (phase === 'refused') await dismissStandardName(second)
+      else {
+        second.node('profile-rename-cancel').click()
+        await settleProfile(second.fixture)
+      }
+    },
+  )
+
+  it('keeps a new tab closed when server state arrives without its open checkpoint', async () => {
+    const first = standardRenamePage()
+    first.state('checking')
+    await settleProfile(first.fixture)
+    expect(first.exists('modal')).toBe(false)
+    sessionStorage.clear()
+    first.unmount()
+    first.dispose()
+
+    const second = standardRenamePage()
+    second.state('checking')
+    await settleProfile(second.fixture)
+    expect(second.exists('modal')).toBe(false)
+    expect(readProfileRenameMemory()).toEqual({
+      version: 1,
+      userId: 1,
+      open: false,
+      step: 'closed',
+      draft: '',
+      checkpoint: null,
+      requestId: null,
+    })
+    expect(
+      second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+    ).toHaveLength(0)
+  })
+
+  it.each(['signout', 'person', 'access'] as const)(
+    'discards the old window on %s and ignores late frames',
+    async (cause) => {
+      const page = standardRenamePage()
+      await sendStandardName(page)
+      page.state('checking')
+      if (cause === 'signout') page.identity(null)
+      if (cause === 'person') page.identity(2, 'Another person')
+      if (cause === 'access') page.identity(1, 'Ann', { accountBlocked: {} })
+      await settleProfile(page.fixture)
+      expect(page.exists('modal')).toBe(false)
+      expect(readProfileRenameMemory()).toBeNull()
+      if (cause === 'signout') expect(page.exists('profile-view')).toBe(false)
+
+      page.state('done')
+      page.identity(1, 'Bob')
+      await settleProfile(page.fixture)
+      expect(page.exists('modal')).toBe(false)
+      expect(readProfileRenameMemory()).toBeNull()
+      expect(page.names()).toHaveLength(1)
+    },
+  )
+
+  it.each([
+    ['password', 'step-up-password', 'secret-password'],
+    ['email_code', 'step-up-code', '123456'],
+  ])(
+    'rechecks %s after remount and never persists its credential or proof',
+    async (method, fieldId, secret) => {
+      const options = {
+        stepUp: { required: true, purpose: 'change your name', method },
+      }
+      const first = standardRenamePage(true, options)
+      await openStandardName(first)
+      const field = first.node(fieldId) as HTMLInputElement
+      field.value = secret
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      first.fixture.detectChanges()
+      expect(readProfileRenameMemory()?.step).toBe('step-up')
+      first.unmount()
+      first.dispose()
+      const raw = sessionStorage.getItem(PROFILE_RENAME_MEMORY_STORAGE_KEY)!
+      expect(raw).not.toContain(secret)
+      expect(JSON.parse(raw)).toMatchObject({
+        version: 1,
+        userId: 1,
+        open: true,
+        step: 'step-up',
+        draft: '',
+        checkpoint: null,
+        requestId: null,
+      })
+
+      const second = standardRenamePage(false, options)
+      second.identity()
+      second.state(null)
+      await settleProfile(second.fixture)
+      expect((second.node(fieldId) as HTMLInputElement).value).toBe('')
+      expect(second.exists('profile-name-input')).toBe(false)
+      expect(
+        second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+      ).toHaveLength(1)
+      expect(second.names()).toHaveLength(0)
+    },
+  )
+
+  it('labels the name field, traps focus, and returns focus to Change after discard', async () => {
+    const page = standardRenamePage()
+    const opener = page.node('profile-edit')
+    opener.focus()
+    await openStandardName(page)
+    const input = page.node('profile-name-input') as HTMLInputElement
+    expect(document.activeElement).toBe(input)
+    expect(input.labels?.[0]?.textContent).toBe('Display name')
+    const close = page.node('modal-close')
+    close.focus()
+    close.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+      }),
+    )
+    expect(document.activeElement).toBe(page.node('profile-rename-cancel'))
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
+    )
+    expect(document.activeElement).toBe(close)
+
+    editName(page.node, page.fixture, 'Carol')
+    page
+      .node('modal')
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    await settleProfile(page.fixture)
+    expect(document.activeElement).toBe(page.node('modal-confirm'))
+    page.node('modal-confirm-discard').click()
+    await settleProfile(page.fixture)
+    expect(page.exists('modal')).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    expect(readProfileRenameMemory()?.open).toBe(false)
+    expect(page.names()).toHaveLength(0)
+  })
+})

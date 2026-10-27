@@ -4,32 +4,25 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
-use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
-use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\StepUp\StepUpOperationKey;
+use Demo\Chat\Database\Entity\Item\UserRename as EntityUserRename;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Constants\SignalConstants;
-use Hilos\Database\Database;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
-use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for user-initiated rename moderation.
@@ -38,26 +31,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-        RtTruthSourceRegistry::register(
-            HilosModerationCheck::RT_COLLECTION,
-            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
-            self::TEST_AGENT_ID,
-        );
-    }
-
-    protected function tearDown(): void
-    {
-        foreach (Hilos::$rt->hilosModerationChecks as $check) {
-            if ($check->kind === ModerationKindKey::PROFILE_NAME) {
-                $check->actions->forget();
-            }
-        }
-        parent::tearDown();
-    }
-
+    /** Admission opens the correlated check before any name or feed write. */
     public function testRenameActionStartsModerationWithoutChangingUserName(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -67,35 +41,8 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
-            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
             Hilos::initSignalRouter(new ChatSignalRouter());
-            Hilos::initBrowser();
-            $agent = new ChatAgent();
-            $token = RandomHelper::hex(16);
-            $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: 'rename-start-ak',
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-            ));
-            $this->authenticateSession($agent, $token, (int)$user->id, null);
-            $session = $this->sessionOf('rename-start-ak');
-            $this->assertNotNull($session);
-            Hilos::$db->stepUps->actions->confirm(
-                ProtectedModeRuntime::hashSessionToken($session->token),
-                (int)$user->id,
-                StepUpOperationKey::CHANGE_NAME,
-                date('Y-m-d H:i:s', time() + 3600),
-            );
-
-            ExecutionContext::setCurrentAcceptKey('rename-start-ak');
-            $this->usersLibrary()->onAgentAction(
-                'rename-start-ak',
-                HilosSignalConstants::PROFILE_NAME_SET,
-                new ProfileNameSetActionDTO('Alice'),
-            );
+            $this->beginProfileNameCheck((int)$user->id, 'rename-start-ak', 'Alice');
 
             $this->assertSame($oldName, Hilos::$db->users[$user->id]->name);
             $check = Hilos::$rt->hilosModerationChecks->find('rename-start-ak', ModerationKindKey::PROFILE_NAME);
@@ -111,6 +58,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
+    /** Approval reaches the person owner and the terminal session snapshot. */
     public function testApprovedRenameModerationResultRenamesUser(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -120,23 +68,20 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
-            Hilos::$rt->connections->actions->register('rename-approve-ak', $user->id);
-            Hilos::$rt->hilosModerationChecks->actions->open(
-                'rename-approve-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'Alice',
-            );
-
             Hilos::initSignalRouter(new ChatSignalRouter());
+            $check = $this->beginProfileNameCheck((int)$user->id, 'rename-approve-ak', 'Alice');
             $this->dispatchRenameModerationVerdict(
                 new ModerationVerdictSignalData(
                     acceptKey: 'rename-approve-ak',
                     kind: ModerationKindKey::PROFILE_NAME,
-                    requestId: Hilos::$rt->hilosModerationChecks->find('rename-approve-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                    requestId: $check->requestId,
                     allow: true,
                     reason: 'ok',
                 ),
             );
 
             $this->assertSame('Alice', Hilos::$db->users[$user->id]->name);
+            $this->assertProfileNamePhase('rename-approve-ak', StateHilosProfileNameChange::PHASE_DONE);
             $this->assertNull(Hilos::$rt->hilosModerationChecks->find('rename-approve-ak', ModerationKindKey::PROFILE_NAME));
             $this->assertUserRenamedEventExists($user->id, $oldName, 'Alice');
 
@@ -149,6 +94,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
+    /** A person merged after admission is refused before an owner hop. */
     public function testApprovedRenameOfAMergedAccountIsRefusedWithoutAHop(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -157,30 +103,24 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         try {
             $survivor = Hilos::$db->users->actions->createWithName('Survivor');
             $loser = Hilos::$db->users->actions->createWithName('Loser');
-            Database::sqlRun(
-                'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
-                [(int)$loser->id, (int)$survivor->id, '2026-10-08 12:00:00'],
-            );
-            Hilos::$rt->connections->actions->register('merged-rename-ak', $loser->id);
-            Hilos::$rt->hilosModerationChecks->actions->open(
-                'merged-rename-ak', $loser->id, ModerationKindKey::PROFILE_NAME, text: 'Alice',
-            );
             Hilos::initSignalRouter(new ChatSignalRouter());
+            $check = $this->beginProfileNameCheck((int)$loser->id, 'merged-rename-ak', 'Alice');
+            $eventsBefore = count(Hilos::$db->events);
+            Hilos::$db->userMerges->actions->add((int)$loser->id, (int)$survivor->id);
 
             $agentSignalData = new AgentSignalData(new ModerationVerdictSignalData(
                 acceptKey: 'merged-rename-ak',
                 kind: ModerationKindKey::PROFILE_NAME,
-                requestId: Hilos::$rt->hilosModerationChecks->find('merged-rename-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                requestId: $check->requestId,
                 allow: true,
                 reason: 'ok',
             ));
             ExecutionContext::setCurrentAcceptKey('merged-rename-ak');
             try {
-                $this->usersLibrary()->onSignalAgent(
-                    $agentSignalData,
-                    '',
-                    HilosSignalConstants::HILOS_MODERATION_VERDICT,
-                );
+                $library = $this->usersLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent(
+                    $agentSignalData, '', HilosSignalConstants::HILOS_MODERATION_VERDICT,
+                ));
                 $carried = $this->deliverPersonAgentFrames();
             } finally {
                 ExecutionContext::setCurrentAcceptKey(null);
@@ -188,6 +128,11 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             $this->assertSame(0, $carried);
             $this->assertSame('Loser', Hilos::$db->users[$loser->id]->name);
+            $this->assertSame('Survivor', Hilos::$db->users[$survivor->id]->name);
+            $this->assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $loser->id]));
+            $this->assertCount($eventsBefore, Hilos::$db->events);
+            $this->assertNull(Hilos::$rt->hilosModerationChecks->find('merged-rename-ak', ModerationKindKey::PROFILE_NAME));
+            $this->assertProfileNamePhase('merged-rename-ak', StateHilosProfileNameChange::PHASE_REFUSED);
             $errorSignal = $this->takeQueuedWebSocketSignal(SignalConstants::ACTION_ERROR);
             $this->assertNotNull($errorSignal);
             $this->assertInstanceOf(PageActionErrorSignalData::class, $errorSignal->data);
@@ -202,6 +147,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
+    /** A content refusal keeps the name and reports the exact reason to the origin. */
     public function testRejectedRenameModerationResultPreservesNameAndReportsActionError(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -211,17 +157,13 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
-            Hilos::$rt->connections->actions->register('rename-reject-ak', $user->id);
-            Hilos::$rt->hilosModerationChecks->actions->open(
-                'rename-reject-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'BlockedName',
-            );
-
             Hilos::initSignalRouter(new ChatSignalRouter());
+            $check = $this->beginProfileNameCheck((int)$user->id, 'rename-reject-ak', 'BlockedName');
             $this->dispatchRenameModerationVerdict(
                 new ModerationVerdictSignalData(
                     acceptKey: 'rename-reject-ak',
                     kind: ModerationKindKey::PROFILE_NAME,
-                    requestId: Hilos::$rt->hilosModerationChecks->find('rename-reject-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                    requestId: $check->requestId,
                     allow: false,
                     reason: 'spam',
                 ),
@@ -229,6 +171,9 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             $this->assertSame($oldName, Hilos::$db->users[$user->id]->name);
             $this->assertNull(Hilos::$rt->hilosModerationChecks->find('rename-reject-ak', ModerationKindKey::PROFILE_NAME));
+            $this->assertProfileNamePhase('rename-reject-ak', StateHilosProfileNameChange::PHASE_REFUSED);
+            $this->assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $user->id]));
+            $this->assertCount(0, Hilos::$db->events);
 
             // The reject is routed back through the framework action_error
             // contract (PageSignalRouter → default onActionException), not a
@@ -261,11 +206,10 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         $agentSignalData = new AgentSignalData($result);
         ExecutionContext::setCurrentAcceptKey($agentSignalData->getAcceptKey());
         try {
-            $this->usersLibrary()->onSignalAgent(
-                $agentSignalData,
-                '',
-                HilosSignalConstants::HILOS_MODERATION_VERDICT,
-            );
+            $library = $this->usersLibrary();
+            $this->underAgent($library, static fn () => $library->onSignalAgent(
+                $agentSignalData, '', HilosSignalConstants::HILOS_MODERATION_VERDICT,
+            ));
             $this->deliverPersonAgentFrames();
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);

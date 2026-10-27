@@ -2315,6 +2315,18 @@ final class HilosSignalConstants
      */
     public const string HILOS_PROFILE_FLOWS = 'hilos_profile_flows';
 
+    /** Users library → sessions library: admit a validated name-change request. */
+    public const string HILOS_PROFILE_NAME_BEGIN = 'hilos_profile_name_begin';
+
+    /** Sessions library → users library: continue the current session name-change attempt. */
+    public const string HILOS_PROFILE_NAME_CONTINUE = 'hilos_profile_name_continue';
+
+    /** Users library → sessions library: advance the addressed name-change attempt. */
+    public const string HILOS_PROFILE_NAME_ADVANCE = 'hilos_profile_name_advance';
+
+    /** Sessions library → its connections: the person's complete name-change snapshot. */
+    public const string HILOS_PROFILE_NAME_STATE = 'hilos_profile_name_state';
+
     /**
      * Users library → sessions library: a profile window of this session reached a step, or its
      * flow is over (HIL-1182).

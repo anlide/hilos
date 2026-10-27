@@ -1,13 +1,16 @@
 import { test, expect, type Page } from '@playwright/test'
-import { grantAdminToSelf } from '../helpers/adminGrant'
+
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
+  clickSubmit,
   enterIdentifierAndPassword,
   logout,
   openSignIn,
   PASSWORD,
   signUp,
-} from '../helpers/session'
+  typeInto,
+} from '../helpers/session.js'
 import {
   expectAnalyticsOverview,
   expectCommunicationsAccessibility,
@@ -24,6 +27,7 @@ import {
   expectDaemonPage,
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
+  watchProfileRenameStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
@@ -312,6 +316,82 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
+})
+
+test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
+  page,
+}) => {
+  const user = await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+
+  const opener = page.getByTestId('profile-edit')
+  await clickSubmit(opener)
+  await expect(page.getByTestId('modal')).toHaveAccessibleName(
+    "Confirm it's you",
+  )
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
+
+  const dialog = page.getByTestId('modal')
+  const field = page.getByTestId('profile-name-input')
+  await expect(dialog).toHaveRole('dialog')
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await expect(dialog).toHaveAccessibleName('Change name')
+  await expect(field).toHaveAccessibleName('Display name')
+  await expect(field).toBeFocused()
+  const status = await watchProfileRenameStatus(expect, page)
+  await status.unchanged(false)
+
+  const draft = 'Accessible draft'
+  await typeInto(field, draft)
+  const save = page.getByTestId('profile-rename-save')
+  const cancel = page.getByTestId('profile-rename-cancel')
+  const close = dialog.getByTestId('modal-close')
+  const confirmation = page.getByTestId('modal-confirm')
+  const keepEditing = page.getByTestId('modal-confirm-cancel')
+  const discard = page.getByTestId('modal-confirm-discard')
+  await expect(cancel).toHaveAccessibleName('Cancel')
+  await expect(close).toHaveAccessibleName('Close')
+  await expect(save).toHaveAccessibleName('Save')
+  await expect(save).toBeEnabled()
+  await status.unchanged(false)
+
+  // The last enabled control wraps back to the close button in either direction.
+  await close.focus()
+  await close.press('Shift+Tab')
+  await expect(save).toBeFocused()
+  await save.press('Tab')
+  await expect(close).toBeFocused()
+
+  // Escape and every explicit close route raise the same discard confirmation.
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toHaveRole('alertdialog')
+  await expect(confirmation).toHaveAccessibleName('Discard changes?')
+  await expect(confirmation).toBeFocused()
+  await clickSubmit(keepEditing)
+  await expect(confirmation).toHaveCount(0)
+  await expect(field).toHaveValue(draft)
+
+  await clickSubmit(cancel)
+  await expect(confirmation).toBeVisible()
+  await clickSubmit(keepEditing)
+  await expect(confirmation).toHaveCount(0)
+  await expect(field).toHaveValue(draft)
+
+  await clickSubmit(close)
+  await expect(confirmation).toBeVisible()
+  await clickSubmit(keepEditing)
+  await expect(confirmation).toHaveCount(0)
+  await expect(field).toHaveValue(draft)
+  await status.unchanged(false)
+
+  await dialog.click({ position: { x: 2, y: 2 } })
+  await expect(confirmation).toBeVisible()
+  await clickSubmit(discard)
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

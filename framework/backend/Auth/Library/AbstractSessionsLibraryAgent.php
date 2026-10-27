@@ -47,6 +47,26 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameBeginSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameAdvanceSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameContinueSignalData;
+use Hilos\Auth\StepUp\StepUpGate;
+use Hilos\Auth\Session\DTO\ProfileNameStateSignalData;
+use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Moderation\ModerationReason;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\DTO\ModerationCheckSignalData;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Database\Entity\Item\Session as EntitySession;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Users\ProfileNameRefusal;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\View\Item\HilosProfileNameChange;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
@@ -115,6 +135,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -545,6 +566,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => ProfileFlowStepSignalData::class,
+        HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN => ProfileNameBeginSignalData::class,
+        HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE => ProfileNameAdvanceSignalData::class,
         HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
@@ -701,6 +724,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Maximum session rows considered by one tick. */
     private const int SESSION_SWEEP_BATCH = 500;
 
+    /** Random bytes behind a secure 32-hex name-change request id. */
+    private const int PROFILE_NAME_REQUEST_BYTES = 16;
+
+    /** Maintenance cadence; no separate lifetime is introduced for name changes. */
+    private const float PROFILE_NAME_SWEEP_INTERVAL_SECONDS = 1.0;
+
     /** Age after which an anonymous browser with one handshake is considered abandoned. */
     private const int NEVER_RETURNED_GRACE_SECONDS = 7 * TimeConstants::SECONDS_PER_DAY;
 
@@ -732,6 +761,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var string What a browser is told when its connection carries no session to act on */
     private const string SESSION_NOT_ON_CONNECTION_MESSAGE
         = 'The session behind this tab could not be found; reload the page and try again';
+
+    /** Last private maintenance pass; attempts themselves live in the holder's RT collection. */
+    private float $lastProfileNameSweepAt = 0.0;
 
     /** @var ?CronRule Schedule of the abandoned-registration sweep, or null when it is switched off */
     private ?CronRule $pendingRegistrationSweepRule = null;
@@ -907,6 +939,67 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Cleans a name attempt from the session's committed source fact, including local writes.
+     * Ordinary touches and a socket closing keep the last result. Unrelated collections are ignored.
+     *
+     * @param DbSyncUpdatedSignalData $data Committed session diff
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws HilosException When the session, attempt or clearing frame cannot be read or written
+     */
+    public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        if (!$this->hasSignInSurface() || $data->collectionKey !== HilosDbContext::sessions
+            || array_intersect_key($data->row, array_flip([
+                EntitySession::token, EntitySession::user_id, EntitySession::impersonator_user_id, EntitySession::expires_at,
+            ])) === []
+        ) {
+            return;
+        }
+        $previousToken = $data->previous[EntitySession::token] ?? null;
+        if (is_string($previousToken)) {
+            $previousChange = Hilos::$rt->hilosProfileNameChanges[StateProtectedModeRuntime::hashSessionToken($previousToken)];
+            if ($previousChange !== null && $previousChange->staleSince() === null) {
+                $this->forgetProfileNameChange($previousToken);
+            }
+        }
+        $session = Hilos::$db->sessions[$data->idString] ?? null;
+        if ($session === null) {
+            return;
+        }
+        $change = Hilos::$rt->hilosProfileNameChanges[StateProtectedModeRuntime::hashSessionToken($session->token)];
+        if ($change !== null && $change->staleSince() === null
+            && ($session->userId !== $change->userId || $session->impersonatorUserId !== null
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime()))
+        ) {
+            $this->forgetProfileNameChange($session->token);
+        }
+    }
+
+    /**
+     * Observes deletion through the same source path; normal owner lifecycle also clears before deleting.
+     *
+     * @param DbSyncDeletedSignalData $data Deleted session's previous row
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws HilosException When the attempt or clearing frame cannot be read or written
+     */
+    public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        if (!$this->hasSignInSurface() || $data->collectionKey !== HilosDbContext::sessions) {
+            return;
+        }
+        $token = $data->row[EntitySession::token] ?? null;
+        if (!is_string($token)) {
+            return;
+        }
+        $change = Hilos::$rt->hilosProfileNameChanges[StateProtectedModeRuntime::hashSessionToken($token)];
+        if ($change !== null && $change->staleSince() === null) {
+            $this->forgetProfileNameChange($token);
+        }
+    }
+
+    /**
      * Reclaims what nobody came back for, and rolls back the browsers waiting on it.
      *
      * The in-memory walks are bounded by short-lived auth work and skipped outright while
@@ -939,6 +1032,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepRecoveryWaiters();
         $this->sweepCodeSendAttempts();
         $this->sweepProfileFlows();
+        $this->sweepProfileNameChanges();
         $this->sweepOAuthTrips();
         $this->sweepAccountDeletions();
         $this->sweepAccessLog();
@@ -1043,6 +1137,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                         $sessionId = $session->id;
                         $sessionToken = $session->token;
+                        $this->forgetProfileNameChange($sessionToken);
                         $session->actions->delete();
                         $deletedSessionIds[$sessionId] = true;
                         $deletedSessionTokens[] = $sessionToken;
@@ -1059,6 +1154,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                         $sessionId = $session->id;
                         $sessionToken = $session->token;
+                        $this->forgetProfileNameChange($sessionToken);
                         $session->actions->delete();
                         $deletedSessionIds[$sessionId] = true;
                         $deletedSessionTokens[] = $sessionToken;
@@ -1387,6 +1483,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($this->hasSignInSurface()) {
             $this->publishCodeSendProgress($sessionTokenHash);
             $this->publishProfileFlows($sessionTokenHash);
+            $this->publishProfileNameChange($sessionTokenHash, $session->userId);
             $this->publishStepUpConfirmations($data->acceptKey, $session, $sessionTokenHash);
         }
     }
@@ -2433,6 +2530,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->forgetProfileNameChange($sessionToken);
         $this->dropCodeSendProgress($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
@@ -3052,6 +3150,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->forgetProfileNameChange($sessionToken);
         $this->dropCodeSendProgress($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
@@ -3133,6 +3232,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session->actions->unbindUser();
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->forgetProfileNameChange($sessionToken);
         $this->dropCodeSendProgress($sessionToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
@@ -3998,6 +4098,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN:
+                if (!$data->data instanceof ProfileNameBeginSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameBeginSignalData::class, $data->data);
+                }
+                $this->beginProfileNameChange($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE:
+                if (!$data->data instanceof ProfileNameAdvanceSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameAdvanceSignalData::class, $data->data);
+                }
+                $this->advanceProfileNameChange($data->data);
+
+                return;
+
             case HilosSignalConstants::HILOS_PROFILE_FLOW_STEP:
                 if (!$data->data instanceof ProfileFlowStepSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, ProfileFlowStepSignalData::class, $data->data);
@@ -4676,6 +4792,273 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Reserves a browser's attempt only while the validated request still names its person.
+     * A second tab joins a pending attempt without moving its id or checking deadline.
+     *
+     * @param ProfileNameBeginSignalData $frame Validated request from the users library
+     * @throws HilosException When the session, setting, attempt or frame cannot be read or written
+     * @throws RandomException When the secure source cannot mint an attempt id
+     */
+    private function beginProfileNameChange(ProfileNameBeginSignalData $frame): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+        try {
+            $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+            if ($session?->userId !== $frame->userId) {
+                return;
+            }
+            if ($session->impersonatorUserId !== null) {
+                $this->refuseProfileNameAdmission($frame, StepUpMessages::IMPERSONATED);
+
+                return;
+            }
+            if ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime()) {
+                $this->refuseProfileNameAdmission($frame, self::SESSION_NOT_ON_CONNECTION_MESSAGE);
+
+                return;
+            }
+            $standing = AccountStandingResolver::of($frame->userId);
+            if ($standing->blocked || $standing->frozen) {
+                $this->refuseProfileNameAdmission($frame, SignalConstants::ACTION_FAILED_REASON);
+
+                return;
+            }
+            AddressablePerson::require($frame->userId);
+            new StepUpGate()->require($frame->sessionToken, $frame->userId, StepUpOperationKey::CHANGE_NAME);
+        } catch (ValidationException $failure) {
+            $this->refuseProfileNameAdmission($frame, ActionFailureReason::forClient($failure));
+
+            return;
+        } catch (WiringRefusal $failure) {
+            $this->logAgentError('Name admission could not read its sources: ' . $failure->getMessage());
+            $this->refuseProfileNameAdmission($frame, SignalConstants::ACTION_FAILED_REASON);
+
+            return;
+        } catch (HilosException $failure) {
+            $this->logAgentError('Name admission failed: ' . $failure->getMessage());
+            $this->refuseProfileNameAdmission($frame, ActionFailureReason::forClient($failure));
+
+            return;
+        }
+
+        $hash = StateProtectedModeRuntime::hashSessionToken($frame->sessionToken);
+        $change = Hilos::$rt->hilosProfileNameChanges[$hash];
+        if (RtStaleness::staleSince(StateHilosProfileNameChange::RT_COLLECTION, $hash) !== null) {
+            $this->refuseProfileNameAdmission($frame, SignalConstants::ACTION_FAILED_REASON);
+
+            return;
+        }
+        if ($change !== null && $change->userId === $frame->userId
+            && in_array($change->phase, [StateHilosProfileNameChange::PHASE_CHECKING, StateHilosProfileNameChange::PHASE_APPLYING], true)
+        ) {
+            $this->publishProfileNameChange($hash, $frame->userId);
+
+            return;
+        }
+        $now = TimeHelper::nowMs();
+        $deadline = Hilos::hasFeature(HilosFeature::MODERATION)
+            ? $now + Hilos::$setting[ModerationSettingsCatalog::CHECK_TIMEOUT_SEC]->int() * TimeConstants::MS_PER_SECOND
+            : null;
+        Hilos::$rt->hilosProfileNameChanges->actions->open(
+            $hash, $frame->userId, RandomHelper::secureHex(self::PROFILE_NAME_REQUEST_BYTES),
+            $frame->originAcceptKey, $frame->name, $now, $deadline,
+        );
+        if ($frame->name === Hilos::$db->users[$frame->userId]->name) {
+            Hilos::$rt->hilosProfileNameChanges[$hash]->actions->complete();
+        } elseif (!Hilos::hasFeature(HilosFeature::MODERATION)) {
+            ExecutionContext::withOrigin($frame->originAcceptKey, Hilos::$rt->hilosProfileNameChanges[$hash]->requestId,
+                fn () => Hilos::$rt->hilosProfileNameChanges[$hash]->actions->markApplying());
+        }
+        $this->publishProfileNameChange($hash, $frame->userId);
+        if (Hilos::$rt->hilosProfileNameChanges[$hash]->phase !== StateHilosProfileNameChange::PHASE_DONE) {
+            $this->sendToAgent(HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE, new ProfileNameContinueSignalData(
+                $hash, Hilos::$rt->hilosProfileNameChanges[$hash]->requestId,
+            ));
+        }
+    }
+
+    /**
+     * Answers a refused BEGIN only to the live requester, without creating or clearing an attempt.
+     *
+     * @param ProfileNameBeginSignalData $frame Request not yet admitted by this holder
+     * @param string $reason Safe backend refusal sentence
+     * @throws HilosException When the connection or refusal frame cannot be read or queued
+     */
+    private function refuseProfileNameAdmission(ProfileNameBeginSignalData $frame, string $reason): void
+    {
+        $connections = Hilos::$rt->sessionConnectionsSource();
+        $connection = $connections?->get($frame->originAcceptKey);
+        if ($connection?->sessionToken === $frame->sessionToken && $connection->userId === $frame->userId
+            && ($collection = $connections->getCollectionName()) !== null
+            && RtStaleness::staleSince($collection, $frame->originAcceptKey) === null
+        ) {
+            $this->sendToUser(SignalConstants::ACTION_ERROR, $frame->originAcceptKey, new PageActionErrorSignalData(
+                HilosSignalConstants::PROFILE_NAME_SET, $reason,
+            ));
+        }
+    }
+
+    /**
+     * @param ProfileNameAdvanceSignalData $frame Correlated report from the users library
+     * @throws HilosException When the current attempt, session or frame cannot be read or written
+     */
+    private function advanceProfileNameChange(ProfileNameAdvanceSignalData $frame): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+        $change = Hilos::$rt->hilosProfileNameChanges[$frame->sessionTokenHash];
+        if ($change === null || $change->staleSince() !== null || $change->requestId !== $frame->requestId
+            || !in_array($change->phase, [StateHilosProfileNameChange::PHASE_CHECKING, StateHilosProfileNameChange::PHASE_APPLYING], true)
+        ) {
+            return;
+        }
+        if (($frame->phase === StateHilosProfileNameChange::PHASE_APPLYING
+                && $change->phase !== StateHilosProfileNameChange::PHASE_CHECKING)
+            || ($frame->phase === StateHilosProfileNameChange::PHASE_DONE
+                && $change->phase !== StateHilosProfileNameChange::PHASE_APPLYING)
+        ) {
+            return;
+        }
+        if ($this->profileNameSession($change) === null) {
+            $change->actions->drop();
+            $this->publishProfileNameChange($frame->sessionTokenHash, null);
+
+            return;
+        }
+        if ($frame->phase === StateHilosProfileNameChange::PHASE_APPLYING) {
+            if ($change->deadlineAt !== null && $change->deadlineAt <= TimeHelper::nowMs()) {
+                $change->actions->refuse(ProfileNameRefusal::forReason(ModerationReason::SERVICE_UNAVAILABLE));
+            } else {
+                ExecutionContext::withOrigin($change->originAcceptKey, $change->requestId, fn () => $change->actions->markApplying());
+                $this->sendToAgent(HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE, new ProfileNameContinueSignalData(
+                    $change->sessionTokenHash, $change->requestId,
+                ));
+            }
+        } elseif ($frame->phase === StateHilosProfileNameChange::PHASE_DONE) {
+            $change->actions->complete();
+        } else {
+            $change->actions->refuse($frame->refusal);
+        }
+        $this->publishProfileNameChange($frame->sessionTokenHash, $change->userId);
+        if ($change->phase === StateHilosProfileNameChange::PHASE_REFUSED) {
+            $this->refuseProfileNameOrigin($change);
+        }
+    }
+
+    /**
+     * @param HilosProfileNameChange $change Current refused attempt
+     * @param bool $stopChecking Whether the holder itself ended a pending moderation wait
+     * @throws HilosException When the connection or refusal frame cannot be read or queued
+     */
+    private function refuseProfileNameOrigin(HilosProfileNameChange $change, bool $stopChecking = false): void
+    {
+        $connection = Hilos::$rt->sessionConnectionsSource()?->get($change->originAcceptKey);
+        if ($connection?->sessionToken !== null && $connection->userId === $change->userId
+            && StateProtectedModeRuntime::hashSessionToken($connection->sessionToken) === $change->sessionTokenHash
+            && ($collection = Hilos::$rt->sessionConnectionsSource()->getCollectionName()) !== null
+            && RtStaleness::staleSince($collection, $change->originAcceptKey) === null
+        ) {
+            if ($stopChecking) {
+                $this->sendToUser(HilosSignalConstants::HILOS_MODERATION_CHECK, $change->originAcceptKey,
+                    new ModerationCheckSignalData(ModerationKindKey::PROFILE_NAME, false));
+            }
+            $this->sendToUser(SignalConstants::ACTION_ERROR, $change->originAcceptKey, new PageActionErrorSignalData(
+                HilosSignalConstants::PROFILE_NAME_SET, $change->refusal,
+            ));
+        }
+    }
+
+    /**
+     * A public projection is addressed only to this browser's session, never the person's group.
+     *
+     * @param string $sessionTokenHash Browser whose snapshot is sent
+     * @param ?int $userId Current person, or null when clearing an identity
+     * @throws HilosException When the attempt or frame cannot be read or queued
+     */
+    private function publishProfileNameChange(string $sessionTokenHash, ?int $userId): void
+    {
+        $change = Hilos::$rt->hilosProfileNameChanges[$sessionTokenHash];
+        if (RtStaleness::staleSince(StateHilosProfileNameChange::RT_COLLECTION, $sessionTokenHash) !== null) {
+            return;
+        }
+        $public = $change !== null && $change->userId === $userId ? [
+            ProfileNameStateSignalData::REQUEST_ID => $change->requestId,
+            ProfileNameStateSignalData::NAME => $change->name,
+            ProfileNameStateSignalData::PHASE => $change->phase,
+            ProfileNameStateSignalData::REFUSAL => $change->refusal,
+        ] : null;
+        $this->sendToSession(
+            HilosSignalConstants::HILOS_PROFILE_NAME_STATE, $sessionTokenHash,
+            new ProfileNameStateSignalData($userId, $public),
+        );
+    }
+
+    /**
+     * @param string $sessionToken Session ending or changing person
+     * @throws HilosException When the attempt or clearing frame cannot be written
+     */
+    private function forgetProfileNameChange(string $sessionToken): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+        $hash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        Hilos::$rt->hilosProfileNameChanges[$hash]?->actions->drop();
+        $this->publishProfileNameChange($hash, null);
+    }
+
+    /**
+     * Uses the existing user's session query, including a browser whose last socket closed.
+     *
+     * @param HilosProfileNameChange $change Attempt whose session must still belong to its person
+     * @return ?Session Live, ordinary session, or null after expiry or identity loss
+     * @throws HilosException When the person's sessions cannot be read
+     */
+    private function profileNameSession(HilosProfileNameChange $change): ?Session
+    {
+        foreach (Hilos::$db->sessions->findByUserId($change->userId) as $session) {
+            if (StateProtectedModeRuntime::hashSessionToken($session->token) === $change->sessionTokenHash
+                && $session->impersonatorUserId === null
+                && ($session->expiresAt === null || $session->expiresAt > TimeHelper::getSqlDateTime())
+            ) {
+                return $session;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Only checking has a moderation clock. Applying waits on the existing person owner's reply.
+     * Session loss is handled by owner lifecycle and session source facts, never by idle DB polling.
+     *
+     * @throws HilosException When an attempt or snapshot cannot be read or written
+     */
+    private function sweepProfileNameChanges(): void
+    {
+        $now = microtime(true);
+        if ($now - $this->lastProfileNameSweepAt < self::PROFILE_NAME_SWEEP_INTERVAL_SECONDS) {
+            return;
+        }
+        $this->lastProfileNameSweepAt = $now;
+        foreach (Hilos::$rt->hilosProfileNameChanges as $change) {
+            if ($change->staleSince() !== null) {
+                continue;
+            }
+            if ($change->phase === StateHilosProfileNameChange::PHASE_CHECKING
+                && $change->deadlineAt !== null && $change->deadlineAt <= TimeHelper::nowMs()
+            ) {
+                $change->actions->refuse(ProfileNameRefusal::forReason(ModerationReason::SERVICE_UNAVAILABLE));
+                $this->publishProfileNameChange($change->sessionTokenHash, $change->userId);
+                $this->refuseProfileNameOrigin($change, stopChecking: true);
+            }
+        }
+    }
+
+    /**
      * Tells the one tab that connected which operations its session has a live identity
      * confirmation of, when it has any (HIL-1330).
      *
@@ -5339,6 +5722,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             correlationId: $correlationId,
         ));
         $this->forgetProfileFlows($sessionToken);
+        $this->forgetProfileNameChange($sessionToken);
         $this->dropCodeSendProgress($sessionToken);
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
@@ -5406,6 +5790,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             correlationId: $correlationId,
         ), $requestId, $action);
         $this->forgetProfileFlows($sessionToken);
+        $this->forgetProfileNameChange($sessionToken);
         $this->dropCodeSendProgress($sessionToken);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([

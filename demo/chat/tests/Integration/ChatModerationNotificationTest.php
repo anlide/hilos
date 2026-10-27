@@ -11,11 +11,9 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
-use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -37,6 +35,7 @@ use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\UserNotificationType;
 use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -51,14 +50,10 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
+    /** Registers chat fixture ownership and starts with no notifications or connections. */
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(
-            HilosModerationCheck::RT_COLLECTION,
-            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
-            self::TEST_AGENT_ID,
-        );
         TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
@@ -67,13 +62,9 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
     }
 
+    /** Removes chat fixture rows; the base releases the name protocol owners. */
     protected function tearDown(): void
     {
-        foreach (Hilos::$rt->hilosModerationChecks as $check) {
-            if ($check->kind === ModerationKindKey::PROFILE_NAME) {
-                $check->actions->forget();
-            }
-        }
         ExecutionContext::setCurrentAcceptKey(null);
         $this->deleteChatNotifications();
         RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -238,24 +229,26 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
     }
 
+    /** A real accepted name check reports its content refusal to its person. */
     public function testRejectedRenameNotifiesTheUserWhoAskedForIt(): void
     {
         $user = Hilos::$db->users->actions->createWithName('RenameAsker557');
-        Hilos::$rt->connections->actions->register('rename-notify-ak', $user->id);
-        Hilos::$rt->hilosModerationChecks->actions->open(
-            'rename-notify-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'BlockedName',
-        );
-
         Hilos::initSignalRouter(new ChatSignalRouter());
+        $oldName = $user->name;
+        $check = $this->beginProfileNameCheck((int)$user->id, 'rename-notify-ak', 'BlockedName');
         $this->dispatchRenameModerationVerdict(
             new ModerationVerdictSignalData(
                 acceptKey: 'rename-notify-ak',
                 kind: ModerationKindKey::PROFILE_NAME,
-                requestId: Hilos::$rt->hilosModerationChecks->find('rename-notify-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                requestId: $check->requestId,
                 allow: false,
                 reason: 'spam',
             ),
         );
+        $this->assertProfileNamePhase('rename-notify-ak', StateHilosProfileNameChange::PHASE_REFUSED);
+        self::assertSame($oldName, Hilos::$db->users[$user->id]->name);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find('rename-notify-ak', ModerationKindKey::PROFILE_NAME));
+        self::assertCount(0, Hilos::$db->events);
 
         $notification = $this->onlyNotificationFor($user->id);
 
@@ -269,24 +262,26 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         );
     }
 
+    /** The category sentence survives the accepted name protocol unchanged. */
     public function testRejectedRenameWithCategoryNotifiesUserWithCategoryPhrase(): void
     {
         $user = Hilos::$db->users->actions->createWithName('ImpersonateAsker557');
-        Hilos::$rt->connections->actions->register('rename-cat-ak', $user->id);
-        Hilos::$rt->hilosModerationChecks->actions->open(
-            'rename-cat-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'ImpersonateName',
-        );
-
         Hilos::initSignalRouter(new ChatSignalRouter());
+        $oldName = $user->name;
+        $check = $this->beginProfileNameCheck((int)$user->id, 'rename-cat-ak', 'ImpersonateName');
         $this->dispatchRenameModerationVerdict(
             new ModerationVerdictSignalData(
                 acceptKey: 'rename-cat-ak',
                 kind: ModerationKindKey::PROFILE_NAME,
-                requestId: Hilos::$rt->hilosModerationChecks->find('rename-cat-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                requestId: $check->requestId,
                 allow: false,
                 reason: 'impersonation',
             ),
         );
+        $this->assertProfileNamePhase('rename-cat-ak', StateHilosProfileNameChange::PHASE_REFUSED);
+        self::assertSame($oldName, Hilos::$db->users[$user->id]->name);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find('rename-cat-ak', ModerationKindKey::PROFILE_NAME));
+        self::assertCount(0, Hilos::$db->events);
 
         $notification = $this->onlyNotificationFor($user->id);
 
@@ -306,26 +301,26 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         );
     }
 
+    /** An accepted check ends refused on unavailability without notifying or renaming. */
     public function testAnUnavailableModeratorNotifiesNobodyAboutTheName(): void
     {
         $user = Hilos::$db->users->actions->createWithName('RenameAsker557');
-        Hilos::$rt->connections->actions->register('rename-unavailable-ak', $user->id);
-        Hilos::$rt->hilosModerationChecks->actions->open(
-            'rename-unavailable-ak', $user->id, ModerationKindKey::PROFILE_NAME, text: 'PendingName',
-        );
-
         Hilos::initSignalRouter(new ChatSignalRouter());
+        $oldName = $user->name;
+        $check = $this->beginProfileNameCheck((int)$user->id, 'rename-unavailable-ak', 'PendingName');
         $this->dispatchRenameModerationVerdict(
             new ModerationVerdictSignalData(
                 acceptKey: 'rename-unavailable-ak',
                 kind: ModerationKindKey::PROFILE_NAME,
-                requestId: Hilos::$rt->hilosModerationChecks->find('rename-unavailable-ak', ModerationKindKey::PROFILE_NAME)->requestId,
+                requestId: $check->requestId,
                 allow: false,
                 reason: 'service_unavailable',
             ),
         );
-
+        $this->assertProfileNamePhase('rename-unavailable-ak', StateHilosProfileNameChange::PHASE_REFUSED);
+        self::assertSame($oldName, Hilos::$db->users[$user->id]->name);
         self::assertNull(Hilos::$rt->hilosModerationChecks->find('rename-unavailable-ak', ModerationKindKey::PROFILE_NAME));
+        self::assertCount(0, Hilos::$db->events);
         self::assertCount(0, $this->notificationsFor($user->id));
     }
 
@@ -386,7 +381,9 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         $signal = new AgentSignalData($result);
         ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
         try {
-            $this->usersLibrary()->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT);
+            $library = $this->usersLibrary();
+            $this->underAgent($library, static fn () => $library->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT));
+            self::assertSame(0, $this->deliverPersonAgentFrames(), 'A refused check sends no owner ask');
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }

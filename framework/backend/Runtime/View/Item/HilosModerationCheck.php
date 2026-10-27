@@ -23,6 +23,7 @@ use Hilos\Runtime\View\Actions\Item\HilosModerationCheckActions;
  * @property-read ?string $clientUploadId Complete upload to check, or null for a kind that looks at no image
  * @property-read int $startedAt Opening moment in epoch milliseconds
  * @property-read int $deadlineAt Moment the wait ends, in epoch milliseconds
+ * @property-read ?string $sessionTokenHash Session name-change correlation, or null for a connection-bound check
  * @property-read HilosModerationCheckActions $actions
  */
 final class HilosModerationCheck extends RtItem
@@ -52,6 +53,7 @@ final class HilosModerationCheck extends RtItem
             StateHilosModerationCheck::clientUploadId => $this->_state->clientUploadId,
             StateHilosModerationCheck::startedAt => $this->_state->startedAt,
             StateHilosModerationCheck::deadlineAt => $this->_state->deadlineAt,
+            StateHilosModerationCheck::sessionTokenHash => $this->_state->sessionTokenHash,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

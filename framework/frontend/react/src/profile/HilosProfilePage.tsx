@@ -62,18 +62,23 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
     route.params,
     router.resolvePath,
   ).filter((section) => !hiddenSections.includes(section.page))
-  useEffect(() => {
-    root.start()
-    return () => root.dispose()
-  }, [root])
   const rename = useMemo(
     () =>
       binding.rename === null
         ? null
-        : createHilosProfileRenameFlow(context, binding.name, binding.rename),
+        : createHilosProfileRenameFlow(context, binding.name, binding.rename, {
+            remember: true,
+          }),
     [context, binding],
   )
-  useEffect(() => () => rename?.dispose(), [rename])
+  useEffect(() => {
+    root.start()
+    rename?.start()
+    return () => {
+      rename?.dispose()
+      root.dispose()
+    }
+  }, [root, rename])
   const email = useMemo(
     () => createHilosProfileEmailChangeFlow(context),
     [context],

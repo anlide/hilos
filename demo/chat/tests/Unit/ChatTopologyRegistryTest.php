@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
@@ -161,6 +164,9 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameBeginSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameAdvanceSignalData;
+use Hilos\Auth\Library\DTO\ProfileNameContinueSignalData;
 use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoRemoveActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePhotoSetActionDTO;
@@ -468,6 +474,27 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    public function testSessionNameChangesHaveOneAuthSessionOwner(): void
+    {
+        self::assertContains(HilosFeature::AUTH, Hilos::features());
+        $owners = [];
+        foreach (Hilos::AGENTS as $type => $entry) {
+            $workerClass = AgentRegistry::workerClass($entry);
+            if ($workerClass === null) {
+                continue;
+            }
+            $claims = OwnershipDeclaration::rtCollectionsOf($workerClass);
+            if (!array_key_exists(HilosProfileNameChange::RT_COLLECTION, $claims)) {
+                continue;
+            }
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+            $owners[$type] = $claims[HilosProfileNameChange::RT_COLLECTION]->asList();
+        }
+        self::assertSame([
+            HilosAgentType::HILOS_SESSIONS_LIBRARY => TruthSourceOperation::ALL,
+        ], $owners);
+    }
+
     public function testLetterFrameUsesTheExistingIndexOwnerWithoutTablesOrMutations(): void
     {
         self::assertSame(CommunicationsChannelFramePage::class, Hilos::PAGES[CommunicationsChannelFramePage::PAGE]);
@@ -1660,6 +1687,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1721,6 +1749,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1981,6 +2011,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
+            HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -2042,6 +2073,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => ProfileFlowStepSignalData::class,
+            HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN => ProfileNameBeginSignalData::class,
+            HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE => ProfileNameAdvanceSignalData::class,
             HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,

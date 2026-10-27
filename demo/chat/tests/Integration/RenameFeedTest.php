@@ -6,10 +6,9 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Hilos\Constants\HilosAgentType;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
-use Hilos\Runtime\State\Item\HilosModerationCheck;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Demo\Chat\Database\Entity\Item\UserRename as EntityUserRename;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -46,26 +45,18 @@ final class RenameFeedTest extends IntegrationTestCase
     /** Connection a person asks to be renamed from. */
     private const string SELF_ACCEPT_KEY = 'rename-feed-self-ak';
 
+    /** Starts the feed fixture with no live connections. */
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(
-            HilosModerationCheck::RT_COLLECTION,
-            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
-            self::TEST_AGENT_ID,
-        );
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::initSignalRouter(new ChatSignalRouter());
     }
 
+    /** Drops chat connections before the base releases the name protocol owners. */
     protected function tearDown(): void
     {
-        foreach (Hilos::$rt->hilosModerationChecks as $check) {
-            if ($check->kind === ModerationKindKey::PROFILE_NAME) {
-                $check->actions->forget();
-            }
-        }
         ExecutionContext::setCurrentAcceptKey(null);
         Hilos::$rt->connections->actions->clear();
         parent::tearDown();
@@ -119,22 +110,32 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertSame('After self', Hilos::$db->users[$userId]->name);
         $row = $this->onlyJournalRowOf($userId);
         self::assertSame($userId, $row->renamed_by_user_id);
+        self::assertSame('Before self', $row->old_name);
+        self::assertSame('After self', $row->new_name);
         self::assertNotNull($row->event_id);
         self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]->type);
         self::assertCount(0, $this->notificationsFor($userId), 'A rename of oneself tells nobody');
     }
 
     /**
-     * An allowed name the person already carries writes nothing: no journal row, no feed line.
+     * An equal name completes at admission without a check, journal row or feed event.
      *
-     * @throws HilosException When seeding or the verdict fails
+     * @throws HilosException When seeding or admission fails
      */
     public function testAnAllowedRenameToTheSameNameWritesNothing(): void
     {
         $userId = (int)Hilos::$db->users->actions->createWithName('Same name')->id;
         $events = count(Hilos::$db->events);
 
-        $this->allowRename($userId, 'Same name');
+        $change = $this->submitProfileNameChange($userId, self::SELF_ACCEPT_KEY, 'Same name');
+
+        self::assertSame(StateHilosProfileNameChange::PHASE_DONE, $change->phase);
+        $this->assertProfileNamePhase(self::SELF_ACCEPT_KEY, StateHilosProfileNameChange::PHASE_DONE);
+        self::assertNull($change->refusal);
+        self::assertNull($change->deadlineAt);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::SELF_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME));
+        self::assertSame('Same name', Hilos::$db->users[$userId]->name);
+        self::assertCount(0, $this->notificationsFor($userId));
 
         self::assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $userId]));
         self::assertCount($events, Hilos::$db->events, 'No feed line for a rename that did not happen');
@@ -231,27 +232,27 @@ final class RenameFeedTest extends IntegrationTestCase
     {
         $oldName = Hilos::$db->users[$userId]->name;
         $eventsBefore = count(Hilos::$db->events);
-        Hilos::$rt->connections->actions->register(self::SELF_ACCEPT_KEY, $userId);
-        Hilos::$rt->hilosModerationChecks->actions->open(
-            self::SELF_ACCEPT_KEY, $userId, ModerationKindKey::PROFILE_NAME, text: $name,
-        );
+        $check = $this->beginProfileNameCheck($userId, self::SELF_ACCEPT_KEY, $name);
+        self::assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $userId]));
 
         $signal = new AgentSignalData(new ModerationVerdictSignalData(
             acceptKey: self::SELF_ACCEPT_KEY,
             kind: ModerationKindKey::PROFILE_NAME,
-            requestId: Hilos::$rt->hilosModerationChecks->find(self::SELF_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME)->requestId,
+            requestId: $check->requestId,
             allow: true,
             reason: 'ok',
         ));
         ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
         try {
-            $this->usersLibrary()->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT);
+            $library = $this->usersLibrary();
+            $this->underAgent($library, static fn () => $library->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT));
             self::assertSame($oldName, Hilos::$db->users[$userId]->name, 'The library only asks the person owner');
             self::assertCount($eventsBefore, Hilos::$db->events);
-            $this->deliverPersonAgentFrames();
-            $expectedEvents = $eventsBefore + ($oldName === $name ? 0 : 1);
+            self::assertSame(2, $this->deliverPersonAgentFrames(), 'One owner ask and its reply');
+            $this->assertProfileNamePhase(self::SELF_ACCEPT_KEY, StateHilosProfileNameChange::PHASE_DONE);
+            $expectedEvents = $eventsBefore + 1;
             self::assertCount($expectedEvents, Hilos::$db->events, 'Exactly one feed line per changed name');
-            $this->usersLibrary()->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT);
+            $this->underAgent($library, static fn () => $library->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT));
             self::assertSame(0, $this->deliverPersonAgentFrames(), 'A repeated verdict sends no second owner ask');
             self::assertCount($expectedEvents, Hilos::$db->events);
         } finally {

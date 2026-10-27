@@ -14,6 +14,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Users\AccountErasure;
@@ -68,6 +69,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosOAuthTrip::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosProfileFlow::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosProfileNameChange::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     /**

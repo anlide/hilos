@@ -273,7 +273,9 @@ class ModerationAgent extends AbstractHilosAgent
             if ($check->deadlineAt <= $now) {
                 continue;
             }
-            if ($connections !== null && $connections->get($check->acceptKey)?->userId !== $check->userId) {
+            if (($check->sessionTokenHash === null || $check->kind !== ModerationKindKey::PROFILE_NAME)
+                && $connections !== null && $connections->get($check->acceptKey)?->userId !== $check->userId
+            ) {
                 continue;
             }
             if ($oldest === null

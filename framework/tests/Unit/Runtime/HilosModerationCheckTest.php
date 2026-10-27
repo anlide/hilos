@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Runtime;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\ModerationFeature;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -22,9 +26,13 @@ use Hilos\Hilos;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\HilosModerationCheck;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -51,6 +59,9 @@ final class HilosModerationCheckTest extends TestCase
     private const string UPLOAD = 'upload-1';
     private const int TIMEOUT_SEC = 30;
     private const int RAISED_TIMEOUT_SEC = 120;
+    private const string SESSION_HASH = 'accepted-session-hash';
+    private const string REQUEST_ID = '0123456789abcdef0123456789abcdef';
+    private const string SESSION_HOLDER = 'unit_name_change_holder';
 
     /** @var string App facade class bound before the test, restored afterwards */
     private string $boundAppClass = Hilos::class;
@@ -93,6 +104,10 @@ final class HilosModerationCheckTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(self::INITIATOR_A);
         RtTruthSourceRegistry::unregisterAgent(self::INITIATOR_B);
+        RtTruthSourceRegistry::unregisterAgent(self::SESSION_HOLDER);
+        RtTruthSourceRegistry::unregisterAgent(HilosAgentType::HILOS_USERS_LIBRARY);
+        SourceInterestRegistry::readsWhatItMounts();
+        RtStaleness::reset();
         SourceChangeBus::reset();
         Hilos::$rt = $this->previousRuntime;
         Hilos::$setting = $this->previousSetting;
@@ -119,6 +134,8 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertSame($check->toArray(), $restored->toArray());
         $this->assertSame(self::TEXT, $restored->text);
         $this->assertNull($restored->clientUploadId);
+        $this->assertNull($restored->sessionTokenHash);
+        $this->assertArrayHasKey(HilosModerationCheck::sessionTokenHash, $restored->toArray());
     }
 
     public function testRoundTripsAnImageCheckWithNoText(): void
@@ -145,6 +162,35 @@ final class HilosModerationCheckTest extends TestCase
     {
         $row = $this->textRow();
         unset($row[HilosModerationCheck::requestId]);
+
+        $this->expectException(InvalidFormatException::class);
+        HilosModerationCheck::fromRow($row);
+    }
+
+    public function testRestoresALegacyRowWithoutASessionHashAsNull(): void
+    {
+        $row = $this->textRow();
+        unset($row[HilosModerationCheck::sessionTokenHash]);
+
+        $restored = HilosModerationCheck::fromRow($row);
+        self::assertNull($restored->sessionTokenHash);
+        self::assertSame([...$row, HilosModerationCheck::sessionTokenHash => null], $restored->toArray());
+    }
+
+    public function testRoundTripsANewSessionHash(): void
+    {
+        $row = $this->textRow();
+        $row[HilosModerationCheck::sessionTokenHash] = self::SESSION_HASH;
+        $restored = HilosModerationCheck::fromRow($row);
+
+        self::assertSame(self::SESSION_HASH, $restored->sessionTokenHash);
+        self::assertSame($row, $restored->toArray());
+    }
+
+    public function testRefusesAMistypedSessionHash(): void
+    {
+        $row = $this->textRow();
+        $row[HilosModerationCheck::sessionTokenHash] = false;
 
         $this->expectException(InvalidFormatException::class);
         HilosModerationCheck::fromRow($row);
@@ -194,6 +240,7 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertSame(self::INITIATOR_A, $check->verdictTo);
         $this->assertSame(self::TEXT, $check->text);
         $this->assertNull($check->clientUploadId);
+        $this->assertNull($check->sessionTokenHash);
         $this->assertGreaterThanOrEqual($before, $check->startedAt);
         $this->assertLessThanOrEqual($after, $check->startedAt);
         $this->assertSame($check->startedAt + 30000, $check->deadlineAt);
@@ -377,6 +424,252 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertNull($checks->find(self::ACCEPT_KEY, ModerationCheckTestDirectory::B_PHOTO));
     }
 
+    public function testAnAcceptedNameKeepsItsCorrelationAndDeadlineWithoutAnOriginConnection(): void
+    {
+        $this->mountNameAttempts();
+        $startedAt = TimeHelper::nowMs() - 1000;
+        $deadlineAt = $startedAt + 90000;
+        $this->acceptNameAttempt(startedAt: $startedAt, deadlineAt: $deadlineAt);
+        // No connection collection exists here. A closed origin cannot cancel an accepted attempt.
+        Hilos::$setting = null;
+
+        $check = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY,
+            self::USER_ID,
+            ModerationKindKey::PROFILE_NAME,
+            self::TEXT,
+            sessionTokenHash: self::SESSION_HASH,
+            requestId: self::REQUEST_ID,
+            deadlineAt: $deadlineAt,
+        );
+
+        self::assertSame(self::SESSION_HASH, $check->sessionTokenHash);
+        self::assertSame(self::REQUEST_ID, $check->requestId);
+        self::assertSame($deadlineAt, $check->deadlineAt);
+        self::assertSame($startedAt, $check->startedAt);
+        self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $check->verdictTo);
+        self::assertSame(self::ACCEPT_KEY . '|' . ModerationKindKey::PROFILE_NAME, $check->getId());
+        self::assertSame($check->toArray(), HilosModerationCheck::fromRow($check->toArray())->toArray());
+        self::assertSame(self::REQUEST_ID, Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->requestId);
+    }
+
+    public function testLegacyFrameworkNameNeedsNoAuthState(): void
+    {
+        RtTruthSourceRegistry::register(
+            HilosModerationCheck::RT_COLLECTION,
+            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
+            HilosAgentType::HILOS_USERS_LIBRARY,
+        );
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_USERS_LIBRARY);
+        self::assertFalse(isset(Hilos::$rt->hilosProfileNameChanges));
+
+        $check = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationKindKey::PROFILE_NAME, self::TEXT,
+        );
+
+        self::assertNull($check->sessionTokenHash);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $check->requestId);
+        self::assertSame($check->startedAt + 30000, $check->deadlineAt);
+    }
+
+    public function testSessionBoundNameCannotOpenWithoutAuth(): void
+    {
+        $queueBefore = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationKindKey::PROFILE_NAME, self::TEXT,
+                sessionTokenHash: self::SESSION_HASH, requestId: self::REQUEST_ID, deadlineAt: PHP_INT_MAX,
+            );
+            self::fail('A session-bound name check was opened without AUTH');
+        } catch (InvalidArgumentException) {
+        }
+        self::assertSame($queueBefore, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @param string $mismatch Field or lifecycle condition that breaks the accepted correlation */
+    #[DataProvider('mismatchedNameAttempts')]
+    public function testRefusesUncorrelatedNamesWithoutChangingTheQueue(string $mismatch): void
+    {
+        $this->mountNameAttempts();
+        $startedAt = TimeHelper::nowMs() - 1000;
+        $deadlineAt = $mismatch === 'expired' ? $startedAt : $startedAt + 90000;
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_A);
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            self::OTHER_ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_NOTE, self::TEXT,
+        );
+        $this->acceptNameAttempt(
+            userId: $mismatch === 'user' ? self::USER_ID + 1 : self::USER_ID,
+            requestId: $mismatch === 'request' ? 'another-request' : self::REQUEST_ID,
+            originAcceptKey: $mismatch === 'origin' ? self::OTHER_ACCEPT_KEY : self::ACCEPT_KEY,
+            name: $mismatch === 'content' ? 'Another name' : self::TEXT,
+            startedAt: $startedAt,
+            deadlineAt: $deadlineAt,
+        );
+        ExecutionContext::setCurrentAgentId(self::SESSION_HOLDER);
+        switch ($mismatch) {
+            case 'applying':
+                Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->actions->markApplying();
+                break;
+            case 'refused':
+                Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->actions->refuse('This name was not accepted.');
+                break;
+            case 'done':
+                Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->actions->complete();
+                break;
+            case 'missing':
+                Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->actions->drop();
+                break;
+            case 'stale':
+                RtStaleness::mark(HilosProfileNameChange::RT_COLLECTION, [self::SESSION_HASH], microtime(true));
+                break;
+        }
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_USERS_LIBRARY);
+        $queueBefore = Hilos::$rt->hilosModerationChecks->toArray();
+
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY,
+                self::USER_ID,
+                ModerationKindKey::PROFILE_NAME,
+                self::TEXT,
+                sessionTokenHash: $mismatch === 'hash' ? 'another-hash' : self::SESSION_HASH,
+                requestId: self::REQUEST_ID,
+                deadlineAt: $mismatch === 'deadline' ? $deadlineAt + 1 : $deadlineAt,
+            );
+            self::fail('A name check without a matching fresh checking attempt was accepted');
+        } catch (InvalidStateException) {
+        }
+        self::assertSame($queueBefore, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @return iterable<string, array{string}> Correlation mismatches and unavailable attempts */
+    public static function mismatchedNameAttempts(): iterable
+    {
+        foreach ([
+            'user', 'request', 'origin', 'content', 'deadline', 'expired', 'applying', 'refused', 'done', 'missing', 'stale', 'hash',
+        ] as $case) {
+            yield $case => [$case];
+        }
+    }
+
+    public function testAnUndeliveredAttemptIsNotTreatedAsPermissionToCreate(): void
+    {
+        $this->mountNameAttempts();
+        $deadlineAt = TimeHelper::nowMs() + 90000;
+        SourceInterestRegistry::register(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION, 'unit-awaiting-name-state');
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION);
+        SourceInterestRegistry::register(SourceChange::KIND_RT, HilosProfileNameChange::RT_COLLECTION, 'unit-awaiting-name-state');
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $queueBefore = Hilos::$rt->hilosModerationChecks->toArray();
+
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationKindKey::PROFILE_NAME, self::TEXT,
+                sessionTokenHash: self::SESSION_HASH, requestId: self::REQUEST_ID, deadlineAt: $deadlineAt,
+            );
+            self::fail('An undelivered attempt was treated as an accepted attempt');
+        } catch (RtCollectionNotReadableException $refusal) {
+            self::assertStringContainsString(HilosProfileNameChange::RT_COLLECTION, $refusal->getMessage());
+            self::assertStringContainsString('its state has not arrived yet', $refusal->getMessage());
+        } finally {
+            SourceInterestRegistry::readsWhatItMounts();
+            SourceInterestRegistry::releaseConsumer('unit-awaiting-name-state');
+        }
+        self::assertSame($queueBefore, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /**
+     * @param ?string $hash Session hash supplied to the queue
+     * @param ?string $requestId Request id supplied to the queue
+     * @param ?int $deadlineAt Deadline supplied to the queue
+     */
+    #[DataProvider('partialCorrelations')]
+    public function testPartialCorrelationCannotBypassAdmission(?string $hash, ?string $requestId, ?int $deadlineAt): void
+    {
+        $this->mountNameAttempts();
+        $queueBefore = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationKindKey::PROFILE_NAME, self::TEXT,
+                sessionTokenHash: $hash, requestId: $requestId, deadlineAt: $deadlineAt,
+            );
+            self::fail('An incomplete correlation was accepted');
+        } catch (InvalidArgumentException) {
+        }
+        self::assertSame($queueBefore, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @return iterable<string, array{?string, ?string, ?int}> Incomplete correlation arguments */
+    public static function partialCorrelations(): iterable
+    {
+        yield 'hash only' => [self::SESSION_HASH, null, null];
+        yield 'missing deadline' => [self::SESSION_HASH, self::REQUEST_ID, null];
+        yield 'missing request' => [self::SESSION_HASH, null, PHP_INT_MAX];
+        yield 'request alone' => [null, self::REQUEST_ID, null];
+        yield 'deadline alone' => [null, null, PHP_INT_MAX];
+        yield 'missing hash' => [null, self::REQUEST_ID, PHP_INT_MAX];
+        yield 'empty hash' => ['', self::REQUEST_ID, PHP_INT_MAX];
+        yield 'empty request' => [self::SESSION_HASH, '', PHP_INT_MAX];
+    }
+
+    public function testSessionCorrelationIsReservedForTheFrameworkNameKind(): void
+    {
+        $this->mountNameAttempts();
+        $deadlineAt = TimeHelper::nowMs() + 90000;
+        $this->acceptNameAttempt(deadlineAt: $deadlineAt);
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_A);
+        $queueBefore = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_NOTE, self::TEXT,
+                sessionTokenHash: self::SESSION_HASH, requestId: self::REQUEST_ID, deadlineAt: $deadlineAt,
+            );
+            self::fail('A project kind opened a session-bound check');
+        } catch (InvalidArgumentException) {
+        }
+        self::assertSame($queueBefore, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** Mounts AUTH storage while keeping the legacy tests on their moderation-only fixture. */
+    private function mountNameAttempts(): void
+    {
+        self::bindAppClass(ModerationNameCheckTestHilos::class);
+        Hilos::$rt->mountFeatureRuntime([new AuthFeature()]);
+        Hilos::$rt->bindStateCollectionNames();
+        RtTruthSourceRegistry::register(HilosProfileNameChange::RT_COLLECTION, TruthSourceKeys::all(), self::SESSION_HOLDER);
+        RtTruthSourceRegistry::register(
+            HilosModerationCheck::RT_COLLECTION,
+            TruthSourceKeys::set(HilosAgentType::HILOS_USERS_LIBRARY),
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
+        );
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_USERS_LIBRARY);
+    }
+
+    /**
+     * @param int $userId Accepted person id
+     * @param string $requestId Accepted request id
+     * @param string $originAcceptKey Accepted origin connection
+     * @param string $name Accepted name
+     * @param ?int $startedAt Accepted start in epoch milliseconds, or current time
+     * @param ?int $deadlineAt Accepted deadline in epoch milliseconds, or a future deadline
+     */
+    private function acceptNameAttempt(
+        int $userId = self::USER_ID,
+        string $requestId = self::REQUEST_ID,
+        string $originAcceptKey = self::ACCEPT_KEY,
+        string $name = self::TEXT,
+        ?int $startedAt = null,
+        ?int $deadlineAt = null,
+    ): void {
+        ExecutionContext::setCurrentAgentId(self::SESSION_HOLDER);
+        Hilos::$rt->hilosProfileNameChanges->actions->open(
+            self::SESSION_HASH, $userId, $requestId, $originAcceptKey, $name,
+            $startedAt ?? TimeHelper::nowMs(), $deadlineAt ?? TimeHelper::nowMs() + 90000,
+        );
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_USERS_LIBRARY);
+    }
+
     /**
      * @return array<string, mixed> Sync row of a text check
      */
@@ -453,6 +746,12 @@ abstract class ModerationCheckTestHilos extends Hilos
 abstract class ModerationCheckOffTestHilos extends Hilos
 {
     protected const string MODERATION_KIND_DIRECTORY = ModerationCheckTestDirectory::class;
+}
+
+/** A project that admits session name-change attempts as well as moderation checks. */
+abstract class ModerationNameCheckTestHilos extends ModerationCheckTestHilos
+{
+    protected const array FEATURES = [HilosFeature::AUTH, HilosFeature::MODERATION];
 }
 
 /**

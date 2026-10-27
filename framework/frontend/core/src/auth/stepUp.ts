@@ -151,7 +151,7 @@ function actionMessage(error: unknown): string {
 export function createHilosStepUpStep(
   actions: HilosStepUpActions,
   onPassed?: () => void | Promise<void>,
-): HilosStepUpStep {
+): HilosStepUpStep & { dispose(): void } {
   const opening = createSignal<HilosStepUpOpening | null>(null)
   const code = createSignal('')
   const password = createSignal('')
@@ -207,7 +207,7 @@ export function createHilosStepUpStep(
     resendAt,
     async open(nextOperation) {
       stopListening()
-      round += 1
+      const started = ++round
       operation = nextOperation
       code.set('')
       password.set('')
@@ -220,6 +220,7 @@ export function createHilosStepUpStep(
       replyResendAt.set(null)
       try {
         const result = await actions.start(nextOperation).done
+        if (round !== started) return 'refused'
         const next = result.reply as HilosStepUpOpening
         opening.set(next)
         if (next.send !== undefined)
@@ -228,12 +229,13 @@ export function createHilosStepUpStep(
 
         return next.required ? 'ask' : 'skip'
       } catch (error) {
+        if (round !== started) return 'refused'
         opening.set(null)
         refusal.set(actionMessage(error))
 
         return 'refused'
       } finally {
-        busy.set(false)
+        if (round === started) busy.set(false)
       }
     },
     async sendAgain() {
@@ -284,6 +286,7 @@ export function createHilosStepUpStep(
         return false
       }
 
+      const started = round
       busy.set(true)
       refusal.set(null)
       try {
@@ -302,11 +305,13 @@ export function createHilosStepUpStep(
               ...(await getPasskey(current.publicKeyOptions)),
             }
           } catch {
+            if (round !== started) return false
             refusal.set(HILOS_STEP_UP_COPY.passkeyNotConfirmed)
             return false
           }
         }
 
+        if (round !== started || operation === null) return false
         await actions.confirm(operation, {
           method: current.method,
           code: code.get(),
@@ -314,15 +319,26 @@ export function createHilosStepUpStep(
           password: password.get(),
           passkey,
         }).done
+        if (round !== started) return false
         stopListening()
 
         return true
       } catch (error) {
+        if (round !== started) return false
         refusal.set(actionMessage(error))
         return false
       } finally {
-        busy.set(false)
+        if (round === started) busy.set(false)
       }
+    },
+    dispose() {
+      round += 1
+      stopListening()
+      operation = null
+      code.set('')
+      password.set('')
+      opening.set(null)
+      busy.set(false)
     },
   }
 }

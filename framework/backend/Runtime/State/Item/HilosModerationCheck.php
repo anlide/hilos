@@ -14,9 +14,9 @@ use Hilos\Runtime\State\Collection\HilosModerationChecks;
  * receives the verdict (HIL-1625).
  *
  * The row is keyed by the connection and the kind, so a connection holds one check of a kind at a
- * time. Every opening draws a fresh request id, and a verdict is applied only while it names the
- * request id the row still holds: a changed content is a new attempt under a new id, never an
- * edit of the old one, and the row carries no field a write could rewrite.
+ * time. An opening draws a fresh request id or keeps an accepted session name-change request id.
+ * A verdict applies only while it names the request id the row still holds. Changed content is a
+ * new attempt, never an edit of the old one, and the row carries no field a write could rewrite.
  *
  * The collection is cut into sets by the agent that receives the verdict ({@see self::SET_VIA}),
  * taken from the kind and not from the caller: each initiator owns the checks it opened, and the
@@ -40,6 +40,7 @@ final class HilosModerationCheck extends RtState
     public const string clientUploadId = 'clientUploadId';
     public const string startedAt = 'startedAt';
     public const string deadlineAt = 'deadlineAt';
+    public const string sessionTokenHash = 'sessionTokenHash';
 
     /** The set a check is in is the agent its verdict goes to. */
     public const string SET_VIA = self::verdictTo;
@@ -53,7 +54,7 @@ final class HilosModerationCheck extends RtState
     /** Key of the moderation kind ({@see ModerationKind::$key}). */
     private(set) string $kind = '';
 
-    /** Id of this attempt, fresh on every opening; a verdict naming another is stale. */
+    /** Id of this attempt; a verdict naming another is stale. */
     private(set) string $requestId = '';
 
     /** Agent type the verdict is sent to, as the kind names it. */
@@ -70,6 +71,9 @@ final class HilosModerationCheck extends RtState
 
     /** Moment the check stops waiting for a verdict, in epoch milliseconds; fixed at the opening. */
     private(set) int $deadlineAt = 0;
+
+    /** Session name-change correlation, or null for a connection-bound check. */
+    private(set) ?string $sessionTokenHash = null;
 
     /**
      * Composes the row id from the connection and the kind.
@@ -95,6 +99,7 @@ final class HilosModerationCheck extends RtState
      * @param ?string $clientUploadId Complete upload to check, or null for a kind that looks at no image
      * @param int $startedAt Opening moment in epoch milliseconds
      * @param int $deadlineAt Moment the wait ends, in epoch milliseconds
+     * @param ?string $sessionTokenHash Session name-change correlation, or null for a connection-bound check
      * @return static Fresh check row
      */
     public static function create(
@@ -107,6 +112,7 @@ final class HilosModerationCheck extends RtState
         ?string $clientUploadId,
         int $startedAt,
         int $deadlineAt,
+        ?string $sessionTokenHash = null,
     ): static {
         $instance = new static();
         $instance->acceptKey = $acceptKey;
@@ -118,6 +124,7 @@ final class HilosModerationCheck extends RtState
         $instance->clientUploadId = $clientUploadId;
         $instance->startedAt = $startedAt;
         $instance->deadlineAt = $deadlineAt;
+        $instance->sessionTokenHash = $sessionTokenHash;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -140,6 +147,7 @@ final class HilosModerationCheck extends RtState
         $instance->clientUploadId = self::optionalString($row, self::clientUploadId);
         $instance->startedAt = self::requireInt($row, self::startedAt);
         $instance->deadlineAt = self::requireInt($row, self::deadlineAt);
+        $instance->sessionTokenHash = self::optionalString($row, self::sessionTokenHash);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -176,6 +184,7 @@ final class HilosModerationCheck extends RtState
             self::clientUploadId => $this->clientUploadId,
             self::startedAt => $this->startedAt,
             self::deadlineAt => $this->deadlineAt,
+            self::sessionTokenHash => $this->sessionTokenHash,
         ];
     }
 }

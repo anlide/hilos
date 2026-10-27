@@ -521,6 +521,15 @@ export {
   resetCommunicationsField,
   saveCommunicationsField,
 } from './communications.js'
+
+export {
+  expectProfileNameSnapshot,
+  watchProfileRenameFrames,
+  watchProfileRenameStatus,
+  type ProfileNameSnapshot,
+  type ProfileRenameFrameLog,
+} from './profileRename.js'
+
 export {
   COMMUNICATIONS_FRAME_PATH,
   communicationsFrameHtml,

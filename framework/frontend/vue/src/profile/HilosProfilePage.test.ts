@@ -16,6 +16,7 @@ import {
   HILOS_PROFILE_ROOT_COPY,
   HilosPages,
   ingest,
+  readProfileRenameMemory,
   resolveHilosProfileSignInMethods,
   ScopeManager,
   setHilosThemePick,
@@ -30,9 +31,13 @@ import {
   type ProjectSignal,
 } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import {
+  profileNameStatus,
+  profileRenameTab,
+} from '../../test/profileRenameHarness.js'
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfilePage from './HilosProfilePage.vue'
 import HilosProfileTimeZone from './HilosProfileTimeZone.vue'
@@ -45,9 +50,13 @@ const themeActions = new ActionLifecycle({
 let releaseTheme: (() => void) | undefined
 let releaseSession: (() => void) | undefined
 let releaseTimeZone: (() => void) | undefined
+const renameCleanup: Array<() => void> = []
 
+beforeEach(() => sessionStorage.clear())
 afterEach(() => {
+  for (const stop of renameCleanup.splice(0).reverse()) stop()
   document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
   releaseTheme?.()
   releaseTheme = undefined
   releaseSession?.()
@@ -1062,5 +1071,256 @@ describe('HilosProfilePage', () => {
     expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
       'Light · default',
     )
+  })
+})
+
+/** A mounted page using the application's standard state-capable binding. */
+function renamePage(known = true) {
+  const tab = profileRenameTab(known)
+  renameCleanup.push(tab.dispose)
+  const wrapper = mountPage(tab.binding, tab.context.scopes, tab.context)
+  return { ...tab, wrapper }
+}
+
+function renameNode(id: string): HTMLElement {
+  const node = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  if (!node) throw new Error(`Missing ${id}`)
+  return node
+}
+
+function nameInput(): HTMLInputElement {
+  return renameNode('profile-name-input') as HTMLInputElement
+}
+
+function draftName(value: string): void {
+  const field = nameInput()
+  field.value = value
+  field.dispatchEvent(new Event('input'))
+}
+
+async function openName(tab: ReturnType<typeof renamePage>): Promise<void> {
+  await tab.wrapper.get('[data-id="profile-edit"]').trigger('click')
+  await flushPromises()
+}
+
+async function sendName(tab: ReturnType<typeof renamePage>): Promise<void> {
+  await openName(tab)
+  draftName('Bob')
+  await nextTick()
+  renameNode('profile-rename-save').click()
+  await nextTick()
+  expect(tab.names()).toHaveLength(1)
+}
+
+// These remounts exercise the component's reload lifecycle. Actual browser
+// page.reload coverage belongs to the separate end-to-end scenario.
+describe('profile name window tab lifecycle', () => {
+  it('starts restore on mount, waits for identity and STATE, and keeps an unsent invalid draft', async () => {
+    const first = renamePage()
+    await openName(first)
+    draftName(' x ')
+    await nextTick()
+    first.wrapper.unmount()
+    expect(readProfileRenameMemory()?.open).toBe(true)
+    expect(readProfileRenameMemory()?.draft).toBe(' x ')
+    first.dispose()
+
+    const second = renamePage(false)
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(second.wrapper.find('[data-id="profile-view"]').exists()).toBe(false)
+    expect(readProfileRenameMemory()?.open).toBe(true)
+    second.identity()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    second.state(null)
+    await flushPromises()
+    expect(nameInput().value).toBe(' x ')
+    expect(renameNode('profile-rename-save').hasAttribute('disabled')).toBe(
+      true,
+    )
+    expect(first.names()).toHaveLength(0)
+    expect(second.names()).toHaveLength(0)
+    expect(
+      second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+    ).toHaveLength(1)
+  })
+
+  it.each(['checking', 'applying'] as const)(
+    'restores an open %s without another name send or step-up start',
+    async (phase) => {
+      const first = renamePage()
+      await sendName(first)
+      first.state(phase)
+      draftName('Carol')
+      await nextTick()
+      first.wrapper.unmount()
+      first.dispose()
+      expect(readProfileRenameMemory()?.open).toBe(true)
+
+      const second = renamePage(false)
+      second.identity()
+      second.state(phase)
+      await flushPromises()
+      expect(nameInput().value).toBe('Carol')
+      expect(profileNameStatus().textContent?.trim()).toBe(
+        phase === 'checking' ? 'Checking your name…' : '',
+      )
+      expect(second.wrapper.get('[data-id="profile-name"]').text()).toBe('Ann')
+      expect(renameNode('profile-rename-save').hasAttribute('disabled')).toBe(
+        true,
+      )
+      expect(second.names()).toHaveLength(0)
+      expect(
+        second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+      ).toHaveLength(0)
+      second.identity(1, 'Bob')
+      second.state('done')
+      await nextTick()
+      expect(nameInput().value).toBe('Carol')
+      expect(
+        document.querySelector('[data-id="profile-edit-notice"]'),
+      ).toBeNull()
+      expect(
+        renameNode('profile-edit-notice-idle').getAttribute('aria-hidden'),
+      ).toBe('true')
+      expect(renameNode('profile-rename-save').hasAttribute('disabled')).toBe(
+        false,
+      )
+    },
+  )
+
+  it('restores the exact server refusal in the open window without sending again', async () => {
+    const first = renamePage()
+    await sendName(first)
+    first.state('refused')
+    await nextTick()
+    first.wrapper.unmount()
+    first.dispose()
+    const second = renamePage(false)
+    second.identity()
+    second.state('refused')
+    await flushPromises()
+    expect(nameInput().value).toBe('Bob')
+    expect(renameNode('profile-rename-live-assertive').textContent).toBe(
+      ' Exact server refusal.\nTry another name. ',
+    )
+    expect(renameNode('profile-rename-save').hasAttribute('disabled')).toBe(
+      false,
+    )
+    expect(second.names()).toHaveLength(0)
+  })
+
+  it.each(['refused', 'done'] as const)(
+    'preserves explicit close across remount and late %s until manual Change',
+    async (phase) => {
+      const first = renamePage()
+      await sendName(first)
+      first.state('checking')
+      await nextTick()
+      renameNode('profile-rename-cancel').click()
+      await nextTick()
+      renameNode('modal-confirm-discard').click()
+      await nextTick()
+      expect(readProfileRenameMemory()?.open).toBe(false)
+      first.wrapper.unmount()
+      first.dispose()
+
+      const second = renamePage(false)
+      second.identity()
+      second.state('checking')
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      second.state(phase)
+      if (phase === 'done') second.identity(1, 'Bob')
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(readProfileRenameMemory()?.open).toBe(false)
+      expect(
+        second.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+      ).toHaveLength(0)
+      await openName(second)
+      expect(nameInput().value).toBe('Bob')
+      expect(renameNode('profile-rename-save').hasAttribute('disabled')).toBe(
+        phase === 'done',
+      )
+      expect(second.names()).toHaveLength(0)
+    },
+  )
+
+  it('keeps a new tab closed when checking and refusal arrive without an open checkpoint', async () => {
+    const tab = renamePage()
+    tab.state('checking')
+    tab.state('refused')
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(readProfileRenameMemory()).toEqual({
+      version: 1,
+      userId: 1,
+      open: false,
+      step: 'closed',
+      draft: '',
+      checkpoint: null,
+      requestId: null,
+    })
+    expect(
+      tab.frames.filter((frame) => frame.action === 'hilos_step_up_start'),
+    ).toHaveLength(0)
+  })
+
+  it.each(['signout', 'person', 'access'] as const)(
+    'discards the previous window on %s and cannot revive it over a new surface',
+    async (cause) => {
+      const tab = renamePage()
+      await sendName(tab)
+      tab.state('checking')
+      if (cause === 'signout') tab.identity(null)
+      if (cause === 'person') tab.identity(2, 'Another person')
+      if (cause === 'access') tab.identity(1, 'Ann', { accountBlocked: {} })
+      await nextTick()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(readProfileRenameMemory()).toBeNull()
+      if (cause === 'signout')
+        expect(tab.wrapper.find('[data-id="profile-view"]').exists()).toBe(
+          false,
+        )
+      tab.state('done')
+      tab.identity(1, 'Bob')
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(readProfileRenameMemory()).toBeNull()
+      expect(tab.names()).toHaveLength(1)
+    },
+  )
+
+  it('focuses the editable name, traps keyboard navigation and returns to Change after discard', async () => {
+    const tab = renamePage()
+    const opener = tab.wrapper.get('[data-id="profile-edit"]')
+      .element as HTMLButtonElement
+    opener.focus()
+    await openName(tab)
+    expect(document.activeElement).toBe(nameInput())
+    expect(nameInput().labels?.[0]?.textContent?.trim()).toBe('Display name')
+    const close = renameNode('modal-close')
+    close.focus()
+    close.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+      }),
+    )
+    expect(document.activeElement).toBe(renameNode('profile-rename-cancel'))
+    draftName('Carol')
+    await nextTick()
+    renameNode('modal').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await nextTick()
+    renameNode('modal-confirm-discard').click()
+    await nextTick()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    expect(readProfileRenameMemory()?.open).toBe(false)
   })
 })
