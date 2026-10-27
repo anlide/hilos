@@ -46,6 +46,71 @@ final class InMemoryTableFilterWindowPlaceTest extends TestCase
         self::assertSame([1, 2, 3], array_column($snapshot->rows, self::KEY_FIELD));
     }
 
+    public function testNullPolicyKeepsAnchorWalksNumberedPagesAndFramesInOneOrder(): void
+    {
+        $values = [1 => 100000, 2 => 100000, 3 => 100000, 4 => 200000, 5 => 200000, 6 => null, 7 => null, 8 => null];
+        $rows = [];
+        foreach ([8, 4, 2, 7, 1, 6, 5, 3] as $id) {
+            $rows[] = ['nextRunAt' => $values[$id], 'id' => $id];
+        }
+        foreach ([false, true] as $nullsLast) {
+            foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+                $keys = $direction === TableConstants::ORDER_ASC
+                    ? [1, 2, 3, 4, 5, 6, 7, 8]
+                    : ($nullsLast ? [5, 4, 3, 2, 1, 8, 7, 6] : [8, 7, 6, 5, 4, 3, 2, 1]);
+                $order = TableSortOrderDTO::of(new TableSortDTO('nextRunAt', $direction));
+                $places = array_map(static fn(int $id): array => ['nextRunAt' => $values[$id], 'id' => $id], $keys);
+                $forward = [];
+                $backward = [];
+                $after = null;
+                $before = null;
+                for ($page = 0; $page < 4; $page++) {
+                    $numbered = InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                        sort: $order, limit: 2, pageIndex: $page,
+                    ), self::KEY_FIELD, $nullsLast);
+                    $next = InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                        sort: $order, limit: 2, anchor: $after,
+                    ), self::KEY_FIELD, $nullsLast);
+                    $previous = InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                        sort: $order, limit: 2, anchor: $before, anchorDirection: TableAnchorDirection::Before,
+                    ), self::KEY_FIELD, $nullsLast);
+                    $start = $page * 2;
+                    $backStart = 6 - $start;
+                    self::assertSame(array_slice($places, $start, 2), $numbered->rows);
+                    self::assertSame($numbered->rows, $next->rows);
+                    self::assertSame(array_slice($places, $backStart, 2), $previous->rows);
+                    self::assertSame($start, $numbered->rowsBefore);
+                    self::assertSame($start, $next->rowsBefore);
+                    self::assertSame($backStart, $previous->rowsBefore);
+                    foreach ([$numbered, $next] as $snapshot) {
+                        self::assertSame($places[$start], $snapshot->firstAnchor?->values);
+                        self::assertSame($places[$start + 1], $snapshot->lastAnchor?->values);
+                        self::assertNotNull($snapshot->frame);
+                        self::assertSame($places[$start - 1] ?? null, $snapshot->frame->before?->values);
+                        self::assertSame($places[$start + 2] ?? null, $snapshot->frame->after?->values);
+                    }
+                    self::assertSame($places[$backStart], $previous->firstAnchor?->values);
+                    self::assertSame($places[$backStart + 1], $previous->lastAnchor?->values);
+                    self::assertNotNull($previous->frame);
+                    self::assertSame($places[$backStart - 1] ?? null, $previous->frame->before?->values);
+                    self::assertSame($places[$backStart + 2] ?? null, $previous->frame->after?->values);
+                    array_push($forward, ...array_column($next->rows, 'id'));
+                    $backward = [...array_column($previous->rows, 'id'), ...$backward];
+                    $after = $next->lastAnchor;
+                    $before = $previous->firstAnchor;
+                }
+                self::assertSame($keys, $forward);
+                self::assertSame($keys, $backward);
+                self::assertSame([], InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                    sort: $order, limit: 2, anchor: $after,
+                ), self::KEY_FIELD, $nullsLast)->rows);
+                self::assertSame([], InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                    sort: $order, limit: 2, anchor: $before, anchorDirection: TableAnchorDirection::Before,
+                ), self::KEY_FIELD, $nullsLast)->rows);
+            }
+        }
+    }
+
     public function testAWindowTakenAfterAnAnchorStandsBehindTheRowsUpToIt(): void
     {
         $snapshot = InMemoryTableFilter::apply(

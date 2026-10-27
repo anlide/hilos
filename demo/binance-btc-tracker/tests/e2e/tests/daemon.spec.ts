@@ -697,6 +697,250 @@ test.describe('daemon overview', () => {
   })
 })
 
+test.describe('Cron search and ordering', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  for (const viewer of [false, true]) {
+    test(`searches real rules and cycles both orders as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+      page,
+    }) => {
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon_cron',
+        tableKey: 'hilosDaemonCron',
+      })
+      const proof: unknown[] = []
+      try {
+        await setAdminViewMode(viewer)
+        if (!viewer) await signUpAdmin(page)
+        await gotoPage(page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
+        await expectStandaloneCron(expect, page)
+        if (viewer) {
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+          await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+            'data-access',
+            'view',
+          )
+        }
+
+        const search = shownByTestId(page, 'hilos-table-search')
+        await expect(search).toHaveAttribute(
+          'placeholder',
+          'Find by rule or agent',
+        )
+        await expect(search).toHaveAccessibleName('Find by rule or agent')
+        const initial = await windows.read()
+        const initialKeys = await windows.rowKeys()
+        const initialRules = initialKeys.map(
+          (key) => readDaemonCronMoment(initial.frames, key)!.rule,
+        )
+        const target = readDaemonCronMoment(
+          initial.frames,
+          'hilos_sessions_library/hilos_sessions_expire',
+        )!.rule
+        expect(target.name).toEqual(expect.any(String))
+        expect(target.agentId).toEqual(expect.any(String))
+        const name = String(target.name)
+        const agentId = String(target.agentId)
+        expect(name).not.toContain(agentId)
+        expect(initial.application).toHaveLength(1)
+        expect(initial.application[0]!.descriptor).toMatchObject({
+          filter: { node: 'standalone' },
+          sort: null,
+          pageIndex: null,
+          anchor: null,
+          anchorDirection: 'after',
+        })
+        for (const field of ['name', 'nextRunAt']) {
+          const button = page.getByTestId(`hilos-table-sort-${field}`)
+          await expect(button).toBeVisible()
+          await expect(button.locator('..')).toHaveAttribute(
+            'aria-sort',
+            'none',
+          )
+        }
+
+        const missing = 'no-such-cron-rule-or-agent'
+        const steps: {
+          search: string
+          control: string
+          field?: 'name' | 'nextRunAt'
+          direction?: 'asc' | 'desc'
+          key?: 'Enter' | 'Space'
+        }[] = [
+          { search: name, control: 'hilos-table-search' },
+          { search: '', control: 'hilos-table-search-clear' },
+          { search: agentId, control: 'hilos-table-search' },
+          ...(['name', 'nextRunAt'] as const).flatMap((field) => [
+            // Rule is sorted inside the agent search; Next run over the whole set.
+            ...(field === 'nextRunAt'
+              ? [{ search: '', control: 'hilos-table-search-clear' }]
+              : []),
+            ...(['asc', 'desc', undefined] as const).map(
+              (direction, index) => ({
+                search: field === 'name' ? agentId : '',
+                control: `hilos-table-sort-${field}`,
+                field,
+                direction,
+                key: (['Enter', 'Space', undefined] as const)[index],
+              }),
+            ),
+          ]),
+          { search: missing, control: 'hilos-table-search' },
+          { search: '', control: 'hilos-table-no-matches-reset' },
+        ]
+
+        for (const step of steps) {
+          const mark = await windows.mark()
+          const control = shownByTestId(page, step.control)
+          if (step.control === 'hilos-table-search') {
+            await control.fill('')
+            await control.pressSequentially(step.search, { delay: 10 })
+          } else {
+            await control.focus()
+            await expect(control).toBeFocused()
+            if (step.key) await control.press(step.key)
+            else await control.click()
+          }
+          const filter = {
+            node: 'standalone',
+            ...(step.search === '' ? {} : { search: step.search }),
+          }
+          const sort = step.direction
+            ? [{ field: step.field, direction: step.direction }]
+            : null
+          let sent: (typeof initial.frames)[number] | undefined
+          let reply: (typeof initial.frames)[number] | undefined
+          await expect
+            .poll(async () => {
+              const state = await windows.read()
+              sent = state.frames
+                .filter(
+                  (frame) =>
+                    frame.direction === 'sent' &&
+                    frame.index >= mark.cursor &&
+                    frame.wire.type === 'table_viewport' &&
+                    JSON.stringify(frame.wire.filter) ===
+                      JSON.stringify(filter) &&
+                    JSON.stringify(frame.wire.sort ?? null) ===
+                      JSON.stringify(sort),
+                )
+                .at(-1)
+              reply = state.frames.find(
+                (frame) =>
+                  sent !== undefined &&
+                  frame.direction === 'received' &&
+                  frame.socket === sent.socket &&
+                  frame.index > sent.index &&
+                  frame.wire.type === 'table_window' &&
+                  deliveryObject(frame.wire.data).requestId ===
+                    sent.wire.requestId,
+              )
+              return deliveryObject(reply?.wire.data).rows
+            })
+            .toEqual(expect.any(Array))
+
+          const rows = deliveryObject(reply!.wire.data).rows as unknown[]
+          const rules = rows.map((row) =>
+            deliveryObject(deliveryObject(deliveryObject(row).slots).rule),
+          )
+          const keys = rows.map((row) => String(deliveryObject(row).rowKey))
+          proof.push(await windows.settled(expect, mark, step.search, keys))
+          const applied = (await windows.read()).application[0]!
+          expect(sent!.wire).toMatchObject({
+            page: 'hilos_daemon_cron',
+            tableKey: 'hilosDaemonCron',
+            filter,
+            anchor: null,
+            anchorDirection: 'after',
+          })
+          expect(sent!.wire.sort ?? null).toEqual(sort)
+          expect(applied.descriptor).toMatchObject({
+            filter,
+            sort,
+            pageIndex: null,
+            anchor: null,
+            anchorDirection: 'after',
+          })
+          expect(applied.filter).toEqual(filter)
+          expect(applied.appliedRequestId).toBe(sent!.wire.requestId)
+          expect(rules.map((rule) => rule.rowKey)).toEqual(keys)
+          if (step.key) await expect(control).toBeFocused()
+
+          const matching = initialRules.filter((rule) =>
+            [rule.name, rule.agentId].some(
+              (value) =>
+                typeof value === 'string' && value.includes(step.search),
+            ),
+          )
+          expect([...keys].sort()).toEqual(
+            matching.map((rule) => String(rule.rowKey)).sort(),
+          )
+          if (step.direction) {
+            const field = step.field!
+            const ordered = [...rules].sort((left, right) => {
+              const a = left[field]
+              const b = right[field]
+              if (a === null && b !== null) return 1
+              if (b === null && a !== null) return -1
+              const comparison =
+                a === b
+                  ? 0
+                  : field === 'nextRunAt'
+                    ? Number(a) - Number(b)
+                    : String(a) < String(b)
+                      ? -1
+                      : 1
+              const byKey = String(left.rowKey) < String(right.rowKey) ? -1 : 1
+              return (step.direction === 'asc' ? 1 : -1) * (comparison || byKey)
+            })
+            expect(keys).toEqual(ordered.map((rule) => rule.rowKey))
+            expect(
+              new Set(rules.map((rule) => rule[field])).size,
+            ).toBeGreaterThan(1)
+          } else {
+            expect(keys).toEqual(matching.map((rule) => rule.rowKey))
+          }
+          for (const field of ['name', 'nextRunAt']) {
+            await expect(
+              page.getByTestId(`hilos-table-sort-${field}`).locator('..'),
+            ).toHaveAttribute(
+              'aria-sort',
+              step.field === field && step.direction
+                ? step.direction === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none',
+            )
+          }
+          if (step.search === missing) {
+            await expect(
+              shownByTestId(page, 'hilos-table-no-matches'),
+            ).toContainText('Nothing found')
+            await expect(
+              shownByTestId(page, 'hilos-table-no-matches-terms'),
+            ).toContainText(missing)
+          } else {
+            await expect(
+              page.getByTestId('hilos-table-no-matches'),
+            ).toHaveCount(0)
+          }
+        }
+        await expect(search).toHaveValue('')
+        await expectStandaloneCron(expect, page)
+      } finally {
+        await test.info().attach('cron-search-order-frames', {
+          body: JSON.stringify(
+            { frames: await windows.read(), proof },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+      }
+    })
+  }
+})
+
 test.describe('Cron reader time zone', () => {
   test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })
 

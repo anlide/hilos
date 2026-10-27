@@ -198,10 +198,12 @@ describe('HilosDaemonCronPage', () => {
       expect(
         h.find('hilos-daemon-cron-executor-agent/sweep')?.textContent,
       ).toBe('agent')
-      expect(h.find('hilos-table-search')).toBeNull()
+      expect(h.find('hilos-table-search')?.getAttribute('placeholder')).toBe(
+        'Find by rule or agent',
+      )
       expect(
         h.view.container.querySelectorAll('[data-id^="hilos-table-sort-"]'),
-      ).toHaveLength(0)
+      ).toHaveLength(2)
     },
   )
 

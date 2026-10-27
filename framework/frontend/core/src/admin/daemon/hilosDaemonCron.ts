@@ -170,8 +170,14 @@ export function createHilosDaemonCronTable(
   nodeId: string,
 ): HilosDaemonCronTable {
   const frame: HilosTableFrame = {
+    search: { placeholder: 'Find by rule or agent' },
     columns: [
-      { key: DAEMON_CRON_NAME_FIELD, label: 'Rule', card: 'title' },
+      {
+        key: DAEMON_CRON_NAME_FIELD,
+        label: 'Rule',
+        card: 'title',
+        sortable: true,
+      },
       { key: DAEMON_CRON_AGENT_FIELD, label: 'Run by', card: 'badge' },
       { key: DAEMON_CRON_EXPRESSION_FIELD, label: 'Expression' },
       {
@@ -183,6 +189,7 @@ export function createHilosDaemonCronTable(
         key: DAEMON_CRON_NEXT_RUN_FIELD,
         label: 'Next run',
         reads: [DAEMON_CRON_IDLE_FIELD],
+        sortable: true,
       },
     ],
   }

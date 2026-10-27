@@ -144,10 +144,12 @@ describe('daemon cron viewport', () => {
     expect(sent.at(-1)?.descriptor.sort).toBeNull()
   })
 
-  it('declares the five unsorted columns and each moment dependency', () => {
+  it('declares search, two sortable columns, and each moment dependency', () => {
     const frame = stubTable().table.controller.frame
     expect(frame.declaration?.title).toBeUndefined()
-    expect(frame.declaration?.search).toBeUndefined()
+    expect(frame.declaration?.search).toEqual({
+      placeholder: 'Find by rule or agent',
+    })
     expect(frame.declaration?.filters).toBeUndefined()
     expect(frame.declaration?.empty).toBeUndefined()
     expect(frame.declaration?.mainAction).toBeUndefined()
@@ -172,7 +174,127 @@ describe('daemon cron viewport', () => {
     expect(columns[1]?.card).toBe('badge')
     expect(columns[3]?.reads).toEqual(['idleReason'])
     expect(columns[4]?.reads).toEqual(['idleReason'])
-    expect(columns.every((column) => column.sortable !== true)).toBe(true)
+    expect(
+      columns
+        .filter((column) => column.sortable === true)
+        .map((column) => column.key),
+    ).toEqual(['name', 'nextRunAt'])
+  })
+
+  it('sends route-preserving search and sort descriptors through the viewport', () => {
+    const { table, sent } = stubTable('node-7')
+    const rows = [
+      rawRow('/cleanup', {
+        agentId: null,
+        name: 'cleanup',
+        expression: '0 3 * * *',
+        lastRunAt: null,
+        nextRunAt: null,
+        idleReason: null,
+      }),
+    ]
+    const anchor = { cursor: '/cleanup' }
+
+    table.controller.ingestSubscriptionWindow(
+      [],
+      50,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      [],
+      0,
+    )
+
+    expect(sent.at(-1)?.descriptor.sort).toBeNull()
+    table.controller.ingestWindow(rows, 50, true, null, null, 25, 0)
+    expect(table.controller.descriptor()?.sort).toBeNull()
+
+    table.controller.setSearch('cleanup')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: null,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+
+    table.controller.setPage(1)
+    expect(sent.at(-1)?.descriptor.pageIndex).toBe(1)
+    table.controller.setSearch('')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7' },
+      sort: null,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+
+    table.controller.setSearch('cleanup')
+    table.controller.setSearch('   ')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7' },
+      sort: null,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+
+    table.controller.setSearch('cleanup')
+    table.controller.setSort('name')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'name', direction: 'asc' }],
+      anchor: null,
+      pageIndex: null,
+    })
+    table.controller.setSort('name')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'name', direction: 'desc' }],
+    })
+    table.controller.setSort('name')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: null,
+    })
+
+    table.controller.setSort('nextRunAt')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'nextRunAt', direction: 'asc' }],
+    })
+    table.controller.setSort('nextRunAt')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'nextRunAt', direction: 'desc' }],
+    })
+    table.controller.setSort('nextRunAt')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: null,
+      anchor: null,
+      pageIndex: null,
+    })
+
+    table.controller.setSort('name')
+    table.controller.ingestWindow(rows, 50, true, anchor, anchor, 25, 0)
+    table.controller.nextPage()
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'name', direction: 'asc' }],
+      anchor,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+    table.controller.setSearch('cleanup')
+    expect(sent.at(-1)?.descriptor).toMatchObject({
+      filter: { node: 'node-7', search: 'cleanup' },
+      sort: [{ field: 'name', direction: 'asc' }],
+      anchor: null,
+      pageIndex: null,
+    })
   })
 })
 

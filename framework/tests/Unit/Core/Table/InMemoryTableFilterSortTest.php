@@ -59,6 +59,40 @@ final class InMemoryTableFilterSortTest extends TestCase
         self::assertSame(['c', 'b', 'a'], array_column($snapshot->rows, 'name'));
     }
 
+    public function testNullsLastIsOptInAndKeepsTheDirectionalKeyTieBreaker(): void
+    {
+        $rows = [
+            ['id' => 6, 'nextRunAt' => null],
+            ['id' => 3, 'nextRunAt' => 200000],
+            ['id' => 2, 'nextRunAt' => 100000],
+            ['id' => 5, 'nextRunAt' => null],
+            ['id' => 4, 'nextRunAt' => 200000],
+            ['id' => 1, 'nextRunAt' => 100000],
+        ];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $order = TableSortOrderDTO::of(new TableSortDTO('nextRunAt', $direction));
+            $query = new TableQueryDTO(sort: $order);
+            $defaultKeys = $direction === TableConstants::ORDER_ASC ? [1, 2, 3, 4, 5, 6] : [6, 5, 4, 3, 2, 1];
+            $lastKeys = $direction === TableConstants::ORDER_ASC ? [1, 2, 3, 4, 5, 6] : [4, 3, 2, 1, 6, 5];
+            self::assertSame($defaultKeys, array_column(InMemoryTableFilter::apply($rows, $query, self::KEY_FIELD)->rows, 'id'));
+            self::assertSame($defaultKeys, array_column(InMemoryTableFilter::apply($rows, $query, self::KEY_FIELD, false)->rows, 'id'));
+            $sorted = InMemoryTableFilter::apply($rows, $query, self::KEY_FIELD, true)->rows;
+            self::assertSame($lastKeys, array_column($sorted, 'id'));
+            foreach ($sorted as $leftIndex => $left) {
+                foreach ($sorted as $rightIndex => $right) {
+                    self::assertSame(
+                        $leftIndex <=> $rightIndex,
+                        InMemoryTableFilter::compare($left, $right, $order, self::KEY_FIELD, true) <=> 0,
+                    );
+                }
+            }
+            self::assertSame(
+                $direction === TableConstants::ORDER_ASC ? 1 : -1,
+                InMemoryTableFilter::compare($rows[0], $rows[1], $order, self::KEY_FIELD) <=> 0,
+            );
+        }
+    }
+
     public function testAWindowWithoutASearchKeepsEveryRow(): void
     {
         $snapshot = InMemoryTableFilter::apply($this->rows(), new TableQueryDTO(search: null), self::KEY_FIELD);

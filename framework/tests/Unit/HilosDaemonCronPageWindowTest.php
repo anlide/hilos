@@ -5,9 +5,18 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableViewportCountDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\TableConstants;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
@@ -46,6 +55,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
 
     private ?SignalRouter $previousRouter = null;
     private ?BrowserContext $previousBrowser = null;
+    private ?TableContext $previousTable = null;
     private ?RtContext $previousRt = null;
     private ?ClusterContext $previousCluster = null;
 
@@ -55,6 +65,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         parent::setUp();
         $this->previousRouter = Hilos::$sr;
         $this->previousBrowser = Hilos::$browser;
+        $this->previousTable = Hilos::$table;
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
         ClusterDaemonPictureMirror::forgetPicture();
@@ -82,6 +93,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         }
         Hilos::$sr = $this->previousRouter;
         Hilos::$browser = $this->previousBrowser;
+        Hilos::$table = $this->previousTable;
         Hilos::$rt = $this->previousRt;
         Hilos::$cluster = $this->previousCluster;
         parent::tearDown();
@@ -211,6 +223,89 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         self::assertSame([], $this->browser()->pageData);
     }
 
+    public function testPictureChangesKeepSearchAndSortThroughTheLiveClassifierAndNullTransitions(): void
+    {
+        Hilos::$table = new DaemonCronWindowTableContext();
+        Hilos::$table->configure();
+        $table = new HilosDaemonCronTable();
+        $agent = new DaemonCronWindowTestAgent();
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $this->browser()->classifyMutations = false;
+            $this->deliverNodes($agent, [$this->node('n1', true, $this->searchedCron(200000))]);
+            $this->browser()->classifyMutations = true;
+            foreach ([null, 200000] as $nextRunAt) {
+                $query = new TableQueryDTO(
+                    search: 'JOB',
+                    sort: TableSortOrderDTO::of(new TableSortDTO('nextRunAt', $direction)),
+                    limit: 10,
+                    filter: ['node' => 'n1', 'search' => 'JOB'],
+                );
+                $snapshot = $table->getPage($query);
+                $viewport = new TableViewportSubscription(
+                    HilosDaemonCronTable::TABLE, filter: $query->filter, sort: $query->sort, limit: 10,
+                );
+                $wireRows = [];
+                $anchors = [];
+                foreach ($snapshot->rows as $row) {
+                    $wireRows[$row->requireRowKey()] = ['rowKey' => $row->requireRowKey(), 'slots' => ['rule' => $row->toArray()]];
+                    $anchors[$row->requireRowKey()] = $table->anchorForRow($row, $query);
+                    self::assertSame($row->toArray(), $this->browser()->hideForViewer($row->toArray(), $table->wireFields()));
+                }
+                $viewport->recordWindow(
+                    $wireRows, $snapshot->totalCount, true, $snapshot->firstAnchor, $snapshot->lastAnchor,
+                    $anchors, $snapshot->frame, $snapshot->rowsBefore,
+                );
+                Hilos::$sr->setTableViewport(self::VIEWER, $viewport);
+                $this->deliverNodes($agent, [$this->node('n1', true, $this->searchedCron($nextRunAt))]);
+                $this->browser()->flushToSignalRouter();
+
+                $deltas = [];
+                while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                    self::assertSame(self::VIEWER, $signal->data->targetAcceptKey);
+                    $payload = $signal->data->data;
+                    if ($payload instanceof TableViewportDeltaDTO) {
+                        $deltas[] = $payload;
+                    } else {
+                        self::assertInstanceOf(TableViewportCountDTO::class, $payload);
+                        self::assertSame(3, $payload->totalCount);
+                    }
+                }
+                self::assertCount(1, $deltas);
+                self::assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $deltas[0]->kind);
+                self::assertSame('b/job%20beta', $deltas[0]->rowKey);
+                self::assertSame($nextRunAt, $deltas[0]->row['slots']['rule']['nextRunAt']);
+                self::assertSame('b', $deltas[0]->row['slots']['rule']['agentId']);
+                self::assertSame('job beta', $deltas[0]->row['slots']['rule']['name']);
+                $expected = $direction === TableConstants::ORDER_ASC
+                    ? ($nextRunAt === null ? ['a/job%20alpha', 'b/job%20beta', 'job-worker/rotate']
+                        : ['b/job%20beta', 'a/job%20alpha', 'job-worker/rotate'])
+                    : ($nextRunAt === null ? ['a/job%20alpha', 'job-worker/rotate', 'b/job%20beta']
+                        : ['a/job%20alpha', 'b/job%20beta', 'job-worker/rotate']);
+                self::assertSame(array_search('b/job%20beta', $expected, true), $deltas[0]->position);
+                self::assertSame($expected, array_map(static fn($row): string|int => $row->getRowKey(), $table->getPage($query)->rows));
+                self::assertSame($query->filter, Hilos::$sr->getTableViewport(self::VIEWER, HilosDaemonCronTable::TABLE)->filter);
+                self::assertSame($query->sort, Hilos::$sr->getTableViewport(self::VIEWER, HilosDaemonCronTable::TABLE)->sort);
+                self::assertTrue($table->containsRow('b/job%20beta', $table->scopeSearch($query)));
+                self::assertTrue($table->containsRow('job-worker/rotate', $table->scopeSearch($query)));
+                self::assertFalse($table->containsRow('c/ignored', $table->scopeSearch($query)));
+            }
+        }
+    }
+
+    /**
+     * @param ?int $nextRunAt Next run of the changing rule
+     * @return DaemonCronPicture Search matches by name and agent id, beside an excluded changing row
+     */
+    private function searchedCron(?int $nextRunAt): DaemonCronPicture
+    {
+        return new DaemonCronPicture(null, [
+            new DaemonCronRulePicture('a', 'job alpha', '* * * * *', null, 300000),
+            new DaemonCronRulePicture('b', 'job beta', '* * * * *', null, $nextRunAt),
+            new DaemonCronRulePicture('c', 'ignored', '* * * * *', $nextRunAt, 400000),
+            new DaemonCronRulePicture('job-worker', 'rotate', '* * * * *', null, null),
+        ]);
+    }
+
     /**
      * @param DaemonCronWindowTestAgent $agent Page agent receiving the portion
      * @param list<ClusterDaemonNodeView> $nodes Node views in the portion
@@ -285,6 +380,9 @@ final class DaemonCronWindowTestAgent extends AbstractHilosDaemonAgent
 
 final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
 {
+    /** Route picture mutations through the real browser classifier for its focused coverage. */
+    public bool $classifyMutations = false;
+
     /** @var list<array{string, string}> Delivered page and connection pairs */
     public array $mutations = [];
 
@@ -317,6 +415,11 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
     /** Records only nonempty typed diffs for the actual held subject and query. */
     public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
     {
+        if ($this->classifyMutations) {
+            parent::publishTableMutations($page, $acceptKey, $tableKey, $build);
+
+            return;
+        }
         $viewport = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
         if ($viewport === null) {
             return;
@@ -327,6 +430,37 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
             $this->mutations[] = [$page, $acceptKey];
             array_push($this->rowMutations, ...$mutations);
         }
+    }
+
+    /**
+     * @param string $page Page being published
+     * @return ?BrowserPageConfig Cron page publication metadata
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        return $page === HilosPageConstants::HILOS_DAEMON_CRON
+            ? BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_CRON])
+            : null;
+    }
+
+    /**
+     * @param string $page Page being published
+     * @return BrowserPageBindings Cron table binding
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return $page === HilosPageConstants::HILOS_DAEMON_CRON
+            ? BrowserPageBindings::fromArray([HilosDaemonCronTable::TABLE => []])
+            : BrowserPageBindings::empty();
+    }
+}
+
+final class DaemonCronWindowTableContext extends TableContext
+{
+    /** Registers the real cron table for browser classification. */
+    public function configure(): void
+    {
+        $this->register(HilosDaemonCronTable::TABLE, new HilosDaemonCronTable());
     }
 }
 

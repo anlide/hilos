@@ -554,7 +554,13 @@ abstract class TableDefinition implements ArrayAccess
 
         $this->holdSearchFields($rows, $query);
 
-        return InMemoryTableFilter::apply($rows, $query, $keyField);
+        return InMemoryTableFilter::apply($rows, $query, $keyField, $this->inMemoryNullsLast());
+    }
+
+    /** @return bool Whether in-memory sorting, anchor walks and placement keep nulls last in either direction */
+    protected function inMemoryNullsLast(): bool
+    {
+        return false;
     }
 
     /**
@@ -840,7 +846,7 @@ abstract class TableDefinition implements ArrayAccess
             }
         }
 
-        return InMemoryTableFilter::compare($values, $anchor->values, $query->sort, $keyField);
+        return InMemoryTableFilter::compare($values, $anchor->values, $query->sort, $keyField, $this->inMemoryNullsLast());
     }
 
     /**

@@ -11,6 +11,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
@@ -152,6 +153,61 @@ final class TableDefinitionRowPlacementTest extends TestCase
         self::assertNull($placement);
     }
 
+    public function testNullPolicyOverrideControlsWindowsAnchorsAndRowPlacementTogether(): void
+    {
+        foreach ([new RowPlacementUnitTable(), new NullsLastRowPlacementUnitTable()] as $policy => $table) {
+            foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+                $query = new TableQueryDTO(sort: self::byLabel($direction));
+                $keys = $direction === TableConstants::ORDER_ASC
+                    ? ['a', 'b', 'c', 'd', 'e', 'f']
+                    : ($policy === 1 ? ['d', 'c', 'b', 'a', 'f', 'e'] : ['f', 'e', 'd', 'c', 'b', 'a']);
+                $whole = $table->getPage($query);
+                self::assertSame($keys, array_map(static fn(AbstractTableRow $row): string|int => $row->getRowKey(), $whole->rows));
+                $forward = [];
+                $backward = [];
+                $after = null;
+                $before = null;
+                for ($page = 0; $page < 3; $page++) {
+                    $numbered = $table->getPage(new TableQueryDTO(sort: $query->sort, limit: 2, pageIndex: $page));
+                    $next = $table->getPage(new TableQueryDTO(sort: $query->sort, limit: 2, anchor: $after));
+                    $previous = $table->getPage(new TableQueryDTO(
+                        sort: $query->sort, limit: 2, anchor: $before, anchorDirection: TableAnchorDirection::Before,
+                    ));
+                    $nextKeys = array_map(static fn(AbstractTableRow $row): string|int => $row->getRowKey(), $next->rows);
+                    self::assertSame(array_slice($keys, $page * 2, 2), $nextKeys);
+                    self::assertEquals($numbered->rows, $next->rows);
+                    array_push($forward, ...$nextKeys);
+                    $backward = [...array_map(static fn(AbstractTableRow $row): string|int => $row->getRowKey(), $previous->rows), ...$backward];
+                    self::assertNotNull($numbered->frame);
+                    foreach ($whole->rows as $index => $row) {
+                        $anchor = $table->anchorForRow($row, $query);
+                        self::assertNotNull($anchor);
+                        self::assertSame(['label', 'key'], array_keys($anchor->values));
+                        foreach ($whole->rows as $otherIndex => $other) {
+                            self::assertSame($otherIndex <=> $index, $table->placeRowAgainst($other, $anchor, $query) <=> 0);
+                        }
+                        if ($numbered->frame->before !== null) {
+                            self::assertSame(
+                                $index <=> ($page * 2 - 1),
+                                $table->placeRowAgainst($row, $numbered->frame->before, $query) <=> 0,
+                            );
+                        }
+                        if ($numbered->frame->after !== null) {
+                            self::assertSame(
+                                $index <=> ($page * 2 + 2),
+                                $table->placeRowAgainst($row, $numbered->frame->after, $query) <=> 0,
+                            );
+                        }
+                    }
+                    $after = $next->lastAnchor;
+                    $before = $previous->firstAnchor;
+                }
+                self::assertSame($keys, $forward);
+                self::assertSame($keys, $backward);
+            }
+        }
+    }
+
     /**
      * @param string $direction Direction the one-column order runs in
      * @return TableSortOrderDTO Order over the row label
@@ -162,7 +218,7 @@ final class TableDefinitionRowPlacementTest extends TestCase
     }
 }
 
-final class RowPlacementUnitTable extends TableDefinition
+class RowPlacementUnitTable extends TableDefinition
 {
     /**
      * Configures the row class the default placement reads its key field from.
@@ -174,11 +230,27 @@ final class RowPlacementUnitTable extends TableDefinition
 
     /**
      * @param TableQueryDTO $query Window query
-     * @return TableSnapshotDTO Empty snapshot: the placement never reaches the row source
+     * @return TableSnapshotDTO Repeated values and nulls for window and placement comparisons
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return new TableSnapshotDTO(rows: [], totalCount: 0, limit: $query->limit);
+        return $this->filterInMemory([
+            ['key' => 'f', 'label' => null],
+            ['key' => 'c', 'label' => '200000'],
+            ['key' => 'b', 'label' => '100000'],
+            ['key' => 'e', 'label' => null],
+            ['key' => 'd', 'label' => '200000'],
+            ['key' => 'a', 'label' => '100000'],
+        ], $query);
+    }
+}
+
+final class NullsLastRowPlacementUnitTable extends RowPlacementUnitTable
+{
+    /** @return bool Null values follow known values in both directions */
+    protected function inMemoryNullsLast(): bool
+    {
+        return true;
     }
 }
 
@@ -192,7 +264,7 @@ final class RowPlacementUnitRow extends AbstractTableRow
 
     public function __construct(
         public readonly string $key,
-        public readonly string $label,
+        public readonly ?string $label,
     ) {
     }
 
@@ -229,6 +301,6 @@ final class RowPlacementUnitRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        return new static((string) $data[self::KEY], (string) $data[self::LABEL]);
+        return new static((string) $data[self::KEY], $data[self::LABEL]);
     }
 }

@@ -86,6 +86,19 @@ whoever asked, keeping the three parts.
 | **A column of a stale source still sorts, carrying a warning.** No mechanism of its own: this is the rule of [Per-source staleness](table-subscription.md#per-source-staleness). The view keeps the sort control on that header — not a disabled one: a disabled button drops out of the focus order. Inside the button stand the column label, the direction arrow, the place numeral, the snowflake, and the hidden warning saying what the order is worth; the menu item carries the same mark. | An order over stale values may be out of date, so the reader must see what the order is worth rather than having it refused. | "Sorting by this column may be wrong: its source is lagging, so the order runs over values that may be out of date. We keep the control live and show the warning." |
 | **A table whose set is entirely in memory declares any order — and still ends it with the primary key.** The sign of "in memory": the window is assembled by filtering in PHP rather than by a page query — `TableDefinition::queryDbCollection()` hands a collection that has no ORM object collection, or one loaded whole, to `filterInMemory()` and `InMemoryTableFilter`. | There are no indexes there and sorting costs nothing, so the index rule and the direction rule do not apply. The primary-key rule does: the in-memory filter settles the order by the same key and logs a warning when a row lacks the key field. Without the key an in-memory table duplicates rows between pages exactly as a queried one would. | "Here anything goes — the set is entirely in memory. The primary key still goes at the end." |
 
+An in-memory table can opt into nulls-last ordering through the protected PHP hook
+`TableDefinition::inMemoryNullsLast(): bool` (default `false`; `HilosDaemonCronTable`
+returns `true`). With the default, the in-memory comparator keeps nulls last ascending
+and first descending. `filterInMemory()` passes the hook to
+`InMemoryTableFilter::apply()`, and `placeRowAgainst()` passes it to `compare()`;
+both helpers take an optional `bool $nullsLast = false`. With the opt-in, null sort
+values follow known values in either direction. Cron's `Never` and `—` labels still
+represent null timestamps; known `nextRunAt` values compare as epoch milliseconds.
+No hidden rank or placeholder date is added. Sorting, anchor walks, and live
+placement share the same comparator. Non-null comparisons and the row-key tie-breaker
+in the last sort direction stay unchanged; anchors still carry the sort fields
+followed by the row key. No query, DTO, or wire fields are added.
+
 ## What the rule does not guarantee
 
 That an index lies under a declared order is checked by nobody: not by the code

@@ -98,7 +98,7 @@ final class HilosDaemonCronTable extends TableDefinition implements DaemonPictur
      * @param string|int $rowKey Row key to find
      * @param TableQueryDTO $query Window filter and search scope
      * @return ?bool Whether the node's picture contains this row
-     * @throws TableSearchNotSupportedException When search is requested
+     * @throws TableSearchNotSupportedException When search arrives without its declared scope
      * @throws TableSearchFieldUnknownException When a declared search field is absent
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
@@ -108,8 +108,8 @@ final class HilosDaemonCronTable extends TableDefinition implements DaemonPictur
 
     /**
      * @param TableQueryDTO $query Window query
-     * @return TableSnapshotDTO Rows in picture order
-     * @throws TableSearchNotSupportedException When search is requested
+     * @return TableSnapshotDTO Matching rules in the requested order, or picture order without a sort
+     * @throws TableSearchNotSupportedException When search arrives without its declared scope
      * @throws TableSearchFieldUnknownException When a declared search field is absent
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
@@ -121,6 +121,30 @@ final class HilosDaemonCronTable extends TableDefinition implements DaemonPictur
     protected function init(): void
     {
         $this->setRowClass(HilosDaemonCronTableRow::class);
+    }
+
+    /** @return array<string, string> Search by rule name or agent instance id */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosDaemonCronTableRow::name => HilosDaemonCronTableRow::name,
+            HilosDaemonCronTableRow::agentId => HilosDaemonCronTableRow::agentId,
+        ];
+    }
+
+    /** @return array<string, string> Order by rule name or next run epoch milliseconds */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosDaemonCronTableRow::name => HilosDaemonCronTableRow::name,
+            HilosDaemonCronTableRow::nextRunAt => HilosDaemonCronTableRow::nextRunAt,
+        ];
+    }
+
+    /** @return bool Keep rules without a next run after known times in either direction */
+    protected function inMemoryNullsLast(): bool
+    {
+        return true;
     }
 
     /**

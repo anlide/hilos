@@ -3,6 +3,8 @@ import { mount } from '@vue/test-utils'
 import * as core from '@hilos/core/base'
 import {
   DAEMON_CRON_IDLE_NOT_LEADER,
+  DAEMON_CRON_NAME_FIELD,
+  DAEMON_CRON_NEXT_RUN_FIELD,
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
   type HilosDaemonCronRow,
@@ -61,7 +63,11 @@ function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
 
 afterEach(() => vi.restoreAllMocks())
 
-function harness(diagramBuilt = false, initialProjectZone?: string) {
+function harness(
+  diagramBuilt = false,
+  initialProjectZone?: string,
+  attachTo?: HTMLElement,
+) {
   const scopes = markRaw(new ScopeManager())
   const scope = openNodePage(scopes, HilosPages.DAEMON_CRON)
   const listeners = new Map<string, Set<(signal: never) => void>>()
@@ -92,6 +98,7 @@ function harness(diagramBuilt = false, initialProjectZone?: string) {
     send,
   } as unknown as HilosConnection
   const view = mount(HilosDaemonCronPage, {
+    ...(attachTo ? { attachTo } : {}),
     props: { context: { connection, scopes } },
     global: {
       provide: { [hilosRouterKey as symbol]: router(diagramBuilt, scopes) },
@@ -154,6 +161,257 @@ function rule(
 }
 
 describe('HilosDaemonCronPage', () => {
+  it('names its native search and sort controls and supports keyboard navigation in Order', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const h = harness(false, undefined, host)
+    try {
+      h.window([rule()])
+      await nextTick()
+      const search = h.view.get<HTMLInputElement>(
+        '[data-id="hilos-table-search"]',
+      )
+      expect(h.view.findAll('[data-id="hilos-table-search"]')).toHaveLength(1)
+      expect(search.attributes('type')).toBe('search')
+      expect(search.attributes('placeholder')).toBe('Find by rule or agent')
+      expect(search.attributes('aria-label')).toBe('Find by rule or agent')
+      search.element.focus()
+      expect(document.activeElement).toBe(search.element)
+
+      const buttons = h.view.findAll<HTMLButtonElement>('th button')
+      expect(buttons.map((button) => button.text())).toEqual([
+        'Rule',
+        'Next run',
+      ])
+      expect(
+        h.view
+          .findAll('th')
+          .slice(0, 5)
+          .map((th) => th.attributes('aria-sort')),
+      ).toEqual(['none', undefined, undefined, undefined, 'none'])
+      for (const button of buttons) {
+        // Native Enter/Space activation belongs to the browser smoke test;
+        // happy-dom can prove the button semantics and focus here.
+        expect(button.element.tagName).toBe('BUTTON')
+        expect(button.attributes('type')).toBe('button')
+        expect(button.element.disabled).toBe(false)
+        expect(button.attributes('tabindex')).toBeUndefined()
+        expect(button.get('i').attributes('aria-hidden')).toBe('true')
+        button.element.focus()
+        expect(document.activeElement).toBe(button.element)
+      }
+
+      const order = h.view.get('[data-id="hilos-table-order"]')
+      expect(order.classes()).toContain('d-md-none')
+      const toggle = order.get('[data-id="hilos-dropdown-toggle"]')
+      const menu = order.get('[data-id="hilos-dropdown-menu"]')
+      expect(toggle.text()).toBe('Order: Default order')
+      expect(toggle.attributes('aria-haspopup')).toBe('listbox')
+      expect(menu.attributes('role')).toBe('listbox')
+      expect(menu.attributes('aria-label')).toBe('Order')
+      expect(toggle.attributes('aria-controls')).toBe(menu.attributes('id'))
+      expect(menu.findAll('button').map((button) => button.text())).toEqual([
+        'Default order',
+        'Rule ↑',
+        'Rule ↓',
+        'Next run ↑',
+        'Next run ↓',
+      ])
+      const requests = h.sendViewport.mock.calls.length
+      await toggle.trigger('keydown', { key: 'ArrowDown' })
+      await nextTick()
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(document.activeElement).toBe(menu.findAll('button')[0].element)
+      await menu.trigger('keydown', { key: 'End' })
+      expect(document.activeElement).toBe(
+        menu.get('[data-id="hilos-table-order-nextRunAt-desc"]').element,
+      )
+      await menu.trigger('keydown', { key: 'Escape' })
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(toggle.element)
+      expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+    } finally {
+      h.view.unmount()
+      host.remove()
+    }
+  })
+
+  it.each([DAEMON_CRON_NAME_FIELD, DAEMON_CRON_NEXT_RUN_FIELD])(
+    'sends the %s asc/desc/default cycle with search and preserves the node on both search clears',
+    async (field) => {
+      const h = harness()
+      try {
+        h.window([rule()])
+        await nextTick()
+        const search = h.view.get<HTMLInputElement>(
+          '[data-id="hilos-table-search"]',
+        )
+        let requests = h.sendViewport.mock.calls.length
+        await search.setValue('cleanup')
+        expect(h.sendViewport).toHaveBeenCalledTimes(++requests)
+        expect(h.sendViewport).toHaveBeenLastCalledWith(
+          HilosPages.DAEMON_CRON,
+          'hilosDaemonCron',
+          expect.objectContaining({
+            filter: { node: 'n1', search: 'cleanup' },
+            sort: null,
+            anchor: null,
+            pageIndex: null,
+          }),
+        )
+        h.window([rule()])
+        await nextTick()
+
+        const button = h.view.get(`[data-id="hilos-table-sort-${field}"]`)
+        for (const [direction, ariaSort] of [
+          ['asc', 'ascending'],
+          ['desc', 'descending'],
+          [null, 'none'],
+        ] as const) {
+          await button.trigger('click')
+          expect(h.sendViewport).toHaveBeenCalledTimes(++requests)
+          expect(h.sendViewport).toHaveBeenLastCalledWith(
+            HilosPages.DAEMON_CRON,
+            'hilosDaemonCron',
+            expect.objectContaining({
+              filter: { node: 'n1', search: 'cleanup' },
+              sort: direction === null ? null : [{ field, direction }],
+              anchor: null,
+              pageIndex: null,
+            }),
+          )
+          h.window([rule()])
+          await nextTick()
+          expect(button.element.closest('th')?.getAttribute('aria-sort')).toBe(
+            ariaSort,
+          )
+          const other = field === DAEMON_CRON_NAME_FIELD ? 'nextRunAt' : 'name'
+          expect(
+            h.view
+              .get(`[data-id="hilos-table-sort-${other}"]`)
+              .element.closest('th')
+              ?.getAttribute('aria-sort'),
+          ).toBe('none')
+        }
+
+        await button.trigger('click')
+        requests++
+        const sort = [{ field, direction: 'asc' }]
+        for (const clear of ['input', 'button'] as const) {
+          if (clear === 'button') {
+            await search.setValue('hilos_sessions_library')
+            expect(h.sendViewport).toHaveBeenCalledTimes(++requests)
+            expect(h.sendViewport).toHaveBeenLastCalledWith(
+              HilosPages.DAEMON_CRON,
+              'hilosDaemonCron',
+              expect.objectContaining({
+                filter: { node: 'n1', search: 'hilos_sessions_library' },
+                sort,
+              }),
+            )
+            const clearButton = h.view.get(
+              '[data-id="hilos-table-search-clear"]',
+            )
+            expect(clearButton.attributes('aria-label')).toBe('Clear search')
+            await clearButton.trigger('click')
+          } else {
+            await search.setValue('')
+          }
+          expect(h.sendViewport).toHaveBeenCalledTimes(++requests)
+          expect(h.sendViewport).toHaveBeenLastCalledWith(
+            HilosPages.DAEMON_CRON,
+            'hilosDaemonCron',
+            expect.objectContaining({ filter: { node: 'n1' }, sort }),
+          )
+          expect(search.element.value).toBe('')
+          expect(
+            h.view.find('[data-id="hilos-table-search-clear"]').exists(),
+          ).toBe(false)
+          h.window([rule()])
+          await nextTick()
+        }
+      } finally {
+        h.view.unmount()
+      }
+    },
+  )
+
+  it('shows Nothing found from an empty server window and resets search to the route node', async () => {
+    const h = harness()
+    try {
+      h.reported(true)
+      h.window([rule()])
+      await nextTick()
+      const search = h.view.get<HTMLInputElement>(
+        '[data-id="hilos-table-search"]',
+      )
+      const requests = h.sendViewport.mock.calls.length
+      await search.setValue('no-such-rule-or-agent')
+      expect(h.sendViewport).toHaveBeenCalledTimes(requests + 1)
+      expect(h.sendViewport).toHaveBeenLastCalledWith(
+        HilosPages.DAEMON_CRON,
+        'hilosDaemonCron',
+        expect.objectContaining({
+          filter: { node: 'n1', search: 'no-such-rule-or-agent' },
+          sort: null,
+        }),
+      )
+      // Typing requests a server window; it does not filter the painted rows.
+      expect(
+        h.view.find('[data-id="hilos-table-row-/cleanup_history"]').exists(),
+      ).toBe(true)
+      expect(h.view.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+        false,
+      )
+      h.window([])
+      await nextTick()
+      for (const empty of h.view.findAll(
+        '[data-id="hilos-table-no-matches"]',
+      )) {
+        expect(empty.text()).toContain('Nothing found')
+        expect(
+          empty.get('[data-id="hilos-table-no-matches-terms"]').text(),
+        ).toBe('No rows match “no-such-rule-or-agent”')
+      }
+      expect(h.view.findAll('[data-id="hilos-table-no-matches"]')).toHaveLength(
+        2,
+      )
+      for (const state of ['waiting', 'silent', 'none']) {
+        expect(
+          h.view.find(`[data-id="hilos-daemon-cron-empty-${state}"]`).exists(),
+        ).toBe(false)
+      }
+      const reset = h.view
+        .get('table')
+        .get('[data-id="hilos-table-no-matches-reset"]')
+      expect(reset.text()).toBe('Reset filters')
+      expect(reset.attributes('type')).toBe('button')
+      await reset.trigger('click')
+      expect(h.sendViewport).toHaveBeenCalledTimes(requests + 2)
+      expect(h.sendViewport).toHaveBeenLastCalledWith(
+        HilosPages.DAEMON_CRON,
+        'hilosDaemonCron',
+        expect.objectContaining({
+          filter: { node: 'n1' },
+          sort: null,
+          anchor: null,
+          pageIndex: null,
+        }),
+      )
+      expect(search.element.value).toBe('')
+      h.window([])
+      await nextTick()
+      expect(h.view.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+        false,
+      )
+      expect(
+        h.view.get('[data-id="hilos-daemon-cron-empty-none"]').text(),
+      ).toBe('The node reports no cron rules')
+    } finally {
+      h.view.unmount()
+    }
+  })
+
   it('keeps mounted run times and both silence readers live through own zone changes and Automatic', async () => {
     const resolved = new Intl.DateTimeFormat().resolvedOptions()
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
@@ -372,6 +630,12 @@ describe('HilosDaemonCronPage', () => {
     expect(waiting.text()).toContain(
       'Nothing has arrived from this node yet — not zero rules.',
     )
+    expect(h.view.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+    expect(
+      h.view.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+    ).toBe(false)
 
     h.heading({
       clustered: true,
@@ -387,6 +651,12 @@ describe('HilosDaemonCronPage', () => {
     expect(silent.text()).toContain(
       'Its rules will appear when it reports again.',
     )
+    expect(h.view.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+    expect(
+      h.view.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+    ).toBe(false)
     expect(h.view.find('[data-id="hilos-daemon-cron-silent"]').exists()).toBe(
       false,
     )
@@ -396,6 +666,12 @@ describe('HilosDaemonCronPage', () => {
     expect(h.view.find('[data-id="hilos-daemon-cron-empty-none"]').text()).toBe(
       'The node reports no cron rules',
     )
+    expect(h.view.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+    expect(
+      h.view.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+    ).toBe(false)
     expect(h.view.find('[data-id="hilos-daemon-cron-silent"]').exists()).toBe(
       false,
     )

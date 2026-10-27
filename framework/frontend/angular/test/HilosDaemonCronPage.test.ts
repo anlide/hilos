@@ -56,7 +56,7 @@ describe('HilosDaemonCronPage', () => {
     expect(h.listeners()).toBe(0)
   })
 
-  it('keeps picture order and the standby idle notice without search or sorting', () => {
+  it('keeps picture order and the standby idle notice before a sort', () => {
     const h = harness()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
@@ -85,8 +85,10 @@ describe('HilosDaemonCronPage', () => {
     ).toBeLessThan(
       h.root.querySelector('tbody')!.textContent!.indexOf('a-first'),
     )
-    expect(h.el('hilos-table-search')).toBeNull()
-    expect(h.root.querySelector('[aria-sort]')).toBeNull()
+    expect(h.el('hilos-table-search')?.getAttribute('placeholder')).toBe(
+      'Find by rule or agent',
+    )
+    expect(h.root.querySelectorAll('[aria-sort="none"]')).toHaveLength(2)
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
       role: null,

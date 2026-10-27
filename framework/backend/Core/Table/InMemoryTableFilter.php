@@ -57,20 +57,21 @@ final class InMemoryTableFilter
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
+     * @param bool $nullsLast Keep null sort values last in either direction
      * @return TableSnapshotDTO Filtered, sorted and windowed snapshot
      */
-    public static function apply(array $rows, TableQueryDTO $query, string $keyField): TableSnapshotDTO
+    public static function apply(array $rows, TableQueryDTO $query, string $keyField, bool $nullsLast = false): TableSnapshotDTO
     {
         $rows = self::searched($rows, $query);
 
         $order = $query->sort;
         if ($order !== null) {
-            usort($rows, static fn(array $a, array $b): int => self::compare($a, $b, $order, $keyField));
+            usort($rows, static fn(array $a, array $b): int => self::compare($a, $b, $order, $keyField, $nullsLast));
         }
 
         $totalCount = count($rows);
         $anchorFields = self::anchorFields($order, $keyField);
-        [$window, $rowsBefore, $frame] = self::window($rows, $query, $keyField, $anchorFields);
+        [$window, $rowsBefore, $frame] = self::window($rows, $query, $keyField, $anchorFields, $nullsLast);
 
         return new TableSnapshotDTO(
             rows: $window,
@@ -155,11 +156,17 @@ final class InMemoryTableFilter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under
      * @param list<string> $anchorFields Fields a place in this order is named by
+     * @param bool $nullsLast Keep null sort values last in either direction
      * @return array{list<array<string, mixed>>, int, ?TableWindowFrameDTO} Rows of the window in the set's
      *     own order, how many rows of the set stand before them, and the places framing them
      */
-    private static function window(array $rows, TableQueryDTO $query, string $keyField, array $anchorFields): array
-    {
+    private static function window(
+        array $rows,
+        TableQueryDTO $query,
+        string $keyField,
+        array $anchorFields,
+        bool $nullsLast,
+    ): array {
         if ($query->limit === TableConstants::NO_LIMIT) {
             return [$rows, 0, $rows === [] ? null : new TableWindowFrameDTO()];
         }
@@ -171,11 +178,11 @@ final class InMemoryTableFilter
         } elseif ($takesFromEnd) {
             $end = $query->anchor === null
                 ? count($rows)
-                : self::boundary($rows, $query->anchor, $query->sort, $keyField, true);
+                : self::boundary($rows, $query->anchor, $query->sort, $keyField, true, $nullsLast);
             $start = max(0, $end - $query->limit);
             $window = array_slice($rows, $start, $end - $start);
         } else {
-            $start = $query->anchor === null ? 0 : self::boundary($rows, $query->anchor, $query->sort, $keyField, false);
+            $start = $query->anchor === null ? 0 : self::boundary($rows, $query->anchor, $query->sort, $keyField, false, $nullsLast);
             $window = array_slice($rows, $start, $query->limit);
         }
 
@@ -217,6 +224,7 @@ final class InMemoryTableFilter
      * @param ?TableSortOrderDTO $order Order the window asked for, or null when the source ordered the rows
      * @param string $keyField Payload field the row key travels under
      * @param bool $takesFromEnd Whether the window runs back from the anchor rather than on from it
+     * @param bool $nullsLast Keep null sort values last in either direction
      * @return int Index the window starts at, or ends before when it runs back
      */
     private static function boundary(
@@ -225,13 +233,14 @@ final class InMemoryTableFilter
         ?TableSortOrderDTO $order,
         string $keyField,
         bool $takesFromEnd,
+        bool $nullsLast,
     ): int {
         if ($order === null) {
             return self::keyBoundary($rows, $anchor, $keyField, $takesFromEnd);
         }
 
         foreach ($rows as $index => $row) {
-            $comparison = self::compare($row, $anchor->values, $order, $keyField);
+            $comparison = self::compare($row, $anchor->values, $order, $keyField, $nullsLast);
             if ($takesFromEnd ? $comparison >= 0 : $comparison > 0) {
                 return $index;
             }
@@ -284,13 +293,24 @@ final class InMemoryTableFilter
      * @param array<string, mixed> $against Values to place it against — another row, or an anchor's
      * @param TableSortOrderDTO $order Order the window asked for
      * @param string $keyField Payload field the row key travels under
+     * @param bool $nullsLast Keep null sort values last in either direction
      * @return int Negative, zero or positive in the ordering's sense
      */
-    public static function compare(array $values, array $against, TableSortOrderDTO $order, string $keyField): int
-    {
+    public static function compare(
+        array $values,
+        array $against,
+        TableSortOrderDTO $order,
+        string $keyField,
+        bool $nullsLast = false,
+    ): int {
         foreach ($order->components as $component) {
             $direction = self::directionSign($component);
-            $byValue = self::compareValues($values[$component->field] ?? null, $against[$component->field] ?? null, $direction);
+            $byValue = self::compareValues(
+                $values[$component->field] ?? null,
+                $against[$component->field] ?? null,
+                $direction,
+                $nullsLast,
+            );
             if ($byValue !== 0) {
                 return $byValue;
             }
@@ -341,23 +361,24 @@ final class InMemoryTableFilter
     }
 
     /**
-     * Compares two values of the sorted column, nulls last ascending.
+     * Compares sort values, with nulls last ascending or, on opt-in, in either direction.
      *
      * @param mixed $a Value of the sorted field in the left row, or null when the row has none
      * @param mixed $b Value of the sorted field in the right row, or null when the row has none
      * @param int $direction 1 ascending, -1 descending
+     * @param bool $nullsLast Keep null sort values last in either direction
      * @return int Negative, zero or positive in the usort sense
      */
-    private static function compareValues(mixed $a, mixed $b, int $direction): int
+    private static function compareValues(mixed $a, mixed $b, int $direction, bool $nullsLast): int
     {
         if ($a === null && $b === null) {
             return 0;
         }
         if ($a === null) {
-            return $direction;
+            return $nullsLast ? 1 : $direction;
         }
         if ($b === null) {
-            return -$direction;
+            return $nullsLast ? -1 : -$direction;
         }
 
         return $direction * strnatcasecmp((string) $a, (string) $b);
