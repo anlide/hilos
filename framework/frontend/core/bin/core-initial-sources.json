@@ -460,8 +460,8 @@
     "outputSha256": "846034f26a85c933001e2d2c0a95cddd58f65bae51c0d53b3ba9abedf59be1c0"
   },
   "src/routing/PageRouter.ts": {
-    "sourceSha256": "7937b409272e9e04dc08c5a9ae8ce2d92bc1e392c2668eb27472e47bccc090fb",
-    "outputSha256": "bb1ef8e11364eddb769969ec71485c67a8ba6bd5c011bb6756c04460f1dc7fb0"
+    "sourceSha256": "71dd17accb3ae4ed87172ace5260e890e31caa5974e7051c99b3bc248cde7f0e",
+    "outputSha256": "57d61a29c74941185898c6e52c4d52f590bee436c2316ceb75b34b1f007b669d"
   },
   "src/routing/appPageRouter.ts": {
     "sourceSha256": "e07a55f1f78d37cae22a5fb5c6391d9130e5dc63bb989f63a8635ced83df7b1d",
@@ -476,12 +476,12 @@
     "outputSha256": "b5b3503cd3183484cefb4545510d8e44c2f291645a7c43d159c9c83fa615521a"
   },
   "src/routing/hilosPages.ts": {
-    "sourceSha256": "0149c26172d74fce444c3508074a08c4042f0d7a36e2dba872947054d3e06962",
-    "outputSha256": "aa5241e615d961911f574ddf9ebc92d1c5f10754428e3d5c022696d841676c0f"
+    "sourceSha256": "d055adcdc1eda381ebefdcb1d8738238029ca6a020326d57b5889645b40c6f16",
+    "outputSha256": "18d15d37e2174dbe56124081f5aee6dd66c08a0cd8bb9769ffc729627e1c51fb"
   },
   "src/routing/hilosUnbuiltPages.ts": {
-    "sourceSha256": "557d792e5fa80a917b8c1a772d7495620dabe5307eb51add8c73ea7aeabdca58",
-    "outputSha256": "0982c09bffca14ca6b921d9cbdfff580fa53645dafac327d417c7654efc76490"
+    "sourceSha256": "83878a320baf9b4e37a001f033da416d2b758ee5112431ea4be93fd6d5682502",
+    "outputSha256": "8bb45ac0a9433f5053636960bc989534991cd2d6e1a7af131875206ac7ea3a58"
   },
   "src/routing/pageError.ts": {
     "sourceSha256": "a4cb95908d8f3d6beccf005e7f24c0b6ee6aaa570170bf0d4aa1cfe0478dca2d",

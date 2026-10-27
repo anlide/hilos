@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 101;
+    private const int CATALOG_ENTRIES = 102;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -267,6 +267,23 @@ final class HilosPageCatalogTest extends TestCase
             'Lines in .env that are not declared in the catalog.',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV_ORPHANS][PageCatalogConstants::CATALOG_ENTRY_LEAD],
         );
+    }
+
+    /** Browser sessions is a sibling of People and the breadcrumb parent of a session. */
+    public function testAnalyticsBrowserSessionsTabOwnsTheSessionPage(): void
+    {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser sessions',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions seen in the selected period.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS]);
+        self::assertSame(
+            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
+        foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
+            self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, $section[PageCatalogConstants::SECTION_ITEMS]);
+        }
     }
 
     /** People is an Analytics tab; the person's sessions page is its entity child, without a dashboard card. */

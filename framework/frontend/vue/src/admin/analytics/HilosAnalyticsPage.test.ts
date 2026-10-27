@@ -38,7 +38,10 @@ const SNAPSHOT: HilosAnalyticsOverviewSnapshot = {
   visitorsThisHour: 4,
 }
 
-function harness(initial?: HilosAnalyticsOverviewSnapshot) {
+function harness(
+  initial?: HilosAnalyticsOverviewSnapshot,
+  resolvePath: HilosRouter['resolvePath'] = resolveHilosPath,
+) {
   const scopes = new ScopeManager()
   const page = scopes.openPage(PAGE)
   if (initial !== undefined) page.data.set(ANALYTICS_OVERVIEW_SECTION, initial)
@@ -50,7 +53,7 @@ function harness(initial?: HilosAnalyticsOverviewSnapshot) {
     pageLoading: createSignal(false),
     pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: resolveHilosPath,
+    resolvePath,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -182,7 +185,22 @@ describe('HilosAnalyticsPage', () => {
             .text(),
         ).toBe(since)
       }
-      expect(tiles.findAll('a, button, [aria-hidden="true"]')).toHaveLength(0)
+      for (const [key, period, count] of [
+        ['week', 'this-week', 38],
+        ['day', 'today', 7],
+        ['hour', 'this-hour', visitorsThisHour],
+      ] as const) {
+        const link = tiles.get(
+          `[data-id="hilos-analytics-visitors-${key}-link"]`,
+        )
+        expect(link.element.tagName).toBe('A')
+        expect(link.text()).toBe(String(count))
+        expect(link.attributes('href')).toBe(
+          `/hilos/analytics/browser-sessions/${period}`,
+        )
+      }
+      expect(tiles.findAll('a')).toHaveLength(3)
+      expect(tiles.findAll('button, [aria-hidden="true"]')).toHaveLength(0)
       expect(h.view.find('[data-id="hilos-admin-children"]').exists()).toBe(
         false,
       )
@@ -200,6 +218,18 @@ describe('HilosAnalyticsPage', () => {
       expect(h.view.text()).not.toContain('Open users')
     },
   )
+
+  it('keeps plain counts when the project does not serve the list', async () => {
+    const h = harness(undefined, () => undefined)
+    h.answer({ ...SNAPSHOT, visitorsThisHour: 0 })
+    await nextTick()
+    const tiles = h.view.get('[data-id="hilos-analytics-overview-tiles"]')
+    expect(tiles.findAll('a')).toHaveLength(0)
+    expect(
+      tiles.get('[data-id="hilos-analytics-visitors-hour-count"]').text(),
+    ).toBe('0')
+    expect(tiles.html()).not.toContain('href="#"')
+  })
 
   it('starts during setup and reads an answer that arrived before mounting', () => {
     const h = harness(SNAPSHOT)

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   dismissToasts,
+  expectCountryDeleteDescription,
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,
   i18nLocaleRow,
@@ -266,18 +267,13 @@ test('shows accessible blocked deletion for a custom country with a locale and a
     )
     await expect(basket).toHaveAttribute('aria-disabled', 'true')
     await expect(description).toHaveText(reason!)
-    await expect(basket).toHaveAttribute(
-      'aria-describedby',
-      (await description.getAttribute('id'))!,
-    )
+    await expectCountryDeleteDescription(expect, page, code!)
     await basket.focus()
+    await expect(basket).toBeFocused()
     await basket.press('Enter')
     await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
     await expect(description).toBeVisible()
-    await expect(basket).toHaveAttribute(
-      'aria-describedby',
-      (await description.getAttribute('id'))!,
-    )
+    await expectCountryDeleteDescription(expect, page, code!)
     await gotoPage(page, `/hilos/i18n/countries/${code}`, PAGE_READY)
     await expect(page.getByTestId('country-card-delete-verdict')).toContainText(
       reason!,

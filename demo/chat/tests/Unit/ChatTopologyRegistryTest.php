@@ -17,6 +17,7 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
+use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\Chat\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 
@@ -65,6 +66,7 @@ use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
@@ -979,6 +981,23 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([ChatTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The period sessions list uses its own table without changing the person's sessions table. */
+    public function testAnalyticsBrowserSessionsPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionsPage::class, Hilos::PAGES[BrowserSessionsPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionsPage::PAGE]);
+        self::assertSame([
+            ChatTableContext::hilosAnalyticsBrowserSessionList => [],
+        ], Hilos::PAGE_TABLES[BrowserSessionsPage::PAGE]);
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::class,
+            Hilos::TABLES[ChatTableContext::hilosAnalyticsBrowserSessionList],
+        );
+        self::assertSame([
+            ChatTableContext::hilosAnalyticsBrowserSessions => [],
+        ], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
     /** The People page binds its own table to the existing Analytics subscription owner. */

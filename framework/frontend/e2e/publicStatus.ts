@@ -17,6 +17,7 @@ export const PUBLIC_STATUS_FILES = [
 interface FileRead {
   path: string
   requestedAt: number
+  /** Body captured; a JSON parse failure still counts as a completed read. */
   completedAt?: number
   status?: number
   headers?: Record<string, string>
@@ -56,11 +57,14 @@ export function watchPublicStatus(page: Page) {
       read.status = response.status()
       read.headers = response.headers()
       try {
-        read.body = await response.json()
+        const body = await response.text()
+        // Navigation can discard Chromium's response resource before capture.
+        // Keep that failure in the log without claiming the body was read.
+        read.completedAt = performance.now()
+        read.body = JSON.parse(body)
       } catch (error) {
         read.failure = String(error)
       }
-      read.completedAt = performance.now()
     })()
     pending.add(done)
     void done.finally(() => pending.delete(done))

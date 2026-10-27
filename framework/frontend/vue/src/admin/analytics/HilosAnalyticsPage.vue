@@ -5,15 +5,20 @@ for this page opening. Bootstrap classes only (styling-rules.md). -->
 import {
   analyticsOverviewTiles,
   createHilosAnalyticsOverview,
+  ANALYTICS_BROWSER_SESSIONS_PERIOD_ROUTE_PARAM,
+  type HilosAnalyticsOverviewTile,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
 import { HilosPages } from '@hilos/core/base'
-import { computed, onUnmounted } from 'vue'
+import { computed, inject, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosLink from '../../HilosLink.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{ context: HilosAnalyticsContext }>()
+const router = inject(hilosRouterKey)
 const overview = createHilosAnalyticsOverview(props.context.scopes)
 overview.start()
 onUnmounted(() => overview.dispose())
@@ -24,6 +29,17 @@ const tiles = computed(() =>
     ? undefined
     : analyticsOverviewTiles(snapshot.value),
 )
+
+const sessionsPath = (
+  key: HilosAnalyticsOverviewTile['key'],
+): string | undefined =>
+  router?.resolvePath(HilosPages.ANALYTICS_BROWSER_SESSIONS, {
+    [ANALYTICS_BROWSER_SESSIONS_PERIOD_ROUTE_PARAM]: {
+      week: 'this-week',
+      day: 'today',
+      hour: 'this-hour',
+    }[key],
+  })
 </script>
 
 <template>
@@ -63,7 +79,19 @@ const tiles = computed(() =>
             class="fs-4 fw-semibold lh-sm my-1"
             :data-id="`hilos-analytics-visitors-${tile.key}-count`"
           >
-            {{ tile.count }}
+            <template
+              v-for="path in [sessionsPath(tile.key)]"
+              :key="path ?? 'none'"
+            >
+              <HilosLink
+                v-if="path"
+                :to="path"
+                class="text-decoration-none"
+                :data-id="`hilos-analytics-visitors-${tile.key}-link`"
+                >{{ tile.count }}</HilosLink
+              >
+              <template v-else>{{ tile.count }}</template>
+            </template>
           </dd>
           <dd
             class="small text-body-secondary mb-0"

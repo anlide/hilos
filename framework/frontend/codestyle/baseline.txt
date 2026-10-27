@@ -8,7 +8,7 @@ SHELL-PARITY framework/frontend/vue/src/HilosNotificationPreferences.vue 2 # HIL
 SHELL-PARITY framework/frontend/vue/src/HilosPushDeviceToggle.vue 2 # HIL-1658
 SHELL-PARITY framework/frontend/vue/src/HilosTableText.vue 1 # HIL-1754
 SHELL-PARITY framework/frontend/vue/src/HilosTableValue.vue 1 # HIL-1754
-SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPage.vue 5 # HIL-1736
+SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPage.vue 6 # HIL-1744
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPersonPage.vue 2 # HIL-1740
 SHELL-PARITY framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 4 # HIL-1595
 SHELL-PARITY framework/frontend/vue/src/admin/daemon/HilosDaemonCronPage.vue 2 # HIL-1595

@@ -24,6 +24,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -634,6 +635,231 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
                     'window' => $reader->personWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 299),
                     'count' => $reader->personCount($filter, 299),
                     'countBefore' => $reader->personCountBefore($filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 2), 299),
+                };
+                self::fail('Every read must recheck the server upper bound');
+            } catch (ValidationException $exception) {
+                self::assertStringContainsString('server time', $exception->getMessage());
+            }
+        }
+    }
+
+    public function testSessionPeriodSetIncludesGuestsAndBothClosedBoundariesWithoutMultiplyingActions(): void
+    {
+        $spanning = $this->session('spanning', 7, 50, 450, 'Windows NT 10.0 Chrome/128.0 Safari/537.36 Edg/129.0');
+        $this->action($this->connection('one', $spanning), 350, 'one', null);
+        $this->action($this->connection('two', $spanning), 350, 'two', null);
+        $week = $this->session('week-touch', null, 50, 100);
+        $day = $this->session('day-touch', 8, 150, 200);
+        $hour = $this->session('hour-touch', null, 250, 300);
+        $upper = $this->session('upper-touch', null, 400, 500);
+        $old = $this->session('before-week', 7, 50, 99);
+        $this->session('future', 7, 401, 500);
+        $reader = new AnalyticsSectionReader();
+        foreach ([[null, [$spanning, $week, $day, $hour, $upper, $old]], ['this-week', [$spanning, $week, $day, $hour, $upper]],
+            ['today', [$spanning, $day, $hour, $upper]], ['this-hour', [$spanning, $hour, $upper]]] as [$period, $ids]) {
+            $filter = $this->personFilter($period);
+            $rows = $reader->browserSessionPeriodWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400);
+            self::assertSame($ids, $this->rowIds($rows));
+            self::assertSame(count($ids), $reader->browserSessionPeriodCount($filter, 400));
+            self::assertSame(2, $rows[0]->actionCount);
+            self::assertSame('Edge 129 · Windows', $rows[0]->browser);
+            self::assertSame(array_fill(0, count($ids) - 1, 0), array_column(array_slice($rows, 1), 'actionCount'));
+        }
+    }
+
+    public function testSessionPeriodReadsSafeLastIdentityAndMountedRawNames(): void
+    {
+        Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, ?), (8, ?)', ['Current name', 'Deleted private name']);
+        $live = $this->session('live', 7, 100, 350);
+        $deleted = $this->session('deleted', 8, 100, 350);
+        $guest = $this->session('guest', null, 100, 350);
+        Database::sql('DELETE FROM `hilos_user` WHERE `id` = 8');
+        $invalidIds = [];
+        foreach ([['email', '7'], ['user_id', '0'], ['user_id', '-1'], ['user_id', '1.0'], ['user_id', ' 7'],
+            ['user_id', '9007199254740992'], ['user_id', '18446744073709551616'], ['user_id', 'hash'], ['user_id', '']]
+            as $index => [$type, $value]) {
+            $id = $this->session('identity-' . $index, null, 100, 350);
+            Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = ?, `user_identity_value` = ? WHERE `id` = ?',
+                [$type, $value, $id]);
+            $invalidIds[] = $id;
+        }
+        $safe = $this->session('safe', 9007199254740991, 100, 350);
+        $padded = $this->session('padded', null, 100, 350);
+        Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = ?, `user_identity_value` = ? WHERE `id` = ?',
+            ['user_id', '0007', $padded]);
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('today');
+        $rows = $reader->browserSessionPeriodWindow($filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400);
+        self::assertSame([$live, $deleted, $guest, ...$invalidIds, $safe, $padded], $this->rowIds($rows));
+        self::assertSame([7, 8, null, ...array_fill(0, count($invalidIds), null), 9007199254740991, 7], array_column($rows, 'lastSignedInUserId'));
+        self::assertSame(['Current name', 'Deleted user #8', null, ...array_fill(0, count($invalidIds), null),
+            'Deleted user #9007199254740991', 'Current name'], array_column($rows, 'lastSignedInUserLabel'));
+        Hilos::$db->users[7]->actions->rename('Renamed account');
+        self::assertSame('Renamed account', $reader->browserSessionPeriodWindow(
+            $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 1, 0, 400,
+        )[0]->lastSignedInUserLabel);
+        Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_value` = ? WHERE `id` = ?', ['8', $live]);
+        self::assertSame(8, $reader->browserSessionPeriodWindow(
+            $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 1, 0, 400,
+        )[0]->lastSignedInUserId);
+        self::assertSame('Current name', $rows[0]->lastSignedInUserLabel);
+    }
+
+    public function testSessionPeriodAnchorsSkipsAndReverseOrdersStayInsideTheSelectedSet(): void
+    {
+        $later = $this->session('later', null, 100, 350);
+        $firstTie = $this->session('first-tie', 7, 100, 300);
+        $lastTie = $this->session('last-tie', 8, 300, 300);
+        $this->session('outside', null, 100, 199);
+        $this->session('future', null, 401, 500);
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('today');
+        foreach ([[AnalyticsWindowOrder::TIME_ASC, [$firstTie, $lastTie, $later]],
+            [AnalyticsWindowOrder::TIME_DESC, [$later, $lastTie, $firstTie]],
+            [AnalyticsWindowOrder::NUMBER, [$later, $firstTie, $lastTie]]] as [$order, $ids]) {
+            $this->assertWindows(
+                fn(?AnalyticsWindowAnchor $anchor, TableAnchorDirection $direction, int $limit, int $skip): array =>
+                    $reader->browserSessionPeriodWindow($filter, $order, $anchor, $direction, $limit, $skip, 400),
+                fn(AnalyticsWindowAnchor $anchor, int $ceiling): int =>
+                    $reader->browserSessionPeriodCountBefore($filter, $order, $anchor, 400, $ceiling),
+                $order, $ids, 'lastSeenTs',
+            );
+        }
+    }
+
+    public function testSessionPeriodRefusesAStoredSessionNumberOutsideTheWireRange(): void
+    {
+        Database::sql(
+            'INSERT INTO `hilos_analytics_browser_session` (`id`, `session_token`, `first_seen_ts`, `last_seen_ts`)
+             VALUES (9007199254740992, ?, 100, 300)',
+            ['unsafe-session-number'],
+        );
+        $this->expectException(DatabaseRuntimeException::class);
+        new AnalyticsSectionReader()->browserSessionPeriodWindow(
+            $this->personFilter(), AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 1, 0, 400,
+        );
+    }
+
+    public function testSessionPeriodCountsProbeOneExtraRowAndWindowsRemainBounded(): void
+    {
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter('this-hour');
+        self::assertSame(0, $reader->browserSessionPeriodCount($filter, 400));
+        $ids = [];
+        for ($index = 0; $index < 500; $index++) {
+            $ids[] = $this->session('count-' . $index, null, 100, 300);
+        }
+        self::assertSame(500, $reader->browserSessionPeriodCount($filter, 400));
+        self::assertSame(500, $reader->browserSessionPeriodCount($filter, 400, 1000));
+        self::assertCount(50, $reader->browserSessionPeriodWindow(
+            $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 1000, 0, 400,
+        ));
+        $ids[] = $this->session('probe', null, 100, 300);
+        $ids[] = $this->session('past-probe', null, 100, 300);
+        self::assertSame(501, $reader->browserSessionPeriodCount($filter, 400));
+        foreach ([0, 1, -1, 1000] as $ceiling) {
+            self::assertSame(max(0, min($ceiling, 500)) + 1, $reader->browserSessionPeriodCount($filter, 400, $ceiling));
+        }
+        self::assertSame(array_slice($ids, 500), $this->rowIds($reader->browserSessionPeriodWindow(
+            $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 500, 400,
+        )));
+        foreach ([[AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, end($ids) + 1)],
+            [AnalyticsWindowOrder::TIME_ASC, new AnalyticsWindowAnchor(301, 1)],
+            [AnalyticsWindowOrder::TIME_DESC, new AnalyticsWindowAnchor(299, 1)]] as [$order, $anchor]) {
+            self::assertSame(501, $reader->browserSessionPeriodCountBefore($filter, $order, $anchor, 400));
+        }
+    }
+
+    public function testColdSessionPeriodContextAndOutOfBoundsWindowsDoNotReadSql(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $cold = AnalyticsPeriodFilter::fromArray([], 400);
+        self::assertSame(0, $reader->browserSessionPeriodCount($cold, 400));
+        self::assertSame(0, $reader->browserSessionPeriodCountBefore($cold, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400));
+        self::assertSame([], $reader->browserSessionPeriodWindow($cold, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400));
+        $filter = $this->personFilter();
+        foreach ([
+            [0, 0, TableAnchorDirection::After], [-1, 0, TableAnchorDirection::Before],
+            [50, 501, TableAnchorDirection::After], [50, 501, TableAnchorDirection::Before],
+        ] as [$limit, $skip, $direction]) {
+            self::assertSame([], $reader->browserSessionPeriodWindow($filter, AnalyticsWindowOrder::NUMBER, null, $direction, $limit, $skip, 400));
+        }
+    }
+
+    public function testSessionPeriodSqlFailuresAreNotEmptyWindowsOrCounts(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter();
+        $failures = [];
+        foreach (['window', 'count', 'countBefore'] as $read) {
+            try {
+                match ($read) {
+                    'window' => $reader->browserSessionPeriodWindow(
+                        $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400,
+                    ),
+                    'count' => $reader->browserSessionPeriodCount($filter, 400),
+                    'countBefore' => $reader->browserSessionPeriodCountBefore(
+                        $filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400,
+                    ),
+                };
+                self::fail('A failed session period read must throw');
+            } catch (DatabaseException) {
+                $failures[] = $read;
+            }
+        }
+        self::assertSame(['window', 'count', 'countBefore'], $failures);
+    }
+
+    public function testInvalidSessionPeriodAnchorsSkipsAndChangedServerBoundsAreRefusedBeforeSql(): void
+    {
+        Database::sql('SET FOREIGN_KEY_CHECKS = 0');
+        Database::sql('DROP TABLE `hilos_analytics_browser_session`');
+        Database::sql('SET FOREIGN_KEY_CHECKS = 1');
+        $reader = new AnalyticsSectionReader();
+        $filter = $this->personFilter();
+        foreach (AnalyticsWindowOrder::cases() as $order) {
+            foreach ([-1, 1] as $skip) {
+                try {
+                    $reader->browserSessionPeriodWindow(
+                        $filter, $order, new AnalyticsWindowAnchor(350, 2), TableAnchorDirection::After, 50, $skip, 400,
+                    );
+                    self::fail('An anchor cannot accompany a skip');
+                } catch (InvalidArgumentException $exception) {
+                    self::assertStringContainsString('skip', $exception->getMessage());
+                }
+            }
+        }
+        foreach ([AnalyticsWindowOrder::TIME_ASC, AnalyticsWindowOrder::TIME_DESC] as $order) {
+            foreach (['window', 'countBefore'] as $read) {
+                try {
+                    match ($read) {
+                        'window' => $reader->browserSessionPeriodWindow(
+                            $filter, $order, new AnalyticsWindowAnchor(null, 2), TableAnchorDirection::After, 50, 0, 400,
+                        ),
+                        'countBefore' => $reader->browserSessionPeriodCountBefore($filter, $order, new AnalyticsWindowAnchor(null, 2), 400),
+                    };
+                    self::fail('A time anchor requires its moment');
+                } catch (InvalidArgumentException $exception) {
+                    self::assertStringContainsString('moment', $exception->getMessage());
+                }
+            }
+        }
+        foreach (['window', 'count', 'countBefore'] as $read) {
+            try {
+                match ($read) {
+                    'window' => $reader->browserSessionPeriodWindow(
+                        $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 299,
+                    ),
+                    'count' => $reader->browserSessionPeriodCount($filter, 299),
+                    'countBefore' => $reader->browserSessionPeriodCountBefore(
+                        $filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 2), 299,
+                    ),
                 };
                 self::fail('Every read must recheck the server upper bound');
             } catch (ValidationException $exception) {

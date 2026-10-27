@@ -12,6 +12,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Core\Execution\ExecutionContext;
@@ -124,6 +125,12 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
         $response = $this->subscribe('analytics-admin', $id);
         self::assertSame('Browser session #' . $id, $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
         self::assertArrayNotHasKey('label', $response->payload->data);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
         self::assertSame([
             'id' => $id, 'browser' => 'Chrome 128 · Windows',
             'lastSignedInUserId' => $userId, 'lastSignedInUserLabel' => 'Last signed in',

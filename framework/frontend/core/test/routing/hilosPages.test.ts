@@ -432,6 +432,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
       path: '/hilos/analytics/browser-sessions/{browserSessionId}',
       admin: true,
+      paramPatterns: { browserSessionId: '\\+?\\d+' },
     })
     expect(resolveHilosPath(page, { browserSessionId: '57' })).toBe(
       '/hilos/analytics/browser-sessions/57',

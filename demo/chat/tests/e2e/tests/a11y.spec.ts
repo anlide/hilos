@@ -11,6 +11,10 @@ import {
 } from '../helpers/session'
 import { expectPageReady, gotoPage } from '../helpers/page.js'
 import {
+  ANALYTICS_SESSION_LIST_HANDLE,
+  ANALYTICS_SESSION_LIST_PATH,
+  expectAnalyticsSessionListAccessibility,
+  expectAnalyticsSessionListWindow,
   expectAnalyticsPeopleAccessibility,
   expectAnalyticsPeopleWindow,
   watchDeliveryFrames,
@@ -738,5 +742,84 @@ test.describe('Daemon section accessibility', () => {
       await expectDaemonPage(expect, page, 'hilos_daemon')
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
     })
+  }
+})
+
+test('Analytics Browser sessions names its table through one heading and operates Last seen and Period from the keyboard', async ({
+  page,
+}) => {
+  const frames = watchDeliveryFrames(page)
+  try {
+    await signUpAdmin(page)
+    await gotoPage(page, ANALYTICS_SESSION_LIST_PATH)
+    const today = await expectAnalyticsSessionListWindow(
+      expect,
+      page,
+      frames,
+      'today',
+    )
+    await expectAnalyticsSessionListAccessibility(expect, page, 'descending')
+    let changing = frames.sent.length
+    const sort = page
+      .getByTestId(ANALYTICS_SESSION_LIST_HANDLE)
+      .getByTestId('hilos-table-sort-lastSeenTs')
+    await sort.focus()
+    await expect(sort).toBeFocused()
+    await sort.press('Enter')
+    const ascending = await expectAnalyticsSessionListWindow(
+      expect,
+      page,
+      frames,
+      'today',
+      changing,
+    )
+    expect(ascending.request.sort).toEqual([
+      { field: 'lastSeenTs', direction: 'asc' },
+    ])
+    expect(ascending.request.filter).toEqual(today.request.filter)
+    await expectAnalyticsSessionListAccessibility(expect, page, 'ascending')
+    await expect(sort).toBeFocused()
+    const period = page.getByTestId('hilos-table-filter-period')
+    const toggle = period.getByTestId('hilos-dropdown-toggle')
+    await toggle.focus()
+    await expect(toggle).toBeFocused()
+    await toggle.press('ArrowDown')
+    await expect(period.getByRole('listbox')).toHaveAccessibleName('Period')
+    const any = period.getByTestId('hilos-dropdown-option--1')
+    await expect(any).toBeFocused()
+    await any.press('End')
+    const week = period.getByTestId('hilos-dropdown-option-2')
+    await expect(week).toBeFocused()
+    changing = frames.sent.length
+    await week.press('Enter')
+    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+    const selected = await expectAnalyticsSessionListWindow(
+      expect,
+      page,
+      frames,
+      'this-week',
+      changing,
+    )
+    expect(selected.request.filter).toEqual({
+      ...today.context,
+      period: 'this-week',
+    })
+    await expect(toggle).toHaveText('Period: This week')
+    await expect(toggle).toBeFocused()
+    await toggle.press('ArrowUp')
+    await expect(week).toBeFocused()
+    await week.press('Escape')
+    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+    await expect(toggle).toBeFocused()
+  } finally {
+    await test.info().attach('analytics-session-list-accessibility', {
+      body: JSON.stringify(
+        { sent: frames.sent, packets: frames.packets },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    frames.stop()
   }
 })

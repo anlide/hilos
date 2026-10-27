@@ -641,7 +641,7 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
-    public function testAnalyticsSharesItsOverviewAndPeopleHeadAndKeepsBothEntityHeadsLegacy(): void
+    public function testAnalyticsSharesItsListHeadsAndKeepsBothEntityHeadsLegacy(): void
     {
         AnalyticsPageHeadTestHilos::initBrowser();
         $params = new PageRouteParams([]);
@@ -658,6 +658,7 @@ final class PageCatalogResolverTest extends TestCase
             ],
             'pageTabs' => [
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
             ],
             'pageChildren' => [],
@@ -665,6 +666,10 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame(
             PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, $params)?->toArray(),
             PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS_PEOPLE, $params)?->toArray(),
+        );
+        self::assertSame(
+            PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, $params)?->toArray(),
+            PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, $params)?->toArray(),
         );
         foreach ([
             HilosPageConstants::HILOS_ANALYTICS_PERSON => [
@@ -676,6 +681,7 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
             ],
         ] as $page => $breadcrumb) {
@@ -683,6 +689,18 @@ final class PageCatalogResolverTest extends TestCase
             self::assertNull(PageCatalogResolver::head($page, $params));
             self::assertSame($breadcrumb, PageCatalogResolver::breadcrumb($page));
         }
+    }
+
+    /** A project serving only Overview keeps the list tabs out through the normal eligibility check. */
+    public function testUnservedAnalyticsListsDoNotBecomeTabsOrCards(): void
+    {
+        AnalyticsOverviewOnlyHeadTestHilos::initBrowser();
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_ANALYTICS, new PageRouteParams([]));
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview'],
+        ], $head->pageTabs);
+        self::assertSame([], $head->toArray()['pageChildren']);
     }
 
     /** Vue opts in only Person; the neighboring BrowserSession stays on its legacy head. */
@@ -721,6 +739,7 @@ final class PageCatalogResolverTest extends TestCase
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
             ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION));
         }
@@ -1518,9 +1537,18 @@ abstract class AnalyticsPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
         HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_PEOPLE => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
+    ];
+}
+
+/** The Analytics section is served without either optional list page. */
+abstract class AnalyticsOverviewOnlyHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
     ];
 }
 

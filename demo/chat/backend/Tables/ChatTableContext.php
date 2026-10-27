@@ -7,6 +7,7 @@ namespace Demo\Chat\Tables;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
@@ -105,6 +106,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosAnalyticsBrowserSessionListTable $hilosAnalyticsBrowserSessionList
  * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  * @property-read HilosModerationKindsTable $hilosModerationKinds
  * @property-read HilosModerationRulesTable $hilosModerationRules
@@ -155,6 +157,7 @@ final class ChatTableContext extends TableContext
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessionList = HilosAnalyticsBrowserSessionListTable::TABLE;
     public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
     public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
     public const string hilosModerationRules = HilosModerationRulesTable::TABLE;

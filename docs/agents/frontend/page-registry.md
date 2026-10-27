@@ -44,6 +44,19 @@ view files, which live in `views/<Page>/`:
   the app's routes — `routes.ts` never spreads `HILOS_ROUTE_DECLARATIONS` by
   hand.
 
+  `HilosRouteDeclaration.paramPatterns` is an optional
+  `Readonly<Record<string, string>>` of regular-expression sources. Each source
+  must match the entire decoded value captured for that parameter; `path()` also
+  checks the raw parameter value before encoding it. An absent optional slot is
+  unchecked. A mismatch continues to the next route declaration, while an
+  invalid value passed to `path()` returns `undefined`. A capture that cannot be
+  decoded is a route miss, and successful captures are decoded exactly once.
+  Static routes keep their existing precedence. The Analytics browser-session
+  detail declaration precedes the optional-period list declaration and constrains
+  its id to digits with an optional leading plus: `/64` and `/+64` resolve to the
+  detail page, while `/today` and `/unknown` fall through to the list. This is a
+  route-specific constraint, not a general singular-URL naming convention.
+
   **`admin` is required on every row and has no default.** It names the surface
   *type*, not any one feature that reads it — say `admin`, never
   `showsThePassForm`. An optional flag would make a forgotten row silently

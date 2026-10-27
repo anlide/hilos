@@ -40,6 +40,7 @@ export const HilosPages = {
   APPEARANCE: 'hilos_appearance',
   ANALYTICS: 'hilos_analytics',
   ANALYTICS_PEOPLE: 'hilos_analytics_people',
+  ANALYTICS_BROWSER_SESSIONS: 'hilos_analytics_browser_sessions',
   ANALYTICS_BROWSER_SESSION: 'hilos_analytics_browser_session',
   ANALYTICS_PERSON: 'hilos_analytics_person',
   ROLES: 'hilos_roles',
@@ -181,6 +182,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.ANALYTICS_BROWSER_SESSION]: {
     path: '/hilos/analytics/browser-sessions/{browserSessionId}',
+    admin: true,
+    paramPatterns: { browserSessionId: '\\+?\\d+' },
+  },
+  [HilosPages.ANALYTICS_BROWSER_SESSIONS]: {
+    path: '/hilos/analytics/browser-sessions/{period?}',
     admin: true,
   },
   [HilosPages.ANALYTICS_PERSON]: {

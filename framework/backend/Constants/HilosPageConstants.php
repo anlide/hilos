@@ -126,6 +126,9 @@ final class HilosPageConstants
     /** @var string Hilos analytics page (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
 
+    /** @var string Browser sessions seen in the selected period */
+    public const string HILOS_ANALYTICS_BROWSER_SESSIONS = 'hilos_analytics_browser_sessions';
+
     /** @var string People who signed into analytics browser sessions */
     public const string HILOS_ANALYTICS_PEOPLE = 'hilos_analytics_people';
 

@@ -134,6 +134,25 @@ const PEOPLE_PAGE = 'hilos_analytics_people'
 const PEOPLE_TABLE = 'hilosAnalyticsPeople'
 const PEOPLE_HANDLE = 'hilos-analytics-people-table'
 
+export const ANALYTICS_SESSION_LIST_PATH = '/hilos/analytics/browser-sessions'
+export const ANALYTICS_SESSION_LIST_HANDLE =
+  'hilos-analytics-browser-session-list-table'
+const SESSION_LIST_PAGE = 'hilos_analytics_browser_sessions'
+const SESSION_LIST_TABLE = 'hilosAnalyticsBrowserSessionList'
+const SESSION_LIST_LINK = 'hilos-analytics-browser-session-list-session'
+const peopleSurface = {
+  page: PEOPLE_PAGE,
+  table: PEOPLE_TABLE,
+  handle: PEOPLE_HANDLE,
+  link: 'hilos-analytics-person-link',
+}
+const sessionListSurface = {
+  page: SESSION_LIST_PAGE,
+  table: SESSION_LIST_TABLE,
+  handle: ANALYTICS_SESSION_LIST_HANDLE,
+  link: SESSION_LIST_LINK,
+}
+
 /** Wait on the real journal writer, using the existing bounded stand probe. */
 export async function waitAnalyticsBrowserSession(
   expect: Expect,
@@ -154,26 +173,30 @@ export async function waitAnalyticsBrowserSession(
   return session
 }
 
-/** Real People viewport requests, in the order the browser sent them. */
-export function analyticsPeopleViewports(log: DeliveryFrameLog) {
+/** Real requests for one table surface, in the order the browser sent them. */
+function analyticsViewports(
+  log: DeliveryFrameLog,
+  surface: typeof peopleSurface,
+) {
   return log.sent.filter(({ wire }) => {
     const request = deliveryObject(wire)
     return (
       request.type === 'table_viewport' &&
-      request.page === PEOPLE_PAGE &&
-      request.tableKey === PEOPLE_TABLE
+      request.page === surface.page &&
+      request.tableKey === surface.table
     )
   })
 }
 
 /**
- * Settle a new People request on its correlated daemon reply and drawn row keys.
+ * Settle a table request on its correlated daemon reply and drawn row keys.
  * The returned filter is the actual captured context, independent of the core.
  */
-export async function expectAnalyticsPeopleWindow(
+async function expectAnalyticsWindow(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
+  surface: typeof peopleSurface,
   period: 'today' | 'this-hour' | 'this-week' | undefined,
   after = 0,
 ) {
@@ -184,8 +207,8 @@ export async function expectAnalyticsPeopleWindow(
         const request = deliveryObject(wire)
         return (
           request.type === 'table_viewport' &&
-          request.page === PEOPLE_PAGE &&
-          request.tableKey === PEOPLE_TABLE
+          request.page === surface.page &&
+          request.tableKey === surface.table
         )
       })
       .at(-1)
@@ -199,8 +222,8 @@ export async function expectAnalyticsPeopleWindow(
         const data = deliveryObject(response.data)
         return (
           response.type === 'table_window' &&
-          data.page === PEOPLE_PAGE &&
-          data.tableKey === PEOPLE_TABLE &&
+          data.page === surface.page &&
+          data.tableKey === surface.table &&
           data.requestId === request.requestId
         )
       })
@@ -233,16 +256,139 @@ export async function expectAnalyticsPeopleWindow(
     expect(Number.isSafeInteger(moment)).toBe(true)
     expect(moment).toBeGreaterThan(0)
   }
-  const table = page.getByTestId(PEOPLE_HANDLE)
+  const table = page.getByTestId(surface.handle)
   await expect(shownByTestId(table, 'hilos-table-loading')).toHaveCount(0)
   await expect
     .poll(() =>
-      shownByTestId(table, 'hilos-analytics-person-link').evaluateAll((links) =>
+      shownByTestId(table, surface.link).evaluateAll((links) =>
         links.map((link) => Number(link.getAttribute('data-record'))),
       ),
     )
     .toEqual(rows.map((row) => row.rowKey))
   return { request, window, rows, context }
+}
+
+/** Real People viewport requests in send order. */
+export function analyticsPeopleViewports(log: DeliveryFrameLog) {
+  return analyticsViewports(log, peopleSurface)
+}
+
+/** Real browser-session list viewport requests in send order. */
+export function analyticsSessionListViewports(log: DeliveryFrameLog) {
+  return analyticsViewports(log, sessionListSurface)
+}
+
+/** Settle People on its correlated reply and drawn row keys. */
+export function expectAnalyticsPeopleWindow(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  period: 'today' | 'this-hour' | 'this-week' | undefined,
+  after = 0,
+) {
+  return expectAnalyticsWindow(expect, page, log, peopleSurface, period, after)
+}
+
+/** Settle the list on its correlated reply and drawn public session keys. */
+export function expectAnalyticsSessionListWindow(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  period: 'today' | 'this-hour' | 'this-week' | undefined,
+  after = 0,
+) {
+  return expectAnalyticsWindow(
+    expect,
+    page,
+    log,
+    sessionListSurface,
+    period,
+    after,
+  )
+}
+
+/** Address a visible session cell by its public envelope key. */
+export function analyticsSessionListCell(
+  page: Page,
+  field: string,
+  rowKey: number,
+): Locator {
+  return analyticsSessionCell(
+    page.getByTestId(ANALYTICS_SESSION_LIST_HANDLE),
+    `hilos-analytics-browser-session-list-${field}`,
+    rowKey,
+  )
+}
+
+/** Match a real session's personal cells to its served window. */
+export async function expectAnalyticsSessionListRow(
+  expect: Expect,
+  page: Page,
+  settled: Awaited<ReturnType<typeof expectAnalyticsSessionListWindow>>,
+  sessionId: number,
+  person: { userId: number; name: string },
+  browserMajor: string,
+): Promise<void> {
+  const row = settled.rows.find((row) => row.rowKey === sessionId)
+  expect(row).toBeDefined()
+  const value = deliveryObject(deliveryObject(row!.slots).browserSession)
+  expect(value.lastSignedInUserId).toBe(person.userId)
+  expect(value.lastSignedInUserName).toBe(person.name)
+  const link = analyticsSessionListCell(page, 'session', sessionId)
+  await expect(link).toHaveText(`#${sessionId}`)
+  await expect(link).toHaveAttribute(
+    'href',
+    `${ANALYTICS_SESSION_LIST_PATH}/${sessionId}`,
+  )
+  const signedIn = analyticsSessionListCell(page, 'person', sessionId)
+  await expect(signedIn).toHaveText(`${person.name} (#${person.userId})`)
+  await expect(signedIn.getByRole('link')).toHaveAttribute(
+    'href',
+    `/hilos/analytics/people/${person.userId}`,
+  )
+  expect(value.browser).toContain(`Chrome ${browserMajor}`)
+  await expect(analyticsSessionListCell(page, 'browser', sessionId)).toHaveText(
+    String(value.browser),
+  )
+  for (const [field, key] of [
+    ['first-seen', 'firstSeenTs'],
+    ['last-seen', 'lastSeenTs'],
+  ] as const) {
+    expect(value[key]).toBeGreaterThan(0)
+    await expectReaderMillisecondMoment(
+      expect,
+      analyticsSessionListCell(page, field, sessionId),
+      Number(value[key]),
+      String(settled.context.timeZone),
+    )
+  }
+  expect(value.actionCount).toBeGreaterThan(0)
+  await expect(analyticsSessionListCell(page, 'actions', sessionId)).toHaveText(
+    String(value.actionCount),
+  )
+}
+
+/** The legacy session title and return link, independent of entity-head adoption. */
+export async function expectAnalyticsSessionReturn(
+  expect: Expect,
+  page: Page,
+  sessionId: number,
+): Promise<void> {
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+    `Browser session #${sessionId}`,
+  )
+  await expect(
+    page.getByTestId('hilos-breadcrumb').getByRole('link'),
+  ).toHaveText(['Hilos', 'Analytics', 'Browser sessions'])
+  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
+    'Hilos',
+    'Analytics',
+    'Browser sessions',
+    `Browser session #${sessionId}`,
+  ])
+  await expect(
+    page.getByTestId('hilos-breadcrumb-hilos_analytics_browser_sessions'),
+  ).toHaveAttribute('href', ANALYTICS_SESSION_LIST_PATH)
 }
 
 /** The public numeric address of a person in the current People window. */
@@ -254,18 +400,32 @@ export function analyticsPersonLink(page: Page, userId: number): Locator {
   )
 }
 
-/** One Analytics section heading, its two real page links and section crumbs. */
+/** The explicit kit's served tabs, in catalog order, and section crumbs. */
 export async function expectAnalyticsSectionHead(
   expect: Expect,
   page: Page,
-  current: 'overview' | 'people',
+  current: 'overview' | 'sessions' | 'people',
+  kit: 'vue' | 'react' = 'vue',
 ): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Analytics pages')
-  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'People'])
+  await expect(tabs.getByRole('link')).toHaveText(
+    kit === 'vue'
+      ? ['Overview', 'Browser sessions', 'People']
+      : ['Overview', 'People'],
+  )
   for (const [key, path, active] of [
     ['hilos_analytics', '/hilos/analytics', current === 'overview'],
+    ...(kit === 'vue'
+      ? ([
+          [
+            SESSION_LIST_PAGE,
+            ANALYTICS_SESSION_LIST_PATH,
+            current === 'sessions',
+          ],
+        ] as const)
+      : []),
     [PEOPLE_PAGE, '/hilos/analytics/people', current === 'people'],
   ] as const) {
     const link = tabs.getByTestId(`hilos-page-tab-${key}`)
@@ -321,10 +481,11 @@ export async function expectAnalyticsPeoplePerson(
 }
 
 /** Period choices show the daemon's four facet counts, through standard handles. */
-export async function expectAnalyticsPeopleFacets(
+async function expectAnalyticsFacets(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
+  surface: typeof peopleSurface,
 ): Promise<void> {
   const latest = () =>
     log.packets
@@ -334,8 +495,8 @@ export async function expectAnalyticsPeopleFacets(
         const data = deliveryObject(response.data)
         return (
           response.type === 'table_facet_counts' &&
-          data.page === PEOPLE_PAGE &&
-          data.tableKey === PEOPLE_TABLE
+          data.page === surface.page &&
+          data.tableKey === surface.table
         )
       })
       .at(-1)
@@ -363,6 +524,72 @@ export async function expectAnalyticsPeopleFacets(
       control.getByTestId(`hilos-table-facet-period-${key}`),
     ).toHaveText(String(count.count))
   }
+}
+
+/** Match People Period counts to the daemon's facets. */
+export function expectAnalyticsPeopleFacets(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+) {
+  return expectAnalyticsFacets(expect, page, log, peopleSurface)
+}
+
+/** Match session-list facets and their captured context to the viewport. */
+export async function expectAnalyticsSessionListFacets(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  context: Record<string, unknown>,
+): Promise<void> {
+  await expectAnalyticsFacets(expect, page, log, sessionListSurface)
+  const requests = log.sent
+    .map(({ wire }) => deliveryObject(wire))
+    .filter(
+      (wire) =>
+        (wire.type === 'table_facets' || wire.type === 'table_viewport') &&
+        wire.page === SESSION_LIST_PAGE &&
+        wire.facets !== undefined,
+    )
+  expect(requests.length).toBeGreaterThan(0)
+  for (const request of requests) {
+    expect(request.tableKey).toBe(SESSION_LIST_TABLE)
+    expect(request.facets).toEqual({
+      period: ['this-hour', 'today', 'this-week'],
+    })
+  }
+  const first = analyticsSessionListViewports(log)[0]
+  expect(first).toBeDefined()
+  expect(deliveryObject(deliveryObject(first!.wire).filter)).toEqual({
+    ...context,
+    period: 'today',
+  })
+}
+
+/** One h1 names the list table; Last seen exposes the served sort direction. */
+export async function expectAnalyticsSessionListAccessibility(
+  expect: Expect,
+  page: Page,
+  direction: 'ascending' | 'descending',
+): Promise<void> {
+  await expectAnalyticsSectionHead(expect, page, 'sessions')
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  const table = page
+    .getByTestId(ANALYTICS_SESSION_LIST_HANDLE)
+    .getByRole('table', { name: 'Analytics', exact: true })
+  await expect(table).toBeVisible()
+  await expect(table).toHaveAttribute(
+    'aria-labelledby',
+    (await heading.getAttribute('id'))!,
+  )
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+  await expect(
+    table.getByRole('columnheader', { name: 'Last seen' }),
+  ).toHaveAttribute('aria-sort', direction)
+  await expect(
+    table.getByTestId('hilos-table-sort-lastSeenTs'),
+  ).toHaveAccessibleName('Last seen')
 }
 
 /** People uses the one h1 as its table name and exposes its live sort direction. */
@@ -614,6 +841,7 @@ export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
   kind: 'tiles' | 'empty' = 'empty',
+  kit: 'legacy' | 'vue' = 'legacy',
 ): Promise<void> {
   await expect(
     page.getByRole('heading', { name: 'Analytics', exact: true }),
@@ -631,7 +859,7 @@ export async function expectAnalyticsOverview(
       'Analytics',
     )
     const tabs = page.getByTestId('hilos-page-tabs')
-    if ((await tabs.count()) > 0) {
+    if (kit === 'vue') {
       await expectAnalyticsSectionHead(expect, page, 'overview')
     } else {
       await expect(tabs).toHaveCount(0)
@@ -654,7 +882,18 @@ export async function expectAnalyticsOverview(
     await expect(
       page.getByRole('heading', { name: 'Overview', exact: true }),
     ).toHaveCount(0)
-    await expect(tiles.getByRole('link')).toHaveCount(0)
+    await expect(tiles.getByRole('link')).toHaveCount(kit === 'vue' ? 3 : 0)
+    if (kit === 'vue') {
+      for (const [key, period] of [
+        ['week', 'this-week'],
+        ['day', 'today'],
+        ['hour', 'this-hour'],
+      ] as const) {
+        await expect(
+          tiles.getByTestId(`hilos-analytics-visitors-${key}-link`),
+        ).toHaveAttribute('href', `${ANALYTICS_SESSION_LIST_PATH}/${period}`)
+      }
+    }
     for (const period of ['week', 'day', 'hour']) {
       await expect(
         tiles.getByTestId(`hilos-analytics-visitors-${period}`),
@@ -985,4 +1224,60 @@ export async function expectOtherAnalyticsSession(
   const foreignKeys = new Set(foreignRows.map((row) => row.rowKey))
   expect(rows.some((row) => foreignKeys.has(row.rowKey))).toBe(false)
   await expect(page.getByTestId(SESSION_PERSON)).toContainText(`(#${userId})`)
+}
+
+/** Viewer receives hidden personal fields and only public session addresses. */
+export async function expectAnalyticsSessionListViewer(
+  expect: Expect,
+  page: Page,
+  settled: Awaited<ReturnType<typeof expectAnalyticsSessionListWindow>>,
+): Promise<void> {
+  expect(settled.rows.length).toBeGreaterThan(0)
+  const table = page.getByTestId(ANALYTICS_SESSION_LIST_HANDLE)
+  for (const [key, row] of [
+    ['firstAnchor', settled.rows[0]],
+    ['lastAnchor', settled.rows.at(-1)],
+  ] as const) {
+    expect(settled.window[key]).toEqual({ rowKey: row!.rowKey })
+  }
+  for (const row of settled.rows) {
+    expect(Object.keys(row).sort()).toEqual(['rowKey', 'slots'])
+    expect(Object.keys(deliveryObject(row.slots))).toEqual(['browserSession'])
+    expect(deliveryObject(row.slots).browserSession).toEqual({
+      lastSignedInUserId: { _hidden: true },
+      lastSignedInUserName: { _hidden: true },
+      browser: { _hidden: true },
+      firstSeenTs: { _hidden: true },
+      lastSeenTs: { _hidden: true },
+      actionCount: { _hidden: true },
+    })
+    const id = Number(row.rowKey)
+    for (const field of [
+      'person',
+      'browser',
+      'first-seen',
+      'last-seen',
+      'actions',
+    ]) {
+      const cell = analyticsSessionListCell(page, field, id)
+      await expect(cell).toHaveText('Hidden')
+      await expect(cell.getByRole('link')).toHaveCount(0)
+      await expect(
+        cell.locator('[data-created-ts], [data-last-seen-ts], [title]'),
+      ).toHaveCount(0)
+    }
+    await expect(analyticsSessionListCell(page, 'session', id)).toHaveAttribute(
+      'href',
+      `${ANALYTICS_SESSION_LIST_PATH}/${id}`,
+    )
+  }
+  await expect(shownByTestId(table, SESSION_LIST_LINK)).toHaveCount(
+    settled.rows.length,
+  )
+  const hrefs = await table
+    .getByRole('link')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  expect(hrefs).toEqual(
+    settled.rows.map((row) => `${ANALYTICS_SESSION_LIST_PATH}/${row.rowKey}`),
+  )
 }

@@ -272,6 +272,236 @@ describe('PageRouter.path', () => {
   })
 })
 
+describe('route parameter patterns', () => {
+  const basePath = '/hilos/analytics/browser-sessions'
+  const router = createPageRouter({
+    entity: {
+      path: `${basePath}/{browserSessionId}`,
+      admin: true,
+      paramPatterns: { browserSessionId: '\\+?\\d+' },
+    },
+    list: { path: `${basePath}/{period?}`, admin: false },
+  })
+
+  it.each([
+    ['64', '64'],
+    ['%36%34', '64'],
+    ['+64', '+64'],
+    ['%2B64', '+64'],
+    ['%2b%36%34', '+64'],
+    ['0', '0'],
+    ['+0', '+0'],
+    ['9007199254740992', '9007199254740992'],
+  ])('matches the decoded numeric entity capture %s', (capture, value) => {
+    expect(router.match(`${basePath}/${capture}`)).toEqual({
+      page: 'entity',
+      params: { browserSessionId: value },
+      admin: true,
+    })
+    const path = router.path('entity', { browserSessionId: value })
+    expect(path).toBe(`${basePath}/${encodeURIComponent(value)}`)
+    expect(router.match(path!)).toEqual({
+      page: 'entity',
+      params: { browserSessionId: value },
+      admin: true,
+    })
+  })
+
+  it.each(['today', 'unknown', '64tail', 'head64', '%36%34', '64\n'])(
+    'falls through to the list for the decoded value %j',
+    (value) => {
+      const path = `${basePath}/${encodeURIComponent(value)}`
+      expect(router.match(path)).toEqual({
+        page: 'list',
+        params: { period: value },
+        admin: false,
+      })
+      expect(router.path('entity', { browserSessionId: value })).toBeUndefined()
+      expect(router.path('list', { period: value })).toBe(path)
+    },
+  )
+
+  it('keeps the bare list and an uncovered entity slot distinct', () => {
+    expect(router.match(basePath)).toEqual({
+      page: 'list',
+      params: {},
+      admin: false,
+    })
+    expect(router.path('list')).toBe(basePath)
+    expect(router.path('entity')).toBeUndefined()
+  })
+
+  it.each(['left', 'right'])(
+    'accepts either whole alternative %s in both directions',
+    (value) => {
+      const alternatives = createPageRouter({
+        choice: {
+          path: '/choice/{value}',
+          admin: false,
+          paramPatterns: { value: 'left|right' },
+        },
+      })
+      expect(alternatives.path('choice', { value })).toBe(`/choice/${value}`)
+      expect(alternatives.match(`/choice/${value}`).params).toEqual({ value })
+    },
+  )
+
+  it.each([
+    'leftover',
+    'copyright',
+    'left\n',
+    'right\r\n',
+    'left\u2028',
+    '\nright',
+  ])('refuses a partial alternative or final line ending in %j', (value) => {
+    const alternatives = createPageRouter({
+      choice: {
+        path: '/choice/{value}',
+        admin: false,
+        paramPatterns: { value: 'left|right' },
+      },
+    })
+    expect(alternatives.path('choice', { value })).toBeUndefined()
+    expect(alternatives.match(`/choice/${encodeURIComponent(value)}`)).toEqual({
+      page: null,
+      params: {},
+      admin: false,
+    })
+  })
+
+  it('skips an absent optional capture and checks every present parameter', () => {
+    const optional = createPageRouter({
+      pair: {
+        path: '/pair/{first}/{second?}',
+        admin: true,
+        paramPatterns: { first: '([a-z]+)-(\\d+)', second: '\\d+' },
+      },
+      empty: {
+        path: '/optional/{second?}',
+        admin: false,
+        paramPatterns: { second: '\\d+' },
+      },
+    })
+    expect(optional.path('empty')).toBe('/optional')
+    expect(optional.match('/optional')).toEqual({
+      page: 'empty',
+      params: {},
+      admin: false,
+    })
+    for (const [params, expectedPath] of [
+      [{ first: 'item-7' }, '/pair/item-7'],
+      [{ first: 'item-7', second: '64' }, '/pair/item-7/64'],
+    ] as const) {
+      const path = optional.path('pair', params)
+      expect(path).toBe(expectedPath)
+      expect(optional.match(path!)).toEqual({
+        page: 'pair',
+        params,
+        admin: true,
+      })
+    }
+    for (const params of [
+      { first: 'invalid', second: '64' },
+      { first: 'item-7', second: 'invalid' },
+      { first: 'item-7', second: '' },
+    ]) {
+      expect(optional.path('pair', params)).toBeUndefined()
+      expect(
+        optional.match(`/pair/${params.first}/${params.second}`).page,
+      ).toBeNull()
+    }
+  })
+
+  it.each(['%2F', 'a/b', 'узел🌍', 'line\n'])(
+    'checks the raw value before encoding and decodes only once for %s',
+    (value) => {
+      const literal = createPageRouter({
+        value: {
+          path: '/value/{value}',
+          admin: false,
+          paramPatterns: { value: '%2F|a/b|узел🌍|line\\n' },
+        },
+      })
+      const path = literal.path('value', { value })
+      expect(path).toBe(`/value/${encodeURIComponent(value)}`)
+      expect(literal.match(path!)).toEqual({
+        page: 'value',
+        params: { value },
+        admin: false,
+      })
+    },
+  )
+
+  it('leaves unconstrained parameter names that also name object properties alone', () => {
+    const plain = createPageRouter({
+      item: { path: '/plain/{constructor}/{toString}', admin: false },
+    })
+    const params = { constructor: 'word', toString: 'today' }
+    expect(plain.path('item', params)).toBe('/plain/word/today')
+    expect(plain.match('/plain/word/today')).toEqual({
+      page: 'item',
+      params,
+      admin: false,
+    })
+  })
+
+  it('keeps static precedence even when a parameter pattern accepts the path', () => {
+    const priority = createPageRouter({
+      dynamic: {
+        path: '/choice/{value}',
+        admin: true,
+        paramPatterns: { value: '.*' },
+      },
+      fixed: { path: '/choice/today', admin: false },
+    })
+    expect(priority.match('/choice/today')).toEqual({
+      page: 'fixed',
+      params: {},
+      admin: false,
+    })
+  })
+
+  it.each(['%', '%2', '%GG', '%C0%AF', '%ED%A0%80', '%E2%82', '%FF'])(
+    'keeps a decode error %s a miss even after a pattern mismatch',
+    (value) => {
+      const malformed = createPageRouter({
+        constrained: {
+          path: '/pair/{first}/{second}',
+          admin: true,
+          paramPatterns: { first: '\\d+' },
+        },
+        literalTail: { path: `/pair/{first}/${value}`, admin: false },
+      })
+      expect(malformed.match(`/pair/word/${value}`)).toEqual({
+        page: null,
+        params: {},
+        admin: false,
+      })
+      expect(router.match(`${basePath}/${value}`).page).toBeNull()
+    },
+  )
+
+  it.each(['\ud800', '\udfff'])(
+    'keeps an unencodable constrained value without a link',
+    (value) => {
+      const unencodable = createPageRouter({
+        required: {
+          path: '/required/{value}',
+          admin: false,
+          paramPatterns: { value: '[\\s\\S]+' },
+        },
+        optional: {
+          path: '/optional/{value?}',
+          admin: false,
+          paramPatterns: { value: '[\\s\\S]+' },
+        },
+      })
+      expect(unencodable.path('required', { value })).toBeUndefined()
+      expect(unencodable.path('optional', { value })).toBeUndefined()
+    },
+  )
+})
+
 describe('route parameter codec', () => {
   const router = createPageRouter({
     fallback: { path: '/', admin: true },

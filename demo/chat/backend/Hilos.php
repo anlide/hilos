@@ -14,6 +14,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
@@ -102,6 +103,7 @@ use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Analytics\PersonPage;
+use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\Chat\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
@@ -414,6 +416,7 @@ final class Hilos extends HilosFacade
         GuardianPage::PAGE => GuardianPage::class,
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
         PeoplePage::PAGE => PeoplePage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PersonPage::PAGE => PersonPage::class,
@@ -728,6 +731,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        ChatTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
         ChatTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         ChatTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
         ChatTableContext::hilosModerationRules => HilosModerationRulesTable::class,
@@ -875,6 +879,9 @@ final class Hilos extends HilosFacade
         ],
         PersonPage::PAGE => [
             ChatTableContext::hilosAnalyticsBrowserSessions => [],
+        ],
+        BrowserSessionsPage::PAGE => [
+            ChatTableContext::hilosAnalyticsBrowserSessionList => [],
         ],
         PeoplePage::PAGE => [
             ChatTableContext::hilosAnalyticsPeople => [],

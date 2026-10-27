@@ -410,7 +410,10 @@ layer that has built the section, which all three layers have.
   valid answer for the current page scope; a later answer or reconnect does not
   replace it, though reconnect may cause the backend subscription to run again.
   Vue and React render three aggregate tiles from that captured snapshot, under the
-  shared section head. Angular retains the legacy empty-state body; its tiles
+  shared section head. Vue also links each tile to Browser sessions at the
+  corresponding `this-week`, `today` or `this-hour` period, including when its
+  count is zero. React retains its prior tiles without those links (HIL-1743).
+  Angular's current overview retains the legacy empty-state body; its tiles
   rendering remains in HIL-1736.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
@@ -423,10 +426,11 @@ layer that has built the section, which all three layers have.
   `/hilos/analytics/people`. It is a thin subscription served by the existing
   Analytics agent: its page payload is empty, and one `page_response` carries
   the catalog, shared Analytics head and table. The Vue bindings expose the
-  `Overview` and `People` tabs in Chat and Binance, with People active on this
-  page; React and Angular People views remain in HIL-1739/1740, and the table is
-  not required by every Analytics activation. The accessible table/list name
-  is `Analytics`, supplied by the section's one heading.
+  `Overview`, `Browser sessions` and `People` tabs in Chat and Binance, with
+  People active on this page; React and Angular People views remain in
+  HIL-1739/1740, and the table is not required by every Analytics activation.
+  The accessible table/list name is `Analytics`, supplied by the section's one
+  heading.
 - People groups rows from `hilos_analytics_browser_session` where
   `user_identity_type` is `user_id` and the identity is a positive safe numeric
   value. It groups by numeric user id and includes sessions whose closed
@@ -485,6 +489,56 @@ layer that has built the section, which all three layers have.
   receives the catalog label `Person` and the session numbers, with Hidden in
   place of every other value.
 
+- The Browser sessions list has key `hilos_analytics_browser_sessions` and route
+  `/hilos/analytics/browser-sessions/{period?}`. It is a thin admin subscription
+  served by the existing Analytics agent: its own page data is empty, and one
+  `page_response` carries the catalog, shared Analytics head and table. The
+  route's `period` is `this-hour`, `today`, `this-week` or `any-time`. A bare or
+  unknown nonnumeric segment selects Today; explicit `any-time` selects the
+  unbounded period, represented by absence of `period` on the table wire. The
+  browser calendar and time-zone scope are captured before the first viewport.
+  Reset returns to that context-only baseline. Filter changes synchronize the
+  URL with `replacePath` without resubscribing; the selected period is recovered
+  for same-page navigation, Back and F5. The list does not refresh on a timer or
+  receive a snapshot from the overview tiles.
+- The list has its own `hilosAnalyticsBrowserSessionList` table and inline
+  `browserSession` slot. Its public session number is only the envelope
+  `rowKey`. The six personal values are `lastSignedInUserId`,
+  `lastSignedInUserName`, `browser`, `firstSeenTs`, `lastSeenTs` and
+  `actionCount`. The current account name comes from the mounted users
+  collection; a guest has a null id, while a non-null id and null name means the
+  account was deleted. Browser is nullable. In admin view mode all six values
+  are Hidden, while the public session link, aggregate count and facets remain.
+  No private value is a sort anchor, and numbered sorting uses `rowKey` only.
+  The default order is `lastSeenTs` descending (or ascending in reverse), with
+  numeric id breaking ties. Windows open at 25 and cap at 50. Aggregate totals
+  are capped at 500 with a probe row to report whether the ceiling was exceeded;
+  facets exclude the current Period facet while retaining the captured context.
+- `AnalyticsSectionReader::browserSessionPeriodWindow()`,
+  `browserSessionPeriodCount()` and
+  `browserSessionPeriodCountBefore()` are the approved narrow raw analytics
+  reads for this list; analytics tables are not mounted in the analytics ORM.
+  The closed interval overlap includes guests: `first_seen_ts <= asOfTs`, and,
+  when the selected period has a lower bound, `last_seen_ts >= periodStart`.
+  Action counts cover only the returned window and do not multiply totals or
+  facets. A cold read without context returns an empty result without SQL;
+  partial or invalid context is refused. A request uses one `asOfTs` for its
+  window and counts, and each facet request shares its own `asOfTs` across
+  options. These reads do not promise a repeatable snapshot. The existing
+  FILTER_USER detail table and person-page behavior are unchanged.
+- In Chat and Binance, Vue currently renders the Browser sessions page and its
+  Overview, Browser sessions and People tabs. React and Angular have not yet
+  built this list (HIL-1743 and HIL-1744); the existing browser-session detail
+  child route remains available through `STAGED_CHILDREN`. This list adds no
+  separate Analytics feature requirement. The session catalog entry has
+  Browser sessions as its parent. Vue binds the permitted session `pageLabel`
+  through the existing `bindPageInstanceName` to the matching final breadcrumb
+  entry, guarded by the current page scope and disposed on unmount. This does
+  not adopt the entity head or icon; that remains HIL-1742. A viewer sees the
+  generic `Browser session` label, and the ancestors include Browser sessions
+  whether opened from the list, from Person, or directly. The session payload
+  is unchanged.
+
 The sessions-based People list above is Phase 1. Visits, visit-based lists and
 reports, cubes, retention and live updates remain Phase-2 work under HIL-1402.
 
@@ -517,13 +571,15 @@ the count. There is no join. An empty selection returns zero; a query failure
 does not become zero. These three exact nonnegative safe-integer counts have no
 500-row ceiling.
 
-Three framework tables expose these reads with 25-row opening windows:
+Four framework tables expose these reads with 25-row opening windows:
 `hilosAnalyticsActions`, filtered by `browserSession`, carries the inline
 `action` slot (`createdTs`, `pageName`, `actionName`), and
 `hilosAnalyticsBrowserSessions`, filtered by `user`, carries the inline
 `browserSession` slot (`firstSeenTs`, `lastSeenTs`, `browser`, `actionCount`),
-while `hilosAnalyticsPeople`, filtered by the selected `period`, carries the
-inline `person` slot (`name`, `sessionCount`, `lastSeenTs`).
+`hilosAnalyticsPeople`, filtered by the selected `period`, carries the inline
+`person` slot (`name`, `sessionCount`, `lastSeenTs`), and
+`hilosAnalyticsBrowserSessionList`, filtered by the selected `period`, carries
+the inline `browserSession` slot described above.
 The numeric identity belongs to the fragment's `rowKey`, never an `id` in the
 slot. For the two detail tables, a missing preset gives an empty window without
 SQL; a value other than a positive integer refuses the window. For People, a
@@ -534,7 +590,7 @@ frontend core supplies their controllers, column declarations, row readers and
 local-time labels. In all three view layers the browser-session page opens the
 actions table with its route's session number as the preset, and the person
 page opens the browser-sessions table with its route's `userId` as the preset;
-the People table is currently rendered in Vue.
+the People and Browser sessions tables are currently rendered in Vue.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a

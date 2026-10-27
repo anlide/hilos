@@ -197,6 +197,7 @@ final class AnalyticsPeoplePageIntegrationTest extends IntegrationTestCase
             ],
             PageCatalogConstants::WIRE_PAGE_TABS => [
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
             ],
         ], $response->payload->data);

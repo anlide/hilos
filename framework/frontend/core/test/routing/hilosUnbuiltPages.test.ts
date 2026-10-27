@@ -10,6 +10,21 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
+  it('serves the session list in Vue while keeping session detail served', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_BROWSER_SESSIONS]).toEqual([
+      'react',
+      'angular',
+    ])
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      expect(
+        hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_BROWSER_SESSIONS),
+      ).toBe(layer !== 'vue')
+      expect(
+        hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_BROWSER_SESSION),
+      ).toBe(false)
+    }
+  })
+
   it('serves the contextual Frame page in all three kits', () => {
     for (const kit of ['vue', 'react', 'angular'] as const) {
       expect(

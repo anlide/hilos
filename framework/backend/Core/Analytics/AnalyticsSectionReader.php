@@ -10,6 +10,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\SqlSortDirection;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
 /** Exact overview aggregates and bounded detail windows over loaded analytics facts. */
@@ -32,6 +33,8 @@ final class AnalyticsSectionReader
     private const string PERSON_ID_SQL = 'p.`user_id`';
 
     private const int MAX_SAFE_USER_ID = 9007199254740991;
+
+    private const int MAX_SAFE_SESSION_ID = 9007199254740991;
 
     private const int MAX_SAFE_COUNT = 9007199254740991;
 
@@ -359,6 +362,170 @@ final class AnalyticsSectionReader
         int $ceiling = TableConstants::COUNT_CEILING,
     ): int {
         return $this->boundedPersonCount($filter, $order, $anchor, $asOfTs, $ceiling);
+    }
+
+    /**
+     * Reads the intersecting session set before applying the window boundary.
+     * Successive requests read current facts rather than a repeatable snapshot.
+     *
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
+     * @param ?AnalyticsWindowAnchor $anchor Complete row key, or an edge of the set
+     * @param TableAnchorDirection $direction Side of the anchor in the chosen order
+     * @param int $limit Requested number of rows, capped at MAX_PAGE_ROWS
+     * @param int $skip Rows to skip from the chosen edge when there is no anchor
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @return list<AnalyticsSectionBrowserSession> Sessions in canonical order, empty before context arrives
+     * @throws InvalidArgumentException When a skip accompanies an anchor or its required moment is missing
+     * @throws HilosException When the period is invalid or an analytics or mounted account read fails
+     */
+    public function browserSessionPeriodWindow(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        int $skip,
+        int $asOfTs,
+    ): array {
+        $filter->validateAsOf($asOfTs);
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Analytics skip requires an edge');
+        }
+        $params = [self::IDENTITY_TYPE_USER_ID];
+        $periodClause = $this->browserSessionPeriodWhereSql($filter, $asOfTs, $params);
+        $cursor = $this->anchorClause(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $anchor, $direction, $params);
+        $limit = $this->boundedLimit($limit);
+        $skip = max(0, $skip);
+        if (!$filter->hasContext() || $limit === 0 || $skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        $sqlOrder = $this->windowOrder(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $direction);
+        // TODO(owner, 2026-10-19): replace this raw-data SQL when the analytics reading model lands.
+        Database::sql(
+            'SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `user_agent`,
+                    CASE WHEN b.`user_identity_type` = ? THEN b.`user_identity_value` END AS `user_id_value`
+             FROM `hilos_analytics_browser_session` b
+             LEFT JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
+             WHERE ' . $periodClause . $cursor . '
+             ORDER BY ' . $sqlOrder . ' LIMIT ' . $limit . ' OFFSET ' . $skip,
+            $params,
+        );
+        $rows = Database::rows();
+        if ($rows === []) {
+            return [];
+        }
+
+        $counts = $this->actionCounts(array_map(static fn(array $row): int => (int)$row['id'], $rows));
+        $sessions = [];
+        foreach ($rows as $row) {
+            if (filter_var($row['id'], FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_SESSION_ID],
+            ]) === false) {
+                throw new DatabaseRuntimeException('Analytics session number is outside the positive safe integer range');
+            }
+            $userId = null;
+            if ($row['user_id_value'] !== null && ctype_digit((string)$row['user_id_value'])) {
+                $parsed = filter_var(ltrim((string)$row['user_id_value'], '0'), FILTER_VALIDATE_INT, [
+                    'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_USER_ID],
+                ]);
+                $userId = $parsed === false ? null : $parsed;
+            }
+            $label = $userId === null ? null : (isset(Hilos::$db->users[$userId])
+                ? Hilos::$db->users[$userId]->name : 'Deleted user #' . $userId);
+            $sessions[] = $this->sessionFromRow($row, $counts, $userId, $label);
+        }
+
+        return $direction === TableAnchorDirection::Before ? array_reverse($sessions) : $sessions;
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Matching sessions, at most ceiling plus one, zero before context arrives
+     * @throws HilosException When the period is invalid or the count query fails
+     */
+    public function browserSessionPeriodCount(
+        AnalyticsPeriodFilter $filter,
+        int $asOfTs,
+        int $ceiling = TableConstants::COUNT_CEILING,
+    ): int {
+        return $this->boundedBrowserSessionPeriodCount($filter, AnalyticsWindowOrder::NUMBER, null, $asOfTs, $ceiling);
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
+     * @param AnalyticsWindowAnchor $anchor Complete row key
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Sessions preceding the anchor, at most ceiling plus one, zero before context arrives
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the period is invalid or the count query fails
+     */
+    public function browserSessionPeriodCountBefore(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        AnalyticsWindowAnchor $anchor,
+        int $asOfTs,
+        int $ceiling = TableConstants::COUNT_CEILING,
+    ): int {
+        return $this->boundedBrowserSessionPeriodCount($filter, $order, $anchor, $asOfTs, $ceiling);
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical window order
+     * @param ?AnalyticsWindowAnchor $anchor Key to count before, or null for the whole set
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param int $ceiling Exact-count ceiling
+     * @return int Matching sessions, capped at ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the period is invalid or the count query fails
+     */
+    private function boundedBrowserSessionPeriodCount(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        int $asOfTs,
+        int $ceiling,
+    ): int {
+        $filter->validateAsOf($asOfTs);
+        $params = [];
+        $periodClause = $this->browserSessionPeriodWhereSql($filter, $asOfTs, $params);
+        $cursor = $this->anchorClause(
+            self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $anchor, TableAnchorDirection::Before, $params,
+        );
+        if (!$filter->hasContext()) {
+            return 0;
+        }
+        $limit = max(0, min($ceiling, TableConstants::COUNT_CEILING)) + 1;
+        // TODO(owner, 2026-10-19): replace this raw-data SQL when the analytics reading model lands.
+        Database::sql(
+            'SELECT COUNT(*) AS `total_count` FROM (SELECT 1 FROM `hilos_analytics_browser_session` b
+             WHERE ' . $periodClause . $cursor . ' LIMIT ' . $limit . ') capped',
+            $params,
+        );
+
+        return (int)Database::field('total_count');
+    }
+
+    /**
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @param list<mixed> $params SQL parameters extended by the period selection
+     * @return string Closed-interval predicate, without an anchor or limit
+     */
+    private function browserSessionPeriodWhereSql(AnalyticsPeriodFilter $filter, int $asOfTs, array &$params): string
+    {
+        $params[] = $asOfTs;
+        $periodClause = 'b.`first_seen_ts` <= ?';
+        if ($filter->startTs() !== null) {
+            $periodClause .= ' AND b.`last_seen_ts` >= ?';
+            $params[] = $filter->startTs();
+        }
+        return $periodClause;
     }
 
     /**

@@ -574,6 +574,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-bar-chart',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser sessions',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions seen in the selected period.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ],
         HilosPageConstants::HILOS_ANALYTICS_PEOPLE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'People',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'People who last signed into browser sessions seen in the selected period.',
@@ -582,7 +587,7 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_ANALYTICS_PERSON => [

@@ -23,6 +23,8 @@ export interface HilosRouteDeclaration {
    * instead of adding a row of their own.
    */
   admin: boolean
+  /** Regexp sources that must match each decoded parameter value in full. */
+  paramPatterns?: Readonly<Record<string, string>>
 }
 
 /**
@@ -45,7 +47,8 @@ export interface PageRouter {
    * of out of params entirely. An unmatched path, and a capture whose percent
    * encoding or UTF-8 cannot be decoded, resolves to no page: `page` null,
    * empty params, and a non-administrative surface. Captures are decoded
-   * exactly once after matching the path structure.
+   * exactly once after matching the path structure. A parameter pattern mismatch
+   * continues the search through the remaining route declarations.
    *
    * @param pathname The location pathname to resolve.
    */
@@ -55,7 +58,8 @@ export interface PageRouter {
    * unfilled `{name?}` slot is cut together with the slash in front of it, so a
    * page entered with none of its optional tail resolves to the bare path rather
    * than to one with empty segments. Every supplied raw value is encoded as one
-   * path segment; an unencodable value returns `undefined`.
+   * path segment after checking its parameter pattern; a pattern mismatch or an
+   * unencodable value returns `undefined`.
    *
    * `undefined` for a page the router does not carry, and for one whose required
    * slot `params` does not cover: a link with no target is drawn as no link,
@@ -74,12 +78,18 @@ interface StaticRoute {
   admin: boolean
 }
 
+/** A path template and the compiled constraints shared by both directions. */
+interface CompiledTemplate {
+  path: string
+  paramNames: string[]
+  paramPatterns: ReadonlyMap<string, RegExp>
+}
+
 /** A compiled templated route: its page key, surface type, regex, and params. */
-interface CompiledRoute {
+interface CompiledRoute extends CompiledTemplate {
   page: string
   admin: boolean
   regex: RegExp
-  paramNames: string[]
 }
 
 /** A template segment that is a route param: `{name}`, or `{name?}` optional. */
@@ -94,6 +104,25 @@ const OPTIONAL_ROUTE_SLOT_PATTERN = /\/\{(\w+)\?}/g
 /** Escape a literal path segment so its characters carry no regex meaning. */
 function escapeSegment(segment: string): string {
   return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Check only present template parameters, leaving an absent optional slot alone.
+ *
+ * @param template The template carrying the compiled parameter patterns.
+ * @param params The decoded captures or raw values supplied for a path.
+ */
+function matchesParamPatterns(
+  template: CompiledTemplate,
+  params: Record<string, string>,
+): boolean {
+  return template.paramNames.every((name) => {
+    const value = params[name]
+    return (
+      value === undefined ||
+      template.paramPatterns.get(name)?.test(value) !== false
+    )
+  })
 }
 
 /**
@@ -115,16 +144,24 @@ export function createPageRouter(
   // The templates are kept as written beside their compiled form: matching reads
   // the regex, naming a page's path reads the template back, and the two answers
   // have to agree or a link would lead where nothing matches.
-  const templates: Record<string, string> = {}
+  const templates: Record<string, CompiledTemplate> = {}
 
   for (const [page, declaration] of Object.entries(routes)) {
     const { path, admin } = declaration
-    templates[page] = path
+    const paramNames: string[] = []
+    const paramPatterns = new Map(
+      Object.entries(declaration.paramPatterns ?? {}).map(([name, source]) => [
+        name,
+        // Group alternation and require the absolute end: `$` alone would also
+        // accept a match that leaves a final newline outside the value.
+        new RegExp(`^(?:${source})(?![\\s\\S])`),
+      ]),
+    )
+    templates[page] = { path, paramNames, paramPatterns }
     if (!path.includes('{')) {
       staticRoutes[path] = { page, admin }
       continue
     }
-    const paramNames: string[] = []
     // The separator is emitted per segment rather than by joining, because an
     // optional slot has to swallow the slash in front of it: the whole `/value`
     // is what the path may end without, and a slash left outside the group
@@ -144,7 +181,9 @@ export function createPageRouter(
       page,
       admin,
       regex: new RegExp(`^${pattern}$`),
+      path,
       paramNames,
+      paramPatterns,
     })
   }
 
@@ -180,6 +219,9 @@ export function createPageRouter(
         } catch {
           return miss()
         }
+        if (!matchesParamPatterns(route, params)) {
+          continue
+        }
         return { page: route.page, params, admin: route.admin }
       }
       return miss()
@@ -189,7 +231,7 @@ export function createPageRouter(
       params: Record<string, string> = {},
     ): string | undefined {
       const template = templates[page]
-      if (template === undefined) {
+      if (template === undefined || !matchesParamPatterns(template, params)) {
         return undefined
       }
       // A required slot with nothing to put in it is noticed while substituting,
@@ -197,7 +239,7 @@ export function createPageRouter(
       // that still looks like an address and names another page's row.
       let covered = true
       try {
-        const resolved = template
+        const resolved = template.path
           .replace(OPTIONAL_ROUTE_SLOT_PATTERN, (_match, name: string) => {
             const value = params[name]
 

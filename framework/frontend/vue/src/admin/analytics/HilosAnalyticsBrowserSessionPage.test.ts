@@ -1,13 +1,13 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
-  createSignal,
+  createAppPageRouter,
+  createHilosRouter,
   HilosPages,
-  pageIdentity,
-  resolveHilosPath,
+  PageSubscription,
   ScopeManager,
+  sessionUserName,
+  USER_ENTITY_TYPE,
   type HilosConnection,
-  type HilosRouter,
-  type PageRouteMatch,
   type TableViewportController,
 } from '@hilos/core/base'
 import {
@@ -15,15 +15,25 @@ import {
   type HilosAnalyticsActionRow,
 } from '@hilos/core/admin/analytics'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { markRaw, nextTick } from 'vue'
 
 import HilosAnalyticsBrowserSessionPage from './HilosAnalyticsBrowserSessionPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 enableAutoUnmount(afterEach)
+const releases: Array<() => void> = []
+afterEach(() => {
+  for (const release of releases.splice(0)) release()
+})
 
 const PAGE = HilosPages.ANALYTICS_BROWSER_SESSION
 const TABLE = 'hilosAnalyticsActions'
+const BREADCRUMB = [
+  { page: HilosPages.DASHBOARD, label: 'Hilos' },
+  { page: HilosPages.ANALYTICS, label: 'Analytics' },
+  { page: HilosPages.ANALYTICS_BROWSER_SESSIONS, label: 'Browser sessions' },
+  { page: PAGE, label: 'Browser session' },
+]
 const HEADER = {
   id: 57,
   browser: 'Firefox 143 / Linux',
@@ -39,30 +49,6 @@ type Listener = (signal: { type?: string; data: unknown }) => void
 
 function harness(param: string | undefined = '57') {
   const scopes = new ScopeManager()
-  scopes.openPage(PAGE)
-  const currentRoute = createSignal<PageRouteMatch>({
-    page: PAGE,
-    params: param === undefined ? {} : { browserSessionId: param },
-    admin: true,
-  })
-  const router: HilosRouter = {
-    currentRoute,
-    currentPath: createSignal('/hilos/analytics/browser-sessions/57'),
-    currentTitle: createSignal(''),
-    pageError: createSignal(null),
-    pageLoading: createSignal(false),
-    pageIdentity: pageIdentity(scopes),
-    dashboardSections: createSignal(undefined),
-    resolvePath: resolveHilosPath,
-    clearPageError: () => {},
-    denyCurrentPage: () => {},
-    awaitPageAnswer: () => {},
-    onLeave: () => () => {},
-    navigate: () => {},
-    replacePath: () => {},
-    start: () => {},
-    stop: () => {},
-  }
   const listeners = new Map<string, Set<Listener>>()
   const registered = new Map<
     string,
@@ -90,8 +76,34 @@ function harness(param: string | undefined = '57') {
     sendTableViewport,
     sendTableRendered: vi.fn(() => true),
   } as unknown as HilosConnection
+  const subscription = new PageSubscription(
+    {
+      state: 'connected',
+      reconnectDragging: false,
+      send: () => true,
+      on: () => () => {},
+      forgetPageFrames: () => {
+        heldPageResponse = undefined
+      },
+      tableWindowDescriptors: () => ({}),
+    },
+    scopes,
+  )
+  let path = `/hilos/analytics/browser-sessions/${param ?? ''}`
+  const router = createHilosRouter(createAppPageRouter({}), subscription, {
+    pathname: () => path,
+    pushState: (next) => {
+      path = next
+    },
+    replaceState: (next) => {
+      path = next
+    },
+    onPopState: () => () => {},
+  })
+  router.start()
+  releases.push(router.stop)
   const view = mount(HilosAnalyticsBrowserSessionPage, {
-    props: { context: { connection, scopes } },
+    props: { context: markRaw({ connection, scopes }) },
     global: { provide: { [hilosRouterKey as symbol]: router } },
   })
   function emit(event: string, data: unknown, type?: string) {
@@ -102,33 +114,25 @@ function harness(param: string | undefined = '57') {
   return {
     view,
     scopes,
-    currentRoute,
+    router,
     registered,
     listeners,
     sendTableViewport,
     unregisterTableWindow,
     navigate(id: string) {
-      // HilosRouter publishes the route before PageSubscription opens the new
-      // scope and forgets the connection's buffered page_response.
-      currentRoute.set({
-        page: PAGE,
-        params: { browserSessionId: id },
-        admin: true,
-      })
-      scopes.openPage(PAGE)
-      heldPageResponse = undefined
+      router.navigate(`/hilos/analytics/browser-sessions/${id}`)
     },
     header(value: unknown, label = 'Browser session #57') {
-      const data = scopes.page()!.data
-      data.set('pageLabel', label)
-      data.set(
-        'pageLead',
-        'Actions recorded in one browser session, in source-time order.',
-      )
-      data.set('pageBreadcrumb', [
-        { page: HilosPages.ANALYTICS, label: 'Analytics' },
-      ])
-      data.set('browserSession', value)
+      subscription.ingestPageResponse(PAGE, {
+        data: {
+          pageLabel: label,
+          pageLead:
+            'Actions recorded in one browser session, in source-time order.',
+          pageBreadcrumb: BREADCRUMB,
+          pageChildren: [],
+          browserSession: value,
+        },
+      })
     },
     coldWindow() {
       emit(
@@ -194,6 +198,28 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
     expect(h.view.findAll('h1')).toHaveLength(1)
     expect(h.view.find('h1').text()).toBe('Browser session #57')
+    const breadcrumb = h.view.find('[data-id="hilos-breadcrumb"]')
+    expect(breadcrumb.findAll('li').map((crumb) => crumb.text())).toEqual([
+      'Hilos',
+      'Analytics',
+      'Browser sessions',
+      'Browser session #57',
+    ])
+    expect(
+      breadcrumb.findAll('a').map((link) => link.attributes('href')),
+    ).toEqual([
+      '/hilos',
+      '/hilos/analytics',
+      '/hilos/analytics/browser-sessions',
+    ])
+    expect(breadcrumb.find('[aria-current="page"]').text()).toBe(
+      'Browser session #57',
+    )
+    expect(breadcrumb.find('[aria-current="page"] a').exists()).toBe(false)
+    expect(h.router.pageIdentity.get()?.pageHeadOwner).toBeUndefined()
+    expect(h.scopes.page()!.data.signal('pageBreadcrumb').get()).toEqual(
+      BREADCRUMB,
+    )
     expect(
       h.view.find('[data-id="hilos-analytics-browser-session-browser"]').text(),
     ).toBe(HEADER.browser)
@@ -256,6 +282,15 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
   it('draws Hidden for the whole header and every cell without epoch dates or personal attributes', async () => {
     const h = harness()
+    const currentUser = { type: USER_ENTITY_TYPE, id: 99 }
+    h.scopes.session.entities.upsert(currentUser, { name: 'Session owner' })
+    h.scopes.session.data.set('currentUser', currentUser)
+    expect(sessionUserName(h.scopes).get()).toBe('Session owner')
+    h.header(HEADER)
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Browser session #57')
     h.header({ _hidden: true }, 'Browser session')
     h.coldWindow()
     h.window([
@@ -267,6 +302,14 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     ])
     await nextTick()
     expect(h.view.find('h1').text()).toBe('Browser session')
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Browser session')
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
+      'Browser session',
+    )
+    expect(h.view.html()).not.toContain('Browser session #57')
+    expect(h.view.html()).not.toContain('Session owner')
     expect(
       h.view.find('[data-id="hilos-analytics-browser-session-header"]').text(),
     ).toBe('Hidden')
@@ -329,6 +372,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
   it('replaces the controller on a new route, drops old rows and releases every listener on unmount', async () => {
     const h = harness()
     h.header(HEADER)
+    const previousScope = h.scopes.page()!
     h.coldWindow()
     h.window([ACTION])
     await nextTick()
@@ -357,7 +401,10 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     ).toBe(false)
     expect(h.view.text()).not.toContain('Ada')
 
+    expect(h.router.pageIdentity.get()).toBeUndefined()
+    expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
     h.header({ ...HEADER, id: 58 }, 'Browser session #58')
+    previousScope.data.set('pageLabel', 'Old scope label')
     h.coldWindow()
     expect(h.sendTableViewport).toHaveBeenLastCalledWith(
       PAGE,
@@ -370,17 +417,106 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       'open',
     )
     expect(h.view.find('[data-record="9"]').exists()).toBe(false)
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Browser session #58')
+    expect(h.view.text()).not.toContain('Old scope label')
 
     h.view.unmount()
     expect(h.registered.size).toBe(0)
     expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
     expect(h.unregisterTableWindow).toHaveBeenCalledTimes(2)
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
+      'Browser session',
+    )
+    h.header({ ...HEADER, id: 58 }, 'Changed after unmount')
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
+      'Browser session',
+    )
+  })
+
+  it('reacts to permitted label updates without deriving a name from the route or header', async () => {
+    const h = harness()
+    h.header(HEADER, 'Permitted label')
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Permitted label')
+    h.scopes.page()!.data.set('pageLabel', 'Updated permitted label')
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Updated permitted label')
+    h.scopes.page()!.data.set('pageLabel', '')
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('')
+  })
+
+  it.each([undefined, null, 57, { _hidden: true }])(
+    'clears the identity when the current label is not a string: %j',
+    async (label) => {
+      const h = harness()
+      h.header(HEADER)
+      await nextTick()
+      h.scopes.page()!.data.set('pageLabel', label)
+      await nextTick()
+      expect(h.router.pageIdentity.get()).toBeUndefined()
+      expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+      h.header(HEADER, 'Browser session')
+      await nextTick()
+      expect(
+        h.view
+          .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .text(),
+      ).toBe('Browser session')
+    },
+  )
+
+  it('keeps permitted names separate between scope managers', async () => {
+    const first = harness()
+    const second = harness('58')
+    first.header(HEADER)
+    second.header({ ...HEADER, id: 58 }, 'Browser session #58')
+    await nextTick()
+    expect(
+      first.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text(),
+    ).toBe('Browser session #57')
+    expect(
+      second.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text(),
+    ).toBe('Browser session #58')
+  })
+
+  it('keeps the catalog caption on another page scope and clears it without a scope', async () => {
+    const h = harness()
+    h.header(HEADER)
+    await nextTick()
+    h.router.navigate('/hilos/analytics/browser-sessions')
+    const data = h.scopes.page()!.data
+    data.set('pageLabel', 'Another page label')
+    data.set('pageBreadcrumb', BREADCRUMB)
+    await nextTick()
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
+      'Browser session',
+    )
+    expect(
+      h.view.findAll('[data-id="hilos-breadcrumb"] li').at(-1)?.text(),
+    ).toBe('Browser session')
+    h.scopes.dropPage()
+    await nextTick()
+    expect(h.router.pageIdentity.get()).toBeUndefined()
+    expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
   })
 
   it('releases the existing controller when the route loses its session number', async () => {
     const h = harness()
     expect(h.registered.size).toBe(1)
-    h.currentRoute.set({ page: PAGE, params: {}, admin: true })
+    h.router.navigate('/hilos/analytics/browser-sessions')
     await nextTick()
     expect(h.registered.size).toBe(0)
     expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
@@ -398,11 +534,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       expect(
         h.view.find('[data-id="hilos-analytics-actions-table"]').exists(),
       ).toBe(false)
-      h.currentRoute.set({
-        page: PAGE,
-        params: { browserSessionId: '57' },
-        admin: true,
-      })
+      h.navigate('57')
       await nextTick()
       expect(h.registered.size).toBe(1)
       expect(

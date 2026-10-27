@@ -8,6 +8,7 @@ import * as analytics from '../../src/admin/analytics/index.js'
 import * as analyticsOverview from '../../src/admin/analytics/hilosAnalyticsOverview.js'
 import * as analyticsPeople from '../../src/admin/analytics/hilosAnalyticsPeople.js'
 import * as analyticsPeriod from '../../src/admin/analytics/hilosAnalyticsPeriod.js'
+import * as analyticsSessionList from '../../src/admin/analytics/hilosAnalyticsBrowserSessionList.js'
 import * as appearance from '../../src/admin/appearance/index.js'
 import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
@@ -172,6 +173,31 @@ const analyticsPeopleTypes = [
   'HilosAnalyticsPersonRow',
   'HilosAnalyticsPeopleOptions',
   'HilosAnalyticsPeopleTable',
+]
+/** The browser-session list belongs only to its lazy Analytics section. */
+const analyticsSessionListValues = [
+  'ANALYTICS_BROWSER_SESSION_LIST_TABLE',
+  'ANALYTICS_BROWSER_SESSION_LIST_SLOT',
+  'ANALYTICS_BROWSER_SESSIONS_PERIOD_ROUTE_PARAM',
+  'ANALYTICS_BROWSER_SESSION_LIST_ROW_KEY_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_LAST_SIGNED_IN_USER_ID_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_LAST_SIGNED_IN_USER_NAME_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_BROWSER_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_FIRST_SEEN_TS_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_LAST_SEEN_TS_FIELD',
+  'ANALYTICS_BROWSER_SESSION_LIST_ACTION_COUNT_FIELD',
+  'readAnalyticsBrowserSessionsAddress',
+  'analyticsBrowserSessionsPath',
+  'resolveHilosAnalyticsBrowserSessionListRow',
+  'formatAnalyticsBrowserSessionListPerson',
+  'formatAnalyticsBrowserSessionListTime',
+  'createHilosAnalyticsBrowserSessionListTable',
+]
+const analyticsSessionListTypes = [
+  'HilosAnalyticsBrowserSessionListRow',
+  'HilosAnalyticsBrowserSessionListAddress',
+  'HilosAnalyticsBrowserSessionListOptions',
+  'HilosAnalyticsBrowserSessionListTable',
 ]
 /** Closed table text policy additions, shared by root and base. */
 const tableTextValues = ['hilosTableRowHeight', 'hilosTableTextClass']
@@ -533,6 +559,19 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (
+          entry === './admin/analytics' &&
+          analyticsSessionListValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              analyticsSessionList[name as keyof typeof analyticsSessionList],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
           entry === './admin/communications' &&
           channelSummaryValues.includes(name)
         ) {
@@ -605,6 +644,7 @@ describe('core public entries', () => {
         ...analyticsOverviewValues,
         ...analyticsPeriodValues,
         ...analyticsPeopleValues,
+        ...analyticsSessionListValues,
         ...channelSummaryValues,
         ...letterFrameValues,
         ...letterFrameEditValues,
@@ -853,6 +893,13 @@ describe('core public entries', () => {
     const periodNames = [...analyticsPeriodValues, ...analyticsPeriodTypes]
     const peopleExports = exportsOf('admin/analytics/hilosAnalyticsPeople.ts')
     const peopleNames = [...analyticsPeopleValues, ...analyticsPeopleTypes]
+    const sessionListExports = exportsOf(
+      'admin/analytics/hilosAnalyticsBrowserSessionList.ts',
+    )
+    const sessionListNames = [
+      ...analyticsSessionListValues,
+      ...analyticsSessionListTypes,
+    ]
     const names = new Set<string>()
     const summaryExports = exportsOf(
       'admin/communications/hilosCommunicationsChannel.ts',
@@ -899,6 +946,13 @@ describe('core public entries', () => {
           expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(peopleExports.get(name))
+        } else if (
+          entry === 'admin/analytics/index.ts' &&
+          sessionListNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(sessionListExports.get(name))
         } else if (
           entry === 'admin/communications/index.ts' &&
           sectionOnly.includes(name)
@@ -948,6 +1002,7 @@ describe('core public entries', () => {
         ...overviewNames,
         ...periodNames,
         ...peopleNames,
+        ...sessionListNames,
         ...sectionOnly,
         ...frameNames,
         ...frameEditNames,
@@ -1022,6 +1077,9 @@ describe('core public entries', () => {
     'legal/legalTerms.ts',
     'legal/legalPublicDocument.ts',
     'legal/legalPrivacy.ts',
+    'routing/PageRouter.ts',
+    'routing/hilosPages.ts',
+    'routing/hilosUnbuiltPages.ts',
   ])('keeps reviewed owner %s in the eager source/output inventory', (name) => {
     const inventory = JSON.parse(
       readFileSync(join(packageRoot, 'bin/core-initial-sources.json'), 'utf8'),

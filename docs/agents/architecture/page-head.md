@@ -24,6 +24,15 @@ merged. Analytics Person is also opted into the shared head by Chat and
 Binance. Its Vue page supplies the permitted name, avatar and a blank circular
 loading visual. React and Angular keep their legacy Person presentation for
 HIL-1739 and HIL-1740. This is separate from the User Overview adoption above.
+Analytics now has a Browser sessions list as a non-entity child of the shared
+Analytics owner, alongside Overview and People. Its browser-session detail page
+is a child of the list in the catalog, so the list appears among the session's
+ancestors whether the detail page is opened from the list, from Person, or
+directly. Chat and Binance expose the list tab in Vue. The Vue session page
+binds its permitted `pageLabel` to the matching final breadcrumb entry through
+the existing `bindPageInstanceName`; it keeps the legacy entity block pending
+HIL-1742. This records the shipped list and breadcrumb binding only; it does not
+adopt an entity head or icon.
 Logs is opted in by the complete Chat and Binance project provider entries for
 Vue. Its six pages share Hilos › Logs, the Logs section title, catalog icon and
 lead, and the Overview / By key / By worker / Rotations / Settings / Viewer row.
