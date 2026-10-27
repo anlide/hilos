@@ -13,9 +13,13 @@ behind. Internal to the shell, not exported from the package. The words are the
 core's ACCOUNT_BLOCKED_COPY, one set for the three view packages. Bootstrap
 classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
+import { nextTick, onMounted, ref } from 'vue'
 import {
+  ACCESS_LOSS_COPY,
   ACCOUNT_BLOCKED_COPY,
+  focusInitial,
   HILOS_DATA_EXPORT_COPY,
+  hilosAccessLossReason,
   hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
@@ -31,6 +35,19 @@ defineProps<{
   notice: AccountBlockedNotice
 }>()
 
+const accessLossReason = useSignal(hilosAccessLossReason)
+const card = ref<HTMLElement | null>(null)
+onMounted(async () => {
+  await nextTick()
+  const root = card.value
+  if (
+    accessLossReason.value === 'account_blocked' &&
+    root?.isConnected &&
+    root.ownerDocument.activeElement === root.ownerDocument.body
+  ) {
+    focusInitial(root, 'dialog')
+  }
+})
 const exportModel = useSignal(hilosAccountBlockedDataExport)
 const { busy, run } = useTrackedAction()
 const onSignOut = (): void => {
@@ -44,8 +61,10 @@ const onSignOut = (): void => {
 <template>
   <div class="row justify-content-center" data-id="account-blocked">
     <section
+      ref="card"
       class="col-12 col-sm-8 col-md-6 col-lg-4"
       aria-labelledby="hilos-account-blocked-heading"
+      tabindex="-1"
     >
       <div class="text-center mb-3">
         <span
@@ -72,6 +91,15 @@ const onSignOut = (): void => {
         </template>
         <template v-else>{{ ACCOUNT_BLOCKED_COPY.accountUnnamed }}</template>
       </p>
+      <div role="status" aria-live="polite">
+        <p
+          v-if="accessLossReason === 'account_blocked'"
+          class="alert alert-warning"
+          data-id="access-loss-notice"
+        >
+          {{ ACCESS_LOSS_COPY.account_blocked }}
+        </p>
+      </div>
       <div
         class="border border-danger-subtle bg-danger-subtle rounded px-3 py-2 mb-3"
         data-id="account-blocked-reason"

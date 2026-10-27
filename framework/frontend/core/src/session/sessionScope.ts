@@ -38,6 +38,7 @@ import { type Hideable } from '../state/hiddenValue.js'
 import { ingest } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
+import { type AccessLossReason } from './accessLoss.js'
 import { applyServerTime, toLocal } from './serverClock.js'
 import { SIGNAL_SESSION_TOASTS, sessionToastsSchema } from './sessionToasts.js'
 
@@ -101,6 +102,9 @@ const PASSKEY_ALLOWS_UNPROVEN_KEY = 'passkeyAllowsUnproven'
  * takes the card down by overwriting the key — no frame of its own is needed.
  */
 const ACCOUNT_BLOCKED_KEY = 'accountBlocked'
+
+/** The current handshake's live access-loss explanation, never a retained notice. */
+const ACCESS_LOSS_REASON_KEY = 'accessLossReason'
 
 /**
  * Plain session-scope key carrying the standing of the person the session acts
@@ -594,6 +598,11 @@ export function bindSessionScope(
       // late is the surface closing over the sentence it exists to show. The
       // second pass rewrites the same values, which notifies nobody.
       const plainData = { ...(payload.data ?? {}) }
+      // Every frame replaces the reason, even when an older server omitted it.
+      // Identity listeners must see THIS reason before the entity slots change.
+      plainData[ACCESS_LOSS_REASON_KEY] = readAccessLossReason(
+        plainData[ACCESS_LOSS_REASON_KEY],
+      )
       if (IMPERSONATION_POLICY_KEY in plainData) {
         const parsedPolicy = impersonationPolicySchema.safeParse(
           plainData[IMPERSONATION_POLICY_KEY],
@@ -738,6 +747,24 @@ export function sessionUserId(
 
     return Number.isFinite(id) ? id : null
   })
+}
+
+/** Read only the server vocabulary; unknown or absent values carry no reason. */
+function readAccessLossReason(value: unknown): AccessLossReason | null {
+  return value === 'session_ended' || value === 'account_blocked' ? value : null
+}
+
+/**
+ * The current handshake's reason, independent of the retained UI explanation.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionAccessLossReason(
+  scopes: ScopeManager,
+): ReadonlySignal<AccessLossReason | null> {
+  const reason = scopes.session.data.signal(ACCESS_LOSS_REASON_KEY)
+
+  return computedSignal(() => readAccessLossReason(reason.get()))
 }
 
 /**

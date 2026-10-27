@@ -10,9 +10,11 @@ use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Auth\Session\SessionAccessLossReason;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
@@ -171,6 +173,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string resetEffectiveAt = 'resetEffectiveAt';
     public const string accountBlocked = 'accountBlocked';
     public const string accountStanding = 'accountStanding';
+    public const string accessLossReason = 'accessLossReason';
     public const string adminViewMode = 'adminViewMode';
     public const string impersonationPolicy = 'impersonationPolicy';
     public const string themeSettings = 'themeSettings';
@@ -223,6 +226,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $selfThemePick Stored theme choice, or null when there is no personal position
      * @param bool $selfThemePickInitialized Whether an account choice was ever saved, including a reset
      * @param ?string $selfTimeZone Stored personal IANA time zone, or null for automatic selection
+     * @param ?string $accessLossReason Live reason access was lost, or null when this frame reports no loss
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -245,7 +250,48 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?string $selfThemePick = null,
         public readonly bool $selfThemePickInitialized = false,
         public readonly ?string $selfTimeZone = null,
+        public readonly ?string $accessLossReason = null,
     ) {
+        if ($accessLossReason !== null) {
+            if (!in_array($accessLossReason, [SessionAccessLossReason::SESSION_ENDED, SessionAccessLossReason::ACCOUNT_BLOCKED], true)) {
+                throw new InvalidArgumentException('Unknown session access-loss reason');
+            }
+            if ($selfId !== null) {
+                throw new InvalidArgumentException('An access-loss reason requires an anonymous identity');
+            }
+        }
+    }
+
+    /**
+     * @param ?string $accessLossReason Live reason access was lost, or null for no loss
+     * @return self The same frame carrying that reason
+     * @throws InvalidArgumentException When the reason is unknown or the identity is authenticated
+     */
+    public function withAccessLossReason(?string $accessLossReason): self
+    {
+        return new self(
+            accessLossReason: $accessLossReason,
+            selfThemePick: $this->selfThemePick,
+            selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
+        );
     }
 
     /**
@@ -258,10 +304,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * @param ?string $pendingAck Ack the addressed connection owes (a {@see SessionAck} value), or null for none
      * @return self The same response carrying that ack
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withPendingAck(?string $pendingAck): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -295,10 +343,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @return self The same response carrying that card
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withAccountBlocked(?array $accountBlocked): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -335,10 +385,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same response carrying that standing
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withAccountStanding(?array $accountStanding): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -371,10 +423,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * @param bool $adminViewMode Whether this node is in the admin view mode
      * @return self The same response carrying that mode
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withAdminViewMode(bool $adminViewMode): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -407,10 +461,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param array{viewOnly: bool, carryAdmin: bool, allowed: bool, accountAccess: bool,
      *     blocked: bool, frozen: bool, equal: bool} $impersonationPolicy Impersonation policy in force
      * @return self The same response carrying that policy
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withImpersonationPolicy(array $impersonationPolicy): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -437,10 +493,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * @param array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings in force
      * @return self The same response carrying the theme settings
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withThemeSettings(array $themeSettings): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -483,6 +541,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order
      * @param bool $passkeyAllowsUnproven Whether a passkey may start an account on an unconfirmed address
      * @return self The same response carrying that session context
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public function withSessionContext(
         int $serverTimeMs,
@@ -492,6 +551,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         bool $passkeyAllowsUnproven,
     ): self {
         return new self(
+            accessLossReason: $this->accessLossReason,
             selfThemePick: $this->selfThemePick,
             selfThemePickInitialized: $this->selfThemePickInitialized,
             selfTimeZone: $this->selfTimeZone,
@@ -551,6 +611,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::passkeyAllowsUnproven => $this->passkeyAllowsUnproven,
                 self::accountBlocked => $this->accountBlocked,
                 self::accountStanding => $this->accountStanding,
+                self::accessLossReason => $this->accessLossReason,
                 self::adminViewMode => $this->adminViewMode,
                 self::impersonationPolicy => $this->impersonationPolicy,
                 self::themeSettings => $this->themeSettings,
@@ -578,7 +639,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a present identity or auth-step node lacks a required field
+     * @throws InvalidFormatException When a present identity or auth-step node lacks a required field, or a field has the wrong type
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public static function fromArray(array $data): static
     {
@@ -613,6 +675,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 passkeyAllowsUnproven: $passkeyAllowsUnproven,
                 accountBlocked: $accountBlocked,
                 accountStanding: $accountStanding,
+                accessLossReason: self::optionalString($section, self::accessLossReason),
                 adminViewMode: $adminViewMode,
                 impersonationPolicy: $impersonationPolicy,
                 themeSettings: $themeSettings,
@@ -637,6 +700,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
             accountStanding: $accountStanding,
+            accessLossReason: self::optionalString($section, self::accessLossReason),
             adminViewMode: $adminViewMode,
             impersonationPolicy: $impersonationPolicy,
             themeSettings: $themeSettings,

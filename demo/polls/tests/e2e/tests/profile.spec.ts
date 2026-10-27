@@ -24,6 +24,7 @@ import {
 } from '../helpers/session.js'
 import {
   addVirtualAuthenticator,
+  expectAccessLossNotice,
   signInAs,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
@@ -436,6 +437,28 @@ test('ends one other browser session from the sessions page', async ({
     await login(pageB, account.email)
     await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
 
+    await gotoPage(pageB, '/profile/sign-in')
+    await clickSubmit(pageB.getByTestId('profile-sign-in-add'))
+    await confirmStepUp(pageB, 'profile-sign-in-add-step-up-confirm')
+    await clickSubmit(pageB.getByTestId('profile-sign-in-choose-phone'))
+    const phone = uniquePhone()
+    await typeInto(pageB.getByTestId('profile-add-sms-phone'), phone)
+    await expect(pageB.getByTestId('profile-add-sms-phone')).toHaveValue(phone)
+
+    const publicTabB = await contextB.newPage()
+    await gotoPage(publicTabB, '/')
+    await expect(publicTabB.getByTestId('self-user-id')).toHaveText(
+      String(account.userId),
+    )
+    await expect(publicTabB.getByTestId('self-user')).toHaveText(account.name)
+    const documents = await Promise.all(
+      [pageB, publicTabB].map(async (target) => ({
+        page: target,
+        url: target.url(),
+        timeOrigin: await target.evaluate(() => performance.timeOrigin),
+      })),
+    )
+
     await gotoPage(pageA, '/profile/sessions')
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
     await expect(pageA.getByTestId('profile-session-this')).toHaveCount(1)
@@ -447,7 +470,26 @@ test('ends one other browser session from the sessions page', async ({
     await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
     await expect(pageA.getByTestId('modal')).toBeHidden()
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
-    await expect(pageB.getByTestId('auth-surface')).toBeVisible()
+    for (const document of documents) {
+      const target = document.page
+      await expect(target.getByTestId('auth-surface')).toHaveCount(1)
+      await expect(target.getByTestId('auth-surface')).toBeVisible()
+      await expectAccessLossNotice(expect, target, 'session_ended')
+      await expect(target.getByTestId('modal')).toHaveCount(0)
+      await expect(target.getByTestId('modal-confirm')).toHaveCount(0)
+      await expect(target).toHaveURL(document.url)
+      expect(await target.evaluate(() => performance.timeOrigin)).toBe(
+        document.timeOrigin,
+      )
+    }
+    await expect(pageB.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+    await expect(pageB.getByTestId('profile-add-sms-phone')).toHaveCount(0)
+    expect(
+      await pageB.evaluate(() =>
+        Array.from(document.querySelectorAll('input'), (input) => input.value),
+      ),
+    ).not.toContain(phone)
+    await expectAccessLossNotice(expect, pageA, null)
   } finally {
     await contextA.close()
     await contextB.close()

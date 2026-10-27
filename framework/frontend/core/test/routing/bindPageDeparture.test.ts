@@ -62,11 +62,13 @@ function mountBinding(composed = false) {
   document.body.append(wrapper)
   const loading = createSignal(false)
   const error = createSignal<PageError | null>(null)
+  const accessLost = createSignal(false)
   const off = bindPageDeparture({
     router,
     slot,
     departure,
     skeletonShown,
+    accessLost,
     ...(composed ? { loading, error } : {}),
   })
 
@@ -79,6 +81,7 @@ function mountBinding(composed = false) {
     skeletonShown,
     loading,
     error,
+    accessLost,
     off,
     leave: () => {
       for (const listener of [...listeners]) {
@@ -90,6 +93,43 @@ function mountBinding(composed = false) {
 }
 
 describe('bindPageDeparture', () => {
+  it('clears an existing departure synchronously on access loss and blocks further copies', () => {
+    const { departure, accessLost, pageLoading, leave } = mountBinding()
+    leave()
+    expect(departure.textContent).toBe('Leaving page')
+    pageLoading.set(true)
+
+    accessLost.set(true)
+
+    expect(departure.childElementCount).toBe(0)
+    pageLoading.set(false)
+    leave()
+    expect(departure.childElementCount).toBe(0)
+    accessLost.set(false)
+    leave()
+    expect(departure.textContent).toBe('Leaving page')
+  })
+
+  it('clears a pre-existing copy when binding with access already lost', () => {
+    const { departure, slot, leave, off } = mountBinding()
+    leave()
+    off()
+    departure.innerHTML = '<article>Private copy</article>'
+    const release = bindPageDeparture({
+      router: {
+        onLeave: () => () => {},
+        pageLoading: createSignal(false),
+        pageError: createSignal(null),
+      } as unknown as HilosRouter,
+      slot,
+      departure,
+      skeletonShown: createSignal(false),
+      accessLost: createSignal(true),
+    })
+    expect(departure.childElementCount).toBe(0)
+    release()
+  })
+
   it('copies the settled page on departure and clears it when the answer arrives', () => {
     const { departure, pageLoading, leave, wrapper } = mountBinding()
     wrapper.scrollTop = 25

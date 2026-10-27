@@ -16,6 +16,7 @@ import { hilosFrozenScreen } from '../../src/legal/legalReconsent.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
 import { hilosAdminAccess } from '../../src/session/adminAccess.js'
+import { hilosAccessLossReason } from '../../src/session/accessLoss.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
   computedSignal,
@@ -198,6 +199,53 @@ describe('bootHilos', () => {
     // The stack is the shared singleton every boot binds to.
     hilosToasts.clear()
     vi.unstubAllGlobals()
+  })
+
+  it('binds live access loss at ordinary boot without project opt-in', () => {
+    const connection = fakeConnection()
+    const { scopes, hilosRouter } = boot(connection)
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 7 } },
+      data: { accountBlocked: null },
+    })
+    connection.emitProjectSignal('page_response', {
+      page: 'main',
+      payload: { data: { privateValue: 'private' } },
+    })
+    expect(scopes.page()?.data.signal('privateValue').get()).toBe('private')
+    const sent = [...connection.sent]
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+      data: { accessLossReason: 'session_ended', accountBlocked: null },
+    })
+
+    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    expect(scopes.page()?.data.signal('privateValue').get()).toBeUndefined()
+    expect(hilosRouter.pageLoading.get()).toBe(true)
+    expect(hilosRouter.currentPath.get()).toBe('/')
+    expect(connection.sent).toEqual(sent)
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+      data: { accessLossReason: null, accountBlocked: null },
+    })
+    expect(hilosAccessLossReason.get()).toBe('session_ended')
+  })
+
+  it('binds the loss controller before connect can publish a handshake', () => {
+    const connection = fakeConnection()
+    connection.connect = function (): void {
+      this.emitProjectSignal('handshake_response', {
+        entities: { currentUser: { id: 7 } },
+      })
+      this.emitProjectSignal('handshake_response', {
+        entities: { currentUser: null },
+        data: { accessLossReason: 'session_ended' },
+      })
+      expect(hilosAccessLossReason.get()).toBe('session_ended')
+    }
+
+    boot(connection)
   })
 
   it('holds early Continue on a new socket until its page subscription is sent', async () => {

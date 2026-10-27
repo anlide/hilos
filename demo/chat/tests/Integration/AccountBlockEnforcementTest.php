@@ -49,6 +49,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -144,21 +145,31 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $userId = $this->registerUser($email);
         $first = $this->signedInSession('block-a1', $userId);
         $second = $this->signedInSession('block-a2', $userId);
+        $this->deliverHandshake($this->holder, $this->handshake('block-a1-sibling', $first));
 
         $this->block($userId);
         $this->drainSignals();
         $this->sendBlockChanged($userId);
 
+        $responses = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->data instanceof HandshakeResponseSignalData) {
+                $responses[$signal->data->targetAcceptKey] = $signal->data->data;
+            }
+        }
+        self::assertCount(3, $responses);
         foreach ([$first, $second] as $token) {
             $this->assertNull(Hilos::$db->sessions->findByToken($token), 'The old cookie no longer names a session');
         }
-        foreach (['block-a1', 'block-a2'] as $acceptKey) {
+        foreach (['block-a1', 'block-a1-sibling', 'block-a2'] as $acceptKey) {
             $session = $this->sessionOf($acceptKey);
             $this->assertNotNull($session);
             $this->assertNull($session->userId, 'Every session of the person is anonymous');
             $this->assertSame($userId, $session->blockedUserId, 'and remembers the account it lost');
+            self::assertArrayHasKey($acceptKey, $responses);
+            self::assertSame('account_blocked', $responses[$acceptKey]->accessLossReason);
         }
-        $response = $this->lastHandshakeResponseFor('block-a1');
+        $response = $responses['block-a1'];
         $this->assertNotNull($response);
         $this->assertNull($response->selfId);
         $this->assertSame(['identifier' => $email, 'dataExport' => null], $response->accountBlocked);
@@ -243,6 +254,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNull($session?->userId);
         $this->assertNull($session?->impersonatorUserId);
         $this->assertSame($adminId, $session?->blockedUserId);
+        $response = $this->lastHandshakeResponseFor('admin-ak');
+        self::assertNotNull($response);
+        self::assertNull($response->accessLossReason);
     }
 
     /**
@@ -443,13 +457,19 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNotSame($token, $session->token);
         $this->assertNull($session?->userId);
         $this->assertSame($userId, $session?->blockedUserId);
-        $this->assertNotNull($this->lastHandshakeResponseFor('door-ak-2')?->accountBlocked);
+        $response = $this->lastHandshakeResponseFor('door-ak-2');
+        self::assertNotNull($response);
+        $this->assertNotNull($response->accountBlocked);
+        self::assertNull($response->accessLossReason);
 
         $sessionId = $session->id;
         $this->deliverHandshake($this->holder, $this->handshake('door-ak-3', $session->token));
         $this->assertSame($sessionId, $this->sessionOf('door-ak-3')?->id);
         $this->assertSame($userId, $this->sessionOf('door-ak-3')?->blockedUserId);
-        $this->assertNotNull($this->lastHandshakeResponseFor('door-ak-3')?->accountBlocked);
+        $response = $this->lastHandshakeResponseFor('door-ak-3');
+        self::assertNotNull($response);
+        $this->assertNotNull($response->accountBlocked);
+        self::assertNull($response->accessLossReason);
     }
 
     /**
@@ -531,6 +551,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->enrolSecondFactor($userId);
         $this->block($userId);
         $token = $this->anonymousSession('grant-ak');
+        $anonymous = $this->lastHandshakeResponseFor('grant-ak');
+        self::assertNotNull($anonymous);
+        self::assertNull($anonymous->accessLossReason);
         $this->drainSignals();
 
         $outcome = $this->grant($token, $userId, 'grant-ak');
@@ -548,7 +571,10 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertSame(AuthFlowOutcome::CODE_ACCOUNT_BLOCKED, $outcome->code);
         $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
         $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
-        $this->assertSame(['identifier' => $email, 'dataExport' => null], $this->lastHandshakeResponseFor('grant-ak')?->accountBlocked);
+        $response = $this->lastHandshakeResponseFor('grant-ak');
+        self::assertNotNull($response);
+        $this->assertSame(['identifier' => $email, 'dataExport' => null], $response->accountBlocked);
+        self::assertNull($response->accessLossReason);
     }
 
     /**

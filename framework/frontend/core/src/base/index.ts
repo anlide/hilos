@@ -361,6 +361,7 @@ export {
   sessionEnabledAuthMethods,
   sessionPasskeyAllowsUnproven,
   sessionAccountBlocked,
+  sessionAccessLossReason,
   sessionAccountStanding,
   sessionHandshakeHeard,
   readHilosAccountStanding,
@@ -415,6 +416,12 @@ export {
   type ImpersonationStrip,
 } from '../session/impersonation.js'
 export { IMPERSONATION_ERROR_CODE } from '../session/impersonationRefusal.js'
+export {
+  type AccessLossReason,
+  ACCESS_LOSS_COPY,
+  hilosAccessLossReason,
+  bindAccessLoss,
+} from '../session/accessLoss.js'
 export {
   bindAccountBlocked,
   hilosAccountBlocked,

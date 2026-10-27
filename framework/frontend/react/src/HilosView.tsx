@@ -31,6 +31,11 @@
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 //
+// A live session end (HIL-1572) takes precedence over every page outcome, even
+// a public page's later answer. The core latch supplies the explanation and
+// prevents departure copies. Its permanent polite region and the in-place auth
+// surface share a focusable container.
+//
 // A page shell may take over the refusal of its own deleted resource (HIL-1603):
 // the outlet provides its retainForResourceDeletion to what it mounts
 // (HilosPageErrorBoundaryContext), and while the core state holds the page on
@@ -42,12 +47,16 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import {
+  ACCESS_LOSS_COPY,
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
+  computedSignal,
   createDeferredFlagState,
   createPageViewState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
+  focusInitial,
+  hilosAccessLossReason,
   type AuthGate,
   type DeferredFlagState,
   type PageView,
@@ -69,6 +78,9 @@ const VIEW_EMPTY = createSignal<ComponentType | undefined>(undefined)
 
 /** Nothing is held before the outlet's layout effect connects core. */
 const NOT_RETAINED = createSignal(false)
+
+/** The shared departure binding's boolean view of the document-local latch. */
+const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
 
 /** Props for {@link HilosView}: the page-key → component map and the auth slot. */
 export interface HilosViewProps {
@@ -131,6 +143,8 @@ export function HilosView({
     pageViewState?.retainedOnError ?? NOT_RETAINED,
   )
   const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
+  const accessLossReason = useSignal(hilosAccessLossReason)
+  const sessionEnded = accessLossReason === 'session_ended'
   const AuthSurface = authSurface
 
   const skeletonFlagRef = useRef<DeferredFlagState | null>(null)
@@ -141,6 +155,7 @@ export function HilosView({
   const showSkeleton = useSignal(skeletonFlag.shown)
   const slotRef = useRef<HTMLDivElement>(null)
   const departureRef = useRef<HTMLDivElement>(null)
+  const accessLossSurfaceRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (pageViewState && slotRef.current && departureRef.current) {
       return bindPageDeparture({
@@ -150,6 +165,7 @@ export function HilosView({
         skeletonShown: skeletonFlag.shown,
         loading: pageViewState.loading,
         error: pageViewState.error,
+        accessLost: ACCESS_LOST,
       })
     }
   }, [router, skeletonFlag, pageViewState])
@@ -157,6 +173,20 @@ export function HilosView({
     skeletonFlag.set(pageLoading)
   }, [skeletonFlag, pageLoading])
   useEffect(() => () => skeletonFlag.dispose(), [skeletonFlag])
+  // The removed HilosModal releases its trap in a passive-effect cleanup.
+  // Focus the replacement afterward, preserving a deliberate choice elsewhere.
+  useEffect(() => {
+    if (!sessionEnded || hilosAccessLossReason.get() !== 'session_ended') {
+      return
+    }
+    const root = accessLossSurfaceRef.current
+    if (
+      root?.isConnected &&
+      root.ownerDocument.activeElement === root.ownerDocument.body
+    ) {
+      focusInitial(root)
+    }
+  }, [sessionEnded])
   const Skeleton =
     page === null ? HilosSkeleton : (pageSkeletons?.[page] ?? HilosSkeleton)
 
@@ -166,7 +196,7 @@ export function HilosView({
   // it lands.
   const pageState = pageError ? 'error' : pageLoading ? 'loading' : 'ready'
   const showAuthInPlace =
-    !!pageError && pageError.httpCode === 401 && !!AuthSurface
+    sessionEnded || (!!pageError && pageError.httpCode === 401 && !!AuthSurface)
 
   // The same choice the Vue peer makes in its template: the surface in place of
   // a 401'd page, the error surface for any other denial, the mapped page once it
@@ -175,8 +205,8 @@ export function HilosView({
   // `<View />` in the same place: that is what keeps its instance, so no wrapper
   // or key may set it apart from the page it was before the refusal.
   let content: ReactNode
-  if (showAuthInPlace && AuthSurface) {
-    content = <AuthSurface />
+  if (showAuthInPlace) {
+    content = null
   } else if (pageError && !retainedOnError) {
     content = <ErrorPage error={pageError} />
   } else if (View && !pageLoading) {
@@ -201,6 +231,16 @@ export function HilosView({
         <HilosPageErrorBoundaryContext.Provider
           value={pageViewState?.retainForResourceDeletion}
         >
+          <div ref={accessLossSurfaceRef} tabIndex={-1}>
+            <div role="status" aria-live="polite">
+              {sessionEnded ? (
+                <p className="alert alert-warning" data-id="access-loss-notice">
+                  {ACCESS_LOSS_COPY.session_ended}
+                </p>
+              ) : null}
+            </div>
+            {showAuthInPlace && AuthSurface ? <AuthSurface /> : null}
+          </div>
           {content}
         </HilosPageErrorBoundaryContext.Provider>
       </div>

@@ -42,10 +42,12 @@
 import { Component, inject, signal } from '@angular/core'
 import { By } from '@angular/platform-browser'
 import { TestBed } from '@angular/core/testing'
+import type { ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
   applyServerTime,
   bindAccountBlocked,
+  bindAccessLoss,
   bindAdminAccess,
   bindAccountStanding,
   bindImpersonation,
@@ -154,6 +156,42 @@ const ADMITTED: ProtectedModeStatus = {
 })
 class BannerHost {
   connection = fakeConnection()
+}
+
+@Component({
+  selector: 'test-live-blocked-page',
+  imports: [HilosModal],
+  template: `
+    <div data-id="private-content">
+      <button type="button" data-id="open-draft" (click)="open.set(true)">
+        Edit
+      </button>
+      <hilos-modal
+        title="Edit phone"
+        [open]="open()"
+        [confirmOnClose]="true"
+        (openChange)="open.set($event)"
+      >
+        <input data-id="draft" data-autofocus="" />
+      </hilos-modal>
+    </div>
+  `,
+})
+class LiveBlockedPage {
+  readonly open = signal(false)
+}
+
+@Component({
+  selector: 'test-live-blocked-shell',
+  imports: [HilosLayout, LiveBlockedPage],
+  template: `
+    <hilos-layout [connection]="connection">
+      <test-live-blocked-page />
+    </hilos-layout>
+  `,
+})
+class LiveBlockedShellHost {
+  readonly connection = fakeConnection()
 }
 
 describe('HilosLayout banner region', () => {
@@ -336,7 +374,7 @@ class ReplyingSource implements ActionLifecycleSource {
  *
  * @returns The lifecycle source, the unbind, and the handshake emitter.
  */
-function bindSession() {
+function bindSession(router?: HilosRouter) {
   const projectListeners: ((signal: ProjectSignal) => void)[] = []
   const handshakes = {
     on(event: string, listener: (payload: never) => void): () => void {
@@ -358,6 +396,7 @@ function bindSession() {
   const unbindSignOut = bindSignOut(scopes, actions)
   const unbindReconsent = bindLegalReconsent(scopes, actions)
   const unbindAdminAccess = bindAdminAccess(scopes)
+  const unbindAccessLoss = router ? bindAccessLoss(scopes, router) : () => {}
 
   return {
     source,
@@ -368,6 +407,7 @@ function bindSession() {
       unbindSignOut()
       unbindReconsent()
       unbindAdminAccess()
+      unbindAccessLoss()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -1231,6 +1271,166 @@ describe('HilosLayout account blocked card', () => {
 
     expect(root.querySelector('[data-id="account-blocked"]')).toBeNull()
   })
+})
+
+describe('HilosLayout live access loss', () => {
+  let unbind: (() => void) | undefined
+  let fixture: ComponentFixture<LiveBlockedShellHost> | undefined
+
+  async function settleShell(): Promise<void> {
+    fixture?.detectChanges()
+    await fixture?.whenStable()
+    fixture?.detectChanges()
+  }
+
+  function mountLiveShell() {
+    fixture = TestBed.createComponent(LiveBlockedShellHost)
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  afterEach(() => {
+    fixture?.destroy()
+    fixture = undefined
+    unbind?.()
+    unbind = undefined
+    document.body.innerHTML = ''
+    document.body.classList.remove('modal-open')
+    TestBed.resetTestingModule()
+    hilosToasts.clear()
+  })
+
+  it('replaces the dirty slot with the live blocked warning and focuses the card', async () => {
+    const router = routerOn('main')
+    const session = bindSession(router)
+    unbind = session.unbind
+    session.handshake({
+      entities: { currentUser: { id: 7 } },
+      data: { accountBlocked: null },
+    })
+    const mounted = mountLiveShell()
+    const root = mounted.nativeElement as HTMLElement
+    const opener = root.querySelector<HTMLElement>('[data-id="open-draft"]')!
+    opener.focus()
+    opener.click()
+    mounted.detectChanges()
+    const draft = root.querySelector<HTMLInputElement>('[data-id="draft"]')!
+    draft.value = 'Unsaved phone number'
+    expect(document.activeElement).toBe(draft)
+
+    session.handshake({
+      entities: { currentUser: null },
+      data: {
+        accountBlocked: { identifier: 'maria@example.com' },
+        accessLossReason: 'account_blocked',
+      },
+    })
+    await settleShell()
+
+    const card = root.querySelector<HTMLElement>('[data-id="account-blocked"]')!
+    const notice = root.querySelector<HTMLElement>(
+      '[data-id="access-loss-notice"]',
+    )!
+    const account = root.querySelector<HTMLElement>(
+      '[data-id="account-blocked-account"]',
+    )!
+    const reason = root.querySelector<HTMLElement>(
+      '[data-id="account-blocked-reason"]',
+    )!
+    expect(notice.textContent?.trim()).toBe('Any unsaved changes were lost.')
+    expect(notice.classList.contains('alert-warning')).toBe(true)
+    expect(notice.parentElement?.getAttribute('role')).toBe('status')
+    expect(notice.parentElement?.getAttribute('aria-live')).toBe('polite')
+    expect(account.nextElementSibling).toBe(notice.parentElement)
+    expect(notice.parentElement?.nextElementSibling).toBe(reason)
+    expect(root.querySelector('[data-id="private-content"]')).toBeNull()
+    expect(root.querySelector('[data-id="hilos-page-departure"]')).toBeNull()
+    expect(draft.isConnected).toBe(false)
+    expect(root.querySelector('[data-id="modal"]')).toBeNull()
+    expect(root.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(document.activeElement).toBe(card.querySelector('section'))
+    expect(root.querySelector('nav')).not.toBeNull()
+    expect(root.querySelector('[data-id="app-footer"]')).not.toBeNull()
+
+    session.handshake({
+      entities: { currentUser: null },
+      data: { accountBlocked: { identifier: 'maria@example.com' } },
+    })
+    await settleShell()
+    expect(
+      root.querySelector('[data-id="access-loss-notice"]')?.textContent?.trim(),
+    ).toBe('Any unsaved changes were lost.')
+  })
+
+  it('keeps cold blocked sign-ins free of a live-loss warning', async () => {
+    const router = routerOn('main')
+    const session = bindSession(router)
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+    const mounted = mountLiveShell()
+    await settleShell()
+
+    const root = mounted.nativeElement as HTMLElement
+    expect(root.querySelector('[data-id="account-blocked"]')).not.toBeNull()
+    expect(root.querySelector('[data-id="access-loss-notice"]')).toBeNull()
+  })
+
+  it.each(['sign out', 'unblock'] as const)(
+    'removes the live warning with the card after %s',
+    async (exit) => {
+      const router = routerOn('main')
+      const session = bindSession(router)
+      unbind = session.unbind
+      session.handshake({
+        entities: { currentUser: { id: 7 } },
+        data: { accountBlocked: null },
+      })
+      const mounted = mountLiveShell()
+      const root = mounted.nativeElement as HTMLElement
+      session.handshake({
+        entities: { currentUser: null },
+        data: {
+          accountBlocked: { identifier: 'maria@example.com' },
+          accessLossReason: 'account_blocked',
+        },
+      })
+      await settleShell()
+      expect(
+        root.querySelector('[data-id="access-loss-notice"]'),
+      ).not.toBeNull()
+
+      if (exit === 'sign out') {
+        root
+          .querySelector<HTMLElement>('[data-id="account-blocked-sign-out"]')
+          ?.click()
+        mounted.detectChanges()
+        expect(session.source.sent[0]?.action).toBe(
+          'hilos_dismiss_account_blocked',
+        )
+        session.source.succeed(session.source.sent[0]?.requestId)
+        await settle()
+        session.handshake({
+          entities: { currentUser: null },
+          data: { accountBlocked: null },
+        })
+      } else {
+        session.handshake({
+          entities: { currentUser: { id: 7 } },
+          data: { accountBlocked: null },
+        })
+      }
+      await settleShell()
+      expect(root.querySelector('[data-id="account-blocked"]')).toBeNull()
+      expect(root.querySelector('[data-id="access-loss-notice"]')).toBeNull()
+      expect(root.querySelector('[data-id="private-content"]')).not.toBeNull()
+
+      session.handshake(BLOCKED)
+      await settleShell()
+      expect(root.querySelector('[data-id="account-blocked"]')).not.toBeNull()
+      expect(root.querySelector('[data-id="access-loss-notice"]')).toBeNull()
+    },
+  )
 })
 
 /**

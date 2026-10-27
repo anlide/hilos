@@ -2,7 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createSSRApp,
+  defineComponent,
   h,
+  markRaw,
   nextTick,
   provide,
   ref,
@@ -13,6 +15,7 @@ import { renderToString } from 'vue/server-renderer'
 import {
   ActionLifecycle,
   applyServerTime,
+  bindAccessLoss,
   bindAccountBlocked,
   bindAccountStanding,
   bindAdminAccess,
@@ -54,6 +57,7 @@ import { bindThemeState } from '../../core/src/theme/themeState.js'
 import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
 import HilosLayout from './HilosLayout.vue'
 import HilosModal from './HilosModal.vue'
+import HilosView from './HilosView.vue'
 import LoadingButton from './LoadingButton.vue'
 import HilosStatusPage from './public/HilosStatusPage.vue'
 import {
@@ -165,8 +169,10 @@ class ReplyingSource implements ActionLifecycleSource {
 /**
  * Bind the shell's session controls the way bootHilos does, over a session
  * scope fed by handshakes this harness emits.
+ *
+ * @param router The outlet whose page waits after a live access loss.
  */
-function bindSession() {
+function bindSession(router: HilosRouter = routerOn('main')) {
   const projectListeners: ((signal: ProjectSignal) => void)[] = []
   const handshakes = {
     on(event: string, listener: (payload: never) => void): () => void {
@@ -188,6 +194,7 @@ function bindSession() {
   const unbindSignOut = bindSignOut(scopes, actions)
   const unbindAdminAccess = bindAdminAccess(scopes)
   const unbindReconsent = bindLegalReconsent(scopes, actions)
+  const unbindAccessLoss = bindAccessLoss(scopes, router)
 
   return {
     source,
@@ -198,6 +205,7 @@ function bindSession() {
       unbindSignOut()
       unbindAdminAccess()
       unbindReconsent()
+      unbindAccessLoss()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -1268,8 +1276,10 @@ const BLOCKED = {
 
 describe('HilosLayout account blocked card', () => {
   let unbind: (() => void) | undefined
+  const wrappers: Array<{ unmount(): void }> = []
 
   afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
     unbind?.()
     unbind = undefined
     hilosToasts.clear()
@@ -1297,6 +1307,7 @@ describe('HilosLayout account blocked card', () => {
     expect(card.find('[data-id="account-blocked-reason"]').text()).toContain(
       'No reason given',
     )
+    expect(card.find('[data-id="access-loss-notice"]').exists()).toBe(false)
   })
 
   it('says "This account" when the server could name no address', () => {
@@ -1357,6 +1368,170 @@ describe('HilosLayout account blocked card', () => {
     const wrapper = mountShell(shellConnection(FROZEN))
 
     expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(false)
+  })
+
+  /** Mount the outlet and a dirty edit dialog under the real shell bindings. */
+  function liveShell() {
+    const router = { ...routerOn('main'), resolvePath: () => '/' }
+    const session = bindSession(router)
+    unbind = session.unbind
+    session.handshake({ entities: { currentUser: { id: 7 } } })
+    const page = markRaw(
+      defineComponent(() => {
+        const open = ref(false)
+        return () =>
+          h('div', { 'data-id': 'private-content' }, [
+            h(
+              'button',
+              {
+                'data-id': 'open-draft',
+                onClick: () => {
+                  open.value = true
+                },
+              },
+              'Edit',
+            ),
+            h(
+              HilosModal,
+              {
+                modelValue: open.value,
+                title: 'Edit phone',
+                confirmOnClose: true,
+                'onUpdate:modelValue': (value: boolean) => {
+                  open.value = value
+                },
+              },
+              () => h('input', { 'data-id': 'draft', 'data-autofocus': '' }),
+            ),
+          ])
+      }),
+    )
+    const authSurface = markRaw(
+      defineComponent(() => () => h('form', { 'data-id': 'test-sign-in' })),
+    )
+    const wrapper = mount(HilosLayout, {
+      props: { connection: shellConnection() },
+      slots: {
+        default: () => h(HilosView, { pages: { main: page }, authSurface }),
+      },
+      global: { provide: { [hilosRouterKey as symbol]: router } },
+      attachTo: document.body,
+    })
+    wrappers.push(wrapper)
+    return { session, wrapper }
+  }
+
+  it('replaces the dirty slot with the live-block warning and moves focus into the card', async () => {
+    const { session, wrapper } = liveShell()
+    const opener = wrapper.get('[data-id="open-draft"]')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await flushPromises()
+    const draft = document.querySelector<HTMLInputElement>('[data-id="draft"]')!
+    draft.value = 'Unsaved phone number'
+    expect(document.activeElement).toBe(draft)
+
+    session.handshake({
+      ...BLOCKED,
+      data: { ...BLOCKED.data, accessLossReason: 'account_blocked' },
+    })
+    await flushPromises()
+
+    const card = wrapper.get('[data-id="account-blocked"]')
+    const notice = card.get('[data-id="access-loss-notice"]')
+    expect(notice.text()).toBe('Any unsaved changes were lost.')
+    expect(notice.classes()).toContain('alert-warning')
+    expect(notice.element.parentElement?.getAttribute('role')).toBe('status')
+    expect(notice.element.parentElement?.getAttribute('aria-live')).toBe(
+      'polite',
+    )
+    const account = card.get('[data-id="account-blocked-account"]').element
+    const reason = card.get('[data-id="account-blocked-reason"]').element
+    expect(account.nextElementSibling).toBe(notice.element.parentElement)
+    expect(notice.element.parentElement?.nextElementSibling).toBe(reason)
+    expect(wrapper.find('[data-id="private-content"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-departure"]').exists()).toBe(
+      false,
+    )
+    expect(draft.isConnected).toBe(false)
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(document.activeElement).toBe(card.get('section').element)
+    expect(wrapper.find('nav').exists()).toBe(true)
+    expect(wrapper.find('[data-id="app-footer"]').exists()).toBe(true)
+
+    session.handshake(BLOCKED)
+    await flushPromises()
+    expect(card.get('[data-id="access-loss-notice"]').text()).toBe(
+      'Any unsaved changes were lost.',
+    )
+  })
+
+  it.each(['sign out', 'unblock'] as const)(
+    'removes the warning with the card on %s, without leaving an old notice behind',
+    async (exit) => {
+      const { session, wrapper } = liveShell()
+      session.handshake({
+        ...BLOCKED,
+        data: { ...BLOCKED.data, accessLossReason: 'account_blocked' },
+      })
+      await flushPromises()
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(true)
+      if (exit === 'sign out') {
+        await wrapper
+          .get('[data-id="account-blocked-sign-out"]')
+          .trigger('click')
+        expect(session.source.sent[0]?.action).toBe(
+          'hilos_dismiss_account_blocked',
+        )
+        session.source.succeed(
+          session.source.sent[0]?.requestId,
+          'hilos_dismiss_account_blocked',
+        )
+        session.handshake({
+          entities: { currentUser: null },
+          data: { accountBlocked: null },
+        })
+      } else {
+        session.handshake({
+          entities: { currentUser: { id: 7 } },
+          data: { accountBlocked: null },
+        })
+      }
+      await flushPromises()
+      expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(
+        false,
+      )
+      expect(wrapper.find('[data-id="private-content"]').exists()).toBe(true)
+
+      session.handshake(BLOCKED)
+      await flushPromises()
+      expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(true)
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(
+        false,
+      )
+    },
+  )
+
+  it('does not carry the ended-session explanation into a newly refused blocked sign-in', async () => {
+    const { session, wrapper } = liveShell()
+    session.handshake({
+      entities: { currentUser: null },
+      data: { accessLossReason: 'session_ended' },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-id="access-loss-notice"]').text()).toBe(
+      'Your session has ended. Any unsaved changes were lost.',
+    )
+    expect(wrapper.find('[data-id="test-sign-in"]').exists()).toBe(true)
+
+    session.handshake(BLOCKED)
+    await flushPromises()
+    expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="test-sign-in"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Any unsaved changes were lost.')
   })
 })
 

@@ -125,6 +125,14 @@ const publicLegalTypes = [
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
+/** One common live-loss controller, shared by base and the compatibility root. */
+const accessLossValues = [
+  'ACCESS_LOSS_COPY',
+  'bindAccessLoss',
+  'hilosAccessLossReason',
+  'sessionAccessLossReason',
+]
+const accessLossTypes = ['AccessLossReason']
 /** The profile picker is one shared base/root implementation and type owner. */
 const timeZonePickerValues = ['createHilosTimeZonePicker']
 const timeZonePickerTypes = ['HilosTimeZonePicker', 'HilosTimeZonePickerRow']
@@ -409,6 +417,7 @@ const expectedValues = [
   ...pageHeadValues,
   ...publicLegalValues,
   ...momentValues,
+  ...accessLossValues,
   ...timeZonePickerValues,
   ...tableTextValues,
   ...tableFocusReturnValues,
@@ -664,6 +673,7 @@ describe('core public entries', () => {
       ...pageHeadValues,
       ...publicLegalValues,
       ...momentValues,
+      ...accessLossValues,
       ...timeZonePickerValues,
       ...tableTextValues,
       ...tableFocusReturnValues,
@@ -835,6 +845,7 @@ describe('core public entries', () => {
         ...pageHeadTypes,
         ...publicLegalTypes,
         ...momentTypes,
+        ...accessLossTypes,
         ...timeZonePickerTypes,
         ...tableTextTypes,
         ...tableFocusReturnTypes,
@@ -850,7 +861,9 @@ describe('core public entries', () => {
       ...pageHeadTypes,
       ...publicLegalTypes,
       ...momentTypes,
+      ...accessLossTypes,
       ...momentValues,
+      ...accessLossValues,
       ...timeZonePickerTypes,
       ...timeZonePickerValues,
       ...tableTextTypes,
@@ -1058,6 +1071,10 @@ describe('core public entries', () => {
 
   it.each([
     'base/index.ts',
+    'bootstrap/bootHilos.ts',
+    'routing/bindPageDeparture.ts',
+    'session/accessLoss.ts',
+    'session/sessionScope.ts',
     'connection/HilosConnection.ts',
     'connection/interactionBlock.ts',
     'dom/interactionBlock.ts',

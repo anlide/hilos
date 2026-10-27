@@ -12,9 +12,13 @@
 // the answer rides behind. Internal to the shell, not exported from the
 // package. The words are the core's ACCOUNT_BLOCKED_COPY, one set for the three
 // view packages. Bootstrap classes only, no CSS of its own (styling-rules.md).
+import { useEffect, useRef } from 'react'
 import {
+  ACCESS_LOSS_COPY,
   ACCOUNT_BLOCKED_COPY,
+  focusInitial,
   HILOS_DATA_EXPORT_COPY,
+  hilosAccessLossReason,
   hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
@@ -38,6 +42,23 @@ export interface HilosAccountBlockedProps {
  */
 export function HilosAccountBlocked({ notice }: HilosAccountBlockedProps) {
   const exportModel = useSignal(hilosAccountBlockedDataExport)
+  const accessLossReason = useSignal(hilosAccessLossReason)
+  const sectionRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (
+      accessLossReason !== 'account_blocked' ||
+      hilosAccessLossReason.get() !== 'account_blocked'
+    ) {
+      return
+    }
+    const root = sectionRef.current
+    if (
+      root?.isConnected &&
+      root.ownerDocument.activeElement === root.ownerDocument.body
+    ) {
+      focusInitial(root, 'dialog')
+    }
+  }, [accessLossReason])
   const signOut = useTrackedAction()
   const onSignOut = (): void => {
     if (signOut.busy) {
@@ -49,8 +70,10 @@ export function HilosAccountBlocked({ notice }: HilosAccountBlockedProps) {
   return (
     <div className="row justify-content-center" data-id="account-blocked">
       <section
+        ref={sectionRef}
         className="col-12 col-sm-8 col-md-6 col-lg-4"
         aria-labelledby="hilos-account-blocked-heading"
+        tabIndex={-1}
       >
         <div className="text-center mb-3">
           <span className="bg-danger-subtle text-danger rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1">
@@ -78,6 +101,13 @@ export function HilosAccountBlocked({ notice }: HilosAccountBlockedProps) {
             ACCOUNT_BLOCKED_COPY.accountUnnamed
           )}
         </p>
+        <div role="status" aria-live="polite">
+          {accessLossReason === 'account_blocked' ? (
+            <p className="alert alert-warning" data-id="access-loss-notice">
+              {ACCESS_LOSS_COPY.account_blocked}
+            </p>
+          ) : null}
+        </div>
         <div
           className="border border-danger-subtle bg-danger-subtle rounded px-3 py-2 mb-3"
           data-id="account-blocked-reason"

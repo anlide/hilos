@@ -16,6 +16,7 @@ import {
   sessionEnabledAuthMethods,
   sessionPasskeyAllowsUnproven,
   sessionAccountBlocked,
+  sessionAccessLossReason,
   sessionAccountStanding,
   sessionSecondFactorPolicy,
   sessionImpersonationPolicy,
@@ -71,6 +72,51 @@ function fakeConnection() {
 }
 
 describe('sessionScope', () => {
+  it.each([undefined, null, 'unknown', '', 1, {}, ['session_ended']])(
+    'replaces a previous access-loss reason with null for %j',
+    (value) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const reason = sessionAccessLossReason(scopes)
+      expect(reason.get()).toBeNull()
+      connection.emitHandshakeResponse({
+        data: { accessLossReason: 'session_ended' },
+      })
+      expect(reason.get()).toBe('session_ended')
+
+      connection.emitHandshakeResponse({
+        ...(value === undefined ? {} : { data: { accessLossReason: value } }),
+      })
+
+      expect(reason.get()).toBeNull()
+      expect(scopes.session.data.signal('accessLossReason').get()).toBeNull()
+    },
+  )
+
+  it.each(['session_ended', 'account_blocked'])(
+    'publishes the current %s reason before identity changes',
+    (value) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      connection.emitHandshakeResponse({ entities: { currentUser: { id: 1 } } })
+      const reason = sessionAccessLossReason(scopes)
+      const observed: unknown[] = []
+      const off = subscribeSignal(sessionUserId(scopes), () =>
+        observed.push(reason.get()),
+      )
+
+      connection.emitHandshakeResponse({
+        entities: { currentUser: null },
+        data: { accessLossReason: value },
+      })
+
+      expect(observed).toEqual([value])
+      off()
+    },
+  )
+
   it('exposes the handshake_response schema keyed for projectSchemas', () => {
     expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   })

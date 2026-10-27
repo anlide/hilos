@@ -42,6 +42,7 @@
 // the page here.
 import { NgComponentOutlet } from '@angular/common'
 import {
+  afterRenderEffect,
   afterNextRender,
   ChangeDetectionStrategy,
   Component,
@@ -57,11 +58,15 @@ import {
 } from '@angular/core'
 import type { Type } from '@angular/core'
 import {
+  ACCESS_LOSS_COPY,
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
+  computedSignal,
   createDeferredFlagState,
   createPageViewState,
   DEFAULT_SKELETON_DELAY_MS,
+  focusInitial,
+  hilosAccessLossReason,
   subscribeSignal,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
@@ -72,6 +77,9 @@ import { HilosSkeleton } from './HilosSkeleton.js'
 import { HILOS_PAGE_ERROR_BOUNDARY } from './hilosPageErrorBoundaryToken.js'
 import { hilosSignal } from './hilosSignal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
+
+/** The shared latch that closes and clears an old page after access is lost. */
+const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
 
 /**
  * Renders the component mapped to the navigator's current page, the sign-in
@@ -89,27 +97,39 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       hidden
     ></div>
     <div #pageSlot class="hilos-page-slot">
-      @if (showAuthInPlace()) {
-        <ng-container [ngComponentOutlet]="authSurfaceType()" />
-      } @else if (ownError(); as error) {
-        <hilos-error-page [error]="error" />
-      } @else if (!pageLoading()) {
-        <!-- A held page skips the branch above and stays in this one: the
-        branch and the outlet are what keep its instance, so no wrapper may move
-        the page out of them. -->
-        <ng-container
-          [ngComponentOutlet]="view() ?? null"
-          [ngComponentOutletInjector]="pageInjector"
-        />
-      } @else if (showSkeleton()) {
-        <div class="h-100" data-id="hilos-page-skeleton">
-          <span class="visually-hidden" role="status">Loading…</span>
-          @if (skeleton(); as declared) {
-            <ng-container [ngComponentOutlet]="declared" />
-          } @else {
-            <hilos-skeleton />
+      <div #accessLossSurface tabindex="-1">
+        <div role="status" aria-live="polite">
+          @if (sessionEnded()) {
+            <p class="alert alert-warning" data-id="access-loss-notice">
+              {{ accessLossCopy.session_ended }}
+            </p>
           }
         </div>
+        @if (showAuthInPlace() && authSurfaceType()) {
+          <ng-container [ngComponentOutlet]="authSurfaceType()" />
+        }
+      </div>
+      @if (!showAuthInPlace()) {
+        @if (ownError(); as error) {
+          <hilos-error-page [error]="error" />
+        } @else if (!pageLoading()) {
+          <!-- A held page skips the branch above and stays in this one: the
+          branch and the outlet are what keep its instance, so no wrapper may move
+          the page out of them. -->
+          <ng-container
+            [ngComponentOutlet]="view() ?? null"
+            [ngComponentOutletInjector]="pageInjector"
+          />
+        } @else if (showSkeleton()) {
+          <div class="h-100" data-id="hilos-page-skeleton">
+            <span class="visually-hidden" role="status">Loading…</span>
+            @if (skeleton(); as declared) {
+              <ng-container [ngComponentOutlet]="declared" />
+            } @else {
+              <hilos-skeleton />
+            }
+          </div>
+        }
       }
     </div>
     <div
@@ -186,6 +206,13 @@ export class HilosView {
     viewChild.required<ElementRef<HTMLElement>>('pageSlot')
   private readonly pageDeparture =
     viewChild.required<ElementRef<HTMLElement>>('pageDeparture')
+  private readonly accessLossSurface =
+    viewChild.required<ElementRef<HTMLElement>>('accessLossSurface')
+  private readonly accessLossReason = hilosSignal(hilosAccessLossReason)
+  private readonly sessionEnded = computed(
+    () => this.accessLossReason() === 'session_ended',
+  )
+  protected readonly accessLossCopy = ACCESS_LOSS_COPY
   private readonly route = hilosSignal(this.router.currentRoute)
   private readonly pageViewState = createPageViewState<Type<unknown>>(
     this.router,
@@ -239,7 +266,9 @@ export class HilosView {
   // then the modal must stand down: the same surface twice is two machines and
   // two subscriptions racing over one sign-in.
   protected readonly showAuthInPlace = computed<boolean>(
-    () => this.pageError()?.httpCode === 401 && !!this.authSurfaceType(),
+    () =>
+      this.sessionEnded() ||
+      (this.pageError()?.httpCode === 401 && !!this.authSurfaceType()),
   )
   // The core modal-open signal mirrored into an Angular signal: the effect
   // (re)subscribes when the gate input arrives or changes and cleans up on
@@ -255,8 +284,21 @@ export class HilosView {
         skeletonShown: this.skeletonFlag.shown,
         loading: this.pageViewState.loading,
         error: this.pageViewState.error,
+        accessLost: ACCESS_LOST,
       })
       this.destroyRef.onDestroy(unbind)
+    })
+    afterRenderEffect(() => {
+      if (!this.sessionEnded()) {
+        return
+      }
+      const root = this.accessLossSurface().nativeElement
+      if (
+        root.isConnected &&
+        root.ownerDocument.activeElement === root.ownerDocument.body
+      ) {
+        focusInitial(root)
+      }
     })
     effect(() => {
       this.pageViewState.setPages(this.pages())

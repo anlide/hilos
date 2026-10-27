@@ -21,6 +21,8 @@ export interface PageDepartureBinding {
   loading?: ReadonlySignal<boolean>
   /** Composed server/import error; defaults to the router's error. */
   error?: ReadonlySignal<PageError | null>
+  /** The shared live-loss latch clears and suppresses departure copies. */
+  accessLost?: ReadonlySignal<boolean>
 }
 
 /**
@@ -55,7 +57,7 @@ export function bindPageDeparture(binding: PageDepartureBinding): Unsubscribe {
   }
 
   const offLeave = router.onLeave(() => {
-    if (loading.get()) {
+    if (binding.accessLost?.get() || loading.get()) {
       return
     }
     copyPageInto(slot, departure)
@@ -75,12 +77,19 @@ export function bindPageDeparture(binding: PageDepartureBinding): Unsubscribe {
       clear()
     }
   })
+  const offAccessLost = binding.accessLost
+    ? subscribeSignal(binding.accessLost, (lost) => {
+        if (lost) clear()
+      })
+    : () => {}
+  if (binding.accessLost?.get()) clear()
 
   return () => {
     offLeave()
     offLoading()
     offError()
     offSkeleton()
+    offAccessLost()
     departure.replaceChildren()
   }
 }

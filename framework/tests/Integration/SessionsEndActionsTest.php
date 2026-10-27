@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\HilosException;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
@@ -32,6 +33,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration coverage for ending one or every other browser session.
@@ -124,6 +126,100 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $this->dispatch(new SessionEndActionDTO((int)$adminSession->id));
     }
 
+    /** @return array<string, array{bool, bool}> One/all targets with rotation and with its fallback */
+    public static function remoteEndModes(): array
+    {
+        return [
+            'one rotated' => [false, false],
+            'others rotated' => [true, false],
+            'one in place' => [false, true],
+            'others in place' => [true, true],
+        ];
+    }
+
+    /**
+     * @param bool $allOthers Whether the action ends every other session
+     * @param bool $exhausted Whether the token mint is exhausted
+     */
+    #[DataProvider('remoteEndModes')]
+    public function testEveryTargetTabGetsTheReasonWhileTheInitiatorAndImpersonationKeepAccess(bool $allOthers, bool $exhausted): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        Hilos::$rt->addConnection(SessionsEndActionsConnection::create('other-sibling', self::USER_ID, self::OTHER_TOKEN, $other->id));
+        $agent = $exhausted ? new SessionsEndActionsExhaustedMintAgent() : new SessionsEndActionsAgent();
+        $dto = $allOthers ? new SessionsEndOthersActionDTO() : new SessionEndActionDTO((int)$other->id);
+
+        $agent->onAgentAction(self::CURRENT_ACCEPT_KEY, $dto->getAction(), $dto);
+
+        $states = [];
+        while (($state = $this->nextSessionState()) !== null) {
+            $states[] = $state;
+        }
+        self::assertCount($exhausted ? 1 : 2, $states);
+        $targets = [];
+        foreach ($states as $state) {
+            self::assertSame('session_ended', $state->accessLossReason);
+            self::assertSame($other->id, $state->sessionId);
+            self::assertNull($state->userId);
+            self::assertNull($state->requestId, 'The target did not press the action');
+            self::assertNull($state->action);
+            self::assertNull($state->outcome);
+            self::assertSame($other->token, $state->sessionToken);
+            $targets = array_merge($targets, $state->acceptKeys);
+        }
+        sort($targets);
+        self::assertSame([self::OTHER_ACCEPT_KEY, 'other-sibling'], $targets);
+        if ($exhausted) {
+            self::assertSame(self::OTHER_TOKEN, $other->token);
+            self::assertNull($states[0]->rotationTicket);
+        } else {
+            self::assertSame(['other-sibling'], $states[0]->acceptKeys);
+            self::assertNull($states[0]->rotationTicket);
+            self::assertSame([self::OTHER_ACCEPT_KEY], $states[1]->acceptKeys);
+            self::assertNotNull($states[1]->rotationTicket);
+            self::assertNotSame(self::OTHER_TOKEN, $other->token);
+        }
+        self::assertSame(self::USER_ID, $current->userId);
+        self::assertSame(self::USER_ID, $admin->userId);
+        self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
+    }
+
+    /** @return array<string, array{bool}> Rotation and fallback */
+    public static function logoutModes(): array
+    {
+        return ['rotated' => [false], 'in place' => [true]];
+    }
+
+    /** @param bool $exhausted Whether the token mint is exhausted */
+    #[DataProvider('logoutModes')]
+    public function testVoluntaryLogoutCarriesNoAccessLossReasonInEitherDeliveryPath(bool $exhausted): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        Hilos::$rt->addConnection(SessionsEndActionsConnection::create('current-sibling', self::USER_ID, self::CURRENT_TOKEN, $current->id));
+        $agent = $exhausted ? new SessionsEndActionsExhaustedMintAgent() : new SessionsEndActionsAgent();
+        $agent->beginActionDispatch('logout-request');
+        try {
+            $agent->onAgentAction(self::CURRENT_ACCEPT_KEY, HilosSignalConstants::HILOS_LOGOUT, new LogoutActionDTO());
+        } finally {
+            $agent->endActionDispatch();
+        }
+
+        $sibling = $this->nextSessionState();
+        $holder = $this->nextSessionState();
+        self::assertNotNull($sibling);
+        self::assertNotNull($holder);
+        self::assertSame(['current-sibling'], $sibling->acceptKeys);
+        self::assertSame([self::CURRENT_ACCEPT_KEY], $holder->acceptKeys);
+        self::assertNull($sibling->accessLossReason);
+        self::assertNull($holder->accessLossReason);
+        self::assertNull($sibling->requestId);
+        self::assertSame('logout-request', $holder->requestId);
+        self::assertNull($current->userId);
+        self::assertNull($this->nextSessionState());
+    }
+
     public function testEndingAnotherSessionMakesItAnonymousAndPublishesItsSessionId(): void
     {
         $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
@@ -147,6 +243,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertNotNull($frame);
         self::assertSame($other->id, $frame->sessionId);
         self::assertNull($frame->userId);
+        self::assertSame('session_ended', $frame->accessLossReason);
         self::assertSame([self::OTHER_ACCEPT_KEY], $frame->acceptKeys);
         self::assertSame("Session #{$other->id} ended", $this->nextSuccessMessage());
     }
@@ -209,6 +306,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $state = $this->nextSessionState();
         self::assertNotNull($state);
         self::assertNull($state->userId);
+        self::assertSame('session_ended', $state->accessLossReason);
         self::assertSame([self::OTHER_ACCEPT_KEY], $state->acceptKeys);
         self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
     }
@@ -389,6 +487,16 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
 
 final class SessionsEndActionsAgent extends AbstractSessionsLibraryAgent
 {
+    public function onStop(): void
+    {
+    }
+}
+
+/** Token rotation exhaustion exercises the existing in-place ending. */
+final class SessionsEndActionsExhaustedMintAgent extends AbstractSessionsLibraryAgent
+{
+    protected const int TOKEN_MINT_ATTEMPTS = 0;
+
     public function onStop(): void
     {
     }

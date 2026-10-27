@@ -398,6 +398,7 @@ export {
 } from './users.js'
 export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
+export { expectAccessLossNotice } from './accessLoss.js'
 
 export {
   expectModerationKindHead,

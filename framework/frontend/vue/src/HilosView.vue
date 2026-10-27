@@ -31,6 +31,11 @@ the `authGate`'s modal shows the same surface over the live page for a gated
 action. Both dismiss and resume through the core gate — no navigation. Omit the
 pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 
+A live session end (HIL-1572) takes precedence over every page outcome, even a
+public page's later answer. The core latch supplies the explanation and also
+prevents departure copies. Its permanent polite region and the in-place auth
+surface share a focusable container, independent of the copy slot's display:contents.
+
 A page shell may take over the refusal of its own deleted resource (HIL-1603):
 the outlet provides its retainForResourceDeletion to what it mounts
 (hilosPageErrorBoundaryKey), and while the core state holds the page on such a
@@ -42,6 +47,7 @@ place of its content. Every other refusal still replaces the page here. -->
 import {
   computed,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
   provide,
@@ -50,12 +56,16 @@ import {
 } from 'vue'
 import type { Component } from 'vue'
 import {
+  ACCESS_LOSS_COPY,
   AUTH_SURFACE_HEADING_ID,
   bindPageDeparture,
+  computedSignal,
   createDeferredFlagState,
   createPageViewState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
+  focusInitial,
+  hilosAccessLossReason,
   HilosPages,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
@@ -103,12 +113,31 @@ const view = useSignal(pageViewState.view)
 const retainedOnError = useSignal(pageViewState.retainedOnError)
 const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
 
+const accessLossReason = useSignal(hilosAccessLossReason)
+const accessLost = computedSignal(() => hilosAccessLossReason.get() !== null)
+const sessionEnded = computed(() => accessLossReason.value === 'session_ended')
+
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)
 watch(pageLoading, (loading) => skeletonFlag.set(loading), { immediate: true })
 onUnmounted(skeletonFlag.dispose)
 const pageSlot = ref<HTMLElement | null>(null)
 const pageDeparture = ref<HTMLElement | null>(null)
+const accessLossSurface = ref<HTMLElement | null>(null)
+// Let the removed dialog release its trap first. Preserve a deliberate focus
+// choice elsewhere; otherwise use the same marked-field placement as the modal.
+watch(sessionEnded, async (ended) => {
+  if (!ended) return
+  await nextTick()
+  const root = accessLossSurface.value
+  if (
+    sessionEnded.value &&
+    root?.isConnected &&
+    root.ownerDocument.activeElement === root.ownerDocument.body
+  ) {
+    focusInitial(root)
+  }
+})
 // This reader has no server wait to toggle loading and clear a departure copy.
 // Drop the previous page even while the public reader's lazy code is pending.
 watch(
@@ -130,6 +159,7 @@ onMounted(() => {
       skeletonShown: skeletonFlag.shown,
       loading: pageViewState.loading,
       error: pageViewState.error,
+      accessLost,
     })
   }
 })
@@ -151,9 +181,10 @@ const pageState = computed(() =>
 )
 const showAuthInPlace = computed(
   () =>
-    !!pageError.value &&
-    pageError.value.httpCode === 401 &&
-    !!props.authSurface,
+    sessionEnded.value ||
+    (!!pageError.value &&
+      pageError.value.httpCode === 401 &&
+      !!props.authSurface),
 )
 
 // The modal only ever closes from within (Esc/backdrop/close button); route that
@@ -168,13 +199,33 @@ function onModalToggle(open: boolean): void {
 <template>
   <div data-id="hilos-page-state" :data-state="pageState" hidden />
   <div ref="pageSlot" class="hilos-page-slot">
-    <component :is="props.authSurface" v-if="showAuthInPlace" />
+    <div ref="accessLossSurface" tabindex="-1">
+      <div role="status" aria-live="polite">
+        <p
+          v-if="sessionEnded"
+          class="alert alert-warning"
+          data-id="access-loss-notice"
+        >
+          {{ ACCESS_LOSS_COPY.session_ended }}
+        </p>
+      </div>
+      <component
+        :is="props.authSurface"
+        v-if="showAuthInPlace && props.authSurface"
+      />
+    </div>
     <!-- A held page skips this branch and stays in the next one: the branch is
     what keeps the instance, so no wrapper may move the page out of it. -->
-    <ErrorPage v-else-if="pageError && !retainedOnError" :error="pageError" />
-    <component :is="view" v-else-if="view && !pageLoading" />
+    <ErrorPage
+      v-if="!showAuthInPlace && pageError && !retainedOnError"
+      :error="pageError"
+    />
+    <component
+      :is="view"
+      v-else-if="!showAuthInPlace && view && !pageLoading"
+    />
     <div
-      v-else-if="pageLoading && showSkeleton"
+      v-else-if="!showAuthInPlace && pageLoading && showSkeleton"
       class="h-100"
       data-id="hilos-page-skeleton"
     >

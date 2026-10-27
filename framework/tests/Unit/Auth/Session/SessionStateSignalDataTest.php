@@ -16,6 +16,96 @@ use PHPUnit\Framework\TestCase;
  */
 final class SessionStateSignalDataTest extends TestCase
 {
+    /** @return array<string, array{?string}> Reasons and an explicit absence */
+    public static function accessLossReasons(): array
+    {
+        return [
+            'remote end' => ['session_ended'],
+            'live block' => ['account_blocked'],
+            'no loss' => [null],
+        ];
+    }
+
+    /** @param ?string $reason Live explanation, independent of addressing and action metadata */
+    #[DataProvider('accessLossReasons')]
+    public function testAccessLossReasonSurvivesEveryCopyAndRoundtrip(?string $reason): void
+    {
+        foreach ([[], ['socket-a'], ['socket-a', 'socket-b']] as $keys) {
+            $frame = new SessionStateSignalData(
+                sessionToken: 'token',
+                sessionId: 17,
+                userId: null,
+                acceptKeys: $keys,
+                pendingAck: 'auth_registered',
+                rotationTicket: count($keys) <= 1 ? 'ticket' : null,
+                requestId: count($keys) <= 1 ? 'request' : null,
+                action: count($keys) <= 1 ? 'action' : null,
+                outcome: count($keys) <= 1 ? ['ok' => true] : null,
+                accountBlocked: ['identifier' => 'ada@example.test', 'dataExport' => null],
+                accessLossReason: $reason,
+            );
+            $copies = [
+                $frame->withAccountBlocked($frame->accountBlocked),
+                $frame->withAccountStanding(null),
+                $frame->withAccessLossReason($reason),
+            ];
+            foreach ($copies as $copy) {
+                self::assertEquals($frame, $copy);
+                self::assertSame($reason, $copy->toArray()['accessLossReason']);
+                self::assertEquals($frame, SessionStateSignalData::fromArray($copy->toArray()));
+            }
+            self::assertNull($frame->withAccessLossReason(null)->accessLossReason);
+            self::assertSame($reason, $frame->accessLossReason);
+
+            $older = $frame->toArray();
+            unset($older['accessLossReason']);
+            self::assertNull(SessionStateSignalData::fromArray($older)->accessLossReason);
+        }
+    }
+
+    /** @return array<string, array{mixed, class-string}> Invalid reasons and their refusal family */
+    public static function malformedAccessLossReasons(): array
+    {
+        return [
+            'unknown' => ['expired', InvalidArgumentException::class],
+            'empty' => ['', InvalidArgumentException::class],
+            'integer' => [42, InvalidFormatException::class],
+            'boolean' => [false, InvalidFormatException::class],
+            'array' => [[], InvalidFormatException::class],
+        ];
+    }
+
+    /**
+     * @param mixed $reason Invalid wire value
+     * @param class-string $exception Expected refusal family
+     */
+    #[DataProvider('malformedAccessLossReasons')]
+    public function testMalformedAccessLossReasonIsRefused(mixed $reason, string $exception): void
+    {
+        $this->expectException($exception);
+
+        SessionStateSignalData::fromArray(['sessionToken' => 'token', 'sessionId' => 17, 'accessLossReason' => $reason]);
+    }
+
+    public function testAccessLossReasonCannotBeAttachedToAnAuthenticatedIdentity(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData('token', 17, 41, ['socket'])->withAccessLossReason('session_ended');
+    }
+
+    public function testParserRefusesAccessLossReasonBesideAnAuthenticatedIdentity(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        SessionStateSignalData::fromArray([
+            'sessionToken' => 'token',
+            'sessionId' => 17,
+            'userId' => 41,
+            'accessLossReason' => 'account_blocked',
+        ]);
+    }
+
     /**
      * @param ?string $message Server words, or an explicit quiet resume
      */
@@ -35,6 +125,7 @@ final class SessionStateSignalDataTest extends TestCase
         ];
         $state = SessionStateSignalData::fromArray(
             new SessionStateSignalData('token', 17, null, ['socket-a', 'socket-b'], pendingAuthStep: $step)
+                ->withAccessLossReason(null)
                 ->withAccountBlocked(null)
                 ->withAccountStanding(null)
                 ->toArray(),

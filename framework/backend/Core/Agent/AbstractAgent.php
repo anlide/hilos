@@ -609,6 +609,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                     PasskeyAddressPolicy::allowsUnproven(),
                 )
                 ->withPendingAck($state->pendingAck)
+                ->withAccessLossReason($state->accessLossReason)
                 ->withAccountBlocked($state->accountBlocked)
                 ->withAccountStanding($state->accountStanding)
                 ->withAdminViewMode(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true)

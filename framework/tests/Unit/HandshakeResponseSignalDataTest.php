@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -72,6 +73,118 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'mergedInto' => null,
         'mergedIntoName' => null,
     ];
+
+    /** @return array<string, array{?string}> Reasons and an explicit absence */
+    public static function accessLossReasons(): array
+    {
+        return [
+            'remote end' => ['session_ended'],
+            'live block' => ['account_blocked'],
+            'no loss' => [null],
+        ];
+    }
+
+    /** @param ?string $reason Live explanation carried by an anonymous response */
+    #[DataProvider('accessLossReasons')]
+    public function testAccessLossReasonSurvivesEachStampAndRoundtrip(?string $reason): void
+    {
+        $frame = new HandshakeResponseSignalData(
+            pendingAck: 'auth_registered',
+            serverTimeMs: self::SERVER_TIME_MS,
+            pendingAuthStep: self::PENDING_AUTH_STEP,
+            codeDelivery: self::CODE_DELIVERY,
+            authMethods: self::AUTH_METHODS,
+            passkeyAllowsUnproven: true,
+            accountBlocked: ['identifier' => 'ada@example.test', 'dataExport' => null],
+            adminViewMode: true,
+            impersonationPolicy: [
+                'viewOnly' => true, 'carryAdmin' => false, 'allowed' => true, 'accountAccess' => true,
+                'blocked' => false, 'frozen' => false, 'equal' => false,
+            ],
+            themeSettings: ['switchingEnabled' => true, 'defaultTheme' => 'dark'],
+            accessLossReason: $reason,
+        );
+        $copies = [
+            $frame->withPendingAck($frame->pendingAck),
+            $frame->withAccountBlocked($frame->accountBlocked),
+            $frame->withAccountStanding(null),
+            $frame->withAdminViewMode(true),
+            $frame->withImpersonationPolicy($frame->impersonationPolicy),
+            $frame->withThemeSettings($frame->themeSettings),
+            $frame->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS, true),
+            $frame->withAccessLossReason($reason),
+        ];
+        foreach ($copies as $copy) {
+            self::assertEquals($frame, $copy);
+            self::assertSame($reason, $copy->toArray()['data']['accessLossReason']);
+            self::assertEquals($frame, HandshakeResponseSignalData::fromArray($copy->toArray()));
+        }
+        self::assertNull($frame->withAccessLossReason(null)->accessLossReason);
+        self::assertSame($reason, $frame->accessLossReason);
+
+        $older = $frame->toArray();
+        unset($older['data']['accessLossReason']);
+        self::assertNull(HandshakeResponseSignalData::fromArray($older)->accessLossReason);
+    }
+
+    public function testAccessLossStampKeepsEveryAuthenticatedIdentityField(): void
+    {
+        $frame = new HandshakeResponseSignalData(
+            selfId: 41,
+            selfName: 'Ada',
+            selfAdmin: true,
+            selfPhoto: '/photo',
+            impersonatorId: 7,
+            impersonatorName: 'Admin',
+            selfThemePick: 'dark',
+            selfThemePickInitialized: true,
+            selfTimeZone: 'Europe/Paris',
+            accountStanding: self::STANDING,
+        );
+
+        self::assertEquals($frame, $frame->withAccessLossReason(null));
+        self::assertEquals($frame, HandshakeResponseSignalData::fromArray($frame->withAccessLossReason(null)->toArray()));
+    }
+
+    /** @return array<string, array{mixed, class-string}> Invalid reasons and their refusal family */
+    public static function malformedAccessLossReasons(): array
+    {
+        return [
+            'unknown' => ['expired', InvalidArgumentException::class],
+            'empty' => ['', InvalidArgumentException::class],
+            'integer' => [42, InvalidFormatException::class],
+            'boolean' => [false, InvalidFormatException::class],
+            'array' => [[], InvalidFormatException::class],
+        ];
+    }
+
+    /**
+     * @param mixed $reason Invalid wire value
+     * @param class-string $exception Expected refusal family
+     */
+    #[DataProvider('malformedAccessLossReasons')]
+    public function testMalformedAccessLossReasonIsRefused(mixed $reason, string $exception): void
+    {
+        $this->expectException($exception);
+
+        HandshakeResponseSignalData::fromArray(['data' => ['accessLossReason' => $reason]]);
+    }
+
+    public function testAccessLossReasonCannotBeAttachedToAnAuthenticatedIdentity(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new HandshakeResponseSignalData(selfId: 41)->withAccessLossReason('session_ended');
+    }
+
+    public function testParserRefusesAccessLossReasonBesideAnAuthenticatedIdentity(): void
+    {
+        $payload = new HandshakeResponseSignalData(selfId: 41)->toArray();
+        $payload['data']['accessLossReason'] = 'account_blocked';
+        $this->expectException(InvalidArgumentException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
 
     /**
      * @param array<string, mixed> $messageField Missing or mistyped required message
@@ -157,6 +270,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'accessLossReason' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
@@ -293,6 +407,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'accessLossReason' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
@@ -347,6 +462,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'accessLossReason' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
@@ -389,6 +505,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'passkeyAllowsUnproven' => null,
                 'accountBlocked' => null,
                 'accountStanding' => null,
+                'accessLossReason' => null,
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
                 'themeSettings' => null,
@@ -462,6 +579,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'passkeyAllowsUnproven' => self::PASSKEY_ALLOWS_UNPROVEN,
                 'accountBlocked' => null,
                 'accountStanding' => null,
+                'accessLossReason' => null,
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
                 'themeSettings' => null,
@@ -828,6 +946,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
             selfTimeZone: $timeZone,
         );
         $stamps = [
+            static fn ($dto) => $dto->withAccessLossReason(null),
             static fn ($dto) => $dto->withPendingAck(SessionAck::SIGNED_IN),
             static fn ($dto) => $dto->withAccountBlocked(null),
             static fn ($dto) => $dto->withAccountStanding(self::STANDING),

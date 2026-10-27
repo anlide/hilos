@@ -35,6 +35,7 @@ import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindProfileFlows } from '../profile/profileFlows.js'
 import { bindStepUpConfirmed } from '../auth/stepUpConfirmed.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
+import { bindAccessLoss } from '../session/accessLoss.js'
 import { bindAccountStanding } from '../session/accountStanding.js'
 import { bindLegalReconsent } from '../legal/legalReconsent.js'
 import { bindAdminAccess } from '../session/adminAccess.js'
@@ -228,6 +229,8 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     },
     hilosUnbuiltPages(config.viewLayer, config.projectViews),
   )
+  // Bind before other page-clearing reactions and before the socket opens.
+  bindAccessLoss(config.scopes, hilosRouter, config.session)
   // A rights change reaches the open tab (HIL-621): the handshake response the
   // grant re-sends moves this marker, and the page on screen is judged again -
   // here by its surface type, on the server by the whole access verdict. Bound

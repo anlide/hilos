@@ -12,11 +12,21 @@
 // the answer rides behind. Internal to the shell, not exported from the
 // package. The words are the core's ACCOUNT_BLOCKED_COPY, one set for the three
 // view packages. Bootstrap classes only, no CSS of its own (styling-rules.md).
-import { ChangeDetectionStrategy, Component, input } from '@angular/core'
 import {
+  afterRenderEffect,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  input,
+  viewChild,
+} from '@angular/core'
+import {
+  ACCESS_LOSS_COPY,
   ACCOUNT_BLOCKED_COPY,
+  focusInitial,
   HILOS_DATA_EXPORT_COPY,
   hilosAccountBlockedDataExport,
+  hilosAccessLossReason,
   dismissAccountBlocked,
   type AccountBlockedNotice,
 } from '@hilos/core/base'
@@ -34,8 +44,10 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
   template: `
     <div class="row justify-content-center" data-id="account-blocked">
       <section
+        #card
         class="col-12 col-sm-8 col-md-6 col-lg-4"
         aria-labelledby="hilos-account-blocked-heading"
+        tabindex="-1"
       >
         <div class="text-center mb-3">
           <span
@@ -63,6 +75,13 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
             {{ copy.accountUnnamed }}
           }
         </p>
+        <div role="status" aria-live="polite">
+          @if (accessLossReason() === 'account_blocked') {
+            <p class="alert alert-warning" data-id="access-loss-notice">
+              {{ accessLossCopy.account_blocked }}
+            </p>
+          }
+        </div>
         <div
           class="border border-danger-subtle bg-danger-subtle rounded px-3 py-2 mb-3"
           data-id="account-blocked-reason"
@@ -99,6 +118,24 @@ export class HilosAccountBlocked {
   protected readonly exportCopy = HILOS_DATA_EXPORT_COPY
   protected readonly copy = ACCOUNT_BLOCKED_COPY
   protected readonly signOut = createHilosTrackedAction()
+  protected readonly accessLossCopy = ACCESS_LOSS_COPY
+  protected readonly accessLossReason = hilosSignal(hilosAccessLossReason)
+  private readonly card = viewChild<ElementRef<HTMLElement>>('card')
+
+  constructor() {
+    afterRenderEffect(() => {
+      if (this.accessLossReason() !== 'account_blocked') {
+        return
+      }
+      const root = this.card()?.nativeElement
+      if (
+        root?.isConnected &&
+        root.ownerDocument.activeElement === root.ownerDocument.body
+      ) {
+        focusInitial(root, 'dialog')
+      }
+    })
+  }
 
   /** Take the card down through the tracked driver; a second press while busy is dropped. */
   protected onSignOut(): void {

@@ -8,6 +8,7 @@ use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Auth\Session\SessionAccessLossReason;
 use Hilos\BaseDTO;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -53,6 +54,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     public const string sessionId = 'sessionId';
     public const string accountBlocked = 'accountBlocked';
     public const string accountStanding = 'accountStanding';
+    public const string accessLossReason = 'accessLossReason';
 
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
@@ -77,7 +79,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Standing of the person
      *     the session acts as, or null when it is anonymous
-     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
+     * @param ?string $accessLossReason Live reason access was lost, or null when this frame reports no loss
+     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -92,7 +95,17 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?array $outcome = null,
         public readonly ?array $accountBlocked = null,
         public readonly ?array $accountStanding = null,
+        public readonly ?string $accessLossReason = null,
     ) {
+        if ($accessLossReason !== null) {
+            if (!in_array($accessLossReason, [SessionAccessLossReason::SESSION_ENDED, SessionAccessLossReason::ACCOUNT_BLOCKED], true)) {
+                throw new InvalidArgumentException('Unknown session access-loss reason');
+            }
+            if ($userId !== null) {
+                throw new InvalidArgumentException('An access-loss reason requires an anonymous identity');
+            }
+        }
+
         if (
             count($acceptKeys) > 1
             && ($rotationTicket !== null || $requestId !== null || $action !== null || $outcome !== null)
@@ -105,16 +118,41 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
+     * @param ?string $accessLossReason Live reason access was lost, or null for no loss
+     * @return self The same frame carrying that reason
+     * @throws InvalidArgumentException When the reason is unknown or the identity is authenticated
+     */
+    public function withAccessLossReason(?string $accessLossReason): self
+    {
+        return new self(
+            accessLossReason: $accessLossReason,
+            sessionToken: $this->sessionToken,
+            sessionId: $this->sessionId,
+            userId: $this->userId,
+            acceptKeys: $this->acceptKeys,
+            pendingAck: $this->pendingAck,
+            pendingAuthStep: $this->pendingAuthStep,
+            rotationTicket: $this->rotationTicket,
+            requestId: $this->requestId,
+            action: $this->action,
+            outcome: $this->outcome,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+        );
+    }
+
+    /**
      * Returns the same frame stamped with the blocked account the session lost (HIL-289).
      *
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @return self The same frame carrying that card
-     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
+     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountBlocked(?array $accountBlocked): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             sessionToken: $this->sessionToken,
             sessionId: $this->sessionId,
             userId: $this->userId,
@@ -139,11 +177,12 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same frame carrying that standing
-     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
+     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountStanding(?array $accountStanding): self
     {
         return new self(
+            accessLossReason: $this->accessLossReason,
             sessionToken: $this->sessionToken,
             sessionId: $this->sessionId,
             userId: $this->userId,
@@ -179,6 +218,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             'outcome' => $this->outcome,
             self::accountBlocked => $this->accountBlocked,
             self::accountStanding => $this->accountStanding,
+            self::accessLossReason => $this->accessLossReason,
         ];
     }
 
@@ -192,7 +232,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When the payload names no session, or a present field is not of its declared type
-     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
+     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public static function fromArray(array $data): static
     {
@@ -221,6 +261,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             outcome: self::optionalArray($data, 'outcome'),
             accountBlocked: HandshakeResponseSignalData::readAccountBlocked($data),
             accountStanding: HandshakeResponseSignalData::readAccountStanding($data),
+            accessLossReason: self::optionalString($data, self::accessLossReason),
         );
     }
 

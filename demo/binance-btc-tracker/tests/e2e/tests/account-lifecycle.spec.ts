@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  dismissToasts,
+  expectAccessLossNotice,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import {
@@ -39,6 +42,7 @@ test('blocks an account from its card and signs the person back in when the bloc
     await expect(personPage.getByTestId('account-blocked-heading')).toHaveText(
       'Access closed',
     )
+    await expectAccessLossNotice(expect, personPage, 'account_blocked')
     await expect(page.getByTestId('hilos-user-block-open')).toHaveText(
       'Lift the block',
     )
@@ -53,6 +57,7 @@ test('blocks an account from its card and signs the person back in when the bloc
     await expect(personPage.getByTestId('self-user-id')).toHaveText(
       String(person.userId),
     )
+    await expectAccessLossNotice(expect, personPage, null)
   } finally {
     await personContext.close()
   }
@@ -76,19 +81,23 @@ test('keeps a person who signed out on the card a guest when the block is lifted
     await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
+    await expectAccessLossNotice(expect, personPage, 'account_blocked')
     await clickSubmit(personPage.getByTestId('account-blocked-sign-out'))
     await expect(personPage.getByTestId('account-blocked')).toHaveCount(0)
+    await expectAccessLossNotice(expect, personPage, null)
 
     await dismissToasts(page)
     await clickSubmit(page.getByTestId('hilos-user-block-open'))
     await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(page.getByTestId('hilos-user-block-open')).toHaveText('Block')
+    await expectAccessLossNotice(expect, personPage, null)
     // Opened again after the lift, the browser goes through the handshake door,
     // which would sign it in had the card's Sign out left anything to return.
     await gotoPage(personPage, '/')
     await expect(personPage.getByTestId('self-anonymous')).toBeVisible()
     await expect(personPage.getByTestId('nav-signin')).toBeVisible()
+    await expectAccessLossNotice(expect, personPage, null)
   } finally {
     await personContext.close()
   }

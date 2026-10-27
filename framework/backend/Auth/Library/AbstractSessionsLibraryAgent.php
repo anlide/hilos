@@ -100,6 +100,7 @@ use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\HandshakeSession;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Auth\Session\SessionAccessLossReason;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionRebindConstants;
@@ -3018,6 +3019,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @param ?string $holderAcceptKey Tab to receive the ticket, or null to choose the first live tab
+     * @param ?string $accessLossReason Live reason the session lost access, or null for an ending without one
      * @return ?string Token the session now answers to, or null when no authenticated session was named
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
@@ -3027,6 +3029,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $requestId = null,
         ?string $action = null,
         ?string $holderAcceptKey = null,
+        ?string $accessLossReason = null,
     ): ?string {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null || $session->userId === null) {
@@ -3042,7 +3045,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $newToken = $this->rotateSessionTokenAndUnbindUser($session);
         } catch (SessionTokenExhaustedException | RandomException $e) {
             $this->logAgentError('Sign-out kept the old session token: ' . $e->getMessage());
-            $this->signOutInPlace($sessionToken, $requestId, $action, $holderAcceptKey);
+            $this->signOutInPlace($sessionToken, $requestId, $action, $holderAcceptKey, $accessLossReason);
 
             return $sessionToken;
         }
@@ -3072,6 +3075,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 userId: null,
                 acceptKeys: $siblings,
                 pendingAck: $this->sessionPendingAck($session),
+                accessLossReason: $accessLossReason,
             ));
         }
         if ($holder !== null && $ticket !== null) {
@@ -3082,6 +3086,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 userId: null,
                 acceptKeys: [$holder],
                 pendingAck: $this->sessionPendingAck($session),
+                accessLossReason: $accessLossReason,
                 rotationTicket: $ticket,
                 requestId: $requestId,
                 action: $action,
@@ -3107,6 +3112,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @param ?string $answeredAcceptKey Connection whose press is answered, or null when nobody waits
+     * @param ?string $accessLossReason Live reason the session lost access, preserved when token rotation failed
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
@@ -3115,6 +3121,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $requestId = null,
         ?string $action = null,
         ?string $answeredAcceptKey = null,
+        ?string $accessLossReason = null,
     ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null || $session->userId === null) {
@@ -3149,6 +3156,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 userId: null,
                 acceptKeys: $others,
                 pendingAck: $this->sessionPendingAck($session),
+                accessLossReason: $accessLossReason,
             ));
         }
         if ($answered !== null) {
@@ -3158,6 +3166,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 userId: null,
                 acceptKeys: [$answered],
                 pendingAck: $this->sessionPendingAck($session),
+                accessLossReason: $accessLossReason,
                 requestId: $requestId,
                 action: $action,
             ));
@@ -3298,7 +3307,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException("An administrator's session cannot be ended from here");
         }
 
-        $this->deauthenticateSession($targetSession->token);
+        $this->deauthenticateSession($targetSession->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
         $this->setActionSuccessMessage("Session #{$targetSessionId} ended");
         $this->askPersonAgent($actingSession->userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
             $actingSession->userId,
@@ -3389,7 +3398,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 continue;
             }
 
-            $this->deauthenticateSession($session->token);
+            $this->deauthenticateSession($session->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
             $ended++;
         }
 
@@ -5943,7 +5952,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $ended = [];
         foreach ($sessions as $session) {
             $session->actions->holdBlockedNotice($userId, true);
-            $this->deauthenticateSession($session->token);
+            $this->deauthenticateSession(
+                $session->token,
+                accessLossReason: $session->impersonatorUserId === null ? SessionAccessLossReason::ACCOUNT_BLOCKED : null,
+            );
             $ended[] = $session->id;
         }
 

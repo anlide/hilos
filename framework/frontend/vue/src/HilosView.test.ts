@@ -14,6 +14,9 @@ import {
 } from 'vue'
 import type { Component } from 'vue'
 import {
+  bindAccessLoss,
+  bindPageScope,
+  bindSessionScope,
   createAuthGate,
   createHilosRouter,
   createPageRouter,
@@ -21,8 +24,11 @@ import {
   DEFAULT_SKELETON_DELAY_MS,
   HilosPages,
   lazyPage,
+  ScopeManager,
+  sessionUserId,
 } from '@hilos/core/base'
 import type {
+  HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   NavigablePages,
@@ -31,6 +37,7 @@ import type {
   PageRouteMatch,
   PageSubscriptionError,
   PageView,
+  ProjectSignal,
   WritableSignal,
 } from '@hilos/core/base'
 
@@ -161,8 +168,8 @@ describe('HilosView skeleton', () => {
 
     await outlast(DEFAULT_SKELETON_DELAY_MS)
     const status = wrapper.findAll('[role="status"]')
-    expect(status).toHaveLength(1)
-    expect(status[0].text()).toBe('Loading…')
+    expect(status).toHaveLength(2)
+    expect(status.map((region) => region.text())).toEqual(['', 'Loading…'])
   })
 
   it('gives way to the page on its answer', async () => {
@@ -600,8 +607,10 @@ describe('HilosView lazy pages', () => {
     expect(departure.element.childElementCount).toBe(0)
     expect(frame.scrollTop).toBe(0)
     expect(wrapper.find('[data-id="main-skeleton"]').exists()).toBe(true)
-    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
-    expect(wrapper.get('[role="status"]').text()).toBe('Loading…')
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(2)
+    expect(
+      wrapper.findAll('[role="status"]').map((region) => region.text()),
+    ).toEqual(['', 'Loading…'])
 
     pending.resolve(page.component)
     await settleCode()
@@ -642,7 +651,8 @@ describe('HilosView lazy pages', () => {
     expect(
       wrapper.get('[data-id="hilos-page-state"]').attributes('data-state'),
     ).toBe('ready')
-    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.get('[role="status"]').text()).toBe('')
     wrapper.unmount()
   })
 
@@ -724,7 +734,8 @@ describe('HilosView lazy pages', () => {
     expect(page.mounted).toHaveBeenCalledTimes(1)
     await outlast(DEFAULT_SKELETON_DELAY_MS)
     expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
-    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.get('[role="status"]').text()).toBe('')
     wrapper.unmount()
   })
 
@@ -1068,7 +1079,7 @@ describe('HilosView lazy pages', () => {
       router.navigate('/lazy')
       await nextTick()
       const departure = wrapper.get('[data-id="hilos-page-departure"]').element
-      expect(departure.childElementCount).toBe(1)
+      expect(departure.childElementCount).toBe(2)
       wrapper.unmount()
       expect(departure.childElementCount).toBe(0)
       expect(vi.getTimerCount()).toBe(0)
@@ -1407,4 +1418,338 @@ describe('HilosView and a page shell under a live deletion', () => {
       wrapper.get('[data-id="page-error-home"]').element,
     )
   })
+})
+
+describe('HilosView live access loss', () => {
+  const releases: Array<() => void> = []
+  const wrappers: Array<{ unmount(): void }> = []
+  const AuthSurface = markRaw(
+    defineComponent(
+      () => () =>
+        h('form', { 'data-id': 'auth-surface' }, [
+          h('input', { 'data-id': 'auth-identifier', 'data-autofocus': '' }),
+        ]),
+    ),
+  )
+  const DirtyPage = markRaw(
+    defineComponent(() => {
+      const open = ref(false)
+      return () =>
+        h('div', { 'data-id': 'private-page' }, [
+          h(
+            'button',
+            {
+              'data-id': 'open-draft',
+              onClick: () => {
+                open.value = true
+              },
+            },
+            'Edit',
+          ),
+          h(
+            HilosModal,
+            {
+              modelValue: open.value,
+              title: 'Edit',
+              confirmOnClose: true,
+              'onUpdate:modelValue': (next: boolean) => {
+                open.value = next
+              },
+            },
+            () => h('input', { 'data-id': 'draft', 'data-autofocus': '' }),
+          ),
+        ])
+    }),
+  )
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    for (const release of releases.splice(0)) release()
+    document.body.innerHTML = ''
+    document.body.classList.remove('modal-open')
+    vi.useRealTimers()
+  })
+
+  /** Real boot bindings with session and page frames delivered on one source. */
+  function session(initial = '/') {
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const send = vi.fn(() => true)
+    const connection = {
+      state: 'connected',
+      reconnectDragging: false,
+      on(event: string, listener: (payload: never) => void): () => void {
+        const projectListener = listener as (signal: ProjectSignal) => void
+        if (event === 'projectSignal') listeners.add(projectListener)
+        return () => listeners.delete(projectListener)
+      },
+      send,
+      forgetPageFrames: () => {},
+      tableWindowDescriptors: () => ({}),
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    const pages = bindPageScope(connection, scopes)
+    const router = createHilosRouter(
+      createPageRouter({
+        main: { path: '/', admin: false },
+        lazy: { path: '/lazy/{id?}', admin: true },
+        other: { path: '/other', admin: false },
+      }),
+      pages,
+      navigation(initial),
+    )
+    releases.push(bindAccessLoss(scopes, router))
+    pages.releaseOnSession()
+    router.start()
+    const gate = createAuthGate({
+      router,
+      currentUserId: sessionUserId(scopes),
+    })
+    const emit = (type: string, data: unknown): void => {
+      for (const listener of listeners) {
+        listener({ kind: 'project', type, data, envelope: {} } as ProjectSignal)
+      }
+    }
+    const handshake = (
+      id: number | null,
+      data: Record<string, unknown> = {},
+    ): void =>
+      emit('handshake_response', {
+        entities: { currentUser: id === null ? null : { id } },
+        data: { accountBlocked: null, ...data },
+      })
+    const answer = (): void =>
+      emit('page_response', {
+        page: router.currentRoute.get().page,
+        payload: {},
+      })
+    const refuse = (error: PageError): void =>
+      emit('subscription_page_error', {
+        ...error,
+        page: router.currentRoute.get().page,
+      })
+    const render = (auth = true, page: Component = DirtyPage) => {
+      const wrapper = mount(HilosView, {
+        props: {
+          pages: { main: page, lazy: page, other: MainPage },
+          ...(auth ? { authSurface: AuthSurface, authGate: gate } : {}),
+        },
+        global: { provide: { [hilosRouterKey as symbol]: router } },
+        attachTo: document.body,
+      })
+      wrappers.push(wrapper)
+      return wrapper
+    }
+    return { router, send, gate, handshake, answer, refuse, render }
+  }
+
+  it('removes a dirty dialog without confirmation and focuses the sole in-place auth form', async () => {
+    const s = session()
+    s.handshake(7)
+    s.answer()
+    const wrapper = s.render()
+    const region = wrapper.get('[role="status"]').element
+    const opener = wrapper.get('[data-id="open-draft"]')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await settleCode()
+    const draft = document.querySelector<HTMLInputElement>('[data-id="draft"]')!
+    draft.value = 'Unsaved phone number'
+    expect(document.activeElement).toBe(draft)
+    const sentBefore = s.send.mock.calls.length
+
+    s.handshake(null, { accessLossReason: 'session_ended' })
+    s.gate.requireAuth()
+    await settleCode()
+
+    const notice = wrapper.get('[data-id="access-loss-notice"]')
+    expect(notice.text()).toBe(
+      'Your session has ended. Any unsaved changes were lost.',
+    )
+    expect(notice.classes()).toContain('alert-warning')
+    expect(notice.element.parentElement).toBe(region)
+    expect(region.getAttribute('role')).toBe('status')
+    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+    expect(draft.isConnected).toBe(false)
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(document.querySelectorAll('[data-id="auth-surface"]')).toHaveLength(
+      1,
+    )
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-id="auth-identifier"]').element,
+    )
+    expect(s.send).toHaveBeenCalledTimes(sentBefore)
+    expect(s.router.currentPath.get()).toBe('/')
+
+    s.handshake(null)
+    s.answer()
+    await outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(wrapper.get('[data-id="access-loss-notice"]').text()).toBe(
+      notice.text(),
+    )
+    expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(false)
+    expect(document.querySelectorAll('[data-id="auth-surface"]')).toHaveLength(
+      1,
+    )
+
+    s.handshake(8)
+    s.answer()
+    await settleCode()
+    expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="private-page"]').exists()).toBe(true)
+    expect(document.querySelector('[data-id="auth-surface"]')).toBeNull()
+  })
+
+  it('replaces an already open action-auth dialog with one in-place surface', async () => {
+    const s = session()
+    s.handshake(7)
+    s.answer()
+    const wrapper = s.render()
+    s.gate.requireAuth()
+    await settleCode()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.querySelectorAll('[data-id="auth-surface"]')).toHaveLength(
+      1,
+    )
+
+    s.handshake(null, { accessLossReason: 'session_ended' })
+    await settleCode()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(wrapper.findAll('[data-id="auth-surface"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-id="auth-surface"]')).toHaveLength(
+      1,
+    )
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-id="auth-identifier"]').element,
+    )
+  })
+
+  it.each(['session_ended', 'account_blocked'] as const)(
+    'clears an existing departure copy synchronously on %s and never copies the lost surface on leave',
+    async (reason) => {
+      const s = session()
+      s.handshake(7)
+      s.answer()
+      const wrapper = s.render()
+      s.router.navigate('/other')
+      const departure = wrapper.get('[data-id="hilos-page-departure"]')
+      expect(departure.text()).toBe('Edit')
+      expect(departure.element.childElementCount).toBe(2)
+
+      s.handshake(null, {
+        accessLossReason: reason,
+        accountBlocked:
+          reason === 'account_blocked'
+            ? { identifier: 'ada@example.com' }
+            : null,
+      })
+      expect(departure.element.childElementCount).toBe(0)
+      await settleCode()
+      s.answer()
+      await settleCode()
+      s.router.navigate('/')
+      expect(departure.element.childElementCount).toBe(0)
+      await settleCode()
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(
+        false,
+      )
+      s.answer()
+      await settleCode()
+      expect(wrapper.find('[data-id="private-page"]').exists()).toBe(true)
+    },
+  )
+
+  it.each(['loading', 'error', 'retained', 'public'] as const)(
+    'gives live session end priority over a %s page and its later guest answer',
+    async (state) => {
+      const s = session(state === 'retained' ? '/lazy/1' : '/')
+      s.handshake(7)
+      if (state !== 'loading') s.answer()
+      const wrapper = s.render(
+        true,
+        state === 'retained' ? shellPage(true).component : DirtyPage,
+      )
+      await settleCode()
+      if (state === 'error') s.refuse(NOT_FOUND)
+      if (state === 'retained') s.refuse(CARD_DELETED)
+      await settleCode()
+      if (state === 'retained') {
+        expect(wrapper.find('[data-id="hilos-admin-page"]').exists()).toBe(true)
+      }
+      s.handshake(null, { accessLossReason: 'session_ended' })
+      await outlast(DEFAULT_SKELETON_DELAY_MS)
+      for (const id of [
+        'page-error',
+        'hilos-page-skeleton',
+        'hilos-admin-page',
+        'private-page',
+      ]) {
+        expect(wrapper.find(`[data-id="${id}"]`).exists()).toBe(false)
+      }
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(true)
+      expect(wrapper.findAll('[data-id="auth-surface"]')).toHaveLength(1)
+      s.answer()
+      await settleCode()
+      expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(true)
+    },
+  )
+
+  it('removes the previous view and explains the loss even without an auth surface', async () => {
+    const s = session()
+    s.handshake(7)
+    s.answer()
+    const wrapper = s.render(false)
+    s.handshake(null, { accessLossReason: 'session_ended' })
+    await settleCode()
+    expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(false)
+    expect(wrapper.get('[data-id="access-loss-notice"]').text()).toBe(
+      'Your session has ended. Any unsaved changes were lost.',
+    )
+    expect(document.activeElement).toBe(
+      wrapper.get('.hilos-page-slot > [tabindex="-1"]').element,
+    )
+    s.answer()
+    await settleCode()
+    expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+  })
+
+  it('preserves a deliberate focus choice outside the replaced page', async () => {
+    const s = session()
+    s.handshake(7)
+    s.answer()
+    const wrapper = s.render()
+    const nav = document.createElement('button')
+    document.body.append(nav)
+    nav.focus()
+    s.handshake(null, { accessLossReason: 'session_ended' })
+    await settleCode()
+    expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(nav)
+  })
+
+  it.each(['cold guest', 'new blocked sign-in', 'voluntary logout'])(
+    'shows no loss notice for %s',
+    async (kind) => {
+      const s = session()
+      if (kind === 'voluntary logout') s.handshake(7)
+      const wrapper = s.render()
+      s.handshake(
+        null,
+        kind === 'new blocked sign-in'
+          ? { accountBlocked: { identifier: 'ada@example.com' } }
+          : {},
+      )
+      s.answer()
+      await settleCode()
+      expect(wrapper.find('[data-id="access-loss-notice"]').exists()).toBe(
+        false,
+      )
+    },
+  )
 })
