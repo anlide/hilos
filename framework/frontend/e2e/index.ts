@@ -457,6 +457,7 @@ export {
   type MonopolisticWorker,
 } from './daemonWorker.js'
 export { watchUploadFrames } from './uploadFrames.js'
+export { watchUploadReady } from './uploadTiming.js'
 export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'
 export { typeInto, clickSubmit } from './input.js'
