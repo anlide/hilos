@@ -58,6 +58,14 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string Bootstrap Icons token for web push
+     */
+    public function icon(): string
+    {
+        return 'bi-broadcast';
+    }
+
+    /**
      * @return string The `webpush` transport name shown in the admin channels hub (HIL-200)
      */
     public function driver(): string

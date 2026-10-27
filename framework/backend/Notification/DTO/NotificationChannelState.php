@@ -32,6 +32,12 @@ final class NotificationChannelState
     /** Payload key: public per-channel config the frontend opt-in UI needs. */
     public const string config = 'config';
 
+    /** Payload key: public delivery address label, or null when not published. */
+    public const string address = 'address';
+
+    /** Payload key: the channel's Bootstrap Icons token (bi-*). */
+    public const string icon = 'icon';
+
     /**
      * @param string $channel Channel name (registry key and toggle target)
      * @param string $label Channel's human label
@@ -39,6 +45,8 @@ final class NotificationChannelState
      * @param bool $hasAddress Whether the recipient has a resolvable address for the channel
      * @param array<string, string> $config Public per-channel config for the browser opt-in (e.g. push
      *     VAPID public key); empty for channels with no browser opt-in
+     * @param ?string $address Public delivery address label, independent of reachability
+     * @param string $icon Bootstrap Icons token (bi-*), without HTML, a URL, or extra classes
      */
     public function __construct(
         public readonly string $channel,
@@ -46,6 +54,8 @@ final class NotificationChannelState
         public readonly bool $allowed,
         public readonly bool $hasAddress,
         public readonly array $config = [],
+        public readonly ?string $address = null,
+        public readonly string $icon = 'bi-bell',
     ) {
     }
 
@@ -59,6 +69,8 @@ final class NotificationChannelState
             self::label => $this->label,
             self::allowed => $this->allowed,
             self::hasAddress => $this->hasAddress,
+            self::address => $this->address,
+            self::icon => $this->icon,
         ];
         if ($this->config !== []) {
             $row[self::config] = $this->config;

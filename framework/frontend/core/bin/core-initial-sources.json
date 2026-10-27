@@ -280,8 +280,8 @@
     "outputSha256": "7ad61ff944810946a4c49e8e9be26b8acfcc6ed718e00a164f5f395f2575f926"
   },
   "src/notifications/notificationPreferences.ts": {
-    "sourceSha256": "936a780a6f8147eb5b2c4e914c774fd450b7ee394c2c7c13f1fd4ccbb53bf7e3",
-    "outputSha256": "7ea600080d456abbe763ba0c6308c6c0e7b9474c47538aa81510ff159df56c9a"
+    "sourceSha256": "c6df2c133f9e78cdde261247597b1938ef95e3c0d764ce9ff779bf00b5572238",
+    "outputSha256": "67b808024f5adca236c5307d70840ac2e6bf2d25e270c842494811234557ef2e"
   },
   "src/notifications/pushSubscription.ts": {
     "sourceSha256": "b4bfb98174a9ac4a94b2f3c25eec6f5971b2575432ee4aff7ce328c902368c5e",

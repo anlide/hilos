@@ -93,7 +93,12 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
     :aria-labelledby="`${baseId}-heading`"
     data-id="hilos-notification-preferences"
   >
-    <h2 :id="`${baseId}-heading`" class="h5">Delivery channels</h2>
+    <h2
+      :id="`${baseId}-heading`"
+      class="h6 text-uppercase text-body-secondary mb-2"
+    >
+      Delivery channels
+    </h2>
     <p
       v-if="channels.length === 0"
       class="text-body-secondary mb-0"
@@ -109,36 +114,75 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
         :label="row.label"
         :vapid-public-key="pushKey(row)!"
         :store="pushStore"
+        :channel-row="true"
+        :icon="row.icon"
       />
-      <div v-else :data-id="`hilos-notification-preference-${row.channel}`">
-        <HilosSwitch
-          class="mb-2"
-          :checked="row.allowed"
-          :busy="pending.has(row.channel)"
-          :disabled="!row.hasAddress"
-          :label="row.label"
-          :aria-describedby="
-            row.hasAddress ? undefined : `${rowId(row.channel)}-hint`
-          "
-          :data-id="`hilos-notification-preference-toggle-${row.channel}`"
-          @toggle="toggle(row, $event)"
+      <div
+        v-else
+        class="d-flex align-items-center gap-3 py-3 border-bottom"
+        :data-id="`hilos-notification-preference-${row.channel}`"
+      >
+        <i
+          class="bi fs-5 text-body-secondary flex-shrink-0"
+          :class="row.icon ?? 'bi-bell'"
+          aria-hidden="true"
+          :data-id="`hilos-notification-preference-icon-${row.channel}`"
         />
-        <div
-          v-if="!row.hasAddress"
-          :id="`${rowId(row.channel)}-hint`"
-          class="form-text mt-0"
-          :data-id="`hilos-notification-preference-hint-${row.channel}`"
-        >
-          <template v-if="addressSection && addressTo !== undefined"
-            >{{ COPY.noAddressBefore }}
-            <HilosLink
-              :to="addressTo"
-              :data-id="`hilos-notification-preference-address-${row.channel}`"
-              >{{ addressSection.label }}</HilosLink
-            >
-            {{ COPY.noAddressAfter }}</template
+        <div class="flex-grow-1 overflow-hidden">
+          <div class="fw-semibold small">{{ row.label }}</div>
+          <div
+            class="hilos-stack small text-body-secondary text-break"
+            :data-id="`hilos-notification-preference-subtitle-${row.channel}`"
           >
-          <template v-else>{{ COPY.noAddress }}</template>
+            <span class="invisible" aria-hidden="true" inert>
+              <template v-if="addressSection && addressTo !== undefined">
+                {{ COPY.noAddressBefore }} {{ addressSection.label }}
+                {{ COPY.noAddressAfter }}
+              </template>
+              <template v-else>{{ COPY.noAddress }}</template>
+            </span>
+            <div
+              v-if="!row.hasAddress"
+              :id="`${rowId(row.channel)}-hint`"
+              :data-id="`hilos-notification-preference-hint-${row.channel}`"
+            >
+              <template v-if="addressSection && addressTo !== undefined"
+                >{{ COPY.noAddressBefore }}
+                <HilosLink
+                  :to="addressTo"
+                  :data-id="`hilos-notification-preference-address-${row.channel}`"
+                  >{{ addressSection.label }}</HilosLink
+                >
+                {{ COPY.noAddressAfter }}</template
+              >
+              <template v-else>{{ COPY.noAddress }}</template>
+            </div>
+            <div v-else :id="`${rowId(row.channel)}-subtitle`">
+              {{ row.address ?? '\u00a0' }}
+            </div>
+          </div>
+        </div>
+        <div class="hilos-stack flex-shrink-0 text-nowrap">
+          <div
+            class="form-check form-switch mb-0 invisible"
+            aria-hidden="true"
+            inert
+          >
+            <span class="form-check-input"></span>
+            <span
+              class="spinner-border spinner-border-sm ms-2 align-middle"
+            ></span>
+          </div>
+          <HilosSwitch
+            class="mb-0"
+            :checked="row.allowed"
+            :busy="pending.has(row.channel)"
+            :disabled="!row.hasAddress"
+            :aria-label="row.label"
+            :aria-describedby="`${rowId(row.channel)}-${row.hasAddress ? 'subtitle' : 'hint'}`"
+            :data-id="`hilos-notification-preference-toggle-${row.channel}`"
+            @toggle="toggle(row, $event)"
+          />
         </div>
       </div>
     </template>

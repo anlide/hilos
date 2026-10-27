@@ -85,12 +85,15 @@ final class NotificationChannelPreferenceProjector
             if (!$this->isGloballyEnabled($descriptor)) {
                 continue;
             }
+            $address = $descriptor->resolveAddress($userId);
             $channels[] = new NotificationChannelState(
                 channel: $name,
                 label: $descriptor->label(),
                 allowed: ObjectNotificationPreferences::channelAllowed($muted, $name),
-                hasAddress: $descriptor->resolveAddress($userId) !== null,
+                hasAddress: $address !== null,
                 config: $descriptor->frontendSubscribeConfig(),
+                address: $descriptor->displayAddress($address),
+                icon: $descriptor->icon(),
             );
         }
 

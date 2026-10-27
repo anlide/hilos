@@ -50,6 +50,14 @@ abstract class AbstractDeliveryChannel
     }
 
     /**
+     * @return string Bootstrap Icons token (bi-*) for the channel, without reading the database
+     */
+    public function icon(): string
+    {
+        return 'bi-bell';
+    }
+
+    /**
      * The channel's transport/driver name for the admin channels hub row (HIL-200).
      *
      * The framework default is the channel name; a channel whose transport differs
@@ -89,6 +97,17 @@ abstract class AbstractDeliveryChannel
      * @throws InvalidArgumentException When the recipient address lookup is given an invalid query order
      */
     abstract public function resolveAddress(int $userId): ?string;
+
+    /**
+     * Channels opt in to publishing an address; transport identifiers stay private by default.
+     *
+     * @param ?string $resolvedAddress Address already resolved for the recipient
+     * @return ?string Public delivery address label for the recipient, or null when none is published
+     */
+    public function displayAddress(?string $resolvedAddress): ?string
+    {
+        return null;
+    }
 
     /**
      * Whether this channel fans across an indexed agent pool rather than a singleton.

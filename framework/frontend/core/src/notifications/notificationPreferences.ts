@@ -35,17 +35,20 @@ export const NOTIFICATION_ACTION_CHANNEL_SET =
  * One channel's row in the profile section (PHP `NotificationChannelState`): the
  * channel's registry name, its human label, whether the recipient currently allows
  * it (sparse opt-out — no muted row means allowed), and whether they have a
- * resolvable address for it. A row with no address is shown disabled with an
- * "add an address" hint rather than hidden. `config` carries the channel's public
- * frontend opt-in config keyed by field — present only for a channel that needs
- * one (push carries its `vapid_public` key so the browser can subscribe); it is
- * never a secret.
+ * resolvable address for it. Optional `address` and `icon` carry display metadata;
+ * `address` may be null when the channel does not publish an address. A row with
+ * no address is shown disabled with an "add an address" hint rather than hidden.
+ * `config` carries the channel's public frontend opt-in config keyed by field —
+ * present only for a channel that needs one (push carries its `vapid_public` key so
+ * the browser can subscribe); it is never a secret.
  */
 const channelStateSchema = z.looseObject({
   channel: z.string(),
   label: z.string(),
   allowed: z.boolean(),
   hasAddress: z.boolean(),
+  icon: z.string().optional(),
+  address: z.string().nullable().optional(),
   config: z.record(z.string(), z.string()).optional(),
 })
 
@@ -252,6 +255,10 @@ export const HILOS_NOTIFICATION_PREFERENCES_COPY = {
   noAddress: 'Add an address in your profile to enable this channel.',
   noAddressBefore: 'Add an address in',
   noAddressAfter: 'to enable this channel.',
+  pushSubscribed: 'This browser is subscribed',
+  pushNotSubscribed: 'This browser is not subscribed',
+  pushUnsupported: 'Push notifications are not supported on this device.',
+  pushBlocked: 'Push notifications are blocked in your browser settings.',
 } as const
 
 /** The stores and connection of a page carrying notification preferences. */

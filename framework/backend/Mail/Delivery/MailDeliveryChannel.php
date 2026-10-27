@@ -67,6 +67,14 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string Bootstrap Icons token for email
+     */
+    public function icon(): string
+    {
+        return 'bi-envelope';
+    }
+
+    /**
      * @return string The `smtp` transport name shown in the admin channels hub (HIL-200)
      */
     public function driver(): string
@@ -93,6 +101,15 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     public function resolveAddress(int $userId): ?string
     {
         return Hilos::$db?->identities->findVerifiedEmailByUser($userId);
+    }
+
+    /**
+     * @param ?string $resolvedAddress Email address resolved by this channel, including project overrides
+     * @return ?string The recipient's delivery email address, or null when unavailable
+     */
+    public function displayAddress(?string $resolvedAddress): ?string
+    {
+        return $resolvedAddress;
     }
 
     /**

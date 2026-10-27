@@ -11,6 +11,7 @@ subscription server-side; disabling unsubscribes and drops the row. Bootstrap
 classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
+  HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
   hilosPushSubscription,
   type HilosConnection,
   type HilosPushSubscriptionStore,
@@ -31,8 +32,16 @@ const props = withDefaults(
     vapidPublicKey: string
     /** The store the toggle renders; defaults to the shared framework store. */
     store?: HilosPushSubscriptionStore
+    /** Render a delivery-channel row instead of the compact device switch. */
+    channelRow?: boolean
+    /** Decorative Bootstrap Icons token for the delivery-channel row. */
+    icon?: string
   }>(),
-  { store: () => hilosPushSubscription },
+  {
+    store: () => hilosPushSubscription,
+    channelRow: false,
+    icon: 'bi-broadcast',
+  },
 )
 
 const supported = useSignal(props.store.supported)
@@ -54,10 +63,10 @@ const rowId = `${baseId}-${props.channel}`
 // instead of retrying.
 const hint = computed(() => {
   if (!supported.value) {
-    return 'Push notifications are not supported on this device.'
+    return COPY.pushUnsupported
   }
   if (permission.value === 'denied') {
-    return 'Push notifications are blocked in your browser settings.'
+    return COPY.pushBlocked
   }
 
   return ''
@@ -66,7 +75,13 @@ const hint = computed(() => {
 // Per-device: subscribe or unsubscribe THIS browser rather than setting a shared
 // preference. The store owns the browser dance and the server round-trip.
 function toggle(event: Event): void {
-  if ((event.target as HTMLInputElement).checked) {
+  const input = event.target as HTMLInputElement
+  const enabled = input.checked
+  // The channel row keeps the store's position while the browser operation runs.
+  if (props.channelRow) {
+    input.checked = subscribed.value
+  }
+  if (enabled) {
     void props.store.enable(props.connection, props.vapidPublicKey)
   } else {
     void props.store.disable(props.connection)
@@ -76,36 +91,102 @@ function toggle(event: Event): void {
 
 <template>
   <div
-    class="form-check form-switch mb-2"
+    :class="
+      channelRow ? 'd-flex align-items-center gap-3 py-3 border-bottom' : 'mb-2'
+    "
     :data-id="`hilos-notification-preference-${channel}`"
   >
-    <input
-      :id="rowId"
-      class="form-check-input"
-      type="checkbox"
-      role="switch"
-      :checked="subscribed"
-      :disabled="hint !== '' || busy"
-      :aria-describedby="hint ? `${rowId}-hint` : undefined"
-      :aria-busy="busy"
-      :data-id="`hilos-notification-preference-toggle-${channel}`"
-      @change="toggle"
+    <i
+      v-if="channelRow"
+      class="bi fs-5 text-body-secondary flex-shrink-0"
+      :class="icon"
+      aria-hidden="true"
+      :data-id="`hilos-notification-preference-icon-${channel}`"
     />
-    <label class="form-check-label" :for="rowId">{{ label }}</label>
-    <span
-      v-if="busy"
-      class="spinner-border spinner-border-sm ms-2 align-middle"
-      role="status"
-      :data-id="`hilos-notification-preference-pending-${channel}`"
-      ><span class="visually-hidden">Saving…</span></span
-    >
-    <div
-      v-if="hint"
-      :id="`${rowId}-hint`"
-      class="form-text mt-0"
-      :data-id="`hilos-notification-preference-hint-${channel}`"
-    >
-      {{ hint }}
+    <div v-if="channelRow" class="flex-grow-1 overflow-hidden">
+      <label class="fw-semibold small" :for="rowId">{{ label }}</label>
+      <div
+        class="hilos-stack small text-body-secondary text-break"
+        :data-id="`hilos-notification-preference-subtitle-${channel}`"
+      >
+        <span class="invisible" aria-hidden="true" inert>
+          {{ COPY.pushSubscribed }}
+        </span>
+        <span class="invisible" aria-hidden="true" inert>
+          {{ COPY.pushNotSubscribed }}
+        </span>
+        <span class="invisible" aria-hidden="true" inert>
+          {{ COPY.pushUnsupported }}
+        </span>
+        <span class="invisible" aria-hidden="true" inert>
+          {{ COPY.pushBlocked }}
+        </span>
+        <div
+          v-if="hint"
+          :id="`${rowId}-hint`"
+          :data-id="`hilos-notification-preference-hint-${channel}`"
+        >
+          {{ hint }}
+        </div>
+        <div v-else :id="`${rowId}-subtitle`">
+          {{ subscribed ? COPY.pushSubscribed : COPY.pushNotSubscribed }}
+        </div>
+      </div>
+    </div>
+    <div :class="channelRow ? 'flex-shrink-0 text-nowrap' : undefined">
+      <div class="form-check form-switch mb-0">
+        <input
+          :id="rowId"
+          class="form-check-input"
+          type="checkbox"
+          role="switch"
+          :checked="subscribed"
+          :disabled="hint !== '' || busy"
+          :aria-describedby="
+            hint
+              ? `${rowId}-hint`
+              : channelRow
+                ? `${rowId}-subtitle`
+                : undefined
+          "
+          :aria-busy="busy"
+          :data-id="`hilos-notification-preference-toggle-${channel}`"
+          @change="toggle"
+        />
+        <label v-if="!channelRow" class="form-check-label" :for="rowId">
+          {{ label }}
+        </label>
+        <span
+          :class="
+            channelRow
+              ? 'hilos-stack d-inline-grid ms-2 align-middle'
+              : undefined
+          "
+        >
+          <span
+            v-if="channelRow"
+            class="spinner-border spinner-border-sm invisible"
+            aria-hidden="true"
+            inert
+          ></span>
+          <span
+            v-if="busy"
+            class="spinner-border spinner-border-sm align-middle"
+            :class="{ 'ms-2': !channelRow }"
+            role="status"
+            :data-id="`hilos-notification-preference-pending-${channel}`"
+            ><span class="visually-hidden">Saving…</span></span
+          >
+        </span>
+        <div
+          v-if="!channelRow && hint"
+          :id="`${rowId}-hint`"
+          class="form-text mt-0"
+          :data-id="`hilos-notification-preference-hint-${channel}`"
+        >
+          {{ hint }}
+        </div>
+      </div>
     </div>
   </div>
 </template>

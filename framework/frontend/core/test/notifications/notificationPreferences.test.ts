@@ -123,7 +123,79 @@ describe('notification preferences store', () => {
     expect(parsed.channels).toHaveLength(1)
     expect(parsed.channels[0].channel).toBe('email')
     expect(parsed.channels[0].config).toBeUndefined()
+    expect(parsed.channels[0].icon).toBeUndefined()
+    expect(parsed.channels[0].address).toBeUndefined()
     expect(parsed.mandatoryNote).toBe(false)
+  })
+
+  it('parses optional icon and address metadata, including a null address', () => {
+    const parsed = notificationPreferencesSectionSchema.parse({
+      channels: [
+        {
+          channel: 'email',
+          label: 'Email',
+          allowed: true,
+          hasAddress: true,
+          icon: 'bi-envelope',
+          address: null,
+        },
+      ],
+      mandatoryNote: false,
+    })
+
+    expect(parsed.channels[0].icon).toBe('bi-envelope')
+    expect(parsed.channels[0].address).toBeNull()
+    expect(parsed.channels[0].hasAddress).toBe(true)
+  })
+
+  it('rejects non-string icon and non-string non-null address metadata', () => {
+    for (const metadata of [{ icon: 7 }, { address: 7 }]) {
+      expect(
+        notificationPreferencesSectionSchema.safeParse({
+          channels: [
+            {
+              channel: 'email',
+              label: 'Email',
+              allowed: true,
+              hasAddress: true,
+              ...metadata,
+            },
+          ],
+          mandatoryNote: false,
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('preserves metadata through section application and changed-map updates', () => {
+    const store = createHilosNotificationPreferencesStore()
+    const section = notificationPreferencesSectionSchema.parse({
+      channels: [
+        {
+          channel: 'email',
+          label: 'Email',
+          allowed: true,
+          hasAddress: true,
+          icon: 'bi-envelope',
+          address: 'person@example.test',
+        },
+      ],
+      mandatoryNote: true,
+    })
+
+    store.applySection(section)
+    store.applyChangedMap({ email: false })
+
+    expect(store.channels.get()).toEqual([
+      {
+        channel: 'email',
+        label: 'Email',
+        allowed: false,
+        hasAddress: true,
+        icon: 'bi-envelope',
+        address: 'person@example.test',
+      },
+    ])
   })
 
   it('parses a channel row carrying frontend opt-in config', () => {
@@ -182,6 +254,45 @@ describe('notification preferences page binding', () => {
     expect(store.channels.get()).toEqual([])
     page.data.set('notificationPreferences', sampleSection())
     expect(store.channels.get()).toEqual([])
+  })
+
+  it('applies updated metadata from the existing page data binding', () => {
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const scopes = new ScopeManager()
+    const page = scopes.openPage('hilos_profile_notifications')
+    const store = createHilosNotificationPreferencesStore()
+    const stop = startHilosNotificationPreferences(
+      {
+        scopes,
+        connection: {
+          on: (_: string, handler: (signal: ProjectSignal) => void) => {
+            listeners.add(handler)
+            return () => listeners.delete(handler)
+          },
+        } as unknown as HilosConnection,
+      },
+      store,
+    )
+
+    page.data.set('notificationPreferences', {
+      channels: [
+        {
+          channel: 'email',
+          label: 'Email',
+          allowed: true,
+          hasAddress: true,
+          icon: 'bi-envelope',
+          address: 'new@example.test',
+        },
+      ],
+      mandatoryNote: false,
+    })
+
+    expect(store.channels.get()[0]).toMatchObject({
+      icon: 'bi-envelope',
+      address: 'new@example.test',
+    })
+    stop()
   })
   it('joins the enabled channel labels and excludes channels with no address', () => {
     expect(

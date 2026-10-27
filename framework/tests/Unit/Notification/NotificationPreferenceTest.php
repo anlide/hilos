@@ -156,11 +156,19 @@ final class NotificationPreferenceTest extends TestCase
         );
     }
 
+    /** Checks exact section serialization with explicit and default channel metadata. */
     public function testSectionDataSerializesChannelsAndMandatoryNote(): void
     {
         $section = new NotificationPreferencesSectionData(
             [
-                new NotificationChannelState(channel: 'email', label: 'Email', allowed: true, hasAddress: true),
+                new NotificationChannelState(
+                    channel: 'email',
+                    label: 'Email',
+                    allowed: true,
+                    hasAddress: true,
+                    address: 'recipient@example.test',
+                    icon: 'bi-envelope',
+                ),
                 new NotificationChannelState(channel: 'sms', label: 'SMS', allowed: false, hasAddress: false),
             ],
             mandatoryNote: true,
@@ -173,12 +181,16 @@ final class NotificationPreferenceTest extends TestCase
                     NotificationChannelState::label => 'Email',
                     NotificationChannelState::allowed => true,
                     NotificationChannelState::hasAddress => true,
+                    NotificationChannelState::address => 'recipient@example.test',
+                    NotificationChannelState::icon => 'bi-envelope',
                 ],
                 [
                     NotificationChannelState::channel => 'sms',
                     NotificationChannelState::label => 'SMS',
                     NotificationChannelState::allowed => false,
                     NotificationChannelState::hasAddress => false,
+                    NotificationChannelState::address => null,
+                    NotificationChannelState::icon => 'bi-bell',
                 ],
             ],
             NotificationPreferencesSectionData::mandatoryNote => true,
@@ -195,17 +207,19 @@ final class NotificationPreferenceTest extends TestCase
         ], $section->toArray());
     }
 
+    /** Keeps config optional while public address and icon keys are unconditional. */
     public function testChannelStateSerializesFrontendConfigOnlyWhenPresent(): void
     {
         // A channel with a browser opt-in (push) carries its public config (the
         // VAPID public key) in the row; a channel without one omits the key
-        // entirely, so existing rows stay unchanged on the wire.
+        // entirely. Address and icon are always present.
         $withConfig = new NotificationChannelState(
             channel: 'push',
             label: 'Push',
             allowed: true,
             hasAddress: false,
             config: ['vapid_public' => 'BPk...'],
+            icon: 'bi-broadcast',
         );
         $withoutConfig = new NotificationChannelState(
             channel: 'email',
@@ -219,9 +233,29 @@ final class NotificationPreferenceTest extends TestCase
             NotificationChannelState::label => 'Push',
             NotificationChannelState::allowed => true,
             NotificationChannelState::hasAddress => false,
+            NotificationChannelState::address => null,
+            NotificationChannelState::icon => 'bi-broadcast',
             NotificationChannelState::config => ['vapid_public' => 'BPk...'],
         ], $withConfig->toArray());
         self::assertArrayNotHasKey(NotificationChannelState::config, $withoutConfig->toArray());
+    }
+
+    /** Keeps the old constructor positions and separates reachability from public metadata. */
+    public function testChannelStateKeepsOldPositionalConfigAndIndependentAddressDefaults(): void
+    {
+        $channel = new NotificationChannelState('push', 'Push', false, true, ['vapid_public' => 'BPk...']);
+
+        self::assertNull($channel->address);
+        self::assertSame('bi-bell', $channel->icon);
+        self::assertSame([
+            NotificationChannelState::channel => 'push',
+            NotificationChannelState::label => 'Push',
+            NotificationChannelState::allowed => false,
+            NotificationChannelState::hasAddress => true,
+            NotificationChannelState::address => null,
+            NotificationChannelState::icon => 'bi-bell',
+            NotificationChannelState::config => ['vapid_public' => 'BPk...'],
+        ], $channel->toArray());
     }
 }
 

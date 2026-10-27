@@ -45,16 +45,27 @@ final class PushDeliveryChannelTest extends TestCase
         parent::tearDown();
     }
 
+    /** Checks the push descriptor's identity and DB-free icon metadata. */
     public function testChannelIdentityIsPushAndPooled(): void
     {
         $channel = new PushDeliveryChannel();
 
         self::assertSame('push', $channel->name());
         self::assertSame('webpush', $channel->driver());
+        self::assertSame('bi-broadcast', $channel->icon());
         self::assertSame(HilosSignalConstants::HILOS_PUSH_DELIVER, $channel->deliverSignalName());
         self::assertTrue($channel->isPooled());
         self::assertSame(NotificationDeliverSignalData::shardKey, $channel->indexField());
         self::assertSame('notifications.channel.push.enabled', $channel->enabledSettingKey());
+    }
+
+    /** Keeps push presence markers out of the public address label. */
+    public function testPublicAddressNeverExposesTheSubscriptionCount(): void
+    {
+        $channel = new PushDeliveryChannel();
+
+        self::assertNull($channel->displayAddress(null));
+        self::assertNull($channel->displayAddress('2'));
     }
 
     public function testAddressIsNullWithoutDbContext(): void

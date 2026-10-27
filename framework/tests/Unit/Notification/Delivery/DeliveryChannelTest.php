@@ -68,6 +68,7 @@ final class DeliveryChannelTest extends TestCase
         self::assertNull($restored->shardKey);
     }
 
+    /** Keeps existing project subclasses usable with private address metadata by default. */
     public function testSingletonChannelDescriptorDefaults(): void
     {
         $channel = new DeliveryTestSingletonChannel();
@@ -79,6 +80,55 @@ final class DeliveryChannelTest extends TestCase
         self::assertNull($channel->shardKeyFor(7, 42));
         self::assertSame('tg-7', $channel->resolveAddress(7));
         self::assertNull($channel->resolveAddress(99));
+        self::assertSame('bi-bell', $channel->icon());
+        self::assertNull($channel->displayAddress(null));
+        self::assertNull($channel->displayAddress('tg-7'));
+    }
+
+    /** Checks a project's explicit icon and public address projection. */
+    public function testProjectChannelCanOverridePublicMetadata(): void
+    {
+        $channel = new class extends AbstractDeliveryChannel {
+            /** @return string Project channel registry key */
+            public function name(): string
+            {
+                return 'project';
+            }
+
+            /** @return string Project delivery signal */
+            public function deliverSignalName(): string
+            {
+                return 'project_deliver';
+            }
+
+            /**
+             * @param int $userId Recipient user id
+             * @return ?string Internal project delivery token
+             */
+            public function resolveAddress(int $userId): ?string
+            {
+                return 'internal-' . $userId;
+            }
+
+            /** @return string Project channel icon token */
+            public function icon(): string
+            {
+                return 'bi-chat';
+            }
+
+            /**
+             * @param ?string $resolvedAddress Internal project token, or null when unreachable
+             * @return ?string Public recipient label, without the internal token
+             */
+            public function displayAddress(?string $resolvedAddress): ?string
+            {
+                return $resolvedAddress === null ? null : '@recipient';
+            }
+        };
+
+        self::assertSame('bi-chat', $channel->icon());
+        self::assertSame('@recipient', $channel->displayAddress($channel->resolveAddress(7)));
+        self::assertNull($channel->displayAddress(null));
     }
 
     public function testPooledChannelDescriptorRoutesByShardKey(): void

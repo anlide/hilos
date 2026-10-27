@@ -257,12 +257,21 @@ test('saving a setting raises a toast the close button dismisses', async ({
 test('muting the email channel keeps the next emit off it', async ({
   page,
 }) => {
-  const { userId } = await signInAddressableAdmin(page)
+  const { email, userId } = await signInAddressableAdmin(page)
   await gotoPage(page, '/hilos/communications')
   await enableEmailChannel(page)
 
   await gotoPage(page, '/profile/notifications')
   const toggle = emailPreference(page)
+  await expect(
+    page.getByTestId('hilos-notification-preference-subtitle-email'),
+  ).toHaveText(email, { useInnerText: true })
+  const icon = page.getByTestId('hilos-notification-preference-icon-email')
+  await expect(icon).toBeVisible()
+  await expect(icon).toHaveClass(/\bbi-envelope\b/)
+  await expect(icon).toHaveAttribute('aria-hidden', 'true')
+  await expect(toggle).toHaveAccessibleName('Email')
+  await expect(toggle).toHaveAccessibleDescription(email)
   // A channel with no address for it is shown disabled, so the switch being
   // usable at all is the proof this account carries a verified email — and an
   // opt-out is sparse, so an untouched channel starts allowed.
@@ -286,10 +295,25 @@ test('muting the email channel keeps the next emit off it', async ({
 
   await toggle.click()
   await expect(emailPreference(tabB)).not.toBeChecked()
+  await expect(
+    tabB.getByTestId('hilos-notification-preference-subtitle-email'),
+  ).toHaveText(email, { useInnerText: true })
+  const tabBIcon = tabB.getByTestId('hilos-notification-preference-icon-email')
+  await expect(tabBIcon).toBeVisible()
+  await expect(tabBIcon).toHaveClass(/\bbi-envelope\b/)
+  await expect(tabBIcon).toHaveAttribute('aria-hidden', 'true')
+  await expect(emailPreference(tabB)).toHaveAccessibleDescription(email)
 
   // Durable, not merely live: a cold load reads the preference back from the DB.
   await gotoPage(page, '/profile/notifications')
   await expect(emailPreference(page)).not.toBeChecked()
+  await expect(
+    page.getByTestId('hilos-notification-preference-subtitle-email'),
+  ).toHaveText(email, { useInnerText: true })
+  await expect(icon).toBeVisible()
+  await expect(icon).toHaveClass(/\bbi-envelope\b/)
+  await expect(icon).toHaveAttribute('aria-hidden', 'true')
+  await expect(emailPreference(page)).toHaveAccessibleDescription(email)
 
   const muted = await emitNotification(userId, {
     type: 'e2e_channel_muted',
