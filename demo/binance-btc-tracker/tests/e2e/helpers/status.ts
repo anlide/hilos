@@ -1,14 +1,16 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import {
   type watchStatusFrames,
   RESTART_AGENT,
+  RESTART_MARK_TIMEOUT_MS,
   readRestartWorker,
   withStoppedRestartWorker,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
 /** The e2e-only catalog binds this component to the existing isolated worker. */
 export const STATUS_FAULT_COMPONENT = 'settings'
@@ -27,6 +29,7 @@ const sendCommand = createCommandChannel({
  * settings-only pause guard and independent watchdog remain unchanged.
  */
 export async function withStatusAgentLoss(
+  expect: Expect,
   workers: Page,
   log: ReturnType<typeof watchStatusFrames>,
   run: () => Promise<void>,
@@ -54,8 +57,11 @@ export async function withStatusAgentLoss(
   let failure: unknown
   try {
     await withStoppedRestartWorker(worker, async () => {
+      const pausedExpect = expect.configure({
+        timeout: Math.min(STATUS_EXPECT_TIMEOUT_MS, RESTART_MARK_TIMEOUT_MS),
+      })
       // Do not mistake a delayed observation after watchdog recovery for loss.
-      await expect
+      await pausedExpect
         .poll(
           async () =>
             (await readFile(`/proc/${worker.pid}/status`, 'utf8')).match(
@@ -73,7 +79,7 @@ export async function withStatusAgentLoss(
         await readFile(`/proc/${worker.pid}/status`, 'utf8')
       ).match(/^State:\s+(\S)/m)?.[1]
       evidence.checkedAt = Date.now()
-      expect(evidence.finalState).toBe('T')
+      pausedExpect(evidence.finalState).toBe('T')
     })
   } catch (error) {
     failure = error

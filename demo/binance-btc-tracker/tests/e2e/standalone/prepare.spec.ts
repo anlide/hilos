@@ -1,9 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect as baseExpect, test } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   DAEMON_ROOT_PATH,
   DAEMON_WORKERS_PATH,
+  RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
   deliveryObject,
   expectPublicStatusPair,
@@ -23,6 +24,12 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
 import { withStatusAgentLoss } from '../helpers/status.js'
+import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
+
+const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
+const pausedExpect = expect.configure({
+  timeout: Math.min(STATUS_EXPECT_TIMEOUT_MS, RESTART_MARK_TIMEOUT_MS),
+})
 
 test.use({ colorScheme: 'light' })
 
@@ -138,9 +145,14 @@ test('prepare an accepted public archive through real loss, publication and reso
     preparation.settledAt = performance.now()
     await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
     await gotoPublicStatus(expect, guest)
-    await expectPublicStatusPair(expect, guest, log)
+    const initial = await expectPublicStatusPair(expect, guest, log)
+    expect(initial.status.config).toEqual({
+      pollIntervalSeconds: 2,
+      staleAfterSeconds: 6,
+    })
     let detectedAt = 0
-    await withStatusAgentLoss(workers, admin, async () => {
+    await withStatusAgentLoss(expect, workers, admin, async () => {
+      const expect = pausedExpect
       await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
       const incident = admin.latest()!.incidents![0]
       detectedAt = incident.detectedAt

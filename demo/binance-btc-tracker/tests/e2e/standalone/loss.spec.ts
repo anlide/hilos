@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect as baseExpect, test } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -18,6 +18,9 @@ import {
   gotoPublicStatus,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
+import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
+
+const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
 
 test.use({ colorScheme: 'light', timezoneId: 'Europe/Warsaw' })
 
@@ -150,25 +153,29 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(started.daemon.state.Running).toBe(true)
     events.started = started
     // Bootstrap has no five-second recovery SLA. Await an actual publication
-    // through the normal HTTP event wait; all configured caps stay unchanged.
+    // through the normal HTTP event wait with the Status convergence budget.
     if (
       !coldLog
         .pairs()
         .some(({ heartbeat }) => heartbeat.aliveAt > frozen.heartbeat.aliveAt)
     ) {
-      await page.waitForResponse(async (response) => {
-        if (
-          new URL(response.url()).pathname !== PUBLIC_STATUS_FILES[1] ||
-          response.status() !== 200
-        )
-          return false
-        const heartbeat = publicStatusHeartbeatSchema.safeParse(
-          await response.json(),
-        )
-        return (
-          heartbeat.success && heartbeat.data.aliveAt > frozen.heartbeat.aliveAt
-        )
-      })
+      await page.waitForResponse(
+        async (response) => {
+          if (
+            new URL(response.url()).pathname !== PUBLIC_STATUS_FILES[1] ||
+            response.status() !== 200
+          )
+            return false
+          const heartbeat = publicStatusHeartbeatSchema.safeParse(
+            await response.json(),
+          )
+          return (
+            heartbeat.success &&
+            heartbeat.data.aliveAt > frozen.heartbeat.aliveAt
+          )
+        },
+        { timeout: STATUS_EXPECT_TIMEOUT_MS },
+      )
     }
     events.writerObservedAt = Date.now()
     // Use the cold reader to witness the writer's genuinely newer heartbeat,
@@ -188,15 +195,18 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
       status.generatedAt > frozen.status.generatedAt &&
       status.components.every((component) => component.state === 'operational')
     if (!coldLog.pairs().some(({ status }) => healthySource(status))) {
-      await page.waitForResponse(async (response) => {
-        if (
-          new URL(response.url()).pathname !== PUBLIC_STATUS_FILES[0] ||
-          response.status() !== 200
-        )
-          return false
-        const status = publicStatusFileSchema.safeParse(await response.json())
-        return status.success && healthySource(status.data)
-      })
+      await page.waitForResponse(
+        async (response) => {
+          if (
+            new URL(response.url()).pathname !== PUBLIC_STATUS_FILES[0] ||
+            response.status() !== 200
+          )
+            return false
+          const status = publicStatusFileSchema.safeParse(await response.json())
+          return status.success && healthySource(status.data)
+        },
+        { timeout: STATUS_EXPECT_TIMEOUT_MS },
+      )
     }
     events.sourceKnownAt = Date.now()
     const sourceReady = await expectPublicStatusPair(

@@ -30,6 +30,12 @@ import {
 } from '../helpers/status.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
+
+const statusExpect = expect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
+const pausedExpect = statusExpect.configure({
+  timeout: Math.min(STATUS_EXPECT_TIMEOUT_MS, RESTART_MARK_TIMEOUT_MS),
+})
 
 // Status's two pages and incident modal over the real socket. The framework's
 // broader shell/table audit stays with its existing representative demos.
@@ -110,6 +116,7 @@ test('Logs pages expose named navigation, one heading and ordinary keyboard link
 test('Status pages expose the shared heading, current tab, title, named table and keyboard navigation', async ({
   page,
 }) => {
+  const expect = statusExpect
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
   await expectStatusHead(expect, page)
@@ -158,6 +165,7 @@ test('Status pages expose the shared heading, current tab, title, named table an
 test('public Status exposes file-backed semantics, shell landmarks and keyboard day details', async ({
   page,
 }) => {
+  const expect = statusExpect
   const log = watchPublicStatus(page)
   try {
     await gotoPublicStatus(expect, page)
@@ -181,49 +189,44 @@ test('public Status exposes file-backed semantics, shell landmarks and keyboard 
   }
 })
 
-// FIXME(F-031, 2026-10-25): Timeout ожидания воркера в withStatusAgentLoss · чужой · попытка 1 · HIL-1591
-test(
-  'a real candidate has text status and named, focus-trapped incident dialogs with Escape and focus return',
-  { tag: '@quarantine:F-031' },
-  async ({ page }) => {
-    // The real roster/collector observation and recovery are part of this modal proof.
-    test.slow()
-    await grantAdminToSelf(expect, page)
-    const workers = await page.context().newPage()
-    const log = watchStatusFrames(page)
-    try {
-      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-      await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-      await withStatusAgentLoss(workers, log, async () => {
-        await expect
-          .poll(() => log.latest()?.incidents?.length, {
-            timeout: RESTART_MARK_TIMEOUT_MS,
-          })
-          .toBe(1)
-        const id = log.latest()!.incidents![0].incidentId
-        await expect(
-          page.getByTestId(`hilos-status-incident-${id}`),
-        ).toContainText('Checking')
-        await expectStatusIncidentDialog(
-          expect,
-          page,
-          page.getByTestId(`hilos-status-cancel-publication-${id}`),
-          'Do not publish',
-        )
-        await expectStatusIncidentDialog(
-          expect,
-          page,
-          page.getByTestId(`hilos-status-publish-now-${id}`),
-          'Publish the outage now',
-        )
-      })
-      await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-    } finally {
-      log.stop()
-      await workers.close()
-    }
-  },
-)
+test('a real candidate has text status and named, focus-trapped incident dialogs with Escape and focus return', async ({
+  page,
+}) => {
+  const expect = statusExpect
+  // The real roster/collector observation and recovery are part of this modal proof.
+  test.slow()
+  await grantAdminToSelf(expect, page)
+  const workers = await page.context().newPage()
+  const log = watchStatusFrames(page)
+  try {
+    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+    await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+    await withStatusAgentLoss(expect, workers, log, async () => {
+      const expect = pausedExpect
+      await expect.poll(() => log.latest()?.incidents?.length).toBe(1)
+      const id = log.latest()!.incidents![0].incidentId
+      await expect(
+        page.getByTestId(`hilos-status-incident-${id}`),
+      ).toContainText('Checking')
+      await expectStatusIncidentDialog(
+        expect,
+        page,
+        page.getByTestId(`hilos-status-cancel-publication-${id}`),
+        'Do not publish',
+      )
+      await expectStatusIncidentDialog(
+        expect,
+        page,
+        page.getByTestId(`hilos-status-publish-now-${id}`),
+        'Publish the outage now',
+      )
+    })
+    await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+  } finally {
+    log.stop()
+    await workers.close()
+  }
+})
 
 test('language pages expose one named head, current link and named table through keyboard navigation', async ({
   page,
