@@ -183,8 +183,10 @@ the moment:
 A new test in an existing spec goes into that spec. The durations are the
 last measurement, refreshed by the leaves that move specs; nobody keeps the
 lengths level. Load decides only where a new spec file is born. A spec born
-away from its area takes shared helpers from `framework/frontend/e2e/`,
-without copying them.
+away from its area takes shared helpers from `framework/frontend/e2e/` and
+`framework/frontend/scripts/`, without copying them; follow
+[the toolbox route](#the-shared-toolbox--look-there-first-leave-there-what-you-grow)
+before moving, splitting or porting a spec too.
 
 A new demo is born only together with the specs that move into it. A moved
 spec leaves no copy behind: the view framework it left stops proving those
@@ -313,8 +315,8 @@ are proved in these files on all three kits, through the checks of
 `expectDeletedCountryCardReloaded`. The temporary React head specs of
 ecommerce-shop (HIL-1604) moved into tasks (HIL-1606), so ecommerce-shop and
 online-testing mount the section without specs. The section's tests share the
-database state in file order, and each demo's `helpers/i18n.ts` is its
-test-command helper (HIL-1504).
+database state in file order, and use the shared test-command helpers in
+`framework/frontend/scripts/i18n.mjs`.
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -423,16 +425,41 @@ e2e robust against copy and layout changes.
 
 ## The shared toolbox — look there first, leave there what you grow
 
-`framework/frontend/e2e/` holds the e2e helpers that would read the same in any
-demo, because what they drive is the framework's own surface — the toast stack,
-the page outlet, the admin shell — or the screen of a stand resident, such as the
-OAuth emulator's consent window. A demo's own `tests/e2e/helpers/` keeps what
-belongs to that demo alone: its login, its fixtures, its command-channel address
-and command names, and its product-mail reads. The socket round trip itself is
-shared.
+Before creating, changing, moving, splitting or porting an e2e spec or helper:
 
-**Look in the toolbox before writing driving code, and prefer what is already
-there** — a helper that exists has already been argued about once.
+1. **Open both shared homes before writing driving code or copying a helper.**
+   Read the exports in `framework/frontend/e2e/index.ts` and the relevant
+   `framework/frontend/scripts/*.mjs` modules, including for a Node-only task.
+2. Use the existing call when it serves the operation. Browser actions and
+   checks live in `framework/frontend/e2e/`; network-only mechanics live in
+   `framework/frontend/scripts/`.
+3. If the operation is missing and would mean the same thing in another demo,
+   view framework or stand, add it to the appropriate shared home **with its
+   first consumer**. Shared meaning decides placement; a second copy is not a
+   prerequisite.
+
+From `demo/*/tests/e2e/tests/`, both homes are reached directly:
+
+```ts
+import { typeInto, clickSubmit } from '../../../../../framework/frontend/e2e/index.js'
+import { switchLanguageOn } from '../../../../../framework/frontend/scripts/i18n.mjs'
+```
+
+A demo's `tests/e2e/helpers/` keeps its own fixtures and product composition.
+Framework sign-in, command transport and mailbox reads stay shared. For example,
+`demo/chat/tests/e2e/helpers/session.ts` imports the shared `signUp` as
+`signUpSession`, and its local `signUp` supplies Chat's entry control:
+
+```ts
+return signUpSession(expect, page, { entryId: 'message-signin' })
+```
+
+That wrapper exists because Chat opens sign-in through its message composer.
+It composes the shared flow; it does not reimplement registration. A local
+wrapper is warranted by the product's own composition or fixtures, not merely
+by a different demo directory or stand address. Moving, splitting or porting a
+spec updates its imports and any product composition; it does not carry a copy
+of the shared helper along with it.
 
 `lazyBundles.ts`, exported through the toolbox `index.ts`, reads the canonical
 `initial-bundle-report.json`, records real client JS/CSS requests and page
@@ -450,29 +477,23 @@ acceptance. Loading and retry limits are in
 measurement and source-proof scope are in
 [build-and-docker.md](build-and-docker.md#initial-client-graph-and-budget).
 
-**Grow it from the work.** When a spec needs a wait, a sweep or a round trip that
-another demo would need in the same words, put it in a shared home rather than in
-a fourth local copy. The command-channel round trip reached that point in chat:
-`helpers/logs.ts` became the fourth copy beside `adminGrant.ts`,
-`notifications.ts` and `protectedMode.ts` because its leaf did not own the other
-three. The toolbox has since absorbed the browser-driving copies, and the
-scripts package has absorbed that node-side round trip.
-
 Two rules keep it working:
 
-- **A file here imports from `@playwright/test` with `import type` and nothing
-  else.** The demo suite carries its own installed Playwright, and pulling a
-  second copy out of this folder is refused by the runner itself — *Requiring
-  @playwright/test second time*. A type import is erased before that can happen;
-  everything a helper needs at runtime arrives through the `Page` it is handed,
-  and a section check receives the spec's `expect` as its first parameter.
+- **A file in `framework/frontend/e2e/` imports from `@playwright/test` with
+  `import type` and nothing else.** The demo suite carries its own installed
+  Playwright, and pulling a second copy out of this folder is refused by the
+  runner itself — *Requiring @playwright/test second time*. A type import is
+  erased before that can happen;
+  browser objects arrive from the caller, and a helper that makes checks
+  receives the spec's `expect` as its first parameter.
   ESLint holds the rule: `framework/frontend/eslint.config.mjs` refuses a value
   import of `@playwright/test` under `e2e/`, so the `fe-checks` lint goes red
   before any demo runner does.
 - **Demos reach it by relative path**, the way their Playwright configs already
   reach `framework/frontend/scripts/timeout-scale.mjs`. The runner mounts the
   whole repository, so no package boundary stands in between, and no install step
-  is added to a suite.
+  is added to a suite. Inside either toolbox, import a sibling module directly
+  (`./input.js`, for example), not through its own index barrel.
 
 Section checks all three kits must meet alike — what a page shows, its totals,
 the node's page — live here as `expect…(expect, page, …)` functions. Tests stay
@@ -480,15 +501,25 @@ in the demo's spec: the scenario, its order and navigation, and which checks it
 calls. Playwright reports a test under that demo spec's path; the Tests tab and
 flake accounting use that path. Three copies of the Daemon checks drifted:
 placement totals were fixed in only two of them. Sharing the checks keeps that
-contract in one place. Driving helpers such as the settings form and verifier
-circle below still take no `expect`; their assertions stay in the demo.
+contract in one place. A driving helper that checks readiness, such as
+`clickSubmit(expect, button)`, also receives the spec's `expect`. Helpers without
+checks need not take it; scenario assertions stay with the caller.
 
-Node-side shared e2e mechanics do not move into this folder merely because an
-e2e spec calls them. A helper that drives the browser belongs here under the
-import-type rule above; a round trip that needs only `node:net` belongs in
-`framework/frontend/scripts/` beside `timeout-scale.mjs`. Nothing about that
-mechanic is Playwright's, and the scripts folder is a vitest project, so
-`commandChannel.mjs` carries the shared rule together with a running unit test.
+For Node-side work, use `switchLanguageOn(code)` and the other operations in
+`framework/frontend/scripts/i18n.mjs` for language/country fixtures. For a
+command without an existing operation wrapper, `createStandCommandChannel`
+(`standCommand.mjs`) reads `COMMAND_HOST` and `COMMAND_PORT` from the runner's
+environment and delegates transport to `createCommandChannel`
+(`commandChannel.mjs`). Do not embed a stand address in a helper; an explicit
+cluster host override remains supported by `createStandCommandChannel`.
+The scripts folder is a vitest project, so the shared transport has its unit
+test beside it.
+
+For delivered letters, use `waitForMailCode(address, subject)` or the named
+registration, recovery and sign-in readers in `mail.mjs`; for the mailbox
+itself, use `waitForMailTo(address, subject)` / `waitForAnyMailTo(address)` in
+`standMailbox.mjs`. These calls own the polling and reads; a demo keeps only
+the interpretation specific to its own product.
 The authenticator-app code (`totp.mjs`) is node-side, in
 `framework/frontend/scripts/`; connecting the first app (`secondFactor.ts`) and
 session-cookie name helpers (`sessionCookie.ts`) live in
@@ -600,11 +631,10 @@ showing and closes the result, which forgets it on the page; it returns the code
 dialog: the lift reloads every open page, this one too, so wait for the expected
 state on the reloaded page before navigating. `presentMaintenanceCode` types a
 code into the maintenance screen and submits it. The first three expect the
-operator's page on `/hilos/maintenance`. The demo's
-`helpers/protectedMode.ts` teardown uses `openProtectedModeIfAny` to turn a
-manual window off because the test open refuses one; individual specs need no
-cleanup. `expectManualMaintenanceOn` proves the manual state on Overview; circle
-membership is proved separately on the SDK's table page.
+operator's page on `/hilos/maintenance`. Teardown uses `openProtectedModeIfAny`
+from `framework/frontend/scripts/protectedMode.mjs` to turn a manual window off
+because the test open refuses one. `expectManualMaintenanceOn` proves the manual
+state on Overview; circle membership is proved separately on the SDK's table page.
 
 `MAINTENANCE_PATH`, the manual copy (`MANUAL_STUB_TITLE`, `MANUAL_STUB_MESSAGE`,
 `MAINTENANCE_ON_NOTICE`) and `MANUAL_MAINTENANCE_OPERATION`;
@@ -649,11 +679,12 @@ scenario does not go on without its second administrator. Nothing revokes the ne
 account, deletes it or remembers it for the next test: it stays on the stand until
 the stand is reset.
 
-The grant itself stays in the demo, because each demo reaches its own
-command-channel address and signs its visitor up its own way. Most demos pass
-`grantAdminToSelf` from their `helpers/adminGrant.ts`; chat passes `signUpAdmin`,
-which also confirms the grant under the view mode; the cluster test wraps it in a
-callback that first points the second page at the follower.
+The demo supplies the grant callback by composing `grantAdminToSelf` or
+`signUpAdmin` from `framework/frontend/e2e/index.ts` with the spec's `expect`
+and any product entry options. The shared helper confirms full access in the
+browser; its command endpoint comes from the runner environment. The cluster
+test wraps the grant in a callback that first points the second page at the
+follower.
 
 ### The Daemon section — names and checks
 
@@ -773,7 +804,7 @@ check preserves a window the caller already opened.
 block application bundles and check both the HTML attribute and painted body.
 It removes only its own route handler. The spec sets media explicitly and
 uses a fresh context with project URL and HTTPS options for System dark. After
-a probe, ordinary UI work starts with the demo's `gotoPage`. Theme-choice
+a probe, ordinary UI work starts with the shared `gotoPage`. Theme-choice
 scenarios use real controls, without an init script that would impose the pick
 again on reload.
 
@@ -814,11 +845,11 @@ The `expectAnalytics…`,
 page and the session page. `expectAnalyticsActionsOnPage` checks that every
 action row shown for the session stands on the same named page; registration
 expects `main` for every row. Every check takes the spec's `expect` first, then
-its `Page`. A spec waits for the journal writer by polling the
-`test:analytics:browser-session` probe until the last registration action of
-both tabs — the person's and the administrator's — has landed, then follows the
-person's admin card into Analytics. The three kits' browser-session specs are
-the same text; the one difference is the stand address of the command channel.
+its `Page`. A spec waits for the journal writer by polling
+`readAnalyticsBrowserSession(sendCommand, userId)` until the last registration
+action of both tabs — the person's and the administrator's — has landed, then follows the
+person's admin card into Analytics. The three kits' browser-session specs use
+the shared checks and command transport; Chat composes its message sign-in entry.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master
@@ -918,10 +949,10 @@ boxes, not every numeric assertion.
 
 ## Opening a page — `gotoPage`, never `goto`
 
-A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, which
-waits for the subscription's answer — the answer, not a good answer, since a page
-closed to a guest answers with a refusal and the specs that walk into one are
-asserting exactly that. Pass `PAGE_REFUSED` (or `PAGE_READY`) as the third
+A spec opens a page through **`gotoPage(expect, page, path)`** from the shared
+toolbox, which waits for the subscription's answer — the answer, not a good
+answer, since a page closed to a guest answers with a refusal and the specs that
+walk into one are asserting exactly that. Pass `PAGE_REFUSED` (or `PAGE_READY`) as the fourth
 argument only when the spec is about which answer came. **Never call Playwright's
 `goto` directly**; `E2E-PAGE-GOTO`
 (`framework/frontend/codestyle/e2eGoto.ts`) reports every direct call outside the
@@ -1050,18 +1081,31 @@ statistics; see [narrow runs](../testing.md#narrow-runs-collect-evidence).
 
 ## Filling inputs — keyboard, not `fill`
 
-Enter values the way a user does. **Do not set a value with `fill(value)`** — a
-bare `fill` sets `.value` and dispatches a single synthetic `input`, which can
-miss the reactivity a view relies on (watchers, debounced state, a form state
-machine's computed submittability), so a submit can ship a stale or empty
-payload. Clear with `fill('')`, then type with
-`pressSequentially(value, { delay: 10 })`, which emits real per-key events
-(keydown / keypress / input / keyup).
+For ordinary value entry, call **`await typeInto(field, value)`** from the shared
+toolbox. It already clears with `fill('')` and types with
+`pressSequentially(value, { delay: 10 })`; use the call instead of repeating
+those steps. Per-key events reach the view's reactivity, where a bare
+`fill(value)` can leave a stale or empty submit payload.
 
-Drive a submit button through its actionable states, not a bare click: scroll it
-into view, assert it visible and enabled, focus it, then click. After the click,
-wait for the form to leave **or** the button to re-enable — never assume a click
-that landed on a still-disabled control did anything.
+Keep operations that need different keyboard behavior:
+
+- A standalone clear stays `await field.fill('')`; it needs no
+  `typeInto(field, '')` call.
+- Native date segments use `enterCalendarDate(expect, field, date)` from the
+  toolbox (`moments.ts`); segment navigation is part of that operation.
+- A disabled-input probe sends keys to the disabled field and checks that its
+  value did not change; clearing first would change the operation being tested.
+- Appending to an existing prefix keeps that prefix and places the caret before
+  typing the suffix. Chat's `attachment.spec.ts` exercises both this case and
+  the disabled-input probe across a reconnect.
+
+For a submit button, call **`await clickSubmit(expect, button)`**, then explicitly
+wait for that action's success or refusal in the calling scenario. The helper in
+`input.ts` retries only preparation — scroll into view, assert visible and
+enabled, focus — before one click. It does not wait for a server reply, a form's
+completion or subscription data. The caller waits for the form to close, the
+button to re-enable or the action's inline refusal, as appropriate to that flow,
+before asserting the received result.
 
 ## Wait for the action to settle before asserting its result
 

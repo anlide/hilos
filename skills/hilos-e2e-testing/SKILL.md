@@ -1,14 +1,21 @@
 ---
 name: hilos-e2e-testing
-description: Author or edit a Hilos e2e (Playwright) spec or shared helper — the rules for selectors, filling inputs, driving submit buttons, and waiting on state that arrives over the socket. Use when creating or changing an e2e spec/helper, choosing which demo carries a spec, marking whose a spec is, or before adding form input, clicks, or state assertions to a Playwright test, or a theme or a viewport size to one. For which suites to run use $hilos-selective-testing; for how to run them use $hilos-testing-cli.
+description: >
+  Create, edit, move, split or port a Hilos e2e spec or helper, including
+  Node-only network wrappers. Use when choosing which demo carries a spec,
+  marking whose it is, reusing or placing helpers, or adding selectors, input,
+  submit, socket-state assertions, themes or viewports to a Playwright test.
+  For which suites to run use $hilos-selective-testing; for how to run them
+  use $hilos-testing-cli.
 ---
 
 # Hilos E2E Testing
 
-Use this skill when **creating or editing an e2e (Playwright) spec or a shared
-e2e helper** — the mechanics of how a spec drives the UI. For deciding *which*
-suites a change warrants use `$hilos-selective-testing`; for *how to run* a
-chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
+Use this skill when **creating, editing, moving, splitting or porting an e2e
+spec or helper**, including a Node-only network wrapper. It routes both browser
+and network mechanics to their shared homes. For deciding *which* suites a
+change warrants use `$hilos-selective-testing`; for *how to run* a chosen command
+use `$hilos-testing-cli`.
 
 ## Read First
 
@@ -17,7 +24,10 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 - Selectors, filling inputs, submit discipline, source-vs-build, the test
   categories, and the shared toolbox:
   `docs/agents/frontend/testing-strategy.md`.
-- What is already in the shared toolbox: `framework/frontend/e2e/index.ts`.
+- Before writing or copying helpers, inspect both shared homes:
+  `framework/frontend/e2e/index.ts` and the relevant
+  `framework/frontend/scripts/*.mjs` modules — for example `standCommand.mjs`,
+  `commandChannel.mjs`, `i18n.mjs`, `mail.mjs` and `standMailbox.mjs`.
 - Full-reset-per-test and the re-run contract: `docs/agents/testing.md`.
 - Static quarantine tags and affected parameterized variants:
   `docs/agents/frontend/testing-strategy.md`, "Quarantine — a static tag and one attempt after main".
@@ -45,22 +55,26 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
    viewport, no check of what only a narrow screen draws. Only the theme
    feature's own specs choose dark, to prove the pick:
    `docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width".
-4. Before writing driving code, look in the shared toolbox
-   (`framework/frontend/e2e/`) and **prefer what is already there**. It holds
-   what reads the same in any demo; a demo's own `tests/e2e/helpers/` holds what
-   belongs to that demo alone.
-5. When the spec needs a wait, a sweep or a round trip another demo would need in
-   the same words, or a check all three kits must meet, **put it in the toolbox**.
-   A check takes the spec's `expect` as its first parameter; the test's scenario,
-   order and navigation stay in the demo spec.
+4. Before driving code or a move/split/port, inspect both toolbox homes above
+   and use the existing calls. A moved spec changes imports and product
+   composition; it does not copy helpers. A demo's `tests/e2e/helpers/` keeps
+   only its own fixtures and composition; see the Chat sign-up example in
+   "The shared toolbox" of `docs/agents/frontend/testing-strategy.md`.
+5. An operation with the same meaning for another demo, view framework or stand
+   belongs in the shared home **from its first consumer**: browser action/check
+   in `framework/frontend/e2e/`, network-only work in
+   `framework/frontend/scripts/`. Read stand addresses from the runner
+   environment through the shared helpers. Checks receive the spec's `expect`;
+   scenario order and navigation stay in the spec.
 6. Select interactive elements only by **stable `data-id`** — never by text or
    position.
-7. Enter a value with `fill('')` to clear, then
-   `pressSequentially(value, { delay: 10 })` — never a bare `fill(value)`, which
-   can miss view reactivity and submit a stale payload.
-8. Drive a submit button through its actionable states: scroll into view →
-   assert visible → assert enabled → focus → click; then wait for the form to
-   leave **or** the button to re-enable.
+7. Enter an ordinary value with `await typeInto(field, value)`. Standalone
+   clearing and the native-date, disabled-input and append cases keep their
+   specific keyboard behavior; see "Filling inputs" in
+   `docs/agents/frontend/testing-strategy.md`.
+8. Submit with `await clickSubmit(expect, button)`. It retries preparation before
+   one click; the calling scenario then waits explicitly for its action's
+   success or refusal. The helper does not wait for server or subscription data.
 9. After triggering an action, wait for it to **settle** — loading cleared, the
    surface/dialog closed on success, or the inline error shown — before asserting
    its result. Asserting through an in-flight action races the reply and flakes.
@@ -105,8 +119,12 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 - A spec of a demo's own product or of the stand carries
   `// spec-owner: demo|stand — <why>`; a framework spec carries none.
 - Select by stable `data-id` only — never by text or position.
-- Never set an input value with `fill(value)` — clear with `fill('')`, then
-  `pressSequentially`.
+- Reuse both toolbox homes when creating or moving specs/helpers; put a missing
+  shared operation there with its first consumer, not after a second copy.
+- Use `typeInto` for ordinary input and `clickSubmit` for submit preparation,
+  instead of repeating their steps or setting a value with bare `fill(value)`.
+  Keep the input exceptions in the canon and the action's outcome wait in the
+  caller.
 - Never assert an action's result while the action is still in flight — wait for
   it to settle (success or error) first.
 - Never navigate a page the application is about to reload by itself — wait the
@@ -119,6 +137,8 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   raise an `expect`, action or navigation timeout to cure a red test.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
-  the runner refuses the run. A shared section check takes the spec's `expect`
-  as its first parameter, just as it receives the `Page`.
+  the runner refuses the run. Checks, including `clickSubmit` preparation, take
+  the spec's `expect` as their first parameter; helpers without checks need not.
+- Inside either toolbox, import the sibling module directly, not its own index
+  barrel.
 - Never run `git commit` or `git push`.
