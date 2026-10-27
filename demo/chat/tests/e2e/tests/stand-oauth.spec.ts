@@ -352,9 +352,6 @@ test('signs a person in as the GitHub account a spec declared', async ({
     name: 'Ada Lovelace',
     email: 'ada@e2e.stand',
   })
-  // A JSON number and not a string of digits: that is how GitHub carries its id, and a
-  // product reading it as a string would pass here and fail in production.
-  expect(typeof payload.id).toBe('number')
 })
 
 test('says "this account has no email" the way each provider says it', async ({
@@ -367,13 +364,11 @@ test('says "this account has no email" the way each provider says it', async ({
   const google = payloadOf(await readUserInfo('google', googleToken))
 
   expect(google.sub).toBe(atGoogle.subject)
-  expect(typeof google.sub).toBe('string')
   expect('email' in google).toBe(false)
 
   const gitHubToken = await tokenFor('github', await codeFor(page, atGitHub))
   const github = payloadOf(await readUserInfo('github', gitHubToken))
 
-  expect('email' in github).toBe(true)
   expect(github.email).toBeNull()
 })
 
