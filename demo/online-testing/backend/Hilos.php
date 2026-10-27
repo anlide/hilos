@@ -155,10 +155,13 @@ use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
@@ -222,6 +225,8 @@ final class Hilos extends HilosFacade
 
     public const array PAGES = [
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+        ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
@@ -404,6 +409,7 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        OnlineTestingTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         OnlineTestingTableContext::settings => HilosSettingsTable::class,
         OnlineTestingTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
@@ -468,11 +474,14 @@ final class Hilos extends HilosFacade
         PersonPage::PAGE => [
             OnlineTestingTableContext::hilosAnalyticsBrowserSessions => [],
         ],
-        ChangeLogDashboardPage::PAGE => [
+        ChangeLogFeedPage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogFeed => [],
         ],
         ChangeLogTablesPage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogNoisyPage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogNoisyColumns => [],
         ],
         ChangeLogTablePage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogHistory => [],

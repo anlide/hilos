@@ -132,7 +132,7 @@ describe('change-log feed viewport', () => {
   it('declares the agreed columns, reads and filters without a preset', () => {
     const { table, tables } = stubTable()
     const frame = table.controller.frame
-    expect(frame.declaration?.title).toBe('Recent actions')
+    expect(frame.declaration?.title).toBeUndefined()
     expect(frame.declaration?.search?.placeholder).toBe('Who…')
     expect(frame.declaration?.empty).toBeUndefined()
     const columns = frame.columns.get()
@@ -199,7 +199,7 @@ describe('change-log feed viewport', () => {
     )
     expect(sent).toEqual([])
     table.controller.setFilter('channel', 'web')
-    expect(sent.at(-1)?.page).toBe(HilosPages.CHANGE_LOG)
+    expect(sent.at(-1)?.page).toBe(HilosPages.CHANGE_LOG_FEED)
     expect(sent.at(-1)?.tableKey).toBe('hilosChangeLogFeed')
     expect(sent.at(-1)?.descriptor.filter).toEqual({ channel: 'web' })
     expect(sent.at(-1)?.descriptor.sort).toBeNull()

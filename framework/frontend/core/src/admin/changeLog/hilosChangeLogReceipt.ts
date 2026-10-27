@@ -19,7 +19,7 @@ import {
 } from './hilosChangeLog.js'
 import { type HilosChangeLogFieldChange } from './hilosChangeLogHistory.js'
 
-/** Reading action for one receipt portion on the Change Log dashboard. */
+/** Reading action for one receipt portion on the Change Log feed. */
 export const HILOS_CHANGE_LOG_RECEIPT_READ = 'hilos_change_log_receipt_read'
 /** Reading action for a full entry that has no application receipt. */
 export const HILOS_CHANGE_LOG_ENTRY_READ = 'hilos_change_log_entry_read'
@@ -109,7 +109,7 @@ export interface HilosChangeLogEntryReadReply {
   readonly entry: HilosChangeLogEntry
 }
 
-/** The dashboard's existing context plus its shared tracked action lifecycle. */
+/** The feed's existing context plus its shared tracked action lifecycle. */
 export interface HilosChangeLogReceiptContext extends HilosChangeLogContext {
   readonly actions: ActionLifecycle
 }
@@ -223,7 +223,7 @@ function uniqueEntries(
 
 /**
  * Read lazily through the shared action lifecycle; generations invalidate replies without
- * altering the dashboard subscription. Only this browser's open dialog holds the snapshot.
+ * altering the feed subscription. Only this browser's open dialog holds the snapshot.
  *
  * @param context Dashboard connection, page scope, and tracked actions.
  */

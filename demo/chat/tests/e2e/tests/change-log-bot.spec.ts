@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  CHANGE_LOG_PATH,
+  CHANGE_LOG_FEED_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogFeedRow,
@@ -49,7 +49,7 @@ test("keeps a bot description's full old and new values in its receipt and leave
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
   await dismissToasts(page)
 
-  await gotoPage(expect, page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
   await chooseChangeLogFeedTable(page, 'bot')
   await typeInto(page.getByTestId('hilos-table-search'), `#${userId}`)
   const { rowKey, receiptId } = await expectChangeLogFeedRow(

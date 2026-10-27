@@ -10,6 +10,7 @@ import {
   expectStatusHead,
   expectLanguagePageHead,
   expectLogsPageHead,
+  expectChangeLogSectionHead,
   expectStatusIncidentDialog,
   shownByTestId,
   watchPublicStatus,
@@ -350,5 +351,35 @@ test.describe('Daemon section accessibility', () => {
       await expectDaemonPage(expect, page, 'hilos_daemon')
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
     })
+  }
+})
+
+test('Change Log names its section navigation and tables from one shared heading', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/change-log')
+  await expectChangeLogSectionHead(expect, page, 'hilos_change_log')
+  await expect(page.getByTestId(/^hilos-change-log-link-/)).toHaveCount(2)
+  await expect(page.getByTestId('hilos-change-log-link-feed')).toHaveRole(
+    'link',
+  )
+  await expect(page.getByTestId('hilos-change-log-link-tables')).toHaveRole(
+    'link',
+  )
+  for (const key of [
+    'hilos_change_log_feed',
+    'hilos_change_log_tables',
+    'hilos_change_log_noisy',
+  ]) {
+    const tab = page.getByTestId(`hilos-page-tab-${key}`)
+    await tab.focus()
+    await page.keyboard.press('Enter')
+    await expectPageReady(expect, page)
+    await expectChangeLogSectionHead(expect, page, key)
+    await expect(
+      page.getByRole('table', { name: 'Change Log', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
   }
 })

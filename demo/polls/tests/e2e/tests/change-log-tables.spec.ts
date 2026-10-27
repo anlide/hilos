@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 import {
   CHANGE_LOG_TABLES_LEAD,
   CHANGE_LOG_TABLES_PATH,
+  CHANGE_LOG_NOISY_PATH,
+  expectChangeLogNoisyColumns,
   expectChangeLogReference,
   expectTrackedTablesPage,
   shownByTestId,
@@ -50,11 +52,6 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await gotoPage(expect, page, CHANGE_LOG_TABLES_PATH)
 
   await expectChangeLogReference(expect, page)
-  const noiseTable = page.getByRole('table', {
-    name: 'Noisy columns',
-    exact: true,
-  })
-
   await typeInto(search, 'hilos_session')
   const journal = page.getByTestId('hilos-table-filter-journal')
   await journal.getByTestId('hilos-dropdown-toggle').click()
@@ -67,7 +64,6 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(
     page.getByTestId('hilos-change-log-open-table-hilos_session'),
   ).toHaveCount(0)
-  await expect(noiseTable).toContainText('hilos_user.last_activity')
 
   await journal.getByTestId('hilos-dropdown-toggle').click()
   const tracked = journal.getByTestId('hilos-dropdown-option-0')
@@ -86,4 +82,6 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(
     page.locator('table [data-id^="hilos-table-row-"]').first(),
   ).toBeVisible()
+  await gotoPage(expect, page, CHANGE_LOG_NOISY_PATH)
+  await expectChangeLogNoisyColumns(expect, page)
 })

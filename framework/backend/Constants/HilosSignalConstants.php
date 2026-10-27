@@ -588,6 +588,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos change log overview. */
     public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG = 'subscription_page_hilos_change_log';
 
+    /** Subscription signal for Hilos change log feed. */
+    public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED = 'subscription_page_hilos_change_log_feed';
+
+    /** Subscription signal for Hilos change log noisy columns. */
+    public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY = 'subscription_page_hilos_change_log_noisy';
+
     /** Subscription signal for Hilos change log tables list. */
     public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLES = 'subscription_page_hilos_change_log_tables';
 

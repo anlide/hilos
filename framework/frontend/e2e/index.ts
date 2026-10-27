@@ -260,13 +260,18 @@ export {
 
 export {
   CHANGE_LOG_PATH,
+  CHANGE_LOG_FEED_PATH,
+  CHANGE_LOG_NOISY_PATH,
   CHANGE_LOG_TABLES_PATH,
   CHANGE_LOG_LEAD,
   CHANGE_LOG_TABLES_LEAD,
   CHANGE_LOG_BLOCK_ACTION,
   chooseChangeLogFeedTable,
   expectChangeLogDashboardCard,
+  expectChangeLogSectionHead,
   expectChangeLogOverview,
+  expectChangeLogFeed,
+  expectChangeLogNoisyColumns,
   expectChangeLogFeedRow,
   expectChangeLogReceiptOpen,
   expectChangeLogReceiptMoment,

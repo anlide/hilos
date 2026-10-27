@@ -11,6 +11,36 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it.each([
+    [
+      HilosPages.CHANGE_LOG_FEED,
+      'HILOS_CHANGE_LOG_FEED',
+      '/hilos/change-log/feed',
+    ],
+    [
+      HilosPages.CHANGE_LOG_NOISY,
+      'HILOS_CHANGE_LOG_NOISY',
+      '/hilos/change-log/noisy',
+    ],
+  ] as const)('serves the built Change Log page %s', (page, phpKey, path) => {
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+    expect(php).toContain(`${phpKey} = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(createPageRouter(HILOS_ROUTE_DECLARATIONS).match(path)).toEqual({
+      page,
+      params: {},
+      admin: true,
+    })
+    for (const kit of ['vue', 'react', 'angular'] as const)
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
+  })
+
   it('addresses channel Configuration beside the unchanged Overview and Deliveries', () => {
     const page = HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)

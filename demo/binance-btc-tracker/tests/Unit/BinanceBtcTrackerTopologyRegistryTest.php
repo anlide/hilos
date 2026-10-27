@@ -65,6 +65,8 @@ use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
@@ -166,6 +168,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
@@ -366,7 +369,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
     public function testChangeLogSectionIsFullyActivated(): void
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
-        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+        foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -377,7 +381,19 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
         self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
         self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogFeed]);
-        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogFeedPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogDashboardPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogFeedPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogNoisyPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED,
+            ChangeLogFeedPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY,
+            ChangeLogNoisyPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame([], ChangeLogDashboardPage::ACTIONS);
+        self::assertSame(ChangeLogFeedPage::class, Hilos::PAGES[ChangeLogFeedPage::PAGE]);
+        self::assertSame(ChangeLogNoisyPage::class, Hilos::PAGES[ChangeLogNoisyPage::PAGE]);
+        self::assertSame(HilosChangeLogNoisyColumnsTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogNoisyColumns]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogNoisyColumns => []], Hilos::PAGE_TABLES[ChangeLogNoisyPage::PAGE]);
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogTables]);
         self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogHistory]);
@@ -414,6 +430,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             PersonPage::PAGE => PersonPage::class,
             BackupPage::PAGE => BackupPage::class,
             ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+            ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+            ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
@@ -542,6 +560,13 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             ),
             $pages[HilosPageConstants::HILOS_LOGS],
         );
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_CHANGE_LOG],
+        );
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
@@ -569,6 +594,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
+            HilosPageConstants::HILOS_CHANGE_LOG,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,

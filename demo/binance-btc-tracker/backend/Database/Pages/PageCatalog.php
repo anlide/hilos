@@ -9,7 +9,7 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
-/** User, Logs, Analytics Person, Communications and Appearance head adoption for the binance-btc-tracker demo. */
+/** User, Logs, Change Log, Analytics Person, Communications and Appearance head adoption for the binance-btc-tracker demo. */
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
@@ -27,6 +27,10 @@ final class PageCatalog implements PageCatalogProviderInterface
             ),
             HilosPageConstants::HILOS_LOGS => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_CHANGE_LOG => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
             HilosPageConstants::HILOS_ANALYTICS_PERSON => array_replace(

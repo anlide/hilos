@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import {
   CHANGE_LOG_COLUMN_MODES,
-  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
   CHANGE_LOG_NOISY_COLUMNS_SECTION,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
   HilosPages,
@@ -243,22 +242,6 @@ describe('HilosChangeLogTablesPage', () => {
         get(container, '[data-id="hilos-table-card-hilos_session"]')
           .textContent,
       ).toContain(CHANGE_LOG_TABLES_UNTRACKED_NOTE)
-      const noise = get(container, '[data-id="hilos-change-log-noisy-columns"]')
-      expect(get(noise, 'table').getAttribute('aria-labelledby')).toBe(
-        get(noise, 'h2').getAttribute('id'),
-      )
-      expect(
-        Array.from(noise.querySelectorAll('th'), (th) =>
-          th.getAttribute('scope'),
-        ),
-      ).toEqual(['col', 'col'])
-      expect(noise.querySelectorAll('tbody tr')).toHaveLength(2)
-      expect(get(noise, 'tbody').textContent).toContain(
-        'project_record.heartbeat',
-      )
-      expect(get(noise, 'tbody').textContent).toContain(NOISY[0]!.reason)
-      expect(get(noise, '.d-md-none').textContent).toContain(NOISY[0]!.reason)
-      expect(noise.querySelector('em')).toBeNull()
       const modes = get(container, '[data-id="hilos-change-log-column-modes"]')
       expect(get(modes, 'h2').textContent?.trim()).toBe(
         'How a column enters the journal',
@@ -275,7 +258,6 @@ describe('HilosChangeLogTablesPage', () => {
       expect(h.connection.sendTableViewport).not.toHaveBeenCalled()
       expect(h.connection.sendTableRendered).toHaveBeenCalled()
       act(() => h.pushWindow([]))
-      expect(noise.querySelectorAll('tbody tr')).toHaveLength(2)
     },
   )
 
@@ -309,19 +291,6 @@ describe('HilosChangeLogTablesPage', () => {
       }
     },
   )
-
-  it('uses the core empty copy only for a valid empty snapshot', () => {
-    const h = harness([])
-    const { container } = mountPage(h)
-    const noise = get(container, '[data-id="hilos-change-log-noisy-columns"]')
-    expect(noise.textContent).toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-    expect(noise.querySelector('table')).toBeNull()
-    for (const invalid of [null, [{ table: 'broken', column: 'heartbeat' }]]) {
-      act(() => h.scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, invalid))
-      expect(noise.textContent).not.toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-      expect(noise.querySelector('table')).toBeNull()
-    }
-  })
 
   it('unregisters the table and releases every connection binding on unmount', () => {
     const h = harness()

@@ -12,6 +12,8 @@ import { shownByTestId, tableRowKeyByText } from './table.js'
  * and navigation stay in each demo's spec.
  */
 export const CHANGE_LOG_PATH = '/hilos/change-log'
+export const CHANGE_LOG_FEED_PATH = '/hilos/change-log/feed'
+export const CHANGE_LOG_NOISY_PATH = '/hilos/change-log/noisy'
 export const CHANGE_LOG_TABLES_PATH = '/hilos/change-log/tables'
 export const CHANGE_LOG_LEAD =
   'Who changed what in the tracked tables, and through which action.'
@@ -49,12 +51,111 @@ export async function expectChangeLogDashboardCard(
   await expect(card).toContainText(CHANGE_LOG_LEAD)
 }
 
-/** The overview names the section and shows its totals and recent actions. */
+/**
+ * The adopted Vue section has one owner head and four native page links.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the Change Log section.
+ * @param currentPage The key of the current owner page.
+ */
+export async function expectChangeLogSectionHead(
+  expect: Expect,
+  page: Page,
+  currentPage: string,
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Change Log')
+  const block = page.getByTestId('hilos-page-head-block')
+  await expect(block).toContainText(CHANGE_LOG_LEAD)
+  await expect(block.locator('i.bi-clock-history')).toHaveCount(1)
+  await expect(
+    block.locator('[aria-hidden="true"] > i.bi-clock-history'),
+  ).toHaveCount(1)
+
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('link')).toHaveText(['Hilos'])
+  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const currentCrumb = crumbs.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect(currentCrumb).toHaveText('Change Log')
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
+
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveRole('navigation')
+  await expect(tabs).toHaveAccessibleName('Change Log pages')
+  await expect(tabs.getByRole('link')).toHaveText([
+    'Overview',
+    'Feed',
+    'Tracked tables',
+    'Noisy columns',
+  ])
+  await expect(tabs.getByRole('link')).toHaveCount(4)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  for (const [key, path] of [
+    ['hilos_change_log', CHANGE_LOG_PATH],
+    ['hilos_change_log_feed', CHANGE_LOG_FEED_PATH],
+    ['hilos_change_log_tables', CHANGE_LOG_TABLES_PATH],
+    ['hilos_change_log_noisy', CHANGE_LOG_NOISY_PATH],
+  ]) {
+    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(tab).toHaveAttribute('href', path!)
+    if (key === currentPage) {
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(tab).toHaveClass(/\bactive\b/)
+    } else {
+      await expect(tab).not.toHaveAttribute('aria-current')
+      await expect(tab).not.toHaveClass(/\bactive\b/)
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(tabs.locator('.active')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+}
+
+/**
+ * Select the shared head on adopted Vue pages, keeping the exact legacy heading
+ * on React and Angular until their owner redraws land.
+ *
+ * @param expect The spec's expect.
+ * @param page The owner page on screen.
+ * @param currentPage The key of the current owner page.
+ * @param legacyTitle The catalog heading of the unadopted page.
+ */
+async function expectChangeLogOwnerHead(
+  expect: Expect,
+  page: Page,
+  currentPage: string,
+  legacyTitle: string,
+): Promise<void> {
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText(
+    new RegExp(`^(${legacyTitle}|Change Log)$`),
+    { useInnerText: true },
+  )
+  if ((await heading.getAttribute('data-id')) === 'hilos-page-head-title') {
+    await expectChangeLogSectionHead(expect, page, currentPage)
+  } else {
+    await expect(heading).toHaveAttribute('data-id', 'hilos-admin-title')
+    await expect(heading).toHaveText(legacyTitle, { useInnerText: true })
+  }
+}
+
+/** The overview names the section and shows its journal totals. */
 export async function expectChangeLogOverview(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Change Log')
+  await expectChangeLogOwnerHead(expect, page, 'hilos_change_log', 'Change Log')
   await expect(page.getByTestId('hilos-admin-page')).toContainText(
     CHANGE_LOG_LEAD,
   )
@@ -64,9 +165,26 @@ export async function expectChangeLogOverview(
   await expect(page.getByTestId('hilos-change-log-tile-tracked')).toHaveText(
     /\d+ of \d+/,
   )
-  await expect(page.getByTestId('hilos-table-title')).toHaveText(
-    'Recent actions',
-  )
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-change-log-feed-empty')).toHaveCount(0)
+  await expect(page.getByTestId('modal')).toHaveCount(0)
+}
+
+/** The standalone feed owns its first window and uses the page heading. */
+export async function expectChangeLogFeed(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expectChangeLogOwnerHead(expect, page, 'hilos_change_log_feed', 'Feed')
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+  await expect(
+    page.getByRole('table', {
+      name: (await page.getByTestId('hilos-page-head-title').count())
+        ? 'Change Log'
+        : 'Feed',
+      exact: true,
+    }),
+  ).toBeVisible()
   await expect(
     page.locator('table [data-id^="hilos-table-row-"]').first(),
   ).toBeVisible()
@@ -384,30 +502,34 @@ export async function expectTrackedTablesPage(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+  await expectChangeLogOwnerHead(
+    expect,
+    page,
+    'hilos_change_log_tables',
     'Tracked tables',
   )
-  await expect(page.getByTestId('hilos-admin-page')).toContainText(
-    CHANGE_LOG_TABLES_LEAD,
-  )
+  if (await page.getByTestId('hilos-admin-title').count()) {
+    await expect(page.getByTestId('hilos-admin-page')).toContainText(
+      CHANGE_LOG_TABLES_LEAD,
+    )
+  }
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(
-    page.getByRole('table', { name: 'Tables', exact: true }),
+    page.getByRole('table', {
+      name: (await page.getByTestId('hilos-page-head-title').count())
+        ? 'Change Log'
+        : 'Tracked tables',
+      exact: true,
+    }),
   ).toBeVisible()
 }
 
-/** The schema reference explains noisy columns and journal column modes. */
+/** The tracked-tables reference explains the journal column modes. */
 export async function expectChangeLogReference(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  const noiseTable = page.getByRole('table', {
-    name: 'Noisy columns',
-    exact: true,
-  })
-  await expect(noiseTable).toBeVisible()
-  await expect(noiseTable).toContainText('hilos_user.last_activity')
-  await expect(noiseTable).toContainText('Changes on every user request')
   const modes = page.getByTestId('hilos-change-log-column-modes')
   await expect(modes.getByRole('heading', { level: 2 })).toHaveText(
     'How a column enters the journal',
@@ -415,6 +537,28 @@ export async function expectChangeLogReference(
   await expect(modes).toContainText('Personal — only a fact')
   await expect(modes).toContainText('Binary — only a fact')
   await expect(modes).toContainText('Record key')
+}
+
+/** The schema declarations have their own address and standard heading. */
+export async function expectChangeLogNoisyColumns(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expectChangeLogOwnerHead(
+    expect,
+    page,
+    'hilos_change_log_noisy',
+    'Noisy columns',
+  )
+  const noiseTable = page.getByRole('table', {
+    name: (await page.getByTestId('hilos-page-head-title').count())
+      ? 'Change Log'
+      : 'Noisy columns',
+    exact: true,
+  })
+  await expect(noiseTable).toBeVisible()
+  await expect(noiseTable).toContainText('hilos_user.last_activity')
+  await expect(noiseTable).toContainText('Changes on every user request')
 }
 
 /** The record history is ready at its own address and names its filter. */

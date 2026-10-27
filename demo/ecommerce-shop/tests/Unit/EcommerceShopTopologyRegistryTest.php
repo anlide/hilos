@@ -57,6 +57,8 @@ use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
@@ -144,6 +146,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -346,7 +349,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testChangeLogSectionIsFullyActivated(): void
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
-        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+        foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -357,7 +361,19 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
         self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
         self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogFeed]);
-        self::assertSame([EcommerceShopTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogFeedPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogDashboardPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogFeedPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogNoisyPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED,
+            ChangeLogFeedPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY,
+            ChangeLogNoisyPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame([], ChangeLogDashboardPage::ACTIONS);
+        self::assertSame(ChangeLogFeedPage::class, Hilos::PAGES[ChangeLogFeedPage::PAGE]);
+        self::assertSame(ChangeLogNoisyPage::class, Hilos::PAGES[ChangeLogNoisyPage::PAGE]);
+        self::assertSame(HilosChangeLogNoisyColumnsTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogNoisyColumns]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogNoisyColumns => []], Hilos::PAGE_TABLES[ChangeLogNoisyPage::PAGE]);
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogTables]);
         self::assertSame([EcommerceShopTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogHistory]);
@@ -392,6 +408,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PersonPage::PAGE => PersonPage::class,
             BackupPage::PAGE => BackupPage::class,
             ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+            ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+            ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,

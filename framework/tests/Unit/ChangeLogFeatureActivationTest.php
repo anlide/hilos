@@ -39,10 +39,13 @@ use Hilos\Database\Entity\Item\ChangeLogChange;
 use Hilos\Database\Entity\Item\ChangeLogValue;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogFeedPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogNoisyPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablePage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablesPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -161,7 +164,7 @@ final class ChangeLogFeatureActivationTest extends TestCase
     public function testCompleteFeaturePassesStartupValidation(): void
     {
         ChangeLogFeatureCompleteHilos::validateFeatureActivation();
-        $this->addToAssertionCount(1);
+        self::assertArrayNotHasKey(ChangeLogFeatureDashboardPage::PAGE, ChangeLogFeatureCompleteHilos::PAGE_TABLES);
     }
 
     /** @return array<string, array{class-string<HilosFacade>, string}> Missing registrations and their refusals */
@@ -169,13 +172,17 @@ final class ChangeLogFeatureActivationTest extends TestCase
     {
         return [
             'dashboard page' => [ChangeLogFeatureMissingDashboardHilos::class, AbstractHilosChangeLogDashboardPage::class],
+            'feed page' => [ChangeLogFeatureMissingFeedPageHilos::class, AbstractHilosChangeLogFeedPage::class],
+            'noisy page' => [ChangeLogFeatureMissingNoisyPageHilos::class, AbstractHilosChangeLogNoisyPage::class],
+            'noisy table' => [ChangeLogFeatureMissingNoisyHilos::class, HilosChangeLogNoisyColumnsTable::class],
+            'noisy binding' => [ChangeLogFeatureMissingNoisyBindingHilos::class, 'PAGE_TABLES'],
             'tables page' => [ChangeLogFeatureMissingTablesPageHilos::class, AbstractHilosChangeLogTablesPage::class],
             'table page' => [ChangeLogFeatureMissingTablePageHilos::class, AbstractHilosChangeLogTablePage::class],
             'reader' => [ChangeLogFeatureMissingAgentHilos::class, 'is not registered in AGENTS'],
             'feed table' => [ChangeLogFeatureMissingFeedHilos::class, HilosChangeLogFeedTable::class],
             'tables table' => [ChangeLogFeatureMissingTablesHilos::class, HilosChangeLogTablesTable::class],
             'history table' => [ChangeLogFeatureMissingHistoryHilos::class, HilosChangeLogHistoryTable::class],
-            'dashboard binding' => [ChangeLogFeatureMissingDashboardBindingHilos::class, 'PAGE_TABLES'],
+            'feed binding' => [ChangeLogFeatureMissingFeedBindingHilos::class, 'PAGE_TABLES'],
             'tables binding' => [ChangeLogFeatureMissingTablesBindingHilos::class, 'PAGE_TABLES'],
             'table binding' => [ChangeLogFeatureMissingHistoryBindingHilos::class, 'PAGE_TABLES'],
             'undeclared feature' => [ChangeLogFeatureUndeclaredHilos::class, 'is not declared in FEATURES'],
@@ -199,6 +206,8 @@ class ChangeLogFeatureCompleteHilos extends HilosFacade
 {
     public const array PAGES = [
         ChangeLogFeatureDashboardPage::PAGE => ChangeLogFeatureDashboardPage::class,
+        ChangeLogFeatureNoisyPage::PAGE => ChangeLogFeatureNoisyPage::class,
+        ChangeLogFeatureFeedPage::PAGE => ChangeLogFeatureFeedPage::class,
         ChangeLogFeatureTablesPage::PAGE => ChangeLogFeatureTablesPage::class,
         ChangeLogFeatureTablePage::PAGE => ChangeLogFeatureTablePage::class,
     ];
@@ -214,10 +223,12 @@ class ChangeLogFeatureCompleteHilos extends HilosFacade
         HilosChangeLogFeedTable::TABLE => HilosChangeLogFeedTable::class,
         HilosChangeLogTablesTable::TABLE => HilosChangeLogTablesTable::class,
         HilosChangeLogHistoryTable::TABLE => HilosChangeLogHistoryTable::class,
+        HilosChangeLogNoisyColumnsTable::TABLE => HilosChangeLogNoisyColumnsTable::class,
     ];
 
     public const array PAGE_TABLES = [
-        ChangeLogFeatureDashboardPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureFeedPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureNoisyPage::PAGE => [HilosChangeLogNoisyColumnsTable::TABLE => []],
         ChangeLogFeatureTablesPage::PAGE => [HilosChangeLogTablesTable::TABLE => []],
         ChangeLogFeatureTablePage::PAGE => [HilosChangeLogHistoryTable::TABLE => []],
     ];
@@ -240,6 +251,14 @@ final class ChangeLogFeatureTestDbContext extends HilosDbContext
 }
 
 final class ChangeLogFeatureDashboardPage extends AbstractHilosChangeLogDashboardPage
+{
+}
+
+final class ChangeLogFeatureFeedPage extends AbstractHilosChangeLogFeedPage
+{
+}
+
+final class ChangeLogFeatureNoisyPage extends AbstractHilosChangeLogNoisyPage
 {
 }
 
@@ -279,6 +298,28 @@ final class ChangeLogFeatureUndeclaredHilos extends ChangeLogFeatureCompleteHilo
 final class ChangeLogFeatureMissingDashboardHilos extends ChangeLogFeatureCompleteHilos
 {
     public const array PAGES = [
+        ChangeLogFeatureNoisyPage::PAGE => ChangeLogFeatureNoisyPage::class,
+        ChangeLogFeatureFeedPage::PAGE => ChangeLogFeatureFeedPage::class,
+        ChangeLogFeatureTablesPage::PAGE => ChangeLogFeatureTablesPage::class,
+        ChangeLogFeatureTablePage::PAGE => ChangeLogFeatureTablePage::class,
+    ];
+}
+
+final class ChangeLogFeatureMissingFeedPageHilos extends ChangeLogFeatureCompleteHilos
+{
+    public const array PAGES = [
+        ChangeLogFeatureDashboardPage::PAGE => ChangeLogFeatureDashboardPage::class,
+        ChangeLogFeatureNoisyPage::PAGE => ChangeLogFeatureNoisyPage::class,
+        ChangeLogFeatureTablesPage::PAGE => ChangeLogFeatureTablesPage::class,
+        ChangeLogFeatureTablePage::PAGE => ChangeLogFeatureTablePage::class,
+    ];
+}
+
+final class ChangeLogFeatureMissingNoisyPageHilos extends ChangeLogFeatureCompleteHilos
+{
+    public const array PAGES = [
+        ChangeLogFeatureDashboardPage::PAGE => ChangeLogFeatureDashboardPage::class,
+        ChangeLogFeatureFeedPage::PAGE => ChangeLogFeatureFeedPage::class,
         ChangeLogFeatureTablesPage::PAGE => ChangeLogFeatureTablesPage::class,
         ChangeLogFeatureTablePage::PAGE => ChangeLogFeatureTablePage::class,
     ];
@@ -288,6 +329,8 @@ final class ChangeLogFeatureMissingTablesPageHilos extends ChangeLogFeatureCompl
 {
     public const array PAGES = [
         ChangeLogFeatureDashboardPage::PAGE => ChangeLogFeatureDashboardPage::class,
+        ChangeLogFeatureNoisyPage::PAGE => ChangeLogFeatureNoisyPage::class,
+        ChangeLogFeatureFeedPage::PAGE => ChangeLogFeatureFeedPage::class,
         ChangeLogFeatureTablePage::PAGE => ChangeLogFeatureTablePage::class,
     ];
 }
@@ -296,6 +339,8 @@ final class ChangeLogFeatureMissingTablePageHilos extends ChangeLogFeatureComple
 {
     public const array PAGES = [
         ChangeLogFeatureDashboardPage::PAGE => ChangeLogFeatureDashboardPage::class,
+        ChangeLogFeatureNoisyPage::PAGE => ChangeLogFeatureNoisyPage::class,
+        ChangeLogFeatureFeedPage::PAGE => ChangeLogFeatureFeedPage::class,
         ChangeLogFeatureTablesPage::PAGE => ChangeLogFeatureTablesPage::class,
     ];
 }
@@ -305,6 +350,7 @@ final class ChangeLogFeatureMissingFeedHilos extends ChangeLogFeatureCompleteHil
     public const array TABLES = [
         HilosChangeLogTablesTable::TABLE => HilosChangeLogTablesTable::class,
         HilosChangeLogHistoryTable::TABLE => HilosChangeLogHistoryTable::class,
+        HilosChangeLogNoisyColumnsTable::TABLE => HilosChangeLogNoisyColumnsTable::class,
     ];
 }
 
@@ -313,6 +359,7 @@ final class ChangeLogFeatureMissingTablesHilos extends ChangeLogFeatureCompleteH
     public const array TABLES = [
         HilosChangeLogFeedTable::TABLE => HilosChangeLogFeedTable::class,
         HilosChangeLogHistoryTable::TABLE => HilosChangeLogHistoryTable::class,
+        HilosChangeLogNoisyColumnsTable::TABLE => HilosChangeLogNoisyColumnsTable::class,
     ];
 }
 
@@ -321,12 +368,32 @@ final class ChangeLogFeatureMissingHistoryHilos extends ChangeLogFeatureComplete
     public const array TABLES = [
         HilosChangeLogFeedTable::TABLE => HilosChangeLogFeedTable::class,
         HilosChangeLogTablesTable::TABLE => HilosChangeLogTablesTable::class,
+        HilosChangeLogNoisyColumnsTable::TABLE => HilosChangeLogNoisyColumnsTable::class,
     ];
 }
 
-final class ChangeLogFeatureMissingDashboardBindingHilos extends ChangeLogFeatureCompleteHilos
+final class ChangeLogFeatureMissingNoisyHilos extends ChangeLogFeatureCompleteHilos
+{
+    public const array TABLES = [
+        HilosChangeLogFeedTable::TABLE => HilosChangeLogFeedTable::class,
+        HilosChangeLogTablesTable::TABLE => HilosChangeLogTablesTable::class,
+        HilosChangeLogHistoryTable::TABLE => HilosChangeLogHistoryTable::class,
+    ];
+}
+
+final class ChangeLogFeatureMissingFeedBindingHilos extends ChangeLogFeatureCompleteHilos
 {
     public const array PAGE_TABLES = [
+        ChangeLogFeatureNoisyPage::PAGE => [HilosChangeLogNoisyColumnsTable::TABLE => []],
+        ChangeLogFeatureTablesPage::PAGE => [HilosChangeLogTablesTable::TABLE => []],
+        ChangeLogFeatureTablePage::PAGE => [HilosChangeLogHistoryTable::TABLE => []],
+    ];
+}
+
+final class ChangeLogFeatureMissingNoisyBindingHilos extends ChangeLogFeatureCompleteHilos
+{
+    public const array PAGE_TABLES = [
+        ChangeLogFeatureFeedPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
         ChangeLogFeatureTablesPage::PAGE => [HilosChangeLogTablesTable::TABLE => []],
         ChangeLogFeatureTablePage::PAGE => [HilosChangeLogHistoryTable::TABLE => []],
     ];
@@ -335,7 +402,8 @@ final class ChangeLogFeatureMissingDashboardBindingHilos extends ChangeLogFeatur
 final class ChangeLogFeatureMissingTablesBindingHilos extends ChangeLogFeatureCompleteHilos
 {
     public const array PAGE_TABLES = [
-        ChangeLogFeatureDashboardPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureFeedPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureNoisyPage::PAGE => [HilosChangeLogNoisyColumnsTable::TABLE => []],
         ChangeLogFeatureTablePage::PAGE => [HilosChangeLogHistoryTable::TABLE => []],
     ];
 }
@@ -343,7 +411,8 @@ final class ChangeLogFeatureMissingTablesBindingHilos extends ChangeLogFeatureCo
 final class ChangeLogFeatureMissingHistoryBindingHilos extends ChangeLogFeatureCompleteHilos
 {
     public const array PAGE_TABLES = [
-        ChangeLogFeatureDashboardPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureFeedPage::PAGE => [HilosChangeLogFeedTable::TABLE => []],
+        ChangeLogFeatureNoisyPage::PAGE => [HilosChangeLogNoisyColumnsTable::TABLE => []],
         ChangeLogFeatureTablesPage::PAGE => [HilosChangeLogTablesTable::TABLE => []],
     ];
 }

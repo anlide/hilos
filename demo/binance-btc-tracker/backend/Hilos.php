@@ -39,6 +39,8 @@ use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
@@ -155,6 +157,7 @@ use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -264,6 +267,8 @@ class Hilos extends HilosFacade
         PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+        ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
@@ -451,6 +456,7 @@ class Hilos extends HilosFacade
     public const array TABLES = [
         BinanceBtcTrackerTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         BinanceBtcTrackerTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        BinanceBtcTrackerTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         BinanceBtcTrackerTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -512,11 +518,14 @@ class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
-        ChangeLogDashboardPage::PAGE => [
+        ChangeLogFeedPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosChangeLogFeed => [],
         ],
         ChangeLogTablesPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogNoisyPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosChangeLogNoisyColumns => [],
         ],
         ChangeLogTablePage::PAGE => [
             BinanceBtcTrackerTableContext::hilosChangeLogHistory => [],

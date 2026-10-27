@@ -3,7 +3,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CHANGE_LOG_COLUMN_MODES,
-  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
   CHANGE_LOG_NOISY_COLUMNS_SECTION,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
   type HilosChangeLogContext,
@@ -22,6 +21,31 @@ import {
 
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosChangeLogTablesPage from './HilosChangeLogTablesPage.vue'
+
+const TABS = [
+  { page: HilosPages.CHANGE_LOG, label: 'Overview', path: '/hilos/change-log' },
+  {
+    page: HilosPages.CHANGE_LOG_FEED,
+    label: 'Feed',
+    path: '/hilos/change-log/feed',
+  },
+  {
+    page: HilosPages.CHANGE_LOG_TABLES,
+    label: 'Tracked tables',
+    path: '/hilos/change-log/tables',
+  },
+  {
+    page: HilosPages.CHANGE_LOG_NOISY,
+    label: 'Noisy columns',
+    path: '/hilos/change-log/noisy',
+  },
+]
+const OWNER = {
+  page: HilosPages.CHANGE_LOG,
+  label: 'Change Log',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  icon: 'bi-clock-history',
+}
 
 const TABLE = 'hilosChangeLogTables'
 const NOISY = [
@@ -142,14 +166,21 @@ function router(detailBuilt: boolean): HilosRouter {
     pageIdentity: createSignal<HilosPageIdentity | undefined>({
       label: 'Tracked tables',
       lead: 'Database tables, their journal label and column rules.',
-      breadcrumb: [],
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+      ],
       children: [],
+      pageHeadOwner: OWNER,
+      pageTabs: TABS.map(({ page, label }) => ({ page, label })),
     }),
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page, params) =>
       detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
         ? `/hilos/change-log/tables/${params.tableId}`
-        : undefined,
+        : page === HilosPages.DASHBOARD
+          ? '/hilos'
+          : TABS.find((tab) => tab.page === page)?.path,
     ),
     clearPageError: () => {},
     denyCurrentPage: () => {},
@@ -182,6 +213,53 @@ async function mountPage(h = harness(), detailBuilt = false) {
 }
 
 describe('HilosChangeLogTablesPage', () => {
+  it('opens directly with the shared head and the table named by its sole h1', async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('h1').text()).toBe('Change Log')
+    expect(wrapper.get('h1').attributes('data-id')).toBe(
+      'hilos-page-head-title',
+    )
+    const head = wrapper.get('[data-id="hilos-page-head"]')
+    expect(
+      head
+        .get('.bi-clock-history')
+        .element.closest('[aria-hidden]')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    expect(head.text()).toContain(OWNER.lead)
+    const crumbs = wrapper.get('[data-id="hilos-breadcrumb"]')
+    expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
+    expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
+      'Hilos',
+      'Change Log',
+    ])
+    expect(crumbs.get('a').attributes('href')).toBe('/hilos')
+    expect(crumbs.get('[aria-current="page"]').text()).toBe('Change Log')
+    const nav = wrapper.get('nav[data-id="hilos-page-tabs"]')
+    expect(nav.attributes('aria-label')).toBe('Change Log pages')
+    expect(nav.findAll('a').map((link) => link.text())).toEqual(
+      TABS.map((tab) => tab.label),
+    )
+    expect(nav.findAll('a').map((link) => link.attributes('href'))).toEqual(
+      TABS.map((tab) => tab.path),
+    )
+    expect(nav.findAll('[aria-current]')).toHaveLength(1)
+    expect(nav.get('[aria-current="page"]').attributes('data-id')).toBe(
+      'hilos-page-tab-hilos_change_log_tables',
+    )
+    expect(nav.get('[aria-current="page"]').classes()).toContain('active')
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id^="hilos-admin-child-"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-title"]').exists()).toBe(false)
+    expect(wrapper.get('table').attributes('aria-labelledby')).toBe(
+      wrapper.get('h1').attributes('id'),
+    )
+  })
+
   it.each(['full', 'view'] as const)(
     'draws the same schema metadata under %s access',
     async (access) => {
@@ -202,7 +280,7 @@ describe('HilosChangeLogTablesPage', () => {
       expect(hilosAdminAccess.get()).toBe(access)
       const { wrapper } = await mountPage(h)
       expect(wrapper.findAll('h1')).toHaveLength(1)
-      expect(wrapper.get('h1').text()).toBe('Tracked tables')
+      expect(wrapper.get('h1').text()).toBe('Change Log')
       const tracked = wrapper.get(
         'table [data-id="hilos-table-row-project_record"]',
       )
@@ -229,19 +307,6 @@ describe('HilosChangeLogTablesPage', () => {
       expect(
         wrapper.get('[data-id="hilos-table-card-hilos_session"]').text(),
       ).toContain(CHANGE_LOG_TABLES_UNTRACKED_NOTE)
-      const noise = wrapper.get('[data-id="hilos-change-log-noisy-columns"]')
-      expect(noise.get('table').attributes('aria-labelledby')).toBe(
-        noise.get('h2').attributes('id'),
-      )
-      expect(noise.findAll('th').map((th) => th.attributes('scope'))).toEqual([
-        'col',
-        'col',
-      ])
-      expect(noise.findAll('tbody tr')).toHaveLength(2)
-      expect(noise.get('tbody').text()).toContain('project_record.heartbeat')
-      expect(noise.get('tbody').text()).toContain(NOISY[0]!.reason)
-      expect(noise.get('.d-md-none').text()).toContain(NOISY[0]!.reason)
-      expect(noise.find('em').exists()).toBe(false)
       const modes = wrapper.get('[data-id="hilos-change-log-column-modes"]')
       expect(modes.get('h2').text()).toBe('How a column enters the journal')
       for (const mode of CHANGE_LOG_COLUMN_MODES) {
@@ -257,7 +322,6 @@ describe('HilosChangeLogTablesPage', () => {
       expect(h.connection.sendTableRendered).toHaveBeenCalled()
       h.pushWindow([])
       await nextTick()
-      expect(noise.findAll('tbody tr')).toHaveLength(2)
     },
   )
 
@@ -291,20 +355,6 @@ describe('HilosChangeLogTablesPage', () => {
       }
     },
   )
-
-  it('uses the core empty copy only for a valid empty snapshot', async () => {
-    const h = harness([])
-    const { wrapper } = await mountPage(h)
-    const noise = wrapper.get('[data-id="hilos-change-log-noisy-columns"]')
-    expect(noise.text()).toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-    expect(noise.find('table').exists()).toBe(false)
-    for (const invalid of [null, [{ table: 'broken', column: 'heartbeat' }]]) {
-      h.scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, invalid)
-      await nextTick()
-      expect(noise.text()).not.toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-      expect(noise.find('table').exists()).toBe(false)
-    }
-  })
 
   it('unregisters the table and releases every connection binding on unmount', async () => {
     const h = harness()

@@ -4,9 +4,13 @@ import {
   PASSWORD,
   countSentFrames,
   expectTableRowOrder,
+  expectTableTotal,
   expectUserActivityDisplay,
   expectUserActivityMoment,
   forwardSessionTimeZone,
+  nameFromEmail,
+  openSignIn,
+  register,
   ROWS,
   shownByTestId,
   watchClientDocument,
@@ -37,11 +41,29 @@ test.describe('merge candidate activity in the reader time zone', () => {
       locale: 'en-GB',
       timezoneId: 'Asia/Tokyo',
     })
+    const peerContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
     try {
       const readerId = await signUpAdmin(expect, page, {
         entryId: 'message-signin',
       })
       const candidate = await signUp(expect, await candidateContext.newPage())
+      // The unfiltered last page can hold just one row. Give this test its own
+      // pair, found together by the real server's address search.
+      const peerEmail = `peer-${candidate.email}`
+      const peer = await peerContext.newPage()
+      await gotoPage(expect, peer, '/')
+      await openSignIn(expect, peer, 'message-signin')
+      await register(expect, peer, peerEmail)
+      await expect(peer.getByTestId('self-user')).toHaveText(
+        nameFromEmail(peerEmail),
+      )
+      const peerId = Number(
+        await peer.getByTestId('self-user-id').textContent(),
+      )
+
       await gotoPage(expect, page, `/hilos/user/${readerId}`)
       await clickSubmit(expect, page.getByTestId('hilos-user-merge-open'))
       await typeInto(page.getByTestId('step-up-password'), PASSWORD)
@@ -49,11 +71,18 @@ test.describe('merge candidate activity in the reader time zone', () => {
         expect,
         page.getByTestId('hilos-user-merge-step-up-confirm'),
       )
+      await typeInto(
+        shownByTestId(page.getByTestId('modal'), 'hilos-table-search'),
+        candidate.email,
+      )
+      await expectTableTotal(expect, page, 2)
+      await expect(
+        page.getByTestId('modal').getByTestId('hilos-table-loading'),
+      ).toHaveCount(0)
       const choice = shownByTestId(
         page,
         `hilos-user-merge-row-${candidate.userId}`,
       )
-      if (!(await choice.isVisible())) await goToLastPage(expect, page)
       await expect(choice).toBeVisible()
       const moment = expectUserActivityMoment(
         expect,
@@ -81,6 +110,7 @@ test.describe('merge candidate activity in the reader time zone', () => {
             ),
           )
         expect(keys.length).toBeGreaterThan(1)
+        expect(keys).toEqual([String(candidate.userId), String(peerId)])
         const requests = [pageRequests(), tableRequests()]
         expect(requests[0]).toBeGreaterThan(0)
         expect(requests[1]).toBeGreaterThan(0)
@@ -134,7 +164,7 @@ test.describe('merge candidate activity in the reader time zone', () => {
       await expect(page.getByTestId('modal')).toHaveCount(0)
     } finally {
       socket.dispose()
-      await candidateContext.close()
+      await Promise.all([candidateContext.close(), peerContext.close()])
     }
   })
 })

@@ -303,6 +303,12 @@ final class HilosPageConstants
     /** @var string Hilos — change log dashboard (audit triggers / config) */
     public const string HILOS_CHANGE_LOG = 'hilos_change_log';
 
+    /** Hilos — change log feed. */
+    public const string HILOS_CHANGE_LOG_FEED = 'hilos_change_log_feed';
+
+    /** Hilos — change log noisy columns. */
+    public const string HILOS_CHANGE_LOG_NOISY = 'hilos_change_log_noisy';
+
     /** @var string Hilos — change log tracked tables list */
     public const string HILOS_CHANGE_LOG_TABLES = 'hilos_change_log_tables';
 

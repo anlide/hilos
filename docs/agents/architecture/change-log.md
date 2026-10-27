@@ -86,12 +86,17 @@ Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
 
-`HilosFeature::CHANGE_LOG` requires the three Change Log pages, their feed,
-tables and history bindings, the `hilos_change_log` section agent and the
-`db:change-log:generate` CLI command. It mounts no runtime state and depends
-on no Backup feature. Its derived schema follows the primary migration track;
-the six journal tables are checked against the real second database, rather
-than listed as primary-table migration requirements.
+`HilosFeature::CHANGE_LOG` requires five pages: Overview (`hilos_change_log`),
+Feed (`hilos_change_log_feed`), Tracked tables (`hilos_change_log_tables`),
+Noisy columns (`hilos_change_log_noisy`), and the separate Table entity
+(`hilos_change_log_table`). Its four browser table bindings are Feed →
+`hilosChangeLogFeed`, Tracked tables → `hilosChangeLogTables`, Noisy columns →
+`hilosChangeLogNoisyColumns`, and Table → `hilosChangeLogHistory`; Overview has
+no table binding. It also requires the `hilos_change_log` section agent and the
+`db:change-log:generate` CLI command. It mounts no runtime state and depends on
+no Backup feature. Its derived schema follows the primary migration track; the
+six journal tables are checked against the real second database, rather than
+listed as primary-table migration requirements.
 
 ## What A Trigger Writes
 
@@ -111,9 +116,9 @@ than listed as primary-table migration requirements.
   HIL-1453 interview). That leaf implements it; HIL-1453 introduces no such table.
 - A write without a receipt is allowed and produces a journal row with a NULL
   receipt number. The feed read returns one row per changed record and table
-  history includes it. The feed's core view model labels its
-  actor “Unknown”; the dashboard shows “Changed past the application — no
-  receipt” without a channel or an action.
+  history includes it. The feed's core view model labels its actor “Unknown”
+  and explains “Changed past the application — no receipt” without a channel
+  or an action.
 
 The journal row commits and rolls back with the write it describes: a trigger
 runs inside its statement's transaction, and both databases are on the same
@@ -604,11 +609,13 @@ both. Windows use a complete time-and-row anchor and carry at most 50 rows.
 Counts stop at the table count ceiling plus one, so a caller can show a bounded
 count without scanning an unbounded result into memory.
 
-The Change Log dashboard answers its subscription with one overview snapshot
-in the page response (`changeLogOverview`): journal entries, journal database
-weight, the oldest entry time, alphabetized names of live journaled tables,
-and the total number of live tables. It is not sent again. The table names
-become the feed's Table filter choices. If the overview cannot be read, the
+The Overview and Feed pages each answer their subscription with an overview
+snapshot in the opening `page_response` (`changeLogOverview`): journal
+entries, journal database weight, the oldest entry time, alphabetized names of
+live journaled tables, and the total number of live tables. It is not sent
+again. The table names become the Feed's Table filter choices. The Feed's first
+`hilosChangeLogFeed` window arrives in that same response, so direct entry and
+F5 do not depend on opening Overview. If the overview cannot be read, either
 subscription is refused with `internal_error`.
 
 `historyWindow()` selects journal row ids, then hydrates the bounded selection
@@ -630,7 +637,7 @@ depend on warmed User wrappers.
 The soft person number, `Deleted user #N` fallback, filters and personal-data
 masking in admin view mode remain unchanged.
 
-The dashboard's two reading actions open details on intent:
+The Feed page owns the two reading actions that open details on intent:
 `hilos_change_log_receipt_read` answers with a complete `receipt` header,
 `entries` (at most 50), and `nextAfterEntryId`; `hilos_change_log_entry_read`
 answers with one complete `entry` that has no receipt. The receipt header keeps
@@ -681,26 +688,41 @@ dictionary number appears in the browser row. The core formats column-mode
 counts for the view, combining personal and binary columns as facts and
 omitting zero parts.
 
-The Tracked tables page answers in that same opening `page_response` with
-`payload.data.changeLogNoisyColumns`: the complete snapshot of noisy columns on
-live journaled tables, ordered by table and column ascending. Each declaration
-has the live `table` name, `column` name and its nonempty `reason` from
-`_journalNoise`. These are schema metadata, declared `WireField::notPersonal()`;
-an admin and a view-mode viewer receive the same list. A valid empty list means
-no noisy columns are declared; absent or malformed data is not an empty result.
-The snapshot is read again on subscription, never sent as a companion signal.
-
-Vue, React and Angular mount `HilosChangeLogTablesPage` with the project's
+The Tracked tables page opens with its `hilosChangeLogTables` viewport and the
+column-mode reference. It does not include noisy-column data. Vue, React and
+Angular mount `HilosChangeLogTablesPage` with the project's
 `HilosChangeLogContext`, outside the context-free default admin view map. Each
 demo binds it through its own Change Log context: chat in Vue, ecommerce-shop
-and tasks in React, and online-testing and polls in Angular. The view draws the
-framework viewport, the full noisy-column list as a table on wide screens and
-cards on narrow screens, and the core's column-mode reference. Viewport filters
-do not narrow the reference list. An untracked table carries its explicit
-no-label note and dashes for journal facts.
+and tasks in React, and online-testing and polls in Angular. The page draws the
+viewport and the core's column-mode reference. Viewport filters do not narrow
+the reference list. An untracked table carries its explicit no-label note and
+dashes for journal facts.
 `Open` appears only for a journaled table whose detail route resolves through
 the router: Vue, React and Angular draw it. The address uses the live table
 name, never a journal dictionary number.
+
+The standalone Noisy columns page (`/hilos/change-log/noisy`) answers in its
+first `page_response` with the noisy-column snapshot in
+`data.changeLogNoisyColumns` for the current React and Angular views, plus the
+first `windows.hilosChangeLogNoisyColumns` viewport. The snapshot covers live
+journaled tables and has each column's live `table`, `column` and non-empty
+`reason` from `_journalNoise`, in table-then-column order. These are schema
+metadata, declared `WireField::notPersonal()`; an admin
+and a view-mode viewer receive the same data. A valid empty list means no noisy
+columns are declared; absent or malformed data is not an empty result. The
+snapshot is read at subscription, while each viewport is read for its window
+request; there is no polling, cache, source-driven update or live mutation.
+
+Vue reads and draws the server window. React and Angular keep the snapshot
+table on wide screens and cards on narrow screens on this separate page. The
+`hilosChangeLogNoisyColumns` table reads
+`Hilos::$db->changeLogTables->sectionNoisyColumns()` into windows of 25, ordered
+by table and column. Its row key and `columnKey` are `table.column`; the
+`noisyColumn` slot contains only `{columnKey, table, column, reason}`, with no
+entity `id` or nested `rowKey`. All four fields are `WireField::notPersonal()`.
+The ordinary count, anchors and window apply; the view offers no search,
+filters or row actions. It draws `Column` (the qualified `table.column`) and
+`Why noisy`, and the existing page and table gates still apply.
 
 The Tracked table page `hilos_change_log_table` lives at
 `/hilos/change-log/tables/{tableId}/{record?}`. `tableId` is the live table
@@ -718,18 +740,21 @@ one. An unknown name is refused as not found; an untracked table answers with
 the view builds the `hilosChangeLogHistory` window after the page answers, only
 for a journaled table, with the table and the record as its preset, and builds
 it again when the address changes. The page declares no action of its own: its
-receipt modal reads through the Change Log's `hilos_change_log_receipt_read`,
-which is addressed by name and needs no subscription to the feed.
+receipt modal reads through the Feed-owned `hilos_change_log_receipt_read`,
+which is addressed by name and needs no subscription to the Feed.
 
 In the receipt modal — on the Change Log and on this page alike — the `table
 #key` of an entry links to this page narrowed to that record, and following it
 closes the modal. The link is drawn only when the router gives the page an
 address and no part of the key is masked; otherwise the label stays text.
 
-The section's e2e coverage is three identical specs in chat (Vue), tasks (React)
+The shared receipt and history scenarios remain in chat (Vue), tasks (React)
 and polls (Angular), using a person's block receipt and checks from
-`framework/frontend/e2e/changeLog.ts`; chat's `change-log-bot.spec.ts` checks
-full long-text values (HIL-1464).
+`framework/frontend/e2e/changeLog.ts`. Chat additionally checks the adopted
+Vue section head, overview tiles, navigation with Back, and direct Feed and
+Noisy columns entry with a complete first answer through F5. React and Angular
+keep their legacy section heads. Chat's `change-log-bot.spec.ts` checks full
+long-text values (HIL-1464).
 
 ## Triggers Are Files
 

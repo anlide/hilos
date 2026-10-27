@@ -7,7 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
@@ -301,7 +301,7 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `created_at`, `id`", [$receiptId]);
         $expectedIds = array_map(static fn(array $row): int => (int)$row['id'], Database::rows());
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
-        $direct = new ChangeLogDashboardPage(new DemoHilosChangeLogAgent())->onAction(self::ADMIN,
+        $direct = new ChangeLogFeedPage(new DemoHilosChangeLogAgent())->onAction(self::ADMIN,
             HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ, new HilosChangeLogReceiptReadActionDTO($receiptId));
         self::assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
@@ -405,7 +405,7 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         Hilos::$browser = null;
         try {
             $this->expectException(LogicException::class);
-            new ChangeLogDashboardPage(new DemoHilosChangeLogAgent())->onAction(self::ADMIN, $request->getAction(), $request);
+            new ChangeLogFeedPage(new DemoHilosChangeLogAgent())->onAction(self::ADMIN, $request->getAction(), $request);
         } finally {
             Hilos::initBrowser();
         }

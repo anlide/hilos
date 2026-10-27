@@ -146,6 +146,12 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.CHANGE_LOG]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLog.vue').then((m) => m.default),
   ),
+  [HilosPages.CHANGE_LOG_FEED]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogFeed.vue').then((m) => m.default),
+  ),
+  [HilosPages.CHANGE_LOG_NOISY]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogNoisy.vue').then((m) => m.default),
+  ),
   [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLogTables.vue').then(
       (m) => m.default,

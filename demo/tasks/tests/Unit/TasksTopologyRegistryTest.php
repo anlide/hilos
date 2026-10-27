@@ -242,10 +242,13 @@ use ReflectionProperty;
 use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Core\Agent\TopologyAgentFactory;
@@ -395,7 +398,8 @@ final class TasksTopologyRegistryTest extends TestCase
     public function testChangeLogSectionIsFullyActivated(): void
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
-        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+        foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -406,7 +410,19 @@ final class TasksTopologyRegistryTest extends TestCase
         self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
         self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
         self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogFeed]);
-        self::assertSame([TasksTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame([TasksTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogFeedPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogDashboardPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogFeedPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogNoisyPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED,
+            ChangeLogFeedPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY,
+            ChangeLogNoisyPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame([], ChangeLogDashboardPage::ACTIONS);
+        self::assertSame(ChangeLogFeedPage::class, Hilos::PAGES[ChangeLogFeedPage::PAGE]);
+        self::assertSame(ChangeLogNoisyPage::class, Hilos::PAGES[ChangeLogNoisyPage::PAGE]);
+        self::assertSame(HilosChangeLogNoisyColumnsTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogNoisyColumns]);
+        self::assertSame([TasksTableContext::hilosChangeLogNoisyColumns => []], Hilos::PAGE_TABLES[ChangeLogNoisyPage::PAGE]);
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogTables]);
         self::assertSame([TasksTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogHistory]);
@@ -1190,6 +1206,7 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame([
             TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
             TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            TasksTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
             TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             TasksTableContext::settings => HilosSettingsTable::class,
             TasksTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
@@ -1245,8 +1262,9 @@ final class TasksTopologyRegistryTest extends TestCase
             [
                 BrowserSessionPage::PAGE,
                 PersonPage::PAGE,
-                ChangeLogDashboardPage::PAGE,
+                ChangeLogFeedPage::PAGE,
                 ChangeLogTablesPage::PAGE,
+                ChangeLogNoisyPage::PAGE,
                 ChangeLogTablePage::PAGE,
                 SettingsPage::PAGE,
                 AppearancePage::PAGE,

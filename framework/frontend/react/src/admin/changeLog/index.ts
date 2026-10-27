@@ -10,3 +10,5 @@ export {
   type HilosChangeLogTablesPageProps,
   HilosChangeLogTablesPage,
 } from './HilosChangeLogTablesPage.js'
+export { HilosChangeLogFeedPage } from './HilosChangeLogFeedPage.js'
+export { HilosChangeLogNoisyPage } from './HilosChangeLogNoisyPage.js'

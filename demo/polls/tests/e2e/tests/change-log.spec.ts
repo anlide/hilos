@@ -3,13 +3,14 @@ import { expect, test } from '@playwright/test'
 import {
   signUp,
   CHANGE_LOG_BLOCK_ACTION,
-  CHANGE_LOG_PATH,
+  CHANGE_LOG_FEED_PATH,
   CHANGE_LOG_TABLES_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogDashboardCard,
   expectChangeLogFeedRow,
   expectChangeLogOverview,
+  expectChangeLogFeed,
   expectChangeLogReceiptOpen,
   expectChangeLogValues,
   expectRegistrationFeedRow,
@@ -32,6 +33,8 @@ test('opens Change Log from the admin dashboard with its overview and feed', asy
   await expectChangeLogDashboardCard(expect, page)
   await page.getByTestId('dashboard-card-hilos_change_log').click()
   await expectChangeLogOverview(expect, page)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
+  await expectChangeLogFeed(expect, page)
 })
 
 // FIXME(F-022, 2026-10-23): receipt modal does not return focus · чужой · попытка 3 · HIL-1641
@@ -58,7 +61,7 @@ test(
       await expect(page.getByTestId('modal')).toBeHidden()
       await dismissToasts(page)
 
-      await gotoPage(expect, page, CHANGE_LOG_PATH)
+      await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
       await chooseChangeLogFeedTable(page, 'hilos_user')
       await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
       const { rowKey, receiptId } = await expectChangeLogFeedRow(
@@ -97,7 +100,7 @@ test('its registration receipt shows person and identity creation as facts witho
   await gotoPage(expect, page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
   await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId))
   const receiptId = await expectRegistrationHistory(expect, page)
-  await gotoPage(expect, page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
   const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
   await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
   await expectChangeLogReceiptOpen(expect, page, receiptId)

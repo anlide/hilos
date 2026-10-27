@@ -207,10 +207,13 @@ use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
@@ -279,6 +282,8 @@ final class Hilos extends HilosFacade
 
     public const array PAGES = [
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+        ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
@@ -506,6 +511,7 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        PollsTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         PollsTableContext::settings => HilosSettingsTable::class,
         PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
@@ -624,11 +630,14 @@ final class Hilos extends HilosFacade
         PersonPage::PAGE => [
             PollsTableContext::hilosAnalyticsBrowserSessions => [],
         ],
-        ChangeLogDashboardPage::PAGE => [
+        ChangeLogFeedPage::PAGE => [
             PollsTableContext::hilosChangeLogFeed => [],
         ],
         ChangeLogTablesPage::PAGE => [
             PollsTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogNoisyPage::PAGE => [
+            PollsTableContext::hilosChangeLogNoisyColumns => [],
         ],
         ChangeLogTablePage::PAGE => [
             PollsTableContext::hilosChangeLogHistory => [],

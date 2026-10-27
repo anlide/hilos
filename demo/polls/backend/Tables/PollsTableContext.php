@@ -47,6 +47,7 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
@@ -58,6 +59,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosChangeLogNoisyColumnsTable $hilosChangeLogNoisyColumns
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
@@ -102,6 +104,7 @@ final class PollsTableContext extends TableContext
 {
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosChangeLogNoisyColumns = HilosChangeLogNoisyColumnsTable::TABLE;
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;

@@ -78,7 +78,9 @@ export const HilosPages = {
   I18N_TRANSLATE_ACTION_ERROR: 'hilos_i18n_translate_action_error',
   I18N_TRANSLATE_EMAIL: 'hilos_i18n_translate_email',
   CHANGE_LOG: 'hilos_change_log',
+  CHANGE_LOG_FEED: 'hilos_change_log_feed',
   CHANGE_LOG_TABLES: 'hilos_change_log_tables',
+  CHANGE_LOG_NOISY: 'hilos_change_log_noisy',
   CHANGE_LOG_TABLE: 'hilos_change_log_table',
   DAEMON: 'hilos_daemon',
   DAEMON_PLACEMENT: 'hilos_daemon_placement',
@@ -288,6 +290,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.CHANGE_LOG]: { path: '/hilos/change-log', admin: true },
+  [HilosPages.CHANGE_LOG_FEED]: { path: '/hilos/change-log/feed', admin: true },
+  [HilosPages.CHANGE_LOG_NOISY]: {
+    path: '/hilos/change-log/noisy',
+    admin: true,
+  },
   [HilosPages.CHANGE_LOG_TABLES]: {
     path: '/hilos/change-log/tables',
     admin: true,

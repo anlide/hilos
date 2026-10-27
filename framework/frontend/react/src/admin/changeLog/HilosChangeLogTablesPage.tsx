@@ -1,21 +1,7 @@
-// HilosChangeLogTablesPage — the framework Tracked tables page
-// (HilosPages.CHANGE_LOG_TABLES). It draws the core's viewport and live schema
-// metadata: the opening page response supplies the complete noisy-column
-// snapshot, and filters apply only to the tables viewport. A journaled table
-// offers Open once the router gives the Tracked table page an address. The
-// core owns the table, the row view-model and every word, so a project mounts
-// this view by passing its HilosChangeLogContext. Bootstrap classes only
-// (styling-rules.md).
-import { useContext, useEffect, useId, useMemo } from 'react'
+import { useContext, useEffect, useMemo } from 'react'
 import {
   CHANGE_LOG_COLUMN_MODES,
   CHANGE_LOG_COLUMN_MODES_TITLE,
-  CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
-  CHANGE_LOG_NOISY_COLUMNS_NOTE,
-  CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_SECTION,
-  CHANGE_LOG_NOISY_COLUMNS_TITLE,
   CHANGE_LOG_TABLES_CHANGES_FIELD,
   CHANGE_LOG_TABLES_COLUMNS_FIELD,
   CHANGE_LOG_TABLES_LAST_CHANGE_FIELD,
@@ -30,7 +16,6 @@ import {
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
-  readHilosChangeLogNoisyColumns,
 } from '@hilos/core/admin/change-log'
 import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import type { HilosChangeLogContext } from '@hilos/core/admin/change-log'
@@ -39,7 +24,6 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
-import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosChangeLogTablesPage}. */
 export interface HilosChangeLogTablesPageProps {
@@ -48,8 +32,7 @@ export interface HilosChangeLogTablesPageProps {
 }
 
 /**
- * The Tracked tables page: the tables viewport, the noisy columns and the
- * column modes.
+ * The tracked tables viewport and the column-mode reference.
  *
  * @param props The project context (connection and page scope).
  */
@@ -57,15 +40,6 @@ export function HilosChangeLogTablesPage({
   context,
 }: HilosChangeLogTablesPageProps) {
   const router = useContext(HilosRouterContext)
-  const noisyHeadingId = useId()
-  const noisyColumns = readHilosChangeLogNoisyColumns(
-    useSignal(
-      useMemo(
-        () => context.scopes.pageDataSignal(CHANGE_LOG_NOISY_COLUMNS_SECTION),
-        [context],
-      ),
-    ),
-  )
   const tables = useMemo(
     () => createHilosChangeLogTablesTable(context),
     [context],
@@ -145,63 +119,6 @@ export function HilosChangeLogTablesPage({
           },
         }}
       />
-
-      <section className="mt-4" data-id="hilos-change-log-noisy-columns">
-        <h2 id={noisyHeadingId} className="h5">
-          {CHANGE_LOG_NOISY_COLUMNS_TITLE}
-        </h2>
-        <p className="small text-body-secondary">
-          {CHANGE_LOG_NOISY_COLUMNS_NOTE}
-        </p>
-        {noisyColumns === null ? (
-          <p className="text-body-secondary">—</p>
-        ) : noisyColumns.length === 0 ? (
-          <p className="text-body-secondary">
-            {CHANGE_LOG_NOISY_COLUMNS_EMPTY}
-          </p>
-        ) : (
-          <>
-            <div className="d-none d-md-block">
-              <table
-                className="table table-sm align-middle mb-0"
-                aria-labelledby={noisyHeadingId}
-              >
-                <thead>
-                  <tr>
-                    <th scope="col">{CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL}</th>
-                    <th scope="col">{CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {noisyColumns.map((column) => (
-                    <tr key={`${column.table}.${column.column}`}>
-                      <td className="font-monospace text-break">
-                        {column.table}.{column.column}
-                      </td>
-                      <td className="small text-break">{column.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="d-md-none d-flex flex-column gap-2">
-              {noisyColumns.map((column) => (
-                <div
-                  key={`${column.table}.${column.column}`}
-                  className="border rounded-3 p-3"
-                >
-                  <div className="font-monospace text-break mb-1">
-                    {column.table}.{column.column}
-                  </div>
-                  <p className="small text-body-secondary text-break mb-0">
-                    {column.reason}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
 
       <section className="mt-4" data-id="hilos-change-log-column-modes">
         <h2 className="h5">{CHANGE_LOG_COLUMN_MODES_TITLE}</h2>

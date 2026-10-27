@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
@@ -33,7 +34,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
-/** Admin and viewer subscriptions carry schema metadata and the first table window together. */
+/** Admin and viewer subscriptions carry each page's metadata and first window together. */
 final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT = 'change-log-tables-page-test';
@@ -107,7 +108,7 @@ final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
         parent::tearDown();
     }
 
-    public function testNoisyMetadataAndTableArriveTogetherForAdminAndViewer(): void
+    public function testSchemaMetadataAndTablesArriveOnTheirOwnPagesForAdminAndViewer(): void
     {
         $this->connect('change-log-tables-admin', 'Change log tables admin', true);
         $this->connect('change-log-tables-viewer', 'Change log tables viewer', false);
@@ -132,15 +133,18 @@ final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
         self::assertNotEmpty($expected);
 
         $adminPayload = $this->subscribe('change-log-tables-admin');
-        self::assertSame(array_values($expected), $adminPayload->data[ChangeLogTablesPage::NOISY_COLUMNS]);
+        self::assertSame(array_values($expected), $adminPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS]);
         $viewerPayload = $this->subscribe('change-log-tables-viewer');
-        self::assertSame($adminPayload->data[ChangeLogTablesPage::NOISY_COLUMNS],
-            $viewerPayload->data[ChangeLogTablesPage::NOISY_COLUMNS]);
+        self::assertSame($adminPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS],
+            $viewerPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS]);
         self::assertSame($adminPayload->windows, $viewerPayload->windows);
         $reopened = $this->subscribe('change-log-tables-viewer');
-        self::assertSame($viewerPayload->data[ChangeLogTablesPage::NOISY_COLUMNS],
-            $reopened->data[ChangeLogTablesPage::NOISY_COLUMNS]);
-        foreach ([$adminPayload, $viewerPayload, $reopened] as $payload) {
+        self::assertSame($viewerPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS],
+            $reopened->data[ChangeLogNoisyPage::NOISY_COLUMNS]);
+        foreach ([$this->subscribe('change-log-tables-admin', ChangeLogTablesPage::class),
+            $this->subscribe('change-log-tables-viewer', ChangeLogTablesPage::class),
+            $this->subscribe('change-log-tables-viewer', ChangeLogTablesPage::class)] as $payload) {
+            self::assertArrayNotHasKey(ChangeLogNoisyPage::NOISY_COLUMNS, $payload->data);
             self::assertSame([], $payload->refusedWindows);
             self::assertArrayHasKey(ChatTableContext::hilosChangeLogTables, $payload->windows);
             $window = $payload->windows[ChatTableContext::hilosChangeLogTables];
@@ -186,16 +190,17 @@ final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
      * Opens or reopens the page without any client action or viewport request.
      *
      * @param string $acceptKey Subscribing connection
+     * @param class-string<ChangeLogNoisyPage|ChangeLogTablesPage> $pageClass Page being opened
      * @return PagePayload Metadata and first window from the only page response
      */
-    private function subscribe(string $acceptKey): PagePayload
+    private function subscribe(string $acceptKey, string $pageClass = ChangeLogNoisyPage::class): PagePayload
     {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
-        Hilos::$sr->subscribeToPage(ChangeLogTablesPage::PAGE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, ChangeLogTablesPage::PAGE, []));
-        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey): void {
-            new ChangeLogTablesPage(new DemoHilosChangeLogAgent())->onSubscribe($acceptKey, new PageRouteParams([]));
+        Hilos::$sr->subscribeToPage($pageClass::PAGE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, []));
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey, $pageClass): void {
+            new $pageClass(new DemoHilosChangeLogAgent())->onSubscribe($acceptKey, new PageRouteParams([]));
         });
         $responses = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {

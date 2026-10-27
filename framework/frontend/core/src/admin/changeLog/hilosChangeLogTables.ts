@@ -241,7 +241,6 @@ export function createHilosChangeLogTablesTable(
     },
   ]
   const frame: HilosTableFrame = {
-    title: 'Tables',
     search: { placeholder: 'Table…' },
     filters: [
       {

@@ -51,6 +51,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Chat\Pages\Hilos\Moderation\ModerationPage;
@@ -139,6 +141,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
@@ -711,7 +714,19 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAnalyticsBrowserSessionsTable::class,
             Hilos::TABLES[ChatTableContext::hilosAnalyticsBrowserSessions],
         );
-        self::assertSame([ChatTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogFeedPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogDashboardPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogFeedPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogNoisyPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED,
+            ChangeLogFeedPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY,
+            ChangeLogNoisyPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame([], ChangeLogDashboardPage::ACTIONS);
+        self::assertSame(ChangeLogFeedPage::class, Hilos::PAGES[ChangeLogFeedPage::PAGE]);
+        self::assertSame(ChangeLogNoisyPage::class, Hilos::PAGES[ChangeLogNoisyPage::PAGE]);
+        self::assertSame(HilosChangeLogNoisyColumnsTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogNoisyColumns]);
+        self::assertSame([ChatTableContext::hilosChangeLogNoisyColumns => []], Hilos::PAGE_TABLES[ChangeLogNoisyPage::PAGE]);
         self::assertSame([ChatTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
         self::assertSame([ChatTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogDashboardPage::SUBSCRIPTION_AGENT_TYPE);
@@ -720,7 +735,7 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([
             HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosChangeLogReceiptReadActionDTO::class,
             HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosChangeLogEntryReadActionDTO::class,
-        ], ChangeLogDashboardPage::ACTIONS);
+        ], ChangeLogFeedPage::ACTIONS);
         self::assertSame(HilosChangeLogReceiptReadActionDTO::class,
             Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ]);
         self::assertSame(HilosChangeLogEntryReadActionDTO::class,
@@ -918,6 +933,13 @@ final class ChatTopologyRegistryTest extends TestCase
             ),
             $pages[HilosPageConstants::HILOS_LOGS],
         );
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_CHANGE_LOG],
+        );
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
@@ -945,6 +967,7 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
+            HilosPageConstants::HILOS_CHANGE_LOG,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -1471,8 +1494,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
             HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
-            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosPageConstants::HILOS_CHANGE_LOG,
-            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosPageConstants::HILOS_CHANGE_LOG,
+            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosPageConstants::HILOS_CHANGE_LOG_FEED,
+            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosPageConstants::HILOS_CHANGE_LOG_FEED,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
             HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT => HilosPageConstants::HILOS_PRIVACY,
             HilosSignalConstants::HILOS_STATUS_CANCEL_PUBLICATION => HilosPageConstants::HILOS_STATUS,

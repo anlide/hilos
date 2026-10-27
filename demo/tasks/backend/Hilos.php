@@ -204,10 +204,13 @@ use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
@@ -277,6 +280,8 @@ final class Hilos extends HilosFacade
 
     public const array PAGES = [
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+        ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
@@ -507,6 +512,7 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        TasksTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         TasksTableContext::settings => HilosSettingsTable::class,
         TasksTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
@@ -598,11 +604,14 @@ final class Hilos extends HilosFacade
         PersonPage::PAGE => [
             TasksTableContext::hilosAnalyticsBrowserSessions => [],
         ],
-        ChangeLogDashboardPage::PAGE => [
+        ChangeLogFeedPage::PAGE => [
             TasksTableContext::hilosChangeLogFeed => [],
         ],
         ChangeLogTablesPage::PAGE => [
             TasksTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogNoisyPage::PAGE => [
+            TasksTableContext::hilosChangeLogNoisyColumns => [],
         ],
         ChangeLogTablePage::PAGE => [
             TasksTableContext::hilosChangeLogHistory => [],

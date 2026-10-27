@@ -2750,3 +2750,11 @@ export {
   type HilosTimeZonePicker,
   type HilosTimeZonePickerRow,
 } from './timeZone/timeZonePicker.js'
+export {
+  CHANGE_LOG_NOISY_COLUMN_FIELD,
+  CHANGE_LOG_NOISY_REASON_FIELD,
+  resolveHilosChangeLogNoisyColumnsRow,
+  createHilosChangeLogNoisyColumnsTable,
+  type HilosChangeLogNoisyColumnsRow,
+  type HilosChangeLogNoisyColumnsTable,
+} from './admin/changeLog/hilosChangeLogNoisyColumns.js'

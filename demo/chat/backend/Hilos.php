@@ -111,10 +111,13 @@ use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingProviderPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingRefundsPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelFramePage;
@@ -479,6 +482,8 @@ final class Hilos extends HilosFacade
         BillingPaymentsPage::PAGE => BillingPaymentsPage::class,
         BillingRefundsPage::PAGE => BillingRefundsPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
+        ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -728,6 +733,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        ChatTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
@@ -1014,11 +1020,14 @@ final class Hilos extends HilosFacade
         CountryNamesPage::PAGE => [
             ChatTableContext::hilosI18nCountryNames => [],
         ],
-        ChangeLogDashboardPage::PAGE => [
+        ChangeLogFeedPage::PAGE => [
             ChatTableContext::hilosChangeLogFeed => [],
         ],
         ChangeLogTablesPage::PAGE => [
             ChatTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogNoisyPage::PAGE => [
+            ChatTableContext::hilosChangeLogNoisyColumns => [],
         ],
         ChangeLogTablePage::PAGE => [
             ChatTableContext::hilosChangeLogHistory => [],

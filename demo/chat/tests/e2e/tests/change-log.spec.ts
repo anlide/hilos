@@ -1,14 +1,20 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import {
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_PATH,
+  CHANGE_LOG_NOISY_PATH,
+  CHANGE_LOG_FEED_PATH,
   CHANGE_LOG_TABLES_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogDashboardCard,
+  expectChangeLogSectionHead,
+  expectChangeLogNoisyColumns,
+  expectTrackedTablesPage,
   expectChangeLogFeedRow,
   expectChangeLogOverview,
+  expectChangeLogFeed,
   expectChangeLogReceiptOpen,
   expectChangeLogReceiptMoment,
   expectChangeLogTimes,
@@ -20,6 +26,8 @@ import {
   forwardSessionTimeZone,
   shownByTestId,
   watchChangeLogDisplay,
+  watchSocketFrames,
+  expectPageReady,
   clickSubmit,
   typeInto,
   gotoPage,
@@ -36,7 +44,173 @@ test('opens Change Log from the admin dashboard with its overview and feed', asy
   await expectChangeLogDashboardCard(expect, page)
   await page.getByTestId('dashboard-card-hilos_change_log').click()
   await expectChangeLogOverview(expect, page)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
+  await expectChangeLogFeed(expect, page)
 })
+
+const SECTION = [
+  { key: 'hilos_change_log', label: 'Overview', path: CHANGE_LOG_PATH },
+  { key: 'hilos_change_log_feed', label: 'Feed', path: CHANGE_LOG_FEED_PATH },
+  {
+    key: 'hilos_change_log_tables',
+    label: 'Tracked tables',
+    path: CHANGE_LOG_TABLES_PATH,
+  },
+  {
+    key: 'hilos_change_log_noisy',
+    label: 'Noisy columns',
+    path: CHANGE_LOG_NOISY_PATH,
+  },
+] as const
+
+/** Observe the real first answer, including a missing payload as failed evidence. */
+function watchSectionReplies(page: Page) {
+  const replies: Array<{ page: string; payload: unknown }> = []
+  const observer = watchSocketFrames(page, ({ wire }) => {
+    const message = wire as
+      | { type?: unknown; data?: { page?: unknown; payload?: unknown } }
+      | undefined
+    if (
+      message?.type === 'page_response' &&
+      typeof message.data?.page === 'string'
+    ) {
+      replies.push({ page: message.data.page, payload: message.data.payload })
+    }
+  })
+  return { replies, stop: observer.stop }
+}
+
+/** The first response carries the whole section identity and that page's own data. */
+function expectFirstSectionReply(
+  replies: ReturnType<typeof watchSectionReplies>['replies'],
+  key: string,
+): void {
+  const first = replies.find((reply) => reply.page === key)
+  expect(first).toBeDefined()
+  expect(first!.payload).toMatchObject({
+    data: {
+      pageHeadOwner: {
+        page: 'hilos_change_log',
+        label: 'Change Log',
+        lead: 'Who changed what in the tracked tables, and through which action.',
+        icon: 'bi-clock-history',
+      },
+      pageBreadcrumb: [
+        { page: 'hilos', label: 'Hilos' },
+        { page: 'hilos_change_log', label: 'Change Log' },
+      ],
+      pageTabs: SECTION.map(({ key, label }) => ({ page: key, label })),
+      pageChildren: [],
+    },
+  })
+  if (key === 'hilos_change_log' || key === 'hilos_change_log_feed') {
+    expect(first!.payload).toMatchObject({
+      data: {
+        changeLogOverview: {
+          journalEntries: expect.any(Number),
+          journalBytes: expect.any(Number),
+          journaledTables: expect.arrayContaining(['hilos_user']),
+          liveTables: expect.any(Number),
+        },
+      },
+    })
+  }
+  const table =
+    key === 'hilos_change_log_feed'
+      ? 'hilosChangeLogFeed'
+      : key === 'hilos_change_log_tables'
+        ? 'hilosChangeLogTables'
+        : key === 'hilos_change_log_noisy'
+          ? 'hilosChangeLogNoisyColumns'
+          : undefined
+  if (table) {
+    expect(first!.payload).toMatchObject({
+      windows: {
+        [table]: { rows: expect.any(Array), totalCount: expect.any(Number) },
+      },
+    })
+  }
+  if (key === 'hilos_change_log_noisy') {
+    expect(first!.payload).toMatchObject({
+      data: {
+        changeLogNoisyColumns: expect.arrayContaining([
+          expect.objectContaining({
+            table: 'hilos_user',
+            column: 'last_activity',
+          }),
+        ]),
+      },
+    })
+  }
+}
+
+test('navigates both overview tiles and all four native section links with Back', async ({
+  page,
+}) => {
+  const observed = watchSectionReplies(page)
+  try {
+    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await gotoPage(expect, page, CHANGE_LOG_PATH)
+    await expectChangeLogOverview(expect, page)
+    await expect(page.getByTestId(/^hilos-change-log-link-/)).toHaveCount(2)
+    const feed = page.getByTestId('hilos-change-log-link-feed')
+    await expect(feed).toHaveRole('link')
+    await expect(feed).toHaveAttribute('href', CHANGE_LOG_FEED_PATH)
+    await feed.click()
+    await expectChangeLogFeed(expect, page)
+    await page.goBack()
+    await expectPageReady(expect, page)
+    await expectChangeLogOverview(expect, page)
+    const tables = page.getByTestId('hilos-change-log-link-tables')
+    await expect(tables).toHaveRole('link')
+    await expect(tables).toHaveAttribute('href', CHANGE_LOG_TABLES_PATH)
+    await tables.click()
+    await expectTrackedTablesPage(expect, page)
+    for (const section of [SECTION[3], SECTION[0], SECTION[1], SECTION[2]]) {
+      await page.getByTestId(`hilos-page-tab-${section.key}`).click()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(new RegExp(`${section.path}$`))
+      await expectChangeLogSectionHead(expect, page, section.key)
+      expectFirstSectionReply(observed.replies, section.key)
+    }
+    expect(observed.replies.some((reply) => reply.page === 'hilos')).toBe(false)
+  } finally {
+    observed.stop()
+  }
+})
+
+for (const section of [SECTION[1], SECTION[3]]) {
+  test(`opens ${section.label} directly with its first complete answer and keeps it through F5`, async ({
+    page,
+  }) => {
+    const observed = watchSectionReplies(page)
+    try {
+      await signUpAdmin(expect, page, { entryId: 'message-signin' })
+      await gotoPage(expect, page, section.path)
+      if (section.key === 'hilos_change_log_feed')
+        await expectChangeLogFeed(expect, page)
+      else await expectChangeLogNoisyColumns(expect, page)
+      expectFirstSectionReply(observed.replies, section.key)
+      expect(
+        observed.replies.some(
+          (reply) =>
+            reply.page === 'hilos' || reply.page === 'hilos_change_log',
+        ),
+      ).toBe(false)
+      await page.reload()
+      await expectPageReady(expect, page)
+      await expectChangeLogSectionHead(expect, page, section.key)
+      if (section.key === 'hilos_change_log_feed')
+        await expectChangeLogFeed(expect, page)
+      else await expectChangeLogNoisyColumns(expect, page)
+      expect(
+        observed.replies.filter((reply) => reply.page === section.key),
+      ).toHaveLength(2)
+    } finally {
+      observed.stop()
+    }
+  })
+}
 
 // FIXME(F-024, 2026-10-24): окно чека не открывается после Enter · чужой · попытка 1 · HIL-1661
 test(
@@ -64,7 +238,7 @@ test(
       await expect(page.getByTestId('modal')).toBeHidden()
       await dismissToasts(page)
 
-      await gotoPage(expect, page, CHANGE_LOG_PATH)
+      await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
       await chooseChangeLogFeedTable(page, 'hilos_user')
       await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
       const { rowKey, receiptId } = await expectChangeLogFeedRow(
@@ -103,7 +277,7 @@ test('its registration receipt shows person and identity creation as facts witho
   await gotoPage(expect, page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
   await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId))
   const receiptId = await expectRegistrationHistory(expect, page)
-  await gotoPage(expect, page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
   const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
   await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
   await expectChangeLogReceiptOpen(expect, page, receiptId)
@@ -131,7 +305,7 @@ test.describe('Change Log reader time zone', () => {
         `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`,
       )
       const receiptId = await expectRegistrationHistory(expect, page)
-      await gotoPage(expect, page, CHANGE_LOG_PATH)
+      await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
       const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)
       await shownByTestId(page, `hilos-change-log-open-${rowKey}`).click()
       await expectChangeLogReceiptOpen(expect, page, receiptId)

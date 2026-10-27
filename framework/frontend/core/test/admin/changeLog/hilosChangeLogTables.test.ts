@@ -280,7 +280,7 @@ describe('change-log tables viewport', () => {
   it('declares the columns, reads, sort controls and journal filter', () => {
     const { table } = stubTable()
     const frame = table.controller.frame
-    expect(frame.declaration?.title).toBe('Tables')
+    expect(frame.declaration?.title).toBeUndefined()
     expect(frame.declaration?.search?.placeholder).toBe('Table…')
     expect(frame.declaration?.empty).toBeUndefined()
     const columns = frame.columns.get()

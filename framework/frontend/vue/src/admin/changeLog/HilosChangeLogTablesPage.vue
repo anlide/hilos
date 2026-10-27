@@ -1,16 +1,7 @@
-<!-- The Tracked tables page draws the core's viewport and live schema metadata.
-The opening page response supplies the complete noisy-column snapshot; filters
-apply only to the tables viewport. Bootstrap classes only. -->
 <script setup lang="ts">
 import {
   CHANGE_LOG_COLUMN_MODES,
   CHANGE_LOG_COLUMN_MODES_TITLE,
-  CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
-  CHANGE_LOG_NOISY_COLUMNS_NOTE,
-  CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_SECTION,
-  CHANGE_LOG_NOISY_COLUMNS_TITLE,
   CHANGE_LOG_TABLES_NOTE,
   CHANGE_LOG_TABLES_OPEN_LABEL,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
@@ -19,18 +10,16 @@ import {
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
-  readHilosChangeLogNoisyColumns,
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
 } from '@hilos/core/admin/change-log'
 import { HilosPages } from '@hilos/core/base'
-import { computed, inject, onMounted, onUnmounted, useId } from 'vue'
+import { inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
-import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -38,13 +27,6 @@ const props = defineProps<{
 }>()
 
 const router = inject(hilosRouterKey)
-const noisyHeadingId = useId()
-const pageNoisyColumns = useSignal(
-  props.context.scopes.pageDataSignal(CHANGE_LOG_NOISY_COLUMNS_SECTION),
-)
-const noisyColumns = computed(() =>
-  readHilosChangeLogNoisyColumns(pageNoisyColumns.value),
-)
 const tables = createHilosChangeLogTablesTable(props.context)
 
 /** Resolve the optional detail link once for each drawn actions cell. */
@@ -60,7 +42,11 @@ onUnmounted(() => tables.dispose())
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.CHANGE_LOG_TABLES">
+  <HilosAdminPage
+    :page="HilosPages.CHANGE_LOG_TABLES"
+    head-kind="section"
+    tabs-label="Change Log pages"
+  >
     <p class="text-body-secondary">{{ CHANGE_LOG_TABLES_NOTE }}</p>
 
     <HilosViewportTable :controller="tables.controller">
@@ -106,59 +92,6 @@ onUnmounted(() => tables.dispose())
         >
       </template>
     </HilosViewportTable>
-
-    <section class="mt-4" data-id="hilos-change-log-noisy-columns">
-      <h2 :id="noisyHeadingId" class="h5">
-        {{ CHANGE_LOG_NOISY_COLUMNS_TITLE }}
-      </h2>
-      <p class="small text-body-secondary">
-        {{ CHANGE_LOG_NOISY_COLUMNS_NOTE }}
-      </p>
-      <p v-if="noisyColumns === null" class="text-body-secondary">—</p>
-      <p v-else-if="noisyColumns.length === 0" class="text-body-secondary">
-        {{ CHANGE_LOG_NOISY_COLUMNS_EMPTY }}
-      </p>
-      <template v-else>
-        <div class="d-none d-md-block">
-          <table
-            class="table table-sm align-middle mb-0"
-            :aria-labelledby="noisyHeadingId"
-          >
-            <thead>
-              <tr>
-                <th scope="col">{{ CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL }}</th>
-                <th scope="col">{{ CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="column in noisyColumns"
-                :key="`${column.table}.${column.column}`"
-              >
-                <td class="font-monospace text-break">
-                  {{ column.table }}.{{ column.column }}
-                </td>
-                <td class="small text-break">{{ column.reason }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="d-md-none d-flex flex-column gap-2">
-          <div
-            v-for="column in noisyColumns"
-            :key="`${column.table}.${column.column}`"
-            class="border rounded-3 p-3"
-          >
-            <div class="font-monospace text-break mb-1">
-              {{ column.table }}.{{ column.column }}
-            </div>
-            <p class="small text-body-secondary text-break mb-0">
-              {{ column.reason }}
-            </p>
-          </div>
-        </div>
-      </template>
-    </section>
 
     <section class="mt-4" data-id="hilos-change-log-column-modes">
       <h2 class="h5">{{ CHANGE_LOG_COLUMN_MODES_TITLE }}</h2>

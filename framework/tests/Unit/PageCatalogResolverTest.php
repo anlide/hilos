@@ -66,6 +66,101 @@ final class PageCatalogResolverTest extends TestCase
         parent::tearDown();
     }
 
+    public function testChangeLogTabsFollowCatalogOrderAndStopAtTheTrackedTableEntity(): void
+    {
+        ChangeLogHeadHilos::initBrowser();
+        foreach ([HilosPageConstants::HILOS_CHANGE_LOG, HilosPageConstants::HILOS_CHANGE_LOG_FEED,
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLES, HilosPageConstants::HILOS_CHANGE_LOG_NOISY] as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_FEED, 'label' => 'Feed'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_NOISY, 'label' => 'Noisy columns'],
+            ], $head->pageTabs);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Change Log'],
+            ], $head->pageBreadcrumb);
+        }
+        $entity = PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, new PageRouteParams([]));
+        self::assertNull($entity);
+        ChangeLogOverviewOnlyHeadHilos::initBrowser();
+        self::assertSame([['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Overview']],
+            PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG, new PageRouteParams([]))->pageTabs);
+    }
+
+    /** The real Vue providers adopt the whole section, stopping at the nested table entity. */
+    public function testVueProvidersAdoptTheChangeLogHeadOnAllFourOwnerPages(): void
+    {
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG]);
+        foreach ([TasksPageCatalog::class, EcommercePageCatalog::class, PollsPageCatalog::class,
+            OnlineTestingPageCatalog::class] as $provider) {
+            self::assertArrayNotHasKey(HilosPageConstants::HILOS_CHANGE_LOG, $provider::pages());
+            self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
+                PageCatalogResolver::catalogOf($provider)[HilosPageConstants::HILOS_CHANGE_LOG]);
+        }
+        ChangeLogDefaultHeadHilos::initBrowser();
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG, new PageRouteParams([])));
+
+        foreach ([ChatChangeLogHeadHilos::class, BinanceChangeLogHeadHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_CHANGE_LOG]);
+            foreach ([HilosPageConstants::HILOS_CHANGE_LOG, HilosPageConstants::HILOS_CHANGE_LOG_FEED,
+                HilosPageConstants::HILOS_CHANGE_LOG_TABLES, HilosPageConstants::HILOS_CHANGE_LOG_NOISY] as $page) {
+                self::assertSame(HilosPageConstants::HILOS_CHANGE_LOG, PageCatalogResolver::rowOwner($page));
+                $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+                self::assertNotNull($head);
+                self::assertSame([
+                    'pageHeadOwner' => [
+                        'page' => HilosPageConstants::HILOS_CHANGE_LOG,
+                        'label' => 'Change Log',
+                        'lead' => 'Who changed what in the tracked tables, and through which action.',
+                        'icon' => 'bi-clock-history',
+                    ],
+                    'pageBreadcrumb' => [
+                        ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                        ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Change Log'],
+                    ],
+                    'pageTabs' => [
+                        ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Overview'],
+                        ['page' => HilosPageConstants::HILOS_CHANGE_LOG_FEED, 'label' => 'Feed'],
+                        ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
+                        ['page' => HilosPageConstants::HILOS_CHANGE_LOG_NOISY, 'label' => 'Noisy columns'],
+                    ],
+                    'pageChildren' => [],
+                ], $head->toArray());
+                self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
+            }
+            self::assertSame(HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
+                PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_CHANGE_LOG_TABLE));
+            self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, new PageRouteParams([])));
+        }
+    }
+
+    /** Missing pages and an inapplicable tab have no links in either Vue provider's section row. */
+    public function testVueChangeLogHeadsFilterUnservedAndInapplicableTabs(): void
+    {
+        foreach ([ChatChangeLogPartialHeadHilos::class, BinanceChangeLogPartialHeadHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
+            ], PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG,
+                new PageRouteParams(['variant' => 'disabled']))->pageTabs);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_FEED, 'label' => 'Feed'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
+            ], PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG,
+                new PageRouteParams(['variant' => 'enabled']))->pageTabs);
+        }
+    }
+
     public function testStatusSharesItsCatalogHeadAndOmitsAnUnservedChild(): void
     {
         StatusPageCatalogHilos::initBrowser();
@@ -1899,4 +1994,79 @@ abstract class ModerationKindRulesPageHeadTestHilos extends Hilos
 
 final class CommunicationsFramePageHeadTestPage extends AbstractHilosCommunicationsChannelFramePage
 {
+}
+
+/** Catalog-only adoption fixture; project adoption remains independent. */
+abstract class ChangeLogHeadHilos extends Hilos
+{
+    protected const string PAGE_CATALOG = ChangeLogHeadCatalog::class;
+
+    public const array PAGES = [
+        HilosPageConstants::HILOS_CHANGE_LOG => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_FEED => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_NOISY => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE => PageHeadTestPage::class,
+    ];
+}
+
+abstract class ChangeLogOverviewOnlyHeadHilos extends ChangeLogHeadHilos
+{
+    public const array PAGES = [HilosPageConstants::HILOS_CHANGE_LOG => PageHeadTestPage::class];
+}
+
+final class ChangeLogHeadCatalog implements PageCatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Complete framework owner opted in for the fixture */
+    public static function pages(): array
+    {
+        return [HilosPageConstants::HILOS_CHANGE_LOG => array_replace(
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG],
+            [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+        )];
+    }
+
+    /** @return array Empty project sections */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
+/** All registered Change Log pages without project head adoption. */
+abstract class ChangeLogDefaultHeadHilos extends Hilos
+{
+    public const array PAGES = ChangeLogHeadHilos::PAGES;
+}
+
+/** Chat's real complete owner entry. */
+abstract class ChatChangeLogHeadHilos extends ChangeLogHeadHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** Binance's real complete owner entry. */
+abstract class BinanceChangeLogHeadHilos extends ChangeLogHeadHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Unserved Noisy and conditionally applicable Feed in Chat. */
+abstract class ChatChangeLogPartialHeadHilos extends ChatChangeLogHeadHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_FEED => PageHeadTestConditionalTab::class,
+        HilosPageConstants::HILOS_CHANGE_LOG => PageHeadTestPage::class,
+    ];
+}
+
+/** The same serving boundary in Binance, independently of registration order. */
+abstract class BinanceChangeLogPartialHeadHilos extends BinanceChangeLogHeadHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_FEED => PageHeadTestConditionalTab::class,
+        HilosPageConstants::HILOS_CHANGE_LOG => PageHeadTestPage::class,
+    ];
 }

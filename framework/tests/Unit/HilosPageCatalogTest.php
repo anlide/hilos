@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 102;
+    private const int CATALOG_ENTRIES = 104;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -417,6 +417,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_DAEMON_NODE,
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
         ], $entities);

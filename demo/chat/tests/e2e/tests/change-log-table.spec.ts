@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import {
   CHANGE_LOG_BLOCK_ACTION,
-  CHANGE_LOG_PATH,
+  CHANGE_LOG_FEED_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogFeedRow,
@@ -41,7 +41,7 @@ test('follows a block receipt to the history of its record and back to the whole
     await expect(page.getByTestId('modal')).toBeHidden()
     await dismissToasts(page)
 
-    await gotoPage(expect, page, CHANGE_LOG_PATH)
+    await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
     await chooseChangeLogFeedTable(page, 'hilos_user')
     await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
     const { rowKey, receiptId } = await expectChangeLogFeedRow(

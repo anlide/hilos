@@ -244,6 +244,16 @@ export class App {
         (module) => module.ChangeLog,
       ),
     ),
+    [HilosPages.CHANGE_LOG_FEED]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-feed.js').then(
+        (module) => module.ChangeLogFeed,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_NOISY]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-noisy.js').then(
+        (module) => module.ChangeLogNoisy,
+      ),
+    ),
     [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
       import('./views/hilos/change-log/change-log-tables.js').then(
         (module) => module.ChangeLogTables,

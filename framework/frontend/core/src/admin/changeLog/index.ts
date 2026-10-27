@@ -140,3 +140,11 @@ export {
   changeLogFeedEmpty,
   type HilosChangeLogOverview,
 } from './hilosChangeLogOverview.js'
+export {
+  CHANGE_LOG_NOISY_COLUMN_FIELD,
+  CHANGE_LOG_NOISY_REASON_FIELD,
+  resolveHilosChangeLogNoisyColumnsRow,
+  createHilosChangeLogNoisyColumnsTable,
+  type HilosChangeLogNoisyColumnsRow,
+  type HilosChangeLogNoisyColumnsTable,
+} from './hilosChangeLogNoisyColumns.js'

@@ -242,17 +242,19 @@ pinned by `ReadingActionsRegistryTest`:
 | `AbstractHilosTermsPage` | `HILOS_TERMS_REVISION_TEXT` (`hilos_terms_revision_text`) |
 | `AbstractHilosProfileAgreementsHistoryPage` | `HILOS_LEGAL_REVISION_TEXT` (`hilos_legal_revision_text`), `HILOS_LEGAL_REVISION_CHANGES` (`hilos_legal_revision_changes`) |
 | `AbstractUsersLibraryAgent` | `HILOS_LEGAL_CONSENT` (`hilos_legal_consent`), `HILOS_LEGAL_RECONSENT` (`hilos_legal_reconsent`), `HILOS_LEGAL_RECONSENT_PREVIEW` (`hilos_legal_reconsent_preview`) |
-| `AbstractHilosChangeLogDashboardPage` | `HILOS_CHANGE_LOG_RECEIPT_READ` (`hilos_change_log_receipt_read`), `HILOS_CHANGE_LOG_ENTRY_READ` (`hilos_change_log_entry_read`) |
+| `AbstractHilosChangeLogFeedPage` | `HILOS_CHANGE_LOG_RECEIPT_READ` (`hilos_change_log_receipt_read`), `HILOS_CHANGE_LOG_ENTRY_READ` (`hilos_change_log_entry_read`) |
 
 The logs viewer page sends its view-mode verdict to the file owner, which
 hides line text (HIL-1257). The users library's re-consent reply carries a null
 identifier under a takeover.
 
-The Change Log dashboard rechecks the viewer on each detail read and hides
-`actorLabel` and `subjectLabel` through `hideForViewer()` and the users-name
-column verdict before placing the reply in `ActionReplyDTO`. Page `dataFields`
-do not mask an action acknowledgement automatically. The non-personal journal
-snapshot and personal-change facts remain readable with the names hidden.
+The Change Log Feed (`/hilos/change-log/feed`) rechecks the viewer on each
+detail read and hides `actorLabel` and `subjectLabel` through `hideForViewer()`
+and the users-name column verdict before placing the reply in `ActionReplyDTO`.
+Page `dataFields` do not mask an action acknowledgement automatically. The
+non-personal journal snapshot and personal-change facts remain readable with
+the names hidden. The Overview (`/hilos/change-log`) carries schema figures
+without a feed window or detail reader.
 
 `COMMUNICATIONS_CHANNEL_TEST` (`communications_channel_test`) is not reading:
 it sends a real message. `LEGAL_ACCEPTANCES_EXPORT` orders a data export,
@@ -700,34 +702,62 @@ disabled for them (HIL-1256); a channel field's value follows its own catalog
 key, while the source and editability are shown — the edit and reset controls
 stand for a viewer the same as for an admin (HIL-1255).
 
-The Change Log section carries its viewer case as a unit of the dashboard page
-(`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts`,
+The Change Log Overview page carries schema figures and tiles without a feed
+window or detail reader. Its UI tests are
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts`,
 `framework/frontend/react/test/HilosChangeLogPage.test.tsx` and
-`framework/frontend/angular/test/HilosChangeLogPage.test.ts`):
-the tiles remain complete, while person names in the feed become a hidden mark
-beside the person's number. Its receipt modal also preserves hidden labels and
-numbers while reading, expanding and collapsing the non-personal snapshot.
-The page-response data integration is covered by
+`framework/frontend/angular/test/HilosChangeLogPage.test.ts`. The page-response
+data is covered by
 `demo/chat/tests/Integration/ChangeLogDashboardPageIntegrationTest.php`.
-`demo/chat/tests/Integration/ChangeLogReceiptPageIntegrationTest.php` exercises
-both routed reading actions under admin and viewer verdicts, including name
-masking in the reply before acknowledgement, deleted people, full value sides,
-cursor refusals and receipt portions. The Vue detail rendering is covered by
+
+The Feed carries its viewer cases in
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogFeedPage.test.ts`,
+beside its Vue page, and in the React and Angular mirrors
+(`framework/frontend/react/test/HilosChangeLogFeedPage.test.tsx` and
+`framework/frontend/angular/test/HilosChangeLogFeedPage.test.ts`). Person names
+in the feed become a hidden mark beside the person's number. Its receipt modal
+also preserves hidden labels and numbers while reading, expanding and
+collapsing the non-personal snapshot. The routed reading actions are covered
+under admin and viewer verdicts by
+`demo/chat/tests/Integration/ChangeLogReceiptPageIntegrationTest.php`,
+including name masking in the reply before acknowledgement, deleted people,
+full value sides, cursor refusals and receipt portions. The Vue detail rendering
+is covered by
 `framework/frontend/vue/src/admin/changeLog/HilosChangeLogReceiptModal.test.ts`;
 `demo/{chat,tasks,polls}/tests/e2e/tests/change-log.spec.ts` opens a block
 receipt and a registration receipt through the built Vue, React and Angular
 pages. Chat's `change-log-bot.spec.ts` checks full long-text values.
 
-The Tracked tables page carries its complete noisy-column snapshot and opening
-table window under both verdicts in
-`demo/chat/tests/Integration/ChangeLogTablesPageIntegrationTest.php`. Table names,
-column names and noise reasons are schema metadata, not personal values. Its Vue
-unit, `framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablesPage.test.ts`,
-draws the same metadata and column-mode reference for admins and viewers, with
-no mutation controls.
-`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-tables.spec.ts` follows the
-section card, journal-label filtering, `Open` into one table and narrow-screen
-reference cards.
+The Tracked tables page carries its own opening table window and column-mode
+reference under both verdicts. It does not carry the noisy-column snapshot.
+`demo/chat/tests/Integration/ChangeLogTablesPageIntegrationTest.php` covers the
+first responses of both Tracked tables and Noisy columns. Table names, column
+names and noise reasons are schema metadata, not personal values. The Vue unit,
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablesPage.test.ts`,
+draws the table viewport and column-mode reference for admins and viewers, with
+no mutation controls. The shared e2e helper checks the column-mode reference and
+Noisy columns separately in `framework/frontend/e2e/changeLog.ts`. Chat follows
+the adopted native section tabs; React and Angular retain their legacy child
+cards, so these checks do not promise a shared section frame.
+`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-tables.spec.ts` follows
+journal-label filtering, `Open` into one table and the narrow-screen reference
+cards.
+
+The Noisy columns page (`/hilos/change-log/noisy`) carries the
+`payload.data.changeLogNoisyColumns` compatibility snapshot and its first
+`windows.hilosChangeLogNoisyColumns` window. The snapshot remains for the legacy
+React and Angular views; Vue renders the window through `HilosViewportTable` and
+does not draw the snapshot. React and Angular keep their snapshot table and
+cards on this page; those legacy views make no promise to redraw from viewport
+updates. Table names, column names and declared reasons are schema metadata, not
+personal values; a viewer receives the same snapshot and window as an admin.
+The page tests are
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogNoisyPage.test.ts`,
+`framework/frontend/react/test/HilosChangeLogNoisyPage.test.tsx` and
+`framework/frontend/angular/test/HilosChangeLogNoisyPage.test.ts`. The initial
+page responses, their windows and view-mode masking are also covered by
+`framework/tests/Integration/ChangeLogSectionPagesIntegrationTest.php` and
+`demo/chat/tests/Integration/ChangeLogTablesPageIntegrationTest.php`.
 
 The Tracked table page carries its one-table section under both verdicts in
 `demo/chat/tests/Integration/ChangeLogTablePageIntegrationTest.php`: a viewer

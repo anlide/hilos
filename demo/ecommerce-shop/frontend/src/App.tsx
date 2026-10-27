@@ -48,6 +48,12 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.CHANGE_LOG]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLog.js').then((m) => m.default),
   ),
+  [HilosPages.CHANGE_LOG_FEED]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogFeed.js').then((m) => m.default),
+  ),
+  [HilosPages.CHANGE_LOG_NOISY]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogNoisy.js').then((m) => m.default),
+  ),
   [HilosPages.CHANGE_LOG_TABLES]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLogTables.js').then((m) => m.default),
   ),

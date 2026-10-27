@@ -1,13 +1,3 @@
-// HilosChangeLogTablesPage — the framework Tracked tables page
-// (HilosPages.CHANGE_LOG_TABLES). It draws the core's viewport and live schema
-// metadata: the opening page response supplies the complete noisy-column
-// snapshot, and filters apply only to the tables viewport. A journaled table
-// offers Open once the router gives the Tracked table page an address. The core
-// owns the table, the row view-model and every word, so a project mounts this
-// view by passing its HilosChangeLogContext. Everything built from the context
-// input is a computed and every subscription lives in an effect, so a new
-// context gets a new window and the old one is released by the same pass.
-// Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -15,17 +5,10 @@ import {
   effect,
   inject,
   input,
-  signal,
 } from '@angular/core'
 import {
   CHANGE_LOG_COLUMN_MODES,
   CHANGE_LOG_COLUMN_MODES_TITLE,
-  CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
-  CHANGE_LOG_NOISY_COLUMNS_NOTE,
-  CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL,
-  CHANGE_LOG_NOISY_COLUMNS_SECTION,
-  CHANGE_LOG_NOISY_COLUMNS_TITLE,
   CHANGE_LOG_TABLES_CHANGES_FIELD,
   CHANGE_LOG_TABLES_COLUMNS_FIELD,
   CHANGE_LOG_TABLES_LAST_CHANGE_FIELD,
@@ -40,7 +23,6 @@ import {
   formatChangeLogTableChanges,
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
-  readHilosChangeLogNoisyColumns,
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
 } from '@hilos/core/admin/change-log'
@@ -52,20 +34,14 @@ import {
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
-  mirrorHilosSignal,
 } from '@hilos/angular/base'
 
-// Distinct ids so two pages in one document never share an aria-labelledby
-// target — what Vue and React write as useId.
-let noisyHeadingSeq = 0
-
-/** The Tracked tables page: the tables viewport, the noisy columns and the column modes. */
+/** The tracked tables viewport and the column-mode reference. */
 @Component({
   selector: 'hilos-change-log-tables-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
   template: `
-    @let noisy = noisyColumns();
     <hilos-admin-page [page]="page">
       <p class="text-body-secondary">{{ text.note }}</p>
 
@@ -114,55 +90,6 @@ let noisyHeadingSeq = 0
         </ng-template>
       </hilos-viewport-table>
 
-      <section class="mt-4" data-id="hilos-change-log-noisy-columns">
-        <h2 [id]="noisyHeadingId" class="h5">{{ text.noisyTitle }}</h2>
-        <p class="small text-body-secondary">{{ text.noisyNote }}</p>
-        @if (noisy === null) {
-          <p class="text-body-secondary">—</p>
-        } @else if (noisy.length === 0) {
-          <p class="text-body-secondary">{{ text.noisyEmpty }}</p>
-        } @else {
-          <div class="d-none d-md-block">
-            <table
-              class="table table-sm align-middle mb-0"
-              [attr.aria-labelledby]="noisyHeadingId"
-            >
-              <thead>
-                <tr>
-                  <th scope="col">{{ text.noisyColumn }}</th>
-                  <th scope="col">{{ text.noisyReason }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (
-                  column of noisy;
-                  track column.table + '.' + column.column
-                ) {
-                  <tr>
-                    <td class="font-monospace text-break">
-                      {{ column.table }}.{{ column.column }}
-                    </td>
-                    <td class="small text-break">{{ column.reason }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          <div class="d-md-none d-flex flex-column gap-2">
-            @for (column of noisy; track column.table + '.' + column.column) {
-              <div class="border rounded-3 p-3">
-                <div class="font-monospace text-break mb-1">
-                  {{ column.table }}.{{ column.column }}
-                </div>
-                <p class="small text-body-secondary text-break mb-0">
-                  {{ column.reason }}
-                </p>
-              </div>
-            }
-          </div>
-        }
-      </section>
-
       <section class="mt-4" data-id="hilos-change-log-column-modes">
         <h2 class="h5">{{ text.modesTitle }}</h2>
         <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
@@ -196,11 +123,6 @@ export class HilosChangeLogTablesPage {
     note: CHANGE_LOG_TABLES_NOTE,
     untracked: CHANGE_LOG_TABLES_UNTRACKED_NOTE,
     open: CHANGE_LOG_TABLES_OPEN_LABEL,
-    noisyTitle: CHANGE_LOG_NOISY_COLUMNS_TITLE,
-    noisyNote: CHANGE_LOG_NOISY_COLUMNS_NOTE,
-    noisyEmpty: CHANGE_LOG_NOISY_COLUMNS_EMPTY,
-    noisyColumn: CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL,
-    noisyReason: CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL,
     modesTitle: CHANGE_LOG_COLUMN_MODES_TITLE,
   } as const
   protected readonly keys = {
@@ -216,32 +138,16 @@ export class HilosChangeLogTablesPage {
   protected readonly columnCounts = formatChangeLogColumnCounts
   protected readonly changes = formatChangeLogTableChanges
   protected readonly lastChange = formatChangeLogTableLastChange
-  protected readonly noisyHeadingId = `hilos-change-log-noisy-columns-title-${noisyHeadingSeq++}`
 
   // The navigator the Open links resolve through; mounted without one, a table
   // offers no Open, as it does in Vue.
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
-  // Mirrored from the page's noisy-column section, which derives from the context input.
-  private readonly pageNoisyColumns = signal<unknown>(undefined)
-  protected readonly noisyColumns = computed(() =>
-    readHilosChangeLogNoisyColumns(this.pageNoisyColumns()),
-  )
   protected readonly tables = computed(() =>
     createHilosChangeLogTablesTable(this.context()),
   )
 
   constructor() {
-    effect((onCleanup) => {
-      onCleanup(
-        mirrorHilosSignal(
-          this.context().scopes.pageDataSignal(
-            CHANGE_LOG_NOISY_COLUMNS_SECTION,
-          ),
-          this.pageNoisyColumns,
-        ),
-      )
-    })
     // Bind the tables window once the context binds, and release it on a new
     // context or when the page is destroyed.
     effect((onCleanup) => {

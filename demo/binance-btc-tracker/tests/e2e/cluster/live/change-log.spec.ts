@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   signUp,
   CHANGE_LOG_BLOCK_ACTION,
-  CHANGE_LOG_PATH,
+  CHANGE_LOG_FEED_PATH,
   DAEMON_ROOT_PATH,
   chooseChangeLogFeedTable,
   deliveryObject,
@@ -289,7 +289,7 @@ async function readBlockReceipt(
   pinned?: ReceiptRead,
 ): Promise<void> {
   read.status = 'reading'
-  await gotoPage(expect, page, CHANGE_LOG_PATH)
+  await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
   await chooseChangeLogFeedTable(page, 'hilos_user')
   await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
   read.receipt = await expectChangeLogFeedRow(

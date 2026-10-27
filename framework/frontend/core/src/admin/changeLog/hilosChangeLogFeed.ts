@@ -86,7 +86,7 @@ export interface HilosChangeLogFeedTable {
   dispose(): void
 }
 
-/** Selectable table names supplied by the dashboard page. */
+/** Selectable table names supplied by the feed page. */
 export interface HilosChangeLogFeedOptions {
   readonly tables: () => readonly string[]
 }
@@ -189,7 +189,7 @@ export function formatChangeLogFeedOpenLabel(
 }
 
 /**
- * Build the feed viewport over the change-log dashboard page.
+ * Build the feed viewport over the Change Log feed page.
  *
  * @param context Connection and page scope.
  * @param options Current journaled table names for the filter.
@@ -235,7 +235,6 @@ export function createHilosChangeLogFeedTable(
     },
   ]
   const frame: HilosTableFrame = {
-    title: 'Recent actions',
     search: { placeholder: 'Who…' },
     filters: [
       {
@@ -265,13 +264,13 @@ export function createHilosChangeLogFeedTable(
     resolve: resolveHilosChangeLogFeedRow,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.CHANGE_LOG,
+        HilosPages.CHANGE_LOG_FEED,
         CHANGE_LOG_FEED_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.CHANGE_LOG,
+        HilosPages.CHANGE_LOG_FEED,
         CHANGE_LOG_FEED_TABLE,
         rendered,
       ),
@@ -286,7 +285,7 @@ export function createHilosChangeLogFeedTable(
         bindTableViewport(
           context.connection,
           context.scopes,
-          { page: HilosPages.CHANGE_LOG, tableKey: CHANGE_LOG_FEED_TABLE },
+          { page: HilosPages.CHANGE_LOG_FEED, tableKey: CHANGE_LOG_FEED_TABLE },
           controller,
         ),
       )

@@ -285,15 +285,17 @@ their own Appearance. The build probes cover a cached pick or a fresh browser's
 System fallback, not a server account choice that browser has never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
-The Change Log section did not move: chat (Vue), tasks (React) and polls
-(Angular) carry `change-log.spec.ts`, `change-log-tables.spec.ts` and
-`change-log-table.spec.ts` with the same test titles. They read the action of
-an administrator blocking a person from that person's card: the column's value
-is journaled in every demo, and the signed-in person is the author (a
-registration receipt has no author because it comes from a guest). Only chat
-carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's description is
-the only long text under the journal. binance-btc-tracker, ecommerce-shop and
-online-testing mount the section without the single-node specs (HIL-1464).
+The shared Change Log receipt and history scenarios remain in chat (Vue), tasks
+(React) and polls (Angular). They cover an administrator blocking a person from
+that person's card: the column's value is journaled in every demo, and the
+signed-in person is the author (a registration receipt has no author because it
+comes from a guest). Chat additionally covers the adopted Vue section head,
+overview tiles, four section links with Back, and direct Feed and Noisy columns
+entry through F5. React and Angular retain their legacy section heads; these
+specs do not promise head parity. Only chat carries `change-log-bot.spec.ts`
+(`spec-owner: demo`): a bot's description is the only long text under the
+journal. binance-btc-tracker, ecommerce-shop and online-testing mount the section
+without the single-node specs (HIL-1464).
 binance-btc-tracker additionally carries the separate cluster proof in
 `tests/e2e/cluster/live/change-log.spec.ts`: one remote writer's block receipt
 reads identically through every master (HIL-1465).
@@ -852,17 +854,27 @@ socket opens.
 
 ### The Change Log section — names and checks
 
-`changeLog.ts` owns `CHANGE_LOG_PATH`, `CHANGE_LOG_TABLES_PATH`, `CHANGE_LOG_LEAD`,
-`CHANGE_LOG_TABLES_LEAD` and `CHANGE_LOG_BLOCK_ACTION`.
+`changeLog.ts` owns `CHANGE_LOG_PATH`, `CHANGE_LOG_FEED_PATH`,
+`CHANGE_LOG_TABLES_PATH`, `CHANGE_LOG_NOISY_PATH`, `CHANGE_LOG_LEAD`,
+`CHANGE_LOG_TABLES_LEAD` and `CHANGE_LOG_BLOCK_ACTION`; the path constants and
+exported checks are re-exported from `framework/frontend/e2e/index.ts`.
 `chooseChangeLogFeedTable` takes no `expect` and chooses by text, since option numbers belong to each demo.
-`expectChangeLog…`, `expectRegistrationReceiptFacts` and `expectTracked…` take
-the spec's `expect` first, then its `Page`.
+`expectChangeLogOverview`, `expectChangeLogFeed`, `expectTrackedTablesPage`,
+`expectChangeLogReference` and `expectChangeLogNoisyColumns` check their own
+page bodies. `expectChangeLog…`, `expectRegistrationReceiptFacts` and
+`expectTracked…` take the spec's `expect` first, then its `Page`.
+`expectChangeLogSectionHead(expect, page, currentPage)` checks the adopted Vue
+owner, its four section links, current page and absence of child cards. The
+owner-page checks preserve the exact legacy heading fallback for React and
+Angular.
 `expectChangeLogReceiptWriter(expect, page, actorLabel, action, agentId)` checks
 the exact Who, Action and Agent values in the receipt's first attribution `dl`.
 It returns the complete visible header with whitespace normalized, including
 When and Source, for comparison across masters.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`; chat keeps a wrapper.
-The three kits' section specs are the same text, with no differences.
+The shared receipt checks remain common across kits; Chat's section-head,
+overview-tile, direct-entry, F5 and Back scenarios are additional to its Vue
+adoption. React and Angular keep the legacy section drawing.
 
 ### Geometry — take a bookmark and ask whether it moved
 

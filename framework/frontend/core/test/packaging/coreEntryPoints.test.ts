@@ -436,8 +436,20 @@ const adminModerationRulesTypes = [
   'HilosModerationRuleRow',
   'HilosModerationRules',
 ]
+/** The standalone noisy-column viewport's explicit public additions. */
+const changeLogNoisyValues = [
+  'CHANGE_LOG_NOISY_COLUMN_FIELD',
+  'CHANGE_LOG_NOISY_REASON_FIELD',
+  'createHilosChangeLogNoisyColumnsTable',
+  'resolveHilosChangeLogNoisyColumnsRow',
+]
+const changeLogNoisyTypes = [
+  'HilosChangeLogNoisyColumnsRow',
+  'HilosChangeLogNoisyColumnsTable',
+]
 const expectedValues = [
   ...daemonNodeValues,
+  ...changeLogNoisyValues,
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
   ...logViewerValues,
@@ -877,6 +889,7 @@ describe('core public entries', () => {
     ).toEqual(
       [
         ...legacy.type,
+        ...changeLogNoisyTypes,
         'HilosProfileRenameState',
         'HilosProfileRenameFlowOptions',
         'HilosAnalyticsPerson',
