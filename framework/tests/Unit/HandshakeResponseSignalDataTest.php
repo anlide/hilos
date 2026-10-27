@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -68,11 +69,54 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'blocked' => false,
         'frozen' => true,
         'deletionEffectiveAt' => 1_767_225_600_000,
+        'deletionGraceDays' => 30,
         'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
         'window' => [['document' => 'privacy', 'deadline' => '2026-11-10']],
         'mergedInto' => null,
         'mergedIntoName' => null,
     ];
+
+    public function testLegacyStandingWithoutDurationKeepsTheDeletion(): void
+    {
+        $standing = self::STANDING;
+        unset($standing['deletionGraceDays']);
+        $frame = new HandshakeResponseSignalData(accountStanding: $standing);
+        $read = HandshakeResponseSignalData::fromArray($frame->toArray());
+
+        self::assertSame(self::STANDING['deletionEffectiveAt'], $read->accountStanding['deletionEffectiveAt']);
+        self::assertNull($read->accountStanding['deletionGraceDays']);
+    }
+
+    public function testTheCardStandingUsesTheSameNullableDurationReader(): void
+    {
+        $frame = new AccountStandingStateSignalData(7, self::STANDING);
+        self::assertEquals($frame, AccountStandingStateSignalData::fromArray($frame->toArray()));
+
+        $standing = self::STANDING;
+        $standing['deletionGraceDays'] = null;
+        self::assertSame($standing, HandshakeResponseSignalData::readAccountStanding(['accountStanding' => $standing]));
+        unset($standing['deletionGraceDays']);
+        $legacy = AccountStandingStateSignalData::fromArray(['userId' => 7, 'accountStanding' => $standing]);
+        self::assertNull($legacy->accountStanding['deletionGraceDays']);
+        self::assertSame(self::STANDING['deletionEffectiveAt'], $legacy->accountStanding['deletionEffectiveAt']);
+    }
+
+    /** @param mixed $duration Invalid duration carried by the frame */
+    #[DataProvider('invalidDeletionDurations')]
+    public function testInvalidDeletionDurationIsRefused(mixed $duration): void
+    {
+        $standing = self::STANDING;
+        $standing['deletionGraceDays'] = $duration;
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::readAccountStanding(['accountStanding' => $standing]);
+    }
+
+    /** @return array<string, array{mixed}> Invalid duration forms */
+    public static function invalidDeletionDurations(): array
+    {
+        return ['zero' => [0], 'negative' => [-1], 'fraction' => [1.5], 'string' => ['30'], 'boolean' => [true]];
+    }
 
     /** @return array<string, array{?string}> Reasons and an explicit absence */
     public static function accessLossReasons(): array

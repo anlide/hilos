@@ -204,6 +204,8 @@ export interface HilosUserDetailRow extends HilosUserRow {
   readonly block: boolean
   /** Scheduled erasure in absolute server epoch milliseconds, or null when none stands. */
   readonly deletionEffectiveAt: number | null
+  /** Positive whole-day duration fixed by that deletion request, or null. */
+  readonly deletionGraceDays: number | null
 }
 
 /** One safe sign-in identity shown while choosing an account to merge. */
@@ -336,6 +338,8 @@ const USER_PHOTO_SLOT = 'userPhotos'
 export const USER_PHOTO_FIELD = 'photo'
 /** Row payload key of the standing deletion request's erasure time. */
 const USER_DELETION_EFFECTIVE_AT_FIELD = 'deletionEffectiveAt'
+/** Row payload key of the standing deletion request's whole-day duration. */
+const USER_DELETION_GRACE_DAYS_FIELD = 'deletionGraceDays'
 const USER_DELETION_GRACE_DAYS_KEY = 'accountDeletionGraceDays'
 /** Page data key of the impersonation settings the card's takeover section reads (PHP `AbstractHilosUserPage::IMPERSONATION`). */
 const USER_IMPERSONATION_KEY = 'impersonation'
@@ -920,6 +924,9 @@ export function createHilosUserDetail<TUser extends User>(
     const deletionEffectiveAt = deletion
       ? readNumberOrNull(deletion, USER_DELETION_EFFECTIVE_AT_FIELD)
       : null
+    const deletionGraceDays = deletion
+      ? readNumberOrNull(deletion, USER_DELETION_GRACE_DAYS_FIELD)
+      : null
 
     return {
       ...resolveHilosUserRow(row, context.users),
@@ -927,6 +934,12 @@ export function createHilosUserDetail<TUser extends User>(
       admin: user?.admin ?? false,
       block: user?.block ?? false,
       deletionEffectiveAt,
+      deletionGraceDays:
+        deletionGraceDays !== null &&
+        Number.isInteger(deletionGraceDays) &&
+        deletionGraceDays > 0
+          ? deletionGraceDays
+          : null,
       hasSecondFactor:
         typeof secondFactor === 'boolean' ? secondFactor : HIDDEN_VALUE,
       hasPassword:
@@ -1642,6 +1655,8 @@ export function hilosUserLifecycleSections(
     standing === null
       ? detail.deletionEffectiveAt
       : standing.deletionEffectiveAt
+  const deletionGraceDays =
+    standing === null ? detail.deletionGraceDays : standing.deletionGraceDays
   const scheduled = deletionEffectiveAt !== null
   const deletionReason = scheduled
     ? null
@@ -1693,7 +1708,11 @@ export function hilosUserLifecycleSections(
                   .replace(
                     '{days}',
                     formatAccountDeletionDays(
-                      accountDeletionDaysLeft(deletionEffectiveAt, now),
+                      accountDeletionDaysLeft(
+                        deletionEffectiveAt,
+                        now,
+                        deletionGraceDays,
+                      ),
                     ),
                   ),
           state: scheduled,

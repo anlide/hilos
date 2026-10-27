@@ -240,6 +240,7 @@ final class SessionStateSignalDataTest extends TestCase
             'blocked' => false,
             'frozen' => false,
             'deletionEffectiveAt' => 1_767_225_600_000,
+            'deletionGraceDays' => 30,
             'lapsed' => [],
             'window' => [],
             'mergedInto' => null,
@@ -254,6 +255,12 @@ final class SessionStateSignalDataTest extends TestCase
         self::assertSame($standing, $read->accountStanding);
         self::assertEquals($frame, $read);
         self::assertNull(SessionStateSignalData::fromArray(new SessionStateSignalData('token', 17, null, [])->toArray())->accountStanding);
+
+        unset($standing['deletionGraceDays']);
+        $legacy = new SessionStateSignalData('token', 17, 41, ['accept-key'])->withAccountStanding($standing);
+        $readLegacy = SessionStateSignalData::fromArray($legacy->toArray());
+        self::assertNull($readLegacy->accountStanding['deletionGraceDays']);
+        self::assertSame(1_767_225_600_000, $readLegacy->accountStanding['deletionEffectiveAt']);
     }
 
     public function testMissingSessionIdIsRefused(): void

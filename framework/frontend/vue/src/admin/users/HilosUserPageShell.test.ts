@@ -59,6 +59,7 @@ const CLEAR_STANDING: HilosAccountStanding = {
   blocked: false,
   frozen: false,
   deletionEffectiveAt: null,
+  deletionGraceDays: null,
   lapsed: [],
   window: [],
   mergedInto: null,

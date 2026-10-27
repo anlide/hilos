@@ -118,6 +118,7 @@ final class AccountStandingResolver
      * @param list<LegalDocumentStanding> $lapsed Documents past their deadline for this person
      * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead for this person
      * @param string $refusal Treatment of a refusal after the deadline ({@see LegalSettings::refusal()})
+     * @param ?int $deletionGraceDays Positive whole-day duration fixed by the live deletion request, or null
      * @return AccountStanding The verdict
      */
     public static function compose(
@@ -129,6 +130,7 @@ final class AccountStandingResolver
         array $lapsed,
         array $window,
         string $refusal,
+        ?int $deletionGraceDays = null,
     ): AccountStanding {
         $frozen = $lapsed !== [] && $refusal === LegalSettings::REFUSAL_FREEZE;
 
@@ -147,6 +149,7 @@ final class AccountStandingResolver
             $window,
             $mergedInto,
             $mergedIntoName,
+            $deletionGraceDays,
         );
     }
 
@@ -246,6 +249,7 @@ final class AccountStandingResolver
             self::inStanding($documents, LegalStanding::LAPSED),
             self::inStanding($documents, LegalStanding::WINDOW),
             $refusal,
+            $deletion?->deletionGraceDays,
         );
     }
 

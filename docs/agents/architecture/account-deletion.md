@@ -71,6 +71,24 @@ The grace period is the setting `auth.account_deletion.grace_days` — 30 by
 default, 1 to 365 (`AccountDeletionSettingsCatalog`, folded into the project's
 catalog).
 
+A live request keeps the duration implied by its two saved server moments.
+`AccountDeletion::deletionGraceDays` is a computed, read-only View value:
+`max(1, ceil((effectiveAtMs - requestedAtMs) / DAY_MS))`, with the stored SQL
+moments converted to milliseconds. This is not a column, migration, or
+snapshot of the current setting; the ceiling preserves the original whole-day
+duration at SQL second precision. A change to the setting affects later
+requests, not the cap of one already live. Canceling and scheduling again
+creates a request with a new cap.
+
+The profile derives that cap from the `requestedAt` and `effectiveAt` it already
+receives, through the shared pure `accountDeletionGraceDays()` helper; its
+`accountDeletion` state remains those two fields, with no third wire field. Its
+days-left display is
+`min(N, max(1, ceil((toLocal(effectiveAt) - now) / DAY_MS)))`, where `N` is
+that request's derived duration. The absolute date and raw moments do not
+change. Legal re-consent still uses the existing two-argument, uncapped
+`accountDeletionDaysLeft()` path.
+
 The admin user card schedules the same request and grace period through
 `scheduleFor()`, and cancels it through the person's agent. The card is
 answered after the write. Both publish the same state to the person; either

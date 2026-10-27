@@ -104,69 +104,61 @@ test('keeps a person who signed out on the card a guest when the block is lifted
   }
 })
 
-// FIXME(F-043, 2026-10-27): a freshly scheduled deletion shows 31 days left instead of 30 · свой · попытка 1 · HIL-1820
-test(
-  'schedules and cancels deletion on the card while the person sees it on their own screen',
-  { tag: '@quarantine:F-043' },
-  async ({ browser, page }) => {
-    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-    const personContext = await browser.newContext({
-      baseURL,
-      ignoreHTTPSErrors,
-    })
-    const personPage = await personContext.newPage()
-    try {
-      await signUpAdmin(expect, page)
-      const person = await signUp(expect, personPage)
-      // This demo has no profile root: a scheduled deletion reaches the person as
-      // the shell's strip above the page, and it arrives live with the change of
-      // their standing (docs/agents/architecture/account-standing.md).
-      const strip = personPage.getByTestId('account-deletion-strip')
-      await expect(strip).toHaveCount(0)
-      await gotoPage(expect, page, `/hilos/user/${person.userId}`)
-      await clickSubmit(expect, page.getByTestId('hilos-user-deletion-open'))
-      // Scheduling someone else's deletion asks the administrator's own password
-      // first (HIL-1275); calling it off below asks nothing.
-      await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-      await clickSubmit(
-        expect,
-        page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
-      )
-      await expect(page.getByTestId('modal')).toContainText('After 30 days')
-      await clickSubmit(
-        expect,
-        page.getByTestId('hilos-user-lifecycle-confirm'),
-      )
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
-        'Erased on',
-      )
-      await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
-        '30 days left',
-      )
-      await expect(strip).toBeVisible()
-      await expect(page.getByTestId('hilos-user-deletion-open')).toHaveText(
-        'Cancel deletion',
-      )
+test('schedules and cancels deletion on the card while the person sees it on their own screen', async ({
+  browser,
+  page,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  try {
+    await signUpAdmin(expect, page)
+    const person = await signUp(expect, personPage)
+    // This demo has no profile root: a scheduled deletion reaches the person as
+    // the shell's strip above the page, and it arrives live with the change of
+    // their standing (docs/agents/architecture/account-standing.md).
+    const strip = personPage.getByTestId('account-deletion-strip')
+    await expect(strip).toHaveCount(0)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-deletion-open'))
+    // Scheduling someone else's deletion asks the administrator's own password
+    // first (HIL-1275); calling it off below asks nothing.
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
+    )
+    await expect(page.getByTestId('modal')).toContainText('After 30 days')
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
+      'Erased on',
+    )
+    await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
+      '30 days left',
+    )
+    await expect(strip).toBeVisible()
+    await expect(page.getByTestId('hilos-user-deletion-open')).toHaveText(
+      'Cancel deletion',
+    )
 
-      await dismissToasts(page)
-      await clickSubmit(expect, page.getByTestId('hilos-user-deletion-open'))
-      await expect(page.getByTestId('modal')).toBeVisible()
-      await expect(page.getByTestId('step-up')).toHaveCount(0)
-      await clickSubmit(
-        expect,
-        page.getByTestId('hilos-user-lifecycle-confirm'),
-      )
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
-        'No deletion is scheduled',
-      )
-      await expect(strip).toHaveCount(0)
-    } finally {
-      await personContext.close()
-    }
-  },
-)
+    await dismissToasts(page)
+    await clickSubmit(expect, page.getByTestId('hilos-user-deletion-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('step-up')).toHaveCount(0)
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('hilos-user-deletion-state')).toContainText(
+      'No deletion is scheduled',
+    )
+    await expect(strip).toHaveCount(0)
+  } finally {
+    await personContext.close()
+  }
+})
 
 // Granting rights asks the administrator to confirm it is them, removing them does
 // not: removal is declared off, and nobody on this demo switches it on, so the

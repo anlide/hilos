@@ -4,6 +4,7 @@ import {
   ActionLifecycle,
   ActionError,
   type ActionResult,
+  applyServerTime,
   formatCalendarDate,
   HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -356,6 +357,7 @@ function standing(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -1883,6 +1885,91 @@ describe('HilosUserPage in the admin view mode', () => {
       fireEvent.click(byId(id) as Element)
     })
   }
+
+  it.each([false, true])(
+    'bounds the live deletion countdown from fallback and standing (viewer=%s)',
+    async (viewer) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const requestedAt = 1_800_000_000_000
+      const day = 86_400_000
+      const effectiveAt = requestedAt + 30 * day
+      vi.setSystemTime(requestedAt)
+      applyServerTime(requestedAt - 300)
+      const world = userContext(false)
+      const { scopes } = world
+      bindSession(scopes).handshake(
+        viewer ? null : { id: 99, admin: true },
+        true,
+      )
+      const page = scopes.page()!
+      page.data.set('accountDeletionGraceDays', viewer ? HIDDEN_VALUE : 7)
+      page.tables.upsert('userDetail', 1, {
+        users: { type: 'user', id: 1 },
+        accountDeletions: {
+          deletionEffectiveAt: effectiveAt,
+          deletionGraceDays: 30,
+        },
+      })
+      const wrapper = renderPage(world)
+      const text = () => byId('hilos-user-deletion-state')?.textContent
+      try {
+        expect(text()).toContain(formatCalendarDate(effectiveAt))
+        expect(text()).toContain('30 days left')
+
+        act(() => {
+          page.data.set(
+            'accountStanding',
+            standing({
+              shown: 'deletion_scheduled',
+              deletionEffectiveAt: effectiveAt,
+              deletionGraceDays: 30,
+            }),
+          )
+        })
+        expect(text()).toContain('30 days left')
+
+        vi.setSystemTime(requestedAt + day)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_000)
+        })
+        expect(text()).toContain('29 days left')
+
+        const rescheduledAt = Date.now() + 5 * day
+        act(() => {
+          world.standingFrame({
+            userId: 1,
+            accountStanding: standing({
+              shown: 'deletion_scheduled',
+              deletionEffectiveAt: rescheduledAt,
+              deletionGraceDays: 5,
+            }),
+          })
+        })
+        expect(text()).toContain(formatCalendarDate(rescheduledAt))
+        expect(text()).toContain('5 days left')
+
+        if (viewer) {
+          expect(scopes.pageDataSignal('accountDeletionGraceDays').get()).toBe(
+            HIDDEN_VALUE,
+          )
+          await click('hilos-user-deletion-open')
+          const confirm = byId(
+            'hilos-user-lifecycle-confirm',
+          ) as HTMLButtonElement
+          expect(confirm.disabled).toBe(true)
+          expect(confirm.getAttribute('aria-describedby')).toContain(
+            HILOS_VIEW_MODE_STRIP_TEXT_ID,
+          )
+          await click('hilos-user-lifecycle-confirm')
+        }
+        expect(world.sent).toEqual([])
+      } finally {
+        wrapper.unmount()
+        applyServerTime(Date.now())
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it('a guest opens the merge dialog directly, chooses a candidate with hidden fields, and confirm is disabled', async () => {
     const context = userContext(true, true, 'skip', {

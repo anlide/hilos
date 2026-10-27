@@ -31,7 +31,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
 
     /**
      * @param int $userId Person the card shows
-     * @param array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     * @param array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int, deletionGraceDays: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Their standing

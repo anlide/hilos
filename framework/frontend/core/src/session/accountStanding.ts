@@ -101,6 +101,8 @@ export interface HilosAvatarMark {
 export interface HilosDeletionStrip {
   /** The absolute server epoch-ms moment the account is erased. */
   readonly effectiveAt: number
+  /** Positive whole-day duration of this request, or `null` for an older frame. */
+  readonly deletionGraceDays: number | null
 }
 
 /**
@@ -144,7 +146,11 @@ export function formatHilosDeletionStrip(
     .replace(
       '{days}',
       formatAccountDeletionDays(
-        accountDeletionDaysLeft(strip.effectiveAt, now),
+        accountDeletionDaysLeft(
+          strip.effectiveAt,
+          now,
+          strip.deletionGraceDays,
+        ),
       ),
     )
 }
@@ -216,7 +222,10 @@ export function bindAccountStanding(
     return value !== null &&
       value.shown === 'deletion_scheduled' &&
       value.deletionEffectiveAt !== null
-      ? { effectiveAt: value.deletionEffectiveAt }
+      ? {
+          effectiveAt: value.deletionEffectiveAt,
+          deletionGraceDays: value.deletionGraceDays,
+        }
       : null
   })
   const mark = computedSignal<HilosAvatarMark | null>(() => {

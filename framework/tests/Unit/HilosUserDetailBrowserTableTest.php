@@ -178,8 +178,14 @@ final class HilosUserDetailBrowserTableTest extends TestCase
 
         $this->assertSame(AccountDeletion::userId, $row[BrowserTableFieldKey::ROW_KEY]);
         $this->assertSame([AccountDeletion::userId => self::TABLE_USER_ID], $row[BrowserTableFieldKey::WHERE]);
-        $this->assertSame([HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT], $row[BrowserTableFieldKey::COMPUTED]);
-        $this->assertSame([HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT], $row[BrowserTableFieldKey::NOT_PERSONAL]);
+        $this->assertSame(
+            [HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT, HilosUserTableRow::FIELD_DELETION_GRACE_DAYS],
+            $row[BrowserTableFieldKey::COMPUTED],
+        );
+        $this->assertSame(
+            [HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT, HilosUserTableRow::FIELD_DELETION_GRACE_DAYS],
+            $row[BrowserTableFieldKey::NOT_PERSONAL],
+        );
     }
 
     /**

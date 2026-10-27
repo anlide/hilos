@@ -13,6 +13,7 @@ through its own live region. Bootstrap classes only (styling-rules.md). -->
 import {
   ACCOUNT_DELETION_TICK_MS,
   accountDeletionDaysLeft,
+  accountDeletionGraceDays,
   createHilosAccountDeletionFlow,
   createHilosAccountDeletionStore,
   focusInitial,
@@ -111,7 +112,14 @@ const daysLeft = computed(() =>
   deletion.value === null
     ? ''
     : formatAccountDeletionDays(
-        accountDeletionDaysLeft(deletion.value.effectiveAt, now.value),
+        accountDeletionDaysLeft(
+          deletion.value.effectiveAt,
+          now.value,
+          accountDeletionGraceDays(
+            deletion.value.requestedAt,
+            deletion.value.effectiveAt,
+          ),
+        ),
       ),
 )
 const voice = computed(() =>

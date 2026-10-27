@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
@@ -22,6 +23,8 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
@@ -31,6 +34,25 @@ use Hilos\Tests\Fixtures\WireTestRow;
 use Hilos\Tests\Fixtures\WireTestTable;
 use Hilos\Tests\Fixtures\WireTestTableContext;
 use Hilos\Users\AccountStandingResolver;
+use Hilos\Users\AccountStanding;
+use Hilos\AdminViewMode\HiddenValue;
+use Hilos\AdminViewMode\WireField;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
+use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Throwable;
 
 require_once __DIR__ . '/../Fixtures/BrowserContextAdminViewModeWireFixture.php';
@@ -211,6 +233,61 @@ final class BrowserContextAdminViewModeWireIntegrationTest extends BrowserContex
         $this->assertPersistedStanding();
     }
 
+    public function testAViewerReceivesTheHistoricalDeletionDurationInSnapshotAndLiveRows(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
+            [self::USER_ID, '2026-01-01 12:00:00', '2026-01-31 12:00:00'],
+        );
+        Hilos::$setting = new SettingsAccessor(DeletionCardHiddenSettingsCatalog::class);
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = null;
+        $params = new PageRouteParams([HilosPageRouteParams::HILOS_USER_USER_ID => self::USER_ID]);
+        Hilos::$sr->subscribeToPage(
+            WireTestBrowser::PAGE,
+            new WebSocketPageSubscribeSignalDTO('viewer-card', WireTestBrowser::PAGE, $params->toArray()),
+        );
+        $browser = new DeletionCardWireBrowser();
+        WireTestHilos::initBrowser($browser);
+        $snapshot = $browser->buildSubscribeSnapshot(WireTestBrowser::PAGE, 'viewer-card', $params);
+        $rows = $snapshot->tables[HilosUserDetailBrowserTable::TABLE][PagePayload::rows];
+        self::assertCount(1, $rows);
+        $deletion = $rows[0][PagePayload::slots][HilosDbContext::accountDeletions];
+        self::assertSame(30, $deletion['deletionGraceDays']);
+        self::assertSame(1769860800000, $deletion['deletionEffectiveAt']);
+        self::assertSame(HiddenValue::mark(), $deletion['requestedAt']);
+        self::assertSame(HiddenValue::mark(), $deletion['effectiveAt']);
+
+        $standing = AccountStandingResolver::of(self::USER_ID)->toArray();
+        $hidden = $browser->hideForViewer(
+            ['accountStanding' => $standing, 'accountDeletionGraceDays' => 7, 'name' => 'Wire admin'],
+            [
+                'accountStanding' => WireField::each(AccountStanding::wireFields()),
+                'accountDeletionGraceDays' => WireField::setting(AccountDeletionSettings::GRACE_DAYS_KEY),
+                'name' => WireField::column(HilosDbContext::users, 'name'),
+            ],
+        );
+        self::assertSame(30, $hidden['accountStanding']['deletionGraceDays']);
+        self::assertSame(1769860800000, $hidden['accountStanding']['deletionEffectiveAt']);
+        self::assertSame(HiddenValue::mark(), $hidden['accountDeletionGraceDays']);
+        self::assertSame(HiddenValue::mark(), $hidden['name']);
+        $liveStanding = new AccountStandingStateSignalData(self::USER_ID, $standing);
+        self::assertSame(
+            $hidden['accountStanding'],
+            $browser->hideForViewer($liveStanding->toArray(), AccountStandingStateSignalData::wireFields())['accountStanding'],
+        );
+
+        $browser->record(SourceChange::dbUpdated(HilosDbContext::accountDeletions, '1', ['effective_at' => '2026-01-31 12:00:00']));
+        $browser->flushToSignalRouter();
+        $live = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($live);
+        self::assertInstanceOf(WebSocketSignalData::class, $live->data);
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $live->signalName->getName());
+        self::assertInstanceOf(PageResponseSignalData::class, $live->data->data);
+        $liveRows = $live->data->data->payload->tables[HilosUserDetailBrowserTable::TABLE][PagePayload::rows];
+        self::assertSame($rows, $liveRows);
+    }
+
     /**
      * The person the gate judges, written by SQL before any ORM read warms the users collection; the
      * verdict remembered for them by an earlier case of this process is dropped, so the gate reads anew.
@@ -324,5 +401,80 @@ final class BrowserContextAdminViewModeWireIntegrationTest extends BrowserContex
             PagePayload::rowKey => $key,
             PagePayload::slots => WireTestTable::slotsOf($row),
         ];
+    }
+}
+
+/** A project may keep its current grace setting hidden; the request's duration stays open. */
+final class DeletionCardHiddenSettingsCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Framework fragment with this project's visibility choice */
+    public static function getCatalog(): array
+    {
+        $catalog = AccountDeletionSettingsCatalog::getCatalog();
+        $catalog[AccountDeletionSettings::GRACE_DAYS_KEY][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+        return $catalog;
+    }
+}
+
+/** Projects the real card's deletion row through the declarative browser and viewer bridge. */
+final class DeletionCardWireBrowser extends BrowserContext
+{
+    /**
+     * @param string $pageClass Page being viewed
+     * @param string $acceptKey Viewer connection
+     * @return bool Viewer verdict
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return true;
+    }
+
+    /** @return ?PiiRegistry Real mounted Entity verdicts, including the deletion table's PURGE */
+    protected function viewerPiiRegistry(): ?PiiRegistry
+    {
+        return PiiRegistry::collect();
+    }
+
+    /**
+     * @param string $page Subscribed page
+     * @return ?BrowserPageConfig Shared fixture page metadata
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        return BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => WireTestBrowser::SIGNAL]);
+    }
+
+    /**
+     * @param string $page Subscribed page
+     * @return BrowserPageBindings Real card binding
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return BrowserPageBindings::fromArray([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING]);
+    }
+
+    /**
+     * @param string $browserKey Requested table
+     * @return ?BrowserSourceConfig Real deletion row with raw dates to prove their masking
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== HilosUserDetailBrowserTable::TABLE) {
+            return null;
+        }
+        $config = HilosUserDetailBrowserTable::BROWSER;
+        $rows = array_values(array_filter(
+            $config[BrowserTableConfigKey::ROWS],
+            static fn (array $row): bool => $row[BrowserTableFieldKey::SOURCE][BrowserSourceKey::KEY] === HilosDbContext::accountDeletions,
+        ));
+        $rows[0][BrowserTableFieldKey::FIELDS][] = ObjectAccountDeletion::requestedAt;
+        $rows[0][BrowserTableFieldKey::FIELDS][] = ObjectAccountDeletion::effectiveAt;
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::PARAMS => $config[BrowserTableConfigKey::PARAMS],
+            BrowserTableConfigKey::SOURCES => [$rows[0][BrowserTableFieldKey::SOURCE]],
+            BrowserTableConfigKey::ROWS => $rows,
+        ]);
     }
 }

@@ -153,16 +153,36 @@ export function readHilosAccountDeletionState(
 
 /**
  * Whole days left until the erasure, rounded up and never below one — "1 day
- * left" is said through the last day.
+ * left" is said through the last day. A positive whole grace period caps the
+ * result at the original duration; an absent or invalid bound leaves it uncapped.
  *
  * @param effectiveAt The absolute server moment of the erasure, in epoch ms.
  * @param now The LOCAL moment now, in epoch ms.
+ * @param graceDays The original grace period in days, or no bound when absent or null.
  */
 export function accountDeletionDaysLeft(
   effectiveAt: number,
   now: number,
+  graceDays?: number | null,
 ): number {
-  return Math.max(1, Math.ceil((toLocal(effectiveAt) - now) / DAY_MS))
+  const daysLeft = Math.max(1, Math.ceil((toLocal(effectiveAt) - now) / DAY_MS))
+  return graceDays != null && Number.isInteger(graceDays) && graceDays > 0
+    ? Math.min(graceDays, daysLeft)
+    : daysLeft
+}
+
+/**
+ * The original grace period, rounded up and never below one. Both moments are
+ * on the server's scale, so their difference needs no local clock correction.
+ *
+ * @param requestedAt The absolute server moment the deletion was requested, in epoch ms.
+ * @param effectiveAt The absolute server moment of the erasure, in epoch ms.
+ */
+export function accountDeletionGraceDays(
+  requestedAt: number,
+  effectiveAt: number,
+): number {
+  return Math.max(1, Math.ceil((effectiveAt - requestedAt) / DAY_MS))
 }
 
 /**

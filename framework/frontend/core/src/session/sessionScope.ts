@@ -422,6 +422,8 @@ export interface HilosAccountStanding {
   readonly frozen: boolean
   /** The absolute server epoch-ms moment the scheduled erasure falls due, or `null` when none is scheduled. */
   readonly deletionEffectiveAt: number | null
+  /** Positive whole-day duration fixed by the live deletion request, or `null`. */
+  readonly deletionGraceDays: number | null
   /** Documents whose deadline has passed, whatever the refusal setting says. */
   readonly lapsed: readonly HilosAccountStandingLapse[]
   /**
@@ -454,6 +456,7 @@ export const accountStandingSchema = z.looseObject({
   blocked: z.boolean(),
   frozen: z.boolean(),
   deletionEffectiveAt: z.number().nullable(),
+  deletionGraceDays: z.number().int().positive().nullable().optional(),
   lapsed: z.array(z.unknown()),
   window: z.array(z.unknown()),
   mergedInto: z.number().nullable(),
@@ -1281,6 +1284,7 @@ export function readHilosAccountStanding(
     blocked: parsed.data.blocked,
     frozen: parsed.data.frozen,
     deletionEffectiveAt,
+    deletionGraceDays: parsed.data.deletionGraceDays ?? null,
     lapsed: readStandingDocuments(parsed.data.lapsed),
     window: readStandingDocuments(parsed.data.window),
     mergedInto: parsed.data.mergedInto,

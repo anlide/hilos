@@ -13,6 +13,8 @@ use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\LegalStanding;
+use Hilos\AdminViewMode\WireField;
+use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +93,7 @@ final class AccountStandingResolverTest extends TestCase
             [$this->lapsedTerms()],
             [],
             LegalSettings::REFUSAL_FREEZE,
+            30,
         );
 
         self::assertSame([
@@ -98,11 +101,22 @@ final class AccountStandingResolverTest extends TestCase
             'blocked' => false,
             'frozen' => true,
             'deletionEffectiveAt' => 1767225600000,
+            'deletionGraceDays' => 30,
             'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
             'window' => [],
             'mergedInto' => null,
             'mergedIntoName' => null,
         ], $standing->toArray());
+    }
+
+    public function testTheDurationIsNullableAndOpenToAViewer(): void
+    {
+        $standing = AccountStandingResolver::compose(false, null, null, false, null, [], [], LegalSettings::REFUSAL_FREEZE);
+
+        self::assertNull($standing->deletionGraceDays);
+        self::assertArrayHasKey('deletionGraceDays', $standing->toArray());
+        self::assertNull($standing->toArray()['deletionGraceDays']);
+        self::assertEquals(WireField::notPersonal(), AccountStanding::wireFields()[AccountStanding::deletionGraceDays]);
     }
 
     /**

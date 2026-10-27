@@ -190,16 +190,31 @@ open by their page level.
 
 ## The Wire
 
-One shape everywhere: `{shown, blocked, frozen, deletionEffectiveAt, lapsed:
-[{document, deadline}], window: [{document, deadline}], mergedInto,
-mergedIntoName}` (`AccountStanding::toArray()`); nobody sends it back. `window`
-names the documents whose deadline is still ahead, whatever the refusal setting
-says: it takes nothing away and plays no part in the verdict, but it is what the
+One shape everywhere: `{shown, blocked, frozen, deletionEffectiveAt,
+deletionGraceDays, lapsed: [{document, deadline}], window: [{document,
+deadline}], mergedInto, mergedIntoName}` (`AccountStanding::toArray()`); nobody
+sends it back. `deletionGraceDays` is the positive whole-day duration fixed by
+the live deletion request, or `null` without one. Readers normalize an older
+payload that omits it to `null`, preserving its uncapped days-left display; the
+current server sends a positive value for a live request. `window` names the
+documents whose deadline is still ahead, whatever the refusal setting says: it
+takes nothing away and plays no part in the verdict, but it is what the
 re-consent window and its icon in the header are drawn from (HIL-500).
 `mergedInto` and `mergedIntoName` are `null` for anybody not merged; to a viewer
 of the admin view mode the id is open and the name is hidden, by the verdicts
 of the two columns of the people they come from (`AccountStanding::wireFields()`,
 HIL-1292).
+
+The existing carriers keep this field nested in `accountStanding`:
+`handshake_response.data.accountStanding`, `hilos_session_state.accountStanding`,
+the initial `page_response.data.accountStanding` of `/hilos/user/{userId}`, and
+`hilos_account_standing_state.accountStanding`. The strip uses
+`deletionEffectiveAt` with this cap. On the user card, the effective moment and
+cap come as a pair from the authoritative standing; until it arrives, both come
+from the single `userDetail.accountDeletions` browser slot. The
+profile's separate `accountDeletion` state still carries only `requestedAt` and
+`effectiveAt`, from which its shared helper derives the cap. No additional
+request, heartbeat, minute server frame, or epoch invalidation is introduced.
 
 - **Session.** `accountStanding` on every `hilos_session_state` frame
   (`SessionStateSignalData`) and in the `data` section of the handshake response

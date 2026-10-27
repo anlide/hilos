@@ -750,12 +750,14 @@ const NOW = 1_800_000_000_000
  * @param shown The standing shown.
  * @param impersonated Whether Ada stands behind the session.
  * @param deletionEffectiveAt The server moment of a scheduled erasure, or null.
+ * @param deletionGraceDays The original grace period, or null for a legacy standing.
  * @returns The handshake payload.
  */
 function standingHandshake(
   shown: string,
   impersonated = false,
   deletionEffectiveAt: number | null = null,
+  deletionGraceDays: number | null = null,
 ): Record<string, unknown> {
   return {
     data: {
@@ -765,6 +767,7 @@ function standingHandshake(
         blocked: shown === 'blocked',
         frozen: shown === 'frozen',
         deletionEffectiveAt,
+        deletionGraceDays,
         lapsed: [],
         window: [],
         mergedInto: null,
@@ -839,6 +842,35 @@ describe('HilosLayout account standing (HIL-945)', () => {
     fixture.detectChanges()
 
     expect(text()).toContain('1 day left')
+  })
+
+  it('bounds the strip by the standing grace period with a negative clock error and keeps ticking', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(NOW)
+    const session = bindSession()
+    unbind = session.unbind
+    const effectiveAt = NOW + 30 * DAY_MS
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, effectiveAt, 30),
+    )
+    applyServerTime(NOW - 300)
+    const fixture = mountShell()
+    const text = () =>
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-id="account-deletion-strip-text"]',
+      )?.textContent
+
+    expect(text()).toContain(
+      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 30 days left`,
+    )
+
+    vi.setSystemTime(NOW + DAY_MS)
+    vi.advanceTimersByTime(60_000)
+    fixture.detectChanges()
+
+    expect(text()).toContain(
+      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 29 days left`,
+    )
   })
 
   it('stands after the framework strips and before the project strip', () => {

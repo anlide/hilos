@@ -1,5 +1,6 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  applyServerTime,
   createSignal,
   bindProfileFlows,
   ScopeManager,
@@ -9,6 +10,9 @@ import {
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosAccountDeletion } from '../src/profile/HilosAccountDeletion.js'
+
+/** One day, in ms. */
+const DAY = 86_400_000
 
 /** A send gate that reopened long ago: another code may be asked for at once. */
 const PAST = 1_000_000_000_000
@@ -117,6 +121,66 @@ function setup() {
 }
 
 describe('HilosAccountDeletion', () => {
+  it('bounds the countdown by the delivered request and keeps ticking through new state', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const requestedAt = 1_800_000_000_000
+    vi.setSystemTime(requestedAt)
+    applyServerTime(requestedAt - 300)
+    const { fixture, node, state } = setup()
+    try {
+      state({ deletion: null })
+      await settle(fixture)
+      expect(vi.getTimerCount()).toBe(0)
+
+      state({
+        deletion: {
+          requestedAt,
+          effectiveAt: requestedAt + 30 * DAY,
+        },
+      })
+      await settle(fixture)
+      expect(node('account-deletion-scheduled').textContent).toContain(
+        '30 days left',
+      )
+      expect(vi.getTimerCount()).toBe(1)
+
+      vi.setSystemTime(requestedAt + DAY)
+      await vi.advanceTimersByTimeAsync(60_000)
+      await settle(fixture)
+      expect(node('account-deletion-scheduled').textContent).toContain(
+        '29 days left',
+      )
+
+      state({ deletion: null })
+      await settle(fixture)
+      expect(
+        document.querySelector('[data-id="account-deletion-scheduled"]'),
+      ).toBeNull()
+      expect(
+        document.querySelector('[data-id="account-deletion-open"]'),
+      ).not.toBeNull()
+      expect(vi.getTimerCount()).toBe(0)
+
+      state({
+        deletion: {
+          requestedAt: Date.now(),
+          effectiveAt: Date.now() + 7 * DAY,
+        },
+      })
+      await settle(fixture)
+      expect(node('account-deletion-scheduled').textContent).toContain(
+        '7 days left',
+      )
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      fixture.destroy()
+      const timersLeft = vi.getTimerCount()
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+      expect(timersLeft).toBe(0)
+    }
+  })
+
   it('starts the zone clock when a deletion appears', async () => {
     let now = 1_700_000_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

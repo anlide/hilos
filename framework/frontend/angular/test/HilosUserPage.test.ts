@@ -8,6 +8,7 @@ import {
   ActionLifecycle,
   ActionError,
   type ActionResult,
+  applyServerTime,
   bindAdminAccess,
   bindSessionScope,
   formatCalendarDate,
@@ -359,6 +360,7 @@ function standing(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -2118,6 +2120,88 @@ describe('HilosUserPage in the admin view mode', () => {
 
     expect(world.sent[0]?.action).toBe('hilos_step_up_start')
   })
+
+  it.each([false, true])(
+    'bounds the live deletion countdown from fallback and standing (viewer=%s)',
+    async (viewer) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const requestedAt = 1_800_000_000_000
+      const day = 86_400_000
+      const effectiveAt = requestedAt + 30 * day
+      vi.setSystemTime(requestedAt)
+      applyServerTime(requestedAt - 300)
+      const world = userContext()
+      const scopes = world.context.scopes
+      const { handshake } = bindSession(scopes)
+      handshake(viewer ? null : { id: 99, admin: true }, true)
+      const page = scopes.page()!
+      page.data.set('accountDeletionGraceDays', viewer ? HIDDEN_VALUE : 7)
+      page.tables.upsert('userDetail', 1, {
+        users: { type: 'user', id: 1 },
+        accountDeletions: {
+          deletionEffectiveAt: effectiveAt,
+          deletionGraceDays: 30,
+        },
+      })
+      const fixture = mountViewModePage(world.context)
+      const text = () => el(fixture, 'hilos-user-deletion-state')?.textContent
+      try {
+        expect(text()).toContain(formatCalendarDate(effectiveAt))
+        expect(text()).toContain('30 days left')
+        expect(scopes.pageDataSignal('accountDeletionGraceDays').get()).toBe(
+          viewer ? HIDDEN_VALUE : 7,
+        )
+
+        await settle(fixture)
+        page.data.set(
+          'accountStanding',
+          standing({
+            shown: 'deletion_scheduled',
+            deletionEffectiveAt: effectiveAt,
+            deletionGraceDays: 30,
+          }),
+        )
+        await settle(fixture)
+        expect(text()).toContain('30 days left')
+
+        vi.setSystemTime(requestedAt + day)
+        vi.advanceTimersByTime(60_000)
+        await settle(fixture)
+        expect(text()).toContain('29 days left')
+
+        const rescheduledAt = Date.now() + 5 * day
+        world.standingFrame({
+          userId: 1,
+          accountStanding: standing({
+            shown: 'deletion_scheduled',
+            deletionEffectiveAt: rescheduledAt,
+            deletionGraceDays: 5,
+          }),
+        })
+        await settle(fixture)
+        expect(text()).toContain(formatCalendarDate(rescheduledAt))
+        expect(text()).toContain('5 days left')
+
+        if (viewer) {
+          await click(fixture, 'hilos-user-deletion-open')
+          const confirm = el(
+            fixture,
+            'hilos-user-lifecycle-confirm',
+          ) as HTMLButtonElement
+          expect(confirm.disabled).toBe(true)
+          expect(confirm.getAttribute('aria-describedby')).toContain(
+            HILOS_VIEW_MODE_STRIP_TEXT_ID,
+          )
+          await click(fixture, 'hilos-user-lifecycle-confirm')
+          expect(world.sent).toEqual([])
+        }
+      } finally {
+        fixture.destroy()
+        applyServerTime(Date.now())
+        vi.useRealTimers()
+      }
+    },
+  )
 })
 
 describe('HilosUserPage merged account (HIL-1292)', () => {
@@ -2138,6 +2222,7 @@ describe('HilosUserPage merged account (HIL-1292)', () => {
       blocked: true,
       frozen: false,
       deletionEffectiveAt: null,
+      deletionGraceDays: null,
       lapsed: [],
       window: [],
       mergedInto: 9,

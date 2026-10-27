@@ -14,6 +14,7 @@ import {
   ActionLifecycle,
   ActionError,
   type ActionResult,
+  applyServerTime,
   bindAdminAccess,
   bindSessionScope,
   createAppPageRouter,
@@ -423,6 +424,7 @@ function standing(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -2663,6 +2665,87 @@ describe('HilosUserPage in the admin view mode', () => {
 
     return wrapper
   }
+
+  it.each([false, true])(
+    'bounds the live deletion countdown from fallback and standing (viewer=%s)',
+    async (viewer) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const requestedAt = 1_800_000_000_000
+      const day = 86_400_000
+      const effectiveAt = requestedAt + 30 * day
+      vi.setSystemTime(requestedAt)
+      applyServerTime(requestedAt - 300)
+      const { scopes, handshake } = bindSession()
+      handshake(viewer ? null : { id: 99, admin: true }, true)
+      const world = userContext(false, {
+        scopes,
+        graceDays: viewer ? HIDDEN_VALUE : 7,
+      })
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 1, {
+        accountDeletions: {
+          deletionEffectiveAt: effectiveAt,
+          deletionGraceDays: 30,
+        },
+      })
+      const wrapper = await mountViewModePage(world.context)
+      const text = () => modalEl('hilos-user-deletion-state')?.textContent
+      try {
+        expect(text()).toContain(formatCalendarDate(effectiveAt))
+        expect(text()).toContain('30 days left')
+
+        page.data.set(
+          'accountStanding',
+          standing({
+            shown: 'deletion_scheduled',
+            deletionEffectiveAt: effectiveAt,
+            deletionGraceDays: 30,
+          }),
+        )
+        await nextTick()
+        expect(text()).toContain('30 days left')
+
+        vi.setSystemTime(requestedAt + day)
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(text()).toContain('29 days left')
+
+        const rescheduledAt = Date.now() + 5 * day
+        world.standingFrame({
+          userId: 1,
+          accountStanding: standing({
+            shown: 'deletion_scheduled',
+            deletionEffectiveAt: rescheduledAt,
+            deletionGraceDays: 5,
+          }),
+        })
+        await nextTick()
+        expect(text()).toContain(formatCalendarDate(rescheduledAt))
+        expect(text()).toContain('5 days left')
+
+        if (viewer) {
+          expect(scopes.pageDataSignal('accountDeletionGraceDays').get()).toBe(
+            HIDDEN_VALUE,
+          )
+          modalEl('hilos-user-deletion-open')?.click()
+          await flushPromises()
+          const confirm = modalEl(
+            'hilos-user-lifecycle-confirm',
+          ) as HTMLButtonElement
+          expect(confirm.disabled).toBe(true)
+          expect(confirm.getAttribute('aria-describedby')).toContain(
+            HILOS_VIEW_MODE_STRIP_TEXT_ID,
+          )
+          confirm.click()
+          await flushPromises()
+        }
+        expect(world.sent).toEqual([])
+      } finally {
+        wrapper.unmount()
+        applyServerTime(Date.now())
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it('a guest opens admin, block and deletion lifecycle dialogs directly and has nothing to send', async () => {
     const { scopes, handshake } = bindSession()

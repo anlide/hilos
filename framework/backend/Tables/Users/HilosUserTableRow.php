@@ -26,6 +26,7 @@ final class HilosUserTableRow extends AbstractTableRow
     public const string block = 'block';
     public const string merged = 'merged';
     public const string FIELD_DELETION_EFFECTIVE_AT = 'deletionEffectiveAt';
+    public const string FIELD_DELETION_GRACE_DAYS = 'deletionGraceDays';
     /** Computed field of a person's row: the live end of the merge chain the account leads to, or null (HIL-1292). */
     public const string FIELD_MERGED_INTO = 'mergedInto';
     /** Computed field of a person's row: the name of that live end, or null when there is none to name (HIL-1292). */

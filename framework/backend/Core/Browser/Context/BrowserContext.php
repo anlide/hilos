@@ -2924,11 +2924,13 @@ abstract class BrowserContext
             }
         }
 
-        if ($field === HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT) {
+        if ($field === HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT || $field === HilosUserTableRow::FIELD_DELETION_GRACE_DAYS) {
             try {
                 $deletion = Hilos::$db->accountDeletions->liveOf((int) $rowKey);
 
-                return $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt);
+                return $field === HilosUserTableRow::FIELD_DELETION_GRACE_DAYS
+                    ? $deletion?->deletionGraceDays
+                    : ($deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt));
             } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
                 throw new PageInternalErrorException('Account deletion date could not be resolved', $exception);
             }

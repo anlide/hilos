@@ -406,6 +406,7 @@ describe('createHilosUserDetail', () => {
       admin: true,
       block: false,
       deletionEffectiveAt: null,
+      deletionGraceDays: null,
     })
     page.entities.upsert(ref, { admin: false, block: true })
     page.tables.upsert('userDetail', 1, {
@@ -864,6 +865,7 @@ describe('hilosUserLifecyclePromptOffered', () => {
     admin: false,
     block: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
   }
@@ -1151,6 +1153,7 @@ function wireStanding(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -1172,6 +1175,7 @@ function readStanding(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -1279,6 +1283,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     admin: false,
     block: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
   }
@@ -1514,6 +1519,7 @@ describe('a merged account on the card (HIL-1292)', () => {
     admin: false,
     block: true,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
   }
@@ -2114,6 +2120,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       admin: false,
       block: false,
       deletionEffectiveAt: null,
+      deletionGraceDays: null,
       unverifiedPasswordAddress: null,
       merged: false,
     }
@@ -2159,6 +2166,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     admin: false,
     block: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
   }
@@ -2347,3 +2355,116 @@ it.each([-300_000, 300_000])(
     }
   },
 )
+
+describe('historical deletion duration on the card', () => {
+  it('keeps deadline and cap paired through fallback, live changes and resubscription', () => {
+    const now = 1_800_000_000_000
+    applyServerTime(Date.now())
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 1 }
+    page.entities.upsert(ref, {
+      id: 1,
+      name: 'Candidate',
+      admin: false,
+      block: false,
+    })
+    page.tables.upsert('userDetail', 1, {
+      users: ref,
+      accountDeletions: {
+        deletionEffectiveAt: now + 30 * DAY_MS + 1,
+        deletionGraceDays: 30,
+      },
+    })
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+    const { connection, emit } = frameConnection()
+    const card = createHilosUserStanding({ scopes, connection })
+    card.start()
+    const deletionRow = (graceDays: number | typeof HIDDEN_VALUE) =>
+      hilosUserLifecycleSections(
+        detail.get(),
+        99,
+        graceDays,
+        now,
+        card.standing.get(),
+      )
+        .find((section) => section.key === 'access')
+        ?.rows.find((row) => row.key === 'deletion')
+    try {
+      expect(detail.get()?.deletionGraceDays).toBe(30)
+      expect(deletionRow(30)?.hint).toContain('30 days left')
+      expect(deletionRow(7)?.hint).toContain('30 days left')
+      expect(deletionRow(HIDDEN_VALUE)?.hint).toContain('30 days left')
+      page.data.set(
+        'accountStanding',
+        wireStanding({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: now + 7 * DAY_MS + 1,
+          deletionGraceDays: 7,
+        }),
+      )
+      expect(deletionRow(HIDDEN_VALUE)?.hint).toContain('7 days left')
+      emit('hilos_account_standing_state', {
+        userId: 1,
+        accountStanding: wireStanding(),
+      })
+      expect(deletionRow(7)?.state).toBe(false)
+      emit('hilos_account_standing_state', {
+        userId: 1,
+        accountStanding: wireStanding({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: now + 60 * DAY_MS,
+          deletionGraceDays: 60,
+        }),
+      })
+      expect(deletionRow(7)?.hint).toContain('60 days left')
+      // A newer browser row cannot replace either half of an authoritative standing.
+      page.tables.upsert('userDetail', 1, {
+        users: ref,
+        accountDeletions: {
+          deletionEffectiveAt: now + DAY_MS,
+          deletionGraceDays: 1,
+        },
+      })
+      expect(deletionRow(7)?.hint).toContain('60 days left')
+      page.data.set(
+        'accountStanding',
+        wireStanding({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: now + 7 * DAY_MS + 1,
+        }),
+      )
+      // An older standing keeps legacy rounding instead of borrowing the browser cap.
+      expect(deletionRow(7)?.hint).toContain('8 days left')
+      card.dispose()
+      card.start()
+      expect(deletionRow(HIDDEN_VALUE)?.hint).toContain('8 days left')
+    } finally {
+      card.dispose()
+      applyServerTime(Date.now())
+    }
+  })
+
+  it.each([undefined, null, 0, -1, 1.5, '30', true])(
+    'reads invalid browser cap %s as null',
+    (cap) => {
+      const { scopes, users } = userStore()
+      const page = scopes.page()!
+      const ref = { type: 'user', id: 1 }
+      page.entities.upsert(ref, { id: 1, name: 'Candidate' })
+      page.tables.upsert('userDetail', 1, {
+        users: ref,
+        accountDeletions: {
+          deletionEffectiveAt: 320_000,
+          deletionGraceDays: cap,
+        },
+      })
+      const detail = createHilosUserDetail({
+        scopes,
+        users,
+      } as HilosUsersContext)
+      expect(detail.get()?.deletionEffectiveAt).toBe(320_000)
+      expect(detail.get()?.deletionGraceDays).toBeNull()
+    },
+  )
+})

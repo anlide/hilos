@@ -547,6 +547,7 @@ export {
   ACCOUNT_DELETION_SIGNAL_SCHEMAS,
   ACCOUNT_DELETION_TICK_MS,
   accountDeletionDaysLeft,
+  accountDeletionGraceDays,
   createHilosAccountDeletionActions,
   createHilosAccountDeletionFlow,
   createHilosAccountDeletionStore,

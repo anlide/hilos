@@ -9,6 +9,8 @@ use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
 use Hilos\HilosException;
+use Hilos\Constants\TimeConstants;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * AccountDeletion Db item - read-facing wrapper around ObjectAccountDeletion (HIL-302).
@@ -20,16 +22,22 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read string $requestedAt
  * @property-read string $effectiveAt
+ * @property-read int $deletionGraceDays Whole-day duration fixed by this request's stored moments
  * @property-read ?string $canceledAt
  * @property-read ?string $completedAt
  * @property-read AccountDeletionActions $actions
  */
 class AccountDeletion extends DbItem
 {
+    public const string deletionGraceDays = 'deletionGraceDays';
+
+    /** Milliseconds in a full day of the request's grace period. */
+    private const int DAY_MS = TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+
     /**
      * Magic getter for request properties.
      *
-     * @param string $name Property name (id, userId, requestedAt, effectiveAt, canceledAt, completedAt)
+     * @param string $name Stored property name or the derived deletionGraceDays
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -42,6 +50,9 @@ class AccountDeletion extends DbItem
             ObjectAccountDeletion::userId => $this->_object->userId,
             ObjectAccountDeletion::requestedAt => $this->_object->requestedAt,
             ObjectAccountDeletion::effectiveAt => $this->_object->effectiveAt,
+            self::deletionGraceDays => max(1, (int) ceil(
+                (TimeHelper::sqlToMs($this->_object->effectiveAt) - TimeHelper::sqlToMs($this->_object->requestedAt)) / self::DAY_MS,
+            )),
             ObjectAccountDeletion::canceledAt => $this->_object->canceledAt,
             ObjectAccountDeletion::completedAt => $this->_object->completedAt,
             default => parent::__get($name),

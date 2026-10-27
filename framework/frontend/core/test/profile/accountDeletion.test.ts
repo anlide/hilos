@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   accountDeletionDaysLeft,
+  accountDeletionGraceDays,
   createHilosAccountDeletionActions,
   createHilosAccountDeletionFlow,
   createHilosAccountDeletionStore,
@@ -668,9 +669,112 @@ describe('the days left', () => {
     expect(accountDeletionDaysLeft(LOCAL_NOW - DAY, LOCAL_NOW)).toBe(1)
   })
 
+  describe.each([1, 7, 30, 45])('a %i-day grace period', (graceDays) => {
+    it.each([-1, -100, -300, -60_000, -300_000])(
+      'stays within the original period with clock estimation error %i ms',
+      (estimationError) => {
+        vi.useFakeTimers()
+        vi.setSystemTime(LOCAL_NOW)
+        const requestedAt = LOCAL_NOW + SERVER_DRIFT_MS
+        const effectiveAt = requestedAt + graceDays * DAY
+        applyServerTime(requestedAt + estimationError)
+
+        const bound = accountDeletionGraceDays(requestedAt, effectiveAt)
+        expect(bound).toBe(graceDays)
+        expect(accountDeletionDaysLeft(effectiveAt, Date.now())).toBe(
+          graceDays + 1,
+        )
+        expect(accountDeletionDaysLeft(effectiveAt, Date.now(), bound)).toBe(
+          graceDays,
+        )
+      },
+    )
+
+    it('counts down elapsed days and keeps the lower bound with exact clocks', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(LOCAL_NOW)
+      const requestedAt = LOCAL_NOW + SERVER_DRIFT_MS
+      const effectiveAt = requestedAt + graceDays * DAY
+      applyServerTime(requestedAt)
+      const bound = accountDeletionGraceDays(requestedAt, effectiveAt)
+
+      expect(accountDeletionDaysLeft(effectiveAt, Date.now(), bound)).toBe(
+        graceDays,
+      )
+      expect(
+        accountDeletionDaysLeft(effectiveAt, Date.now() + DAY, bound),
+      ).toBe(Math.max(1, graceDays - 1))
+      expect(
+        accountDeletionDaysLeft(
+          effectiveAt,
+          Date.now() + graceDays * DAY,
+          bound,
+        ),
+      ).toBe(1)
+      expect(
+        accountDeletionDaysLeft(
+          effectiveAt,
+          Date.now() + (graceDays + 1) * DAY,
+          bound,
+        ),
+      ).toBe(1)
+    })
+  })
+
+  it('keeps 30 days when 29 days and one millisecond remain', () => {
+    expect(
+      accountDeletionDaysLeft(LOCAL_NOW + 30 * DAY, LOCAL_NOW + DAY - 1, 30),
+    ).toBe(30)
+  })
+
+  it.each([undefined, null, 0, -1, 1.5, -1.5, NaN, Infinity, -Infinity])(
+    'keeps the uncapped result for an absent or invalid bound %s',
+    (bound) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(LOCAL_NOW)
+      applyServerTime(LOCAL_NOW - 1)
+      const effectiveAt = LOCAL_NOW + 30 * DAY
+
+      expect(accountDeletionDaysLeft(effectiveAt, Date.now())).toBe(31)
+      expect(accountDeletionDaysLeft(effectiveAt, Date.now(), bound)).toBe(31)
+    },
+  )
+
   it('spells one day and many', () => {
     expect(formatAccountDeletionDays(1)).toBe('1 day')
     expect(formatAccountDeletionDays(30)).toBe('30 days')
+  })
+})
+
+describe('the original grace period', () => {
+  it.each([1, 7, 30, 45])(
+    'reads %i server days at SQL second precision regardless of the browser clock',
+    (graceDays) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(LOCAL_NOW)
+      applyServerTime(LOCAL_NOW - 300_000)
+      const requestedAt = LOCAL_NOW + SERVER_DRIFT_MS
+      const effectiveAt = requestedAt + graceDays * DAY
+
+      expect(accountDeletionGraceDays(requestedAt, effectiveAt)).toBe(graceDays)
+      const sqlEffectiveAt = effectiveAt - 1_000
+      const bound = accountDeletionGraceDays(requestedAt, sqlEffectiveAt)
+      expect(bound).toBe(graceDays)
+      expect(accountDeletionDaysLeft(sqlEffectiveAt, Date.now(), bound)).toBe(
+        graceDays,
+      )
+    },
+  )
+
+  it.each([
+    [DAY + 1, 2],
+    [1, 1],
+    [0, 1],
+    [-DAY, 1],
+  ])('rounds a duration of %i ms up to %i days', (duration, expected) => {
+    expect(accountDeletionGraceDays(LOCAL_NOW, LOCAL_NOW + duration)).toBe(
+      expected,
+    )
   })
 })
 

@@ -21,6 +21,7 @@ import {
 } from '@angular/core'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  accountDeletionGraceDays,
   accountDeletionDaysLeft,
   createHilosAccountDeletionFlow,
   createHilosAccountDeletionStore,
@@ -323,7 +324,14 @@ export class HilosAccountDeletion {
     return deletion === null
       ? ''
       : formatAccountDeletionDays(
-          accountDeletionDaysLeft(deletion.effectiveAt, this.now()),
+          accountDeletionDaysLeft(
+            deletion.effectiveAt,
+            this.now(),
+            accountDeletionGraceDays(
+              deletion.requestedAt,
+              deletion.effectiveAt,
+            ),
+          ),
         )
   })
 

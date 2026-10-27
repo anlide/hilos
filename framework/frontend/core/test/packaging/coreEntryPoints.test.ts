@@ -34,6 +34,7 @@ import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
+import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
 import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
@@ -405,6 +406,8 @@ const profileRenameValues = [
   'PROFILE_NAME_SET_ACTION',
   'createHilosProfileRename',
 ]
+/** The original deletion duration, shared by the compatibility root and base. */
+const accountDeletionValues = ['accountDeletionGraceDays']
 /** Presentation copy shared by the user section and compatibility root. */
 const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY']
 /** Approved Moderation section exports; keep the legacy snapshot and base graph unchanged. */
@@ -479,6 +482,7 @@ const expectedValues = [
   ...statusValues,
   ...publicStatusValues,
   ...profileRenameValues,
+  ...accountDeletionValues,
   ...userOverviewValues,
   ...maintenanceFrameValues,
   ...maintenanceRestoreActionValues,
@@ -748,6 +752,7 @@ describe('core public entries', () => {
       ...moderationValues,
       ...connectionInteractionValues,
       ...profileRenameValues,
+      ...accountDeletionValues,
     ]) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
@@ -772,6 +777,9 @@ describe('core public entries', () => {
       expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
     }
     for (const api of [core, base]) {
+      expect(api.accountDeletionGraceDays).toBe(
+        accountDeletion.accountDeletionGraceDays,
+      )
       expect(api).not.toHaveProperty('formatTimeZoneChoiceMoment')
       expect(api).not.toHaveProperty('formatSnapshotMoment')
     }

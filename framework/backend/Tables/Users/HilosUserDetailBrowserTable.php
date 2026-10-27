@@ -49,8 +49,8 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
  * Each other row names what it opens in its NOT_PERSONAL: the connection's person, presence and the
  * session count, worked out of runtime connections; whether a password is set, worked out of the
  * identity's type, while the unconfirmed address stays hidden as the address it is (HIL-1276); and
- * the date a scheduled deletion falls due. That date is the one computed field out of a table under
- * PURGE a viewer is shown: `hilos_account_deletion` is erased on a restore so that the copy does not
+ * the date a scheduled deletion falls due and its derived whole-day duration (HIL-1840). These computed
+ * fields out of a table under PURGE are open: `hilos_account_deletion` is erased on a restore so that the copy does not
  * go on to erase a masked person, not because the date names anybody, and without it the card would
  * tell a viewer no deletion is scheduled (the owner, 2026-10-01). The table's columns stay hidden.
  */
@@ -155,9 +155,11 @@ final class HilosUserDetailBrowserTable
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
+                    HilosUserTableRow::FIELD_DELETION_GRACE_DAYS,
                 ],
                 BrowserTableFieldKey::NOT_PERSONAL => [
                     HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
+                    HilosUserTableRow::FIELD_DELETION_GRACE_DAYS,
                 ],
             ],
         ],

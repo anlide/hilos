@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
   accountDeletionDaysLeft,
+  accountDeletionGraceDays,
   createHilosAccountDeletionFlow,
   createHilosAccountDeletionStore,
   focusInitial,
@@ -99,7 +100,14 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
     deletion === null
       ? ''
       : formatAccountDeletionDays(
-          accountDeletionDaysLeft(deletion.effectiveAt, now),
+          accountDeletionDaysLeft(
+            deletion.effectiveAt,
+            now,
+            accountDeletionGraceDays(
+              deletion.requestedAt,
+              deletion.effectiveAt,
+            ),
+          ),
         )
 
   function fill(template: string): string {

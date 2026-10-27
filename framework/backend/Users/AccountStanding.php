@@ -39,6 +39,7 @@ final readonly class AccountStanding
     public const string blocked = 'blocked';
     public const string frozen = 'frozen';
     public const string deletionEffectiveAt = 'deletionEffectiveAt';
+    public const string deletionGraceDays = 'deletionGraceDays';
     public const string lapsed = 'lapsed';
     public const string window = 'window';
     public const string document = 'document';
@@ -55,6 +56,7 @@ final readonly class AccountStanding
      * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead, whatever the refusal setting says
      * @param ?int $mergedInto Live end of the merge chain a folded account leads to, or null when not merged or the chain leads nowhere
      * @param ?string $mergedIntoName Name of that account, or null when there is none to name
+     * @param ?int $deletionGraceDays Positive whole-day duration fixed by the live deletion request, or null
      */
     public function __construct(
         public AccountStandingKind $shown,
@@ -65,13 +67,14 @@ final readonly class AccountStanding
         public array $window,
         public ?int $mergedInto = null,
         public ?string $mergedIntoName = null,
+        public ?int $deletionGraceDays = null,
     ) {
     }
 
     /**
      * The shape the session frame, the admin card and its live frame carry.
      *
-     * @return array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     * @return array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int, deletionGraceDays: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} Wire form of the verdict
@@ -83,6 +86,7 @@ final readonly class AccountStanding
             self::blocked => $this->blocked,
             self::frozen => $this->frozen,
             self::deletionEffectiveAt => $this->deletionEffectiveAt,
+            self::deletionGraceDays => $this->deletionGraceDays,
             self::lapsed => self::documentsToArray($this->lapsed),
             self::window => self::documentsToArray($this->window),
             self::mergedInto => $this->mergedInto,
@@ -99,7 +103,8 @@ final readonly class AccountStanding
      * the stored facts, and the documents with their deadlines are the revision catalog and acceptance
      * records that are not personal ({@see LegalAcceptance}). The date a scheduled erasure falls due is
      * opened by the owner's word (2026-10-01): it names nobody, and without it the card would tell a
-     * viewer no deletion is scheduled; the columns of the deletion table stay hidden. Where a merged
+     * viewer no deletion is scheduled. The request's derived whole-day duration is open too (HIL-1840);
+     * the columns of the deletion table stay hidden. Where a merged
      * account went is the survivor's id and name, each by the verdict of its column of the people
      * (HIL-1292): the number is open, the name is a person's and hidden.
      *
@@ -117,6 +122,7 @@ final readonly class AccountStanding
             self::blocked => WireField::column(HilosDbContext::users, ObjectUser::block),
             self::frozen => WireField::notPersonal(),
             self::deletionEffectiveAt => WireField::notPersonal(),
+            self::deletionGraceDays => WireField::notPersonal(),
             self::lapsed => $documents,
             self::window => $documents,
             self::mergedInto => WireField::column(HilosDbContext::users, ObjectUser::id),

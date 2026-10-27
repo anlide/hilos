@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
@@ -260,10 +261,34 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         $scheduled = AccountStandingResolver::of(self::USER_ID);
         self::assertSame(AccountStandingKind::DELETION_SCHEDULED, $scheduled->shown);
         self::assertSame(TimeHelper::sqlToMs($request->effectiveAt), $scheduled->deletionEffectiveAt);
+        self::assertSame(1, $scheduled->deletionGraceDays);
 
         // The cancel updates columns that do not name the person, so every verdict is dropped.
         $request->actions->cancel();
         self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::of(self::USER_ID)->shown);
+        self::assertNull(AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
+    }
+
+    public function testChangingTheCurrentGraceDoesNotChangeAnExistingRequestsDuration(): void
+    {
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_OWNER);
+        $request = Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+        );
+        self::assertSame(30, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
+        Hilos::$db->settings->actions->add(AccountDeletionSettings::GRACE_DAYS_KEY, 7, StandingIntegrationSettingsCatalog::getCatalog());
+        self::assertSame(7, AccountDeletionSettings::graceDays());
+        AccountStandingResolver::forgetAll();
+        self::assertSame(30, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
+        self::assertSame(TimeHelper::sqlToMs($request->effectiveAt), AccountStandingResolver::of(self::USER_ID)->deletionEffectiveAt);
+        $request->actions->cancel();
+        self::assertNull(AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + 7 * TimeConstants::SECONDS_PER_DAY),
+        );
+        self::assertSame(7, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
     }
 
     public function testOnlyAChangeCarryingTheBlockDropsAPersonsVerdict(): void
@@ -651,8 +676,18 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         foreach ($states as $state) {
             self::assertSame('deletion_scheduled', $state->accountStanding[AccountStanding::shown] ?? null);
             self::assertIsInt($state->accountStanding[AccountStanding::deletionEffectiveAt] ?? null);
+            self::assertSame(1, $state->accountStanding[AccountStanding::deletionGraceDays]);
         }
         self::assertArrayNotHasKey(SignalConstants::PAGE_ACCESS_REASSESS_USER, $drained);
+
+        Hilos::$db->accountDeletions->liveOf(self::USER_ID)->actions->cancel();
+        $sessions->onTick();
+        $canceled = $this->drained()[HilosSignalConstants::HILOS_SESSION_STATE] ?? [];
+        self::assertCount(2, $canceled);
+        foreach ($canceled as $state) {
+            self::assertNull($state->accountStanding[AccountStanding::deletionEffectiveAt]);
+            self::assertNull($state->accountStanding[AccountStanding::deletionGraceDays]);
+        }
     }
 
     public function testHoldCommandCausesLapseAndFreezesAccountAndNotifiesSessions(): void

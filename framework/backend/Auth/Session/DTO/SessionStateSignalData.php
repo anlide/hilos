@@ -74,7 +74,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     or null
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked Blocked account the session lost, named by its confirmed
      *     address or not at all, or null when the session holds no such card
-     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int, deletionGraceDays: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Standing of the person
@@ -171,7 +171,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Returns the same frame stamped with the standing of the person the session acts as (HIL-945).
      *
-     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int, deletionGraceDays: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding

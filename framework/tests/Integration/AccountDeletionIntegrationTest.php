@@ -39,6 +39,7 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * A person's own account deletion, run by the framework's users library (HIL-302).
@@ -88,6 +89,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame('Deletion scheduled: the account is erased in 30 days', $reply->successMessage);
         $deletion = Hilos::$db->accountDeletions->liveOf(self::USER_ID);
         self::assertNotNull($deletion);
+        self::assertSame(30, $deletion->deletionGraceDays);
         self::assertEqualsWithDelta(
             self::GRACE_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             TimeHelper::sqlToMs($deletion->effectiveAt) - TimeHelper::sqlToMs($deletion->requestedAt),
@@ -101,6 +103,31 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
                 'user' => self::USER_ID, 'by' => self::ADMIN_USER_ID]),
             $this->library->messages[0],
         );
+    }
+
+    #[DataProvider('storedRequestDurations')]
+    public function testDurationComesFromTheStoredMoments(string $effectiveAt, int $expected): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
+            [self::USER_ID, '2026-01-01 12:00:00', $effectiveAt],
+        );
+        $deletion = Hilos::$db->accountDeletions->liveOf(self::USER_ID);
+
+        self::assertNotNull($deletion);
+        self::assertSame($expected, $deletion->deletionGraceDays);
+    }
+
+    /** @return array<string, array{string, int}> Whole days, rounded-up partial days and the one-day floor */
+    public static function storedRequestDurations(): array
+    {
+        return [
+            'thirty days' => ['2026-01-31 12:00:00', 30],
+            'partial day' => ['2026-01-02 12:00:01', 2],
+            'short request' => ['2026-01-01 12:00:01', 1],
+            'same moment' => ['2026-01-01 12:00:00', 1],
+            'deadline moved earlier' => ['2025-12-31 12:00:00', 1],
+        ];
     }
 
     public function testAdministratorCanCancelAndThePersonCanCancelAnAdministratorsRequest(): void

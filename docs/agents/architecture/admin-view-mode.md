@@ -446,8 +446,9 @@ nobody is asked*).
   the session count, worked out of runtime connections; whether a password is
   set, worked out of the identity's type; and the account standing whole — the
   fact shown, the block, the freeze, the documents and their deadlines, the
-  date a scheduled deletion falls due, and for a merged account the number of
-  the account it went into — on the card's page data and on its live frame
+  date a scheduled deletion falls due and the historical `deletionGraceDays`
+  of that live request, and for a merged account the number of the account it
+  went into — on the card's page data and on its live frame
   alike, by one map (`AccountStanding::wireFields()`); whether a person in the
   list was merged, a fact of the merge table in the row's inline `merge` slot
   (HIL-1292). Hidden: the name of the account a merged one went into, a
@@ -456,12 +457,19 @@ nobody is asked*).
   addresses, the unconfirmed password address among them; a candidate's
   sign-in methods whole, because the merge window reads the list as one value
   and the methods' types without their addresses tell a viewer nothing; the
-  grace period of a deletion when its catalog key is closed. The date a
-  deletion falls due is the one computed field out of a table under `PURGE` a
-  viewer is shown: `hilos_account_deletion` is erased on a restore so that the
-  copy does not go on to erase a masked person, not because the date names
-  anybody, and without it the card would tell a viewer no deletion is
-  scheduled (the owner, 2026-10-01). The table's columns stay hidden.
+  current `accountDeletionGraceDays` setting when its catalog key is closed,
+  and `requestedAt` from a deletion row. The date a deletion falls due and the
+  request's derived duration are the two computed fields out of a table under
+  `PURGE` a viewer is shown: `deletionEffectiveAt` and `deletionGraceDays` are
+  `NOT_PERSONAL` in the browser row and open in `AccountStanding::wireFields()`.
+  Those fields describe the specific request's saved moments. This explicit
+  HIL-1840 exception leaves the current `accountDeletionGraceDays` setting
+  under its existing catalog verdict and leaves `requestedAt` hidden.
+  `hilos_account_deletion` is erased on a restore so that the copy does not go
+  on to erase a masked person, not because either computed value names
+  anybody, and without them the card would tell a viewer no deletion is
+  scheduled (the owner, 2026-10-01). The table's stored columns stay hidden,
+  and viewer mutations stay closed.
 
 ## The Browser Side
 

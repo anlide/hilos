@@ -93,6 +93,7 @@ function standing(
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -185,6 +186,7 @@ describe('the session standing (HIL-945)', () => {
       blocked: false,
       frozen: false,
       deletionEffectiveAt: null,
+      deletionGraceDays: null,
       lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
       window: [],
       mergedInto: null,
@@ -208,7 +210,10 @@ describe('the session standing (HIL-945)', () => {
       ),
     )
 
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + 12 * DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + 12 * DAY_MS,
+      deletionGraceDays: null,
+    })
     expect(hilosSessionAvatarMark.get()).toEqual({
       tone: 'warning',
       icon: 'bi-trash',
@@ -271,7 +276,9 @@ describe('the session standing (HIL-945)', () => {
         icon: 'bi-people-fill',
       })
       expect(hilosDeletionStrip.get()).toEqual(
-        shown === 'deletion_scheduled' ? { effectiveAt: NOW + DAY_MS } : null,
+        shown === 'deletion_scheduled'
+          ? { effectiveAt: NOW + DAY_MS, deletionGraceDays: null }
+          : null,
       )
     },
   )
@@ -298,7 +305,10 @@ describe('the session standing (HIL-945)', () => {
         true,
       ),
     )
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + DAY_MS,
+      deletionGraceDays: null,
+    })
 
     booted.connection.emitHandshakeResponse({
       ...handshake(
@@ -311,7 +321,10 @@ describe('the session standing (HIL-945)', () => {
         impersonatedBy: null,
       },
     })
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + 12 * DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + 12 * DAY_MS,
+      deletionGraceDays: null,
+    })
     expect(hilosSessionAvatarMark.get()).toEqual({
       tone: 'warning',
       icon: 'bi-trash',
@@ -326,7 +339,10 @@ describe('the session standing (HIL-945)', () => {
         true,
       ),
     )
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + DAY_MS,
+      deletionGraceDays: null,
+    })
     booted.connection.emitHandshakeResponse({
       data: { accountStanding: null },
       entities: { currentUser: null, impersonatedBy: null },
@@ -345,7 +361,10 @@ describe('the session standing (HIL-945)', () => {
         true,
       ),
     )
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + DAY_MS,
+      deletionGraceDays: null,
+    })
 
     booted.scopes.session.data.set('accountStanding', undefined)
     expect(hilosAccountStanding.get()).toBeNull()
@@ -361,7 +380,10 @@ describe('the session standing (HIL-945)', () => {
         true,
       ),
     )
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + DAY_MS,
+      deletionGraceDays: null,
+    })
 
     const current = bind()
     unbind = current.unbind
@@ -377,7 +399,10 @@ describe('the session standing (HIL-945)', () => {
 
     previous.unbind()
     previous.connection.emitHandshakeResponse(handshake(standing('none')))
-    expect(hilosDeletionStrip.get()).toEqual({ effectiveAt: NOW + 12 * DAY_MS })
+    expect(hilosDeletionStrip.get()).toEqual({
+      effectiveAt: NOW + 12 * DAY_MS,
+      deletionGraceDays: null,
+    })
     current.unbind()
     current.connection.emitHandshakeResponse(handshake(standing('none')))
     expect(hilosDeletionStrip.get()).toBeNull()
@@ -416,11 +441,14 @@ describe('formatHilosDeletionStrip', () => {
       dateStyle: 'long',
     })
 
-    expect(formatHilosDeletionStrip({ effectiveAt }, NOW)).toBe(
-      `Your account will be deleted on ${date} — 12 days left`,
-    )
     expect(
-      formatHilosDeletionStrip({ effectiveAt }, effectiveAt + DAY_MS),
+      formatHilosDeletionStrip({ effectiveAt, deletionGraceDays: null }, NOW),
+    ).toBe(`Your account will be deleted on ${date} — 12 days left`)
+    expect(
+      formatHilosDeletionStrip(
+        { effectiveAt, deletionGraceDays: null },
+        effectiveAt + DAY_MS,
+      ),
     ).toBe(`Your account will be deleted on ${date} — 1 day left`)
     expect(ACCOUNT_STANDING_STRIP_COPY.keep).toBe('Keep my account')
   })
@@ -479,9 +507,9 @@ it.each([-300_000, 300_000])(
     try {
       const now = Date.parse('2025-12-30T00:30:05Z') - drift
       const effectiveAt = Date.parse('2026-01-01T00:30:05Z')
-      expect(formatHilosDeletionStrip({ effectiveAt }, now)).toBe(
-        'Your account will be deleted on December 31, 2025 — 2 days left',
-      )
+      expect(
+        formatHilosDeletionStrip({ effectiveAt, deletionGraceDays: null }, now),
+      ).toBe('Your account will be deleted on December 31, 2025 — 2 days left')
     } finally {
       zone.mockRestore()
       applyServerTime(Date.now())
@@ -489,3 +517,54 @@ it.each([-300_000, 300_000])(
     }
   },
 )
+
+describe('the deletion strip historical duration', () => {
+  afterEach(() => {
+    applyServerTime(Date.now())
+    vi.useRealTimers()
+  })
+
+  it('caps initial, live and reconnected requests and clears cancellation', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    const booted = bind()
+    const initial = standing('deletion_scheduled', {
+      deletionEffectiveAt: NOW + 30 * DAY_MS + 1,
+      deletionGraceDays: 30,
+    })
+    try {
+      booted.connection.emitHandshakeResponse(handshake(initial))
+      expect(hilosDeletionStrip.get()).toEqual({
+        effectiveAt: NOW + 30 * DAY_MS + 1,
+        deletionGraceDays: 30,
+      })
+      expect(
+        formatHilosDeletionStrip(hilosDeletionStrip.get()!, NOW),
+      ).toContain('30 days left')
+      expect(
+        formatHilosDeletionStrip(hilosDeletionStrip.get()!, NOW + DAY_MS + 1),
+      ).toContain('29 days left')
+      expect(
+        formatHilosDeletionStrip(hilosDeletionStrip.get()!, NOW + 31 * DAY_MS),
+      ).toContain('1 day left')
+
+      booted.scopes.session.data.set('accountStanding', standing('none'))
+      expect(hilosDeletionStrip.get()).toBeNull()
+      const next = standing('deletion_scheduled', {
+        deletionEffectiveAt: NOW + 7 * DAY_MS + 1,
+        deletionGraceDays: 7,
+      })
+      booted.scopes.session.data.set('accountStanding', next)
+      expect(
+        formatHilosDeletionStrip(hilosDeletionStrip.get()!, NOW),
+      ).toContain('7 days left')
+      booted.connection.emitHandshakeResponse(handshake(next))
+      expect(hilosDeletionStrip.get()?.deletionGraceDays).toBe(7)
+      expect(
+        formatHilosDeletionStrip(hilosDeletionStrip.get()!, NOW),
+      ).toContain('7 days left')
+    } finally {
+      booted.unbind()
+    }
+  })
+})

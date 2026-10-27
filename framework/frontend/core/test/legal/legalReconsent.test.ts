@@ -15,6 +15,7 @@ import {
   describeHilosLegalReconsentRefusal,
   formatHilosLegalReconsentBadge,
   hilosFrozenScreen,
+  hilosLegalDaysLeft,
   hilosLegalReconsent,
   hilosLegalReconsentDue,
   hilosLegalReconsentOpen,
@@ -26,6 +27,7 @@ import {
   type HilosLegalReconsentContent,
 } from '../../src/legal/legalReconsent.js'
 import { bindSessionScope } from '../../src/session/sessionScope.js'
+import { applyServerTime } from '../../src/session/serverClock.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
 import { change, clause, current, first } from './fixtures.js'
@@ -73,6 +75,7 @@ function standing(facts: Record<string, unknown> = {}) {
     blocked: false,
     frozen: false,
     deletionEffectiveAt: null,
+    deletionGraceDays: null,
     lapsed: [],
     window: [],
     mergedInto: null,
@@ -325,6 +328,37 @@ describe('the header reminder (HIL-500)', () => {
       formatHilosLegalReconsentBadge({ nearestDeadline: null }, NOVEMBER_FIRST),
     ).toBe('The terms have changed — please review them')
   })
+
+  it.each([
+    ['2026-11-10', 9],
+    ['2026-12-16', 45],
+  ] as const)(
+    'keeps the uncapped deadline rounding for %s',
+    (deadline, days) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(NOVEMBER_FIRST)
+      try {
+        applyServerTime(Date.now())
+        expect(hilosLegalDaysLeft(deadline, Date.now())).toBe(days)
+
+        applyServerTime(Date.now() - 300)
+        expect(hilosLegalDaysLeft(deadline, Date.now())).toBe(days + 1)
+        expect(
+          formatHilosLegalReconsentBadge(
+            { nearestDeadline: deadline },
+            Date.now(),
+          ),
+        ).toBe(`The terms have changed — ${days + 1} days left to decide`)
+        expect(hilosLegalDaysLeft(deadline, Date.now() + DAY_MS)).toBe(days)
+        expect(
+          hilosLegalDaysLeft(deadline, Date.now() + (days + 1) * DAY_MS),
+        ).toBe(1)
+      } finally {
+        applyServerTime(Date.now())
+        vi.useRealTimers()
+      }
+    },
+  )
 })
 
 describe('the screen content (HIL-500)', () => {

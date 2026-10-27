@@ -606,6 +606,7 @@ describe('sessionScope', () => {
         blocked: false,
         frozen: true,
         deletionEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
+        deletionGraceDays: null,
         lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
         window: [{ document: 'privacy', deadline: '2026-11-10' }],
         mergedInto: null,
@@ -1394,3 +1395,54 @@ it.each([-300_000, 300_000])(
     }
   },
 )
+
+describe('historical deletion duration', () => {
+  const scheduled = {
+    shown: 'deletion_scheduled',
+    blocked: false,
+    frozen: false,
+    deletionEffectiveAt: LOCAL_NOW + 30 * 86_400_000,
+    lapsed: [],
+    window: [],
+    mergedInto: null,
+    mergedIntoName: null,
+  }
+
+  it.each([30, 7, 1, null, undefined])(
+    'keeps duration %s through handshake and session frames',
+    (deletionGraceDays) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const standing = sessionAccountStanding(scopes)
+      const raw = {
+        ...scheduled,
+        ...(deletionGraceDays === undefined ? {} : { deletionGraceDays }),
+      }
+      connection.emitHandshakeResponse({ data: { accountStanding: raw } })
+      expect(standing.get()).toEqual({
+        ...scheduled,
+        deletionGraceDays: deletionGraceDays ?? null,
+      })
+      // The session holder's state is delivered to the browser as handshake_response.
+      connection.emitHandshakeResponse({
+        data: { accountStanding: { ...raw, deletionEffectiveAt: LOCAL_NOW } },
+      })
+      expect(standing.get()?.deletionGraceDays).toBe(deletionGraceDays ?? null)
+      expect(standing.get()?.deletionEffectiveAt).toBe(LOCAL_NOW)
+    },
+  )
+
+  it.each([0, -1, 1.5, '30', true, Infinity, NaN])(
+    'refuses malformed duration %s',
+    (deletionGraceDays) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      connection.emitHandshakeResponse({
+        data: { accountStanding: { ...scheduled, deletionGraceDays } },
+      })
+      expect(sessionAccountStanding(scopes).get()).toBeNull()
+    },
+  )
+})
