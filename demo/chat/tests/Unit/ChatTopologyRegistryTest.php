@@ -956,6 +956,8 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Bots',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[PageConstants::ADMIN_BOTS]);
         self::assertSame([[
             PageCatalogConstants::SECTION_TITLE => 'Chat administration',

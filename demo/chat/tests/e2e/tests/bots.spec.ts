@@ -7,16 +7,20 @@ import {
   expectTableRowOrder,
   screenshotTable,
   settleTableLayout,
+  deliveryObject,
   shownByTestId,
   watchFirstRowTop,
   watchTableAllocation,
   watchTableGeometry,
   type TableGeometryWatch,
+  watchDeliveryFrames,
+  type DeliveryFrameLog,
   watchSocketFrames,
   type SocketFrame,
   clickSubmit,
   typeInto,
   gotoPage,
+  expectPageReady,
   signUpAdmin,
   expectTableTotal,
   goToLastPage,
@@ -1189,14 +1193,137 @@ test('an open edit follows its row past the window edge, and conflicts after it'
   await tabB.close()
 })
 
-test('reaches the bots admin from the dashboard', async ({ page }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
-  await gotoPage(expect, page, '/hilos')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+/**
+ * Asserts the shared page head on /hilos/app/bots: section head block, title,
+ * lead, robot icon, breadcrumbs, absence of tabs or subsection cards, and the
+ * table's accessible name connected to the section heading.
+ *
+ * @param page The Playwright page.
+ */
+async function expectBotsPageHead(page: Page): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toBeVisible()
 
-  await page.getByTestId('dashboard-card-admin_bots').click()
-  await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Bots')
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+
+  await expect(
+    head.getByText('Library bots: profiles, status, and behavior.', {
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await expect(
+    head.getByTestId('hilos-page-head-block').locator('i.bi-robot'),
+  ).toBeVisible()
+
+  const breadcrumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(breadcrumbs).toBeVisible()
+  const rootCrumb = breadcrumbs.getByTestId('hilos-breadcrumb-hilos')
+  await expect(rootCrumb).toHaveAttribute('href', '/hilos')
+  await expect(rootCrumb).toHaveText('Hilos')
+  const currentCrumb = breadcrumbs.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect(currentCrumb).toHaveText('Bots')
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
+
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+
+  const table = page.getByTestId('admin-bots-view').getByRole('table')
+  await expect(table).toBeVisible()
+  const headingId = await heading.getAttribute('id')
+  expect(headingId).toBeTruthy()
+  await expect(table).toHaveAttribute('aria-labelledby', headingId!)
+  await expect(table).toHaveAccessibleName('Bots')
+}
+
+/**
+ * Asserts the wire page_response frame for admin_bots after a navigation boundary.
+ *
+ * @param frames The active delivery frames monitor.
+ * @param opening The bookmark index boundary before navigation.
+ */
+function expectBotsPageResponse(
+  frames: DeliveryFrameLog,
+  opening: { packets: number; sent: number },
+): void {
+  const incoming = frames.packets
+    .slice(opening.packets)
+    .flatMap((packet) => packet.frames)
+  const replies = incoming.filter(({ wire }) => {
+    const response = deliveryObject(wire)
+    return (
+      response.type === 'page_response' &&
+      deliveryObject(response.data).page === 'admin_bots'
+    )
+  })
+  expect(replies).toHaveLength(1)
+  expect(replies[0].failure).toBeUndefined()
+
+  const payload = deliveryObject(
+    deliveryObject(deliveryObject(replies[0].wire).data).payload,
+  )
+  const data = deliveryObject(payload.data)
+  expect(data).toMatchObject({
+    pageLabel: 'Bots',
+    pageLead: 'Library bots: profiles, status, and behavior.',
+    pageHeadOwner: {
+      page: 'admin_bots',
+      label: 'Bots',
+      lead: 'Library bots: profiles, status, and behavior.',
+      icon: 'bi-robot',
+    },
+    pageBreadcrumb: [
+      { page: 'hilos', label: 'Hilos' },
+      { page: 'admin_bots', label: 'Bots' },
+    ],
+    pageTabs: [{ page: 'admin_bots', label: 'Overview' }],
+    pageChildren: [],
+  })
+  expect(deliveryObject(payload.windows).bots).toBeDefined()
+}
+
+test('reaches the bots admin from the dashboard', async ({ page }) => {
+  const frames = watchDeliveryFrames(page)
+  try {
+    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await gotoPage(expect, page, '/hilos')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+    let opening = {
+      packets: frames.packets.length,
+      sent: frames.sent.length,
+    }
+    await page.getByTestId('dashboard-card-admin_bots').click()
+    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
+    await expectBotsPageHead(page)
+    expectBotsPageResponse(frames, opening)
+
+    opening = {
+      packets: frames.packets.length,
+      sent: frames.sent.length,
+    }
+    await gotoPage(expect, page, '/hilos/app/bots')
+    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+    await expectBotsPageHead(page)
+    expectBotsPageResponse(frames, opening)
+
+    opening = {
+      packets: frames.packets.length,
+      sent: frames.sent.length,
+    }
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+    await expectBotsPageHead(page)
+    expectBotsPageResponse(frames, opening)
+  } finally {
+    frames.stop()
+  }
 })
 
 test.describe('in the admin view mode', () => {
@@ -1207,6 +1334,7 @@ test.describe('in the admin view mode', () => {
   }) => {
     await setAdminViewMode(true)
     await openBots(page)
+    await expectBotsPageHead(page)
     await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
 
     const name = page.getByTestId('admin-bots-name')

@@ -65,6 +65,8 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Bots',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],
         ];
     }

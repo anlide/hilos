@@ -357,7 +357,7 @@ async function submitDelete(): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="PAGE_ADMIN_BOTS">
+  <HilosAdminPage :page="PAGE_ADMIN_BOTS" head-kind="section">
     <section data-id="admin-bots-view">
       <HilosViewportTable :controller="bots.controller">
         <template #cell-name="{ row }">
