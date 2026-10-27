@@ -11,6 +11,9 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Analytics\AnalyticsStore;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DataExport\DataExportState;
 use Hilos\Database\Database;
@@ -23,13 +26,34 @@ use PharData;
 /** The project seam includes only the author's messages and the rename target's history. */
 final class DataExportTest extends IntegrationTestCase
 {
+    /** Only the analytics tables insertPersonEvent() writes, children before dictionaries. */
+    private const array ANALYTICS_CLEANUP_ORDER = [
+        'hilos_analytics_person_event', 'hilos_analytics_browser_session',
+        'hilos_analytics_page', 'hilos_analytics_page_params', 'hilos_analytics_action_name',
+    ];
+
     private string $directory;
     private ?FsContext $previousFs;
+    private ?SignalRouter $previousRouter;
+    private ?DataExportAgent $agent = null;
+
+    /** @var array<string, int> Analytics high water marks owned by this test instance only */
+    private array $analyticsBaseline = [];
+
+    /** @var list<int> People created by this case */
+    private array $userIds = [];
+
+    /** @var list<int> Feed events created by this case */
+    private array $eventIds = [];
+
+    /** @var list<int> Published registry files created by this case */
+    private array $fileIds = [];
 
     /** Creates separate attachment and archive storage for this case. */
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousRouter = Hilos::$sr;
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->directory = sys_get_temp_dir() . '/chat-export-' . bin2hex(random_bytes(8));
         mkdir($this->directory);
@@ -37,23 +61,45 @@ final class DataExportTest extends IntegrationTestCase
         $this->previousFs = Hilos::$fs;
         Hilos::$fs = new ChatExportTestFs($this->directory);
         Hilos::$fs->configure();
+        // AnalyticsStore's tables have no mounted DbCollection; retain pre-existing dictionary rows.
+        foreach (self::ANALYTICS_CLEANUP_ORDER as $table) {
+            Database::sql('SELECT COALESCE(MAX(`id`), 0) AS `id` FROM `' . $table . '`');
+            $this->analyticsBaseline[$table] = (int)Database::field('id');
+        }
     }
 
-    /** Restores the project's FS binding and drops this case's files and agent claim. */
+    /** Removes owned rows even after a failed assertion, then releases the agent, bindings and files. */
     protected function tearDown(): void
     {
-        Hilos::$fs = $this->previousFs;
-        TruthSourceRegistry::unregisterAgent(DataExportAgent::AGENT_TYPE);
-        foreach (['published', 'exports'] as $directory) {
-            foreach (glob($this->directory . '/' . $directory . '/*') as $file) {
-                unlink($file);
-            }
-            if (is_dir($this->directory . '/' . $directory)) {
-                rmdir($this->directory . '/' . $directory);
+        try {
+            $this->removeFixtureRows();
+        } finally {
+            try {
+                if ($this->agent !== null) {
+                    $this->underAgent($this->agent, fn () => $this->agent->onStop());
+                }
+            } finally {
+                if ($this->agent !== null) {
+                    TruthSourceRegistry::unregisterAgent($this->agent->getId());
+                    SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->agent->getId()));
+                }
+                Hilos::$fs = $this->previousFs;
+                Hilos::$sr = $this->previousRouter;
+                try {
+                    foreach (['published', 'exports'] as $directory) {
+                        foreach (glob($this->directory . '/' . $directory . '/*') as $file) {
+                            unlink($file);
+                        }
+                        if (is_dir($this->directory . '/' . $directory)) {
+                            rmdir($this->directory . '/' . $directory);
+                        }
+                    }
+                    rmdir($this->directory);
+                } finally {
+                    parent::tearDown();
+                }
             }
         }
-        rmdir($this->directory);
-        parent::tearDown();
     }
 
     /**
@@ -62,19 +108,20 @@ final class DataExportTest extends IntegrationTestCase
      */
     public function testExportsOwnChatRowsAndAttachmentBytes(): void
     {
-        $personId = (int)Hilos::$db->users->actions->createWithName('Exporting')->id;
-        $otherId = (int)Hilos::$db->users->actions->createWithName('Other')->id;
-        Hilos::$db->events->actions->addUserRegistered($personId);
-        Hilos::$db->events->actions->addUserRenamed(
+        $personId = $this->createUser('Exporting');
+        $otherId = $this->createUser('Other');
+        $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRegistered($personId)->id;
+        $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRenamed(
             Hilos::$db->userRenames->actions->add($personId, $personId, 'Before', 'Exporting'),
-        );
-        Hilos::$db->events->actions->addUserRenamed(
+        )->id;
+        $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRenamed(
             Hilos::$db->userRenames->actions->add($otherId, $personId, 'Other before', 'Other'),
-        );
+        )->id;
         $file = $this->keepRegistryFile($personId, 'note.txt', "my attachment\n");
-        Hilos::$db->events->actions->addMessage('my message', userId: $personId, fileIds: [(int)$file->id]);
-        Hilos::$db->events->actions->addMessage('foreign message', userId: $otherId);
-        $agent = new DataExportAgent();
+        $this->fileIds[] = (int)$file->id;
+        $this->eventIds[] = (int)Hilos::$db->events->actions->addMessage('my message', userId: $personId, fileIds: [(int)$file->id])->id;
+        $this->eventIds[] = (int)Hilos::$db->events->actions->addMessage('foreign message', userId: $otherId)->id;
+        $agent = $this->agent = new DataExportAgent();
         $this->startAgent($agent);
         ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $personId): void {
             Hilos::$db->dataExports->actions->order($personId, '2026-01-01 00:00:00');
@@ -114,33 +161,34 @@ final class DataExportTest extends IntegrationTestCase
      */
     public function testAnalyticsPartsUseTheExactActorAndIncludeFoldedAccounts(): void
     {
-        $aliceId = (int)Hilos::$db->users->actions->createWithName('Alice')->id;
-        $bobId = (int)Hilos::$db->users->actions->createWithName('Bob')->id;
-        $foldedId = (int)Hilos::$db->users->actions->createWithName('Folded')->id;
-        $olderId = (int)Hilos::$db->users->actions->createWithName('Older')->id;
-        Database::sql('INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`) VALUES (?, ?), (?, ?)',
-            [$foldedId, $aliceId, $olderId, $foldedId]);
+        $aliceId = $this->createUser('Alice');
+        $bobId = $this->createUser('Bob');
+        $foldedId = $this->createUser('Folded');
+        $olderId = $this->createUser('Older');
+        Hilos::$db->userMerges->actions->add($foldedId, $aliceId);
+        Hilos::$db->userMerges->actions->add($olderId, $foldedId);
 
         $store = new AnalyticsStore();
+        $browserToken = 'shared-browser-' . bin2hex(random_bytes(8));
         // Every Alice row has the same source moment: the second part needs the id tie-breaker.
         for ($row = 1; $row <= 501; $row++) {
             $store->insertPersonEvent(new AnalyticsPersonEvent(
-                'shared-browser', $aliceId, null, 11, AnalyticsPersonEvent::ACTION, 'alice_action',
+                $browserToken, $aliceId, null, 11, AnalyticsPersonEvent::ACTION, 'alice_action',
                 null, null, '127.0.0.1', 1,
             ));
         }
         $store->insertPersonEvent(new AnalyticsPersonEvent(
-            'shared-browser', $olderId, null, 12, AnalyticsPersonEvent::PAGE_OPEN,
+            $browserToken, $olderId, null, 12, AnalyticsPersonEvent::PAGE_OPEN,
             null, 'chat', ['room' => 'mine'], '2001:db8::1', 502,
         ));
         $store->insertPersonEvent(new AnalyticsPersonEvent(
-            'shared-browser', $bobId, $aliceId, 13, AnalyticsPersonEvent::ACTION, 'bob_action',
+            $browserToken, $bobId, $aliceId, 13, AnalyticsPersonEvent::ACTION, 'bob_action',
             null, null, '127.0.0.2', 503,
         ));
         Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = ?, `user_identity_value` = ?
-            WHERE `session_token` = ?', ['user_id', (string)$bobId, 'shared-browser']);
+            WHERE `session_token` = ?', ['user_id', (string)$bobId, $browserToken]);
 
-        $agent = new DataExportAgent();
+        $agent = $this->agent = new DataExportAgent();
         $this->startAgent($agent);
         ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $aliceId, $bobId): void {
             Hilos::$db->dataExports->actions->order($aliceId, '2026-01-01 00:00:00');
@@ -176,6 +224,47 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame('bob_action', $bobPart[0]['name']);
         self::assertSame($aliceId, $bobPart[0]['subjectUserId']);
         self::assertStringNotContainsString('alice_action', $bobArchive['analytics_person_000001.json']->getContent());
+    }
+
+    /**
+     * @param string $name Fixture display name
+     * @return int Created person, retained for cleanup before any assertion runs
+     */
+    private function createUser(string $name): int
+    {
+        $id = (int)Hilos::$db->users->actions->createWithName($name)->id;
+        $this->userIds[] = $id;
+
+        return $id;
+    }
+
+    /** Removes the case's dependent rows before its files and people, through existing mounted actions. */
+    private function removeFixtureRows(): void
+    {
+        foreach ($this->analyticsBaseline as $table => $id) {
+            Database::sqlRun('DELETE FROM `' . $table . '` WHERE `id` > ?', [$id]);
+        }
+        if ($this->agent !== null) {
+            $this->underAgent($this->agent, function (): void {
+                foreach ($this->userIds as $userId) {
+                    Hilos::$db->dataExports->ofUser($userId)?->actions->delete();
+                }
+            });
+        }
+        Hilos::$db->eventAttachments->actions->deleteForMessages($this->eventIds);
+        foreach ($this->userIds as $userId) {
+            Hilos::$db->eventMessages->actions->deleteByAuthor($userId);
+            Hilos::$db->eventUserRegistrations->actions->deleteByTarget($userId);
+            Hilos::$db->userRenames->actions->deleteByUser($userId);
+            Hilos::$db->userMerges->actions->deleteForUser($userId);
+        }
+        Hilos::$db->events->actions->deleteByIds($this->eventIds);
+        foreach ($this->fileIds as $fileId) {
+            Hilos::$db->files[$fileId]->actions->delete();
+        }
+        foreach ($this->userIds as $userId) {
+            Hilos::$db->users[$userId]->actions->delete();
+        }
     }
 }
 

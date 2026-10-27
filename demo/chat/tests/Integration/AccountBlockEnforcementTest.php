@@ -864,10 +864,19 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             self::assertNull(Hilos::$db->dataExports->ofUser($userId));
             self::assertSame([], glob($path . '/*'));
         } finally {
-            Hilos::$fs = $previousFs;
-            foreach (glob($path . '/*') as $file) { unlink($file); }
-            if (is_dir($path)) { rmdir($path); }
-            TruthSourceRegistry::unregisterAgent($agent->getId());
+            try {
+                $this->underAgent($agent, static function () use ($userId): void {
+                    Hilos::$db->dataExports->ofUser($userId)?->actions->delete();
+                });
+            } finally {
+                Hilos::$fs = $previousFs;
+                try {
+                    foreach (glob($path . '/*') as $file) { unlink($file); }
+                    if (is_dir($path)) { rmdir($path); }
+                } finally {
+                    TruthSourceRegistry::unregisterAgent($agent->getId());
+                }
+            }
         }
     }
 

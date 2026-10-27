@@ -28,28 +28,51 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 final class ProfileDataPageTest extends IntegrationTestCase
 {
     private const string ACCEPT_KEY = 'profile-data-test';
+    private const string OWNER = 'profile-data-test-agent';
 
+    private ?SignalRouter $previousRouter;
+
+    /** @var list<int> People whose requests and rows belong to this case */
+    private array $userIds = [];
+
+    /** Claims the fixture's exports and connections and preserves the caller's router. */
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), 'profile-data-test-agent');
-        TruthSourceRegistry::register(HilosDbContext::dataExports, TruthSourceKeys::all(), 'profile-data-test-agent');
-        Hilos::$rt->connections->actions->clear();
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::OWNER);
+        TruthSourceRegistry::register(HilosDbContext::dataExports, TruthSourceKeys::all(), self::OWNER);
+        $this->previousRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
     }
 
+    /** Deletes even unfinished requests while this case owns them, then releases its runtime and router. */
     protected function tearDown(): void
     {
-        Hilos::$rt->connections->actions->clear();
-        Hilos::$sr = null;
-        parent::tearDown();
+        try {
+            foreach ($this->userIds as $userId) {
+                Hilos::$db->dataExports->ofUser($userId)?->actions->delete();
+                Hilos::$db->users[$userId]->actions->delete();
+            }
+        } finally {
+            try {
+                Hilos::$rt->connections[self::ACCEPT_KEY]?->actions->unregister();
+            } finally {
+                TruthSourceRegistry::unregisterAgent(self::OWNER);
+                RtTruthSourceRegistry::unregisterAgent(self::OWNER);
+                Hilos::$sr = $this->previousRouter;
+                parent::tearDown();
+            }
+        }
     }
 
+    /** Both pages expose only the current person's request, including its initial absence. */
     public function testBothPagesCarryAbsenceThenOwnCopyAndJoinTheGroup(): void
     {
         $userId = (int)Hilos::$db->users->actions->createWithName('Data copy owner')->id;
+        $this->userIds[] = $userId;
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
         $foreignUserId = (int)Hilos::$db->users->actions->createWithName('Foreign copy owner')->id;
+        $this->userIds[] = $foreignUserId;
         Hilos::$db->dataExports->actions->order($foreignUserId, '2026-09-27 10:00:00');
 
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {

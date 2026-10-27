@@ -88,15 +88,19 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
     private array $journalBaseline = [];
 
     private ?int $ruleId = null;
+    private ?int $pictureRuleId = null;
 
+    /** The SQL seed and the warmed ORM must agree on both rule identities and text. */
     public function testSeedGivesThreeMessageAndThreeNameRulesAndNothingForPictures(): void
     {
         $oldPieces = self::oldPieces();
+        $this->assertRulesMatchDatabase();
 
-        Seed::applyOne(self::SEED);
+        $this->applySeed();
 
         $this->assertSame(self::seededRows(), self::ruleRows());
         $this->assertSame([ChatModerationKindKey::MESSAGE, ModerationKindKey::PROFILE_NAME], self::kinds());
+        $this->assertRulesMatchDatabase();
         // The old table and its readers keep their rows, and the new rows are their texts word for word.
         $this->assertSame($oldPieces, self::oldPieces());
         $this->assertSame([
@@ -128,20 +132,24 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         }
     }
 
+    /** Replacing the six seeded rows preserves the third kind and refreshes warmed ORM selections. */
     public function testRepeatedSeedNeitherDuplicatesNorErasesAThirdKind(): void
     {
         $oldPieces = self::oldPieces();
-        Seed::applyOne(self::SEED);
+        $this->assertRulesMatchDatabase();
+        $this->applySeed();
+        $this->assertRulesMatchDatabase();
         Database::sqlRun('INSERT INTO `hilos_moderation_rule` (`kind`, `rule`) VALUES (?, ?)',
             [ChatModerationKindKey::MESSAGE_PICTURE, self::PICTURE_RULE]);
         Database::sql('SELECT LAST_INSERT_ID() AS `id`');
-        $pictureId = (int)Database::field('id');
+        $this->pictureRuleId = (int)Database::field('id');
 
-        Seed::applyOne(self::SEED);
+        $this->applySeed();
 
         // The repeat writes its six rows anew, after the picture rule that kept its place.
         $this->assertSame([[ChatModerationKindKey::MESSAGE_PICTURE, self::PICTURE_RULE], ...self::seededRows()], self::ruleRows());
-        Database::sql('SELECT `kind`, `rule` FROM `hilos_moderation_rule` WHERE `id` = ?', [$pictureId]);
+        $this->assertRulesMatchDatabase();
+        Database::sql('SELECT `kind`, `rule` FROM `hilos_moderation_rule` WHERE `id` = ?', [$this->pictureRuleId]);
         $this->assertSame(['kind' => ChatModerationKindKey::MESSAGE_PICTURE, 'rule' => self::PICTURE_RULE], Database::row());
         $this->assertSame($oldPieces, self::oldPieces());
     }
@@ -206,6 +214,7 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
     {
         parent::setUp();
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Hilos::$db->forgetLoadedDataForTest();
         $this->previousSeedPath = Seed::getSeedPath();
         Seed::setSeedPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Seed');
         Migration::setMigrationListPath(dirname(__DIR__, 2) . '/backend/Database/Migration');
@@ -228,33 +237,73 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
      */
     protected function tearDown(): void
     {
-        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-        Database::setJournalReceiptId(null);
-        Database::sql('SELECT `TRIGGER_NAME` FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
-        foreach (Database::rows() as $trigger) {
-            Database::sql('DROP TRIGGER `' . $trigger['TRIGGER_NAME'] . '`');
+        try {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::setJournalReceiptId(null);
+            try {
+                Database::sql('SELECT `TRIGGER_NAME` FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()');
+                foreach (Database::rows() as $trigger) {
+                    Database::sql('DROP TRIGGER `' . $trigger['TRIGGER_NAME'] . '`');
+                }
+                try {
+                    foreach ([$this->ruleId, $this->pictureRuleId] as $id) {
+                        if (isset(Hilos::$db->moderationRules[$id])) {
+                            $this->underAgent($this->library, fn () => Hilos::$db->moderationRules[$id]->actions->delete());
+                        }
+                    }
+                } finally {
+                    $this->applySeed();
+                }
+            } finally {
+                try {
+                    $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+                    foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
+                        Database::sqlRun("DELETE FROM {$journal}.`{$table}` WHERE `id` > ?", [$this->journalBaseline[$table]]);
+                    }
+                } finally {
+                    foreach ($this->originalTriggers as $trigger) {
+                        Database::sql('DROP TRIGGER IF EXISTS `' . $trigger['TRIGGER_NAME'] . '`');
+                        Database::sql('CREATE TRIGGER `' . $trigger['TRIGGER_NAME'] . '` ' . $trigger['ACTION_TIMING']
+                            . ' ' . $trigger['EVENT_MANIPULATION'] . ' ON `' . $trigger['EVENT_OBJECT_TABLE']
+                            . '` FOR EACH ROW ' . $trigger['ACTION_STATEMENT']);
+                    }
+                }
+            }
+        } finally {
+            if ($this->previousSeedPath !== null) {
+                Seed::setSeedPath($this->previousSeedPath);
+            }
+            try {
+                $this->library->onStop();
+            } finally {
+                TruthSourceRegistry::unregisterAgent($this->library->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
+                parent::tearDown();
+            }
         }
-        if ($this->ruleId !== null && isset(Hilos::$db->moderationRules[$this->ruleId])) {
-            $this->underAgent($this->library, fn () => Hilos::$db->moderationRules[$this->ruleId]->actions->delete());
+    }
+
+    /** The raw seed replaces row ids; discard loaded rows locally, outside any transaction, even on failure. */
+    private function applySeed(): void
+    {
+        try {
+            Seed::applyOne(self::SEED);
+        } finally {
+            Hilos::$db->forgetLoadedDataForTest();
         }
-        Database::sqlRun('DELETE FROM `hilos_moderation_rule` WHERE `kind` = ?', [ChatModerationKindKey::MESSAGE_PICTURE]);
-        Seed::applyOne(self::SEED);
-        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
-            Database::sqlRun("DELETE FROM {$journal}.`{$table}` WHERE `id` > ?", [$this->journalBaseline[$table]]);
+    }
+
+    /** Warms a fresh ORM selection and checks its identities as well as text against independent SQL. */
+    private function assertRulesMatchDatabase(): void
+    {
+        Database::sql('SELECT `id`, `kind`, `rule` FROM `hilos_moderation_rule` ORDER BY `id`');
+        $expected = array_map(static fn (array $row): array => [(int)$row['id'], $row['kind'], $row['rule']], Database::rows());
+        $actual = [];
+        foreach (Hilos::$db->moderationRules as $rule) {
+            $actual[] = [$rule->id, $rule->kind, $rule->rule];
         }
-        foreach ($this->originalTriggers as $trigger) {
-            Database::sql('CREATE TRIGGER `' . $trigger['TRIGGER_NAME'] . '` ' . $trigger['ACTION_TIMING']
-                . ' ' . $trigger['EVENT_MANIPULATION'] . ' ON `' . $trigger['EVENT_OBJECT_TABLE']
-                . '` FOR EACH ROW ' . $trigger['ACTION_STATEMENT']);
-        }
-        if ($this->previousSeedPath !== null) {
-            Seed::setSeedPath($this->previousSeedPath);
-        }
-        $this->library->onStop();
-        TruthSourceRegistry::unregisterAgent($this->library->getId());
-        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
-        parent::tearDown();
+        usort($actual, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        $this->assertSame($expected, $actual);
     }
 
     /** @return list<array{string, string}> Kind and text of every row the seed writes, in its order */
