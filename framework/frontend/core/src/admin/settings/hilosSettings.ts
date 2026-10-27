@@ -248,7 +248,10 @@ const SETTINGS_COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
 const SETTINGS_FRAME: HilosTableFrame = {
   search: { placeholder: 'Search settings…' },
   columns: SETTINGS_COLUMNS,
-  empty: { title: 'No settings yet.' },
+  empty: {
+    title: 'This project declares no settings',
+    hint: 'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+  },
 }
 
 /**

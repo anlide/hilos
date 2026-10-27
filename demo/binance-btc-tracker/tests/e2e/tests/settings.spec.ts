@@ -2,8 +2,11 @@ import { test, expect, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
+  dismissToasts,
   draftCustomSetting,
   expectDataFreeDeparture,
+  expectSettingsPageHead,
+  liesAbove,
   openSettingEdit,
   setCustomSetting,
   shownByTestId,
@@ -14,7 +17,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
-import { gotoPage } from '../helpers/page'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
 import { clickSubmit, typeInto } from '../helpers/session'
 
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
@@ -54,7 +57,12 @@ test(
   async ({ page }) => {
     await signUpAdmin(page)
     await openSettings(page)
-    await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
+    await expectSettingsPageHead(expect, page)
+
+    // Direct entry and F5 keep the same head without a single Overview tab.
+    await page.reload()
+    await expectPageReady(page)
+    await expectSettingsPageHead(expect, page)
 
     // A cataloged table has no free "add a setting" entry point.
     await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
@@ -181,8 +189,41 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   const row = page.getByTestId('hilos-table-row-example_integer')
   await expect(row).toContainText('default')
 
-  // Add-by-key: open the on-default row, switch on a custom value, and save it.
-  await setCustomSetting(page, 'example_integer', '42')
+  // The catalog type stays in the header, and custom-off keeps a disabled,
+  // dimmed field mounted before there is a custom value.
+  await openSettingEdit(page, 'example_integer')
+  await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
+    'integer',
+  )
+  const custom = page.getByTestId('hilos-settings-edit-custom')
+  const value = page.getByTestId('hilos-settings-edit-value')
+  await expect(custom).not.toBeChecked()
+  await expect(value).toBeVisible()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+  const input = await value.elementHandle()
+
+  // Off/on preserves both the input node and the exact unsaved draft.
+  await custom.check()
+  await expect(value).toBeEnabled()
+  await typeInto(value, '42')
+  await custom.uncheck()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+  await expect(value).toHaveValue('42')
+  expect(
+    await value.evaluate((node, original) => node === original, input),
+  ).toBe(true)
+  await custom.check()
+  await expect(value).toBeEnabled()
+  await expect(value.locator('..')).not.toHaveClass(/\bopacity-50\b/)
+  await expect(value).toHaveValue('42')
+  expect(
+    await value.evaluate((node, original) => node === original, input),
+  ).toBe(true)
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await clickSubmit(save)
+  await expect(save).toHaveCount(0)
 
   // The success sentence is the backend's own, naming the key it saved: the
   // driver has none of its own to fall back on (HIL-770).
@@ -197,10 +238,18 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Reset back to the catalog default.
-  await clearCustomSetting(page, 'example_integer')
+  // Saving with custom off resets to the default rather than writing the draft.
+  await dismissToasts(page)
+  await openSettingEdit(page, 'example_integer')
+  await typeInto(value, '43')
+  await custom.uncheck()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value).toHaveValue('43')
+  await clickSubmit(save)
+  await expect(save).toHaveCount(0)
   await expect(row).toContainText('default')
   await expect(row).not.toContainText('custom')
+  await expect(row).not.toContainText('43')
 
   // The reset took the row away, so the key is back to offering a custom value
   // rather than pretending there is one to edit — this is what the stored row
@@ -210,10 +259,11 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   ).toHaveAttribute('aria-label', 'Set custom value')
 
   // And re-opening the dialog arms the switch from the value, not from the row:
-  // off, with no value field behind it.
+  // off, with the disabled value field still visible.
   await openSettingEdit(page, 'example_integer')
   await expect(page.getByTestId('hilos-settings-edit-custom')).not.toBeChecked()
-  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+  await expect(value).toBeVisible()
+  await expect(value).toHaveAttribute('disabled', '')
   await page.getByTestId('modal-close').click()
 
   // All of it happened over the live socket — no document reload.
@@ -535,6 +585,34 @@ test('deletes an orphan setting through the confirm modal', async ({
     })
   }
 
+  // Both the visible value cell and its editor name the uncataloged key.
+  const cellBadge = shownByTestId(page, 'hilos-setting-not-in-catalog')
+  await expect(cellBadge).toBeVisible()
+  await expect(cellBadge).toHaveText('not in catalog')
+  await expect(cellBadge).toHaveAttribute(
+    'title',
+    'This key is not in the project catalog',
+  )
+  await openSettingEdit(page, orphanKey)
+  const orphanBadge = page.getByTestId('hilos-settings-edit-orphan')
+  const orphanValue = page.getByTestId('hilos-settings-edit-value')
+  await expect(orphanBadge).toBeVisible()
+  await expect(orphanBadge).toHaveText('not in catalog')
+  await expect(orphanBadge).toHaveAttribute(
+    'title',
+    'This key is not in the project catalog',
+  )
+  await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
+    'string',
+  )
+  await expect(page.getByTestId('hilos-settings-edit-custom')).toHaveCount(0)
+  await expect(orphanValue).toBeEnabled()
+  await expect(orphanValue).toHaveValue('seed-value')
+  await liesAbove(orphanBadge, orphanValue)
+  await page.getByTestId('modal-close').click()
+  await expect(orphanValue).toHaveCount(0)
+  await expect(page.getByTestId('modal-confirm-discard')).toHaveCount(0)
+
   // The delete affordance is orphan-only: a catalog key never exposes it, this
   // uncataloged row does.
   const deleteButton = shownByTestId(page, `hilos-settings-delete-${orphanKey}`)
@@ -651,6 +729,9 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await isolate(page, key)
 
   const value = await draftCustomSetting(page, key, '-1')
+  await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
+    'integer',
+  )
 
   // The room for a refusal is held before there is one, and nothing in it looks
   // like a refusal: the live region stands there, the red plate does not
@@ -658,6 +739,10 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   const slot = page.getByTestId('hilos-action-error-slot')
   await expect(slot).toBeAttached()
   await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
+  await expect(slot.locator('..')).toHaveAttribute(
+    'id',
+    'hilos-settings-edit-error',
+  )
 
   // Measured once the submit has been scrolled to, not before: the click would
   // scroll it there itself, and a body that moved under the measurement would
@@ -670,7 +755,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   const valueTop = await watchTop(value)
 
   await save.focus()
-  await save.click()
+  await clickSubmit(save)
 
   // The dialog stays open with the refusal above the field, and the value the
   // person typed is still there for them to correct.
@@ -678,6 +763,12 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('Value must be an integer of 0 or more')
   await expect(value).toHaveValue('-1')
+  await expect(value).toHaveClass(/\bis-invalid\b/)
+  await expect(value).toHaveAttribute('aria-invalid', 'true')
+  await expect(value).toHaveAttribute(
+    'aria-describedby',
+    'hilos-settings-edit-error',
+  )
 
   // The plate landed in room that was already taken: the region is the height it
   // stood at while empty, and the field under it did not move. That is what the
@@ -697,14 +788,32 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(save).toBeVisible()
   await expect(save).toBeEnabled()
   await save.focus()
-  await save.click()
+  await clickSubmit(save)
   await expect(toast.getByTestId('hilos-toast-repeats')).toHaveText('×2')
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('Value must be an integer of 0 or more')
   await expect(value).toHaveValue('-1')
+  await expect(value).toHaveClass(/\bis-invalid\b/)
+  await expect(value).toHaveAttribute('aria-invalid', 'true')
+  await expect(value).toHaveAttribute(
+    'aria-describedby',
+    'hilos-settings-edit-error',
+  )
   await slotRoom.unchanged()
   await valueTop.unchanged()
   await expect(toast).toHaveCount(1)
+
+  // Correcting the draft clears the previous refusal and its field annotation
+  // without submitting anything or releasing the reserved room.
+  await typeInto(value, '1')
+  await expect(value).toHaveValue('1')
+  await expect(refusal).toHaveCount(0)
+  await expect(value).not.toHaveClass(/\bis-invalid\b/)
+  await expect(value).not.toHaveAttribute('aria-invalid', /./)
+  await expect(value).not.toHaveAttribute('aria-describedby', /./)
+  await expect(slot).toBeAttached()
+  await slotRoom.unchanged()
+  await valueTop.unchanged()
 
   // Nothing was written: the row still reads as the catalog default. Closing
   // goes through the discard guard, because the draft is dirty by construction.

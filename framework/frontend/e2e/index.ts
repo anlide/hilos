@@ -147,6 +147,7 @@ export { enableEmailChannel, openBell, unreadBadge } from './notifications.js'
 export {
   clearCustomSetting,
   draftCustomSetting,
+  expectSettingsPageHead,
   openSettingEdit,
   setCustomSetting,
 } from './settings.js'

@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  clearCustomSetting,
-  setCustomSetting,
+  dismissToasts,
+  expectSettingsPageHead,
+  openSettingEdit,
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
-import { typeInto } from '../helpers/session'
+import { expectPageReady, gotoPage } from '../helpers/page.js'
+import { clickSubmit, typeInto } from '../helpers/session.js'
 
 // Hilos settings admin e2e for this demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
@@ -29,8 +30,12 @@ test('lists settings in the framework table and filters from the search box', as
 
   await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expectSettingsPageHead(expect, page)
+
+  // Direct entry and F5 keep the same head without a single Overview tab.
+  await page.reload()
+  await expectPageReady(page)
+  await expectSettingsPageHead(expect, page)
 
   // A cataloged table has no free "add a setting" entry point.
   await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
@@ -100,18 +105,71 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   const integerRow = page.getByTestId('hilos-table-row-example_integer')
   await expect(integerRow).toContainText('default')
 
-  // Add-by-key: open the on-default row, switch on a custom value, and save it.
-  await setCustomSetting(page, 'example_integer', '42')
+  // The catalog type stays in the header, and custom-off keeps a disabled,
+  // dimmed field mounted before there is a custom value.
+  await openSettingEdit(page, 'example_integer')
+  await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
+    'integer',
+  )
+  const custom = page.getByTestId('hilos-settings-edit-custom')
+  const value = page.getByTestId('hilos-settings-edit-value')
+  await expect(custom).not.toBeChecked()
+  await expect(value).toBeVisible()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+  const input = await value.elementHandle()
+
+  // Off/on preserves both the input node and the exact unsaved draft.
+  await custom.check()
+  await expect(value).toBeEnabled()
+  await typeInto(value, '42')
+  await custom.uncheck()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+  await expect(value).toHaveValue('42')
+  expect(
+    await value.evaluate((node, original) => node === original, input),
+  ).toBe(true)
+  await custom.check()
+  await expect(value).toBeEnabled()
+  await expect(value.locator('..')).not.toHaveClass(/\bopacity-50\b/)
+  await expect(value).toHaveValue('42')
+  expect(
+    await value.evaluate((node, original) => node === original, input),
+  ).toBe(true)
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await clickSubmit(save)
+  await expect(save).toHaveCount(0)
 
   // The custom value returns over the live table and the edit dialog closes.
   await expect(integerRow).toContainText('42')
   await expect(integerRow).toContainText('custom')
-  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+  await expect(value).toHaveCount(0)
 
-  // Reset back to the catalog default via the edit dialog's custom toggle.
-  await clearCustomSetting(page, 'example_integer')
+  // Saving with custom off resets to the default rather than writing the draft.
+  await dismissToasts(page)
+  await openSettingEdit(page, 'example_integer')
+  await typeInto(value, '43')
+  await custom.uncheck()
+  await expect(value).toHaveAttribute('disabled', '')
+  await expect(value).toHaveValue('43')
+  await clickSubmit(save)
+  await expect(save).toHaveCount(0)
   await expect(integerRow).toContainText('default')
   await expect(integerRow).not.toContainText('custom')
+  await expect(integerRow).not.toContainText('43')
+
+  await expect(value).toHaveCount(0)
+
+  // And re-opening the dialog arms the switch from the value, not from the row:
+  // off, with the disabled value field still visible.
+  await openSettingEdit(page, 'example_integer')
+  await expect(page.getByTestId('hilos-settings-edit-custom')).not.toBeChecked()
+  await expect(value).toBeVisible()
+  await expect(value).toHaveAttribute('disabled', '')
+  await page.getByTestId('modal-close').click()
+
+  await expect(value).toHaveCount(0)
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)

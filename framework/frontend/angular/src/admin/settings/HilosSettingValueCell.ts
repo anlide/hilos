@@ -81,6 +81,13 @@ import { HilosHiddenMark } from '@hilos/angular/base'
           title="Custom value"
           >custom</span
         >
+      } @else if (valueSource() === 'orphan') {
+        <span
+          class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0"
+          title="This key is not in the project catalog"
+          data-id="hilos-setting-not-in-catalog"
+          >not in catalog</span
+        >
       }
     </span>
   `,

@@ -12,6 +12,7 @@ import {
   settleClientBundles,
   expectPublicBundle,
   expectServerRefusal,
+  expectSettingsPageHead,
   expectThemeMode,
   holdClientBundle,
   holdPageReply,
@@ -171,7 +172,7 @@ test('holds selected project code after the server answer, then reuses it throug
     await expectPageReady(page)
     await page.goBack()
     await expectPageReady(page)
-    await expectLazyAdminPage(expect, page, 'Settings')
+    await expectSettingsPageHead(expect, page)
     await page.goForward()
     await expectPageReady(page)
     await page.goBack()

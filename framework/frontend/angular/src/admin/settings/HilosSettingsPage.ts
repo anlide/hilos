@@ -23,6 +23,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import { HilosPages, hilosRowEditIdle } from '@hilos/core/base'
 import {
@@ -87,7 +88,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
     ConflictHeader,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section">
       <hilos-viewport-table [controller]="settings().controller">
         <ng-template hilosTableCell="key" let-row>
           <code class="text-break">{{ row.key }}</code>
@@ -157,15 +158,39 @@ function inputStep(type: string | undefined): 'any' | undefined {
         (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="editDirty()"
       >
-        <h5
-          hilosConflictHeader
+        <div
           modalHeader
-          [title]="editTitle()"
-          [conflict]="live().conflict"
-        ></h5>
-        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
+          class="d-flex align-items-center gap-2 flex-grow-1 min-w-0"
+        >
+          <h5
+            hilosConflictHeader
+            class="text-break min-w-0"
+            [title]="editTitle()"
+            [conflict]="live().conflict"
+          ></h5>
+          @if (editRow()?.type) {
+            <span
+              class="font-monospace small px-1 border rounded bg-body-tertiary text-body-secondary flex-shrink-0 ms-auto"
+              data-id="hilos-settings-edit-type"
+              >{{ editRow()?.type }}</span
+            >
+          }
+        </div>
+        <div id="hilos-settings-edit-error">
+          <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
+        </div>
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
+            @if (isOrphan(row)) {
+              <div class="mb-3">
+                <span
+                  class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0"
+                  title="This key is not in the project catalog"
+                  data-id="hilos-settings-edit-orphan"
+                  >not in catalog</span
+                >
+              </div>
+            }
             @if (editHidden()) {
               <div class="mb-3">
                 <span class="form-label d-block">{{ row.key }}</span>
@@ -204,43 +229,53 @@ function inputStep(type: string | undefined): 'any' | undefined {
                   </label>
                 </div>
               }
-              @if (editUseCustom()) {
-                <div class="mb-0">
-                  @if (editInputType() === 'checkbox') {
-                    <div class="form-check">
-                      <input
-                        id="hilos-settings-edit-value"
-                        type="checkbox"
-                        class="form-check-input"
-                        data-id="hilos-settings-edit-value"
-                        data-autofocus
-                        [checked]="editValue() === '1'"
-                        (change)="onValueCheckbox($event)"
-                      />
-                      <label
-                        class="form-check-label"
-                        for="hilos-settings-edit-value"
-                      >
-                        Enabled
-                      </label>
-                    </div>
-                  } @else {
-                    <label class="form-label" for="hilos-settings-edit-value">{{
-                      row.key
-                    }}</label>
+              <div class="mb-0" [class.opacity-50]="!editUseCustom()">
+                @if (editInputType() === 'checkbox') {
+                  <div class="form-check">
                     <input
                       id="hilos-settings-edit-value"
-                      [type]="editInputType()"
-                      [attr.step]="editStep()"
-                      class="form-control"
+                      type="checkbox"
+                      class="form-check-input"
                       data-id="hilos-settings-edit-value"
                       data-autofocus
-                      [value]="editValue()"
-                      (input)="onValueInput($event)"
+                      [disabled]="!editUseCustom()"
+                      [class.is-invalid]="editValueInvalid()"
+                      [attr.aria-invalid]="editValueInvalid() ? 'true' : null"
+                      [attr.aria-describedby]="
+                        editValueInvalid() ? 'hilos-settings-edit-error' : null
+                      "
+                      [checked]="editValue() === '1'"
+                      (change)="onValueCheckbox($event)"
                     />
-                  }
-                </div>
-              }
+                    <label
+                      class="form-check-label"
+                      for="hilos-settings-edit-value"
+                    >
+                      Enabled
+                    </label>
+                  </div>
+                } @else {
+                  <label class="form-label" for="hilos-settings-edit-value">{{
+                    row.key
+                  }}</label>
+                  <input
+                    id="hilos-settings-edit-value"
+                    [type]="editInputType()"
+                    [attr.step]="editStep()"
+                    class="form-control"
+                    data-id="hilos-settings-edit-value"
+                    data-autofocus
+                    [disabled]="!editUseCustom()"
+                    [class.is-invalid]="editValueInvalid()"
+                    [attr.aria-invalid]="editValueInvalid() ? 'true' : null"
+                    [attr.aria-describedby]="
+                      editValueInvalid() ? 'hilos-settings-edit-error' : null
+                    "
+                    [value]="editValue()"
+                    (input)="onValueInput($event)"
+                  />
+                }
+              </div>
             }
             <hilos-edit-notice
               [kind]="editNotice()"
@@ -465,6 +500,12 @@ export class HilosSettingsPage {
   protected readonly editHidden = computed(() => this.editForm().hidden)
   protected readonly editUseCustom = computed(() => this.editForm().useCustom)
   protected readonly editValue = computed(() => this.editForm().text)
+  protected readonly editValueInvalid = computed(
+    () =>
+      !this.editHidden() &&
+      this.editUseCustom() &&
+      this.edit.failure()?.outcome === 'fail',
+  )
   protected readonly deleteGone = computed(() => this.liveRow() === undefined)
   protected readonly resetShown = computed(
     () => this.liveRow() ?? this.resetRow(),
@@ -520,6 +561,12 @@ export class HilosSettingsPage {
         editor.dispose()
         settings.dispose()
       })
+    })
+    effect(() => {
+      this.editHidden()
+      this.editUseCustom()
+      this.editValue()
+      untracked(() => this.edit.clearError())
     })
   }
 

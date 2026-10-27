@@ -113,6 +113,14 @@ export function HilosSettingValueCell({
         >
           custom
         </span>
+      ) : valueSource === 'orphan' ? (
+        <span
+          className="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0"
+          title="This key is not in the project catalog"
+          data-id="hilos-setting-not-in-catalog"
+        >
+          not in catalog
+        </span>
       ) : null}
     </span>
   )

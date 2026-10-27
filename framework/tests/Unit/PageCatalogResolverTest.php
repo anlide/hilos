@@ -641,6 +641,33 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
+    /** Settings uses the framework section head with only its Overview tab. */
+    public function testSettingsAdoptsOnlyTheOverviewFromTheFrameworkCatalog(): void
+    {
+        SettingsPageHeadTestHilos::initBrowser();
+        self::assertSame(HilosPageConstants::HILOS_SETTINGS, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_SETTINGS));
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_SETTINGS, new PageRouteParams([]));
+
+        self::assertNotNull($head);
+        self::assertSame([
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_SETTINGS,
+                'label' => 'Settings',
+                'lead' => 'Application setting catalog: catalog defaults, overrides, and references.',
+                'icon' => 'bi-sliders',
+            ],
+            'pageBreadcrumb' => [
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_SETTINGS, 'label' => 'Settings'],
+            ],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_SETTINGS, 'label' => 'Overview'],
+            ],
+            'pageChildren' => [],
+        ], $head->toArray());
+        self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_SETTINGS));
+    }
+
     public function testAnalyticsSharesItsListHeadsAndKeepsBothEntityHeadsLegacy(): void
     {
         AnalyticsPageHeadTestHilos::initBrowser();
@@ -1530,6 +1557,14 @@ abstract class ChatAppearancePageHeadTestHilos extends AppearancePageHeadTestHil
 abstract class BinanceAppearancePageHeadTestHilos extends AppearancePageHeadTestHilos
 {
     protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Settings is served directly from the framework catalog without a project override. */
+abstract class SettingsPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_SETTINGS => PageHeadTestPage::class,
+    ];
 }
 
 /** The Analytics overview and People share a row; its two entities never join it. */

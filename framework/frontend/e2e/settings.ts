@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 
 import { shownByTestId } from './table.js'
 import { dismissToasts } from './toasts.js'
@@ -21,6 +21,61 @@ const SETTING_SAVE = 'hilos-settings-edit-save'
 
 /** Accessible name of an edit control whose row still uses its catalog default. */
 const SET_CUSTOM_VALUE_LABEL = 'Set custom value'
+
+/**
+ * Checks the Settings section head and the table named by its single heading.
+ * Navigation and the scenario stay with the calling spec.
+ *
+ * @param expect The spec's expect.
+ * @param page A page showing the Settings catalog.
+ */
+export async function expectSettingsPageHead(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Settings')
+
+  const block = page.getByTestId('hilos-page-head-block')
+  await expect(block.locator('.bi-sliders')).toBeVisible()
+  await expect(block.locator('p')).toHaveText(
+    'Application setting catalog: catalog defaults, overrides, and references.',
+  )
+
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('listitem')).toHaveCount(2)
+  const root = crumbs.getByTestId('hilos-breadcrumb-hilos')
+  await expect(root).toHaveText('Hilos')
+  await expect(root).toHaveAttribute('href', '/hilos')
+  await expect(crumbs.getByRole('link')).toHaveCount(1)
+  const current = crumbs.locator('[aria-current]')
+  await expect(current).toHaveCount(1)
+  await expect(current).toHaveAttribute('aria-current', 'page')
+  await expect(current.locator('a')).toHaveCount(0)
+  // React and Angular draw a decorative divider inside the current crumb.
+  await expect
+    .poll(() =>
+      current.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe('Settings')
+  await expect(current.locator('xpath=following-sibling::*')).toHaveCount(0)
+
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByRole('table')).toHaveAccessibleName('Settings')
+}
 
 /**
  * Opens one setting's edit dialog and waits until its controls are ready.

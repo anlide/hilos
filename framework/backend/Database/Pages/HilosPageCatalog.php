@@ -411,9 +411,11 @@ final class HilosPageCatalog
         // — Platform operations —
         HilosPageConstants::HILOS_SETTINGS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Settings',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Settings',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application setting catalog: catalog defaults, overrides, and references.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-sliders',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_APPEARANCE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Appearance',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosSettingsActions,
+  createHilosSettingsTable,
   hasCustomValue,
   isOrphanSetting,
   resolveHilosSettingRow,
@@ -122,6 +123,39 @@ describe('hasCustomValue', () => {
     expect(hasCustomValue(rowWithSource('orphan', null))).toBe(true)
     expect(hasCustomValue(rowWithSource('default'))).toBe(false)
     expect(hasCustomValue(rowWithSource('reference'))).toBe(false)
+  })
+})
+
+describe('createHilosSettingsTable', () => {
+  it('shows the catalog empty message only for an unfiltered empty window', () => {
+    const context = {
+      connection: { sendTableViewport: () => undefined },
+      scopes: {},
+      actions: {},
+    } as unknown as HilosSettingsContext
+    const { controller } = createHilosSettingsTable(context)
+
+    expect(controller.frame.body.get()).toBe('loading')
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+
+    expect(controller.frame.body.get()).toBe('empty')
+    expect(controller.frame.declaration.empty).toEqual({
+      title: 'This project declares no settings',
+      hint: 'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+    })
+    expect(controller.frame.declaration.mainAction).toBeUndefined()
+
+    controller.setSearch('missing setting')
+    controller.ingestWindow([], 0, true, null, null, 10)
+
+    expect(controller.frame.body.get()).toBe('empty_filtered')
+
+    controller.setSearch('')
+    controller.ingestWindow([], 0, true, null, null, 10)
+
+    expect(controller.frame.body.get()).toBe('empty')
+    controller.dispose()
   })
 })
 

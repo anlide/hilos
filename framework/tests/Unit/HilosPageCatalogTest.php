@@ -383,7 +383,8 @@ final class HilosPageCatalogTest extends TestCase
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MODERATION_KIND_RULES]);
     }
 
-    public function testI18nLanguageCountryAndMaintenanceAdoptTheSharedHead(): void
+    /** Keeps the adopted owners and entity boundaries explicit in catalog order. */
+    public function testOnlyDeclaredOwnersAdoptTheSharedHead(): void
     {
         $adopted = [];
         $entities = [];
@@ -402,6 +403,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_SETTINGS,
             HilosPageConstants::HILOS_DAEMON,
             HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_MAINTENANCE,
@@ -450,5 +452,13 @@ final class HilosPageCatalogTest extends TestCase
             'Names',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_I18N_COUNTRY_NAMES][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB],
         );
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Settings',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Settings',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application setting catalog: catalog defaults, overrides, and references.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-sliders',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SETTINGS]);
     }
 }

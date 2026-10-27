@@ -121,6 +121,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const editHidden = editForm.hidden
   const editUseCustom = editForm.useCustom
   const editValue = editForm.text
+  const editValueInvalid =
+    !editHidden && editUseCustom && edit.failure?.outcome === 'fail'
+  const clearEditError = edit.clearError
+  useEffect(() => {
+    clearEditError()
+  }, [editHidden, editUseCustom, editValue, clearEditError])
   const setEditUseCustom = (on: boolean) => editor.patchForm({ useCustom: on })
   const setEditValue = (text: string) => editor.patchForm({ text })
   // The live row the open delete or reset dialog is about: the row the table
@@ -214,7 +220,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   return (
-    <HilosAdminPage page={HilosPages.SETTINGS}>
+    <HilosAdminPage page={HilosPages.SETTINGS} headKind="section">
       <HilosViewportTable
         controller={settings.controller}
         cells={{
@@ -295,7 +301,21 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         open={editOpen}
         confirmOnClose={editDirty}
         onClose={closeEdit}
-        header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
+        header={
+          <div className="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+            <div className="text-break min-w-0">
+              <ConflictHeader title={editTitle} conflict={live.conflict} />
+            </div>
+            {editRow?.type ? (
+              <span
+                className="font-monospace small px-1 border rounded bg-body-tertiary text-body-secondary flex-shrink-0 ms-auto"
+                data-id="hilos-settings-edit-type"
+              >
+                {editRow.type}
+              </span>
+            ) : null}
+          </div>
+        }
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
@@ -329,7 +349,9 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           />
         )}
       >
-        <HilosActionError action={edit} detailsTitle="Couldn't save" />
+        <div id="hilos-settings-edit-error">
+          <HilosActionError action={edit} detailsTitle="Couldn't save" />
+        </div>
         {editRow ? (
           <form
             onSubmit={(event) => {
@@ -337,6 +359,15 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
               void submitEdit()
             }}
           >
+            {isOrphanSetting(editRow) ? (
+              <span
+                className="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0 mb-3"
+                title="This key is not in the project catalog"
+                data-id="hilos-settings-edit-orphan"
+              >
+                not in catalog
+              </span>
+            ) : null}
             {editHidden ? (
               <div className="mb-3">
                 <span className="form-label d-block">{editRow.key}</span>
@@ -380,50 +411,62 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                     </label>
                   </div>
                 ) : null}
-                {editUseCustom ? (
-                  <div className="mb-0">
-                    {editInputType === 'checkbox' ? (
-                      <div className="form-check">
-                        <input
-                          id="hilos-settings-edit-value"
-                          type="checkbox"
-                          className="form-check-input"
-                          data-id="hilos-settings-edit-value"
-                          data-autofocus
-                          checked={editValue === '1'}
-                          onChange={(event) =>
-                            setEditValue(event.target.checked ? '1' : '0')
-                          }
-                        />
-                        <label
-                          className="form-check-label"
-                          htmlFor="hilos-settings-edit-value"
-                        >
-                          Enabled
-                        </label>
-                      </div>
-                    ) : (
-                      <>
-                        <label
-                          className="form-label"
-                          htmlFor="hilos-settings-edit-value"
-                        >
-                          {editRow.key}
-                        </label>
-                        <input
-                          id="hilos-settings-edit-value"
-                          type={editInputType}
-                          step={editStep}
-                          className="form-control"
-                          data-id="hilos-settings-edit-value"
-                          data-autofocus
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                        />
-                      </>
-                    )}
-                  </div>
-                ) : null}
+                <div className={`mb-0${!editUseCustom ? ' opacity-50' : ''}`}>
+                  {editInputType === 'checkbox' ? (
+                    <div className="form-check">
+                      <input
+                        id="hilos-settings-edit-value"
+                        type="checkbox"
+                        className={`form-check-input${editValueInvalid ? ' is-invalid' : ''}`}
+                        disabled={!editUseCustom}
+                        aria-invalid={editValueInvalid || undefined}
+                        aria-describedby={
+                          editValueInvalid
+                            ? 'hilos-settings-edit-error'
+                            : undefined
+                        }
+                        data-id="hilos-settings-edit-value"
+                        data-autofocus
+                        checked={editValue === '1'}
+                        onChange={(event) =>
+                          setEditValue(event.target.checked ? '1' : '0')
+                        }
+                      />
+                      <label
+                        className="form-check-label"
+                        htmlFor="hilos-settings-edit-value"
+                      >
+                        Enabled
+                      </label>
+                    </div>
+                  ) : (
+                    <>
+                      <label
+                        className="form-label"
+                        htmlFor="hilos-settings-edit-value"
+                      >
+                        {editRow.key}
+                      </label>
+                      <input
+                        id="hilos-settings-edit-value"
+                        type={editInputType}
+                        step={editStep}
+                        className={`form-control${editValueInvalid ? ' is-invalid' : ''}`}
+                        disabled={!editUseCustom}
+                        aria-invalid={editValueInvalid || undefined}
+                        aria-describedby={
+                          editValueInvalid
+                            ? 'hilos-settings-edit-error'
+                            : undefined
+                        }
+                        data-id="hilos-settings-edit-value"
+                        data-autofocus
+                        value={editValue}
+                        onChange={(event) => setEditValue(event.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
               </>
             )}
             <HilosEditNotice

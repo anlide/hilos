@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { z } from 'zod'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -7,33 +8,54 @@ import {
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
+  createAppPageRouter,
   createSignal,
 } from '@hilos/core'
 import type {
+  ConnectionState,
   HilosConnection,
+  HilosPageIdentity,
   HilosRouter,
   HilosSettingsContext,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportDescriptor,
 } from '@hilos/core'
 
 import { HilosSettingsPage } from '../src/admin/settings/HilosSettingsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-function router(): HilosRouter {
+const SETTINGS_IDENTITY: HilosPageIdentity = {
+  label: 'Settings',
+  lead: 'Application setting catalog: catalog defaults, overrides, and references.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SETTINGS, label: 'Settings' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.SETTINGS,
+    label: 'Settings',
+    lead: 'Application setting catalog: catalog defaults, overrides, and references.',
+    icon: 'bi-sliders',
+  },
+  pageTabs: [{ page: HilosPages.SETTINGS, label: 'Overview' }],
+}
+
+function router(identity: HilosPageIdentity | undefined): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SETTINGS,
       params: {},
       admin: true,
     }),
-    currentPath: createSignal(''),
+    currentPath: createSignal('/hilos/settings'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(identity),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: createAppPageRouter({}).path,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -76,6 +98,7 @@ function seededContext(initial: SettingSlot[]): {
   pushRemove: (key: string) => void
   pushLeave: (next: SettingSlot) => void
   answer: (outcome: 'success' | 'fail') => void
+  disconnect: () => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -92,15 +115,19 @@ function seededContext(initial: SettingSlot[]): {
   const serveWindow = (
     page: string = HilosPages.SETTINGS,
     tableKey: string = 'settings',
+    descriptor?: TableViewportDescriptor,
   ): void => {
+    const search = String(descriptor?.filter.search ?? '')
+    const shown = rows.filter((row) => row.key.includes(search))
     const data = {
       page,
       tableKey,
-      rows: rows.map((settings) => ({
+      requestId: descriptor?.requestId,
+      rows: shown.map((settings) => ({
         rowKey: settings.key,
         slots: { settings },
       })),
-      totalCount: rows.length,
+      totalCount: shown.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -118,8 +145,12 @@ function seededContext(initial: SettingSlot[]): {
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(page: string, tableKey: string): boolean {
-      serveWindow(page, tableKey)
+    sendTableViewport(
+      page: string,
+      tableKey: string,
+      descriptor: TableViewportDescriptor,
+    ): boolean {
+      serveWindow(page, tableKey, descriptor)
 
       return true
     },
@@ -155,6 +186,7 @@ function seededContext(initial: SettingSlot[]): {
     string,
     Set<(signal: Record<string, unknown>) => void>
   >()
+  const stateListeners = new Set<(state: ConnectionState) => void>()
   const actions = new ActionLifecycle({
     sendAction: (
       action: string,
@@ -169,6 +201,14 @@ function seededContext(initial: SettingSlot[]): {
       event: string,
       listener: (signal: Record<string, unknown>) => void,
     ) => {
+      if (event === 'state') {
+        const stateListener = listener as unknown as (
+          state: ConnectionState,
+        ) => void
+        stateListeners.add(stateListener)
+
+        return () => stateListeners.delete(stateListener)
+      }
       const listeners = replyListeners.get(event) ?? new Set()
       listeners.add(listener)
       replyListeners.set(event, listeners)
@@ -241,14 +281,22 @@ function seededContext(initial: SettingSlot[]): {
         })
       }
     },
+    disconnect(): void {
+      for (const listener of stateListeners) {
+        listener('disconnected')
+      }
+    },
     sent,
     focus,
   }
 }
 
-function renderPage(context: HilosSettingsContext) {
+function renderPage(
+  context: HilosSettingsContext,
+  navigation: HilosRouter = router(SETTINGS_IDENTITY),
+) {
   return render(
-    <HilosRouterContext.Provider value={router()}>
+    <HilosRouterContext.Provider value={navigation}>
       <HilosSettingsPage context={context} />
     </HilosRouterContext.Provider>,
   )
@@ -302,6 +350,106 @@ describe('HilosSettingsPage', () => {
   afterEach(() => {
     cleanup()
     document.body.classList.remove('modal-open')
+  })
+
+  it('replaces the section skeleton with the adopted Settings head and names the live table', () => {
+    const { context } = seededContext([
+      slot({ key: 'site_name', valueSource: 'default' }),
+    ])
+    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+    const navigation = { ...router(undefined), pageIdentity: identity }
+    const { container } = renderPage(context, navigation)
+
+    const skeleton = container.querySelector(
+      '[data-id="hilos-page-head-skeleton"]',
+    )
+    expect(skeleton).not.toBeNull()
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true')
+    expect(skeleton?.querySelector('.rounded-circle')).not.toBeNull()
+    expect(skeleton?.querySelector('.rounded-3')).toBeNull()
+    expect(container.querySelector('h1')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-page-head-block"]'),
+    ).toBeNull()
+    expect(container.querySelector('[data-id="hilos-breadcrumb"]')).toBeNull()
+    expect(container.querySelector('[data-id="hilos-page-tabs"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-title-skeleton"]'),
+    ).toBeNull()
+    expect(container.querySelector('.bi-sliders')).toBeNull()
+    expect(container.textContent).not.toContain('Settings')
+    expect(container.textContent).not.toContain(SETTINGS_IDENTITY.lead)
+
+    act(() => {
+      identity.set(SETTINGS_IDENTITY)
+    })
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-page-head"]'),
+    ).toHaveLength(1)
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    const heading = container.querySelector('h1') as HTMLHeadingElement
+    expect(heading.getAttribute('data-id')).toBe('hilos-page-head-title')
+    expect(heading.textContent).toBe('Settings')
+    const block = container.querySelector(
+      '[data-id="hilos-page-head-block"]',
+    ) as HTMLElement
+    const circle = block.querySelector(':scope > .rounded-circle')
+    expect(circle?.getAttribute('aria-hidden')).toBe('true')
+    expect(circle?.querySelector('i')?.className).toBe('bi bi-sliders')
+    expect(block.querySelectorAll('p')).toHaveLength(1)
+    expect(block.querySelector('p')?.textContent).toBe(
+      'Application setting catalog: catalog defaults, overrides, and references.',
+    )
+    expect(container.textContent?.split(SETTINGS_IDENTITY.lead)).toHaveLength(2)
+
+    const crumbs = container.querySelector(
+      '[data-id="hilos-breadcrumb"]',
+    ) as HTMLElement
+    expect(crumbs.getAttribute('aria-label')).toBe('Breadcrumb')
+    const items = crumbs.querySelectorAll('li')
+    expect(items).toHaveLength(2)
+    expect(items[0].textContent).toBe('Hilos')
+    expect(items[0].querySelector('a')?.getAttribute('href')).toBe('/hilos')
+    expect(items[0].hasAttribute('aria-current')).toBe(false)
+    expect(items[0].querySelector('a')?.hasAttribute('aria-current')).toBe(
+      false,
+    )
+    expect(items[1].textContent?.replace('/', '').trim()).toBe('Settings')
+    expect(items[1].getAttribute('aria-current')).toBe('page')
+    expect(items[1].querySelector('a')).toBeNull()
+    expect(container.querySelector('[data-id="hilos-page-tabs"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    expect(container.querySelector('[data-id="hilos-admin-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-page-head-skeleton"]'),
+    ).toBeNull()
+    expect(container.querySelector('[data-id="hilos-admin-empty"]')).toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-page-head"]')
+        ?.nextElementSibling?.getAttribute('data-id'),
+    ).toBe('hilos-viewport-table')
+
+    expect(heading.id).toBeTruthy()
+    expect(document.getElementById(heading.id)).toBe(heading)
+    expect(
+      container.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(heading.id)
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-cards"] [role="list"]')
+        ?.getAttribute('aria-labelledby'),
+    ).toBe(heading.id)
+    expect(
+      container.querySelectorAll('[data-id^="hilos-table-row-"]'),
+    ).toHaveLength(1)
+    expect(container.querySelector('table')?.textContent).toContain('site_name')
   })
 
   it('renders a row per setting with its key and source badge', () => {
@@ -388,9 +536,12 @@ describe('HilosSettingsPage', () => {
     ) as HTMLInputElement
 
     expect(custom.checked).toBe(false)
-    expect(
-      document.querySelector('[data-id="hilos-settings-edit-value"]'),
-    ).toBeNull()
+    const input = document.querySelector(
+      '[data-id="hilos-settings-edit-value"]',
+    ) as HTMLInputElement
+    expect(input.value).toBe('d')
+    expect(input.disabled).toBe(true)
+    expect(input.parentElement?.classList.contains('opacity-50')).toBe(true)
   })
 
   it('opens the edit dialog from a row action', () => {
@@ -896,6 +1047,580 @@ describe('HilosSettingsPage Save in flight', () => {
 
     await reply(answer, 'fail')
     expect(saveState()).toEqual(SAVE_OFF)
+  })
+})
+
+describe('HilosSettingsPage typed editor and refusals', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    vi.useRealTimers()
+  })
+
+  const CUSTOM = slot({
+    key: 'site_name',
+    valueSource: 'override',
+    value: '1',
+    overrideValue: '1',
+    defaultValue: '0',
+  })
+
+  function byId(id: string): HTMLElement | null {
+    return document.querySelector(`[data-id="${id}"]`)
+  }
+
+  function open(context: HilosSettingsContext, key = 'site_name'): void {
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(`[data-id="hilos-settings-edit-${key}"]`)!,
+    )
+  }
+
+  function input(): HTMLInputElement {
+    return byId('hilos-settings-edit-value') as HTMLInputElement
+  }
+
+  function toggle(): void {
+    fireEvent.click(byId('hilos-settings-edit-custom')!)
+  }
+
+  function type(text: string): void {
+    fireEvent.change(input(), { target: { value: text } })
+  }
+
+  async function reply(
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail' = 'fail',
+  ): Promise<void> {
+    await act(async () => answer(outcome))
+  }
+
+  function expectInvalid(field: HTMLInputElement, invalid: boolean): void {
+    expect(field.classList.contains('is-invalid')).toBe(invalid)
+    expect(field.getAttribute('aria-invalid')).toBe(invalid ? 'true' : null)
+    expect(field.getAttribute('aria-describedby')).toBe(
+      invalid ? 'hilos-settings-edit-error' : null,
+    )
+  }
+
+  it.each([
+    ['string', 'text', null],
+    ['integer', 'number', null],
+    ['float', 'number', 'any'],
+    ['boolean', 'checkbox', null],
+  ] as const)(
+    'shows the server type %s beside the existing title',
+    (type, inputType, step) => {
+      const key = 'a_very_long_setting_key_'.repeat(8)
+      open(seededContext([{ ...CUSTOM, key, type }]).context, key)
+      const badge = byId('hilos-settings-edit-type')!
+      expect(badge.textContent).toBe(type)
+      expect(badge.classList.contains('font-monospace')).toBe(true)
+      expect(badge.classList.contains('flex-shrink-0')).toBe(true)
+      const header = badge.parentElement!
+      expect(header.classList.contains('flex-grow-1')).toBe(true)
+      expect(header.classList.contains('min-w-0')).toBe(true)
+      const title = header.querySelector('h5')!
+      expect(title.textContent).toBe(`Edit · ${key}`)
+      expect(title.closest('.text-break.min-w-0')).not.toBeNull()
+      expect(
+        header.parentElement?.querySelector('[data-id="modal-close"]'),
+      ).not.toBeNull()
+      expect(header.contains(byId('modal-close'))).toBe(false)
+      expect(input().type).toBe(inputType)
+      expect(input().getAttribute('step')).toBe(step)
+    },
+  )
+
+  it('omits an absent server type without inferring it from the value', () => {
+    open(seededContext([{ ...CUSTOM, type: '' }]).context)
+    expect(byId('hilos-settings-edit-type')).toBeNull()
+    expect(input().type).toBe('text')
+  })
+
+  it.each(['string', 'integer', 'float'])(
+    'keeps the same %s input and zero draft through custom off and on',
+    async (type) => {
+      const { context, sent, answer } = seededContext([
+        {
+          ...CUSTOM,
+          type,
+          valueSource: 'default',
+          value: '5',
+          overrideValue: null,
+          defaultValue: '5',
+        },
+      ])
+      open(context)
+      const field = input()
+      const group = field.parentElement!
+      const notice = byId('hilos-settings-edit-notice-idle')
+      expect(field.value).toBe('5')
+      expect(field.disabled).toBe(true)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(notice).not.toBeNull()
+      toggle()
+      expect(input()).toBe(field)
+      expect(field.disabled).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      fireEvent.change(field, { target: { value: '0' } })
+      toggle()
+      expect(input()).toBe(field)
+      expect(field.value).toBe('0')
+      expect(field.disabled).toBe(true)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(byId('hilos-settings-edit-notice-idle')).toBe(notice)
+      toggle()
+      expect(input()).toBe(field)
+      expect(field.value).toBe('0')
+      expect(field.disabled).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      enterInEdit()
+      expect(sent[0]).toMatchObject({
+        action: 'setting_add',
+        payload: { key: 'site_name', value: '0' },
+      })
+      await reply(answer, 'success')
+      expect(byId('modal')).toBeNull()
+    },
+  )
+
+  it.each(['default', 'override'])(
+    'keeps the same boolean input and false draft through off and on from %s',
+    async (valueSource) => {
+      const { context, sent, answer } = seededContext([
+        {
+          ...CUSTOM,
+          type: 'boolean',
+          valueSource,
+          value: '0',
+          overrideValue: valueSource === 'default' ? null : '0',
+        },
+      ])
+      open(context)
+      const field = input()
+      const group = field.parentElement!.parentElement!
+      expect(field.checked).toBe(false)
+      expect(field.disabled).toBe(valueSource === 'default')
+      expect(group.classList.contains('opacity-50')).toBe(
+        valueSource === 'default',
+      )
+      if (valueSource === 'default') toggle()
+      fireEvent.click(field)
+      expect(field.checked).toBe(true)
+      fireEvent.click(field)
+      expect(field.checked).toBe(false)
+      toggle()
+      expect(input()).toBe(field)
+      expect(field.disabled).toBe(true)
+      expect(field.checked).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(byId('hilos-settings-edit-notice-idle')).not.toBeNull()
+      toggle()
+      expect(input()).toBe(field)
+      expect(field.disabled).toBe(false)
+      expect(field.checked).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      if (valueSource === 'default') {
+        enterInEdit()
+        expect(sent[0]).toMatchObject({
+          action: 'setting_add',
+          payload: { key: 'site_name', value: '0' },
+        })
+        await reply(answer, 'success')
+      }
+    },
+  )
+
+  it.each(['string', 'integer', 'float', 'boolean'])(
+    'marks only a real refusal of the custom %s value and clears on run and change',
+    async (type) => {
+      const { context, sent, answer } = seededContext([{ ...CUSTOM, type }])
+      open(context)
+      const field = input()
+      if (type === 'boolean') fireEvent.click(field)
+      else fireEvent.change(field, { target: { value: '2' } })
+      const draft = type === 'boolean' ? field.checked : field.value
+      const error = document.getElementById('hilos-settings-edit-error')!
+      expect(error).not.toBeNull()
+      expect(error.getAttribute('role')).toBeNull()
+      expect(error.getAttribute('aria-live')).toBeNull()
+      expectInvalid(field, false)
+      enterInEdit()
+      await reply(answer)
+      expect(byId('modal')).not.toBeNull()
+      expect(input()).toBe(field)
+      expect(type === 'boolean' ? field.checked : field.value).toBe(draft)
+      expectInvalid(field, true)
+      expect(error.contains(byId('hilos-action-error'))).toBe(true)
+      expect(byId('hilos-action-error')?.textContent).toContain(
+        'The setting refused the reset.',
+      )
+      expect(
+        field.classList.contains(
+          type === 'boolean' ? 'form-check-input' : 'form-control',
+        ),
+      ).toBe(true)
+      enterInEdit()
+      expect(sent).toHaveLength(2)
+      expectInvalid(field, false)
+      expect(byId('hilos-action-error')).toBeNull()
+      await reply(answer)
+      expectInvalid(field, true)
+      if (type === 'boolean') fireEvent.click(field)
+      else fireEvent.change(field, { target: { value: '3' } })
+      expectInvalid(field, false)
+      expect(byId('hilos-action-error')).toBeNull()
+      expect(document.getElementById('hilos-settings-edit-error')).toBe(error)
+    },
+  )
+
+  it.each(['timeout', 'disconnected', 'invalid-reply'])(
+    'keeps a %s message without marking the value invalid',
+    async (outcome) => {
+      const { context, answer, disconnect } = seededContext([CUSTOM])
+      if (outcome === 'invalid-reply') {
+        const dispatch = context.actions.dispatch.bind(context.actions)
+        vi.spyOn(context.actions, 'dispatch').mockImplementation(
+          (action, data) => dispatch(action, data, { replySchema: z.string() }),
+        )
+      }
+      open(context)
+      type('Mine')
+      const field = input()
+      enterInEdit()
+      await act(async () => {
+        if (outcome === 'timeout') await vi.advanceTimersByTimeAsync(30000)
+        else if (outcome === 'disconnected') disconnect()
+        else answer('success')
+      })
+      expect(byId('modal')).not.toBeNull()
+      expect(input()).toBe(field)
+      expect(field.value).toBe('Mine')
+      expectInvalid(field, false)
+      const message =
+        outcome === 'timeout'
+          ? 'The action timed out. Please try again.'
+          : outcome === 'disconnected'
+            ? 'The connection dropped before the action completed. Please try again.'
+            : 'The server answered in a form this page could not read. Please try again.'
+      expect(byId('hilos-action-error')?.textContent).toContain(message)
+    },
+  )
+
+  it('sends only reset while custom is off and leaves its refused disabled draft unmarked', async () => {
+    const { context, sent, answer } = seededContext([CUSTOM])
+    open(context)
+    type('Unsaved draft')
+    const field = input()
+    toggle()
+    enterInEdit()
+    expect(sent[0]?.action).toBe('setting_reset')
+    expect(sent[0]?.payload).toEqual({ key: 'site_name' })
+    await reply(answer)
+    expect(input()).toBe(field)
+    expect(field.value).toBe('Unsaved draft')
+    expect(field.disabled).toBe(true)
+    expectInvalid(field, false)
+    expect(byId('hilos-action-error')).not.toBeNull()
+    toggle()
+    expect(field.value).toBe('Unsaved draft')
+    expectInvalid(field, false)
+    expect(byId('hilos-action-error')).toBeNull()
+  })
+
+  it('keeps refusal on conflict-only changes and Keep mine, clearing when Take theirs changes the form', async () => {
+    const { context, pushUpdate, answer } = seededContext([CUSTOM])
+    open(context)
+    type('Mine')
+    const field = input()
+    enterInEdit()
+    await reply(answer)
+    act(() =>
+      pushUpdate({ ...CUSTOM, value: 'Theirs', overrideValue: 'Theirs' }),
+    )
+    expect(field.value).toBe('Mine')
+    expect(byId('conflict-badge')).not.toBeNull()
+    expect(byId('hilos-settings-edit-type')?.textContent).toBe('string')
+    expectInvalid(field, true)
+    expect(byId('hilos-action-error')).not.toBeNull()
+    fireEvent.click(byId('conflict-accept-mine')!)
+    expect(byId('conflict-badge')).toBeNull()
+    expectInvalid(field, true)
+    expect(byId('hilos-action-error')).not.toBeNull()
+    act(() =>
+      pushUpdate({
+        ...CUSTOM,
+        value: 'New theirs',
+        overrideValue: 'New theirs',
+      }),
+    )
+    fireEvent.click(byId('conflict-accept-theirs')!)
+    expect(field.value).toBe('New theirs')
+    expectInvalid(field, false)
+    expect(byId('hilos-action-error')).toBeNull()
+  })
+
+  it('clears refusal when automatic live merge changes the accepted form text', async () => {
+    const { context, pushUpdate, answer } = seededContext([CUSTOM])
+    open(context)
+    type('Mine')
+    enterInEdit()
+    await reply(answer)
+    const field = input()
+    expect(byId('hilos-action-error')).not.toBeNull()
+    act(() => pushUpdate({ ...CUSTOM, value: 'Mine', overrideValue: 'Mine' }))
+    expect(field.value).toBe('Mine')
+    expectInvalid(field, true)
+    expect(byId('hilos-action-error')).not.toBeNull()
+    act(() => pushUpdate({ ...CUSTOM, value: 'Next', overrideValue: 'Next' }))
+    expect(input()).toBe(field)
+    expect(field.value).toBe('Next')
+    expect(field.disabled).toBe(false)
+    expect(byId('hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expectInvalid(field, false)
+    expect(byId('hilos-action-error')).toBeNull()
+  })
+
+  it('clears an old refusal on opening a hidden orphan without exposing a draft', async () => {
+    const hidden = { _hidden: true } as const
+    const { context, sent, answer } = seededContext([
+      CUSTOM,
+      slot({
+        key: 'hidden_orphan',
+        valueSource: 'orphan',
+        value: hidden,
+        overrideValue: hidden,
+        defaultValue: null,
+      }),
+    ])
+    open(context)
+    type('Mine')
+    enterInEdit()
+    await reply(answer)
+    expectInvalid(input(), true)
+    fireEvent.click(byId('modal-close')!)
+    fireEvent.click(byId('modal-confirm-discard')!)
+    expect(byId('modal')).toBeNull()
+    fireEvent.click(
+      document.querySelector('[data-id="hilos-settings-edit-hidden_orphan"]')!,
+    )
+    expect(input()).toBeNull()
+    expect(byId('hilos-settings-edit-custom')).toBeNull()
+    expect(byId('hilos-hidden')).not.toBeNull()
+    expect(byId('hilos-settings-edit-orphan')?.textContent).toBe(
+      'not in catalog',
+    )
+    expect(byId('hilos-action-error')).toBeNull()
+    expect(byId('modal')?.querySelector('.is-invalid')).toBeNull()
+    expect(byId('modal')?.textContent).not.toContain('Mine')
+    enterInEdit()
+    expect(sent).toHaveLength(1)
+    expect(byId('modal')).toBeNull()
+  })
+})
+
+describe('HilosSettingsPage orphan and empty states', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    vi.useRealTimers()
+  })
+
+  const ORPHAN = slot({
+    key: 'legacy',
+    valueSource: 'orphan',
+    value: 'legacy value',
+    overrideValue: 'legacy value',
+    defaultValue: null,
+  })
+
+  it('labels an orphan in both table projections and above its edit field, then updates it', async () => {
+    const { context, sent, answer } = seededContext([ORPHAN])
+    const { container } = renderPage(context)
+    for (const projection of ['table', '[data-id="hilos-table-cards"]']) {
+      const root = container.querySelector(projection)!
+      const badges = root.querySelectorAll(
+        '[data-id="hilos-setting-not-in-catalog"]',
+      )
+      expect(badges).toHaveLength(1)
+      expect(badges[0]!.textContent).toBe('not in catalog')
+      expect(badges[0]!.getAttribute('title')).toBe(
+        'This key is not in the project catalog',
+      )
+      expect(badges[0]!.className).toBe(
+        'badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0',
+      )
+      expect(root.textContent).toContain('legacy value')
+    }
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-settings-edit-legacy"]')!,
+    )
+    const modal = document.querySelector('[data-id="modal"]')!
+    const badge = modal.querySelector('[data-id="hilos-settings-edit-orphan"]')!
+    const field = modal.querySelector(
+      '[data-id="hilos-settings-edit-value"]',
+    ) as HTMLInputElement
+    expect(badge.textContent).toBe('not in catalog')
+    expect(badge.getAttribute('title')).toBe(
+      'This key is not in the project catalog',
+    )
+    expect(
+      badge.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(field.disabled).toBe(false)
+    expect(
+      modal.querySelector('[data-id="hilos-settings-edit-custom"]'),
+    ).toBeNull()
+    expect(modal.textContent).not.toContain('Catalog default')
+    fireEvent.change(field, { target: { value: 'New legacy value' } })
+    enterInEdit()
+    expect(sent[0]).toMatchObject({
+      action: 'setting_update',
+      payload: { key: 'legacy', value: 'New legacy value' },
+    })
+    await act(async () => answer('success'))
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
+  it('keeps hidden orphan marks and badges in both projections without rendering a value', () => {
+    const hidden = { _hidden: true } as const
+    const { context } = seededContext([
+      { ...ORPHAN, value: hidden, overrideValue: hidden },
+    ])
+    const { container } = renderPage(context)
+    for (const projection of ['table', '[data-id="hilos-table-cards"]']) {
+      const cell = container.querySelector(
+        `${projection} [data-id="setting-value"]`,
+      )!
+      expect(cell.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+      expect(
+        cell.querySelector('[data-id="hilos-setting-not-in-catalog"]')
+          ?.textContent,
+      ).toBe('not in catalog')
+      expect(cell.querySelector('input')).toBeNull()
+      expect(cell.textContent).not.toContain('legacy value')
+      expect(cell.innerHTML).not.toContain('_hidden')
+    }
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-settings-edit-legacy"]')!,
+    )
+    const modal = document.querySelector('[data-id="modal"]')!
+    expect(
+      modal.querySelector('[data-id="hilos-settings-edit-orphan"]'),
+    ).not.toBeNull()
+    expect(
+      modal.querySelector('[data-id="hilos-settings-edit-value"]'),
+    ).toBeNull()
+    expect(modal.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(modal.textContent).not.toContain('legacy value')
+  })
+
+  it('preserves catalog default, reference, custom, false, zero and empty without orphan badges', () => {
+    const { context } = seededContext([
+      slot({ key: 'empty', valueSource: 'default', value: '' }),
+      slot({
+        key: 'zero',
+        type: 'integer',
+        valueSource: 'reference',
+        value: '0',
+        defaultReferenceKey: 'source.key',
+      }),
+      slot({
+        key: 'off',
+        type: 'boolean',
+        valueSource: 'override',
+        value: '0',
+        overrideValue: '0',
+      }),
+    ])
+    const { container } = renderPage(context)
+    expect(
+      container.querySelectorAll('[data-id="hilos-setting-not-in-catalog"]'),
+    ).toHaveLength(0)
+    for (const prefix of ['hilos-table-row', 'hilos-table-card']) {
+      const empty = container.querySelector(`[data-id="${prefix}-empty"]`)!
+      expect(empty.textContent).toContain('empty')
+      expect(empty.textContent).toContain('default')
+      const zero = container.querySelector(
+        `[data-id="${prefix}-zero"] [data-id="setting-value"]`,
+      )!
+      expect(zero.querySelector('.fst-italic')?.textContent).toBe('0')
+      expect(zero.textContent).toContain('source.key')
+      const off = container.querySelector(
+        `[data-id="${prefix}-off"] [data-id="setting-value"]`,
+      )!
+      expect((off.querySelector('input') as HTMLInputElement).checked).toBe(
+        false,
+      )
+      expect(off.textContent).toContain('custom')
+    }
+  })
+
+  it('draws the declared empty title and hint in both projections', () => {
+    const { container } = renderPage(seededContext([]).context)
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-id="hilos-table-empty-title"]'),
+        (el) => el.textContent,
+      ),
+    ).toEqual([
+      'This project declares no settings',
+      'This project declares no settings',
+    ])
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-id="hilos-table-empty-hint"]'),
+        (el) => el.textContent,
+      ),
+    ).toEqual([
+      'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+      'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+    ])
+    expect(
+      container.querySelector('[data-id="hilos-table-empty-action"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-no-matches"]'),
+    ).toBeNull()
+  })
+
+  it('keeps search without matches distinct from an empty catalog and resets it', async () => {
+    vi.useFakeTimers()
+    const { container } = renderPage(seededContext([ORPHAN]).context)
+    fireEvent.change(
+      container.querySelector('[data-id="hilos-table-search"]')!,
+      { target: { value: 'no-such-setting' } },
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(300))
+    const states = container.querySelectorAll(
+      '[data-id="hilos-table-no-matches"]',
+    )
+    expect(states).toHaveLength(2)
+    for (const state of states) {
+      expect(state.textContent).toContain('Nothing found')
+      expect(
+        state.querySelector('[data-id="hilos-table-no-matches-terms"]')
+          ?.textContent,
+      ).toBe('No rows match “no-such-setting”')
+    }
+    expect(
+      container.querySelector('[data-id="hilos-table-empty-title"]'),
+    ).toBeNull()
+    expect(container.textContent).not.toContain(
+      'This project declares no settings',
+    )
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-table-no-matches-reset"]')!,
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(300))
+    expect(
+      container.querySelector('[data-id="hilos-table-no-matches"]'),
+    ).toBeNull()
+    expect(container.querySelector('table')?.textContent).toContain('legacy')
   })
 })
 

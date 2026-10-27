@@ -28,7 +28,7 @@ import {
   type HilosSettingsContext,
 } from '@hilos/core/admin/settings'
 import { HilosPages } from '@hilos/core/base'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -121,6 +121,13 @@ const editValueBool = computed({
   get: () => editForm.value.text === '1',
   set: (on: boolean) => editor.patchForm({ text: on ? '1' : '0' }),
 })
+const editValueInvalid = computed(
+  () =>
+    !editHidden.value &&
+    editUseCustom.value &&
+    editAction.failure.value?.outcome === 'fail',
+)
+watch([editHidden, editUseCustom, () => editForm.value.text], clearEditError)
 const editDirty = computed(() => live.value.dirty)
 const editTitle = computed(() =>
   editRow.value ? `Edit · ${editRow.value.key}` : 'Edit setting',
@@ -241,7 +248,7 @@ async function submitReset(): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SETTINGS">
+  <HilosAdminPage :page="HilosPages.SETTINGS" head-kind="section">
     <HilosViewportTable :controller="settingsTable">
       <template #cell-key="{ row }">
         <code class="text-break">{{ row.key }}</code>
@@ -315,10 +322,31 @@ async function submitReset(): Promise<void> {
       @cancel="closeEdit"
     >
       <template #header>
-        <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+        <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+          <ConflictHeader
+            class="text-break min-w-0"
+            :title="editTitle"
+            :conflict="live.conflict"
+          />
+          <span
+            v-if="editRow?.type"
+            class="font-monospace small px-1 border rounded bg-body-tertiary text-body-secondary flex-shrink-0 ms-auto"
+            data-id="hilos-settings-edit-type"
+            >{{ editRow.type }}</span
+          >
+        </div>
       </template>
-      <HilosActionError :action="editAction" details-title="Couldn't save" />
+      <div id="hilos-settings-edit-error">
+        <HilosActionError :action="editAction" details-title="Couldn't save" />
+      </div>
       <form v-if="editRow" @submit.prevent="submitEdit">
+        <span
+          v-if="isOrphanSetting(editRow)"
+          class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0 mb-3"
+          title="This key is not in the project catalog"
+          data-id="hilos-settings-edit-orphan"
+          >not in catalog</span
+        >
         <div v-if="editHidden" class="mb-3">
           <span class="form-label d-block">{{ editRow.key }}</span>
           <HilosSettingValueCell
@@ -353,13 +381,19 @@ async function submitReset(): Promise<void> {
               Custom value
             </label>
           </div>
-          <div v-if="editUseCustom" class="mb-0">
+          <div class="mb-0" :class="{ 'opacity-50': !editUseCustom }">
             <div v-if="editInputType === 'checkbox'" class="form-check">
               <input
                 id="hilos-settings-edit-value"
                 v-model="editValueBool"
                 type="checkbox"
                 class="form-check-input"
+                :class="{ 'is-invalid': editValueInvalid }"
+                :disabled="!editUseCustom"
+                :aria-invalid="editValueInvalid ? true : undefined"
+                :aria-describedby="
+                  editValueInvalid ? 'hilos-settings-edit-error' : undefined
+                "
                 data-id="hilos-settings-edit-value"
                 data-autofocus
               />
@@ -377,6 +411,12 @@ async function submitReset(): Promise<void> {
                 :type="editInputType"
                 :step="editStep"
                 class="form-control"
+                :class="{ 'is-invalid': editValueInvalid }"
+                :disabled="!editUseCustom"
+                :aria-invalid="editValueInvalid ? true : undefined"
+                :aria-describedby="
+                  editValueInvalid ? 'hilos-settings-edit-error' : undefined
+                "
                 data-id="hilos-settings-edit-value"
                 data-autofocus
               />

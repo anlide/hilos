@@ -1,10 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   ActionLifecycle,
   bindAdminAccess,
   bindSessionScope,
+  createAppPageRouter,
   createSignal,
   HilosPages,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -13,29 +15,48 @@ import {
 import type {
   Hideable,
   HilosConnection,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportDescriptor,
 } from '@hilos/core/base'
 import type { HilosSettingsContext } from '@hilos/core/admin/settings'
 
 import HilosSettingsPage from './HilosSettingsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
-function router(): HilosRouter {
+const SETTINGS_IDENTITY: HilosPageIdentity = {
+  label: 'Settings',
+  lead: 'Application setting catalog: catalog defaults, overrides, and references.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SETTINGS, label: 'Settings' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.SETTINGS,
+    label: 'Settings',
+    lead: 'Application setting catalog: catalog defaults, overrides, and references.',
+    icon: 'bi-sliders',
+  },
+  pageTabs: [{ page: HilosPages.SETTINGS, label: 'Overview' }],
+}
+
+function router(identity: HilosPageIdentity | undefined): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SETTINGS,
       params: {},
       admin: true,
     }),
-    currentPath: createSignal(''),
+    currentPath: createSignal('/hilos/settings'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(identity),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: createAppPageRouter({}).path,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -76,6 +97,7 @@ function seededContext(initial: SettingSlot[]): {
   pushRemove: (key: string) => void
   pushLeave: (next: SettingSlot) => void
   answer: (outcome: 'success' | 'fail') => void
+  disconnect: () => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -92,15 +114,19 @@ function seededContext(initial: SettingSlot[]): {
   const serveWindow = (
     page: string = HilosPages.SETTINGS,
     tableKey: string = 'settings',
+    descriptor?: TableViewportDescriptor,
   ): void => {
+    const search = String(descriptor?.filter.search ?? '')
+    const shown = rows.filter((row) => row.key.includes(search))
     const data = {
       page,
       tableKey,
-      rows: rows.map((settings) => ({
+      requestId: descriptor?.requestId,
+      rows: shown.map((settings) => ({
         rowKey: settings.key,
         slots: { settings },
       })),
-      totalCount: rows.length,
+      totalCount: shown.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -118,8 +144,12 @@ function seededContext(initial: SettingSlot[]): {
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(page: string, tableKey: string): boolean {
-      serveWindow(page, tableKey)
+    sendTableViewport(
+      page: string,
+      tableKey: string,
+      descriptor: TableViewportDescriptor,
+    ): boolean {
+      serveWindow(page, tableKey, descriptor)
 
       return true
     },
@@ -155,6 +185,7 @@ function seededContext(initial: SettingSlot[]): {
     string,
     Set<(signal: Record<string, unknown>) => void>
   >()
+  const stateListeners = new Set<(state: 'disconnected') => void>()
   const actions = new ActionLifecycle({
     sendAction: (
       action: string,
@@ -169,6 +200,14 @@ function seededContext(initial: SettingSlot[]): {
       event: string,
       listener: (signal: Record<string, unknown>) => void,
     ) => {
+      if (event === 'state') {
+        const stateListener = listener as unknown as (
+          state: 'disconnected',
+        ) => void
+        stateListeners.add(stateListener)
+
+        return () => stateListeners.delete(stateListener)
+      }
       const listeners = replyListeners.get(event) ?? new Set()
       listeners.add(listener)
       replyListeners.set(event, listeners)
@@ -241,6 +280,11 @@ function seededContext(initial: SettingSlot[]): {
         })
       }
     },
+    disconnect(): void {
+      for (const listener of stateListeners) {
+        listener('disconnected')
+      }
+    },
     sent,
     focus,
   }
@@ -254,13 +298,17 @@ afterEach(() => {
   }
   document.body.classList.remove('modal-open')
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
-async function mountPage(context: HilosSettingsContext) {
+async function mountPage(
+  context: HilosSettingsContext,
+  navigation: HilosRouter = router(SETTINGS_IDENTITY),
+) {
   const wrapper = mount(HilosSettingsPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: navigation } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -321,6 +369,92 @@ function tryClosing(): void {
 }
 
 describe('HilosSettingsPage', () => {
+  it('replaces the section skeleton with the adopted Settings head and names the live table', async () => {
+    const { context } = seededContext([
+      slot({ key: 'site_name', valueSource: 'default' }),
+    ])
+    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+    const navigation = { ...router(undefined), pageIdentity: identity }
+    const wrapper = await mountPage(context, navigation)
+
+    const skeleton = wrapper.get('[data-id="hilos-page-head-skeleton"]')
+    expect(skeleton.attributes('aria-hidden')).toBe('true')
+    expect(skeleton.find('.rounded-circle').exists()).toBe(true)
+    expect(skeleton.find('.rounded-3').exists()).toBe(false)
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-head-block"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-admin-title-skeleton"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('.bi-sliders').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Settings')
+    expect(wrapper.text()).not.toContain(SETTINGS_IDENTITY.lead)
+
+    identity.set(SETTINGS_IDENTITY)
+    await nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-page-head"]')).toHaveLength(1)
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    const heading = wrapper.get('h1')
+    expect(heading.attributes('data-id')).toBe('hilos-page-head-title')
+    expect(heading.text()).toBe('Settings')
+    const block = wrapper.get('[data-id="hilos-page-head-block"]')
+    const circle = wrapper.get(
+      '[data-id="hilos-page-head-block"] > .rounded-circle',
+    )
+    expect(circle.attributes('aria-hidden')).toBe('true')
+    expect(circle.get('i').classes()).toEqual(['bi', 'bi-sliders'])
+    expect(block.findAll('p')).toHaveLength(1)
+    expect(block.get('p').text()).toBe(
+      'Application setting catalog: catalog defaults, overrides, and references.',
+    )
+    expect(wrapper.text().split(SETTINGS_IDENTITY.lead)).toHaveLength(2)
+
+    const crumbs = wrapper.get('[data-id="hilos-breadcrumb"]')
+    expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
+    const items = crumbs.findAll('li')
+    expect(items).toHaveLength(2)
+    expect(items[0]!.text()).toBe('Hilos')
+    expect(items[0]!.get('a').attributes('href')).toBe('/hilos')
+    expect(items[0]!.attributes('aria-current')).toBeUndefined()
+    expect(items[1]!.text()).toBe('Settings')
+    expect(items[1]!.attributes('aria-current')).toBe('page')
+    expect(items[1]!.find('a').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-admin-title"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-admin-empty"]').exists()).toBe(false)
+    expect(
+      wrapper
+        .get('[data-id="hilos-page-head"]')
+        .element.nextElementSibling?.getAttribute('data-id'),
+    ).toBe('hilos-viewport-table')
+
+    const headingId = heading.attributes('id')
+    expect(headingId).toBeTruthy()
+    expect(document.getElementById(headingId!)).toBe(heading.element)
+    expect(wrapper.get('table').attributes('aria-labelledby')).toBe(headingId)
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-cards"] [role="list"]')
+        .attributes('aria-labelledby'),
+    ).toBe(headingId)
+    expect(wrapper.findAll('[data-id^="hilos-table-row-"]')).toHaveLength(1)
+    expect(wrapper.get('table').text()).toContain('site_name')
+  })
+
   it('renders a row per setting with its key', async () => {
     const { context } = seededContext([
       slot({
@@ -791,6 +925,610 @@ describe('HilosSettingsPage', () => {
     await settle()
     expect(spinner(save)).toBeNull()
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('HilosSettingsPage typed edit and refusals', () => {
+  const CUSTOM = slot({
+    key: 'site_name',
+    valueSource: 'override',
+    value: '1',
+    overrideValue: '1',
+    defaultValue: '0',
+  })
+
+  function valueInput(): HTMLInputElement {
+    return modalEl('hilos-settings-edit-value') as HTMLInputElement
+  }
+
+  function customSwitch(): HTMLInputElement {
+    return modalEl('hilos-settings-edit-custom') as HTMLInputElement
+  }
+
+  function expectInvalid(input: HTMLInputElement, invalid: boolean): void {
+    expect(input.classList.contains('is-invalid')).toBe(invalid)
+    expect(input.getAttribute('aria-invalid')).toBe(invalid ? 'true' : null)
+    expect(input.getAttribute('aria-describedby')).toBe(
+      invalid ? 'hilos-settings-edit-error' : null,
+    )
+  }
+
+  it.each([
+    ['string', 'text', null],
+    ['integer', 'number', null],
+    ['float', 'number', 'any'],
+    ['boolean', 'checkbox', null],
+  ] as const)(
+    'shows the server type %s beside the existing title',
+    async (type, inputType, step) => {
+      const key = 'a_very_long_setting_key_'.repeat(8)
+      const { context } = seededContext([{ ...CUSTOM, key, type }])
+      await mountPage(context)
+      editButton(key).click()
+      await settle()
+
+      const badge = modalEl('hilos-settings-edit-type')!
+      expect(badge.textContent).toBe(type)
+      expect(badge.classList.contains('font-monospace')).toBe(true)
+      expect(badge.classList.contains('flex-shrink-0')).toBe(true)
+      const header = badge.parentElement!
+      expect(header.classList.contains('flex-grow-1')).toBe(true)
+      expect(header.classList.contains('min-w-0')).toBe(true)
+      const title = header.querySelector('h5')!
+      expect(title.textContent).toBe(`Edit · ${key}`)
+      expect(title.classList.contains('text-break')).toBe(true)
+      expect(
+        header.parentElement?.querySelector('[data-id="modal-close"]'),
+      ).not.toBeNull()
+      expect(header.contains(modalEl('modal-close'))).toBe(false)
+      expect(valueInput().type).toBe(inputType)
+      expect(valueInput().getAttribute('step')).toBe(step)
+    },
+  )
+
+  it('omits a missing server type without inferring it from the value', async () => {
+    const { context } = seededContext([{ ...CUSTOM, type: '' }])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+
+    expect(modalEl('hilos-settings-edit-type')).toBeNull()
+    expect(valueInput().type).toBe('text')
+  })
+
+  it.each(['string', 'integer', 'float'])(
+    'keeps the same %s input and its zero draft through custom off and on',
+    async (settingType) => {
+      const { context, sent, answer } = seededContext([
+        {
+          ...CUSTOM,
+          type: settingType,
+          valueSource: 'default',
+          value: '5',
+          overrideValue: null,
+          defaultValue: '5',
+        },
+      ])
+      await mountPage(context)
+      editButton('site_name').click()
+      await settle()
+      const input = valueInput()
+      const group = input.parentElement!
+      const notice = modalEl('hilos-settings-edit-notice-idle')
+      expect(input.value).toBe('5')
+      expect(input.disabled).toBe(true)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(notice).not.toBeNull()
+
+      customSwitch().click()
+      await settle()
+      expect(valueInput()).toBe(input)
+      expect(input.disabled).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      await type('0')
+      customSwitch().click()
+      await settle()
+      expect(valueInput()).toBe(input)
+      expect(input.value).toBe('0')
+      expect(input.disabled).toBe(true)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(modalEl('hilos-settings-edit-notice-idle')).toBe(notice)
+
+      customSwitch().click()
+      await settle()
+      expect(valueInput()).toBe(input)
+      expect(input.value).toBe('0')
+      expect(input.disabled).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      submitEdit()
+      await settle()
+      expect(sent[0]).toMatchObject({
+        action: 'setting_add',
+        payload: { key: 'site_name', value: '0' },
+      })
+      answer('success')
+      await settle()
+      expect(modalEl('modal')).toBeNull()
+    },
+  )
+
+  it.each(['default', 'override'])(
+    'keeps the same boolean input and false draft through off and on from %s',
+    async (valueSource) => {
+      const { context, sent, answer } = seededContext([
+        {
+          ...CUSTOM,
+          type: 'boolean',
+          valueSource,
+          value: '0',
+          overrideValue: valueSource === 'default' ? null : '0',
+        },
+      ])
+      await mountPage(context)
+      editButton('site_name').click()
+      await settle()
+      const input = valueInput()
+      const group = input.parentElement!.parentElement!
+      expect(input.checked).toBe(false)
+      expect(input.disabled).toBe(valueSource === 'default')
+      expect(group.classList.contains('opacity-50')).toBe(
+        valueSource === 'default',
+      )
+      if (valueSource === 'default') {
+        customSwitch().click()
+        await settle()
+      }
+      input.click()
+      await settle()
+      expect(input.checked).toBe(true)
+      input.click()
+      await settle()
+      expect(input.checked).toBe(false)
+
+      customSwitch().click()
+      await settle()
+      expect(valueInput()).toBe(input)
+      expect(input.disabled).toBe(true)
+      expect(input.checked).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(true)
+      expect(modalEl('hilos-settings-edit-notice-idle')).not.toBeNull()
+      customSwitch().click()
+      await settle()
+      expect(valueInput()).toBe(input)
+      expect(input.disabled).toBe(false)
+      expect(input.checked).toBe(false)
+      expect(group.classList.contains('opacity-50')).toBe(false)
+      if (valueSource === 'default') {
+        submitEdit()
+        await settle()
+        expect(sent[0]).toMatchObject({
+          action: 'setting_add',
+          payload: { key: 'site_name', value: '0' },
+        })
+        answer('success')
+        await settle()
+      }
+    },
+  )
+
+  it.each(['string', 'integer', 'float', 'boolean'])(
+    'marks only a real refusal of the custom %s value and clears on run and change',
+    async (settingType) => {
+      const { context, sent, answer } = seededContext([
+        { ...CUSTOM, type: settingType },
+      ])
+      await mountPage(context)
+      editButton('site_name').click()
+      await settle()
+      const input = valueInput()
+      if (settingType === 'boolean') {
+        input.click()
+        await settle()
+      } else {
+        await type('2')
+      }
+      const draft = settingType === 'boolean' ? input.checked : input.value
+      const error = document.getElementById('hilos-settings-edit-error')!
+      expect(error).not.toBeNull()
+      expect(error.getAttribute('role')).toBeNull()
+      expect(error.getAttribute('aria-live')).toBeNull()
+      expectInvalid(input, false)
+      submitEdit()
+      await settle()
+      answer('fail')
+      await settle()
+
+      expect(modalEl('modal')).not.toBeNull()
+      expect(valueInput()).toBe(input)
+      expect(settingType === 'boolean' ? input.checked : input.value).toBe(
+        draft,
+      )
+      expectInvalid(input, true)
+      expect(error.contains(modalEl('hilos-action-error'))).toBe(true)
+      expect(modalEl('hilos-action-error')?.textContent).toContain(
+        'The setting refused the reset.',
+      )
+      expect(
+        input.classList.contains(
+          settingType === 'boolean' ? 'form-check-input' : 'form-control',
+        ),
+      ).toBe(true)
+
+      submitEdit()
+      await settle()
+      expect(sent).toHaveLength(2)
+      expectInvalid(input, false)
+      expect(modalEl('hilos-action-error')).toBeNull()
+      answer('fail')
+      await settle()
+      expectInvalid(input, true)
+      if (settingType === 'boolean') {
+        input.click()
+        await settle()
+      } else {
+        await type('3')
+      }
+      expectInvalid(input, false)
+      expect(modalEl('hilos-action-error')).toBeNull()
+      expect(document.getElementById('hilos-settings-edit-error')).toBe(error)
+    },
+  )
+
+  it.each(['timeout', 'disconnected', 'invalid-reply'])(
+    'keeps a %s message without marking the value invalid',
+    async (outcome) => {
+      vi.useFakeTimers()
+      const { context, answer, disconnect } = seededContext([CUSTOM])
+      if (outcome === 'invalid-reply') {
+        // Exercise the real lifecycle's schema failure through the same tracker.
+        const dispatch = context.actions.dispatch.bind(context.actions)
+        vi.spyOn(context.actions, 'dispatch').mockImplementation(
+          (action, data) => dispatch(action, data, { replySchema: z.string() }),
+        )
+      }
+      await mountPage(context)
+      editButton('site_name').click()
+      await settle()
+      await type('Mine')
+      const input = valueInput()
+      submitEdit()
+      await settle()
+      if (outcome === 'timeout') {
+        await vi.advanceTimersByTimeAsync(30000)
+      } else if (outcome === 'disconnected') {
+        disconnect()
+      } else {
+        answer('success')
+      }
+      await settle()
+
+      expect(modalEl('modal')).not.toBeNull()
+      expect(valueInput()).toBe(input)
+      expect(input.value).toBe('Mine')
+      expectInvalid(input, false)
+      const message =
+        outcome === 'timeout'
+          ? 'The action timed out. Please try again.'
+          : outcome === 'disconnected'
+            ? 'The connection dropped before the action completed. Please try again.'
+            : 'The server answered in a form this page could not read. Please try again.'
+      expect(modalEl('hilos-action-error')?.textContent).toContain(message)
+    },
+  )
+
+  it('sends only reset while custom is off, leaving a refused disabled draft unmarked', async () => {
+    const { context, sent, answer } = seededContext([CUSTOM])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Unsaved draft')
+    const input = valueInput()
+    customSwitch().click()
+    await settle()
+    submitEdit()
+    await settle()
+    expect(sent[0]?.action).toBe('setting_reset')
+    expect(sent[0]?.payload).toEqual({ key: 'site_name' })
+    answer('fail')
+    await settle()
+
+    expect(valueInput()).toBe(input)
+    expect(input.value).toBe('Unsaved draft')
+    expect(input.disabled).toBe(true)
+    expectInvalid(input, false)
+    expect(modalEl('hilos-action-error')).not.toBeNull()
+    customSwitch().click()
+    await settle()
+    expect(input.value).toBe('Unsaved draft')
+    expectInvalid(input, false)
+    expect(modalEl('hilos-action-error')).toBeNull()
+  })
+
+  it('keeps refusal on conflict-only changes and Keep mine, clearing it when Take theirs changes the form', async () => {
+    const { context, pushUpdate, answer } = seededContext([CUSTOM])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    const input = valueInput()
+    submitEdit()
+    await settle()
+    answer('fail')
+    await settle()
+    pushUpdate({ ...CUSTOM, value: 'Theirs', overrideValue: 'Theirs' })
+    await settle()
+    expect(input.value).toBe('Mine')
+    expect(modalEl('conflict-badge')).not.toBeNull()
+    expect(modalEl('hilos-settings-edit-type')?.textContent).toBe('string')
+    expectInvalid(input, true)
+    expect(modalEl('hilos-action-error')).not.toBeNull()
+    modalEl('conflict-accept-mine')?.click()
+    await settle()
+    expect(modalEl('conflict-badge')).toBeNull()
+    expectInvalid(input, true)
+    expect(modalEl('hilos-action-error')).not.toBeNull()
+
+    pushUpdate({ ...CUSTOM, value: 'New theirs', overrideValue: 'New theirs' })
+    await settle()
+    modalEl('conflict-accept-theirs')?.click()
+    await settle()
+    expect(input.value).toBe('New theirs')
+    expectInvalid(input, false)
+    expect(modalEl('hilos-action-error')).toBeNull()
+  })
+
+  it('clears a refusal when an automatic live merge changes the accepted form text', async () => {
+    const { context, pushUpdate, answer } = seededContext([CUSTOM])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    submitEdit()
+    await settle()
+    answer('fail')
+    await settle()
+    expect(modalEl('hilos-action-error')).not.toBeNull()
+    const input = valueInput()
+    expect(input.value).toBe('Mine')
+
+    pushUpdate({ ...CUSTOM, value: 'Mine', overrideValue: 'Mine' })
+    await settle()
+    expect(input.value).toBe('Mine')
+    expectInvalid(input, true)
+    expect(modalEl('hilos-action-error')).not.toBeNull()
+    pushUpdate({ ...CUSTOM, value: 'Next', overrideValue: 'Next' })
+    await settle()
+    expect(valueInput()).toBe(input)
+    expect(input.value).toBe('Next')
+    expect(input.disabled).toBe(false)
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(modalEl('hilos-action-error')).toBeNull()
+    expectInvalid(input, false)
+  })
+
+  it('clears the old refusal on opening another row, including a hidden orphan', async () => {
+    const hidden = { _hidden: true } as const
+    const { context, sent, answer } = seededContext([
+      CUSTOM,
+      slot({
+        key: 'hidden_orphan',
+        valueSource: 'orphan',
+        value: hidden,
+        overrideValue: hidden,
+        defaultValue: null,
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await settle()
+    await type('Mine')
+    submitEdit()
+    await settle()
+    answer('fail')
+    await settle()
+    expectInvalid(valueInput(), true)
+    modalEl('modal-close')?.click()
+    await settle()
+    modalEl('modal-confirm-discard')?.click()
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+
+    editButton('hidden_orphan').click()
+    await settle()
+    expect(valueInput()).toBeNull()
+    expect(modalEl('hilos-settings-edit-custom')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
+    expect(modalEl('hilos-settings-edit-orphan')?.textContent).toBe(
+      'not in catalog',
+    )
+    expect(modalEl('hilos-action-error')).toBeNull()
+    expect(modalEl('modal')?.querySelector('.is-invalid')).toBeNull()
+    expect(modalEl('modal')?.textContent).not.toContain('Mine')
+    submitEdit()
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(modalEl('modal')).toBeNull()
+  })
+})
+
+describe('HilosSettingsPage orphan and empty states', () => {
+  const ORPHAN = slot({
+    key: 'legacy',
+    valueSource: 'orphan',
+    value: 'legacy value',
+    overrideValue: 'legacy value',
+    defaultValue: null,
+  })
+
+  it('labels an orphan in both table projections and above its edit field, then updates it', async () => {
+    const { context, sent, answer } = seededContext([ORPHAN])
+    const wrapper = await mountPage(context)
+    for (const projection of ['table', '[data-id="hilos-table-cards"]']) {
+      const badges = wrapper.findAll(
+        `${projection} [data-id="hilos-setting-not-in-catalog"]`,
+      )
+      expect(badges).toHaveLength(1)
+      expect(badges[0]!.text()).toBe('not in catalog')
+      expect(badges[0]!.attributes('title')).toBe(
+        'This key is not in the project catalog',
+      )
+      expect(badges[0]!.classes()).toEqual([
+        'badge',
+        'rounded-pill',
+        'bg-warning-subtle',
+        'text-warning-emphasis',
+        'border',
+        'border-warning-subtle',
+        'flex-shrink-0',
+      ])
+      expect(wrapper.get(projection).text()).toContain('legacy value')
+    }
+    editButton('legacy').click()
+    await settle()
+    const badge = modalEl('hilos-settings-edit-orphan')!
+    const input = modalEl('hilos-settings-edit-value') as HTMLInputElement
+    expect(badge.textContent).toBe('not in catalog')
+    expect(badge.title).toBe('This key is not in the project catalog')
+    expect(
+      badge.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(input.disabled).toBe(false)
+    expect(modalEl('hilos-settings-edit-custom')).toBeNull()
+    expect(modalEl('modal')?.textContent).not.toContain('Catalog default')
+    await type('New legacy value')
+    submitEdit()
+    await settle()
+    expect(sent[0]).toMatchObject({
+      action: 'setting_update',
+      payload: { key: 'legacy', value: 'New legacy value' },
+    })
+    answer('success')
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('keeps hidden orphan marks and badges in both projections without rendering a value', async () => {
+    const hidden = { _hidden: true } as const
+    const { context } = seededContext([
+      { ...ORPHAN, value: hidden, overrideValue: hidden },
+    ])
+    const wrapper = await mountPage(context)
+    for (const projection of ['table', '[data-id="hilos-table-cards"]']) {
+      const cell = wrapper.get(`${projection} [data-id="setting-value"]`)
+      expect(cell.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+      expect(cell.get('[data-id="hilos-setting-not-in-catalog"]').text()).toBe(
+        'not in catalog',
+      )
+      expect(cell.find('input').exists()).toBe(false)
+      expect(cell.text()).not.toContain('legacy value')
+      expect(cell.html()).not.toContain('_hidden')
+    }
+    editButton('legacy').click()
+    await settle()
+    expect(modalEl('hilos-settings-edit-orphan')).not.toBeNull()
+    expect(modalEl('hilos-settings-edit-value')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
+    expect(modalEl('modal')?.textContent).not.toContain('legacy value')
+  })
+
+  it('preserves catalog default, reference, custom, false, zero and empty values without orphan badges', async () => {
+    const { context } = seededContext([
+      slot({ key: 'empty', valueSource: 'default', value: '' }),
+      slot({
+        key: 'zero',
+        type: 'integer',
+        valueSource: 'reference',
+        value: '0',
+        defaultReferenceKey: 'source.key',
+      }),
+      slot({
+        key: 'off',
+        type: 'boolean',
+        valueSource: 'override',
+        value: '0',
+        overrideValue: '0',
+      }),
+    ])
+    const wrapper = await mountPage(context)
+    expect(
+      wrapper.findAll('[data-id="hilos-setting-not-in-catalog"]'),
+    ).toHaveLength(0)
+    for (const prefix of ['hilos-table-row', 'hilos-table-card']) {
+      expect(wrapper.get(`[data-id="${prefix}-empty"]`).text()).toContain(
+        'empty',
+      )
+      expect(wrapper.get(`[data-id="${prefix}-empty"]`).text()).toContain(
+        'default',
+      )
+      const zero = wrapper.get(
+        `[data-id="${prefix}-zero"] [data-id="setting-value"]`,
+      )
+      expect(zero.get('.fst-italic').text()).toBe('0')
+      expect(zero.text()).toContain('source.key')
+      const off = wrapper.get(
+        `[data-id="${prefix}-off"] [data-id="setting-value"]`,
+      )
+      expect((off.get('input').element as HTMLInputElement).checked).toBe(false)
+      expect(off.text()).toContain('custom')
+    }
+  })
+
+  it('draws the declared empty title and hint in both projections', async () => {
+    const { context } = seededContext([])
+    const wrapper = await mountPage(context)
+    expect(
+      wrapper
+        .findAll('[data-id="hilos-table-empty-title"]')
+        .map((title) => title.text()),
+    ).toEqual([
+      'This project declares no settings',
+      'This project declares no settings',
+    ])
+    expect(
+      wrapper
+        .findAll('[data-id="hilos-table-empty-hint"]')
+        .map((hint) => hint.text()),
+    ).toEqual([
+      'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+      'Setting keys are declared in the project catalog in code. They cannot be added from this screen.',
+    ])
+    expect(wrapper.find('[data-id="hilos-table-empty-action"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('keeps a search without matches distinct from an empty catalog and resets it', async () => {
+    const { context } = seededContext([ORPHAN])
+    const wrapper = await mountPage(context)
+    await wrapper
+      .get('[data-id="hilos-table-search"]')
+      .setValue('no-such-setting')
+    await settle()
+    const states = wrapper.findAll('[data-id="hilos-table-no-matches"]')
+    expect(states).toHaveLength(2)
+    for (const state of states) {
+      expect(state.text()).toContain('Nothing found')
+      expect(state.get('[data-id="hilos-table-no-matches-terms"]').text()).toBe(
+        'No rows match “no-such-setting”',
+      )
+    }
+    expect(wrapper.find('[data-id="hilos-table-empty-title"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.text()).not.toContain('This project declares no settings')
+    await wrapper
+      .get('[data-id="hilos-table-no-matches-reset"]')
+      .trigger('click')
+    await settle()
+    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('table').text()).toContain('legacy')
   })
 })
 

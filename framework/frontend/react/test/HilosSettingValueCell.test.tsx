@@ -45,6 +45,16 @@ describe('HilosSettingValueCell', () => {
       />,
     )
     expect(container.textContent).toContain('empty')
+    const badge = container.querySelector(
+      '[data-id="hilos-setting-not-in-catalog"]',
+    )!
+    expect(badge.textContent).toBe('not in catalog')
+    expect(badge.getAttribute('title')).toBe(
+      'This key is not in the project catalog',
+    )
+    expect(badge.className).toBe(
+      'badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle flex-shrink-0',
+    )
   })
 
   it('shows the reference badge with the referenced key', () => {
@@ -57,6 +67,9 @@ describe('HilosSettingValueCell', () => {
       />,
     )
     expect(container.textContent).toContain('other_key')
+    expect(
+      container.querySelector('[data-id="hilos-setting-not-in-catalog"]'),
+    ).toBeNull()
   })
 
   it('badges a catalog default and a custom override distinctly', () => {
@@ -69,6 +82,9 @@ describe('HilosSettingValueCell', () => {
       />,
     )
     expect(def.container.textContent).toContain('default')
+    expect(
+      def.container.querySelector('[data-id="hilos-setting-not-in-catalog"]'),
+    ).toBeNull()
     cleanup()
 
     const custom = render(
@@ -80,6 +96,29 @@ describe('HilosSettingValueCell', () => {
       />,
     )
     expect(custom.container.textContent).toContain('custom')
+    expect(
+      custom.container.querySelector(
+        '[data-id="hilos-setting-not-in-catalog"]',
+      ),
+    ).toBeNull()
+  })
+
+  it('keeps an orphan badge beside a hidden mark without rendering a value', () => {
+    const { container } = render(
+      <HilosSettingValueCell
+        value={{ _hidden: true }}
+        type="string"
+        valueSource="orphan"
+        defaultReferenceKey={null}
+      />,
+    )
+    expect(container.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-setting-not-in-catalog"]')
+        ?.textContent,
+    ).toBe('not in catalog')
+    expect(container.querySelector('input')).toBeNull()
+    expect(container.innerHTML).not.toContain('_hidden')
   })
 
   it('renders a disabled, unchecked box for a disabled boolean', () => {
