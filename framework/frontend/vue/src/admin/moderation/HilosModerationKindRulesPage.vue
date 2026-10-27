@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import {
   createHilosModerationKind,
+  createHilosModerationRuleAdd,
   createHilosModerationRules,
   HILOS_MODERATION_COPY,
-  type HilosModerationContext,
+  type HilosModerationRulesContext,
 } from '@hilos/core/admin/moderation'
 import {
   bindPageInstanceName,
@@ -18,8 +19,9 @@ import HilosTableLive from '../../HilosTableLive.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
+import HilosModerationRuleAdd from './HilosModerationRuleAdd.vue'
 
-const props = defineProps<{ context: HilosModerationContext }>()
+const props = defineProps<{ context: HilosModerationRulesContext }>()
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -32,7 +34,14 @@ const detail = createHilosModerationKind(
   kind,
   HilosPages.MODERATION_KIND_RULES,
 )
-const rules = createHilosModerationRules(props.context, kind)
+const rules = createHilosModerationRules(props.context, kind, {
+  openAdd: () => add.open(),
+})
+const add = createHilosModerationRuleAdd(
+  props.context,
+  detail.row,
+  rules.current,
+)
 const row = useSignal(detail.row)
 const unavailable = useSignal(detail.unavailable)
 const columns = useSignal(detail.controller.frame.columns)
@@ -53,9 +62,11 @@ const unbindName = bindPageInstanceName(
 onMounted(() => {
   detail.start()
   rules.start()
+  add.start()
 })
 onUnmounted(() => {
   unbindName()
+  add.dispose()
   detail.dispose()
   rules.dispose()
 })
@@ -151,5 +162,6 @@ onUnmounted(() => {
       <span class="placeholder col-6 d-block mb-2"></span>
       <span class="placeholder col-4 d-block"></span>
     </div>
+    <HilosModerationRuleAdd :add="add" />
   </HilosAdminPage>
 </template>

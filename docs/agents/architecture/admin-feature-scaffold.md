@@ -746,7 +746,7 @@ stay with their marked leaves:
    wrapper `views/Hilos/Moderation/Rules/Rules.vue`, supplying the same
    `hilosModerationContext`; `App.vue` lazy-loads that wrapper for
    `HILOS_MODERATION_KIND_RULES`.
-   Its Add dialog follows. (not in the code yet — HIL-1632)
+   Its Add dialog follows.
    Its Edit dialog follows. (not in the code yet — HIL-1633)
    Its Delete dialog follows. (not in the code yet — HIL-1634)
    React/tasks receives the section. (not in the code yet — HIL-1636)

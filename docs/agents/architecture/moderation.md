@@ -430,7 +430,10 @@ model changes across every kind using that profile. The kinds table's optional
 exact `kind` filter returns one published kind; an unknown or non-string value
 returns no rows, and `query()` and `containsRow()` use the same filtered set.
 Without the filter, the root keeps its directory order, 25-row window and
-existing columns. No signal names or DTOs are added.
+existing columns. The shared source-change, `page_response` and `table_window`
+mechanisms remain unchanged. The earlier read-only tables and windows needed no
+signal names or DTOs of their own; Rules now has the Add handover described
+below.
 
 The section has these pages, with Vue/chat as their first consumer:
 
@@ -445,12 +448,28 @@ The section has these pages, with Vue/chat as their first consumer:
   the full directory check and page response for direct, repeated, updated and
   reconnected subscriptions.
 - `/hilos/moderation/{kind}/rules`, page key `hilos_moderation_kind_rules` and
-  signal `subscription_page_hilos_moderation_kind_rules`: the kind's read-only
-  own-rules page (`AbstractHilosModerationKindRulesPage` / Chat's
+  signal `subscription_page_hilos_moderation_kind_rules`: the kind's own-rules
+  page (`AbstractHilosModerationKindRulesPage` / Chat's
   `ModerationKindRulesPage`). It uses the same required string `kind` route
   param and `HilosModerationKindSubscribeParams`; an unknown kind answers 404.
   It inherits the `ADMIN` access gate and viewer behavior and declares no
-  `DB_EXISTS` requirement or actions.
+  `DB_EXISTS` requirement. Its tracked Add action is a write and is refused to
+  a viewer before the page forwards it.
+
+The Rules page's browser action `hilos_moderation_rule_add` uses
+`HilosModerationRuleAddActionDTO` with `kind` and raw `rule`. After the page's
+`ADMIN` gate and its published-kind check, `AbstractHilosModerationKindRulesPage`
+uses `HandoverGatekeeperTrait` to forward a `ModerationRuleAddSignalData`
+(`HandoverAskInterface`) over `moderation_rule_add` to the single
+`ModerationRulesLibraryAgent`. The library calls
+`Hilos::$db->moderationRules->actions->create($kind, $rule)`, then returns a
+`HandoverAnswerSignalData` over the page-owned
+`hilos_moderation_rule_write_done` signal. The ask carries the initiating
+action and `requestId`; the gatekeeper answers that tracked action with its
+normal `::success` or `::fail`. Success follows the completed write and carries
+the page's success sentence for the single success toast. The refusal stays
+with the open form. This path uses the existing handover and source-change
+fan-out: it adds no refresh request or second row store.
 
 Before answering either kind page, `onSubscribeBeforeResponse()` consumes the
 connection's reported table windows and installs the canonical metadata
@@ -466,31 +485,50 @@ fields. The core
 `createHilosModerationKind(context, kind, page = HilosPages.MODERATION_KIND)`
 binds the metadata viewport for either kind page and leaves client
 `initialFilter` unset, so the canonical first window is accepted without a
-second fetch. `createHilosModerationRules(context, kind)` owns the Rules
+second fetch. `createHilosModerationRules(context, kind, view?)` owns the Rules
 controller and scope checks, confines viewport sends and accepted rows to that
-page and kind, and disposes before another page subscribes; a later Vue unmount
-can safely dispose it again. The Rules view has one own-rules viewport table and
-shows `defaultRules` as plain built-in text only when the overall
+page and kind, and disposes before another page subscribes; an optional
+`view.openAdd` supplies its main action. A later Vue unmount can safely dispose
+it again. The Rules view has one own-rules viewport table and shows
+`defaultRules` as plain built-in text only when the overall
 `ownRuleCount === 0`; an empty search of own rules does not show the built-ins.
-Add, Edit and Delete remain separate leaves below.
+The Add form captures the current kind and title for `Add rule · <title>`,
+starts with an empty raw-text area and keeps the draft verbatim; trimming only
+guards against submitting blank text. A dirty draft asks before discard. While
+the write is busy, the form is locked and user close or cancel requests are
+refused. A tracked success closes it; the refusal row stays in the fixed error
+area above the fields, with its diagnostic details available there. Page or
+kind changes isolate the replacement form from a late reply to the previous
+one. In admin view mode, a viewer may open and edit the local draft, but submit
+is blocked in the browser and the server's `ADMIN` gate refuses the page action
+before it reaches the writer.
 
-The new core Rules API is exported from the moderation section, and Vue's
-`HilosModerationKindRulesPage` is exported from the lazy Vue moderation section;
+The first own rule makes `ownRuleCount` nonzero and replaces the built-ins as a
+whole, so the built-in panel disappears. The next moderation check reads fresh
+`effectiveForKind()` rules as before. Existing source-change fan-out and the
+table's Apply behavior remain unchanged.
+
+The core `HilosModerationRulesContext` extends the existing
+`HilosModerationContext` with the `actions` lifecycle used by
+`createHilosModerationRuleAdd`; the base context stays sufficient for the root
+and Overview. Chat passes its existing `actions` singleton through
+`hilosModerationContext`. The Add API is exported from the moderation section,
+and Vue's `HilosModerationKindRulesPage` from the lazy Vue moderation section;
 neither is added to compatibility root or base exports. The Vue kind Overview
-receives the project's context through Chat's lazy `ModerationKind.vue` wrapper
-and `hilosModerationContext` in `App.vue`. The Rules view receives the same
-context through Chat's lazy `Rules.vue` wrapper.
+continues to receive the project's base context through Chat's lazy
+`ModerationKind.vue` wrapper. The Rules view receives the extended context
+through Chat's lazy `Rules.vue` wrapper.
 
-The rule actions and their dialog validation belong to separate leaves:
+The remaining rule actions and their dialog validation belong to separate
+leaves:
 
-- Add a custom rule. (not in the code yet — HIL-1632)
 - Edit a custom rule. (not in the code yet — HIL-1633)
 - Delete a custom rule. (not in the code yet — HIL-1634)
 
 Apply [admin-features.md](admin-features.md) and
 [admin-view-mode.md](admin-view-mode.md) to each page, table and action: the
-viewer may look but may not mutate. The leaves above owe that behavior with
-their own surface; this document adds no separate UI or payload specification.
+viewer may look but may not mutate. Edit and Delete remain responsible for
+that behavior on their own surfaces.
 
 Mount the React SDK section in tasks. (not in the code yet — HIL-1636)
 Mount the Angular SDK section in polls. (not in the code yet — HIL-1637)
@@ -512,13 +550,14 @@ There is no verdict journal and no per-kind on/off switch in this design.
 
 **Built so far:** the kinds directory, the rules table and its library, the check
 queue and its signals, the moderator, its profiles and settings, the profile
-photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), and the
-kinds/rules browser tables registered by Chat (HIL-1628).
+photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), the
+kinds/rules browser tables registered by Chat (HIL-1628), and the section pages
+with the Vue Rules Add flow and its focused e2e coverage.
 
-**Not built yet:** chat as a consumer (HIL-1627); section pages, actions, SDK
-mounts and demo stands (HIL-1629–HIL-1637);
-e2e and cluster coverage (HIL-1638/HIL-1639); enabling profile photos in
-tasks/polls (HIL-1644/HIL-1645).
+**Not built yet:** chat as a consumer (HIL-1627); Edit and Delete
+(HIL-1633/HIL-1634); React/tasks and Angular/polls SDK mounts
+(HIL-1636/HIL-1637); the broader moderation e2e coverage and cluster coverage
+(HIL-1638/HIL-1639); enabling profile photos in tasks/polls (HIL-1644/HIL-1645).
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

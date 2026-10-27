@@ -341,6 +341,8 @@ use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
 use Hilos\Moderation\ModerationAgent;
@@ -1264,8 +1266,16 @@ final class ChatTopologyRegistryTest extends TestCase
         ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
         self::assertSame(PageAccessLevel::ADMIN, ModerationKindRulesPage::ACCESS_LEVEL);
         self::assertSame(PageReach::ROUTE, ModerationKindRulesPage::REACH);
-        self::assertSame([], ModerationKindRulesPage::ACTIONS);
-        self::assertSame([], ModerationKindRulesPage::SIGNALS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+        ], ModerationKindRulesPage::ACTIONS);
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesPage::SIGNALS);
+        self::assertSame([], ModerationKindRulesPage::READING_ACTIONS);
+        self::assertSame(HilosModerationRuleAddActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_MODERATION_RULE_ADD]);
+        self::assertArrayNotHasKey(HilosSignalConstants::MODERATION_RULE_ADD, Hilos::getActionAgentRoutes());
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
         $this->assertSame([
@@ -1475,6 +1485,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_BLOCK_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_DELETION_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_IMPERSONATE_START => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -1574,6 +1585,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_BLOCK_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_DELETION_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_IMPERSONATE_START => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
@@ -1625,6 +1637,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
@@ -1661,6 +1674,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
@@ -1798,6 +1812,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosSignalConstants::MODERATION_RULE_ADD => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
@@ -2122,6 +2137,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
             HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HandoverAnswerSignalData::class,
+            HilosSignalConstants::MODERATION_RULE_ADD => ModerationRuleAddSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => ManualMaintenanceDisableSignalData::class,

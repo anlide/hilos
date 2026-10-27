@@ -2422,6 +2422,15 @@ final class HilosSignalConstants
      */
     public const string HILOS_MODERATION_VERDICT = 'hilos_moderation_verdict';
 
+    /** Browser → Rules page: add an administrator's own rule. */
+    public const string HILOS_MODERATION_RULE_ADD = 'hilos_moderation_rule_add';
+
+    /** Rules gatekeeper → rules library: create a rule and report its outcome. */
+    public const string MODERATION_RULE_ADD = 'moderation_rule_add';
+
+    /** Rules library → Rules page: outcome of the handed-over write. */
+    public const string HILOS_MODERATION_RULE_WRITE_DONE = 'hilos_moderation_rule_write_done';
+
     /** Users library → sessions library: refresh every open session of this person. */
     public const string HILOS_USER_SESSIONS_RESTATE = 'hilos_user_sessions_restate';
 

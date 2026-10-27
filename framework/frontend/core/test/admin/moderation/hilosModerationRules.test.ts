@@ -28,7 +28,7 @@ function wireRule(id = 1, kind = 'first', rule = `Rule ${id}`) {
 }
 
 /** Real parsing, page scopes, replay and both viewport bindings, with only the socket scripted. */
-function setup() {
+function setup(view?: { readonly openAdd: () => void }) {
   const listeners = new Map<string, (event: { data?: unknown }) => void>()
   const sent: Array<Record<string, unknown>> = []
   const socket: WebSocketLike = {
@@ -49,7 +49,7 @@ function setup() {
   pages.releaseOnSession()
   pages.subscribe(PAGE, { kind: kind.get() })
   const registered = vi.spyOn(connection, 'registerTableWindow')
-  const rules = createHilosModerationRules({ connection, scopes }, kind)
+  const rules = createHilosModerationRules({ connection, scopes }, kind, view)
   const detail = createHilosModerationKind({ connection, scopes }, kind, PAGE)
   cleanups.push(() => {
     detail.dispose()
@@ -154,6 +154,36 @@ describe('moderation Rules', () => {
     expect(moderationKindRulesPath('project/kind with spaces')).toBe(
       '/hilos/moderation/project%2Fkind%20with%20spaces/rules',
     )
+  })
+
+  it('offers one optional Add rule callback in the frame for empty and populated windows', () => {
+    const openAdd = vi.fn()
+    const h = setup({ openAdd })
+    h.start()
+    h.answer([])
+    const c = h.rules.controller
+    expect(c.frame.body.get()).toBe('empty')
+    expect(c.frame.declaration.mainAction).toEqual({
+      label: 'Add rule',
+      press: openAdd,
+    })
+    c.frame.declaration.mainAction?.press()
+    h.answer()
+    expect(c.frame.body.get()).toBe('rows')
+    expect(c.frame.declaration.mainAction?.press).toBe(openAdd)
+    c.frame.declaration.mainAction?.press()
+    expect(openAdd).toHaveBeenCalledTimes(2)
+    expect(h.rules.current.get()).toBe(true)
+    expect(c.descriptor()).toMatchObject({
+      filter: { kind: 'first' },
+      rendered: ['rule', 'id', 'kind'],
+    })
+    expect(c.rows.get()[0].row).toEqual({
+      id: 1,
+      kind: 'first',
+      rule: 'Rule 1',
+    })
+    expect(h.viewports()).toEqual([])
   })
 
   it.each(['before start', 'after start'])(

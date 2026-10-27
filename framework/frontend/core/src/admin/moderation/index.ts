@@ -28,3 +28,11 @@ export {
   type HilosModerationRuleRow,
   type HilosModerationRules,
 } from './hilosModerationRules.js'
+
+export {
+  HILOS_MODERATION_RULE_ADD_ACTION,
+  HILOS_MODERATION_RULE_ADD_COPY,
+  createHilosModerationRuleAdd,
+  type HilosModerationRulesContext,
+  type HilosModerationRuleAdd,
+} from './hilosModerationRuleAdd.js'

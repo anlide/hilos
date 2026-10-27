@@ -2,6 +2,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, markRaw, nextTick } from 'vue'
 import {
+  ActionLifecycle,
   bindPageScope,
   createAppPageRouter,
   createHilosRouter,
@@ -164,7 +165,11 @@ async function harness(
     })
   }
   if (!options.pending) answer()
-  const context = markRaw({ connection, scopes })
+  const context = markRaw({
+    connection,
+    scopes,
+    actions: new ActionLifecycle(connection),
+  })
   const view = options.outlet
     ? mount(HilosView, {
         props: {
@@ -247,9 +252,7 @@ describe('HilosModerationKindRulesPage', () => {
     ).toBe(false)
     expect(
       view
-        .find(
-          'button[aria-label*="Edit"], button[aria-label*="Delete"], [data-id="hilos-table-main-action"]',
-        )
+        .find('button[aria-label*="Edit"], button[aria-label*="Delete"]')
         .exists(),
     ).toBe(false)
     expect(
@@ -258,7 +261,9 @@ describe('HilosModerationKindRulesPage', () => {
         .map((cell) => cell.text())
         .join(' '),
     ).toContain('Rule')
-    expect(view.text()).not.toContain('Add rule')
+    expect(view.get('[data-id="hilos-table-main-action"]').text()).toBe(
+      'Add rule',
+    )
     expect(sent.filter((frame) => frame.type === 'table_viewport')).toEqual([])
     update({ ...first, title: 'New title', owner: 'project' })
     await nextTick()
@@ -268,6 +273,23 @@ describe('HilosModerationKindRulesPage', () => {
     expect(view.get('[data-id="hilos-moderation-kind-owner"]').text()).toBe(
       'Project',
     )
+  })
+
+  it('opens one SDK add form through the table action and disposes it on navigation', async () => {
+    const { view, navigation } = await harness()
+    await view.get('[data-id="hilos-table-main-action"]').trigger('click')
+    await nextTick()
+    expect(
+      document.querySelectorAll('[data-id="hilos-moderation-rule-add"]'),
+    ).toHaveLength(1)
+    expect(
+      document.querySelector('[data-id="modal"]')?.getAttribute('aria-label'),
+    ).toBe('Add rule · Profile name')
+    navigation.navigate('/hilos/moderation/second/rules')
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-add"]'),
+    ).toBeNull()
   })
 
   it('shows the design empty copy and plain built-in texts only when metadata says no own rules', async () => {

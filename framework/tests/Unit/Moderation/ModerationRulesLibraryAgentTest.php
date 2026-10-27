@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Moderation;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -46,6 +48,15 @@ final class ModerationRulesLibraryAgentTest extends TestCase
         $this->assertSame([], OwnershipDeclaration::rtCollectionsOf(ModerationRulesLibraryAgent::class));
         $this->assertSame([], OwnershipDeclaration::rtRowCollectionsOf(ModerationRulesLibraryAgent::class));
         $this->assertSame([], OwnershipDeclaration::rtSetCollectionsOf(ModerationRulesLibraryAgent::class));
+    }
+
+    public function testOnlyAnInternalAskReachesTheWriter(): void
+    {
+        self::assertSame([
+            HilosSignalConstants::MODERATION_RULE_ADD => ModerationRuleAddSignalData::class,
+        ], ModerationRulesLibraryAgent::AGENT_SIGNALS);
+        self::assertSame([], ModerationRulesLibraryAgent::AGENT_ACTIONS);
+        self::assertSame([], ModerationRulesLibraryAgent::AUTH_ACTIONS);
     }
 
     public function testAgentAndDaemonShareTheRulesLibraryType(): void

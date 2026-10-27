@@ -14,6 +14,7 @@ import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type TableViewportDescriptor } from '../../connection/HilosConnection.js'
 import { type HilosModerationContext } from './hilosModeration.js'
+import { HILOS_MODERATION_RULE_ADD_COPY } from './hilosModerationRuleAdd.js'
 
 /** Table key for a kind's own moderation rules. */
 export const HILOS_MODERATION_RULES_TABLE = 'hilosModerationRules'
@@ -116,10 +117,12 @@ class ModerationRulesViewportController extends TableViewportController<HilosMod
  *
  * @param context The project's connection and page scopes.
  * @param kind The current route's kind key.
+ * @param view The optional rule creation opener shared by the frame's actions.
  */
 export function createHilosModerationRules(
   context: HilosModerationContext,
   kind: ReadonlySignal<string>,
+  view?: { readonly openAdd: () => void },
 ): HilosModerationRules {
   // A rule's id makes its slot an entity fragment at the normalizer boundary.
   // Resolve that page-owned reference before applying the public row projector;
@@ -171,6 +174,14 @@ export function createHilosModerationRules(
         columns: RULES_COLUMNS,
         rowHeight: { mode: 'lines', count: 3 },
         search: { placeholder: 'Search rules…' },
+        ...(view
+          ? {
+              mainAction: {
+                label: HILOS_MODERATION_RULE_ADD_COPY.open,
+                press: view.openAdd,
+              },
+            }
+          : {}),
       },
       sendViewport: (descriptor) => {
         if (!current.get()) return

@@ -17,6 +17,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Cluster\ClusterContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\AbstractPage;
@@ -138,6 +139,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_i18n_locale_switch_on',
         'hilos_i18n_locale_update',
         'hilos_impersonate_start',
+        'hilos_moderation_rule_add',
         'hilos_status_add_update',
         'hilos_status_cancel_publication',
         'hilos_status_publish_now',
@@ -263,6 +265,28 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         foreach ($actions as $action => $pageClass) {
             self::assertSame(PageUnauthorizedException::class, self::refusalOf($pageClass, self::ANONYMOUS_KEY, $action), $action);
             self::assertSame(PageForbiddenException::class, self::refusalOf($pageClass, self::VISITOR_KEY, $action), $action);
+        }
+    }
+
+    public function testForgedRuleAddsNeverReachTheWriterFromAViewerOrVisitor(): void
+    {
+        foreach ([true, false] as $viewMode) {
+            $this->switchMode($viewMode);
+            foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+                $this->drainSignals();
+                $this->dispatch(HilosPageConstants::HILOS_MODERATION_KIND_RULES, $acceptKey,
+                    HilosSignalConstants::HILOS_MODERATION_RULE_ADD,
+                    ['kind' => 'hilos_profile_name', 'rule' => 'Forged rule'], 'forged-rule');
+                $frames = [];
+                while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                    $frames[] = $frame;
+                }
+                self::assertCount(1, $frames, 'Only a refusal; no internal writer ask');
+                self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
+                self::assertSame('forged-rule', $frames[0]->data->data->requestId);
+                self::assertSame($viewMode ? 'view_mode' : ($acceptKey === self::ANONYMOUS_KEY ? 'unauthorized' : 'forbidden'),
+                    $frames[0]->data->data->errorCode);
+            }
         }
     }
 

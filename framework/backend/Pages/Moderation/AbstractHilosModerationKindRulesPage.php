@@ -6,33 +6,112 @@ namespace Hilos\Pages\Moderation;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
 use Hilos\Pages\Moderation\DTO\HilosModerationKindSubscribeParams;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
 use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use Hilos\Tables\Moderation\HilosModerationKindTableRow;
 use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Moderation\HilosModerationRuleTableRow;
 
-/** Read-only own rules and kind metadata in one subscription answer. */
+/** Own rules and kind metadata, with an ADMIN gatekeeper for the rules writer. */
 abstract class AbstractHilosModerationKindRulesPage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_MODERATION_KIND_RULES;
 
     public const PageReach REACH = PageReach::ROUTE;
 
+    public const array ACTIONS = [
+        HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ],
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
     ];
+
+    /**
+     * @param string $acceptKey Initiating connection
+     * @param string $action Browser action name
+     * @param ActionPayloadDTO $dto Typed action payload
+     * @return ?ActionReplyDTO Deferred until the writer answers
+     * @throws AgentUnknownActionException When the action is not declared here
+     * @throws InvalidActionPayloadException When the action has the wrong DTO
+     * @throws ValidationException When the kind is no longer published
+     * @throws InvalidArgumentException When the directory is invalid or forwarding fails
+     * @throws InvalidFormatException When handover metadata is invalid
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::HILOS_MODERATION_RULE_ADD:
+                if (!$dto instanceof HilosModerationRuleAddActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosModerationRuleAddActionDTO::class, $dto);
+                }
+                $this->handleAdd($acceptKey, $dto);
+
+                break;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+
+        return null;
+    }
+
+    /**
+     * @param AgentSignalData $data Writer's wrapped answer
+     * @param string $sender Sending agent identity (unused)
+     * @param string $name Page-owned reply name
+     * @throws AgentUnknownSignalException When the reply name is unknown
+     * @throws InvalidAgentSignalPayloadException When the reply has the wrong DTO
+     * @throws InvalidArgumentException When the action answer cannot be queued
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE:
+                if (!$data->data instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                }
+                $this->answerHandover($data->data);
+
+                break;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
 
     /**
      * Revalidates the new kind and answers with both windows and the page identity.
@@ -101,6 +180,31 @@ abstract class AbstractHilosModerationKindRulesPage extends AbstractHilosPage
                 HilosModerationRuleTableRow::kind,
                 HilosModerationRuleTableRow::rule,
             ],
+        ));
+    }
+
+    /**
+     * @param string $acceptKey Initiating connection
+     * @param HilosModerationRuleAddActionDTO $dto Published catalog key and raw rule
+     * @throws ValidationException When the kind is no longer published
+     * @throws InvalidArgumentException When the directory is invalid or forwarding fails
+     * @throws InvalidFormatException When handover metadata is invalid
+     */
+    private function handleAdd(string $acceptKey, HilosModerationRuleAddActionDTO $dto): void
+    {
+        $kind = Hilos::moderationKinds()[$dto->kind] ?? null;
+        if ($kind === null) {
+            throw new ValidationException("Unknown moderation kind: {$dto->kind}");
+        }
+
+        $this->forward(HilosSignalConstants::MODERATION_RULE_ADD, new ModerationRuleAddSignalData(
+            kind: $dto->kind,
+            rule: $dto->rule,
+            replySignal: HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: HilosSignalConstants::HILOS_MODERATION_RULE_ADD,
+            successMessage: 'Rule added to "' . $kind->title . '".',
         ));
     }
 }

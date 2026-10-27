@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -190,8 +192,12 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         self::assertSame([
             BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
         ], ModerationKindRulesTestPage::BROWSER);
-        self::assertSame([], ModerationKindRulesTestPage::ACTIONS);
-        self::assertSame([], ModerationKindRulesTestPage::SIGNALS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+        ], ModerationKindRulesTestPage::ACTIONS);
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesTestPage::SIGNALS);
         self::assertSame([], ModerationKindRulesTestPage::READING_ACTIONS);
         self::assertNull(Hilos::$sr->pageResource('rules'));
     }
@@ -439,7 +445,9 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
     {
         $this->bootBrowser();
         $this->subscribe('rules', ['kind' => 'test_note']);
-        self::assertSame([], ModerationKindRulesPageIntegrationTestHilos::getActionDtoRoutes());
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+        ], ModerationKindRulesPageIntegrationTestHilos::getActionDtoRoutes());
         $page = new ModerationKindRulesTestPage(new ModerationKindRulesPageTestAgent());
         $this->expectException(AgentUnknownActionException::class);
         $page->onAction('rules', 'unsupported', new UnknownActionPayloadDTO('unsupported', []));

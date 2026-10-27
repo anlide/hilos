@@ -1,30 +1,41 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  clickSubmit,
+  clickUnavailableControl,
+  countSentFrames,
   deliveryObject,
   expectModerationKindHead,
   expectModerationKindTabs,
   expectModerationOwnRules,
   expectModerationRulesOpening,
+  expectPageReady,
+  gotoPage,
+  openAndSelectPhoto,
+  PAGE_READY,
+  PAGE_REFUSED,
   ROWS,
   shownByTestId,
+  signUpAdmin,
+  typeInto,
   watchClientDocument,
   watchDeliveryFrames,
   watchPageReplies,
-  expectPageReady,
-  gotoPage,
-  PAGE_READY,
-  PAGE_REFUSED,
-  signUpAdmin,
-  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import {
+  dictateModelAnswer,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { picture } from '../helpers/profilePhoto.js'
 
-// Framework moderation kinds, read-only Overview and Rules, carried by chat.
+// Framework moderation kinds, Overview, Rules and creation, carried by chat.
 // Expectations come from the kind declarations, moderation profile defaults
-// and seed 006_framework_moderation_rules; no Rules mutations are needed.
+// and seed 006_framework_moderation_rules. Only the last test adds a rule.
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+// Keep the seeded assertions ahead of the rule that replaces the photo defaults.
+test.describe.configure({ mode: 'default' })
 
 const DECLARED_KINDS = [
   {
@@ -673,6 +684,7 @@ test('filters moderation kinds by search query and shows empty state when no row
 test('displays moderation kinds in admin view mode with view-mode banner', async ({
   page,
 }) => {
+  const sends = countSentFrames(page, 'hilos_moderation_rule_add')
   await setAdminViewMode(true)
   await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expectPageReady(expect, page)
@@ -758,8 +770,103 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
     await expect(
       page.getByTestId('hilos-admin-page').locator('input'),
     ).toHaveAttribute('type', 'search')
+
+    // A viewer can inspect the form, but neither Save nor a forged submit writes.
+    await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
+    const dialog = page.getByTestId('modal')
+    await expect(dialog).toHaveAccessibleName('Add rule · Profile name')
+    const field = page.getByTestId('hilos-moderation-rule-add-rule')
+    await typeInto(field, 'Preview-only moderation rule')
+    const save = page.getByTestId('hilos-moderation-rule-add-submit')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      'hilos-view-mode-strip-text',
+    )
+    await clickUnavailableControl(page, save)
+    await field.evaluate((textarea) => {
+      textarea
+        .closest('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await expect(dialog).toBeVisible()
+    await expect(field).toHaveValue('Preview-only moderation rule')
+    await expect(save).not.toHaveAttribute('aria-busy', 'true')
+    expect(sends()).toBe(0)
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-moderation-rule-add-cancel'),
+    )
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+    await expect(dialog).toBeHidden()
+    await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
     await document.unchanged()
+
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
+    expect(sends()).toBe(0)
   } finally {
     await document.dispose()
   }
+})
+
+test('adds a photo rule through its owner and uses it in the real model request after F5', async ({
+  page,
+}) => {
+  const sends = countSentFrames(page, 'hilos_moderation_rule_add')
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  const key = modelKey()
+  // Only the policy carries the model key: no name, picture or file can match it.
+  const rule = `Allow ordinary profile photos. Policy marker: ${key}.`
+  await gotoPage(
+    expect,
+    page,
+    '/hilos/moderation/hilos_profile_photo/rules',
+    PAGE_READY,
+  )
+  await expect(
+    page.getByTestId('hilos-moderation-rules-built-in'),
+  ).toBeVisible()
+  await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toHaveAccessibleName('Add rule · Profile photo')
+  await typeInto(page.getByTestId('hilos-moderation-rule-add-rule'), rule)
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-moderation-rule-add-submit'),
+  )
+  // Closing is the tracked DONE settling, before any live-table assertion.
+  await expect(dialog).toBeHidden()
+  const toast = page.getByTestId('hilos-toast-success')
+  await expect(toast).toHaveCount(1)
+  await expect(toast).toContainText('Rule added to "Profile photo".')
+  await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
+  expect(sends()).toBe(1)
+  await expectModerationOwnRules(expect, page, [rule])
+
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expectModerationOwnRules(expect, page, [rule])
+
+  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+  await gotoPage(expect, page, '/profile', PAGE_READY)
+  await expect(page.getByTestId('profile-name')).not.toContainText(key)
+  await openAndSelectPhoto(
+    expect,
+    page,
+    await picture(page, 'image/jpeg'),
+    'image/jpeg',
+  )
+  await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+  await expect(dialog).toBeHidden()
+  // Publication consumes the sole dictated answer through the real photo check.
+  await expect(
+    page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
+  ).toBeVisible()
+  await expect(
+    page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
+  ).toBeVisible()
+  expect(sends()).toBe(1)
 })
