@@ -8,6 +8,7 @@ import {
   daemonEnvMismatchCellView,
   daemonEnvMismatchFromExample,
   daemonEnvMismatchStandsOut,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   type HilosDaemonEnvMismatchRow,
 } from '@hilos/core/admin/daemon'
 import { HilosDaemonEnvValue } from './HilosDaemonEnvValue.js'
@@ -26,6 +27,7 @@ import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
 
     <div
       class="d-flex flex-column gap-1"
+      [class.bg-warning-subtle]="fromExample"
       [attr.data-id]="
         'hilos-daemon-env-mismatch-cell-' + row.rowKey + '-' + nodeId
       "
@@ -95,23 +97,17 @@ export class HilosDaemonEnvMismatchCell {
   readonly row = input.required<HilosDaemonEnvMismatchRow>()
   readonly nodeId = input.required<string>()
   readonly servingNodeId = input.required<string | null>()
-  readonly valuesMatch = input.required<boolean>()
   protected readonly view = computed(() =>
-    daemonEnvMismatchCellView(
-      this.row(),
-      this.nodeId(),
-      this.servingNodeId(),
-      this.valuesMatch(),
-    ),
+    daemonEnvMismatchCellView(this.row(), this.nodeId(), this.servingNodeId()),
   )
   protected readonly standsOut = computed(
     () =>
-      !this.valuesMatch() &&
+      this.row().kind !== DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
       daemonEnvMismatchStandsOut(this.row(), this.nodeId()),
   )
   protected readonly fromExample = computed(
     () =>
-      this.valuesMatch() &&
+      this.row().kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
       daemonEnvMismatchFromExample(this.row(), this.nodeId()),
   )
 }

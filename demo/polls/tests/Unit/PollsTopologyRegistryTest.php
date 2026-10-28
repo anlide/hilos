@@ -171,8 +171,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -1171,8 +1170,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             PollsTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
-            PollsTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
-            PollsTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
+            PollsTableContext::hilosDaemonEnvMismatch => HilosDaemonEnvMismatchTable::class,
             PollsTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             PollsTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
@@ -1595,8 +1593,7 @@ final class PollsTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
         );
         $this->assertSame([
-            PollsTableContext::hilosDaemonEnvDiverged => [],
-            PollsTableContext::hilosDaemonEnvSourcesDiffer => [],
+            PollsTableContext::hilosDaemonEnvMismatch => [],
         ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         $this->assertSame(
             [PollsTableContext::hilosDaemonHttpRoutes => []],

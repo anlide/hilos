@@ -94,6 +94,9 @@ function harness(initial: HilosDaemonEnvMismatchSummary | null = null) {
     unregister,
     activeWindows,
     listeners,
+    event(event: string, data: unknown) {
+      act(() => emit(event, { data }))
+    },
     sendViewport,
     find: (id: string): HTMLElement | null =>
       view.container.querySelector(`[data-id="${id}"]`),
@@ -143,14 +146,15 @@ function cell(nodeId: string, overrides: Record<string, unknown> = {}) {
 function row(key: string, overrides: Record<string, unknown> = {}) {
   return {
     key,
+    kind: 'diverged',
+    position: 0,
     sensitive: false,
     value: null,
     cells: [cell('n1'), cell('n2')],
     ...overrides,
   }
 }
-const DIVERGED = 'hilosDaemonEnvDiverged'
-const SOURCES = 'hilosDaemonEnvSourcesDiffer'
+const MISMATCH = 'hilosDaemonEnvMismatch'
 const CELL = 'hilos-daemon-env-mismatch-cell-'
 afterEach(cleanup)
 
@@ -187,9 +191,9 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(h.find('hilos-daemon-env-mismatch-waiting')).not.toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-tile-diverged')).toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-empty-agree')).toBeNull()
-    expect(h.register).toHaveBeenCalledTimes(2)
+    expect(h.register).toHaveBeenCalledTimes(1)
     h.response(summary())
-    h.window(DIVERGED, [])
+    h.window(MISMATCH, [])
     expect(h.find('hilos-daemon-env-mismatch-waiting')).toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-empty-agree')?.textContent).toBe(
       'The answering nodes agree on every key they share.',
@@ -228,8 +232,8 @@ describe('HilosDaemonEnvMismatchPage', () => {
     ).toBe('CLUSTER_NODE_ID')
     expect(
       h.view.container.querySelectorAll('[data-id="hilos-viewport-table"]'),
-    ).toHaveLength(2)
-    h.window(DIVERGED, [])
+    ).toHaveLength(1)
+    h.window(MISMATCH, [])
     expect(
       h.find('hilos-daemon-env-mismatch-tile-diverged')?.querySelector('.fs-5')
         ?.textContent,
@@ -262,7 +266,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
         diverged: 1,
       }),
     )
-    h.window(DIVERGED, [
+    h.window(MISMATCH, [
       row('APP_ENV', {
         value: { kind: 'text', text: 'prod' },
         cells: [
@@ -311,7 +315,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
 
   it('uses only digests for sensitive values and respects hidden serving-node values', () => {
     const h = harness(summary({ diverged: 3 }))
-    h.window(DIVERGED, [
+    h.window(MISMATCH, [
       row('SECRET', {
         sensitive: true,
         cells: [cell('n1'), cell('n2', { digest: 'aaaa222200000000' })],
@@ -344,21 +348,33 @@ describe('HilosDaemonEnvMismatchPage', () => {
 
   it('reuses permitted matching values across sources, including hidden, empty and boolean', () => {
     const h = harness(summary({ sourcesDiffer: 3 }))
-    h.window(SOURCES, [
+    h.window(MISMATCH, [
       row('MAIL_HOST', {
+        kind: 'sourcesDiffer',
         value: { kind: 'text', text: 'mail.example.test' },
         cells: [cell('n1'), cell('n2', { source: 'example' })],
       }),
-      row('HIDDEN', { value: HIDDEN_VALUE }),
+      row('HIDDEN', { kind: 'sourcesDiffer', value: HIDDEN_VALUE }),
       row('BOOL', {
+        kind: 'sourcesDiffer',
         value: { kind: 'text', text: 'false' },
         cells: [
           cell('n1', { type: 'boolean' }),
           cell('n2', { type: 'boolean' }),
         ],
       }),
-      row('EMPTY', { value: { kind: 'text', text: '' } }),
+      row('EMPTY', {
+        kind: 'sourcesDiffer',
+        value: { kind: 'text', text: '' },
+      }),
     ])
+    expect(h.find('hilos-daemon-env-mismatch-empty-agree')).toBeNull()
+    expect(
+      h.find('hilos-daemon-env-mismatch-sources-differ-MAIL_HOST')?.textContent,
+    ).toBe('Sources differ')
+    expect(
+      h.find(`${CELL}MAIL_HOST-n2`)?.classList.contains('bg-warning-subtle'),
+    ).toBe(true)
     expect(h.find(`${CELL}MAIL_HOST-n2`)?.dataset.kind).toBe('value')
     expect(h.find(`${CELL}MAIL_HOST-n2`)?.textContent).toContain(
       'mail.example.test.env.example',
@@ -377,9 +393,67 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(h.find(`${CELL}EMPTY-n2`)?.textContent).toBe('empty.env')
   })
 
+  it('keeps row updates live and one bucket transition pending until Apply, then recovers a refusal', () => {
+    const h = harness(summary({ diverged: 2 }))
+    h.window(MISMATCH, [
+      row('A', { value: { kind: 'text', text: 'before' } }),
+      row('B', { position: 1 }),
+    ])
+    const address = { page: HilosPages.DAEMON_ENV_MISMATCH, tableKey: MISMATCH }
+    const wire = (value: Record<string, unknown>) => ({
+      rowKey: 'A',
+      slots: { key: value },
+    })
+    h.event('tableViewportDelta', {
+      ...address,
+      kind: 'row_updated',
+      rowKey: 'A',
+      row: wire(row('A', { value: { kind: 'text', text: 'after' } })),
+    })
+    expect(h.find(`${CELL}A-n1`)?.textContent).toContain('after')
+    expect(h.find('hilos-table-apply')).toBeNull()
+    const order = () =>
+      Array.from(
+        h.view.container.querySelectorAll(
+          'tbody tr[data-id^="hilos-table-row-"]',
+        ),
+      ).map((el) => el.getAttribute('data-id'))
+    h.event('tableViewportDelta', {
+      ...address,
+      kind: 'row_moved',
+      rowKey: 'A',
+      position: 1,
+      row: wire(row('A', { kind: 'sourcesDiffer', position: 1 })),
+    })
+    expect(order()).toEqual(['hilos-table-row-A', 'hilos-table-row-B'])
+    expect(h.find('hilos-table-apply')).not.toBeNull()
+    act(() => h.find('hilos-table-apply')!.click())
+    expect(order()).toEqual(['hilos-table-row-B', 'hilos-table-row-A'])
+    expect(
+      h.find('hilos-daemon-env-mismatch-sources-differ-A')?.textContent,
+    ).toBe('Sources differ')
+    const labelId = h.view.container
+      .querySelector('table')
+      ?.getAttribute('aria-labelledby')
+    expect(
+      h.view.container.querySelector(`[id="${labelId}"]`)?.textContent,
+    ).toBe('Env mismatch')
+    expect(
+      h.view.container
+        .querySelector('[role="list"]')
+        ?.getAttribute('aria-labelledby'),
+    ).toBe(labelId)
+    h.event('tableWindowRefused', { ...address, errorCode: 'unavailable' })
+    expect(h.find('hilos-daemon-env-mismatch-empty-agree')).toBeNull()
+    expect(h.view.container.textContent).toContain('List unavailable')
+    h.window(MISMATCH, [row('A', { kind: 'sourcesDiffer' })])
+    expect(h.find('hilos-daemon-env-mismatch-sources-differ-A')).not.toBeNull()
+    expect(h.register).toHaveBeenCalledTimes(1)
+  })
+
   it('updates dynamic node columns and values without rebinding, and releases all listeners', () => {
     const h = harness(summary({ diverged: 1 }))
-    h.window(DIVERGED, [row('KEY')])
+    h.window(MISMATCH, [row('KEY')])
     expect(h.view.container.querySelector('thead')?.textContent).toContain(
       'n1 · this node',
     )
@@ -387,7 +461,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.response(
       summary({ nodes: ['n1', 'n3'], answering: ['n1', 'n3'], diverged: 1 }),
     )
-    h.window(DIVERGED, [
+    h.window(MISMATCH, [
       row('KEY', {
         cells: [cell('n1'), cell('n3', { digest: 'cccc111100000000' })],
       }),
@@ -395,7 +469,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(h.find(`${CELL}KEY-n2`)).toBeNull()
     expect(h.find(`${CELL}KEY-n3`)?.textContent).toContain('#cccc')
     expect(h.view.container.querySelector('thead')?.textContent).toContain('n3')
-    expect(h.register).toHaveBeenCalledTimes(2)
+    expect(h.register).toHaveBeenCalledTimes(1)
     h.response({
       clustered: false,
       servingNodeId: 'standalone',
@@ -406,7 +480,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
       true,
     )
     h.response(summary())
-    expect(h.register).toHaveBeenCalledTimes(4)
+    expect(h.register).toHaveBeenCalledTimes(2)
     h.view.unmount()
     expect(h.activeWindows.size).toBe(0)
     expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(

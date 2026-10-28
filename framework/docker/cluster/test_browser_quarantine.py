@@ -13,9 +13,9 @@ from unittest.mock import Mock, patch
 import browser
 
 
-def planned(project, flake=None, title=None):
+def planned(project, flake=None, title=None, file=None):
     title = title or f"{project} check"
-    file = f"{project}/check.spec.ts"
+    file = file or f"{project}/check.spec.ts"
     return {"project": project, "flake": flake, "file": file, "line": 12,
             "titlePath": [title], "selector": f"[{project}] › {file}:12 › {title}"}
 
@@ -248,6 +248,138 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.daemon_factory.assert_not_called()
         self.assertTrue(all("--grep" in args for _, _, _, args in self.calls))
 
+    def test_env_mismatch_unfiltered_selection_sets_fixture_and_refreshes_roles_before_browser(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+
+        def switch(stand, node, assignment):
+            self.events.append(("env", node, assignment))
+            self.leader, self.term = "m2", 5
+            return SimpleNamespace(code=0, out="switched", err="")
+        self.own_env.side_effect = switch
+        self.assertEqual(0, browser.run(self.stand, []))
+        self.assertEqual([("s1", "MAIL_FROM_NAME=hilos-env-mismatch-fixture"), ("s1", "off")],
+                         [call.args[1:] for call in self.own_env.call_args_list])
+        self.assertLess(self.events.index(("plan",)), self.events.index(
+            ("env", "s1", "MAIL_FROM_NAME=hilos-env-mismatch-fixture")))
+        env = self.calls[0][2]
+        self.assertEqual(("s1", "MAIL_FROM_NAME", "hilos-env-mismatch-fixture"), tuple(
+            env[key] for key in ("CLUSTER_ENV_MISMATCH_NODE", "CLUSTER_ENV_MISMATCH_KEY",
+                                "CLUSTER_ENV_MISMATCH_VALUE")))
+        self.assertEqual(("m2", "m1"), (env["CLUSTER_LEADER"], env["CLUSTER_FOLLOWER"]))
+        self.assertEqual(("m2", 5), self.delivery_factory.call_args.args[-2:])
+        off = self.events.index(("env", "s1", "off"))
+        self.assertLess(self.events.index(("delivery-restore",)), off)
+        self.assertEqual(("converge", tuple(self.stand.members)), self.events[off + 1])
+        self.assertEqual(2, self.refusal.call_count)
+        self.kill.assert_not_called()
+        self.start.assert_not_called()
+        self.daemon_factory.assert_not_called()
+
+    def test_env_mismatch_native_plan_exclusion_never_sets_fixture_even_with_filename_argument(self):
+        self.plan = [planned("live")]
+        self.assertEqual(0, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC, "--grep=other"]))
+        self.own_env.assert_not_called()
+        self.assertNotIn("CLUSTER_ENV_MISMATCH_NODE", self.calls[0][2])
+
+    def test_env_mismatch_quarantine_does_not_prepare_fixture_for_unrelated_main(self):
+        self.plan = [planned("live"), planned("live", "F-100", file=browser.ENV_MISMATCH_SPEC)]
+        self.assertEqual(0, browser.run(self.stand, ["--project=live"]))
+        self.assertNotIn("CLUSTER_ENV_MISMATCH_NODE", self.calls[0][2])
+        self.assertEqual("s1", self.calls[1][2]["CLUSTER_ENV_MISMATCH_NODE"])
+        self.assertLess(self.events.index(("main", "live")), self.events.index(
+            ("env", "s1", "MAIL_FROM_NAME=hilos-env-mismatch-fixture")))
+        self.assertEqual(2, self.own_env.call_count)
+        self.assertEqual("passed", self.lines()[0]["status"])
+
+    def test_env_mismatch_diagnostic_uses_fixture_once_and_preserves_native_repeats(self):
+        self.plan = [planned("live", "F-100", file=browser.ENV_MISMATCH_SPEC)]
+        self.assertEqual(0, browser.run(self.stand, ["--repeat-each=5"]))
+        self.assertEqual("diagnostic", self.calls[0][0])
+        self.assertIn("--repeat-each=5", self.calls[0][3])
+        self.assertEqual(2, self.own_env.call_count)
+        self.assertEqual([], self.lines())
+
+    def test_env_mismatch_setup_switch_failure_still_restores_and_checks_start(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+        self.own_env.side_effect = [RuntimeError("fixture setup failed"),
+                                    SimpleNamespace(code=0, out="restored", err="")]
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertEqual([], self.calls)
+        self.refusal.assert_called_once()
+        self.assertEqual(3, self.wait.call_count)
+        self.delivery_factory.assert_not_called()
+
+    def test_env_mismatch_setup_convergence_failure_still_restores(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+
+        def converge(nodes):
+            if self.wait.call_count == 3:
+                raise RuntimeError("fixture did not converge")
+            return self.views(nodes)
+        self.wait.side_effect = converge
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertEqual(4, self.wait.call_count)
+        self.refusal.assert_called_once()
+        self.assertEqual([], self.calls)
+
+    def test_env_mismatch_setup_startup_refusal_still_restores(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+        self.refusal.side_effect = [AssertionError("fixture start refused"), None]
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertEqual(2, self.refusal.call_count)
+        self.assertEqual([], self.calls)
+
+    def test_env_mismatch_browser_exception_still_restores(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+
+        def broken_browser(phase, project, env):
+            raise RuntimeError("browser invocation failed")
+        self.gateway_hook = broken_browser
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertEqual(2, self.refusal.call_count)
+        self.assertIn("browser invocation failed", self.output.getvalue())
+
+    def test_env_mismatch_restore_failure_makes_browser_pass_red(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+        self.own_env.side_effect = [SimpleNamespace(code=0, out="setup", err=""),
+                                    SimpleNamespace(code=9, out="", err="fixture restore failed")]
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual(4, self.wait.call_count)
+        self.assertEqual(2, self.refusal.call_count)
+        self.assertIn("fixture restore failed", self.output.getvalue())
+
+    def test_env_mismatch_restore_convergence_failure_preserves_browser_native_rc(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+        self.codes[("main", "live")] = 7
+
+        def converge(nodes):
+            if self.wait.call_count == 4:
+                raise RuntimeError("restored node did not converge")
+            return self.views(nodes)
+        self.wait.side_effect = converge
+        self.assertEqual(7, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertEqual(2, self.refusal.call_count)
+        self.assertIn("restored node did not converge", self.output.getvalue())
+
+    def test_env_mismatch_restore_startup_refusal_makes_browser_pass_red(self):
+        self.plan = [planned("live", file=browser.ENV_MISMATCH_SPEC)]
+        self.refusal.side_effect = [None, AssertionError("restored start refused")]
+        self.assertEqual(1, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("off", self.own_env.call_args.args[-1])
+        self.assertIn("restored start refused", self.output.getvalue())
+
+    def test_env_mismatch_quarantine_cleanup_failure_demotes_pass_without_altering_main_rc(self):
+        self.plan = [planned("live", "F-100", file=browser.ENV_MISMATCH_SPEC)]
+        self.own_env.side_effect = [SimpleNamespace(code=0, out="setup", err=""), RuntimeError("restore failed")]
+        self.assertEqual(0, browser.run(self.stand, [browser.ENV_MISMATCH_SPEC]))
+        self.assertEqual("failed", self.lines()[0]["status"])
+        self.assertIn("restore failed", self.lines()[0]["reason"])
+
     def test_online_testing_only_live_with_no_slave_or_daemon(self):
         self.stand.demo_dir = self.root / "demo" / "online-testing"
         (self.stand.demo_dir / "data").mkdir(parents=True)
@@ -260,6 +392,7 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.start.assert_not_called()
         self.daemon_factory.assert_not_called()
         self.delivery_factory.assert_not_called()
+        self.own_env.assert_not_called()
 
     def test_no_quarantine_is_silent(self):
         self.plan = [planned("live")]

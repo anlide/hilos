@@ -155,10 +155,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -1540,8 +1539,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvKeys]);
         $this->assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvOrphans]);
         $this->assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonAgents]);
-        $this->assertSame(HilosDaemonEnvDivergedTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvDiverged]);
-        $this->assertSame(HilosDaemonEnvSourcesDifferTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer]);
+        $this->assertSame(HilosDaemonEnvMismatchTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonEnvMismatch]);
         $this->assertSame(HilosDaemonHttpRoutesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonHttpRoutes]);
         $this->assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosDaemonPlacement]);
 
@@ -1556,8 +1554,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvOrphansPage::PAGE]);
         $this->assertSame([
-            EcommerceShopTableContext::hilosDaemonEnvDiverged => [],
-            EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => [],
+            EcommerceShopTableContext::hilosDaemonEnvMismatch => [],
         ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         $this->assertSame([EcommerceShopTableContext::hilosDaemonHttpRoutes => []], Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE]);
 

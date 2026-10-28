@@ -16,6 +16,7 @@ from stand import StandRefused
 
 PLAYWRIGHT_ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
 QUARANTINE_STATUSES = frozenset(("passed", "failed", "timedOut", "skipped", "interrupted", "notRun"))
+ENV_MISMATCH_SPEC = "live/daemon-env-mismatch.spec.ts"
 
 # A phase switched off whole, the host-side twin of a static `test.fixme`: the host
 # prepares neither its main nor its quarantine run. A test that fails on its own test
@@ -284,14 +285,32 @@ def _daemon_phase(stand, extra_args, hilos_phase="main", run_env=None):
     return result
 
 
-def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_env=None):
+def _env_mismatch_selected(stand, tests):
+    """The native plan, after filters and phase partitioning, owns fixture selection."""
+    return stand.demo_dir.name == "binance-btc-tracker" and any(
+        test["project"] == "live" and test["file"] == ENV_MISMATCH_SPEC for test in tests)
+
+
+def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_env=None,
+                env_mismatch=False):
     """Join delivery control before restoring its faults and collecting its host verdict."""
     result = _PhaseResult()
     controller = None
     thread = None
     directory = stand.demo_dir / "data" / "cluster-delivery-e2e" / uuid.uuid4().hex
     directory_created = False
+    override_attempted = False
+    env_key, env_value = "MAIL_FROM_NAME", "hilos-env-mismatch-fixture"
     try:
+        if env_mismatch:
+            remote = stand.slaves[0]
+            mark = scenarios.node_log_mark(remote)
+            override_attempted = True
+            _switch(control.own_env(stand, remote, f"{env_key}={env_value}"))
+            env, leader, term = _roles(stand, "live env mismatch")
+            scenarios.assert_no_startup_refusal(remote, mark, "after its environment mismatch fixture start")
+            env.update({"CLUSTER_ENV_MISMATCH_NODE": remote, "CLUSTER_ENV_MISMATCH_KEY": env_key,
+                        "CLUSTER_ENV_MISMATCH_VALUE": env_value})
         if stand.demo_dir.name == "binance-btc-tracker":
             directory.mkdir(parents=True)
             directory_created = True
@@ -316,6 +335,26 @@ def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_en
                 result.fail(f"cluster delivery: restoration failed: {error}")
             if controller.error is not None:
                 result.fail(f"cluster delivery: controller failed: {controller.error}")
+        if override_attempted:
+            restore_mark = None
+            try:
+                restore_mark = scenarios.node_log_mark(remote)
+            except Exception as error:
+                result.fail(f"cluster env mismatch: recovery log mark failed: {error}")
+            try:
+                _switch(control.own_env(stand, remote, "off"))
+            except Exception as error:
+                result.fail(f"cluster env mismatch: environment recovery failed: {error}")
+            try:
+                _roles(stand, "env mismatch recovery converged all members")
+            except Exception as error:
+                result.fail(f"cluster env mismatch: recovery convergence failed: {error}")
+            if restore_mark is not None:
+                try:
+                    scenarios.assert_no_startup_refusal(
+                        remote, restore_mark, "after its recreation on the stand's environment")
+                except Exception as error:
+                    result.fail(f"cluster env mismatch: recovery start failed: {error}")
         try:
             # Sequence files belong to this UUID only, including interrupted writes.
             if directory_created:
@@ -442,7 +481,8 @@ def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase):
             return result.code
     if "live" in projects:
         env, leader, term = _roles(stand, "live")
-        result = _live_phase(stand, env, extra_args, leader, term, hilos_phase, run_env)
+        result = _live_phase(stand, env, extra_args, leader, term, hilos_phase, run_env,
+                             env_mismatch=_env_mismatch_selected(stand, tests))
         if result.code:
             print("cluster e2e: failed: phase live")
             return result.code
@@ -484,7 +524,8 @@ def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, l
                 if project == "daemon":
                     result = _daemon_phase(stand, extra_args, "quarantine", env_files)
                 else:
-                    result = _live_phase(stand, env, extra_args, leader, term, "quarantine", env_files)
+                    result = _live_phase(stand, env, extra_args, leader, term, "quarantine", env_files,
+                                         env_mismatch=_env_mismatch_selected(stand, selected))
         except Exception as error:
             result.fail(f"cluster quarantine {project}: host preparation/invocation failed: {error}")
         observations.extend(_observations(selected, path, result))

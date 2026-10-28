@@ -4,6 +4,7 @@ import {
   daemonEnvMismatchCellView,
   daemonEnvMismatchFromExample,
   daemonEnvMismatchStandsOut,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   type HilosDaemonEnvMismatchRow,
 } from '@hilos/core/admin/daemon'
 import { computed } from 'vue'
@@ -15,30 +16,27 @@ const props = defineProps<{
   row: HilosDaemonEnvMismatchRow
   nodeId: string
   servingNodeId: string | null
-  valuesMatch: boolean
 }>()
 
 const view = computed(() =>
-  daemonEnvMismatchCellView(
-    props.row,
-    props.nodeId,
-    props.servingNodeId,
-    props.valuesMatch,
-  ),
+  daemonEnvMismatchCellView(props.row, props.nodeId, props.servingNodeId),
 )
 const standsOut = computed(
   () =>
-    !props.valuesMatch && daemonEnvMismatchStandsOut(props.row, props.nodeId),
+    props.row.kind !== DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
+    daemonEnvMismatchStandsOut(props.row, props.nodeId),
 )
 const fromExample = computed(
   () =>
-    props.valuesMatch && daemonEnvMismatchFromExample(props.row, props.nodeId),
+    props.row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
+    daemonEnvMismatchFromExample(props.row, props.nodeId),
 )
 </script>
 
 <template>
   <div
     class="d-flex flex-column gap-1"
+    :class="{ 'bg-warning-subtle': fromExample }"
     :data-id="`hilos-daemon-env-mismatch-cell-${row.rowKey}-${nodeId}`"
     :data-kind="view.kind"
   >

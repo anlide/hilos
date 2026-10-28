@@ -1,16 +1,20 @@
-// Framework headless tables for the cluster environment verdict. The page
+// Framework headless table for the cluster environment verdict. The page
 // supplies its node list; rows come from the page worker's picture mirror.
 
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readBoolean, readString } from '../../state/fieldReaders.js'
+import {
+  readBoolean,
+  readNumber,
+  readString,
+} from '../../state/fieldReaders.js'
 import { HIDDEN_VALUE, isHiddenValue } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumn } from '../../table/hilosTableColumn.js'
+import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import {
@@ -20,9 +24,17 @@ import {
   type HilosDaemonEnvValueView,
 } from './hilosDaemonEnv.js'
 
-const DAEMON_ENV_DIVERGED_TABLE = 'hilosDaemonEnvDiverged'
-const DAEMON_ENV_SOURCES_DIFFER_TABLE = 'hilosDaemonEnvSourcesDiffer'
+const DAEMON_ENV_MISMATCH_TABLE = 'hilosDaemonEnvMismatch'
 const DAEMON_ENV_MISMATCH_SLOT = 'key'
+
+/** Row payload key of the server's verdict bucket. */
+const DAEMON_ENV_MISMATCH_KIND_FIELD = 'kind'
+/** Row payload key of the zero-based place in the complete verdict set. */
+const DAEMON_ENV_MISMATCH_POSITION_FIELD = 'position'
+/** Values or declarations differ across answering nodes. */
+export const DAEMON_ENV_MISMATCH_DIVERGED = 'diverged'
+/** Values agree but their sources differ across answering nodes. */
+export const DAEMON_ENV_MISMATCH_SOURCES_DIFFER = 'sourcesDiffer'
 
 /** Row payload key of the compared environment key. */
 export const DAEMON_ENV_MISMATCH_KEY_FIELD = 'key'
@@ -94,7 +106,7 @@ const cellsSchema = z.array(
   }),
 )
 
-/** A node the page names as one column of each verdict table. */
+/** A node the page names as one column of the verdict table. */
 export interface HilosDaemonEnvMismatchNode {
   readonly nodeId: string
   readonly serving: boolean
@@ -120,7 +132,7 @@ export function daemonEnvMismatchNodes(
 export type HilosDaemonEnvMismatchEmptyState = 'alone' | 'agree'
 
 /**
- * Determine the empty-state message for the diverged keys table.
+ * Determine the empty-state message for the combined keys table.
  *
  * @param comparison Active comparison cluster summary.
  */
@@ -146,21 +158,28 @@ export interface HilosDaemonEnvMismatchCell {
 export interface HilosDaemonEnvMismatchRow {
   readonly rowKey: string
   readonly key: string
+  readonly kind:
+    | typeof DAEMON_ENV_MISMATCH_DIVERGED
+    | typeof DAEMON_ENV_MISMATCH_SOURCES_DIFFER
+  readonly position: number
   readonly sensitive: boolean
   readonly value: HilosDaemonEnvValue | null
   readonly cells: readonly HilosDaemonEnvMismatchCell[]
 }
 
-/** Connection and page scope used by both verdict tables. */
+/** Column addresses include virtual node cells without extending the row payload. */
+type HilosDaemonEnvMismatchColumnRow = HilosDaemonEnvMismatchRow &
+  Partial<Record<`node:${string}`, HilosDaemonEnvMismatchCell>>
+
+/** Connection and page scope used by the combined verdict table. */
 export interface HilosDaemonEnvMismatchContext {
   readonly connection: HilosConnection
   readonly scopes: ScopeManager
 }
 
-/** The two table controllers and their shared view mount lifecycle. */
-export interface HilosDaemonEnvMismatchTables {
-  readonly diverged: TableViewportController<HilosDaemonEnvMismatchRow>
-  readonly sourcesDiffer: TableViewportController<HilosDaemonEnvMismatchRow>
+/** The combined table controller and its view mount lifecycle. */
+export interface HilosDaemonEnvMismatchTable {
+  readonly controller: TableViewportController<HilosDaemonEnvMismatchRow>
   start(): void
   dispose(): void
 }
@@ -213,6 +232,12 @@ export function resolveHilosDaemonEnvMismatchRow(
   return {
     rowKey: String(row.rowKey),
     key: readString(slot, DAEMON_ENV_MISMATCH_KEY_FIELD),
+    kind:
+      slot[DAEMON_ENV_MISMATCH_KIND_FIELD] ===
+      DAEMON_ENV_MISMATCH_SOURCES_DIFFER
+        ? DAEMON_ENV_MISMATCH_SOURCES_DIFFER
+        : DAEMON_ENV_MISMATCH_DIVERGED,
+    position: readNumber(slot, DAEMON_ENV_MISMATCH_POSITION_FIELD),
     sensitive: readBoolean(slot, DAEMON_ENV_MISMATCH_SENSITIVE_FIELD),
     value:
       rawValue === null
@@ -232,63 +257,57 @@ export function resolveHilosDaemonEnvMismatchRow(
 }
 
 /**
- * Build both unfiltered viewports for the cluster environment verdict.
+ * Build the combined unfiltered viewport for the cluster environment verdict.
  *
  * @param context Connection and page scope.
  * @param nodes Current nodes in page order, including the serving node.
  */
-export function createHilosDaemonEnvMismatchTables(
+export function createHilosDaemonEnvMismatchTable(
   context: HilosDaemonEnvMismatchContext,
   nodes: ReadonlySignal<readonly HilosDaemonEnvMismatchNode[]>,
-): HilosDaemonEnvMismatchTables {
-  const columns = (): HilosTableColumn[] => [
+): HilosDaemonEnvMismatchTable {
+  const columns = (): HilosTableColumnOf<HilosDaemonEnvMismatchColumnRow>[] => [
     {
       key: DAEMON_ENV_MISMATCH_KEY_FIELD,
       label: 'Key',
       card: 'title',
-      reads: [DAEMON_ENV_MISMATCH_SENSITIVE_FIELD],
+      reads: [
+        DAEMON_ENV_MISMATCH_SENSITIVE_FIELD,
+        DAEMON_ENV_MISMATCH_KIND_FIELD,
+      ],
     },
-    ...nodes.get().map((node): HilosTableColumn => ({
-      key: daemonEnvMismatchNodeColumnKey(node.nodeId),
-      label: formatDaemonEnvMismatchNodeLabel(node),
-      reads: [DAEMON_ENV_MISMATCH_CELLS_FIELD, DAEMON_ENV_MISMATCH_VALUE_FIELD],
-    })),
+    ...nodes
+      .get()
+      .map((node): HilosTableColumnOf<HilosDaemonEnvMismatchColumnRow> => ({
+        key: daemonEnvMismatchNodeColumnKey(node.nodeId),
+        label: formatDaemonEnvMismatchNodeLabel(node),
+        reads: [
+          DAEMON_ENV_MISMATCH_CELLS_FIELD,
+          DAEMON_ENV_MISMATCH_VALUE_FIELD,
+          DAEMON_ENV_MISMATCH_KIND_FIELD,
+        ],
+      })),
   ]
-  const makeController = (
-    tableKey: string,
-    title: string,
-  ): TableViewportController<HilosDaemonEnvMismatchRow> => {
-    const frame: HilosTableFrame = { title, columns }
-    return new TableViewportController<HilosDaemonEnvMismatchRow>({
-      resolve: resolveHilosDaemonEnvMismatchRow,
-      sendViewport: (descriptor) =>
-        context.connection.sendTableViewport(
-          HilosPages.DAEMON_ENV_MISMATCH,
-          tableKey,
-          descriptor,
-        ),
-      sendRendered: (rendered) =>
-        context.connection.sendTableRendered(
-          HilosPages.DAEMON_ENV_MISMATCH,
-          tableKey,
-          rendered,
-        ),
-      frame,
-    })
-  }
-  const diverged = makeController(
-    DAEMON_ENV_DIVERGED_TABLE,
-    'Keys the nodes disagree on',
-  )
-  const sourcesDiffer = makeController(
-    DAEMON_ENV_SOURCES_DIFFER_TABLE,
-    'Values match, sources differ',
-  )
+  const frame: HilosTableFrame = { columns }
+  const controller = new TableViewportController<HilosDaemonEnvMismatchRow>({
+    resolve: resolveHilosDaemonEnvMismatchRow,
+    sendViewport: (descriptor) =>
+      context.connection.sendTableViewport(
+        HilosPages.DAEMON_ENV_MISMATCH,
+        DAEMON_ENV_MISMATCH_TABLE,
+        descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.DAEMON_ENV_MISMATCH,
+        DAEMON_ENV_MISMATCH_TABLE,
+        rendered,
+      ),
+    frame,
+  })
   const teardown: Array<() => void> = []
-
   return {
-    diverged,
-    sourcesDiffer,
+    controller,
     start() {
       teardown.push(
         bindTableViewport(
@@ -296,31 +315,22 @@ export function createHilosDaemonEnvMismatchTables(
           context.scopes,
           {
             page: HilosPages.DAEMON_ENV_MISMATCH,
-            tableKey: DAEMON_ENV_DIVERGED_TABLE,
+            tableKey: DAEMON_ENV_MISMATCH_TABLE,
           },
-          diverged,
-        ),
-        bindTableViewport(
-          context.connection,
-          context.scopes,
-          {
-            page: HilosPages.DAEMON_ENV_MISMATCH,
-            tableKey: DAEMON_ENV_SOURCES_DIFFER_TABLE,
-          },
-          sourcesDiffer,
+          controller,
         ),
       )
     },
     dispose() {
-      for (const off of teardown.splice(0)) {
-        off()
-      }
+      for (const off of teardown.splice(0)) off()
     },
   }
 }
 
 /** @param nodeId Id of a node named by the page. */
-export function daemonEnvMismatchNodeColumnKey(nodeId: string): string {
+export function daemonEnvMismatchNodeColumnKey(
+  nodeId: string,
+): `node:${string}` {
   return `node:${nodeId}`
 }
 
@@ -384,13 +394,11 @@ export function daemonEnvMismatchTypesDiffer(
  * @param row Compared key.
  * @param nodeId Node named by the column.
  * @param servingNodeId Node whose local value the row may carry.
- * @param valuesMatch Whether this is the equal-values, different-sources table.
  */
 export function daemonEnvMismatchCellView(
   row: HilosDaemonEnvMismatchRow,
   nodeId: string,
   servingNodeId: string | null,
-  valuesMatch: boolean,
 ): HilosDaemonEnvMismatchCellView {
   const cell = daemonEnvMismatchCellOf(row, nodeId)
   if (cell === null || cell.state === DAEMON_ENV_CELL_UNKNOWN) {
@@ -403,7 +411,11 @@ export function daemonEnvMismatchCellView(
   if (source === 'missing') {
     return { kind: 'none', text: '—', source }
   }
-  if (row.value !== null && (nodeId === servingNodeId || valuesMatch)) {
+  if (
+    row.value !== null &&
+    (nodeId === servingNodeId ||
+      row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER)
+  ) {
     return {
       kind: 'value',
       view: formatDaemonEnvValue(row.value, cell.type ?? 'string', false),

@@ -13,6 +13,8 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -23,7 +25,6 @@ use Hilos\DaemonSection\DaemonPictureRowChanges;
 use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\ClusterEnvironmentCellState;
 use Hilos\DaemonSection\ClusterEnvironmentComparison;
-use Hilos\DaemonSection\ClusterEnvironmentKeyComparison;
 use Hilos\DaemonSection\NodeEnvironmentReading;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
@@ -33,16 +34,21 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
- * Rows are verdict buckets from the page worker's picture mirror; the page has no separate verdict.
+ * Rows are the combined verdict set from the page worker's picture mirror; the page has no separate verdict.
  * Labels come from the collector, never a node hash. The only value comes from the serving
  * page agent's process, never for a sensitive key and hidden from a viewer unless its catalog
  * opens it. {@see AbstractHilosDaemonEnvMismatchPage::onPictureChanged()} publishes picture mutations through the shared viewport classifier.
  */
-abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition implements DaemonPictureViewportTable
+final class HilosDaemonEnvMismatchTable extends TableDefinition implements DaemonPictureViewportTable
 {
+    public const string TABLE = 'hilosDaemonEnvMismatch';
+
     private const string ROW_SLOT = 'key';
 
-    /** @return ?TableRowMutationDTO The mirror raises no row source events */
+    /**
+     * @param SourceChange $change Source fact, unused by this mirror-backed table
+     * @return ?TableRowMutationDTO The mirror raises no row source events
+     */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
@@ -84,6 +90,8 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
         return [
             HilosDaemonEnvMismatchTableRow::rowKey => WireField::notPersonal(),
             HilosDaemonEnvMismatchTableRow::key => WireField::notPersonal(),
+            HilosDaemonEnvMismatchTableRow::kind => WireField::notPersonal(),
+            HilosDaemonEnvMismatchTableRow::position => WireField::notPersonal(),
             HilosDaemonEnvMismatchTableRow::sensitive => WireField::notPersonal(),
             HilosDaemonEnvMismatchTableRow::value => WireField::notPersonal(),
             HilosDaemonEnvMismatchTableRow::cells => WireField::each([
@@ -97,9 +105,9 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
     }
 
     /**
-     * @param string|int $rowKey Key in this verdict bucket
+     * @param string|int $rowKey Key in the combined verdict set
      * @param TableQueryDTO $query Viewer and search scope
-     * @return ?bool Bucket membership, unknown before the first picture
+     * @return ?bool Combined set membership, unknown before the first picture
      * @throws EnvException When the process catalog or value cannot be read
      * @throws ClusterException When the serving node cannot be identified
      * @throws InvalidArgumentException When the picture comparison is invalid
@@ -114,24 +122,26 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
     }
 
     /**
-     * @param list<ClusterEnvironmentKeyComparison> $keys One verdict bucket in catalog order
+     * @param ClusterEnvironmentComparison $comparison Complete verdict in catalog order
      * @param string $servingNodeId Node running the page agent
      * @param EnvAccessor $env That process's environment
      * @param bool $viewer Whether the window belongs to an admin view-mode viewer
      * @return list<array<string, mixed>> Rows ready for the window
      * @throws EnvException When the process catalog or value cannot be read
      */
-    public static function rowsOf(array $keys, string $servingNodeId, EnvAccessor $env, bool $viewer): array
+    public static function rowsOf(ClusterEnvironmentComparison $comparison, string $servingNodeId, EnvAccessor $env, bool $viewer): array
     {
         $catalog = array_fill_keys($env->catalogKeys(), true);
         $rows = [];
-        foreach ($keys as $comparison) {
-            $key = $comparison->key;
+        $keys = [...$comparison->diverged, ...$comparison->sourcesDiffer];
+        $divergedCount = count($comparison->diverged);
+        foreach ($keys as $position => $comparedKey) {
+            $key = $comparedKey->key;
             $declared = isset($catalog[$key]);
             $sensitive = $declared && $env->sensitiveFor($key);
             $servingKnown = false;
             $cells = [];
-            foreach ($comparison->cells as $cell) {
+            foreach ($comparedKey->cells as $cell) {
                 $fingerprint = $cell->fingerprint;
                 $cells[] = [
                     HilosDaemonEnvMismatchTableRow::CELL_NODE_ID => $cell->nodeId,
@@ -156,6 +166,9 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
             $rows[] = [
                 HilosDaemonEnvMismatchTableRow::rowKey => $key,
                 HilosDaemonEnvMismatchTableRow::key => $key,
+                HilosDaemonEnvMismatchTableRow::kind => $position < $divergedCount
+                    ? HilosDaemonEnvMismatchTableRow::KIND_DIVERGED : HilosDaemonEnvMismatchTableRow::KIND_SOURCES_DIFFER,
+                HilosDaemonEnvMismatchTableRow::position => $position,
                 HilosDaemonEnvMismatchTableRow::sensitive => $sensitive,
                 HilosDaemonEnvMismatchTableRow::value => $value,
                 HilosDaemonEnvMismatchTableRow::cells => $cells,
@@ -165,11 +178,11 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
         return $rows;
     }
 
-    /**
-     * @param ClusterEnvironmentComparison $comparison Current picture verdict
-     * @return list<ClusterEnvironmentKeyComparison> This table's bucket
-     */
-    abstract protected function keysOf(ClusterEnvironmentComparison $comparison): array;
+    /** @return TableSortOrderDTO Combined verdict order, before pagination */
+    public function defaultSort(): TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosDaemonEnvMismatchTableRow::position));
+    }
 
     /**
      * An unknown mirror cannot pay a window's debt with a fabricated empty set.
@@ -200,10 +213,16 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
         $this->setRowClass(HilosDaemonEnvMismatchTableRow::class);
     }
 
+    /** @return array<string, string> Technical verdict position used for movement classification */
+    protected function sortableFields(): array
+    {
+        return [HilosDaemonEnvMismatchTableRow::position => HilosDaemonEnvMismatchTableRow::position];
+    }
+
     /**
      * @param ?ClusterDaemonPicture $picture Immutable source picture
      * @param TableQueryDTO $query Viewer scope
-     * @return list<array<string, mixed>> Rows from the appropriate verdict bucket
+     * @return list<array<string, mixed>> Rows in combined verdict order
      * @throws EnvException When the process catalog or value cannot be read
      * @throws ClusterException When the serving node cannot be identified
      * @throws InvalidArgumentException When the picture comparison is invalid
@@ -217,6 +236,6 @@ abstract class AbstractHilosDaemonEnvMismatchTable extends TableDefinition imple
 
         $serving = Hilos::$cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
 
-        return self::rowsOf($this->keysOf($comparison), $serving, Hilos::$env, $query->shownFields !== null);
+        return self::rowsOf($comparison, $serving, Hilos::$env, $query->shownFields !== null);
     }
 }

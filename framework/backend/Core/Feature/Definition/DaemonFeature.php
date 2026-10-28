@@ -21,10 +21,9 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -66,8 +65,7 @@ final class DaemonFeature extends FeatureDefinition
                 HilosDaemonEnvKeysTable::class,
                 HilosDaemonEnvOrphansTable::class,
                 HilosDaemonAgentsTable::class,
-                HilosDaemonEnvDivergedTable::class,
-                HilosDaemonEnvSourcesDifferTable::class,
+                HilosDaemonEnvMismatchTable::class,
                 HilosDaemonHttpRoutesTable::class,
                 HilosDaemonPlacementTable::class,
             ],
@@ -78,8 +76,7 @@ final class DaemonFeature extends FeatureDefinition
                 AbstractHilosDaemonEnvOrphansPage::class => HilosDaemonEnvOrphansTable::class,
                 AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
                 AbstractHilosDaemonEnvMismatchPage::class => [
-                    HilosDaemonEnvDivergedTable::class,
-                    HilosDaemonEnvSourcesDifferTable::class,
+                    HilosDaemonEnvMismatchTable::class,
                 ],
                 AbstractHilosDaemonHttpServerPage::class => HilosDaemonHttpRoutesTable::class,
                 AbstractHilosDaemonPlacementPage::class => HilosDaemonPlacementTable::class,

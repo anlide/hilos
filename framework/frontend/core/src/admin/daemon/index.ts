@@ -215,7 +215,7 @@ export {
 } from './hilosDaemonEnv.js'
 export {
   resolveHilosDaemonEnvMismatchRow,
-  createHilosDaemonEnvMismatchTables,
+  createHilosDaemonEnvMismatchTable,
   daemonEnvMismatchNodeColumnKey,
   formatDaemonEnvMismatchNodeLabel,
   daemonEnvMismatchCellOf,
@@ -229,6 +229,8 @@ export {
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchSummarySchema,
   DAEMON_ENV_MISMATCH_DATA,
+  DAEMON_ENV_MISMATCH_DIVERGED,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   DAEMON_ENV_MISMATCH_SENSITIVE_FIELD,
   DAEMON_ENV_MISMATCH_VALUE_FIELD,
@@ -240,7 +242,7 @@ export {
   type HilosDaemonEnvMismatchCell,
   type HilosDaemonEnvMismatchRow,
   type HilosDaemonEnvMismatchContext,
-  type HilosDaemonEnvMismatchTables,
+  type HilosDaemonEnvMismatchTable,
   type HilosDaemonEnvMismatchCellView,
   type HilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchEmptyState,

@@ -3,6 +3,7 @@ import {
   daemonEnvMismatchCellView,
   daemonEnvMismatchFromExample,
   daemonEnvMismatchStandsOut,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   type HilosDaemonEnvMismatchRow,
 } from '@hilos/core/admin/daemon'
 import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
@@ -13,24 +14,21 @@ export function HilosDaemonEnvMismatchCell({
   row,
   nodeId,
   servingNodeId,
-  valuesMatch,
 }: {
   row: HilosDaemonEnvMismatchRow
   nodeId: string
   servingNodeId: string | null
-  valuesMatch: boolean
 }) {
-  const view = daemonEnvMismatchCellView(
-    row,
-    nodeId,
-    servingNodeId,
-    valuesMatch,
-  )
-  const standsOut = !valuesMatch && daemonEnvMismatchStandsOut(row, nodeId)
-  const fromExample = valuesMatch && daemonEnvMismatchFromExample(row, nodeId)
+  const view = daemonEnvMismatchCellView(row, nodeId, servingNodeId)
+  const standsOut =
+    row.kind !== DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
+    daemonEnvMismatchStandsOut(row, nodeId)
+  const fromExample =
+    row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER &&
+    daemonEnvMismatchFromExample(row, nodeId)
   return (
     <div
-      className="d-flex flex-column gap-1"
+      className={`d-flex flex-column gap-1 ${fromExample ? 'bg-warning-subtle' : ''}`}
       data-id={`hilos-daemon-env-mismatch-cell-${row.rowKey}-${nodeId}`}
       data-kind={view.kind}
     >

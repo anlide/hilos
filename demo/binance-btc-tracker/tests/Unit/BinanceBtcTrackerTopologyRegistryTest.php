@@ -184,8 +184,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -1173,8 +1172,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvKeys]);
         self::assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans]);
         $this->assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonAgents]);
-        $this->assertSame(HilosDaemonEnvDivergedTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvDiverged]);
-        $this->assertSame(HilosDaemonEnvSourcesDifferTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvSourcesDiffer]);
+        $this->assertSame(HilosDaemonEnvMismatchTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvMismatch]);
         $this->assertSame(HilosDaemonHttpRoutesTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonHttpRoutes]);
         self::assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonPlacement]);
         $this->assertSame(
@@ -1202,8 +1200,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
         );
         $this->assertSame([
-            BinanceBtcTrackerTableContext::hilosDaemonEnvDiverged => [],
-            BinanceBtcTrackerTableContext::hilosDaemonEnvSourcesDiffer => [],
+            BinanceBtcTrackerTableContext::hilosDaemonEnvMismatch => [],
         ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonHttpRoutes => []],

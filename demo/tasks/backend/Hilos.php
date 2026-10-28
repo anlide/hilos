@@ -186,8 +186,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -531,8 +530,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         TasksTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         TasksTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
-        TasksTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
-        TasksTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
+        TasksTableContext::hilosDaemonEnvMismatch => HilosDaemonEnvMismatchTable::class,
         TasksTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         TasksTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         TasksTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
@@ -666,8 +664,7 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosDaemonAgents => [],
         ],
         DaemonEnvMismatchPage::PAGE => [
-            TasksTableContext::hilosDaemonEnvDiverged => [],
-            TasksTableContext::hilosDaemonEnvSourcesDiffer => [],
+            TasksTableContext::hilosDaemonEnvMismatch => [],
         ],
         DaemonHttpServerPage::PAGE => [
             TasksTableContext::hilosDaemonHttpRoutes => [],

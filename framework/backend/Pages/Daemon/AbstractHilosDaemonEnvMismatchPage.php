@@ -22,8 +22,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use JsonException;
 
 /** Cluster environment comparison page: own part names nodes and verdict counters; answers on standalone rather than refusing. */
@@ -64,14 +63,12 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     {
         self::publishChangedPage();
         foreach (Hilos::$sr?->getAcceptKeysForPage(self::PAGE) ?? [] as $acceptKey) {
-            foreach ([HilosDaemonEnvDivergedTable::TABLE, HilosDaemonEnvSourcesDifferTable::TABLE] as $tableKey) {
-                Hilos::$browser?->publishTableMutations(
-                    self::PAGE,
-                    $acceptKey,
-                    $tableKey,
-                    static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
-                );
-            }
+            Hilos::$browser?->publishTableMutations(
+                self::PAGE,
+                $acceptKey,
+                HilosDaemonEnvMismatchTable::TABLE,
+                static fn (DaemonPictureViewportTable $table, TableQueryDTO $query): array => $table->pictureMutations($before, $query),
+            );
         }
     }
 

@@ -275,8 +275,8 @@ Table rows travel separately through `BrowserContext::publishTableMutations()`
 and the existing viewer-scoped table classifier. When the daemon agent handles
 one `DAEMON_CLUSTER_PICTURE_PORTION`, it captures the immutable mirror before
 the portion, applies the portion, then runs the page publishers in that same
-worker callback. Its seven mirror-backed viewport tables — Placement, Workers,
-Agents, Cron, HTTP routes, Env diverged and Env sources differ — implement
+worker callback. Its six mirror-backed viewport tables — Placement, Workers,
+Agents, Cron, HTTP routes and Env mismatch — implement
 `DaemonPictureViewportTable::pictureMutations()`. They compare typed complete
 subject projections with `DaemonPictureRowChanges::between()`; this is a subject
 diff, not a diff of the currently paginated window. The normal classifier turns
@@ -352,28 +352,39 @@ from different sources, and `per_node` keys, which differ by design. Each key
 has a `known`, `unknown` or `undeclared` cell for every node; a silent node is
 unknown, while a missing declaration on an answering node is a discrepancy.
 
-The Env mismatch page holds two tables, `hilosDaemonEnvDiverged` and
-`hilosDaemonEnvSourcesDiffer`, built by the page agent from that comparison:
-per node a label, a type and a source. The one value they carry is the serving
-node's own, read in the page agent's process as the environment page reads its
-node's: never for a `sensitive` key, hidden for a view-mode viewer unless the
-catalog opens it. Their rows use the same complete-subject mutation path above,
-under the viewer's held viewport and its existing privacy verdicts. The page's
-own part, `envMismatch`, names the cluster mode, the serving node and, once a
-picture exists, the picture's nodes, the answering ones, the count of each
-bucket and the `per_node` keys. With no page-wide debt, a changed summary is a
-data-only `page_response`; it does not resend either table window. A page owed
-whole follows the complete-answer recovery path.
+The Env mismatch page holds one final `HilosDaemonEnvMismatchTable`, keyed
+`hilosDaemonEnvMismatch`, built by the page agent from the existing picture
+mirror's comparison. The server combines `diverged`, then `sourcesDiffer`,
+before pagination. Each row carries an explicit `kind` and a computed
+nonnegative `position`; the default order is `position ASC`. The row key remains
+the environment key across kind changes, and the count covers the combined set.
+The browser preserves server order; no DB, RT state or cache is added.
 
-Before the mirror has a picture, `AbstractHilosDaemonEnvMismatchTable::query()`
+Each row carries per node a label, a type and a source. Its only value is the
+serving node's own, read in the page agent's process as the environment page
+reads its node's: never for a `sensitive` key, with the existing hidden marker
+for a view-mode viewer unless the catalog opens it. Rows use the same
+complete-subject mutation path above, under the viewer's held viewport and its
+existing privacy verdicts. A change that keeps the row's place uses native
+`row_updated`; kind/position changes that move it and departures follow the
+existing viewport's pending/Apply path.
+
+The page's own part, `envMismatch`, still names the cluster mode, the serving
+node and, once a picture exists, the picture's nodes, the answering ones, the
+count of each bucket and the `per_node` keys. With no page-wide debt, a changed
+summary is a data-only `page_response`; it does not resend the table window.
+A page owed whole follows the complete-answer recovery path.
+
+Before the mirror has a picture, `HilosDaemonEnvMismatchTable::query()`
 refuses with the existing `HilosException`. That state is unknown, not a
-known-empty set, so the page records the refused windows as owed. A later known
-picture lets the ordinary recovery send authoritative rows and totals for both
-tables; a genuinely empty bucket then returns its known zero. This null-mirror
-refusal belongs to these Env mismatch tables and does not describe every other
-Daemon table's source semantics. Window debt and its recovery follow
+known-empty set, so the page records the refused window as owed. A later known
+picture lets ordinary recovery send authoritative rows and the combined total
+for the table without a new subscribe; a genuinely empty set returns its known
+zero. This null-mirror refusal belongs to the Env mismatch table and does not
+describe every other Daemon table's source semantics. Window debt and its
+recovery follow
 [Coming Back Without A Reload](browser-source-fanout.md#coming-back-without-a-reload).
-See [`AbstractHilosDaemonEnvMismatchTable`](../../../framework/backend/Tables/Daemon/AbstractHilosDaemonEnvMismatchTable.php).
+See [`HilosDaemonEnvMismatchTable`](../../../framework/backend/Tables/Daemon/HilosDaemonEnvMismatchTable.php).
 
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.

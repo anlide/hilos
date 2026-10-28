@@ -10,6 +10,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
@@ -17,6 +18,7 @@ use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\ClusterEnvironmentCell;
 use Hilos\DaemonSection\ClusterEnvironmentCellState;
 use Hilos\DaemonSection\ClusterEnvironmentKeyComparison;
+use Hilos\DaemonSection\ClusterEnvironmentComparison;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentFingerprint;
@@ -26,12 +28,11 @@ use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\EnvSource;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTableRow;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use PHPUnit\Framework\TestCase;
 
-/** Both comparison tables project the same value-free verdict with only eligible local values. */
+/** The combined comparison table projects the same value-free verdict with only eligible local values. */
 final class HilosDaemonEnvMismatchTablesTest extends TestCase
 {
     private const string TEXT = 'HILOS_MISMATCH_TEST_TEXT';
@@ -72,22 +73,26 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
             $first, $this->node('b', true, [$this->fingerprint(self::TEXT, EnvSource::ENV_FILE, 'aaaaaaaaaaaaaaaa')]),
         ]));
         $query = new TableQueryDTO(limit: 1, pageIndex: 10, shownFields: []);
-        $departed = new HilosDaemonEnvDivergedTable()->pictureMutations($before, $query);
-        $arrived = new HilosDaemonEnvSourcesDifferTable()->pictureMutations($before, $query);
-        self::assertCount(1, $departed);
-        self::assertSame('delete', $departed[0]->type->value);
-        self::assertSame(self::TEXT, $departed[0]->rowKey);
-        self::assertCount(1, $arrived);
-        self::assertSame('create', $arrived[0]->type->value);
-        self::assertSame(self::TEXT, $arrived[0]->rowKey);
-        self::assertNull($arrived[0]->row->toArray()['value']);
-        self::assertStringNotContainsString('local-value', json_encode($arrived[0]->toArray(), JSON_THROW_ON_ERROR));
-        self::assertSame([], new HilosDaemonEnvSourcesDifferTable()->pictureMutations(ClusterDaemonPictureMirror::picture(), $query));
+        $mutations = new HilosDaemonEnvMismatchTable()->pictureMutations($before, $query);
+        self::assertCount(1, $mutations);
+        self::assertSame('update', $mutations[0]->type->value);
+        self::assertSame(self::TEXT, $mutations[0]->rowKey);
+        self::assertSame('sourcesDiffer', $mutations[0]->row->toArray()['kind']);
+        self::assertSame(0, $mutations[0]->row->toArray()['position']);
+        self::assertNull($mutations[0]->row->toArray()['value']);
+        self::assertStringNotContainsString('local-value', json_encode($mutations[0]->toArray(), JSON_THROW_ON_ERROR));
+        self::assertSame([], new HilosDaemonEnvMismatchTable()->pictureMutations(ClusterDaemonPictureMirror::picture(), $query));
+        $before = ClusterDaemonPictureMirror::picture();
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, []));
+        $deleted = new HilosDaemonEnvMismatchTable()->pictureMutations($before, $query);
+        self::assertCount(1, $deleted);
+        self::assertSame('delete', $deleted[0]->type->value);
+        self::assertSame(self::TEXT, $deleted[0]->rowKey);
     }
 
     public function testUnknownMirrorRefusesWindowsAndUnsupportedSearch(): void
     {
-        foreach ([new HilosDaemonEnvDivergedTable(), new HilosDaemonEnvSourcesDifferTable()] as $table) {
+        foreach ([new HilosDaemonEnvMismatchTable()] as $table) {
             try {
                 $table->getPage(new TableQueryDTO());
                 self::fail('An unknown comparison answered with an empty window');
@@ -95,7 +100,7 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
                 self::assertSame('Environment comparison has no source picture yet', $failure->getMessage());
             }
             self::assertNull($table->containsRow(self::TEXT, new TableQueryDTO()));
-            self::assertNull($table->defaultSort());
+            self::assertSame([['field' => 'position', 'direction' => 'asc']], $table->defaultSort()->toArray());
             self::assertSame(25, $table->windowSize());
             try {
                 $table->getPage(new TableQueryDTO(search: self::TEXT));
@@ -109,7 +114,7 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
     public function testKnownEmptyPictureHasAuthoritativeEmptyBuckets(): void
     {
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, []));
-        foreach ([new HilosDaemonEnvDivergedTable(), new HilosDaemonEnvSourcesDifferTable()] as $table) {
+        foreach ([new HilosDaemonEnvMismatchTable()] as $table) {
             self::assertSame([], $table->getPage(new TableQueryDTO())->rows);
             self::assertSame(0, $table->getPage(new TableQueryDTO())->totalCount);
             self::assertTrue($table->getPage(new TableQueryDTO())->totalExact);
@@ -136,8 +141,11 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
             ]),
         ]));
 
-        $diverged = $this->rows(new HilosDaemonEnvDivergedTable());
-        $sources = $this->rows(new HilosDaemonEnvSourcesDifferTable());
+        $rows = $this->rows(new HilosDaemonEnvMismatchTable());
+        self::assertSame(['diverged', 'diverged', 'diverged', 'sourcesDiffer'], array_column($rows, 'kind'));
+        self::assertSame([0, 1, 2, 3], array_column($rows, 'position'));
+        $diverged = array_slice($rows, 0, 3);
+        $sources = array_slice($rows, 3);
         self::assertSame([self::TEXT, self::SECRET, self::MISSING], array_map(
             static fn (HilosDaemonEnvMismatchTableRow $row): string => $row->key,
             $diverged,
@@ -159,6 +167,71 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
         self::assertSame('example', $sources[0]->cells[1]['source']);
     }
 
+    public function testPagingCrossesTheCombinedBucketBoundaryBeforeSlicing(): void
+    {
+        $first = [];
+        $second = [];
+        for ($index = 0; $index < 30; $index++) {
+            $key = 'KEY_' . $index;
+            $first[] = $this->fingerprint($key, EnvSource::PROCESS, 'a');
+            $second[] = $this->fingerprint($key, $index < 23 ? EnvSource::PROCESS : EnvSource::EXAMPLE, $index < 23 ? 'b' : 'a');
+        }
+        $first[] = $this->fingerprint('MATCHED', EnvSource::PROCESS, 'same');
+        $second[] = $this->fingerprint('MATCHED', EnvSource::PROCESS, 'same');
+        $first[] = $this->fingerprint('PER_NODE', EnvSource::PROCESS, 'a', true);
+        $second[] = $this->fingerprint('PER_NODE', EnvSource::PROCESS, 'b', true);
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
+            $this->node('a', true, $first), $this->node('b', true, $second),
+        ]));
+        $table = new HilosDaemonEnvMismatchTable();
+        $sort = $table->defaultSort();
+        $window = $table->getPage(new TableQueryDTO(sort: $sort, limit: 25));
+        self::assertSame(30, $window->totalCount);
+        self::assertCount(25, $window->rows);
+        self::assertSame(range(0, 24), array_column($window->rows, 'position'));
+        self::assertSame('diverged', $window->rows[22]->kind);
+        self::assertSame('sourcesDiffer', $window->rows[23]->kind);
+        self::assertSame(['position' => 24, 'rowKey' => 'KEY_24'], $window->lastAnchor->toArray());
+        $tail = $table->getPage(new TableQueryDTO(sort: $sort, limit: 25, anchor: $window->lastAnchor));
+        self::assertSame(range(25, 29), array_column($tail->rows, 'position'));
+        self::assertSame(25, $tail->rowsBefore);
+        self::assertSame(30, $tail->totalCount);
+        self::assertSame('KEY_25', $tail->rows[0]->rowKey);
+        self::assertTrue($table->containsRow('KEY_29', new TableQueryDTO()));
+        self::assertFalse($table->containsRow('MATCHED', new TableQueryDTO()));
+        self::assertFalse($table->containsRow('PER_NODE', new TableQueryDTO()));
+        $jump = $table->getPage(new TableQueryDTO(sort: $sort, limit: 25, pageIndex: 1));
+        self::assertSame(array_column($tail->rows, 'rowKey'), array_column($jump->rows, 'rowKey'));
+        self::assertInstanceOf(TableAnchorDTO::class, $tail->firstAnchor);
+    }
+
+    public function testSourcesOnlySetHasItsOwnCountAndZeroBasedPositions(): void
+    {
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, [
+            $this->node('a', true, [$this->fingerprint(self::TEXT, EnvSource::PROCESS, 'a')]),
+            $this->node('b', true, [$this->fingerprint(self::TEXT, EnvSource::EXAMPLE, 'a')]),
+        ]));
+        $table = new HilosDaemonEnvMismatchTable();
+        $window = $table->getPage(new TableQueryDTO(sort: $table->defaultSort(), limit: 25));
+        self::assertSame(1, $window->totalCount);
+        self::assertSame(['sourcesDiffer'], array_column($window->rows, 'kind'));
+        self::assertSame([0], array_column($window->rows, 'position'));
+    }
+
+    public function testMalformedKindAndPositionAreRejected(): void
+    {
+        foreach ([['kind', 'other'], ['kind', null], ['position', -1], ['position', 1.5], ['position', '1']] as [$field, $value]) {
+            $data = $this->keyRow();
+            $data[$field] = $value;
+            try {
+                HilosDaemonEnvMismatchTableRow::fromArray($data);
+                self::fail('A malformed verdict kind or position was accepted');
+            } catch (InvalidFormatException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function testOwnValueDependsOnServingCellCatalogAndViewer(): void
     {
         $keys = [
@@ -172,7 +245,7 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
         $env = Hilos::$env;
         self::assertInstanceOf(EnvAccessor::class, $env);
 
-        $admin = HilosDaemonEnvDivergedTable::rowsOf($keys, 'a', $env, false);
+        $admin = HilosDaemonEnvMismatchTable::rowsOf(new ClusterEnvironmentComparison(['a'], ['a'], $keys, [], []), 'a', $env, false);
         self::assertSame(['kind' => 'text', 'text' => 'local-value'], $admin[0]['value']);
         self::assertTrue($admin[1]['sensitive']);
         self::assertNull($admin[1]['value']);
@@ -181,15 +254,15 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
         self::assertFalse($admin[5]['sensitive']);
         self::assertNull($admin[5]['value']);
 
-        $viewer = HilosDaemonEnvSourcesDifferTable::rowsOf($keys, 'a', $env, true);
+        $viewer = HilosDaemonEnvMismatchTable::rowsOf(new ClusterEnvironmentComparison(['a'], ['a'], $keys, [], []), 'a', $env, true);
         self::assertSame(HiddenValue::mark(), $viewer[0]['value']);
         self::assertSame(['kind' => 'text', 'text' => 'visible-value'], $viewer[2]['value']);
     }
 
     public function testWireFieldsAndRowRoundTripCoverEveryCellField(): void
     {
-        $table = new HilosDaemonEnvDivergedTable();
-        $row = new HilosDaemonEnvMismatchTableRow(self::TEXT, self::TEXT, false, ['kind' => 'text', 'text' => 'v'], [
+        $table = new HilosDaemonEnvMismatchTable();
+        $row = new HilosDaemonEnvMismatchTableRow(self::TEXT, self::TEXT, 'diverged', 0, false, ['kind' => 'text', 'text' => 'v'], [
             ['nodeId' => 'a', 'state' => 'known', 'type' => 'string', 'source' => 'process', 'digest' => 'abcd'],
         ]);
         self::assertSame(array_keys($row->toArray()), array_keys($table->wireFields()));
@@ -217,13 +290,13 @@ final class HilosDaemonEnvMismatchTablesTest extends TestCase
     /** @return array<string, mixed> Valid wire row */
     private function keyRow(): array
     {
-        return (new HilosDaemonEnvMismatchTableRow(self::TEXT, self::TEXT, false, null, [
+        return (new HilosDaemonEnvMismatchTableRow(self::TEXT, self::TEXT, 'diverged', 0, false, null, [
             ['nodeId' => 'a', 'state' => 'known', 'type' => 'string', 'source' => 'process', 'digest' => 'abcd'],
         ]))->toArray();
     }
 
     /** @return list<HilosDaemonEnvMismatchTableRow> First window rows */
-    private function rows(HilosDaemonEnvDivergedTable|HilosDaemonEnvSourcesDifferTable $table): array
+    private function rows(HilosDaemonEnvMismatchTable $table): array
     {
         /** @var list<HilosDaemonEnvMismatchTableRow> $rows */
         $rows = $table->getPage(new TableQueryDTO())->rows;

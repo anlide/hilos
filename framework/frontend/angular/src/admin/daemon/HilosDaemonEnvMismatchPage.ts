@@ -9,11 +9,12 @@ import {
 } from '@angular/core'
 import { computedSignal, HilosPages, subscribeSignal } from '@hilos/core/base'
 import {
-  createHilosDaemonEnvMismatchTables,
+  createHilosDaemonEnvMismatchTable,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_SENSITIVE_HINT,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
@@ -41,7 +42,7 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
     HilosDaemonEnvMismatchCell,
   ],
   template: `@let summary = this.summary();
-    @let tables = this.tables();
+    @let table = this.table();
     @let nodes = this.nodes();
     @let comparison = this.comparison();
     @let emptyState = this.emptyState();
@@ -190,7 +191,7 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
           </div>
         </div>
 
-        <hilos-viewport-table [controller]="tables.diverged">
+        <hilos-viewport-table [controller]="table.controller">
           <ng-template [hilosTableCell]="DAEMON_ENV_MISMATCH_KEY_FIELD" let-row>
             <code class="fw-semibold">{{ row.key }}</code>
             @if (row.sensitive) {
@@ -203,6 +204,17 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
                 DAEMON_ENV_SENSITIVE_HINT
               }}</span>
             }
+            @if (row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER) {
+              <div>
+                <span
+                  class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  [attr.data-id]="
+                    'hilos-daemon-env-mismatch-sources-differ-' + row.rowKey
+                  "
+                  >Sources differ</span
+                >
+              </div>
+            }
           </ng-template>
           @for (node of nodes; track node.nodeId) {
             <ng-template
@@ -213,7 +225,6 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
                 [row]="row"
                 [nodeId]="node.nodeId"
                 [servingNodeId]="summary.servingNodeId"
-                [valuesMatch]="false"
               ></hilos-daemon-env-mismatch-cell>
             </ng-template>
           }
@@ -234,45 +245,6 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
             }
           </ng-template>
         </hilos-viewport-table>
-
-        @if (comparison.sourcesDiffer > 0) {
-          <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
-            <h2 class="h6 text-uppercase text-body-secondary mb-0">
-              Values match, sources differ
-            </h2>
-          </div>
-          <hilos-viewport-table [controller]="tables.sourcesDiffer">
-            <ng-template
-              [hilosTableCell]="DAEMON_ENV_MISMATCH_KEY_FIELD"
-              let-row
-            >
-              <code class="fw-semibold">{{ row.key }}</code>
-              @if (row.sensitive) {
-                <i
-                  class="bi bi-shield-lock text-body-secondary ms-1"
-                  [title]="DAEMON_ENV_SENSITIVE_HINT"
-                  aria-hidden="true"
-                ></i>
-                <span class="visually-hidden">{{
-                  DAEMON_ENV_SENSITIVE_HINT
-                }}</span>
-              }
-            </ng-template>
-            @for (node of nodes; track node.nodeId) {
-              <ng-template
-                [hilosTableCell]="daemonEnvMismatchNodeColumnKey(node.nodeId)"
-                let-row
-              >
-                <hilos-daemon-env-mismatch-cell
-                  [row]="row"
-                  [nodeId]="node.nodeId"
-                  [servingNodeId]="summary.servingNodeId"
-                  [valuesMatch]="true"
-                ></hilos-daemon-env-mismatch-cell>
-              </ng-template>
-            }
-          </hilos-viewport-table>
-        }
 
         @if (comparison.perNode.length > 0) {
           <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
@@ -301,6 +273,8 @@ export class HilosDaemonEnvMismatchPage {
   readonly context = input.required<HilosDaemonEnvMismatchContext>()
   protected readonly page = HilosPages.DAEMON_ENV_MISMATCH
   protected readonly DAEMON_ENV_SENSITIVE_HINT = DAEMON_ENV_SENSITIVE_HINT
+  protected readonly DAEMON_ENV_MISMATCH_SOURCES_DIFFER =
+    DAEMON_ENV_MISMATCH_SOURCES_DIFFER
   protected readonly DAEMON_ENV_MISMATCH_KEY_FIELD =
     DAEMON_ENV_MISMATCH_KEY_FIELD
   protected readonly daemonEnvMismatchNodeColumnKey =
@@ -311,9 +285,9 @@ export class HilosDaemonEnvMismatchPage {
   private readonly source = computed(() =>
     readHilosDaemonEnvMismatchSummary(this.context().scopes),
   )
-  protected readonly tables = computed(() => {
+  protected readonly table = computed(() => {
     const source = this.source()
-    return createHilosDaemonEnvMismatchTables(
+    return createHilosDaemonEnvMismatchTable(
       this.context(),
       computedSignal(() => daemonEnvMismatchNodes(source.get())),
     )
@@ -331,12 +305,12 @@ export class HilosDaemonEnvMismatchPage {
   constructor() {
     effect((onCleanup) => {
       const source = this.source()
-      const tables = this.tables()
+      const table = this.table()
       let started = false
       const ensureStarted = () => {
         if (!started && source.get()?.clustered === true) {
           started = true
-          tables.start()
+          table.start()
         }
       }
       const stops = [
@@ -346,7 +320,7 @@ export class HilosDaemonEnvMismatchPage {
       ensureStarted()
       onCleanup(() => {
         stops.forEach((stop) => stop())
-        tables.dispose()
+        table.dispose()
       })
     })
   }

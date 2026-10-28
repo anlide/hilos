@@ -1167,7 +1167,15 @@ export async function expectClusterEnvironmentMismatch(
     key,
     remoteNodeId,
     silentNodeId,
-  }: { key: string; remoteNodeId: string; silentNodeId?: string },
+    frames,
+    after = 0,
+  }: {
+    key: string
+    remoteNodeId: string
+    silentNodeId?: string
+    frames?: readonly DaemonMismatchFrame[]
+    after?: number
+  },
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon_env_mismatch')
   await expect(
@@ -1182,6 +1190,53 @@ export async function expectClusterEnvironmentMismatch(
   await expect(remote.locator('code')).toHaveText(/^#[0-9a-f]{4,16}$/)
   await expect(remote).toContainText('Launch environment')
   await expect(shownByTestId(page, `${cellId}-stands-out`)).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(shownByTestId(page, `hilos-table-row-${key}`)).toBeVisible()
+  if (frames !== undefined) {
+    // A cold mirror may initially refuse the window; its ordinary recovery must
+    // deliver the same single table and the real diverged row on this visit.
+    await expect
+      .poll(() => {
+        let rows: unknown[] = []
+        let answered = false
+        for (const frame of frames.slice(after)) {
+          const data = deliveryObject(deliveryObject(frame.wire).data)
+          if (frame.type === 'page_response') {
+            answered = true
+            const windows = deliveryObject(deliveryObject(data.payload).windows)
+            const window = deliveryObject(windows.hilosDaemonEnvMismatch)
+            if (Array.isArray(window.rows)) rows = window.rows
+          } else if (data.tableKey === 'hilosDaemonEnvMismatch') {
+            if (Array.isArray(data.rows)) rows = data.rows
+          }
+        }
+        return {
+          answered,
+          row: rows.find((row) => deliveryObject(row).rowKey === key),
+        }
+      })
+      .toMatchObject({
+        answered: true,
+        row: { rowKey: key, slots: { key: { key, kind: 'diverged' } } },
+      })
+    for (const frame of frames.slice(after)) {
+      const data = deliveryObject(deliveryObject(frame.wire).data)
+      if (frame.type === 'table_window') {
+        expect(data.tableKey).toBe('hilosDaemonEnvMismatch')
+      } else {
+        const payload = deliveryObject(data.payload)
+        for (const field of ['windows', 'refusedWindows']) {
+          const keys = Object.keys(deliveryObject(payload[field]))
+          expect(
+            keys.filter((key) => key !== 'hilosDaemonEnvMismatch'),
+          ).toEqual([])
+        }
+      }
+      expect(frame.raw).not.toContain('hilosDaemonEnvDiverged')
+      expect(frame.raw).not.toContain('hilosDaemonEnvSourcesDiffer')
+    }
+  }
   if (silentNodeId !== undefined) {
     const silent = shownByTestId(
       page,

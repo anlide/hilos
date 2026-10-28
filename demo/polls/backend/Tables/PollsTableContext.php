@@ -30,8 +30,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -70,8 +69,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosDaemonEnvKeysTable $hilosDaemonEnvKeys
  * @property-read HilosDaemonEnvOrphansTable $hilosDaemonEnvOrphans
  * @property-read HilosDaemonAgentsTable $hilosDaemonAgents
- * @property-read HilosDaemonEnvDivergedTable $hilosDaemonEnvDiverged
- * @property-read HilosDaemonEnvSourcesDifferTable $hilosDaemonEnvSourcesDiffer
+ * @property-read HilosDaemonEnvMismatchTable $hilosDaemonEnvMismatch
  * @property-read HilosDaemonHttpRoutesTable $hilosDaemonHttpRoutes
  * @property-read HilosDaemonPlacementTable $hilosDaemonPlacement
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
@@ -116,8 +114,7 @@ final class PollsTableContext extends TableContext
     public const string hilosDaemonEnvKeys = HilosDaemonEnvKeysTable::TABLE;
     public const string hilosDaemonEnvOrphans = HilosDaemonEnvOrphansTable::TABLE;
     public const string hilosDaemonAgents = HilosDaemonAgentsTable::TABLE;
-    public const string hilosDaemonEnvDiverged = HilosDaemonEnvDivergedTable::TABLE;
-    public const string hilosDaemonEnvSourcesDiffer = HilosDaemonEnvSourcesDifferTable::TABLE;
+    public const string hilosDaemonEnvMismatch = HilosDaemonEnvMismatchTable::TABLE;
     public const string hilosDaemonHttpRoutes = HilosDaemonHttpRoutesTable::TABLE;
     public const string hilosDaemonPlacement = HilosDaemonPlacementTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;

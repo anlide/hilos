@@ -13,9 +13,14 @@ final class HilosDaemonEnvMismatchTableRow extends AbstractTableRow
 {
     public const string rowKey = 'rowKey';
     public const string key = 'key';
+    public const string kind = 'kind';
+    public const string position = 'position';
     public const string sensitive = 'sensitive';
     public const string value = 'value';
     public const string cells = 'cells';
+
+    public const string KIND_DIVERGED = 'diverged';
+    public const string KIND_SOURCES_DIFFER = 'sourcesDiffer';
 
     public const string CELL_NODE_ID = 'nodeId';
     public const string CELL_STATE = 'state';
@@ -26,6 +31,8 @@ final class HilosDaemonEnvMismatchTableRow extends AbstractTableRow
     /**
      * @param string $rowKey Compared catalog key
      * @param string $key Compared catalog key
+     * @param string $kind Verdict bucket
+     * @param int $position Zero-based place in the complete verdict set
      * @param bool $sensitive Whether the serving node declares the key sensitive
      * @param ?array<string, mixed> $value Serving node's masked value, if eligible
      * @param list<array<string, mixed>> $cells Per-node comparison cells
@@ -33,6 +40,8 @@ final class HilosDaemonEnvMismatchTableRow extends AbstractTableRow
     public function __construct(
         public string $rowKey,
         public string $key,
+        public string $kind,
+        public int $position,
         public bool $sensitive,
         public ?array $value,
         public array $cells,
@@ -57,6 +66,8 @@ final class HilosDaemonEnvMismatchTableRow extends AbstractTableRow
         return [
             self::rowKey => $this->rowKey,
             self::key => $this->key,
+            self::kind => $this->kind,
+            self::position => $this->position,
             self::sensitive => $this->sensitive,
             self::value => $this->value,
             self::cells => $this->cells,
@@ -70,9 +81,17 @@ final class HilosDaemonEnvMismatchTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        $kind = self::requireString($data, self::kind);
+        $position = self::requireInt($data, self::position);
+        if (!in_array($kind, [self::KIND_DIVERGED, self::KIND_SOURCES_DIFFER], true) || $position < 0) {
+            throw new InvalidFormatException('Environment mismatch row has an invalid kind or position');
+        }
+
         return new static(
             rowKey: self::requireString($data, self::rowKey),
             key: self::requireString($data, self::key),
+            kind: $kind,
+            position: $position,
             sensitive: self::requireBool($data, self::sensitive),
             value: self::requireNullableArray($data, self::value),
             cells: self::cellList($data),

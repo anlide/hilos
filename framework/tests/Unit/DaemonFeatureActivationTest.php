@@ -31,10 +31,9 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -72,8 +71,7 @@ final class DaemonFeatureActivationTest extends TestCase
             HilosDaemonEnvKeysTable::class,
             HilosDaemonEnvOrphansTable::class,
             HilosDaemonAgentsTable::class,
-            HilosDaemonEnvDivergedTable::class,
-            HilosDaemonEnvSourcesDifferTable::class,
+            HilosDaemonEnvMismatchTable::class,
             HilosDaemonHttpRoutesTable::class,
             HilosDaemonPlacementTable::class,
         ], $definition->requirements()->requiredTables);
@@ -84,8 +82,7 @@ final class DaemonFeatureActivationTest extends TestCase
             AbstractHilosDaemonEnvOrphansPage::class => HilosDaemonEnvOrphansTable::class,
             AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
             AbstractHilosDaemonEnvMismatchPage::class => [
-                HilosDaemonEnvDivergedTable::class,
-                HilosDaemonEnvSourcesDifferTable::class,
+                HilosDaemonEnvMismatchTable::class,
             ],
             AbstractHilosDaemonHttpServerPage::class => HilosDaemonHttpRoutesTable::class,
             AbstractHilosDaemonPlacementPage::class => HilosDaemonPlacementTable::class,
@@ -190,20 +187,20 @@ final class DaemonFeatureActivationTest extends TestCase
         DaemonFeatureMissingAgentsBindingHilos::validateFeatureActivation();
     }
 
-    public function testMissingSourcesDifferTableRefusesStartup(): void
+    public function testMissingMismatchTableRefusesStartup(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
         $this->expectExceptionMessage('HilosFeature::DAEMON is declared but no table in TABLES extends '
-            . HilosDaemonEnvSourcesDifferTable::class);
+            . HilosDaemonEnvMismatchTable::class);
 
-        DaemonFeatureMissingSourcesDifferTableHilos::validateFeatureActivation();
+        DaemonFeatureMissingMismatchTableHilos::validateFeatureActivation();
     }
 
     public function testMissingMismatchPageBindingRefusesStartup(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
         $this->expectExceptionMessage('HilosFeature::DAEMON is declared but PAGE_TABLES binds no page extending '
-            . AbstractHilosDaemonEnvMismatchPage::class . ' to ' . HilosDaemonEnvSourcesDifferTable::class);
+            . AbstractHilosDaemonEnvMismatchPage::class . ' to ' . HilosDaemonEnvMismatchTable::class);
 
         DaemonFeatureMissingMismatchBindingHilos::validateFeatureActivation();
     }
@@ -321,8 +318,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
         HilosDaemonEnvKeysTable::TABLE => HilosDaemonEnvKeysTable::class,
         HilosDaemonEnvOrphansTable::TABLE => HilosDaemonEnvOrphansTable::class,
         HilosDaemonAgentsTable::TABLE => HilosDaemonAgentsTable::class,
-        HilosDaemonEnvDivergedTable::TABLE => HilosDaemonEnvDivergedTable::class,
-        HilosDaemonEnvSourcesDifferTable::TABLE => HilosDaemonEnvSourcesDifferTable::class,
+        HilosDaemonEnvMismatchTable::TABLE => HilosDaemonEnvMismatchTable::class,
         HilosDaemonHttpRoutesTable::TABLE => HilosDaemonHttpRoutesTable::class,
         HilosDaemonPlacementTable::TABLE => HilosDaemonPlacementTable::class,
     ];
@@ -338,8 +334,7 @@ class DaemonFeatureCompleteHilos extends HilosFacade
         ],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
         DaemonFeatureEnvMismatchPage::PAGE => [
-            HilosDaemonEnvDivergedTable::TABLE => [],
-            HilosDaemonEnvSourcesDifferTable::TABLE => [],
+            HilosDaemonEnvMismatchTable::TABLE => [],
         ],
         DaemonFeatureHttpServerPage::PAGE => [HilosDaemonHttpRoutesTable::TABLE => []],
         DaemonFeaturePlacementPage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
@@ -502,7 +497,7 @@ final class DaemonFeatureMissingAgentsBindingHilos extends DaemonFeatureComplete
     ];
 }
 
-final class DaemonFeatureMissingSourcesDifferTableHilos extends DaemonFeatureCompleteHilos
+final class DaemonFeatureMissingMismatchTableHilos extends DaemonFeatureCompleteHilos
 {
     public const array TABLES = [
         HilosDaemonCronTable::TABLE => HilosDaemonCronTable::class,
@@ -510,7 +505,6 @@ final class DaemonFeatureMissingSourcesDifferTableHilos extends DaemonFeatureCom
         HilosDaemonEnvKeysTable::TABLE => HilosDaemonEnvKeysTable::class,
         HilosDaemonEnvOrphansTable::TABLE => HilosDaemonEnvOrphansTable::class,
         HilosDaemonAgentsTable::TABLE => HilosDaemonAgentsTable::class,
-        HilosDaemonEnvDivergedTable::TABLE => HilosDaemonEnvDivergedTable::class,
         HilosDaemonHttpRoutesTable::TABLE => HilosDaemonHttpRoutesTable::class,
         HilosDaemonPlacementTable::TABLE => HilosDaemonPlacementTable::class,
     ];
@@ -526,7 +520,6 @@ final class DaemonFeatureMissingMismatchBindingHilos extends DaemonFeatureComple
             HilosDaemonEnvOrphansTable::TABLE => [],
         ],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
-        DaemonFeatureEnvMismatchPage::PAGE => [HilosDaemonEnvDivergedTable::TABLE => []],
         DaemonFeatureHttpServerPage::PAGE => [HilosDaemonHttpRoutesTable::TABLE => []],
         DaemonFeaturePlacementPage::PAGE => [HilosDaemonPlacementTable::TABLE => []],
     ];

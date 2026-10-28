@@ -1,13 +1,14 @@
 <!-- Environment mismatch between nodes of the cluster. Displays standalone notice,
-waiting indicator, or comparison summary with tiles and verdict tables. -->
+waiting indicator, or comparison summary with tiles and verdict table. -->
 <script setup lang="ts">
 import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  createHilosDaemonEnvMismatchTables,
+  createHilosDaemonEnvMismatchTable,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_SENSITIVE_HINT,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
 } from '@hilos/core/admin/daemon'
@@ -20,13 +21,13 @@ import { useSignal } from '../../useSignal.js'
 import HilosDaemonEnvMismatchCell from './HilosDaemonEnvMismatchCell.vue'
 
 const props = defineProps<{
-  /** Connection and page scope used by the environment mismatch tables. */
+  /** Connection and page scope used by the environment mismatch table. */
   context: HilosDaemonEnvMismatchContext
 }>()
 
 const summarySignal = readHilosDaemonEnvMismatchSummary(props.context.scopes)
 const summary = useSignal(summarySignal)
-const tables = createHilosDaemonEnvMismatchTables(
+const table = createHilosDaemonEnvMismatchTable(
   props.context,
   computedSignal(() => daemonEnvMismatchNodes(summarySignal.get())),
 )
@@ -43,7 +44,7 @@ let started = false
 function ensureStarted(): void {
   if (!started && summary.value?.clustered === true) {
     started = true
-    tables.start()
+    table.start()
   }
 }
 
@@ -61,7 +62,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  tables.dispose()
+  table.dispose()
 })
 
 function nodeSlot(nodeId: string): string {
@@ -220,7 +221,7 @@ function nodeSlot(nodeId: string): string {
         </div>
       </div>
 
-      <HilosViewportTable :controller="tables.diverged">
+      <HilosViewportTable :controller="table.controller">
         <template #cell-key="{ row }">
           <code class="fw-semibold">{{ row.key }}</code>
           <template v-if="row.sensitive">
@@ -231,6 +232,13 @@ function nodeSlot(nodeId: string): string {
             ></i>
             <span class="visually-hidden">{{ DAEMON_ENV_SENSITIVE_HINT }}</span>
           </template>
+          <div v-if="row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER">
+            <span
+              class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+              :data-id="`hilos-daemon-env-mismatch-sources-differ-${row.rowKey}`"
+              >Sources differ</span
+            >
+          </div>
         </template>
         <template
           v-for="node in nodes"
@@ -241,7 +249,6 @@ function nodeSlot(nodeId: string): string {
             :row="row"
             :node-id="node.nodeId"
             :serving-node-id="summary.servingNodeId"
-            :values-match="false"
           />
         </template>
         <template #empty>
@@ -263,41 +270,6 @@ function nodeSlot(nodeId: string): string {
           </div>
         </template>
       </HilosViewportTable>
-
-      <template v-if="comparison.sourcesDiffer > 0">
-        <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
-          <h2 class="h6 text-uppercase text-body-secondary mb-0">
-            Values match, sources differ
-          </h2>
-        </div>
-        <HilosViewportTable :controller="tables.sourcesDiffer">
-          <template #cell-key="{ row }">
-            <code class="fw-semibold">{{ row.key }}</code>
-            <template v-if="row.sensitive">
-              <i
-                class="bi bi-shield-lock text-body-secondary ms-1"
-                :title="DAEMON_ENV_SENSITIVE_HINT"
-                aria-hidden="true"
-              ></i>
-              <span class="visually-hidden">{{
-                DAEMON_ENV_SENSITIVE_HINT
-              }}</span>
-            </template>
-          </template>
-          <template
-            v-for="node in nodes"
-            :key="node.nodeId"
-            #[nodeSlot(node.nodeId)]="{ row }"
-          >
-            <HilosDaemonEnvMismatchCell
-              :row="row"
-              :node-id="node.nodeId"
-              :serving-node-id="summary.servingNodeId"
-              :values-match="true"
-            />
-          </template>
-        </HilosViewportTable>
-      </template>
 
       <template v-if="comparison.perNode.length > 0">
         <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">

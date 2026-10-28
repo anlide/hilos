@@ -137,8 +137,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
@@ -676,8 +675,7 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvKeys]);
         self::assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvOrphans]);
         self::assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonAgents]);
-        self::assertSame(HilosDaemonEnvDivergedTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvDiverged]);
-        self::assertSame(HilosDaemonEnvSourcesDifferTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvSourcesDiffer]);
+        self::assertSame(HilosDaemonEnvMismatchTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvMismatch]);
         self::assertSame(HilosDaemonHttpRoutesTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonHttpRoutes]);
         self::assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonPlacement]);
         self::assertSame([ChatTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
@@ -691,8 +689,7 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([ChatTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPlacementPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
         self::assertSame([
-            ChatTableContext::hilosDaemonEnvDiverged => [],
-            ChatTableContext::hilosDaemonEnvSourcesDiffer => [],
+            ChatTableContext::hilosDaemonEnvMismatch => [],
         ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonHttpRoutes => []], Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE]);
     }

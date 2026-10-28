@@ -170,8 +170,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -475,8 +474,7 @@ class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
-        BinanceBtcTrackerTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
-        BinanceBtcTrackerTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
+        BinanceBtcTrackerTableContext::hilosDaemonEnvMismatch => HilosDaemonEnvMismatchTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
@@ -595,8 +593,7 @@ class Hilos extends HilosFacade
             BinanceBtcTrackerTableContext::hilosDaemonAgents => [],
         ],
         DaemonEnvMismatchPage::PAGE => [
-            BinanceBtcTrackerTableContext::hilosDaemonEnvDiverged => [],
-            BinanceBtcTrackerTableContext::hilosDaemonEnvSourcesDiffer => [],
+            BinanceBtcTrackerTableContext::hilosDaemonEnvMismatch => [],
         ],
         DaemonHttpServerPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosDaemonHttpRoutes => [],

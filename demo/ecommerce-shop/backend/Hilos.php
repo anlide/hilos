@@ -136,10 +136,9 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -427,8 +426,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         EcommerceShopTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         EcommerceShopTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
-        EcommerceShopTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
-        EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
+        EcommerceShopTableContext::hilosDaemonEnvMismatch => HilosDaemonEnvMismatchTable::class,
         EcommerceShopTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         EcommerceShopTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         EcommerceShopTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
@@ -541,8 +539,7 @@ final class Hilos extends HilosFacade
             EcommerceShopTableContext::hilosDaemonAgents => [],
         ],
         DaemonEnvMismatchPage::PAGE => [
-            EcommerceShopTableContext::hilosDaemonEnvDiverged => [],
-            EcommerceShopTableContext::hilosDaemonEnvSourcesDiffer => [],
+            EcommerceShopTableContext::hilosDaemonEnvMismatch => [],
         ],
         DaemonHttpServerPage::PAGE => [
             EcommerceShopTableContext::hilosDaemonHttpRoutes => [],

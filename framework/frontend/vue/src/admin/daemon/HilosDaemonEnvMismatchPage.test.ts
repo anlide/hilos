@@ -24,7 +24,11 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
   if (initialSummary !== undefined) {
     scope.data.set(DAEMON_ENV_MISMATCH_DATA, initialSummary)
   }
-  const listeners: Array<(signal: { data: unknown }) => void> = []
+  const listeners = new Map<string, Set<(signal: never) => void>>()
+  const emit = (event: string, data: unknown) => {
+    for (const listener of listeners.get(event) ?? [])
+      listener({ data } as never)
+  }
   const sentViewports: Array<{
     page: string
     tableKey: string
@@ -34,10 +38,12 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
 
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
-      if (event === 'tableWindow') {
-        listeners.push(listener as (signal: { data: unknown }) => void)
+      const group = listeners.get(event) ?? new Set()
+      listeners.set(event, group)
+      group.add(listener)
+      return () => {
+        group.delete(listener)
       }
-      return () => {}
     },
     registerTableWindow(tableKey: string): void {
       registeredTables.add(tableKey)
@@ -69,7 +75,12 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal({
+      label: 'Env mismatch',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+    }),
     dashboardSections: createSignal(undefined),
     resolvePath: () => undefined,
     clearPageError: () => {},
@@ -87,7 +98,6 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
     global: {
       provide: { [hilosRouterKey as symbol]: router },
       stubs: {
-        HilosAdminPage: { template: '<main><slot /></main>' },
         HilosSkeleton: { template: '<div data-id="stub-skeleton" />' },
       },
     },
@@ -99,23 +109,21 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
     connection,
     sentViewports,
     registeredTables,
+    emit,
+    listeners,
     setSummary(value: HilosDaemonEnvMismatchSummary | null): void {
       scope.data.set(DAEMON_ENV_MISMATCH_DATA, value)
     },
     window(tableKey: string, rows: Record<string, unknown>[]): void {
-      for (const listener of listeners) {
-        listener({
-          data: {
-            page: HilosPages.DAEMON_ENV_MISMATCH,
-            tableKey,
-            rows: rows.map((key) => ({
-              rowKey: String(key.key ?? key.rowKey),
-              slots: { key },
-            })),
-            totalCount: rows.length,
-          },
-        })
-      }
+      emit('tableWindow', {
+        page: HilosPages.DAEMON_ENV_MISMATCH,
+        tableKey,
+        rows: rows.map((key) => ({
+          rowKey: String(key.key ?? key.rowKey),
+          slots: { key },
+        })),
+        totalCount: rows.length,
+      })
     },
   }
 }
@@ -248,23 +256,8 @@ describe('HilosDaemonEnvMismatchPage', () => {
     ).toBe('success')
   })
 
-  it('hides second table when sourcesDiffer is zero, shows when greater than zero', async () => {
+  it('renders a sources-only set in the single unnamed table without an agree state', async () => {
     const h = harness({
-      clustered: true,
-      servingNodeId: 'n1',
-      comparison: {
-        nodes: ['n1', 'n2'],
-        answering: ['n1', 'n2'],
-        diverged: 0,
-        sourcesDiffer: 0,
-        perNode: [],
-      },
-    })
-    await nextTick()
-
-    expect(h.view.text()).not.toContain('Values match, sources differ')
-
-    h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
       comparison: {
@@ -276,8 +269,30 @@ describe('HilosDaemonEnvMismatchPage', () => {
       },
     })
     await nextTick()
-
-    expect(h.view.text()).toContain('Values match, sources differ')
+    h.window('hilosDaemonEnvMismatch', [
+      {
+        key: 'HOST',
+        kind: 'sourcesDiffer',
+        position: 0,
+        sensitive: false,
+        value: null,
+        cells: [],
+      },
+    ])
+    await nextTick()
+    expect(h.registeredTables).toEqual(new Set(['hilosDaemonEnvMismatch']))
+    expect(h.view.findAll('[data-id="hilos-viewport-table"]')).toHaveLength(1)
+    expect(
+      h.view
+        .find('[data-id="hilos-daemon-env-mismatch-sources-differ-HOST"]')
+        .text(),
+    ).toBe('Sources differ')
+    expect(
+      h.view.find('[data-id="hilos-daemon-env-mismatch-empty-agree"]').exists(),
+    ).toBe(false)
+    expect(h.view.text()).not.toContain('Values match, sources differ')
+    h.view.unmount()
+    expect(h.registeredTables.size).toBe(0)
   })
 
   it('hides per_node section when list is empty, shows badges when populated', async () => {
@@ -345,12 +360,14 @@ describe('HilosDaemonEnvMismatchPage', () => {
     })
     await nextTick()
 
-    h.window('hilosDaemonEnvDiverged', [
+    h.window('hilosDaemonEnvMismatch', [
       {
         rowKey: 'SECRET_KEY',
         key: 'SECRET_KEY',
+        kind: 'diverged',
+        position: 0,
         sensitive: true,
-        value: { kind: 'text', text: 'secret-val' },
+        value: null,
         cells: [
           {
             nodeId: 'n1',
@@ -399,8 +416,9 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const cellN1 = h.view.find(
       '[data-id="hilos-daemon-env-mismatch-cell-SECRET_KEY-n1"]',
     )
-    expect(cellN1.attributes('data-kind')).toBe('value')
-    expect(cellN1.text()).toContain('secret-val')
+    expect(cellN1.attributes('data-kind')).toBe('digest')
+    expect(cellN1.text()).toContain('#aaaa')
+    expect(h.view.text()).not.toContain('secret-val')
     expect(cellN1.text()).toContain('Launch environment')
 
     const cellN2 = h.view.find(
@@ -442,10 +460,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(cellN5.attributes('data-kind')).toBe('none')
     expect(cellN5.text()).toContain('—')
 
-    h.window('hilosDaemonEnvSourcesDiffer', [
+    h.window('hilosDaemonEnvMismatch', [
       {
         rowKey: 'MAIL_HOST',
         key: 'MAIL_HOST',
+        kind: 'sourcesDiffer',
+        position: 1,
         sensitive: false,
         value: { kind: 'text', text: 'mail.example.test' },
         cells: [
@@ -473,6 +493,16 @@ describe('HilosDaemonEnvMismatchPage', () => {
     )
     expect(fromExample.exists()).toBe(true)
     expect(fromExample.text()).toContain('From .env.example')
+    expect(
+      h.view
+        .find('[data-id="hilos-daemon-env-mismatch-cell-MAIL_HOST-n2"]')
+        .classes(),
+    ).toContain('bg-warning-subtle')
+    expect(
+      h.view.findAll(
+        '[data-id="hilos-daemon-env-mismatch-sources-differ-MAIL_HOST"]',
+      ),
+    ).toHaveLength(2)
   })
 
   it('displays empty state for alone and agree', async () => {
@@ -489,7 +519,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     })
     await nextTick()
 
-    h.window('hilosDaemonEnvDiverged', [])
+    h.window('hilosDaemonEnvMismatch', [])
     await nextTick()
 
     expect(
@@ -516,6 +546,94 @@ describe('HilosDaemonEnvMismatchPage', () => {
     ).toContain('The answering nodes agree on every key they share.')
   })
 
+  it('keeps values live and bucket movement pending, with one named table and recovery', async () => {
+    const h = harness({
+      clustered: true,
+      servingNodeId: 'n1',
+      comparison: {
+        nodes: ['n1', 'n2'],
+        answering: ['n1', 'n2'],
+        diverged: 2,
+        sourcesDiffer: 0,
+        perNode: [],
+      },
+    })
+    await nextTick()
+    const address = {
+      page: HilosPages.DAEMON_ENV_MISMATCH,
+      tableKey: 'hilosDaemonEnvMismatch',
+    }
+    const a = {
+      key: 'A',
+      kind: 'diverged',
+      position: 0,
+      sensitive: false,
+      value: { kind: 'text', text: 'before' },
+      cells: [
+        {
+          nodeId: 'n1',
+          state: 'known',
+          type: 'string',
+          source: 'env',
+          digest: 'aaaa',
+        },
+      ],
+    }
+    const b = { ...a, key: 'B', position: 1 }
+    h.window(address.tableKey, [a, b])
+    await nextTick()
+    const wire = (value: typeof a) => ({ rowKey: 'A', slots: { key: value } })
+    h.emit('tableViewportDelta', {
+      ...address,
+      kind: 'row_updated',
+      rowKey: 'A',
+      row: wire({ ...a, value: { kind: 'text', text: 'after' } }),
+    })
+    await nextTick()
+    expect(
+      h.view.get('[data-id="hilos-daemon-env-mismatch-cell-A-n1"]').text(),
+    ).toContain('after')
+    expect(h.view.find('[data-id="hilos-table-apply"]').exists()).toBe(false)
+    const order = () =>
+      h.view
+        .findAll('tbody tr[data-id^="hilos-table-row-"]')
+        .map((el) => el.attributes('data-id'))
+    h.emit('tableViewportDelta', {
+      ...address,
+      kind: 'row_moved',
+      rowKey: 'A',
+      position: 1,
+      row: wire({ ...a, kind: 'sourcesDiffer', position: 1 }),
+    })
+    await nextTick()
+    expect(order()).toEqual(['hilos-table-row-A', 'hilos-table-row-B'])
+    await h.view.get('[data-id="hilos-table-apply"]').trigger('click')
+    expect(order()).toEqual(['hilos-table-row-B', 'hilos-table-row-A'])
+    const nameId = h.view.get('table').attributes('aria-labelledby')
+    expect(h.view.get(`[id="${nameId}"]`).text()).toBe('Env mismatch')
+    expect(h.view.get('[role="list"]').attributes('aria-labelledby')).toBe(
+      nameId,
+    )
+    h.emit('tableWindowRefused', { ...address, errorCode: 'unavailable' })
+    await nextTick()
+    expect(h.view.text()).toContain('List unavailable')
+    expect(
+      h.view.find('[data-id="hilos-daemon-env-mismatch-empty-agree"]').exists(),
+    ).toBe(false)
+    h.window(address.tableKey, [{ ...a, kind: 'sourcesDiffer' }])
+    await nextTick()
+    expect(
+      h.view
+        .get('[data-id="hilos-daemon-env-mismatch-sources-differ-A"]')
+        .text(),
+    ).toBe('Sources differ')
+    expect(h.registeredTables.size).toBe(1)
+    h.view.unmount()
+    expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(
+      true,
+    )
+  })
+
   it('rebuilds table columns when page summary changes nodes', async () => {
     const h = harness({
       clustered: true,
@@ -530,12 +648,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     })
     await nextTick()
 
-    expect(
-      h.view
-        .find('main')
-        .findAll('th')
-        .map((th) => th.text()),
-    ).toEqual([
+    expect(h.view.findAll('th').map((th) => th.text())).toEqual([
       'Key',
       'n1 · this node',
       'n2',
@@ -555,12 +668,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     })
     await nextTick()
 
-    expect(
-      h.view
-        .find('main')
-        .findAll('th')
-        .map((th) => th.text()),
-    ).toEqual([
+    expect(h.view.findAll('th').map((th) => th.text())).toEqual([
       'Key',
       'n1 · this node',
       'n2',

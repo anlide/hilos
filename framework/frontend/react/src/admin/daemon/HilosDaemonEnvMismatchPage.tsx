@@ -1,14 +1,15 @@
-// Cluster comparison renders the existing summary and two verdict windows.
+// Cluster comparison renders the existing summary and one verdict window.
 import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { computedSignal, HilosPages } from '@hilos/core/base'
 import {
-  createHilosDaemonEnvMismatchTables,
+  createHilosDaemonEnvMismatchTable,
   daemonEnvMismatchEmptyState,
   daemonEnvMismatchNodeColumnKey,
   daemonEnvMismatchNodes,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   DAEMON_ENV_SENSITIVE_HINT,
+  DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchRow,
@@ -33,9 +34,9 @@ export function HilosDaemonEnvMismatchPage({
     [context],
   )
   const summary = useSignal(summarySignal)
-  const tables = useMemo(
+  const table = useMemo(
     () =>
-      createHilosDaemonEnvMismatchTables(
+      createHilosDaemonEnvMismatchTable(
         context,
         computedSignal(() => daemonEnvMismatchNodes(summarySignal.get())),
       ),
@@ -43,16 +44,14 @@ export function HilosDaemonEnvMismatchPage({
   )
   const clustered = summary?.clustered === true
   useEffect(() => {
-    if (clustered) tables.start()
-    return () => tables.dispose()
-  }, [tables, clustered])
+    if (clustered) table.start()
+    return () => table.dispose()
+  }, [table, clustered])
   const nodes = daemonEnvMismatchNodes(summary)
   const comparison = summary?.comparison ?? null
   const emptyState =
     comparison === null ? null : daemonEnvMismatchEmptyState(comparison)
-  const cells = (
-    valuesMatch: boolean,
-  ): Record<string, (row: HilosDaemonEnvMismatchRow) => ReactNode> => ({
+  const cells: Record<string, (row: HilosDaemonEnvMismatchRow) => ReactNode> = {
     [DAEMON_ENV_MISMATCH_KEY_FIELD]: (row) => (
       <>
         <code className="fw-semibold text-break">{row.key}</code>
@@ -66,6 +65,16 @@ export function HilosDaemonEnvMismatchPage({
             <span className="visually-hidden">{DAEMON_ENV_SENSITIVE_HINT}</span>
           </>
         )}
+        {row.kind === DAEMON_ENV_MISMATCH_SOURCES_DIFFER && (
+          <div>
+            <span
+              className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+              data-id={`hilos-daemon-env-mismatch-sources-differ-${row.rowKey}`}
+            >
+              Sources differ
+            </span>
+          </div>
+        )}
       </>
     ),
     ...Object.fromEntries(
@@ -76,12 +85,11 @@ export function HilosDaemonEnvMismatchPage({
             row={row}
             nodeId={node.nodeId}
             servingNodeId={summary?.servingNodeId ?? null}
-            valuesMatch={valuesMatch}
           />
         ),
       ]),
     ),
-  })
+  }
   return (
     <HilosAdminPage
       page={HilosPages.DAEMON_ENV_MISMATCH}
@@ -200,8 +208,8 @@ export function HilosDaemonEnvMismatchPage({
             </div>
           </div>
           <HilosViewportTable
-            controller={tables.diverged}
-            cells={cells(false)}
+            controller={table.controller}
+            cells={cells}
             empty={
               emptyState === 'alone' ? (
                 <div data-id="hilos-daemon-env-mismatch-empty-alone">
@@ -219,14 +227,6 @@ export function HilosDaemonEnvMismatchPage({
               )
             }
           />
-          {comparison.sourcesDiffer > 0 && (
-            <div className="mt-4">
-              <HilosViewportTable
-                controller={tables.sourcesDiffer}
-                cells={cells(true)}
-              />
-            </div>
-          )}
           {comparison.perNode.length > 0 && (
             <>
               <h2 className="h6 text-uppercase text-body-secondary mb-2 mt-4">

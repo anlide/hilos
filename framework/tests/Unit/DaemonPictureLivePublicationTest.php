@@ -55,8 +55,7 @@ use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use ReflectionProperty;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\WorkerConstants;
@@ -124,7 +123,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
         parent::tearDown();
     }
 
-    public function testAllSevenMirrorTablesPublishNativeDeltasFromSerializedPortions(): void
+    public function testAllSixMirrorTablesPublishNativeDeltasFromSerializedPortions(): void
     {
         $before = $this->completePicture(1);
         $current = $this->completePicture(2);
@@ -134,8 +133,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
             HilosDaemonAgentsTable::TABLE => ['x:1'],
             HilosDaemonCronTable::TABLE => ['/cleanup'],
             HilosDaemonHttpRoutesTable::TABLE => ['GET/%2Fhealth'],
-            HilosDaemonEnvDivergedTable::TABLE => ['DIVERGED'],
-            HilosDaemonEnvSourcesDifferTable::TABLE => ['SOURCE'],
+            HilosDaemonEnvMismatchTable::TABLE => ['DIVERGED', 'SOURCE'],
         ] as $tableKey => $keys) {
             ClusterDaemonPictureMirror::applyPortion(DaemonClusterPicturePortionSignalData::fromArray(
                 new DaemonClusterPicturePortionSignalData(true, $before->nodes())->toArray(),
@@ -182,8 +180,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
         self::assertNull($initial[0][1]->payload->data['envMismatch']['comparison']);
         AbstractHilosDaemonEnvMismatchPage::onPictureChanged(null);
         self::assertSame([], $this->frames());
-        self::assertTrue(Hilos::$sr->isTableWindowOwed('ak', HilosDaemonEnvDivergedTable::TABLE));
-        self::assertTrue(Hilos::$sr->isTableWindowOwed('ak', HilosDaemonEnvSourcesDifferTable::TABLE));
+        self::assertTrue(Hilos::$sr->isTableWindowOwed('ak', HilosDaemonEnvMismatchTable::TABLE));
         $context->flushToSignalRouter();
 
         $known = $this->completePicture(1);
@@ -194,19 +191,21 @@ final class DaemonPictureLivePublicationTest extends TestCase
         $context->flushToSignalRouter();
         $recovery = array_values(array_filter($this->frames(),
             static fn (array $frame): bool => $frame[0] !== SignalTypeConstants::PAGE_RESPONSE));
-        self::assertSame([SignalTypeConstants::TABLE_WINDOW, SignalTypeConstants::TABLE_WINDOW], array_column($recovery, 0));
-        foreach ($recovery as $index => [$name, $window]) {
-            $key = $index === 0 ? 'DIVERGED' : 'SOURCE';
-            self::assertSame(1, $window->totalCount);
-            self::assertTrue($window->totalExact);
-            self::assertCount(1, $window->rows);
-            self::assertSame($key, $window->rows[0]['rowKey']);
-            self::assertSame('aaaaaaaaaaaaaaaa', $window->rows[0]['slots']['key']['cells'][0]['digest']);
-            self::assertSame('known', $window->rows[0]['slots']['key']['cells'][0]['state']);
-            self::assertArrayNotHasKey('requestId', $window->toArray());
-            self::assertFalse(Hilos::$sr->isTableWindowOwed('ak', $window->tableKey));
-            self::assertArrayHasKey($window->tableKey, $initial[0][1]->payload->refusedWindows);
+        self::assertSame([SignalTypeConstants::TABLE_WINDOW], array_column($recovery, 0));
+        $window = $recovery[0][1];
+        self::assertSame(2, $window->totalCount);
+        self::assertTrue($window->totalExact);
+        self::assertSame(['DIVERGED', 'SOURCE'], array_column($window->rows, 'rowKey'));
+        foreach ($window->rows as $row) {
+            self::assertSame('aaaaaaaaaaaaaaaa', $row['slots']['key']['cells'][0]['digest']);
+            self::assertSame('known', $row['slots']['key']['cells'][0]['state']);
         }
+        self::assertSame([['field' => 'position', 'direction' => 'asc']], Hilos::$sr->getTableViewport('ak', $window->tableKey)->sort->toArray());
+        self::assertSame(['position' => 0, 'rowKey' => 'DIVERGED'], $window->firstAnchor->toArray());
+        self::assertSame(['position' => 1, 'rowKey' => 'SOURCE'], $window->lastAnchor->toArray());
+        self::assertArrayNotHasKey('requestId', $window->toArray());
+        self::assertFalse(Hilos::$sr->isTableWindowOwed('ak', $window->tableKey));
+        self::assertArrayHasKey($window->tableKey, $initial[0][1]->payload->refusedWindows);
         self::assertSame([], $initial[0][1]->payload->windows);
 
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(false, $this->completePicture(2)->nodes()));
@@ -219,7 +218,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
         self::assertSame('example', $updates[1][1]->row['slots']['key']['cells'][1]['source']);
     }
 
-    public function testKnownEmptyMismatchSubscriptionKeepsOrdinaryUnorderedCreatesCountOnly(): void
+    public function testKnownEmptyMismatchSubscriptionUsesOrderedArrivals(): void
     {
         ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, []));
         $context = $this->subscribeMismatch();
@@ -237,12 +236,78 @@ final class DaemonPictureLivePublicationTest extends TestCase
         $context->flushToSignalRouter();
         $arrivals = array_values(array_filter($this->frames(),
             static fn (array $frame): bool => $frame[0] !== SignalTypeConstants::PAGE_RESPONSE));
-        self::assertSame([SignalTypeConstants::TABLE_VIEWPORT_COUNT, SignalTypeConstants::TABLE_VIEWPORT_COUNT], array_column($arrivals, 0));
-        foreach ($arrivals as [$name, $count]) {
-            self::assertSame(1, $count->totalCount);
-            self::assertFalse(Hilos::$sr->getTableViewport('ak', $count->tableKey)->hasRow('DIVERGED'));
-            self::assertFalse(Hilos::$sr->getTableViewport('ak', $count->tableKey)->hasRow('SOURCE'));
+        self::assertSame([
+            SignalTypeConstants::TABLE_VIEWPORT_APPEND,
+            SignalTypeConstants::TABLE_VIEWPORT_APPEND,
+            SignalTypeConstants::TABLE_VIEWPORT_COUNT,
+        ], array_column($arrivals, 0));
+        self::assertSame('DIVERGED', $arrivals[0][1]->row['rowKey']);
+        self::assertSame('SOURCE', $arrivals[1][1]->row['rowKey']);
+        self::assertSame(2, $arrivals[2][1]->totalCount);
+        $held = Hilos::$sr->getTableViewport('ak', HilosDaemonEnvMismatchTable::TABLE);
+        self::assertTrue($held->hasRow('DIVERGED'));
+        self::assertTrue($held->hasRow('SOURCE'));
+    }
+
+    public function testMismatchBucketChangeMovesOneStableKeyAndRemovalLeavesTheSet(): void
+    {
+        foreach ([false, true] as $viewer) {
+            $before = $this->mismatchPicture(false);
+            ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, $before->nodes()));
+            $context = $this->subscribeMismatch($viewer);
+            $initial = $this->frames()[0][1]->payload->windows[HilosDaemonEnvMismatchTable::TABLE];
+            self::assertSame(['A', 'B', 'C'], array_column($initial['rows'], 'rowKey'));
+            self::assertSame([['field' => 'position', 'direction' => 'asc']], $initial['sort']);
+            self::assertSame(3, $initial['totalCount']);
+            $current = $this->mismatchPicture(true);
+            ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, $current->nodes()));
+            AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
+            $context->flushToSignalRouter();
+            $deltas = array_values(array_filter($this->frames(),
+                static fn (array $frame): bool => $frame[0] === SignalTypeConstants::TABLE_VIEWPORT_DELTA));
+            self::assertSame(['B', 'A'], array_map(static fn (array $frame): string => $frame[1]->rowKey, $deltas));
+            self::assertSame('row_updated', $deltas[0][1]->kind);
+            self::assertSame('row_moved', $deltas[1][1]->kind);
+            foreach ($deltas as [$name, $delta]) {
+                self::assertFalse($delta->own);
+            }
+            self::assertSame('A', $deltas[1][1]->row['rowKey']);
+            self::assertSame('sourcesDiffer', $deltas[1][1]->row['slots']['key']['kind']);
+            self::assertSame(1, $deltas[1][1]->row['slots']['key']['position']);
+            $held = Hilos::$sr->getTableViewport('ak', HilosDaemonEnvMismatchTable::TABLE);
+            self::assertSame(3, $held->totalCount());
+            self::assertTrue($held->hasRow('A'));
+            $window = new HilosDaemonEnvMismatchTable()->getPage(new TableQueryDTO(sort: $held->sort));
+            self::assertSame(['B', 'A', 'C'], array_column($window->rows, 'rowKey'));
+            ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(true, []));
+            AbstractHilosDaemonEnvMismatchPage::onPictureChanged($current);
+            $context->flushToSignalRouter();
+            $removed = array_values(array_filter($this->frames(),
+                static fn (array $frame): bool => $frame[0] === SignalTypeConstants::TABLE_VIEWPORT_DELTA));
+            self::assertCount(3, $removed);
+            foreach ($removed as [$name, $delta]) {
+                self::assertSame('row_removed', $delta->kind);
+                self::assertSame('deleted', $delta->reason);
+            }
         }
+    }
+
+    /** @return ClusterDaemonPicture Two verdict groups with a key that can change groups */
+    private function mismatchPicture(bool $moved): ClusterDaemonPicture
+    {
+        $picture = ClusterDaemonPicture::empty();
+        foreach (['n1', 'n2'] as $nodeId) {
+            $fingerprints = [
+                new NodeEnvironmentFingerprint('A', 'string', $nodeId === 'n1' ? EnvSource::PROCESS : EnvSource::ENV_FILE,
+                    false, $nodeId === 'n1' || $moved ? 'a' : 'b'),
+                new NodeEnvironmentFingerprint('B', 'string', EnvSource::PROCESS, false, $nodeId === 'n1' ? 'a' : 'b'),
+                new NodeEnvironmentFingerprint('C', 'string', $nodeId === 'n1' ? EnvSource::PROCESS : EnvSource::EXAMPLE, false, 'a'),
+            ];
+            $report = new NodeDaemonPicture($nodeId, NodeRole::Master, 100,
+                environment: new NodeEnvironmentSummary(3, 0, 0, 0, 0, $fingerprints));
+            $picture = $picture->withNode(new ClusterDaemonNodeView($nodeId, true, new ClusterDaemonNodeSlot($nodeId, $report, 100)));
+        }
+        return $picture;
     }
 
     public function testEachRecipientBuildsItsOwnSubjectAndOnlyTheChangedNodeGetsADelta(): void
@@ -565,10 +630,14 @@ final class DaemonPictureLivePublicationTest extends TestCase
         self::assertFalse(Hilos::$sr->isTableWindowOwed('ak', HilosDaemonWorkersTable::TABLE));
     }
 
-    /** @return LivePublicationTestBrowser Real subscription and first page answer with both mismatch tables */
-    private function subscribeMismatch(): LivePublicationTestBrowser
+    /**
+     * @param bool $viewer Whether this is an admin view-mode reader
+     * @return LivePublicationTestBrowser Real subscription and first page answer with the combined mismatch table
+     */
+    private function subscribeMismatch(bool $viewer = false): LivePublicationTestBrowser
     {
-        $context = new LivePublicationTestBrowser();
+        $context = new LivePublicationTestBrowser($viewer ? null : 1);
+        $context->viewer = $viewer;
         Hilos::$browser = $context;
         $context->bindHilosFacade(LivePublicationTestHilos::class);
         Hilos::$sr->subscribeToPage(AbstractHilosDaemonEnvMismatchPage::PAGE,
@@ -590,7 +659,7 @@ final class DaemonPictureLivePublicationTest extends TestCase
         $context->bindHilosFacade(LivePublicationTestHilos::class);
         Hilos::$sr->subscribeToPage('publication', new WebSocketPageSubscribeSignalDTO('ak', 'publication'));
         $viewport = new TableViewportSubscription($tableKey, filter: in_array($tableKey, [
-            HilosDaemonPlacementTable::TABLE, HilosDaemonEnvDivergedTable::TABLE, HilosDaemonEnvSourcesDifferTable::TABLE,
+            HilosDaemonPlacementTable::TABLE, HilosDaemonEnvMismatchTable::TABLE,
         ], true) ? [] : ['node' => 'n1']);
         Hilos::$sr->setTableViewport('ak', $viewport);
         self::assertTrue($context->sendTableWindow('publication', 'ak', $viewport));
@@ -673,8 +742,7 @@ final class LivePublicationTestTables extends TableContext
         $this->register(HilosDaemonAgentsTable::TABLE, new HilosDaemonAgentsTable());
         $this->register(HilosDaemonCronTable::TABLE, new HilosDaemonCronTable());
         $this->register(HilosDaemonHttpRoutesTable::TABLE, new HilosDaemonHttpRoutesTable());
-        $this->register(HilosDaemonEnvDivergedTable::TABLE, new HilosDaemonEnvDivergedTable());
-        $this->register(HilosDaemonEnvSourcesDifferTable::TABLE, new HilosDaemonEnvSourcesDifferTable());
+        $this->register(HilosDaemonEnvMismatchTable::TABLE, new HilosDaemonEnvMismatchTable());
     }
 }
 
@@ -710,7 +778,7 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
     {
         if ($page === AbstractHilosDaemonEnvMismatchPage::PAGE) {
             return BrowserPageBindings::fromArray([
-                HilosDaemonEnvDivergedTable::TABLE => [], HilosDaemonEnvSourcesDifferTable::TABLE => [],
+                HilosDaemonEnvMismatchTable::TABLE => [],
             ]);
         }
         if ($this->readClusterSource) {
@@ -719,7 +787,7 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
         return BrowserPageBindings::fromArray([
             HilosDaemonWorkersTable::TABLE => [], HilosDaemonPlacementTable::TABLE => [], HilosDaemonAgentsTable::TABLE => [],
             HilosDaemonCronTable::TABLE => [], HilosDaemonHttpRoutesTable::TABLE => [],
-            HilosDaemonEnvDivergedTable::TABLE => [], HilosDaemonEnvSourcesDifferTable::TABLE => [],
+            HilosDaemonEnvMismatchTable::TABLE => [],
         ]);
     }
 

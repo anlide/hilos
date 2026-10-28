@@ -35,8 +35,7 @@ use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
-use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
@@ -85,8 +84,8 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
             Hilos::$sr->subscribeToPage(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH,
                 new WebSocketPageSubscribeSignalDTO($acceptKey, HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH));
         }
-        Hilos::$sr->setTableViewport(self::DIVERGED_VIEWER, new TableViewportSubscription(HilosDaemonEnvDivergedTable::TABLE));
-        Hilos::$sr->setTableViewport(self::SOURCES_VIEWER, new TableViewportSubscription(HilosDaemonEnvSourcesDifferTable::TABLE));
+        Hilos::$sr->setTableViewport(self::DIVERGED_VIEWER, new TableViewportSubscription(HilosDaemonEnvMismatchTable::TABLE));
+        Hilos::$sr->setTableViewport(self::SOURCES_VIEWER, new TableViewportSubscription(HilosDaemonEnvMismatchTable::TABLE));
     }
 
     protected function tearDown(): void
@@ -254,7 +253,8 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
 
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER]], $this->browser()->pageData);
         self::assertSame([
-            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvDivergedTable::TABLE],
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvMismatchTable::TABLE],
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvMismatchTable::TABLE],
         ], $this->browser()->mutations);
     }
 
@@ -362,15 +362,14 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
     private function assertDivergedMutations(): void
     {
         self::assertSame([
-            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvDivergedTable::TABLE],
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::DIVERGED_VIEWER, HilosDaemonEnvMismatchTable::TABLE],
+            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvMismatchTable::TABLE],
         ], $this->browser()->mutations);
     }
 
     private function assertSourcesMutations(): void
     {
-        self::assertSame([
-            [HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, self::SOURCES_VIEWER, HilosDaemonEnvSourcesDifferTable::TABLE],
-        ], $this->browser()->mutations);
+        $this->assertDivergedMutations();
     }
 
     private function clearWindows(): void
@@ -423,7 +422,7 @@ final class DaemonEnvMismatchWindowTestBrowser extends IdentityTestBrowser
         if ($viewport === null) {
             return;
         }
-        $table = ( $tableKey === HilosDaemonEnvDivergedTable::TABLE ? new HilosDaemonEnvDivergedTable() : new HilosDaemonEnvSourcesDifferTable());
+        $table = new HilosDaemonEnvMismatchTable();
         $mutations = $build($table, new TableQueryDTO(filter: $viewport->filter));
         if ($mutations !== []) {
             $this->mutations[] = [$page, $acceptKey, $tableKey];
