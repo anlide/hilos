@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 import {
   PASSWORD,
+  createTestUser,
   continueFromDone,
   enterIdentifierAndPassword,
   finishWithoutPassword,
@@ -132,9 +133,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   await logout(expect, page)
@@ -164,9 +163,7 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,
@@ -312,14 +309,13 @@ test('makes an account with no password, then signs it in by the mailed code', a
 test('signs a member in by the code, on an address that already has an account', async ({
   page,
 }) => {
-  // A DIFFERENT account from the case above, and made the ordinary way: the send
+  // A DIFFERENT account from the case above, prepared with a password: the send
   // gate holds a second letter to one address for a minute, so a spec that asked
   // twice for the same one would be waiting on a letter nobody mailed.
   const email = uniqueEmail()
 
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -347,12 +343,11 @@ test('signs a member in by clicking the link in the letter, from a cold load', a
 }) => {
   const email = uniqueEmail()
 
-  // An account made the ordinary way first. The envelope stands where it still
+  // A verified password account first. The envelope stands where it still
   // stands after HIL-1008 — beside the password field of an account that has one,
   // as the way past that password — and a free address no longer offers it at all.
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -384,9 +379,8 @@ test('signs a member in by clicking the link in the letter, from a cold load', a
     nameFromEmail(email),
   )
 
-  // Three letters: the code the account was made with, the magic link it
-  // came back by, and the mandatory new sign-in security notice.
-  expect(await mailsTo(email)).toHaveLength(3)
+  // Two letters: the magic link and the mandatory new sign-in security notice.
+  expect(await mailsTo(email)).toHaveLength(2)
 })
 
 test('turns a tampered sign-in link down on its own screen', async ({
@@ -396,9 +390,8 @@ test('turns a tampered sign-in link down on its own screen', async ({
 
   // An account first, for the same reason as the case above: the envelope is
   // offered beside a password, never on a free address (HIL-1008).
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -425,7 +418,7 @@ test('turns a tampered sign-in link down on its own screen', async ({
   await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
   // Nothing was signed in, and the letter is still the only one.
   await expect(page.getByTestId('nav-logout')).toHaveCount(0)
-  expect(await mailsTo(email)).toHaveLength(2)
+  expect(await mailsTo(email)).toHaveLength(1)
 })
 
 test('says how the letter is going, to every tab of the browser and across a reload', async ({
@@ -797,9 +790,8 @@ test('opens a fresh tab on the new-password step once the code is accepted', asy
   // session had already passed.
   const email = uniqueEmail()
 
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -851,9 +843,8 @@ test.fixme('tells the tab that did not save the password that the flow succeeded
   // read. The flow ended in that tab, and never said it had succeeded.
   const email = uniqueEmail()
 
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 

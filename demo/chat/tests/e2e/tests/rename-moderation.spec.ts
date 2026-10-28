@@ -12,11 +12,11 @@ import {
   watchProfileRenameFrames,
   type ProfileRenameFrameLog,
   expectPageReady,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { signUp } from '../helpers/session.js'
 
 // Framework profile-name moderation on a real call to the stand's model: a
 // content refusal with an approved retry, an unavailable model, and an invalid
@@ -42,9 +42,9 @@ async function openRename(page: Page): Promise<void> {
 test('a name the model refuses is not taken, and a retry it permits renames the author', async ({
   page,
 }) => {
-  const { name: oldName } = await signUp(expect, page)
+  const { name: oldName } = await createTestUser(expect, page)
   // A cold load of /profile joins the notification group before the page
-  // subscription, so a refusal notice will be delivered (see signUpJoined).
+  // subscription, so the bound account receives the refusal over the live signal.
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(oldName)
 
@@ -88,7 +88,7 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
 
   // A cold load of the chat room proves the event stream received the rename.
   // The filter isolates the event-notice row: the author label on events carries the
-  // current name, so the registration notice would also match a key-filtered event row.
+  // current name, so other notices would also match a key-filtered event row.
   await gotoPage(expect, page, '/')
   const renameNotice = page.getByTestId('event-notice').filter({ hasText: key })
   await expect(renameNotice).toHaveCount(1)
@@ -98,7 +98,7 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
 test('a rename nobody dictated a verdict for comes back as moderation unavailable', async ({
   page,
 }) => {
-  const { name: oldName } = await signUp(expect, page)
+  const { name: oldName } = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(oldName)
 
@@ -161,7 +161,7 @@ test.describe('accepted name attempt lifetime', () => {
     page,
     context,
   }) => {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     const key = modelKey()
     const name = `Reload ${key}`
@@ -246,7 +246,7 @@ test.describe('accepted name attempt lifetime', () => {
   test('explicit close survives F5, pending reopen skips step-up, and late success stays closed', async ({
     page,
   }) => {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     const key = modelKey()
     const name = `Closed ${key}`
@@ -307,7 +307,7 @@ test.describe('accepted name attempt lifetime', () => {
   test('background refusal stays closed and manual error with its requested name survives F5', async ({
     page,
   }) => {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     const key = modelKey()
     const name = `Refused ${key}`
@@ -410,7 +410,7 @@ test.describe('accepted name attempt lifetime', () => {
   test('late own success preserves a newer draft and rebases it without a false conflict', async ({
     page,
   }) => {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     const key = modelKey()
     const name = `First ${key}`
@@ -462,7 +462,7 @@ test.describe('accepted name attempt lifetime', () => {
 test('a rename with an invalid model reason is unavailable and preserves the draft without a notification', async ({
   page,
 }) => {
-  const { name: oldName } = await signUp(expect, page)
+  const { name: oldName } = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(oldName)
 

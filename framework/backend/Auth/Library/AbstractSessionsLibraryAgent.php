@@ -29,6 +29,7 @@ use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
+use Hilos\Auth\TestUserCommandConstants;
 use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
@@ -675,7 +676,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the command socket's non-production gate refuses it on production. This holder
      * already has the request's update right and owns the erasure and session sign-out.
      *
-     * Every project that registers the library answers all seven. The first five are the
+     * The fixture bind also runs here: this holder owns the anonymous session it authenticates.
+     *
+     * Every project that registers the library answers these names. The first five are the
      * framework's code over `hilos_user` in every one of them ({@see mintAdminUser()},
      * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197);
      * only the merge still answers a REFUSAL by default, in a project that never wired it
@@ -692,6 +695,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         CliCommands::IMPERSONATE_STOP,
         CliCommands::ACCOUNT_MERGE,
         CliCommands::ACCOUNT_TEST_FORCE_PURGE,
+        CliCommands::SESSION_TEST_BIND,
     ];
 
     /**
@@ -5486,7 +5490,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Routes a CLI command sent to this library.
      *
-     * The seven names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
+     * The names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
      * rather than silence, because the socket parks the caller until it is answered.
      *
      * @param CommandRequestDTO $data Command request payload
@@ -5496,6 +5500,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($data->command === CliCommands::SESSION_TEST_BIND) {
+            $this->handleTestSessionBindCommand($data);
+
+            return;
+        }
+
         if ($data->command === CliCommands::ADMIN_CREATE) {
             $this->handleAdminCreateCommand($data);
 
@@ -5533,6 +5543,58 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Idle browser and existing person to bind
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleTestSessionBindCommand(CommandRequestDTO $data): void
+    {
+        $token = $data->payload[TestUserCommandConstants::FIELD_SESSION_TOKEN] ?? null;
+        $userId = $data->payload[TestUserCommandConstants::FIELD_USER_ID] ?? null;
+        if (!is_string($token) || !is_int($userId) || $userId <= 0) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Fixture bind requires a token and positive integer user id'));
+
+            return;
+        }
+
+        try {
+            SessionToken::ensureValid($token);
+            $session = Hilos::$db->sessions->findByToken($token);
+            if ($session === null) {
+                throw new ValidationException('No session for that token');
+            }
+            if ($session->userId !== null || $session->impersonatorUserId !== null
+                || $session->pendingRegistrationIdentifier !== null || $session->pendingSecondFactorUserId !== null
+                || $session->pendingAck !== null || $session->blockedUserId !== null) {
+                throw new ValidationException('Fixture bind requires an idle anonymous session');
+            }
+            AddressablePerson::require($userId);
+            if (Hilos::$db->users[$userId]->block !== false) {
+                throw new ValidationException('Cannot bind a blocked user');
+            }
+
+            $liveToken = $this->authenticateSession($token, $userId, null, recordPersonSignIn: true, announceSignIn: false);
+            $liveSession = $liveToken === null ? null : Hilos::$db->sessions->findByToken($liveToken);
+            if ($liveSession === null || $liveToken !== $token || $liveSession->userId !== $userId) {
+                throw new ValidationException('Fixture session was not bound');
+            }
+            $sessionId = $liveSession->id;
+        } catch (WiringRefusal $refusal) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Cannot read fixture data here: ' . $refusal->getMessage()));
+
+            return;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            TestUserCommandConstants::FIELD_SESSION_ID => $sessionId,
+            TestUserCommandConstants::FIELD_USER_ID => $userId,
+        ]));
     }
 
     /**

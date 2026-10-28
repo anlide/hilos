@@ -4,6 +4,7 @@ import {
   login,
   logout,
   signUp,
+  createTestUser,
   clearCustomSetting,
   THEME_DEFAULT_KEY,
   THEME_PICK_STORAGE_KEY,
@@ -20,7 +21,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -30,7 +31,7 @@ test('registration keeps the guest pick and independent sessions deliver choices
   page,
   baseURL,
 }) => {
-  // Two registrations, a real second login and both controls across sessions.
+  // Guest-pick registration, a real second login and both controls across sessions.
   test.slow()
   const contexts: BrowserContext[] = []
   try {
@@ -76,7 +77,7 @@ test('registration keeps the guest pick and independent sessions deliver choices
     await expectProfileTheme(expect, second, 'dark')
 
     const stranger = await strangerContext.newPage()
-    await signUp(expect, stranger)
+    await createTestUser(expect, stranger)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, stranger, 'light')
 
@@ -198,7 +199,7 @@ test('both account controls reset independent sessions and follow later site def
   page,
   baseURL,
 }) => {
-  // Three registrations, a separate login, resets and live settings delivery
+  // Account preparation, a separate login, resets and live settings delivery
   // exceed the single-client cap even on an idle stand.
   test.slow()
   const contexts: BrowserContext[] = []
@@ -228,11 +229,11 @@ test('both account controls reset independent sessions and follow later site def
     contexts.push(adminContext)
     admin = await adminContext.newPage()
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
 
     // Login creates a separate session and storage; neither is copied from the
-    // registered browser, so browser storage events cannot supply this proof.
+    // first browser, so browser storage events cannot supply this proof.
     const second = await secondContext.newPage()
     await emulateSystemTheme(second, 'dark')
     await gotoPage(expect, second, '/profile')
@@ -250,7 +251,7 @@ test('both account controls reset independent sessions and follow later site def
 
     const stranger = await strangerContext.newPage()
     await emulateSystemTheme(stranger, 'light')
-    await signUp(expect, stranger)
+    await createTestUser(expect, stranger)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, stranger, 'light')
 
@@ -300,7 +301,7 @@ test('both account controls reset independent sessions and follow later site def
     await expectThemeHeader(expect, stranger, 'light')
     await expectProfileTheme(expect, stranger, 'light')
 
-    await signUpAdmin(expect, admin)
+    await grantAdminToSelf(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await typeInto(search, THEME_DEFAULT_KEY)
@@ -419,7 +420,7 @@ test('both account controls reset independent sessions and follow later site def
 test('profile and header work by keyboard and return focus', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   PASSWORD,
+  createTestUser,
   continueFromDone,
   enterIdentifierAndPassword,
   login,
@@ -30,6 +31,8 @@ import {
   THROTTLE_SESSION_LIMIT,
   THROTTLE_WINDOW_MS,
 } from '../../../../../framework/frontend/scripts/authThrottle.mjs'
+
+// spec-owner: demo — proves the BTC Tracker shell activates the shared sign-in surface.
 
 // Sign-in e2e for the binance-btc-tracker demo. Nothing about the machine is
 // this demo's, so what is proved here is the ACTIVATION — that the framework
@@ -109,9 +112,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   await logout(expect, page)
@@ -141,9 +142,7 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,

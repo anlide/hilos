@@ -11,7 +11,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { FOLLOWED_STREAM } from '../helpers/logs.js'
 
@@ -33,7 +33,7 @@ test('navigates the admin tree with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const loadsAfterColdLoad = fullLoads
@@ -128,7 +128,7 @@ test('navigates the admin tree with no reload or reconnect', async ({
 test('cold-loads a parametrized admin page through the framework shell', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/communications/email/deliveries')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expectCommunicationsChannelHead(expect, page, 'deliveries')
@@ -180,7 +180,7 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   }
   const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()

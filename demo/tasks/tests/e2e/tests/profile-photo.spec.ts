@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   watchClientDocument,
   watchUploadFrames,
   watchSocketFrames,
@@ -40,7 +40,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
   const second = await page.context().newPage()
   const documents: Awaited<ReturnType<typeof watchClientDocument>>[] = []
   try {
-    const { name, userId } = await signUp(expect, page)
+    const { name, userId } = await createTestUser(expect, page)
     const initials = name.charAt(0).toUpperCase()
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await gotoPage(expect, second, '/profile', PAGE_READY)
@@ -252,7 +252,7 @@ test('a picture over 40 MB is refused before any upload begins', async ({
   page,
 }) => {
   const uploads = watchUploadFrames(page, 'oversize', () => {})
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   await clickSubmit(expect, page.getByTestId('profile-photo-open'))
   await page.getByTestId('profile-photo-input').setInputFiles({

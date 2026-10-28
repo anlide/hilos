@@ -6,7 +6,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModelAnswer,
@@ -73,7 +73,7 @@ test('a saved invalid bot model logs an error and a later request uses the resto
   // another real context change if all three decline an earlier one.
   test.setTimeout(test.info().timeout * 5)
   const windows = await watchBotSearch(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   const settingKey = 'chat_bot_model'
   const botKey = modelKey()
   const answer = `bot recovered ${botKey}`

@@ -5,14 +5,14 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 test('Your data prepares a copy across tabs, downloads it and announces readiness', async ({
   context,
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-data-summary')).toHaveText(
     'No copy yet',
@@ -54,7 +54,7 @@ test('Your data prepares a copy across tabs, downloads it and announces readines
 test('the deletion explanation links to Your data without scheduling deletion', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)

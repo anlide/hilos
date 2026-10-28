@@ -11,7 +11,7 @@ import {
   PASSWORD,
   enterIdentifierAndPassword,
   logout,
-  signUp,
+  createTestUser,
   connectFirstApp,
   shownByTestId,
   clickSubmit,
@@ -19,7 +19,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   nextTotpCode,
@@ -99,7 +99,7 @@ test.describe('two-step verification', () => {
     'asks the code on the next sign-in, and not again on a trusted browser',
     { tag: '@quarantine:F-010' },
     async ({ page }) => {
-      const user = await signUp(expect, page)
+      const user = await createTestUser(expect, page)
       await gotoPage(expect, page, '/profile/security')
       const app = await connectFirstApp(page, PASSWORD)
 
@@ -121,7 +121,7 @@ test.describe('two-step verification', () => {
   )
 
   test('takes a backup code once', async ({ page, browser }) => {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile/security')
     const app = await connectFirstApp(page, PASSWORD)
     const backupCode = app.backupCodes[0] ?? ''
@@ -145,10 +145,10 @@ test.describe('two-step verification', () => {
     browser,
   }) => {
     const member = await freshPage(browser)
-    const user = await signUp(expect, member)
+    const user = await createTestUser(expect, member)
     await logout(expect, member)
 
-    await signUpAdmin(expect, page)
+    await createTestAdmin(expect, page)
     await setRequired(page, 'everyone', 'Everyone')
     // The policy outlives this test on the shared stand, so it goes back
     // whatever happens in between.
@@ -218,12 +218,12 @@ test.describe('turned off for everyone', () => {
     browser,
   }) => {
     const member = await freshPage(browser)
-    const user = await signUp(expect, member)
+    const user = await createTestUser(expect, member)
     await gotoPage(expect, member, '/profile/security')
     await connectFirstApp(member, PASSWORD)
     await logout(expect, member)
 
-    await signUpAdmin(expect, page)
+    await createTestAdmin(expect, page)
     try {
       await turnSecondFactorOff(page)
 

@@ -9,6 +9,7 @@ import {
 } from '../../../../../framework/frontend/scripts/mail.mjs'
 import {
   PASSWORD,
+  createTestUser,
   continueFromDone,
   enterIdentifierAndPassword,
   login,
@@ -130,9 +131,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   await logout(expect, page)
@@ -162,9 +161,7 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,
@@ -272,8 +269,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // An account first. The envelope stands where it still stands after HIL-1008
     // — beside the password field of an account that has one, as the way past
     // that password — and a free address no longer offers it at all.
-    await openSignIn(expect, page)
-    await register(expect, page, email)
+    await createTestUser(expect, page, { email })
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await logout(expect, page)
 
@@ -299,9 +295,8 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await continueFromDone(expect, page)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // Three letters: the code the account was made with, the magic link,
-    // and the mandatory new sign-in security notice.
-    expect(await mailsTo(email)).toHaveLength(3)
+    // Two letters: the magic link and the mandatory new sign-in security notice.
+    expect(await mailsTo(email)).toHaveLength(2)
 
     await logout(expect, page)
   })
@@ -309,8 +304,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
   await test.step('click from a cold load', async () => {
     const email = uniqueEmail()
 
-    await openSignIn(expect, page)
-    await register(expect, page, email)
+    await createTestUser(expect, page, { email })
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await logout(expect, page)
 
@@ -335,9 +329,8 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await expect(page.getByTestId('nav-logout')).toBeVisible()
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // Three letters: the code the account was made with, the magic link,
-    // and the mandatory new sign-in security notice.
-    expect(await mailsTo(email)).toHaveLength(3)
+    // Two letters: the magic link and the mandatory new sign-in security notice.
+    expect(await mailsTo(email)).toHaveLength(2)
 
     // The click signed the session in, so the surface says what was achieved
     // and waits for Continue (HIL-422) — over the shell, in the way of the
@@ -349,8 +342,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
   await test.step('tampered token', async () => {
     const email = uniqueEmail()
 
-    await openSignIn(expect, page)
-    await register(expect, page, email)
+    await createTestUser(expect, page, { email })
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await logout(expect, page)
 
@@ -374,9 +366,9 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
 
     await expect(page.getByTestId('auth-magic-error')).toBeVisible()
     await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
-    // Nothing was signed in, and no third letter went out.
+    // Nothing was signed in, and no sign-in security notice went out.
     await expect(page.getByTestId('nav-logout')).toHaveCount(0)
-    expect(await mailsTo(email)).toHaveLength(2)
+    expect(await mailsTo(email)).toHaveLength(1)
   })
 })
 

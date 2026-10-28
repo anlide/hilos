@@ -8,12 +8,12 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
-  signUpJoined,
+  createTestUser,
+  createTestUserJoined,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — chat's moderator judging a message
 
@@ -34,9 +34,9 @@ import { signUp } from '../helpers/session.js'
 test('a rejected message stays out of the room and its author is told', async ({
   page,
 }) => {
-  // A cold load after sign-up, so the socket has joined the author's notification
-  // group before the verdict raises the notification (see signUpJoined).
-  await signUpJoined(expect, page, { entryId: 'message-signin' })
+  // A cold load after binding joins the author's notification group before
+  // the verdict raises the notification (see createTestUserJoined).
+  await createTestUserJoined(expect, page)
 
   const key = modelKey()
   const text = `a message the model refuses ${key}`
@@ -68,7 +68,7 @@ test('a rejected message stays out of the room and its author is told', async ({
 test('a message nobody dictated a verdict for comes back as moderation unavailable', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   // No verdict is dictated: the model refuses the call with a 503, which for the
   // product is a model that is not answering.
@@ -90,7 +90,7 @@ test('a message nobody dictated a verdict for comes back as moderation unavailab
 test('a message refused without a reason shows generic message rejection and preserves draft', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const key = modelKey()
   const text = `a message blocked without category ${key}`
@@ -112,9 +112,9 @@ test('a message refused without a reason shows generic message rejection and pre
 test('a saved invalid moderation model is refused then a restored model handles the next message', async ({
   page,
 }) => {
-  // Registration, two settings writes, and two moderation rounds outlive the base test cap.
+  // Setup, two settings writes, and two moderation rounds outlive the base test cap.
   test.slow()
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   const settingKey = 'chat_moderation_model'
   const key = modelKey()
   const text = `moderation after changing the model ${key}`

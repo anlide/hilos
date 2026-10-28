@@ -9,8 +9,6 @@ import {
   expectUserActivityMoment,
   forwardSessionTimeZone,
   nameFromEmail,
-  openSignIn,
-  register,
   ROWS,
   shownByTestId,
   watchClientDocument,
@@ -18,11 +16,11 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
   goToLastPage,
+  createTestAdmin,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
-import { signUp } from '../helpers/session.js'
 
 test.describe('merge candidate activity in the reader time zone', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Asia/Tokyo' })
@@ -46,17 +44,16 @@ test.describe('merge candidate activity in the reader time zone', () => {
       ignoreHTTPSErrors,
     })
     try {
-      const readerId = await signUpAdmin(expect, page, {
-        entryId: 'message-signin',
-      })
-      const candidate = await signUp(expect, await candidateContext.newPage())
+      const readerId = await createTestAdmin(expect, page)
+      const candidate = await createTestUser(
+        expect,
+        await candidateContext.newPage(),
+      )
       // The unfiltered last page can hold just one row. Give this test its own
       // pair, found together by the real server's address search.
       const peerEmail = `peer-${candidate.email}`
       const peer = await peerContext.newPage()
-      await gotoPage(expect, peer, '/')
-      await openSignIn(expect, peer, 'message-signin')
-      await register(expect, peer, peerEmail)
+      await createTestUser(expect, peer, { email: peerEmail })
       await expect(peer.getByTestId('self-user')).toHaveText(
         nameFromEmail(peerEmail),
       )
@@ -192,8 +189,8 @@ test.describe('in the admin view mode', () => {
     const userBPage = await userBContext.newPage()
 
     try {
-      const { userId: userAId } = await signUp(expect, userAPage)
-      const { userId: userBId } = await signUp(expect, userBPage)
+      const { userId: userAId } = await createTestUser(expect, userAPage)
+      const { userId: userBId } = await createTestUser(expect, userBPage)
 
       await setAdminViewMode(true)
 

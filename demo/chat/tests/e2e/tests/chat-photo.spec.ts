@@ -4,7 +4,7 @@ import {
   openAndSelectPhoto,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
@@ -179,7 +179,7 @@ test('a guest sees the circles of a series, the roster and the user page follow 
 // test switches a quiet one on to have a bot row at all, and off again after.
 test('a bot row wears the circle of its initials', async ({ page }) => {
   const windows = await watchBotSearch(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   try {
     await setBotActive(page, QUIET_BOT, true, windows)

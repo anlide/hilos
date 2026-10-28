@@ -64,7 +64,6 @@ import {
   gotoPage,
   PAGE_READY,
   grantAdminToSelf,
-  signUpAdmin,
   RESTART_AGENT,
   readRestartWorker,
   withStoppedRestartWorker,
@@ -133,9 +132,9 @@ test.describe('daemon overview', () => {
   test('opens the real root from the dashboard, cold loads it and returns from Workers and the node log', async ({
     page,
   }) => {
-    // Registration and four page subscriptions are real daemon round trips.
+    // Admin preparation and four page subscriptions are real daemon round trips.
     test.slow()
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos', PAGE_READY)
     const card = page.getByTestId('dashboard-card-hilos_daemon')
     await expect(card).toHaveAttribute('href', DAEMON_ROOT_PATH)
@@ -207,7 +206,7 @@ test.describe('daemon overview', () => {
       if (viewer) {
         await setAdminViewMode(true)
       } else {
-        await signUpAdmin(expect, page)
+        await grantAdminToSelf(expect, page)
       }
       await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -334,7 +333,7 @@ test.describe('daemon overview', () => {
   }) => {
     // It follows every child and its breadcrumb over live subscriptions.
     test.slow()
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
     await page.setViewportSize({ width: 1280, height: 812 })
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -483,7 +482,7 @@ test.describe('daemon node pages', () => {
       // Cold reply hold, reload and every addressed tab's table subscription.
       test.slow()
       await setAdminViewMode(viewer)
-      if (!viewer) await signUpAdmin(expect, page)
+      if (!viewer) await grantAdminToSelf(expect, page)
       const cold = await context.newPage()
       const held = await holdPageReply(cold, 'hilos_daemon_node')
       const reports = watchDaemonNodeFrames(cold)
@@ -590,7 +589,7 @@ test.describe('daemon node pages', () => {
       // Three live pages and the worker log.
       test.slow()
       await setAdminViewMode(viewer)
-      if (!viewer) await signUpAdmin(expect, page)
+      if (!viewer) await grantAdminToSelf(expect, page)
       await page.setViewportSize({ width: 1280, height: 812 })
       await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -667,7 +666,7 @@ test.describe('daemon node pages', () => {
         // It follows real page subscriptions and an agent's live log.
         test.slow()
         await setAdminViewMode(viewer)
-        if (!viewer) await signUpAdmin(expect, page)
+        if (!viewer) await grantAdminToSelf(expect, page)
         await page.setViewportSize({ width: 1280, height: 812 })
         await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
         await expectStandaloneOverview(expect, page, DATABASE_HOST)
@@ -799,7 +798,7 @@ test.describe('restarting an agent', () => {
     page,
     context,
   }) => {
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     const worker = await readRestartWorker(expect, page)
     await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
     const observer = await context.newPage()
@@ -886,9 +885,9 @@ test.describe('daemon environment', () => {
   test('reads environment values, masks secrets and filters attention', async ({
     page,
   }) => {
-    // Registration and several server-window changes are real round trips.
+    // Admin preparation and several server-window changes are real round trips.
     test.slow()
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
     await expectStandaloneOverview(expect, page, DATABASE_HOST)
     await page.getByTestId('hilos-daemon-node-standalone').click()
@@ -1050,7 +1049,7 @@ test.describe('daemon environment', () => {
   test('cold loads the standalone comparison without table windows', async ({
     page,
   }) => {
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     const windows: string[] = []
     page.on('websocket', (socket) =>
       socket.on('framesent', ({ payload }) => {
@@ -1199,10 +1198,10 @@ for (const viewer of [false, true]) {
     page,
     browser,
   }) => {
-    // Registration, reload, route recovery and two source changes each cross the real daemon.
+    // Admin preparation, reload, route recovery and two source changes cross the daemon.
     test.slow()
     await setAdminViewMode(viewer)
-    if (!viewer) await signUpAdmin(expect, page)
+    if (!viewer) await grantAdminToSelf(expect, page)
     const reports = watchDaemonWebsocketsFrames(page)
     const { baseURL, ignoreHTTPSErrors } = test.info().project.use
     const visitorContext = await browser.newContext({
@@ -1232,6 +1231,14 @@ for (const viewer of [false, true]) {
       await expect(link).toBeFocused()
       reports.frames.length = 0
       await link.press('Enter')
+      // This serial standalone scenario has only this page; the visitor context
+      // is still empty. Let the node report the closed navigation sockets before
+      // taking a baseline from its sampled picture.
+      await expect
+        .poll(() => readDaemonWebsocketsCount(reports.frames), {
+          timeout: 10_000,
+        })
+        .toBe(1)
       const baseline = await expectStandaloneWebsockets(
         expect,
         page,

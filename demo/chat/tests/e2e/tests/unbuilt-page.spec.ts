@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
   gotoPage,
   PAGE_REFUSED,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('answers 404 for a page the view layer has not built', async ({
@@ -19,7 +19,7 @@ test('answers 404 for a page the view layer has not built', async ({
 test('draws no card for a page the view layer has not built', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
   await expect(page.getByTestId('dashboard-card-hilos_users')).toBeVisible()
   const daemonCard = page.getByTestId('dashboard-card-hilos_daemon')

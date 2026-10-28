@@ -18,11 +18,12 @@ import {
   ROW_PREFIX,
   ROWS,
   shownByTestId,
-  signUpAdmin,
   typeInto,
   watchClientDocument,
   watchDeliveryFrames,
   watchPageReplies,
+  createTestAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
@@ -129,7 +130,7 @@ test.afterEach(async () => {
 test('opens moderation kinds from dashboard, supports direct navigation, reload and history', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
   await expectPageReady(expect, page)
 
@@ -176,7 +177,7 @@ test('opens moderation kinds from dashboard, supports direct navigation, reload 
 test('opens each declared kind Overview and keeps its head, data and history in the SPA', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
@@ -383,7 +384,7 @@ test('opens each declared kind Overview and keeps its head, data and history in 
 test('loads a kind Overview directly and after F5 with the same resolved data', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   for (const {
     kind,
@@ -422,7 +423,7 @@ test('loads Rules directly and after F5 from one reply with both canonical windo
   page,
 }) => {
   const log = watchDeliveryFrames(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   try {
     for (const declared of DECLARED_KINDS) {
       await gotoPage(
@@ -461,7 +462,7 @@ for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
     page,
   }) => {
     const log = watchDeliveryFrames(page)
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(
       expect,
       page,
@@ -570,7 +571,7 @@ test('refuses an unknown kind through the server subscription as 404', async ({
   page,
 }) => {
   const observed = watchPageReplies(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/moderation/unknown_kind', PAGE_REFUSED)
   await expect(page).toHaveURL('/hilos/moderation/unknown_kind')
   await expect(page.getByTestId('page-error')).toHaveAttribute(
@@ -597,7 +598,7 @@ test('refuses an unknown Rules kind through the server subscription as 404', asy
   page,
 }) => {
   const observed = watchPageReplies(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(
     expect,
     page,
@@ -630,7 +631,7 @@ test('refuses an unknown Rules kind through the server subscription as 404', asy
 test('filters moderation kinds by search query and shows empty state when no rows match', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
   await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
 
@@ -821,7 +822,7 @@ test('resolves a photo rule Edit conflict, uses the saved policy after F5, then 
   const sends = countSentFrames(page, 'hilos_moderation_rule_add')
   const updates = countSentFrames(page, 'hilos_moderation_rule_update')
   const deletes = countSentFrames(page, 'hilos_moderation_rule_delete')
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await createTestAdmin(expect, page)
   const initialKey = modelKey()
   const initialRule = `Allow ordinary profile photos. Policy marker: ${initialKey}.`
   const editOwn = watchDeliveryFrames(page)

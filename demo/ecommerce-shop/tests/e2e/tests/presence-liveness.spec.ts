@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   openRawWebSocket,
   typeInto,
   gotoPage,
@@ -91,7 +91,7 @@ test('says a person probably offline while every socket of theirs is silent', as
   page,
 }) => {
   // Two silences waited into doubt and one into the close, 15 s of the stand's
-  // clock on its own, on top of a sign-up and an admin grant: 22.7 s on an idle
+  // clock on its own, on top of fixture setup and an admin grant: 22.7 s on an idle
   // box (scale 1), most of the 30 s cap, and the stand's clock does not stretch
   // with the load.
   test.slow()
@@ -103,8 +103,8 @@ test('says a person probably offline while every socket of theirs is silent', as
   try {
     await grantAdminToSelf(expect, page)
     const personPage = await personContext.newPage()
-    const person = await signUp(expect, personPage)
-    // A fresh document spends a rotation the sign-up may have left in flight, so
+    const person = await createTestUser(expect, personPage)
+    // A fresh document spends a rotation the fixture binding may have left in flight, so
     // the cookie the raw sockets present is the one the person's session ends on.
     await gotoPage(expect, personPage, '/')
     await expect(personPage.getByTestId('self-user')).toHaveText(person.name)

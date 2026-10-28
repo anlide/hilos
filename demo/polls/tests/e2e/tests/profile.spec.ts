@@ -9,9 +9,7 @@ import {
   changePassword,
   login,
   nameFromEmail,
-  openSignIn,
-  register,
-  signUp,
+  createTestUser,
   uniqueEmail,
   addVirtualAuthenticator,
   expectAccessLossNotice,
@@ -56,9 +54,7 @@ test('the header avatar leads to the profile root and its sections', async ({
 
   const email = uniqueEmail()
   const name = nameFromEmail(email)
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(name)
   const loadsAfterSignIn = fullLoads
 
@@ -100,7 +96,7 @@ test('renames the profile name without moderation', async ({ page }) => {
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
@@ -160,7 +156,7 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
@@ -223,9 +219,7 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
   })
 
   const was = uniqueEmail()
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, was)
+  await createTestUser(expect, page, { email: was })
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-email')).toContainText(was)
   const loadsBeforeChange = fullLoads
@@ -275,7 +269,7 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
     fullLoads += 1
   })
 
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/sign-in')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-identities-list')).toBeVisible()
@@ -311,7 +305,7 @@ for (const signOutOthers of [true, false]) {
     page,
     browser,
   }) => {
-    const { email } = await signUp(expect, page)
+    const { email } = await createTestUser(expect, page)
     const otherContext = await browser.newContext()
     try {
       const other = await otherContext.newPage()
@@ -357,7 +351,7 @@ for (const signOutOthers of [true, false]) {
 test('keeps password-change input after a wrong code and a common password (HIL-300)', async ({
   page,
 }) => {
-  const { email } = await signUp(expect, page)
+  const { email } = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/sign-in')
   await clickSubmit(expect, page.getByTestId('profile-password-change'))
   await confirmStepUp(page, 'profile-password-step-up-confirm')
@@ -388,7 +382,7 @@ test('keeps password-change input after a wrong code and a common password (HIL-
 test('says the last code was used, and sends a new one once the pause is over (HIL-1186)', async ({
   page,
 }) => {
-  const { email } = await signUp(expect, page)
+  const { email } = await createTestUser(expect, page)
   await changePassword(expect, page, {
     email,
     currentPassword: PASSWORD,
@@ -428,7 +422,7 @@ test('continues the email change in another tab of the same session (HIL-1182)',
   context,
 }) => {
   const tabA = await context.newPage()
-  const { email: was } = await signUp(expect, tabA)
+  const { email: was } = await createTestUser(expect, tabA)
   await gotoPage(expect, tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await tabA.getByTestId('profile-email-change').click()
@@ -468,7 +462,7 @@ test('continues the email change in another tab of the same session (HIL-1182)',
 test('opens the email change on the step reached before a reload (HIL-1182)', async ({
   page,
 }) => {
-  const { email: was } = await signUp(expect, page)
+  const { email: was } = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('profile-email-change').click()
@@ -495,7 +489,7 @@ test('saves the new password from another tab of the same session (HIL-1182)', a
   context,
 }) => {
   const tabA = await context.newPage()
-  const { email } = await signUp(expect, tabA)
+  const { email } = await createTestUser(expect, tabA)
   await gotoPage(expect, tabA, '/profile/sign-in')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await clickSubmit(expect, tabA.getByTestId('profile-password-change'))
@@ -522,7 +516,7 @@ test('adds a phone from another tab of the same session (HIL-1184)', async ({
   context,
 }) => {
   const tabA = await context.newPage()
-  await signUp(expect, tabA)
+  await createTestUser(expect, tabA)
   await gotoPage(expect, tabA, '/profile/sign-in')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await clickSubmit(expect, tabA.getByTestId('profile-sign-in-add'))
@@ -562,7 +556,7 @@ test('ends one other browser session from the sessions page', async ({
   const contextB = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(expect, pageA)
+    const account = await createTestUser(expect, pageA)
     const pageB = await contextB.newPage()
     await gotoPage(expect, pageB, '/profile/sessions')
     await login(expect, pageB, account.email)
@@ -632,7 +626,7 @@ test('signs out every other browser session at once', async ({ browser }) => {
   const contextB = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(expect, pageA)
+    const account = await createTestUser(expect, pageA)
     const pageB = await contextB.newPage()
     await gotoPage(expect, pageB, '/profile/sessions')
     await login(expect, pageB, account.email)
@@ -676,7 +670,7 @@ test('ends sessions of closed browsers without a reload (HIL-1180)', async ({
   const contextC = await browser.newContext()
   try {
     const pageA = await contextA.newPage()
-    const account = await signUp(expect, pageA)
+    const account = await createTestUser(expect, pageA)
     const pageB = await contextB.newPage()
     await gotoPage(expect, pageB, '/profile/sessions')
     await login(expect, pageB, account.email)
@@ -713,7 +707,7 @@ test('updates the sign-in summary when another tab adds a device key', async ({
   page,
   context,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
     'Password',

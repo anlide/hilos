@@ -8,12 +8,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   dismissToasts,
   shownByTestId,
   clickSubmit,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 /** The settings page this spec drives. */
@@ -58,8 +58,8 @@ test('switching impersonation off takes the takeover off the card, and on brings
     cardLoads += 1
   })
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, personPage)
     const card = `/hilos/user/${person.userId}`
     const open = page.getByTestId('hilos-user-impersonate-open')
 
@@ -112,8 +112,8 @@ test('switching impersonation off returns an administrator from a takeover witho
     loads += 1
   })
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, await personContext.newPage())
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, await personContext.newPage())
 
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-open'))
@@ -128,7 +128,7 @@ test('switching impersonation off returns an administrator from a takeover witho
     await dismissToasts(page)
     const loadsBeforeSwitch = loads
 
-    await signUpAdmin(expect, switcherPage)
+    await grantAdminToSelf(expect, switcherPage)
     await setAllowed(switcherPage, false)
     switchedOff = true
     await expect(strip).toBeHidden()

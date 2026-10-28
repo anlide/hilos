@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test'
 
 import {
   PASSWORD,
-  signUp,
-  ANALYTICS_SIGN_UP_LAST_ACTION,
-  ANALYTICS_WRITER_TIMEOUT_MS,
+  uniqueEmail,
+  login,
+  openSignIn,
+  waitAnalyticsBrowserSession,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
@@ -15,19 +16,19 @@ import {
   expectNoAnalyticsBodies,
   expectNoAnalyticsPersonSession,
   expectOtherAnalyticsSession,
-  readAnalyticsBrowserSession,
   watchAnalyticsFrames,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
 
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
-// action body — the address or the password of a registration — reaches the
-// screen or the frames. The actions are the registration of the person and of
-// the administrator, because tasks and polls declare no actions of their own.
+// action body — a sign-in address or password — reaches the screen or frames.
+// Both actors sign in through the real surface on the main page.
 
 const sendCommand = createCommandChannel({
   host: process.env.COMMAND_HOST ?? 'tasks-daemon-test',
@@ -41,9 +42,12 @@ test('shows real session actions in source order without bodies or another sessi
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Two registrations and the wait on the journal writer exceed the base cap.
+  // Two real logins and the wait on the journal writer exceed the base cap.
   test.slow()
-  const user = await signUp(expect, page)
+  const user = await seedTestUser({ email: uniqueEmail() })
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await login(expect, page, user.email, PASSWORD)
   const browserMajor = await page.evaluate(
     () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
   )
@@ -54,30 +58,31 @@ test('shows real session actions in source order without bodies or another sessi
   try {
     const admin = await adminContext.newPage()
     const frames = watchAnalyticsFrames(admin)
-    const adminId = await signUpAdmin(expect, admin)
+    const { userId: adminId, email: adminEmail } = await seedTestUser({
+      email: uniqueEmail(),
+    })
+    await gotoPage(expect, admin, '/')
+    await openSignIn(expect, admin)
+    await login(expect, admin, adminEmail, PASSWORD)
+    await setAdmin(adminId, true)
+    await expect(admin.getByTestId('nav-admin')).toHaveAttribute(
+      'data-access',
+      'full',
+    )
+    bodies.push(adminEmail)
 
-    const readUser = () => readAnalyticsBrowserSession(sendCommand, user.userId)
-    const readAdmin = () => readAnalyticsBrowserSession(sendCommand, adminId)
-    await expect
-      .poll(
-        async () =>
-          (await readUser()).actionNames.includes(
-            ANALYTICS_SIGN_UP_LAST_ACTION,
-          ),
-        { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
-      )
-      .toBe(true)
-    await expect
-      .poll(
-        async () =>
-          (await readAdmin()).actionNames.includes(
-            ANALYTICS_SIGN_UP_LAST_ACTION,
-          ),
-        { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
-      )
-      .toBe(true)
-    const userSession = await readUser()
-    const adminSession = await readAdmin()
+    const userSession = await waitAnalyticsBrowserSession(
+      expect,
+      sendCommand,
+      user.userId,
+      AUTH_ACTION_LOGIN,
+    )
+    const adminSession = await waitAnalyticsBrowserSession(
+      expect,
+      sendCommand,
+      adminId,
+      AUTH_ACTION_LOGIN,
+    )
     expect(userSession.browserSessionId).not.toBeNull()
     expect(adminSession.browserSessionId).not.toBeNull()
     expect(userSession.browserSessionId).not.toBe(adminSession.browserSessionId)
@@ -121,7 +126,7 @@ test('shows real session actions in source order without bodies or another sessi
       admin,
       userSession.actionNames,
     )
-    // The whole registration ran on the main page: every action stands on it.
+    // Both real logins ran on the main page: every action stands on it.
     await expectAnalyticsActionsOnPage(expect, admin, 'main')
 
     await expectAnalyticsSessionFrames(
@@ -136,7 +141,7 @@ test('shows real session actions in source order without bodies or another sessi
     await admin.getByTestId('hilos-table-sort-createdTs').click()
     await expectAnalyticsActionRows(expect, admin, [...ascending].reverse())
 
-    // The observer is on the admin's analytics page only: the registration
+    // The observer is on the admin's analytics page only: the sign-in
     // screens legitimately carried these bodies earlier, in the other context.
     await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 

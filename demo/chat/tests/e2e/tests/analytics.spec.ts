@@ -2,7 +2,12 @@ import { expect, test } from '@playwright/test'
 
 import {
   nameFromEmail,
-  register,
+  createTestUser,
+  createTestAdmin,
+  grantAdminToSelf,
+  login,
+  openSignIn,
+  PASSWORD,
   uniqueEmail,
   ANALYTICS_SESSION_LIST_PATH,
   analyticsSessionListViewports,
@@ -33,10 +38,12 @@ import {
   type SocketFrame,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
+import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
 
 const sendCommand = createCommandChannel({
   host: process.env.COMMAND_HOST ?? 'chat-test',
@@ -52,7 +59,7 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
   const frames: SocketFrame[] = []
   const observer = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos')
 
     await expectAnalyticsDashboardCard(expect, page)
@@ -82,20 +89,13 @@ test('opens a real person from Analytics People and returns through People crumb
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Two registrations and the real journal-writer wait exceed the base cap.
+  // Independent browsers and the real journal-writer wait exceed the base cap.
   test.slow()
   // Give the target initials distinct from the administrator's e2e- name.
   const email = `person-${uniqueEmail()}`
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await page.getByTestId('message-signin').click()
-  await register(expect, page, email)
+  const user = await createTestUser(expect, page, { email })
   const name = nameFromEmail(email)
   await expect(page.getByTestId('self-user')).toHaveText(name)
-  const user = {
-    userId: Number(await page.getByTestId('self-user-id').textContent()),
-    name,
-  }
   expect(user.userId).toBeGreaterThan(0)
   const browserMajor = await page.evaluate(
     () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
@@ -105,9 +105,7 @@ test('opens a real person from Analytics People and returns through People crumb
   const admin = await adminContext.newPage()
   const frames = watchDeliveryFrames(admin)
   try {
-    const adminId = await signUpAdmin(expect, admin, {
-      entryId: 'message-signin',
-    })
+    const adminId = await createTestAdmin(expect, admin)
     expect(adminId).not.toBe(user.userId)
     const adminName = await admin.getByTestId('self-user').innerText()
     expect(adminName).toMatch(/^e2e-/)
@@ -276,9 +274,7 @@ test('People starts with one Today viewport and resets only its Period filter', 
   test.slow()
   const frames = watchDeliveryFrames(page)
   try {
-    const userId = await signUpAdmin(expect, page, {
-      entryId: 'message-signin',
-    })
+    const userId = await createTestAdmin(expect, page)
     const name = await page.getByTestId('self-user').innerText()
     await waitAnalyticsBrowserSession(expect, sendCommand, userId)
     // A document entry exercises the buffered page_response and lazy view mount.
@@ -404,14 +400,20 @@ test('People starts with one Today viewport and resets only its Period filter', 
 test('Browser sessions opens real sessions from the tab and Person with the same return link', async ({
   page,
 }) => {
-  // Registration waits for a real journal rotation and its writer.
+  // The session probe waits for a real journal rotation and its writer.
   test.slow()
   const frames = watchDeliveryFrames(page)
   try {
-    const userId = await signUpAdmin(expect, page, {
-      entryId: 'message-signin',
-    })
-    const name = await page.getByTestId('self-user').innerText()
+    // The row checks a positive action count, so sign in through the surface.
+    const { userId, name, email } = await seedTestUser({ email: uniqueEmail() })
+    await gotoPage(expect, page, '/')
+    await openSignIn(expect, page, 'message-signin')
+    await login(expect, page, email, PASSWORD)
+    await setAdmin(userId, true)
+    await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+      'data-access',
+      'full',
+    )
     const browserMajor = await page.evaluate(
       () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
     )
@@ -420,6 +422,7 @@ test('Browser sessions opens real sessions from the tab and Person with the same
       expect,
       sendCommand,
       userId,
+      AUTH_ACTION_LOGIN,
     )
     const id = session.browserSessionId!
     await gotoPage(expect, page, '/hilos/analytics')
@@ -509,7 +512,7 @@ test('Browser sessions keeps Period in its URL through tile entry, reset, reload
 }) => {
   const frames = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos/analytics')
     const period = page.getByTestId('hilos-table-filter-period')
     // Each real tile owns a calendar address; its snapshot is not sent as list context.
@@ -659,7 +662,7 @@ test('Browser sessions viewer receives hidden personal values with only public s
 }) => {
   // Seed through the real journal, then read from an independent guest browser.
   test.slow()
-  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  const userId = await createTestAdmin(expect, page)
   const session = await waitAnalyticsBrowserSession(expect, sendCommand, userId)
   const viewerContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const viewer = await viewerContext.newPage()

@@ -12,7 +12,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -129,7 +129,7 @@ test('guest reset clears both tabs and follows later site defaults across reload
       ).toBeNull()
     }
 
-    await signUpAdmin(expect, admin)
+    await grantAdminToSelf(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await typeInto(search, THEME_DEFAULT_KEY)

@@ -13,14 +13,13 @@
 import { expect, test } from '@playwright/test'
 import {
   PASSWORD,
-  registerEmailOnly,
+  createTestUser,
   clickSubmit,
   typeInto,
   gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
-import { signUp } from '../helpers/session.js'
 
 /** The subject AccountDeletionMailTemplate sends the code under. */
 const SUBJECT = 'Confirm deleting your account'
@@ -29,7 +28,8 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
   context,
   page,
 }) => {
-  const email = await registerEmailOnly(expect, page)
+  const { email } = await createTestUser(expect, page, { passwordless: true })
+  await gotoPage(expect, page, '/profile')
   const other = await context.newPage()
   await gotoPage(expect, other, '/profile')
   await expect(other.getByTestId('account-deletion-open')).toBeVisible()
@@ -85,7 +85,7 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
 test('asks the password of a password account before anything else', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
 
   await clickSubmit(expect, page.getByTestId('account-deletion-open'))
@@ -104,7 +104,8 @@ test('shares the deletion code step and closes other open windows on start and c
   context,
   page,
 }) => {
-  const email = await registerEmailOnly(expect, page)
+  const { email } = await createTestUser(expect, page, { passwordless: true })
+  await gotoPage(expect, page, '/profile')
   const other = await context.newPage()
   await gotoPage(expect, other, '/profile')
 
@@ -133,7 +134,8 @@ test('shares the deletion code step and closes other open windows on start and c
 test('resumes the deletion code step after reload and discards it on Cancel', async ({
   page,
 }) => {
-  await registerEmailOnly(expect, page)
+  await createTestUser(expect, page, { passwordless: true })
+  await gotoPage(expect, page, '/profile')
   await clickSubmit(expect, page.getByTestId('account-deletion-open'))
   await clickSubmit(expect, page.getByTestId('account-deletion-continue'))
   await expect(page.getByTestId('account-deletion-code')).toBeVisible()

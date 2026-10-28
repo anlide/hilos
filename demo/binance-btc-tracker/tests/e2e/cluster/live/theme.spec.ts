@@ -9,7 +9,7 @@ import {
 import {
   login,
   openSignIn,
-  signUp,
+  createTestUser,
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,
   THEME_PICK_STORAGE_KEY,
@@ -393,10 +393,10 @@ test('cluster theme settings reach every master without reloading', async ({
       [CLUSTER_LEADER, 'light', 'dark'],
       [third, null, 'light'],
     ] as const) {
-      // Registration is preparation on a disposable browser. Each recipient then
+      // Account creation is preparation on a disposable browser. Each recipient then
       // signs in by password with its own cookie and StorageArea, never a copy.
       const seed = await fresh(CLUSTER_FOLLOWER, 'light')
-      const person = await signUp(expect, seed.page)
+      const person = await createTestUser(expect, seed.page)
       await proof.close(seed, true)
       const account = await fresh(node, system)
       clients.push(account)
@@ -557,7 +557,7 @@ async function expectAccountTabs(
 test('cluster theme account choices and reset reach independent sessions on every master', async ({
   browser,
 }) => {
-  // Two registrations, two independent logins, five broadcasts, six new tabs
+  // Two accounts, two independent logins, five broadcasts, six new tabs
   // and an Appearance save exceed the single-client cap on an idle stand.
   test.slow()
   await withThemeProof(browser, async (proof) => {
@@ -568,7 +568,7 @@ test('cluster theme account choices and reset reach independent sessions on ever
     }
     const first = await fresh(CLUSTER_FOLLOWER, 'light')
     clients.push(first)
-    const person = await signUp(expect, first.page)
+    const person = await createTestUser(expect, first.page)
     first.userId = person.userId
     first.initialized = false
     const accounts = [first]
@@ -590,7 +590,7 @@ test('cluster theme account choices and reset reach independent sessions on ever
     }
     const stranger = await fresh(third, 'dark')
     clients.push(stranger)
-    stranger.userId = (await signUp(expect, stranger.page)).userId
+    stranger.userId = (await createTestUser(expect, stranger.page)).userId
     expect(stranger.userId).not.toBe(person.userId)
     await chooseHeaderTheme(expect, stranger.page, 'light')
     stranger.pick = 'light'
@@ -695,7 +695,7 @@ test('cluster theme account choices and reset reach independent sessions on ever
 test('cluster theme stale Dark session reconnects after remote reset without adoption', async ({
   browser,
 }) => {
-  // A registration, an independent login and two real reconnects include the
+  // Account preparation, an independent login and two real reconnects include the
   // client's reconnect backoff and need more than the single-client cap.
   test.slow()
   await withThemeProof(browser, async (proof) => {
@@ -705,7 +705,7 @@ test('cluster theme stale Dark session reconnects after remote reset without ado
     }
     const first = await proof.fresh(CLUSTER_FOLLOWER, 'light')
     proof.clients.push(first)
-    const person = await signUp(expect, first.page)
+    const person = await createTestUser(expect, first.page)
     first.userId = person.userId
     first.pick = 'dark'
     first.initialized = true

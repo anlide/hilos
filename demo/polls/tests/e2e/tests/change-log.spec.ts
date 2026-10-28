@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
+  grantAdminToSelf,
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_FEED_PATH,
   CHANGE_LOG_TABLES_PATH,
@@ -27,7 +28,7 @@ import {
 test('opens Change Log from the admin dashboard with its overview and feed', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
 
   await expectChangeLogDashboardCard(expect, page)
@@ -49,8 +50,8 @@ test(
     })
     const personPage = await personContext.newPage()
     try {
-      const adminId = await signUpAdmin(expect, page)
-      const person = await signUp(expect, personPage)
+      const adminId = await grantAdminToSelf(expect, page)
+      const person = await createTestUser(expect, personPage)
       await gotoPage(expect, page, `/hilos/user/${person.userId}`)
       await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
       await expect(page.getByTestId('modal')).toBeVisible()

@@ -3,11 +3,11 @@ import {
   login,
   openSignIn,
   PASSWORD,
-  signUp,
+  createTestUser,
   clickSubmit,
   gotoAdmitted,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { expect, test } from '@playwright/test'
 
@@ -23,8 +23,8 @@ test('a blocked account prepares and downloads its data after a credited passwor
   })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))

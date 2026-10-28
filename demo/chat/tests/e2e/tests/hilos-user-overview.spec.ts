@@ -14,9 +14,9 @@ import {
   type SocketFrame,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — the Overview's project slot opens the real chat participant card.
 
@@ -25,7 +25,7 @@ test.use({ locale: 'en-GB', timezoneId: 'Asia/Tokyo' })
 test('cold user Overview and F5 retain the shared head and open the same chat participant', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  const userId = await createTestAdmin(expect, page)
   const name = await page.getByTestId('self-user').innerText()
   // A fresh document has never subscribed to the users list or either card.
   // Only its session cookie is shared with the administrator's first window.
@@ -104,7 +104,7 @@ test('a guest sees the public participant activity in the non-UTC browser zone f
   browser,
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const guestContext = await browser.newContext({
     baseURL,
@@ -142,7 +142,7 @@ test('a guest sees the public participant activity in the non-UTC browser zone f
       participant.lastActivity,
       'Asia/Tokyo',
     )
-    // Fresh registered accounts distinguish epoch milliseconds from seconds.
+    // Fresh fixture accounts distinguish epoch milliseconds from seconds.
     expect(participant.lastActivity).toBeGreaterThan(1_000_000_000_000)
     await test.info().attach('guest-public-activity-wire', {
       body: JSON.stringify(frames),

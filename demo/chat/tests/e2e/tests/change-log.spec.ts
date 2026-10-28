@@ -32,13 +32,15 @@ import {
   typeInto,
   gotoPage,
   signUpAdmin,
+  createTestAdmin,
+  createTestUser,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 test('opens Change Log from the admin dashboard with its overview and feed', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
 
   await expectChangeLogDashboardCard(expect, page)
@@ -149,7 +151,7 @@ test('navigates both overview tiles and all four native section links with Back'
 }) => {
   const observed = watchSectionReplies(page)
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, CHANGE_LOG_PATH)
     await expectChangeLogOverview(expect, page)
     await expect(page.getByTestId(/^hilos-change-log-link-/)).toHaveCount(2)
@@ -185,7 +187,7 @@ for (const section of [SECTION[1], SECTION[3]]) {
   }) => {
     const observed = watchSectionReplies(page)
     try {
-      await signUpAdmin(expect, page, { entryId: 'message-signin' })
+      await grantAdminToSelf(expect, page)
       await gotoPage(expect, page, section.path)
       if (section.key === 'hilos_change_log_feed')
         await expectChangeLogFeed(expect, page)
@@ -224,10 +226,8 @@ test(
     })
     const personPage = await personContext.newPage()
     try {
-      const adminId = await signUpAdmin(expect, page, {
-        entryId: 'message-signin',
-      })
-      const person = await signUp(expect, personPage)
+      const adminId = await createTestAdmin(expect, page)
+      const person = await createTestUser(expect, personPage)
       await gotoPage(expect, page, `/hilos/user/${person.userId}`)
       await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
       await expect(page.getByTestId('modal')).toBeVisible()

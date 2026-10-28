@@ -25,7 +25,8 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUp } from '../helpers/session.js'
@@ -36,7 +37,7 @@ test('independent account sessions synchronize profile and header choices and ke
   page,
   baseURL,
 }) => {
-  // Three registrations, a separate login, resets and live settings delivery
+  // Independent sessions, a real login, resets and live settings delivery
   // exceed the single-client cap even on an idle stand.
   test.slow()
   const contexts: BrowserContext[] = []
@@ -63,11 +64,11 @@ test('independent account sessions synchronize profile and header choices and ke
     contexts.push(adminContext)
     admin = await adminContext.newPage()
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page, { themePick: null })
     await gotoPage(expect, page, '/profile', PAGE_READY)
 
     // Login creates a separate session and storage; neither is copied from the
-    // registered browser, so browser storage events cannot supply this proof.
+    // first browser, so browser storage events cannot supply this proof.
     const second = await secondContext.newPage()
     await emulateSystemTheme(second, 'dark')
     await gotoPage(expect, second, '/profile')
@@ -85,7 +86,7 @@ test('independent account sessions synchronize profile and header choices and ke
 
     const stranger = await strangerContext.newPage()
     await emulateSystemTheme(stranger, 'light')
-    await signUp(expect, stranger)
+    await createTestUser(expect, stranger, { themePick: null })
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, stranger, 'light')
 
@@ -135,7 +136,7 @@ test('independent account sessions synchronize profile and header choices and ke
     await expectThemeHeader(expect, stranger, 'light')
     await expectProfileTheme(expect, stranger, 'light')
 
-    await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await typeInto(search, THEME_DEFAULT_KEY)
@@ -343,7 +344,7 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
   const frames: SocketFrame[] = []
   try {
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page, { themePick: null })
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await chooseHeaderTheme(expect, page, 'dark')
     const second = await secondContext.newPage()
@@ -443,7 +444,7 @@ test('a never-chosen account still adopts a guest Dark choice on first login', a
   })
   try {
     await emulateSystemTheme(page, 'light')
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page, { themePick: null })
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await expectThemeMode(expect, page, 'light')
     await expectThemeHeader(expect, page, 'system', true)
@@ -470,7 +471,7 @@ test('a never-chosen account still adopts a guest Dark choice on first login', a
 test('profile and header work by keyboard and return focus', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page, { themePick: null })
   await gotoPage(expect, page, '/profile', PAGE_READY)
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
@@ -572,7 +573,7 @@ test('registration keeps the guest pick and switching Off closes the open profil
   page,
   baseURL,
 }) => {
-  // Two registrations and two live setting writes exceed the single-client cap.
+  // Registration and two live setting writes exceed the single-client cap.
   test.slow()
   const adminContext = await browser.newContext({
     baseURL,
@@ -592,7 +593,7 @@ test('registration keeps the guest pick and switching Off closes the open profil
     await expectProfileTheme(expect, page, 'dark')
 
     admin = await adminContext.newPage()
-    await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, admin)
     await gotoPage(expect, admin, '/hilos/settings', PAGE_READY)
     const search = admin.getByTestId('hilos-table-search')
     await typeInto(search, THEME_SWITCHING_KEY)

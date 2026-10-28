@@ -52,11 +52,24 @@ const OPERATION = 'e2e-freeze'
 // no route params.
 const ADMIN_URL = '/hilos'
 
-test.afterEach(async () => {
-  // Unconditional, and an open rather than a leave: an enter can be refused and
-  // still land afterwards, a failed assertion can strand the node in any phase,
-  // and only the open lifts from all of them.
-  await openProtectedModeIfAny()
+test.afterEach(async ({ page }, info) => {
+  let frozenDocument: boolean
+  try {
+    frozenDocument = await page.getByTestId('maintenance').isVisible()
+    if (frozenDocument) {
+      await markDocument(page)
+    }
+  } finally {
+    // Unconditional, and an open rather than a leave: an enter can be refused and
+    // still land afterwards, a failed assertion can strand the node in any phase,
+    // and only the open lifts from all of them.
+    await openProtectedModeIfAny()
+  }
+  if (frozenDocument) {
+    // Inactive precedes the resumed roster's lift frame. Finish its reload here
+    // before that frame can reload the next test's newly connected browser.
+    await expectSelfReload(page, info.project.use.navigationTimeout)
+  }
 })
 
 test('the verification window waits for a code before it offers a field', async ({

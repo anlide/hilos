@@ -5,7 +5,7 @@ import {
   continueFromDone,
   login,
   logout,
-  signUp,
+  createTestUser,
   submitRegistration,
   submitRegistrationCode,
   uniqueEmail,
@@ -94,7 +94,7 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // ceremony (HIL-284) mints one, so enroll a passkey first, then sign out.
   await addVirtualAuthenticator(page)
   await watchPasskeyCreation(page)
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/sign-in')
   await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
   // Adding a way in asks the password first (HIL-1138).
@@ -299,7 +299,7 @@ test('warns a passkey-only account on the profile and adds a password from the w
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {
   await addVirtualAuthenticator(page)
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
 
   await gotoPage(expect, page, '/profile/sign-in')
   await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))

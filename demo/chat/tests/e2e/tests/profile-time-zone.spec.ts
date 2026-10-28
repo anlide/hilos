@@ -17,8 +17,8 @@ import {
   gotoPage,
   PAGE_READY,
   typeInto,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 test.use({ timezoneId: 'Europe/Warsaw' })
 
@@ -28,7 +28,7 @@ test('displays automatic browser time zone with Change before Theme and receives
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await expect(page.getByTestId('profile-name')).toBeVisible()
     await expectProfileTimeZoneCatalog(expect, frames)
@@ -67,7 +67,7 @@ test('renders delivered own time zone and updates reactively on session restate 
 
   const socket = await forwardSessionTimeZone(page, 'Asia/Tokyo')
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toBeVisible()
 
@@ -101,7 +101,7 @@ test('real account choices fan out to independent sessions, preserve picker sear
   test.slow()
   const contexts: BrowserContext[] = []
   try {
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     const secondContext = await browser.newContext({
       baseURL,
@@ -133,7 +133,7 @@ test('real account choices fan out to independent sessions, preserve picker sear
     })
     contexts.push(strangerContext)
     const stranger = await strangerContext.newPage()
-    const otherPerson = await signUp(expect, stranger)
+    const otherPerson = await createTestUser(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')

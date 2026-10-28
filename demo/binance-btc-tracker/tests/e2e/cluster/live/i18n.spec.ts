@@ -13,7 +13,7 @@ import {
   typeInto,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_FOLLOWER,
@@ -55,7 +55,7 @@ const test = baseTest.extend<{ masters: [Page, Page] }>({
         upgrades.push(
           await watchClusterMasterUpgrades(expect, page, stand, node),
         )
-        await signUpAdmin(expect, page)
+        await grantAdminToSelf(expect, page)
       }
       expect(pages[0].context()).not.toBe(pages[1].context())
       for (const upgrade of upgrades) await upgrade.assert()

@@ -7,8 +7,9 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
   tableRowKeyByText,
+  createTestAdmin,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { openBotEdit, watchBotSearch } from '../helpers/bots'
@@ -28,7 +29,7 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 test('renders the connected user in the participant roster', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
 
   await expect(
     page.getByTestId('participant').filter({ hasText: user.name }),
@@ -81,7 +82,7 @@ test('sends a message action and starts the re-send lockout', async ({
 
   // The composer is gated for anonymous, so sign in first; the send then rides
   // the same live connection.
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   // The stand's model answers only what a spec dictated, so the permission
   // is ordered up front under a key the text carries; with none the text
@@ -128,7 +129,7 @@ test('sends a message action and starts the re-send lockout', async ({
 test('renders a sent message in the event stream after moderation', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const key = modelKey()
   const text = `hello from e2e ${key}`
@@ -338,9 +339,7 @@ test.describe('home links', () => {
     let quinnActive = false
 
     try {
-      const userId = await signUpAdmin(expect, page, {
-        entryId: 'message-signin',
-      })
+      const userId = await createTestAdmin(expect, page)
       const name = (await page.getByTestId('self-user').innerText()).trim()
       await setBotActive(page, QUIET_BOT, true, windows)
       quinnActive = true

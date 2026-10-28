@@ -6,11 +6,12 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestUser,
+  createTestUserJoined,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — notifications raised by chat's own events
 
@@ -44,14 +45,13 @@ test('a mention reaches the named user in another window', async ({
   page,
   browser,
 }) => {
-  const author = await signUp(expect, page)
+  const author = await createTestUser(expect, page)
 
-  // The recipient signs in and joins its notification group BEFORE the message is
-  // published, so the mention arrives over the live signal (see signUpJoined in
-  // helpers/notifications.ts for why a cold load is what makes the join waitable).
+  // Bind the recipient and cold-load home before publishing the message. The
+  // settled page answer follows the notification group join, so the mention
+  // arrives over the live signal (see createTestUserJoined).
   const recipient = await openSecondPerson(browser)
-  const { name: recipientName } = await signUp(expect, recipient)
-  await gotoPage(expect, recipient, '/')
+  const { name: recipientName } = await createTestUserJoined(expect, recipient)
 
   // The message is moderated by the stand's model, which answers only what a spec
   // dictated: the key rides in the text, and the permission is ordered up front.
@@ -88,12 +88,11 @@ test('an administrator renaming somebody reaches the renamed person and the room
 }) => {
   // This browser is the account about to be renamed; its socket joins the
   // notification group first, so the row arrives over the live signal (the cold
-  // load after the sign-up is what signUpJoined makes waitable).
-  const { userId, name: oldName } = await signUp(expect, page)
-  await gotoPage(expect, page, '/')
+  // load after binding is what createTestUserJoined makes waitable).
+  const { userId, name: oldName } = await createTestUserJoined(expect, page)
 
   const adminPage = await openSecondPerson(browser)
-  await signUpAdmin(expect, adminPage, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, adminPage)
   // Straight to the detail page: the users list pages, and this account is not
   // guaranteed to be on the first page of a database every test writes to.
   await gotoPage(expect, adminPage, `/hilos/user/${userId}`)

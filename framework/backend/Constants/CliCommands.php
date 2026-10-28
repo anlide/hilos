@@ -198,6 +198,12 @@ final class CliCommands
     /** @var string Command: Bulk-seed N fixture users with password identities (test-only) */
     public const string USER_TEST_SEED = 'test:user:seed';
 
+    /** @var string Command: Create one verified fixture user through its owner (test-only) */
+    public const string USER_TEST_CREATE = 'test:user:create';
+
+    /** @var string Command: Bind an anonymous fixture session through its owner (test-only) */
+    public const string SESSION_TEST_BIND = 'test:session:bind';
+
     /**
      * Echo a payload back through the whole command round-trip (test-only).
      *

@@ -2,7 +2,7 @@ import { test, expect, type Expect, type Page } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { createLegacyBackupFixture } from '../../../../../framework/frontend/scripts/backupFixture.mjs'
 import {
-  signUp,
+  createTestUser,
   dismissToasts,
   deliveryObject,
   enterCalendarDate,
@@ -486,7 +486,7 @@ test('closes the backup page to a guest', async ({ page }) => {
 
 test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
   // Signed in but not admin: 403, the error page replaces the backup surface.
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/hilos/backup')
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()

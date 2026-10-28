@@ -6,8 +6,8 @@ import {
   typeInto,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
   tableRowKeyByText,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // spec-owner: demo — chat's bot detail page
@@ -44,7 +44,7 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
   // the guest outlive the single-client cap.
   test.slow()
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/app/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()

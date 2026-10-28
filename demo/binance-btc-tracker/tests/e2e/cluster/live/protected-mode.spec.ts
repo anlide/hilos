@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   CIRCLE_ONLINE,
   MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
@@ -121,7 +121,7 @@ test(
         await expect(page.getByTestId('maintenance')).toBeHidden()
       }
       const follower = pages[CLUSTER_MASTERS.indexOf(CLUSTER_FOLLOWER)]
-      const person = await signUp(expect, follower)
+      const person = await createTestUser(expect, follower)
       expect(await enterProtectedMode(OPERATION)).toBe('active')
       for (const page of pages) {
         await expect(page.getByTestId('maintenance')).toBeVisible()
@@ -169,7 +169,7 @@ test(
       await clearMaintenanceCircle(operator)
       const operatorSession = await sessionToken(operator)
 
-      const memberEmail = (await signUp(expect, member)).email
+      const memberEmail = (await createTestUser(expect, member)).email
       await addToMaintenanceCircle(operator, memberEmail)
       await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
       await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
@@ -329,7 +329,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
     circlePrepared = true
-    const memberEmail = (await signUp(expect, member)).email
+    const memberEmail = (await createTestUser(expect, member)).email
     await gotoPage(expect, member, '/')
     const memberName = await member.getByTestId('self-user').innerText()
     const memberId = await member.getByTestId('self-user-id').innerText()

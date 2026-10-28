@@ -16,14 +16,14 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata', async ({
   page,
 }) => {
   const frames = watchDeliveryFrames(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
   await page.getByTestId('dashboard-card-hilos_change_log').click()
   await expectChangeLogSectionHead(expect, page, 'hilos_change_log')

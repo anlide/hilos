@@ -5,9 +5,9 @@ import {
   typeInto,
   gotoPage,
   expectPageReady,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { signUp } from '../helpers/session.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import {
@@ -41,7 +41,7 @@ test('the navbar links the current user to the profile page', async ({
     fullLoads += 1
   })
 
-  const { name } = await signUp(expect, page)
+  const { name } = await createTestUser(expect, page)
   const loadsAfterColdLoad = fullLoads
 
   await expect(page.getByTestId('nav-profile')).toBeVisible()
@@ -96,7 +96,7 @@ test('the navbar links the current user to the profile page', async ({
 })
 
 test('renames the current user through the edit modal', async ({ page }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -126,7 +126,7 @@ for (const draft of ['Unsent name', 'X']) {
     const wire = watchProfileRenameFrames(page)
     const sends = countSentFrames(page, 'hilos_profile_name_set')
     try {
-      const user = await signUp(expect, page)
+      const user = await createTestUser(expect, page)
       await gotoPage(expect, page, '/profile')
       await clickSubmit(expect, page.getByTestId('profile-edit'))
       await confirmStepUp(page, 'profile-name-step-up-confirm')
@@ -179,11 +179,11 @@ for (const draft of ['Unsent name', 'X']) {
 test('surfaces a conflict when the name changes in another tab', async ({
   context,
 }) => {
-  // Two tabs of the same user share the session cookie within one context, so
-  // registering in the first tab signs both in.
+  // Two tabs share the session cookie within one context, so binding the
+  // fixture account in the first tab establishes the identity for both.
   const tabA = await context.newPage()
   const wireA = watchProfileRenameFrames(tabA)
-  const user = await signUp(expect, tabA)
+  const user = await createTestUser(expect, tabA)
   await gotoPage(expect, tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabA.getByTestId('profile-name')).toBeVisible()
@@ -247,7 +247,7 @@ test('surfaces a conflict when the name changes in another tab', async ({
 })
 
 test('opens the push devices page', async ({ page }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/devices')
 
   await expect(page.getByTestId('profile-devices')).toBeVisible()

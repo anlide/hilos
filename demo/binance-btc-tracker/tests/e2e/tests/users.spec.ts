@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 import {
   PASSWORD,
-  signUp,
+  createTestUser,
+  createTestAdmin,
   advanceTableToRow,
   controlSocketReconnect,
   countSentFrames,
@@ -34,7 +35,6 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   sessionToken,
-  signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -58,11 +58,11 @@ const viewerTest = test.extend<{ viewerPage: Page }>({
 })
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
-// real table in the new frontend) over the live socket, a registered user's row
+// real table in the new frontend) over the live socket, a prepared user's row
 // is present, search filters the client viewport, a row links to the user detail
 // page, and a modal rename round-trips through the backend and re-renders with no
 // document reload. Under session≠user a fresh context is anonymous, so each test
-// registers a user to populate the table (the register itself creates the row).
+// prepares its own user row before opening the table.
 
 /**
  * The count the footer shows reads `${first} – ${last} of ${total}`. The pattern
@@ -96,7 +96,7 @@ test('lists users in the framework table and opens a detail page', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
@@ -118,7 +118,7 @@ test('lists users in the framework table and opens a detail page', async ({
 test('user Overview has no empty project section and supports keyboard rename', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(expect, page)
+  const userId = await createTestAdmin(expect, page)
   const name = await page.getByTestId('nav-profile-name').getAttribute('title')
   expect(name).toBeTruthy()
   await gotoPage(expect, page, `/hilos/user/${userId}`)
@@ -167,7 +167,7 @@ test.describe('people time zones and numeric activity', () => {
     const cardPageRequests = countSentFrames(card, '"type":"page_')
     const cardTableRequests = countSentFrames(card, '"type":"table_')
     try {
-      const readerId = await signUpAdmin(expect, page)
+      const readerId = await createTestAdmin(expect, page)
       await gotoPage(expect, page, `/hilos/user/${readerId}`)
       await expectUserTimeZone(expect, page, null)
       expect(userTableRows(listSocket.frames).at(-1)?.user.timeZone).toBeNull()
@@ -344,7 +344,7 @@ test.describe('people time zones and numeric activity', () => {
           frames.push(frame),
         )
         try {
-          const automaticId = await signUpAdmin(expect, page)
+          const automaticId = await createTestAdmin(expect, page)
           await gotoPage(expect, page, `/hilos/user/${automaticId}`)
           await expectUserTimeZone(expect, page, null)
           expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBeNull()
@@ -358,7 +358,7 @@ test.describe('people time zones and numeric activity', () => {
           expect(userTableRows(adminFrames).at(-1)?.user.timeZone).toBe(
             chosenZone,
           )
-          if (viewer === 'person') await signUp(expect, viewerPage)
+          if (viewer === 'person') await createTestUser(expect, viewerPage)
           await setAdminViewMode(true)
 
           // Viewer names are hidden. Address real fixtures by the ids the admin
@@ -427,7 +427,7 @@ test.describe('people time zones and numeric activity', () => {
 })
 
 test('filters the users table from the search box', async ({ page }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -447,7 +447,7 @@ test('filters the users table from the search box', async ({ page }) => {
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
@@ -464,13 +464,13 @@ test('renames a user from the detail page and re-renders live', async ({
 })
 
 // HIL-1050: the rename modal merges against the live row. Two tabs of one
-// context on the card of the user this test registers itself: a pristine open
+// context on the card of the user this test prepares itself: a pristine open
 // modal follows the other tab's rename and says so, a typed one conflicts and
 // locks Save, and Take theirs adopts the other tab's name.
 test('an open rename follows the other tab, then conflicts and takes theirs', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(expect, page)
+  const userId = await createTestAdmin(expect, page)
   const tabB = await page.context().newPage()
   await gotoPage(expect, page, `/hilos/user/${userId}`)
   await gotoPage(expect, tabB, `/hilos/user/${userId}`)
@@ -541,10 +541,10 @@ async function renameUser(tab: Page, name: string): Promise<void> {
 test('shows the connected user as online with a live session', async ({
   page,
 }) => {
-  // Register the client and take its own id, then open its detail directly.
+  // Prepare the client and take its own id, then open its detail directly.
   // Robust against how many users the shared DB has accumulated: the self row
   // need not be on the first viewport page of /hilos/users.
-  const userId = await signUpAdmin(expect, page)
+  const userId = await createTestAdmin(expect, page)
 
   await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -568,7 +568,7 @@ test('shows the connected user as online with a live session', async ({
 // deterministic `seed-###` users on stand bring-up, so window paging and server search
 // run against more than one page — the case a single registered user can never reach.
 test('windows, paginates, and searches the seeded users', async ({ page }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -658,8 +658,8 @@ test('takes a person over from their card and shows the shell banner', async ({
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
@@ -723,8 +723,8 @@ test("shows a person's standing on the card and in the takeover strip", async ({
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
   try {
-    const adminId = await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    const adminId = await createTestAdmin(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     const badge = page.getByTestId('user-standing-badge')
     await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
@@ -916,8 +916,8 @@ test.describe('the people section in the admin view mode', () => {
     const userBPage = await userBContext.newPage()
 
     try {
-      const { userId: userAId } = await signUp(expect, userAPage)
-      const { userId: userBId } = await signUp(expect, userBPage)
+      const { userId: userAId } = await createTestUser(expect, userAPage)
+      const { userId: userBId } = await createTestUser(expect, userBPage)
 
       await setAdminViewMode(true)
 

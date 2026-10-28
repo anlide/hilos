@@ -5,10 +5,10 @@ import {
   typeInto,
   gotoPage,
   drawPhotoFixture,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { dictateModerationVerdict } from './moderation.js'
-import { signUp } from './session.js'
 
 /** Keep Chat's opaque JPEG and half-transparent PNG recipe for its moderation walk. */
 export async function picture(
@@ -45,7 +45,7 @@ export async function picture(
  * @returns The person's new name.
  */
 export async function nameForPhoto(page: Page, key: string): Promise<string> {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   const name = `Photo ${key}`
   await dictateModerationVerdict(key, true, 'ok')

@@ -1,8 +1,9 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { gotoPage } from './page.js'
-import { signUp } from './session.js'
+import { signUp, type SignedInUser } from './session.js'
 import { shownByTestId } from './table.js'
+import { createTestUser, type TestUserOptions } from './testUser.js'
 
 // Notification steps shared by all three SDKs, whose data-id controls match. They
 // drive the framework's own screens — the bell a demo mounts in its header slot
@@ -43,6 +44,26 @@ export async function signUpJoined(
   await gotoPage(expect, page, '/')
 
   return { email, userId }
+}
+
+/**
+ * Prepare a fixture account and reload after binding so notifications have joined.
+ * The settled cold-load page answer follows the notification group's join.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page Browser page to bind to the fixture account.
+ * @param options Account fixture values and an optional cluster command host.
+ * @returns The fixture account's email, display name, and durable user id.
+ */
+export async function createTestUserJoined(
+  expect: Expect,
+  page: Page,
+  options: TestUserOptions = {},
+): Promise<SignedInUser> {
+  const user = await createTestUser(expect, page, options)
+  await gotoPage(expect, page, '/')
+
+  return user
 }
 
 /**

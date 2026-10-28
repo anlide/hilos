@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   logout,
   signUp,
+  createTestUser,
   clickSubmit,
   gotoPage,
   PAGE_READY,
@@ -96,7 +97,7 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
 test('the page follows a revision moved under it, and accepting there lifts the freeze', async ({
   page,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/terms', PAGE_READY)
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')

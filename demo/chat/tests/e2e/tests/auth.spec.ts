@@ -22,11 +22,12 @@ import {
   expectPageRefused,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { readRegisterCode } from '../../../../../framework/frontend/scripts/mail.mjs'
-import { logout, signUp } from '../helpers/session.js'
+import { logout } from '../helpers/session.js'
 
 // Auth e2e for the chat demo (HIL-167). Following the test consolidation
 // (HIL-1324), server-side auth methods (OAuth, phone code channels, magic links,
@@ -179,9 +180,8 @@ test('answers a wrong password inline, and an unknown address with the registrat
   const email = uniqueEmail()
 
   // Seed a known account, then log out so the sign-in path is exercised.
+  await createTestUser(expect, page, { email })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -226,9 +226,8 @@ test('keeps the main button still while the field answers', async ({
   const free = uniqueEmail()
 
   // What must not move is the button under the field.
+  await createTestUser(expect, page, { email: member })
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(expect, page, member)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(expect, page)
 
@@ -261,7 +260,7 @@ test('keeps the password screen still while the way past the password comes and 
   page,
   browser,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/security/sign-in-methods')
   const magicLinkToggle = page
     .getByTestId('hilos-table-row-magic_link')
@@ -400,7 +399,7 @@ test('keeps the main button at one height on ordinary registration steps', async
 test('re-decides an open admin page when the person signs out, in place', async ({
   page,
 }) => {
-  const { userId } = await signUp(expect, page)
+  const { userId } = await createTestUser(expect, page)
   await setAdmin(userId, true)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -424,7 +423,7 @@ test('re-decides an open admin page when the person signs out, in place', async 
 test('re-decides an open profile when the person signs out, in place', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 

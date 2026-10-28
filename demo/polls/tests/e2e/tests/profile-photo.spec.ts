@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   countSentFrames,
   watchClientDocument,
   watchSocketFrames,
@@ -41,10 +41,10 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
   page,
   request,
 }) => {
-  // Registration, two publications and removal across two live Angular pages.
+  // Account preparation, two publications and removal across two live Angular pages.
   test.slow()
   const uploads = countSentFrames(page, 'hilos_upload_init')
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   const second = await page.context().newPage()
   try {
@@ -197,7 +197,7 @@ test('a picture over 40 MiB is refused locally before upload', async ({
   page,
 }) => {
   const uploads = countSentFrames(page, 'hilos_upload_init')
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   await clickSubmit(expect, page.getByTestId('profile-photo-open'))
   await page.getByTestId('profile-photo-input').setInputFiles({
@@ -224,9 +224,9 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
   browser,
   baseURL,
 }) => {
-  // One registration, a separate admin session and live card updates.
+  // A prepared account, a separate admin session and live card updates.
   test.slow()
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   const adminContext = await browser.newContext({
     baseURL,

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   CIRCLE_OFFLINE,
   CIRCLE_ONLINE,
   MAINTENANCE_PATH,
@@ -1118,8 +1118,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // WHICH browser - the named one, the unnamed one, and the operator's own.
   //
   // The circle member needs a PROVEN address: naming somebody resolves the address
-  // against the confirmed identities. Registering proves it - the code the
-  // registration mails out confirms the address it was sent to (HIL-825).
+  // against the confirmed identities. The account fixture supplies that
+  // confirmed address before the circle is named.
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
@@ -1128,7 +1128,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = (await signUp(expect, member)).email
+  const memberEmail = (await createTestUser(expect, member)).email
 
   // Named through the modal, which is the only way an operator has: no test backdoor
   // writes this row, so a broken action surface fails here rather than silently
@@ -1263,7 +1263,7 @@ test('a circle member who was away when the node froze is named and still outsid
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = (await signUp(expect, member)).email
+  const memberEmail = (await createTestUser(expect, member)).email
   await addToMaintenanceCircle(page, memberEmail)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await gotoPage(expect, member, '/')
@@ -1436,7 +1436,7 @@ test.describe('the maintenance section in the admin view mode', () => {
 
       const memberContext = await browser.newContext()
       const member = await memberContext.newPage()
-      const memberEmail = (await signUp(expect, member)).email
+      const memberEmail = (await createTestUser(expect, member)).email
       await addToMaintenanceCircle(page, memberEmail)
       await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
 

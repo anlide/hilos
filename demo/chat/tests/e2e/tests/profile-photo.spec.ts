@@ -3,13 +3,13 @@ import {
   clickSubmit,
   openAndSelectPhoto,
   gotoPage,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
-import { signUp } from '../helpers/session.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
 
@@ -122,7 +122,7 @@ test('a transparent PNG is accepted as a cropped photo', async ({ page }) => {
 test('a picture over 40 MB is refused before an upload begins', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await clickSubmit(expect, page.getByTestId('profile-photo-open'))
   await page.getByTestId('profile-photo-input').setInputFiles({

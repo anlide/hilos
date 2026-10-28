@@ -12,8 +12,8 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
   tableRowKeyByText,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // spec-owner: demo — a bot description is chat's product and the only long text under the journal
@@ -24,7 +24,7 @@ import {
 test("keeps a bot description's full old and new values in its receipt and leaves them out of its record's history", async ({
   page,
 }) => {
-  const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  const userId = await createTestAdmin(expect, page)
   const name = `AAA journal ${Date.now()}`
   // The bot form trims boundary whitespace before saving. Keep the inputs in
   // that saved form so the journal assertions below remain byte-for-byte.

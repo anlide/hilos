@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   watchThemeFrames,
   type ThemeFrameLog,
   gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-// The live handshake carries the stored personal time zone. Registration has
-// no time-zone choice yet, so a new account must carry an explicit null.
+// The live handshake carries the stored personal time zone. A new account has
+// no time-zone choice yet, so it must carry an explicit null.
 
 /** Reject malformed wire objects rather than treating them as a guest. */
 function object(value: unknown): Record<string, unknown> {
@@ -36,7 +36,7 @@ test('account handshake keeps an explicit null time zone after reload', async ({
   page,
 }) => {
   const frames = watchThemeFrames(page)
-  await signUp(expect, page)
+  const person = await createTestUser(expect, page)
 
   await expect
     .poll(() =>
@@ -51,6 +51,7 @@ test('account handshake keeps an explicit null time zone after reload', async ({
     .map(currentUser)
     .at(-1)?.id
   expect(userId).toEqual(expect.any(Number))
+  expect(userId).toBe(person.userId)
 
   // Only frames received after this boundary may prove the reloaded session.
   const beforeReload = frames.length

@@ -6,12 +6,12 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
-import { signUp } from '../helpers/session.js'
 
 // HIL-1253: the browser knows the node's admin view mode from the session
 // response, so the shell draws the admin gear for a viewer who may look — a
@@ -66,7 +66,7 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
   // An account of this test's own: the acceptances and the users then hold at
   // least one person whose name is kept from the guest.
   const someone = await browser.newContext()
-  await signUp(expect, await someone.newPage())
+  await createTestUser(expect, await someone.newPage())
   await someone.close()
 
   await setAdminViewMode(true)
@@ -122,7 +122,7 @@ test('a viewer sees open framework settings while a project key stays hidden', a
     shownByTestId(page, 'legal-setting-value-legal.consent_form'),
   ).toContainText('Checkbox')
 
-  const { userId } = await signUp(expect, page)
+  const { userId } = await createTestUser(expect, page)
   await setAdmin(userId, true)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -152,12 +152,11 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   // Made before the people open, that one's row is in the table from its first
   // answer rather than arriving live in the middle of the scenario.
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(
-    browser,
-    (page) => signUpAdmin(expect, page, { entryId: 'message-signin' }),
-    { baseURL, ignoreHTTPSErrors },
-  )
-  const { userId } = await signUp(expect, page)
+  await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const { userId } = await createTestUser(expect, page)
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toHaveAttribute('data-access', 'view')
 

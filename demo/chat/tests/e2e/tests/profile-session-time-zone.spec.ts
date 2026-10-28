@@ -10,8 +10,8 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 test.use({ timezoneId: 'Asia/Tokyo', locale: 'en-US' })
 
@@ -22,7 +22,7 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile/sessions', PAGE_READY)
     await expect.poll(() => profileSessionSnapshot(frames)).toBeDefined()
     const initial = profileSessionSnapshot(frames)!

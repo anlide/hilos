@@ -9,11 +9,11 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { signUp } from '../helpers/session.js'
 
 // spec-owner: demo — verifies that the merge reassigns the chat message to the survivor.
 
@@ -68,8 +68,8 @@ test(
     const survivorCardPage = await page.context().newPage()
 
     try {
-      await signUpAdmin(expect, page, { entryId: 'message-signin' })
-      const survivor = await signUp(expect, survivorPage)
+      await createTestAdmin(expect, page)
+      const survivor = await createTestUser(expect, survivorPage)
 
       // Give the survivor a secret distinct from the loser's. The post-merge
       // login through the loser's address can then prove which password survived.
@@ -86,7 +86,7 @@ test(
         survivorPage.getByTestId('profile-password-modal'),
       ).toHaveCount(0)
 
-      const loser = await signUp(expect, loserPage)
+      const loser = await createTestUser(expect, loserPage)
       const key = modelKey()
       const message = `message that survives account merge ${key}`
       await dictateModerationVerdict(key, true, 'ok')

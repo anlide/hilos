@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI;
 
+use Hilos\Core\CLI\Commands\SessionTestBindCommand;
+use Hilos\Core\CLI\Commands\UserTestCreateCommand;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -228,6 +230,8 @@ class CliManager
         $this->commands[CliCommands::SETTING_OVERRIDE_TEST_CREATE] = new SettingOverrideTestCreateCommand();
         $this->commands[CliCommands::SETTING_OVERRIDE_TEST_DELETE] = new SettingOverrideTestDeleteCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
+        $this->commands[CliCommands::USER_TEST_CREATE] = new UserTestCreateCommand();
+        $this->commands[CliCommands::SESSION_TEST_BIND] = new SessionTestBindCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_SEED] = new NotificationTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
         $this->commands[CliCommands::COMMAND_TEST_ECHO] = new CommandTestEchoCommand();

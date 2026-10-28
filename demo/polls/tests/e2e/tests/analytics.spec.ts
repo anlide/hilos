@@ -4,13 +4,13 @@ import {
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('opens the empty Analytics overview from the admin dashboard and follows users', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
 
   await expectAnalyticsDashboardCard(expect, page)

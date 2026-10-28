@@ -23,8 +23,9 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { orphanSessionToken, signUp } from '../helpers/session.js'
+import { orphanSessionToken } from '../helpers/session.js'
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
@@ -55,10 +56,10 @@ test('websocket transport reaches connected', async ({ page }) => {
 
 // Session bootstrap e2e: the client-minted cookie rides the handshake and the
 // session scope tracks the current user. Under session≠user a fresh visitor is
-// anonymous, so the user is established by registering; the session upgrade rides
-// the same connection and the current user renders in place.
+// anonymous, so a fixture binds the user; the session update rides the same
+// connection and the current user renders in place.
 test('session bootstrap resolves the current user', async ({ page }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
 })
 
@@ -165,7 +166,7 @@ test('holds page and modal interaction until the real reconnect', async ({
   const smsRequests = countSentFrames(page, PROFILE_ADD_SMS_REQUEST_ACTION)
   const watches: { dispose(): Promise<void> }[] = []
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile/sign-in')
     await expectPageReady(expect, page)
     const document = await watchClientDocument(page)

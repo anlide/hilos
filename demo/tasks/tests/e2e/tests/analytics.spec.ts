@@ -9,7 +9,7 @@ import {
   type SocketFrame,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test.use({ timezoneId: 'Asia/Kathmandu' })
@@ -20,7 +20,7 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
   const frames: SocketFrame[] = []
   const observer = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos')
 
     await expectAnalyticsDashboardCard(expect, page)

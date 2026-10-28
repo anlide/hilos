@@ -6,9 +6,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   PASSWORD,
+  createTestUser,
   nameFromEmail,
   openSignIn,
-  register,
   uniqueEmail,
   clickSubmit,
   typeInto,
@@ -53,9 +53,7 @@ test('starts a deletion after the password and a code, then keeps the account', 
   page,
 }) => {
   const email = uniqueEmail()
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
   await scheduleDeletion(page, email)
 
@@ -69,9 +67,7 @@ test('an account whose moment came is erased: every tab turns guest and the addr
   page,
 }) => {
   const email = uniqueEmail()
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
   const userId = Number(await page.getByTestId('self-user-id').textContent())
   const other = await context.newPage()

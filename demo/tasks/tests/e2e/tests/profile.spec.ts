@@ -2,8 +2,6 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   PASSWORD,
   nameFromEmail,
-  openSignIn,
-  register,
   uniqueEmail,
   clickSubmit,
   typeInto,
@@ -13,7 +11,7 @@ import {
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
   expectPageReady,
-  signUp,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
@@ -44,9 +42,7 @@ test('the header avatar leads to the profile root and its sections', async ({
 
   const email = uniqueEmail()
   const name = nameFromEmail(email)
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(name)
   const loadsAfterSignIn = fullLoads
 
@@ -92,7 +88,7 @@ test('renames the profile name without moderation', async ({ page }) => {
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
@@ -152,7 +148,7 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
@@ -215,9 +211,7 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
   })
 
   const was = uniqueEmail()
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, was)
+  await createTestUser(expect, page, { email: was })
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-email')).toContainText(was)
   const loadsBeforeChange = fullLoads

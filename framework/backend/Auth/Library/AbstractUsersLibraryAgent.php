@@ -33,6 +33,8 @@ use Hilos\Auth\Library\Command\PasswordChangeCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\ProfileNameCommands;
+use Hilos\Auth\Library\Command\TestUserCommands;
+use Hilos\Auth\TestUserCommandConstants;
 use Hilos\Auth\Library\Command\ProfilePhotoCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
@@ -677,8 +679,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * The commands answered by the users library.
      *
-     * Three are test-only: the test: prefix enforces the production ban via NonProductionGate.
-     * Routed here because this library owns both acceptance records and verification rows
+     * The test: prefix enforces the production ban via NonProductionGate.
+     * Routed here because this library creates people and identities and owns acceptance and verification rows
      * ({@see self::OWNS_DB}). The operator's {@see CliCommands::SECOND_FACTOR_UNLOCK} runs on
      * production (HIL-1285): it is answered here because this library coordinates the second
      * factor, and the person's agent lifts the lock on its frame (HIL-1406).
@@ -688,6 +690,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         CliCommands::VERIFICATION_TEST_SWEEP,
         CliCommands::VERIFICATION_TEST_END_PAUSE,
         CliCommands::SECOND_FACTOR_UNLOCK,
+        CliCommands::USER_TEST_CREATE,
     ];
 
     /** Name of the cron rule that frees the registration holds whose deadline passed. */
@@ -1487,6 +1490,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($data->command === CliCommands::USER_TEST_CREATE) {
+            $this->handleTestUserCreateCommand($data);
+
+            return;
+        }
+
         if ($data->command === CliCommands::LEGAL_TEST_HOLD) {
             $this->handleLegalHoldCommand($data);
 
@@ -1512,6 +1521,48 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Fixture account request
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleTestUserCreateCommand(CommandRequestDTO $data): void
+    {
+        $email = $data->payload[TestUserCommandConstants::FIELD_EMAIL] ?? null;
+        $passwordHash = $data->payload[TestUserCommandConstants::FIELD_PASSWORD_HASH] ?? null;
+        $themePick = $data->payload[TestUserCommandConstants::FIELD_THEME_PICK] ?? null;
+        $phone = $data->payload[TestUserCommandConstants::FIELD_PHONE] ?? null;
+        if (!is_string($email)
+            || !array_key_exists(TestUserCommandConstants::FIELD_PASSWORD_HASH, $data->payload)
+            || ($passwordHash !== null && !is_string($passwordHash))
+            || !array_key_exists(TestUserCommandConstants::FIELD_THEME_PICK, $data->payload)
+            || ($themePick !== null && !is_string($themePick))
+            || ($phone !== null && !is_string($phone))) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Invalid fixture user payload'));
+
+            return;
+        }
+
+        $email = strtolower(trim($email));
+        try {
+            $userId = new TestUserCommands($this)->create($email, $passwordHash, $themePick, $phone);
+            $displayName = Hilos::$db->users[$userId]->name;
+        } catch (WiringRefusal $refusal) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Cannot read fixture data here: ' . $refusal->getMessage()));
+
+            return;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            TestUserCommandConstants::FIELD_USER_ID => $userId,
+            TestUserCommandConstants::FIELD_EMAIL => $email,
+            TestUserCommandConstants::FIELD_NAME => $displayName,
+        ]));
     }
 
     /**

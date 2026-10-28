@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  openSignIn,
-  register,
-  uniqueEmail,
+  createTestUser,
   shownByTestId,
   clickSubmit,
   expectPageReady,
@@ -77,9 +75,7 @@ test('a guest reads the view-mode strip on the account screens and the acceptanc
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const someone = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const registrant = await someone.newPage()
-  await gotoPage(expect, registrant, '/')
-  await openSignIn(expect, registrant)
-  await register(expect, registrant, uniqueEmail())
+  await createTestUser(expect, registrant)
   await someone.close()
 
   await setAdminViewMode(true)

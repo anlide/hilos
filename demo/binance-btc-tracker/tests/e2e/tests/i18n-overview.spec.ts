@@ -16,7 +16,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createAdminStorageState,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { switchLanguageOff } from '../../../../../framework/frontend/scripts/i18n.mjs'
@@ -24,6 +24,24 @@ import { switchLanguageOff } from '../../../../../framework/frontend/scripts/i18
 // The Vue overview's two tiles, first complete answer and live summary. Section
 // navigation in React and Angular stays in their list/card specs until their
 // overview tiles land in HIL-1726 and HIL-1727.
+
+// One administrator per worker attempt; every test still opens its own context.
+test.describe.configure({ mode: 'default' })
+let adminStorageState: Awaited<ReturnType<typeof createAdminStorageState>>
+test.beforeAll(async ({ browser }) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  adminStorageState = await createAdminStorageState(expect, browser, {
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+})
+test.use({
+  // Playwright requires a fixture pattern even without dependencies.
+  // eslint-disable-next-line no-empty-pattern
+  storageState: async ({}, use) => {
+    await use(adminStorageState)
+  },
+})
 
 const ROOT = 'hilos_i18n'
 const ROOT_PATH = '/hilos/i18n'
@@ -127,7 +145,6 @@ function watchOverview(page: Page) {
 test('waits for the first whole response without invented zero tiles', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
   const answer = await holdPageReply(page, ROOT)
   const navigation = gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   const completed = navigation.catch((error: unknown) => error)
@@ -162,7 +179,6 @@ test('updates the whole overview in its existing window after language and custo
   page,
   context,
 }) => {
-  await signUpAdmin(expect, page)
   await switchLanguageOff('de')
   const frames = watchOverview(page)
   await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
@@ -279,7 +295,6 @@ test('updates the whole overview in its existing window after language and custo
 test('opens each tile, uses Back and the page row, and keeps all three direct URLs through F5', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
   await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expectHead(page)
   const document = await watchClientDocument(page)
@@ -329,7 +344,6 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
   page,
   browser,
 }) => {
-  await signUpAdmin(expect, page)
   const frames = watchOverview(page)
   await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expect.poll(() => frames.replies.length).toBeGreaterThan(0)
@@ -337,7 +351,11 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
   await expectOverview(page, initial)
   await setAdminViewMode(true)
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  const viewerContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const viewerContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+    storageState: { cookies: [], origins: [] },
+  })
   const viewer = await viewerContext.newPage()
   const writes = countSentFrames(viewer, '"type":"action"')
   try {

@@ -2,18 +2,17 @@ import { test, expect } from '@playwright/test'
 
 import {
   PASSWORD,
+  createTestUser,
   enterIdentifierAndPassword,
   logout,
   nameFromEmail,
   openSignIn,
-  register,
   uniqueEmail,
   waitAuthSettled,
   watchSocketFrames,
   type SocketFrame,
   clickSubmit,
   typeInto,
-  gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { resetThrottle } from '../helpers/throttle'
@@ -42,7 +41,7 @@ const REFUSED_REASON = 'Too many attempts. Please wait a moment and try again.'
 test('a run of wrong passwords is refused, and the block holds the right one too', async ({
   page,
 }) => {
-  // A registration and twelve sign-in round trips, each one a verdict of the
+  // A fixture account and twelve sign-in round trips, each one a verdict of the
   // throttle agent: longer than the base cap allows a single test.
   test.slow()
 
@@ -68,9 +67,7 @@ test('a run of wrong passwords is refused, and the block holds the right one too
   await resetThrottle()
   try {
     const email = uniqueEmail()
-    await gotoPage(expect, page, '/')
-    await openSignIn(expect, page)
-    await register(expect, page, email)
+    await createTestUser(expect, page, { email })
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
     await logout(expect, page)
     await expect(page.getByTestId('self-anonymous')).toBeVisible()

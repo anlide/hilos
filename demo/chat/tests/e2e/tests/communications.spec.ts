@@ -19,14 +19,15 @@ import {
   expectCommunicationsFrameEditor,
   expectPageReady,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 test('the letter frame editor has a dialog name and keyboard focus', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/communications/email/frame')
   await expectCommunicationsAccessibility(expect, page, 'frame', 'Enabled')
   const preview = page.getByTestId('hilos-channel-frame-preview')
@@ -45,7 +46,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
 }) => {
   const wire = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     let after = wire.packets.length
     await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     await expectCommunicationsChannelHead(expect, page, 'frame')
@@ -137,7 +138,7 @@ for (const [name, invalid, refusal] of [
   }) => {
     const wire = watchDeliveryFrames(page)
     try {
-      await signUpAdmin(expect, page, { entryId: 'message-signin' })
+      await grantAdminToSelf(expect, page)
       await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
       const original = await expectCommunicationsFrameInitial(
         expect,
@@ -170,7 +171,7 @@ test('letter frame saves an override and resets only after confirmation', async 
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     original = await expectCommunicationsFrameInitial(expect, page, wire)
     const html = communicationsFrameHtml('frame-saved')
@@ -217,7 +218,7 @@ test('letter frame dirty Escape and Close keep a named discard layer and return 
 }) => {
   const wire = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     const original = await expectCommunicationsFrameInitial(expect, page, wire)
     const edit = page.getByTestId('hilos-channel-frame-edit')
@@ -309,12 +310,8 @@ test('another person saves into a pristine frame editor, then resolves atomic co
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    const observerId = await signUpAdmin(expect, page, {
-      entryId: 'message-signin',
-    })
-    const writerId = await signUpAdmin(expect, other, {
-      entryId: 'message-signin',
-    })
+    const observerId = await createTestAdmin(expect, page)
+    const writerId = await createTestAdmin(expect, other)
     expect(writerId).not.toBe(observerId)
     await gotoPage(expect, page, COMMUNICATIONS_FRAME_PATH)
     await gotoPage(expect, other, COMMUNICATIONS_FRAME_PATH)
@@ -400,12 +397,8 @@ test('another person resets the frame under pristine and dirty editors without d
   let original:
     Awaited<ReturnType<typeof expectCommunicationsFrameInitial>> | undefined
   try {
-    const observerId = await signUpAdmin(expect, page, {
-      entryId: 'message-signin',
-    })
-    const writerId = await signUpAdmin(expect, other, {
-      entryId: 'message-signin',
-    })
+    const observerId = await createTestAdmin(expect, page)
+    const writerId = await createTestAdmin(expect, other)
     expect(writerId).not.toBe(observerId)
     await gotoPage(expect, other, COMMUNICATIONS_FRAME_PATH)
     original = await expectCommunicationsFrameInitial(expect, other, otherWire)

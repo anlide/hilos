@@ -149,12 +149,18 @@ export {
   turnOnMaintenance,
 } from './maintenance.js'
 export {
+  createTestUserJoined,
   enableEmailChannel,
   openBell,
   signUpJoined,
   unreadBadge,
 } from './notifications.js'
-export { grantAdminToSelf, signUpAdmin } from './adminGrant.js'
+export {
+  createAdminStorageState,
+  createTestAdmin,
+  grantAdminToSelf,
+  signUpAdmin,
+} from './adminGrant.js'
 export { armViewerSubmit, expectViewerRestartRefused } from './adminViewMode.js'
 export {
   selectPhoto,
@@ -218,7 +224,6 @@ export {
   sessionToken,
 } from './sessionCookie.js'
 export {
-  ANALYTICS_SIGN_UP_LAST_ACTION,
   ANALYTICS_WRITER_TIMEOUT_MS,
   ANALYTICS_SESSION_LIST_PATH,
   ANALYTICS_SESSION_LIST_HANDLE,
@@ -662,3 +667,4 @@ export {
   signUp,
   changePassword,
 } from './session.js'
+export { createTestUser, type TestUserOptions } from './testUser.js'

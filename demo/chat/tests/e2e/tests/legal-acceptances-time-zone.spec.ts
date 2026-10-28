@@ -5,7 +5,7 @@ import {
   forwardSessionTimeZone,
   watchDeliveryFrames,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test.use({ locale: 'en-GB', timezoneId: 'America/Los_Angeles' })
@@ -21,9 +21,7 @@ test('displays legal acceptances in automatic browser time zone and updates reac
   const log = watchDeliveryFrames(page)
   const socket = await forwardSessionTimeZone(page, null)
   try {
-    const userId = await signUpAdmin(expect, page, {
-      entryId: 'message-signin',
-    })
+    const userId = await createTestAdmin(expect, page)
     await gotoPage(expect, page, '/hilos/legal/acceptances')
 
     const initialExpected = await expectLegalAcceptanceMoments(

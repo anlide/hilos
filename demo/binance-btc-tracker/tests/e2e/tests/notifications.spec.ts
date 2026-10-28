@@ -14,7 +14,7 @@ import {
   typeInto,
   gotoPage,
   grantAdminToSelf,
-  signUpJoined,
+  createTestUserJoined,
   tableRowKeys,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
@@ -31,13 +31,12 @@ import { emitNotification } from '../../../../../framework/frontend/scripts/noti
 //
 // Every wait is a web-first assertion on the id the emit replied with, so the
 // suite never sleeps and never guesses which row it is looking at. Each test
-// signs up its own account, and a notification belongs to one recipient, so the
+// prepares its own account, and a notification belongs to one recipient, so the
 // tests stay isolated on the shared database.
 //
 // The delivery tests need an account the email channel can address — a verified
-// email, which this demo's registration hands out itself: the code it mails also
-// proves the address (HIL-825). They switch the channel on from the admin hub as
-// an operator would, and read the result from both ends: the delivery journal,
+// email supplied by the joined account fixture. They switch the channel on from
+// the admin hub as an operator would, and read the result from both ends: the delivery journal,
 // which is the node's own account of the send, and the stand's mail interceptor,
 // which is the independent one.
 
@@ -70,8 +69,8 @@ function emailPreference(page: Page): Locator {
  * Sign in an account the email channel can actually address, and make it admin.
  *
  * The two halves the delivery tests need: a verified email (which is what
- * MailDeliveryChannel resolves an address from — the registration code proves
- * it, see signUpJoined) and the admin flag, since the channel hub lives behind
+ * MailDeliveryChannel resolves an address from — createTestUserJoined supplies
+ * it) and the admin flag, since the channel hub lives behind
  * the framework admin surface.
  *
  * @param page Page starting anonymous.
@@ -80,7 +79,7 @@ function emailPreference(page: Page): Locator {
 async function signInAddressableAdmin(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const { email, userId } = await signUpJoined(expect, page)
+  const { email, userId } = await createTestUserJoined(expect, page)
   await setAdmin(userId, true)
   // The daemon re-sends the handshake response to the granted user's live
   // connections, so the admin entry appearing is the grant reaching this page.
@@ -112,7 +111,7 @@ async function expectJournalSent(page: Page, title: string): Promise<void> {
 test('an emitted notification reaches the bell as an unread row', async ({
   page,
 }) => {
-  const { userId } = await signUpJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
 
   const { notificationId } = await emitNotification(userId, {
     type: 'e2e_center',
@@ -134,7 +133,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 })
 
 test('marking a row read clears the badge', async ({ page }) => {
-  const { userId } = await signUpJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
   const { notificationId } = await emitNotification(userId, {
     type: 'e2e_mark_read',
     title: 'One to read',
@@ -159,7 +158,7 @@ test('marking a row read clears the badge', async ({ page }) => {
 })
 
 test('mark-all read clears a badge carrying several', async ({ page }) => {
-  const { userId } = await signUpJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
   const first = await emitNotification(userId, {
     type: 'e2e_mark_all',
     title: 'First',
@@ -187,7 +186,7 @@ test('mark-all read clears a badge carrying several', async ({ page }) => {
 test('a read in one tab reaches the other tab of the same user', async ({
   page,
 }) => {
-  const { userId } = await signUpJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
 
   // Tab B joins the group before the emit, so it receives the notification live
   // rather than picking it up from a reconnect snapshot.
@@ -361,12 +360,12 @@ test('an emitted notification is mailed out and journaled as sent', async ({
 test('a sign-in is mailed to the person', async ({ page }) => {
   // The administrator who switches the channel on is the person signing in: the
   // hub is one setting for the whole stand, and the account signInAddressableAdmin
-  // registers already has the proven address the mail channel writes to.
+  // prepares already has the proven address the mail channel writes to.
   const { email } = await signInAddressableAdmin(page)
   await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
 
-  // Registration announces no sign-in, so a letter under this subject can only
+  // Account preparation announces no sign-in, so a letter under this subject can only
   // come from the password sign-in below.
   await gotoPage(expect, page, '/')
   await logout(expect, page)

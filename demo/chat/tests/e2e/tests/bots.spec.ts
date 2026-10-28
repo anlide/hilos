@@ -21,13 +21,13 @@ import {
   typeInto,
   gotoPage,
   expectPageReady,
-  signUpAdmin,
   expectTableTotal,
   goToLastPage,
   pageBackOnce,
   tableRowKeyByText,
   tableRowKeys,
   tableTotal,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
@@ -383,7 +383,7 @@ async function botProofSet(
   placement: 'search' | 'last-page' = 'search',
 ) {
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const lastPage = placement === 'last-page'
   const pads = lastPage ? await fillToWholePages(page, Date.now() - 1000) : []
@@ -431,7 +431,7 @@ test('a bot created here takes the place the sort gives it, and edits and delete
   const name = nameBeforeAll(stamp)
   const description = `edited by e2e ${stamp}`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   let fullLoads = 0
   page.on('load', () => {
@@ -484,7 +484,7 @@ test('a bot created in another tab arrives on its own at the tail of a window wi
   const filler = `ZZ ${stamp} filler`
   const tail = `ZZ ${stamp} tail`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const base = await tableTotal(expect, page)
 
@@ -531,7 +531,7 @@ test('a bot created above the window is announced, and Show brings the window le
 }) => {
   const name = nameBeforeAll(Date.now())
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   const tabB = await page.context().newPage()
   const tableWindowsOfB = countTableWindows(tabB)
@@ -582,7 +582,7 @@ test('a bot created above the window is announced, and Show brings the window le
 test('Next still reaches the rows below after bots above the window are deleted', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const base = await tableTotal(expect, page)
   const stamp = Date.now()
@@ -627,7 +627,7 @@ test('Next turns on when another tab renames a bot from above a full last page t
   const name = nameBeforeAll(stamp)
   const past = `ZZ ${stamp} zzz`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const pads = await fillToWholePages(page, stamp)
 
@@ -667,7 +667,7 @@ test('Next turns off when the only bot past the window is renamed above it', asy
   const past = `ZZ ${stamp} zzz`
   const name = nameBeforeAll(stamp)
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const pads = await fillToWholePages(page, stamp)
   await createBot(page, past)
@@ -700,7 +700,7 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
 }) => {
   const name = nameBeforeAll(Date.now())
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   const tabB = await page.context().newPage()
   const tableWindowsOfB = countTableWindows(tabB)
@@ -772,7 +772,7 @@ test('a bot created inside the window is announced by the same strip, and Show b
 }) => {
   const name = `Dave ${Date.now()}`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
 
   const tabB = await page.context().newPage()
   const tableWindowsOfB = countTableWindows(tabB)
@@ -826,7 +826,7 @@ test('a bot another tab renamed into the window is announced by the same strip, 
   const name = `ZZ ${stamp} renamed`
   const renamed = `Dave ${stamp}`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
 
   // A creates the bot BEFORE B opens, past every other bot, so B's cold first
@@ -886,7 +886,7 @@ test('a bot another tab renamed onto the tail of a last page with room is announ
   const name = nameBeforeAll(stamp)
   const tail = `ZZ ${stamp} tail`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
 
   // A makes the page with room — the filler sorts after every bot — and a bot
@@ -937,7 +937,7 @@ test('a value edited in another tab lands in place, highlighted and with no gate
   const name = nameBeforeAll(stamp)
   const description = `edited by e2e ${stamp}`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
 
   // A creates the bot BEFORE B opens, so B's cold first window already holds it
@@ -976,7 +976,7 @@ test('the last foreign deletion retains a data-free slot until an explicit windo
   const name = nameBeforeAll(Date.now())
   const windows = countTableWindows(page)
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   await createBot(page, name)
   const key = await tableRowKeyByText(expect, page, name)
@@ -1026,7 +1026,7 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   const name = nameBeforeAll(stamp)
   const renamed = `${name} renamed`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   await createBot(page, name)
   const key = await tableRowKeyByText(expect, page, name)
@@ -1140,7 +1140,7 @@ test('an open edit follows its row past the window edge, and conflicts after it'
   // search never takes a row off the screen; the order does.)
   const renamed = `ZZ ${stamp}`
 
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   await createBot(page, name)
   const key = await tableRowKeyByText(expect, page, name)
@@ -1289,7 +1289,7 @@ function expectBotsPageResponse(
 test('reaches the bots admin from the dashboard', async ({ page }) => {
   const frames = watchDeliveryFrames(page)
   try {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos')
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
@@ -1358,7 +1358,7 @@ test('Next starts after the rows another tab appended to a last page with room',
 }) => {
   // Filling a last page and then removing every bot takes more round trips than a single write.
   test.slow()
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const base = await tableTotal(expect, page)
   const stamp = Date.now()
@@ -1414,7 +1414,7 @@ test('Next starts after the rows another tab appended to a last page with room',
 test('Next retrieves the row an own create pushed below the first page', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const base = await tableTotal(expect, page)
   const keysBefore = await tableRowKeys(page)
@@ -1436,7 +1436,7 @@ test('Next retrieves the row an own create pushed below the first page', async (
 test('an own create on a Back window pushes its first row above and Back retrieves it', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await openBots(page)
   const base = await tableTotal(expect, page)
   const firstPageKeys = await tableRowKeys(page)

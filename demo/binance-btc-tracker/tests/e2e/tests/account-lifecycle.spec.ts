@@ -2,13 +2,14 @@ import { expect, test } from '@playwright/test'
 
 import {
   PASSWORD,
-  signUp,
+  createTestUser,
   dismissToasts,
   expectAccessLossNotice,
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Two independent browsers prove the card's writes reach the affected person.
@@ -23,8 +24,8 @@ test('blocks an account from its card and signs the person back in when the bloc
   })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     // Blocking is declared off in the list of confirmed operations (HIL-1275): the
@@ -72,8 +73,8 @@ test('keeps a person who signed out on the card a guest when the block is lifted
   })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await grantAdminToSelf(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
     await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
@@ -115,8 +116,8 @@ test('schedules and cancels deletion on the card while the person sees it on the
   })
   const personPage = await personContext.newPage()
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await createTestAdmin(expect, page)
+    const person = await createTestUser(expect, personPage)
     // This demo has no profile root: a scheduled deletion reaches the person as
     // the shell's strip above the page, and it arrives live with the change of
     // their standing (docs/agents/architecture/account-standing.md).
@@ -178,8 +179,8 @@ test.describe('admin rights and their confirmation', () => {
     })
     const personPage = await personContext.newPage()
     try {
-      await signUpAdmin(expect, page)
-      const person = await signUp(expect, personPage)
+      await createTestAdmin(expect, page)
+      const person = await createTestUser(expect, personPage)
       await gotoPage(expect, page, `/hilos/user/${person.userId}`)
       await clickSubmit(expect, page.getByTestId('hilos-user-admin-open'))
       await expect(page.getByTestId('modal')).toContainText("Confirm it's you")

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 import {
   expectPageReady,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
@@ -19,12 +19,10 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  // Sign in and take the admin grant: the gear's target is the framework
-  // dashboard, and /hilos is closed by default (HIL-441), so without the grant
-  // this spec would be asserting that a non-admin is shown the admin section.
-  // signUp asserts the self user itself, and both it and the grant run in
-  // place, so the load count settles here.
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  // Grant this fresh visitor admin access: the gear targets the framework
+  // dashboard, and /hilos is closed by default (HIL-441). The helper waits for
+  // the live full-access mark, so the load count settles here.
+  await grantAdminToSelf(expect, page)
   const loadsAfterColdLoad = fullLoads
 
   // Gear -> dashboard. Wait for the outlet to settle first: the page is held

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   MAINTENANCE_PATH,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
@@ -37,7 +37,7 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const email = (await signUp(expect, member)).email
+  const { email } = await createTestUser(expect, member)
   await addToMaintenanceCircle(page, email)
   await dismissToasts(page)
 

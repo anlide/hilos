@@ -4,7 +4,7 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 
 import {
   PASSWORD,
-  signUp,
+  createTestUser,
   downloadBytes,
   shownByTestId,
   clickSubmit,
@@ -14,7 +14,7 @@ import {
   PAGE_READY,
   PAGE_REFUSED,
   grantAdminToSelf,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 /** The header line of a file of acceptance records (HIL-1234). */
@@ -41,7 +41,7 @@ async function exportedLinesOf(page: Page, userId: number): Promise<string[]> {
 test('reads the legal catalog, deviations and revision comparison', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await createTestAdmin(expect, page)
   await gotoPage(expect, page, '/hilos/legal')
   await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
   // The suite keeps earlier accounts; each document now has at least this administrator's acceptance.
@@ -108,7 +108,7 @@ async function setLegalSetting(
 test('offers complete acceptance filters and merges legal setting changes across tabs', async ({
   page,
 }) => {
-  const userId = await signUpAdmin(expect, page)
+  const userId = await createTestAdmin(expect, page)
   await gotoPage(expect, page, '/hilos/legal/acceptances')
   const table = page.getByTestId('legal-acceptances-table')
   await expect(
@@ -184,7 +184,7 @@ test('offers complete acceptance filters and merges legal setting changes across
 test("previews the re-consent screen through the previous revision's holder", async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/legal/terms')
   await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
   const preview = page.getByTestId('legal-reconsent-preview')
@@ -228,7 +228,7 @@ test("previews the re-consent screen through the previous revision's holder", as
 test('exports the acceptance records the table shows, confirming once', async ({
   page,
 }) => {
-  const admin = await signUp(expect, page)
+  const admin = await createTestUser(expect, page)
   await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -277,7 +277,7 @@ test('exports the acceptance records the table shows, confirming once', async ({
 test('unknown legal documents and revisions are not-found subscription refusals', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   for (const path of [
     '/hilos/legal/missing-document',
     '/hilos/legal/terms/missing-revision',

@@ -17,7 +17,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('follows a block receipt to the history of its record and back to the whole table', async ({
@@ -31,7 +31,7 @@ test('follows a block receipt to the history of its record and back to the whole
   })
   const personPage = await personContext.newPage()
   try {
-    const adminId = await signUpAdmin(expect, page)
+    const adminId = await createTestAdmin(expect, page)
     const person = await signUp(expect, personPage)
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))

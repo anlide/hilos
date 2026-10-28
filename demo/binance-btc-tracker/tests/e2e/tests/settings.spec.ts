@@ -17,7 +17,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
   expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -57,7 +57,7 @@ test(
   'lists settings in the server window and filters from the search box',
   { tag: '@quarantine:F-029' },
   async ({ page }) => {
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     await openSettings(page)
     await expectSettingsPageHead(expect, page)
 
@@ -103,7 +103,7 @@ test(
 test('paginates the server window by its page numbers and its neighbors', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
 
   // Compare the windows themselves: catalog additions legitimately move a
@@ -144,7 +144,7 @@ test('paginates the server window by its page numbers and its neighbors', async 
 test('a third click on a sorted header returns the table to its initial order', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
 
   // The catalog opens sorted by Key ascending: that is the order the third
@@ -184,7 +184,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
     fullLoads += 1
   })
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
   const loadsAfterColdLoad = fullLoads
   await isolate(page, 'example_integer')
@@ -275,7 +275,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
 test('an edit in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -318,7 +318,7 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
 test('the edit dialog opens on the value the other tab just wrote', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -353,7 +353,7 @@ test('an open pristine edit reloads when the other tab saves', async ({
   // A string with no catalog rule; the file runs in order, so sharing it with the
   // other two-tab tests is safe.
   const key = 'example_string'
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -390,7 +390,7 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
   page,
 }) => {
   const key = 'example_string'
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -430,7 +430,7 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   page,
 }) => {
   const key = 'example_string'
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -487,7 +487,7 @@ test('an open edit follows its row past the window edge, and the conflict after 
   // always did. (This table cannot say whether a row left a search, so a search
   // never takes a row off the screen; an order does.)
   const key = 'example_string'
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -574,7 +574,7 @@ test('deletes an orphan setting through the confirm modal', async ({
     page: 'hilos_settings',
     tableKey: 'settings',
   })
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
   const mark = await windows.mark()
   await typeInto(page.getByTestId('hilos-table-search'), orphanKey)
@@ -694,7 +694,7 @@ test('resets a custom setting to its catalog default through the confirm modal',
   // test ends on the catalog default, which is its own cleanup.
   const key = 'notifications.delivery_log.retention_days'
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
   await isolate(page, key)
   await setCustomSetting(page, key, '30')
@@ -726,7 +726,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   // of the journey, in the frontend driver.
   const key = 'logs.archive_retention.keep_batches'
 
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await openSettings(page)
   await isolate(page, key)
 

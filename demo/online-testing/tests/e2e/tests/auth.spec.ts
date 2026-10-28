@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
   PASSWORD,
   continueFromDone,
+  createTestUser,
   enterIdentifierAndPassword,
   login,
   logout,
@@ -101,9 +102,7 @@ test('answers a wrong password inline, then signs the account back in', async ({
 }) => {
   const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
   await logout(expect, page)
@@ -133,9 +132,7 @@ test('recovers a forgotten password and signs in with the new one', async ({
   const email = uniqueEmail()
   const newPassword = 'a whole other passphrase'
 
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await logout(expect, page)
 
   // Recovery starts from the same one field: the lookup finds the account,

@@ -8,6 +8,7 @@ import { pageResponseSchema } from '../../../../../framework/frontend/core/src/p
 import {
   logout,
   signUp,
+  createTestUser,
   watchClientDocument,
   watchSocketFrames,
   clickSubmit,
@@ -86,7 +87,7 @@ test('an open policy follows a hold and accepts only Privacy through its compari
     if (agreements !== undefined)
       snapshots.push(legalAgreementsStateSchema.parse(agreements))
   })
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/privacy', PAGE_READY)
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')
@@ -192,7 +193,7 @@ test('a stale revision is refused without optimistic coverage and can be retried
       })
     },
   )
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/privacy', PAGE_READY)
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')

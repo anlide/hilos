@@ -4,7 +4,7 @@ import { TABLE_VIEW_STORAGE_KEY } from '../../../../../framework/frontend/core/s
 import {
   login,
   openSignIn,
-  signUp,
+  createTestUser,
   isSessionCookie,
   watchClientDocument,
   clickSubmit,
@@ -60,7 +60,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
   page,
   context,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/privacy', PAGE_READY)
   const document = await watchClientDocument(page)
   const reader = page.getByTestId('privacy-reader')

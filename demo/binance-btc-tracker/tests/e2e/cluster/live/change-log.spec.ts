@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_FEED_PATH,
   DAEMON_ROOT_PATH,
@@ -21,7 +21,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
@@ -104,7 +104,7 @@ test(
       status: 'notRun',
     }))
     try {
-      const adminId = await signUpAdmin(expect, adminPage)
+      const adminId = await createTestAdmin(expect, adminPage)
       const actorLabel = await adminPage.getByTestId('self-user').innerText()
       const workersPath = `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}/workers`
       await gotoPage(expect, adminPage, workersPath)
@@ -152,7 +152,7 @@ test(
       )
 
       personPage = await newMasterPage(browser, CLUSTER_FOLLOWER)
-      const person = await signUp(expect, personPage)
+      const person = await createTestUser(expect, personPage)
       // Address the lazy owner without changing this normal account's admin flag (P-612).
       await setAdmin(person.userId, false)
       writerId = `hilos_user:${person.userId}`

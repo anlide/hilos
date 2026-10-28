@@ -6,7 +6,7 @@ import {
   logout,
   openSignIn,
   PASSWORD,
-  signUp,
+  createTestUser,
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -230,7 +230,7 @@ test('an admin screen holds the refusal region before there is a refusal', async
 test('password visibility toggle operates from keyboard on sign-in', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await logout(expect, page)
   await openSignIn(expect, page)
   await expect(page.getByTestId('auth-surface')).toBeVisible()
@@ -248,7 +248,7 @@ test('password visibility toggle operates from keyboard on sign-in', async ({
 test('Privacy comparison and erase expose names, keyboard focus and live regions', async ({
   page,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await gotoPage(expect, page, '/privacy')
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
@@ -454,7 +454,7 @@ test('the default language deletion explanation is named, keyboard readable and 
 test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toHaveText(user.name)
@@ -533,7 +533,7 @@ test.describe('Profile time zone accessibility', () => {
   test('names the picker, supports keyboard search, choice and Close, and returns focus', async ({
     page,
   }) => {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
     const opener = page.getByTestId('profile-time-zone-change')
     await expect(opener).toHaveAccessibleName('Change')

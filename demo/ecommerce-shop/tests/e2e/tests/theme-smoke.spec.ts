@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   APPEARANCE_PATH,
   THEME_PICK_STORAGE_KEY,
   chooseHeaderTheme,
@@ -62,7 +62,7 @@ test('an account keeps its header pick across a reload and returns to the defaul
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await signUp(expect, page)
+  await createTestUser(expect, page, { themePick: null })
   await expectThemeMode(expect, page, 'light')
   await expectThemeHeader(expect, page, 'system', true)
 

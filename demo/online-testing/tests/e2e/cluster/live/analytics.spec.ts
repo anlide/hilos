@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 
 import {
   PASSWORD,
-  nameFromEmail,
-  signUp,
-  ANALYTICS_SIGN_UP_LAST_ACTION,
-  ANALYTICS_WRITER_TIMEOUT_MS,
+  uniqueEmail,
+  login,
+  openSignIn,
+  waitAnalyticsBrowserSession,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
@@ -16,7 +16,6 @@ import {
   expectNoAnalyticsBodies,
   expectNoAnalyticsPersonSession,
   expectOtherAnalyticsSession,
-  readAnalyticsBrowserSession,
   watchAnalyticsFrames,
   clusterCommandChannel,
   expectClusterAnalyticsAgents,
@@ -29,6 +28,8 @@ import {
   gotoPage,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
+import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src/index.js'
 
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
@@ -39,7 +40,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
   test(`an action through ${sourceNode} is shown on the session page through ${viewerNode}`, async ({
     browser,
   }) => {
-    // Two registrations, journal rotation and remote reads exceed the base cap.
+    // Two real logins, journal rotation and remote reads exceed the base cap.
     test.slow()
     const before = (await sendCommand(
       'test:cluster:inspect',
@@ -69,53 +70,48 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       )
       const frames = watchAnalyticsFrames(admin)
 
-      const email = (await signUp(expect, source)).email
-      const userId = Number(
-        await source.getByTestId('self-user-id').innerText(),
-      )
+      const user = await seedTestUser({ email: uniqueEmail() })
+      await gotoPage(expect, source, '/')
+      await openSignIn(expect, source)
+      await login(expect, source, user.email, PASSWORD)
+      const userId = user.userId
       expect(Number.isSafeInteger(userId)).toBe(true)
       expect(userId).toBeGreaterThan(0)
-      const user = { userId, name: nameFromEmail(email) }
       const browserMajor = await source.evaluate(
         () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
       )
       expect(browserMajor).toBeDefined()
-      const bodies = [email, PASSWORD]
+      const bodies = [user.email, PASSWORD]
       await sourceUpgrades.assert()
 
-      await signUp(expect, admin)
-      const adminId = Number(
-        await admin.getByTestId('self-user-id').innerText(),
-      )
+      const { userId: adminId, email: adminEmail } = await seedTestUser({
+        email: uniqueEmail(),
+      })
+      await gotoPage(expect, admin, '/')
+      await openSignIn(expect, admin)
+      await login(expect, admin, adminEmail, PASSWORD)
       expect(Number.isSafeInteger(adminId)).toBe(true)
       expect(adminId).toBeGreaterThan(0)
       await setAdmin(adminId, true)
-      await expect(admin.getByTestId('nav-admin')).toBeVisible()
+      await expect(admin.getByTestId('nav-admin')).toHaveAttribute(
+        'data-access',
+        'full',
+      )
+      bodies.push(adminEmail)
       await viewerUpgrades.assert()
 
-      const readUser = () =>
-        readAnalyticsBrowserSession(sendCommand, user.userId)
-      const readAdmin = () => readAnalyticsBrowserSession(sendCommand, adminId)
-      await expect
-        .poll(
-          async () =>
-            (await readUser()).actionNames.includes(
-              ANALYTICS_SIGN_UP_LAST_ACTION,
-            ),
-          { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
-        )
-        .toBe(true)
-      await expect
-        .poll(
-          async () =>
-            (await readAdmin()).actionNames.includes(
-              ANALYTICS_SIGN_UP_LAST_ACTION,
-            ),
-          { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
-        )
-        .toBe(true)
-      const userSession = await readUser()
-      const adminSession = await readAdmin()
+      const userSession = await waitAnalyticsBrowserSession(
+        expect,
+        sendCommand,
+        user.userId,
+        AUTH_ACTION_LOGIN,
+      )
+      const adminSession = await waitAnalyticsBrowserSession(
+        expect,
+        sendCommand,
+        adminId,
+        AUTH_ACTION_LOGIN,
+      )
       expect(userSession.browserSessionId).not.toBeNull()
       expect(adminSession.browserSessionId).not.toBeNull()
       expect(userSession.browserSessionId).not.toBe(
@@ -161,7 +157,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
         admin,
         userSession.actionNames,
       )
-      // The whole registration ran on the main page: every action stands on it.
+      // Both real logins ran on the main page: every action stands on it.
       await expectAnalyticsActionsOnPage(expect, admin, 'main')
 
       await expectAnalyticsSessionFrames(
@@ -176,7 +172,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       await admin.getByTestId('hilos-table-sort-createdTs').click()
       await expectAnalyticsActionRows(expect, admin, [...ascending].reverse())
 
-      // The observer is on the admin's analytics page only: the registration
+      // The observer is on the admin's analytics page only: the sign-in
       // screens legitimately carried these bodies earlier, in the other context.
       await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 

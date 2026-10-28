@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
 import {
   nameFromEmail,
-  openSignIn,
+  createTestUser,
   PASSWORD,
-  register,
   uniqueEmail,
   downloadBytes,
   clickSubmit,
@@ -15,9 +14,7 @@ test('Your data confirms identity, prepares a copy and downloads it', async ({
   page,
 }) => {
   const email = uniqueEmail()
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page)
-  await register(expect, page, email)
+  await createTestUser(expect, page, { email })
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
   await gotoPage(expect, page, '/profile/data')
   await expect(page.getByTestId('profile-data-view')).toBeVisible()

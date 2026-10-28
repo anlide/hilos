@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
-  signUp,
+  createTestUser,
   gotoPage,
   PAGE_REFUSED,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -19,9 +19,9 @@ import {
 test('gates the people page for a non-admin, then opens it after a grant', async ({
   page,
 }) => {
-  // Register a user (the durable id feeds the grant); the account is not admin
+  // Prepare a user (the durable id feeds the grant); the account is not admin
   // yet, so the page's level still refuses it until the grant lands.
-  const { userId } = await signUp(expect, page)
+  const { userId } = await createTestUser(expect, page)
 
   // Not an admin: the subscription is refused with a 403 error page in place of
   // the admin view.

@@ -7,7 +7,7 @@ import {
 } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUserJoined,
   clearCustomSetting,
   enableEmailChannel,
   openBell,
@@ -45,7 +45,7 @@ function emailPreference(page: Page): Locator {
 }
 
 /**
- * Sign in an account the email channel can address (with a verified email), and make it admin.
+ * Prepare a verified account the email channel can address, and make it admin.
  *
  * @param page Page starting anonymous.
  * @returns The account's proven email and durable user id.
@@ -53,7 +53,7 @@ function emailPreference(page: Page): Locator {
 async function signInAddressableAdmin(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const email = (await signUp(expect, page)).email
+  const email = (await createTestUserJoined(expect, page)).email
   const userId = await grantAdminToSelf(expect, page)
 
   return { email, userId }

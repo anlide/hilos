@@ -6,7 +6,7 @@ import {
   login,
   logout,
   openSignIn,
-  signUp,
+  createTestUser,
   shownByTestId,
   clickSubmit,
   gotoPage,
@@ -51,7 +51,7 @@ async function setRefusal(admin: Page, value: string): Promise<void> {
 test('a person past the deadline is frozen until they accept, and keeps their data', async ({
   page,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
 
   const held = await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
   expect(held.standing).toBe('lapsed')
@@ -88,7 +88,7 @@ test('a person past the deadline is frozen until they accept, and keeps their da
 test('under "remind" the window rises on sign-in and the header icon keeps the reminder', async ({
   page,
 }) => {
-  const admin = await signUp(expect, page)
+  const admin = await createTestUser(expect, page)
   await grantAdminToSelf(expect, page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -98,7 +98,7 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     await setRefusal(page, 'remind')
     await logout(expect, page)
 
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page)
     const held = await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
     expect(held.standing).toBe('lapsed')
     expect(held.frozen).toBe(false)
@@ -175,7 +175,7 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
 test('a person frozen elsewhere sees the screen on every page but the open ones', async ({
   page,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
   await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
 

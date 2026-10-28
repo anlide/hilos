@@ -16,7 +16,7 @@ import {
   openProfileTimeZone,
   PAGE_READY,
   profileSessionSnapshot,
-  signUp,
+  createTestUser,
   typeInto,
   watchClientDocument,
   watchOpenedSockets,
@@ -32,7 +32,7 @@ test('shows the automatic browser zone before Theme and searches the real profil
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await expectProfileTimeZoneCatalog(expect, frames)
     await expect(page.getByTestId('profile-time-zone-row')).toBeVisible()
@@ -79,7 +79,7 @@ test('fans choices out to independent browsers, keeps the receiving search and i
   const contexts: BrowserContext[] = []
   const firstSockets = watchOpenedSockets(page)
   try {
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     const secondContext = await browser.newContext({
       baseURL,
@@ -113,7 +113,7 @@ test('fans choices out to independent browsers, keeps the receiving search and i
     contexts.push(strangerContext)
     const stranger = await strangerContext.newPage()
     const strangerSockets = watchOpenedSockets(stranger)
-    const otherPerson = await signUp(expect, stranger)
+    const otherPerson = await createTestUser(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
@@ -178,7 +178,7 @@ test('reformats real session and tab milliseconds while retaining the device bro
   context,
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
   const sessionsPage = await context.newPage()
   const frames: SocketFrame[] = []

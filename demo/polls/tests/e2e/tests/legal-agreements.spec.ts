@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
-  signUp,
+  createTestUser,
   clickSubmit,
   gotoPage,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -8,7 +8,7 @@ import {
 test('reads personal agreements and compares published revisions', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
     'Terms and privacy accepted',

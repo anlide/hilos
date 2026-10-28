@@ -8,9 +8,9 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUp } from '../helpers/session.js'
 
 /** The settings page this spec drives. */
 const SETTINGS_PATH = '/hilos/security/impersonation'
@@ -63,8 +63,8 @@ test(
     const strip = page.getByTestId('impersonation-banner')
     let viewOnly = false
     try {
-      await signUpAdmin(expect, page, { entryId: 'message-signin' })
-      const person = await signUp(expect, personPage)
+      await grantAdminToSelf(expect, page)
+      const person = await createTestUser(expect, personPage)
 
       await setScope(page, 'view')
       viewOnly = true

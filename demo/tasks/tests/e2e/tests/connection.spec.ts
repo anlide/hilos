@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { PROFILE_ADD_SMS_REQUEST_ACTION } from '../../../../../framework/frontend/core/src/base/index.js'
 import {
   PASSWORD,
-  signUp,
+  createTestUser,
   clickUnavailableControl,
   controlSocketReconnect,
   countSentFrames,
@@ -50,7 +50,7 @@ test('holds page and modal interaction until the real reconnect', async ({
   const smsRequests = countSentFrames(page, PROFILE_ADD_SMS_REQUEST_ACTION)
   const watches: { dispose(): Promise<void> }[] = []
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile/sign-in')
     await expectPageReady(expect, page)
     const document = await watchClientDocument(page)

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   uniqueEmail,
   MAINTENANCE_PATH,
   addToMaintenanceCircle,
@@ -36,12 +36,11 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await gotoPage(expect, page, MAINTENANCE_PATH)
   await clearMaintenanceCircle(page)
 
-  // The registration code proves the address (HIL-825). This demo signs in by
-  // password only. An address nobody has confirmed is exactly what the section
-  // refuses.
+  // The prepared member has a verified address. This demo signs in by password
+  // only. An address nobody has confirmed is exactly what the section refuses.
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const memberEmail = (await signUp(expect, member)).email
+  const memberEmail = (await createTestUser(expect, member)).email
 
   await addToMaintenanceCircle(page, memberEmail)
 

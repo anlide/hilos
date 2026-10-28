@@ -13,7 +13,7 @@ import {
   login,
   openProfileTimeZone,
   PAGE_READY,
-  signUp,
+  createTestUser,
   typeInto,
   watchClientDocument,
   watchSocketFrames,
@@ -28,7 +28,7 @@ test('shows Automatic before Theme and receives the profile time-zone catalog', 
   const frames: SocketFrame[] = []
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   try {
-    await signUp(expect, page)
+    await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     await expectProfileTimeZoneCatalog(expect, frames)
     await expect(page.getByTestId('profile-time-zone-row')).toBeVisible()
@@ -61,7 +61,7 @@ test('real Tokyo and Automatic choices reach independent sessions while preservi
   page,
   baseURL,
 }) => {
-  // Two registrations, an independent login, two account writes and reloads
+  // Two account fixtures, an independent login, two account writes and reloads
   // exceed the ordinary single-client budget even on an idle stand.
   test.slow()
   const contexts: BrowserContext[] = []
@@ -69,7 +69,7 @@ test('real Tokyo and Automatic choices reach independent sessions while preservi
   const socket = watchSocketFrames(page, (frame) => frames.push(frame))
   const sockets = [socket]
   try {
-    const person = await signUp(expect, page)
+    const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
     const secondContext = await browser.newContext({
       baseURL,
@@ -106,7 +106,7 @@ test('real Tokyo and Automatic choices reach independent sessions while preservi
     })
     contexts.push(strangerContext)
     const stranger = await strangerContext.newPage()
-    const otherPerson = await signUp(expect, stranger)
+    const otherPerson = await createTestUser(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
     await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')

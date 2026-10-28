@@ -7,7 +7,7 @@ import {
 } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUserJoined,
   clearCustomSetting,
   enableEmailChannel,
   deliveryObject,
@@ -55,7 +55,7 @@ function emailPreference(page: Page): Locator {
 async function signInAddressableAdmin(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const email = (await signUp(expect, page)).email
+  const { email } = await createTestUserJoined(expect, page)
   const userId = await grantAdminToSelf(expect, page)
 
   return { email, userId }

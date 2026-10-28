@@ -6,8 +6,7 @@ import { expect, test } from '@playwright/test'
 
 import {
   PASSWORD,
-  registerEmailOnly,
-  signUp,
+  createTestUser,
   addVirtualAuthenticator,
   dismissToasts,
   shownByTestId,
@@ -16,7 +15,7 @@ import {
   connectFirstApp,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   nextTotpCode,
@@ -26,7 +25,7 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 
 test('confirms an email change with the account password', async ({ page }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
@@ -44,7 +43,7 @@ test('confirms an email change with the account password', async ({ page }) => {
 test('confirms data export with a code sent to the verified email', async ({
   page,
 }) => {
-  const email = await registerEmailOnly(expect, page)
+  const { email } = await createTestUser(expect, page, { passwordless: true })
   await gotoPage(expect, page, '/profile/data')
   await expect(page.getByTestId('profile-data-view')).toBeVisible()
   await clickSubmit(expect, page.getByTestId('data-export-prepare'))
@@ -60,7 +59,7 @@ test('confirms data export with a code sent to the verified email', async ({
 test('confirms an email change with the connected authenticator app', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/security')
   const app = await connectFirstApp(page, PASSWORD)
   await gotoPage(expect, page, '/profile')
@@ -75,7 +74,8 @@ test('confirms an email change with the connected authenticator app', async ({
 test('does not ask twice when email change starts with its own address code', async ({
   page,
 }) => {
-  await registerEmailOnly(expect, page)
+  await createTestUser(expect, page, { passwordless: true })
+  await gotoPage(expect, page, '/profile')
   await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
   await expect(page.getByTestId('step-up')).toHaveCount(0)
@@ -86,7 +86,7 @@ test('confirms adding a way in once and lets the next add through without a step
   page,
 }) => {
   await addVirtualAuthenticator(page)
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/sign-in')
 
   // Adding a way in is a protected operation (HIL-1138): the dialog opens on
@@ -114,7 +114,7 @@ test('confirms adding a way in once and lets the next add through without a step
 test('confirms the first authenticator app with the password and lets a second prove itself', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/security')
 
   // The first app is the operation's own step (HIL-1138): the password first,
@@ -149,7 +149,7 @@ test('confirms the first authenticator app with the password and lets a second p
 test('opens the add-a-way-in dialog at the chooser once an administrator switched its operation off', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await createTestAdmin(expect, page)
   await gotoPage(expect, page, '/hilos/security/2fa/step-up')
   await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(1)
   const operation = shownByTestId(
@@ -179,7 +179,7 @@ test('opens the add-a-way-in dialog at the chooser once an administrator switche
 test('skips a protected operation disabled by an administrator', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await createTestAdmin(expect, page)
   // The list lives on its own page under two-factor (HIL-1204): the way in is
   // the child card the two-factor page draws from the catalog.
   await gotoPage(expect, page, '/hilos/security/2fa')
@@ -234,8 +234,8 @@ test('asks before removing rights once the administrator switches it on', async 
   const revokeSwitch = shownByTestId(page, 'hilos-step-up-switch-revoke_admin')
   let switched = false
   try {
-    await signUpAdmin(expect, page)
-    const person = await signUp(expect, personPage)
+    await createTestAdmin(expect, page)
+    const person = await createTestUser(expect, personPage)
     await gotoPage(expect, page, '/hilos/security/2fa/step-up')
     await expect(revokeSwitch).not.toBeChecked()
     await revokeSwitch.click()

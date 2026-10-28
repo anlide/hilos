@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   COMMUNICATIONS_FRAME_PATH,
   communicationsFrameHtml,
   draftCommunicationsFrame,
@@ -29,7 +29,7 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 test('the communications section displays email channel, sends a test notification and records delivery', async ({
   page,
 }) => {
-  const email = (await signUp(expect, page)).email
+  const email = (await createTestUser(expect, page)).email
   await grantAdminToSelf(expect, page)
 
   await gotoPage(expect, page, '/hilos/communications')

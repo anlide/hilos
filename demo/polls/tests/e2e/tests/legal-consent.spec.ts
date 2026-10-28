@@ -13,7 +13,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
@@ -76,7 +76,7 @@ test('reads the current documents before registration and records both accepted 
 test('previews the same complete consent body from a legal document', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/legal/terms')
   await clickSubmit(expect, page.getByTestId('legal-preview-consent'))
   const preview = page.getByTestId('legal-consent-preview')

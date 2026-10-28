@@ -211,6 +211,33 @@ is left in `demo/chat/backend/CLI/ChatCliManager.php` is the empty override, kep
 worked example of the shape — the other three demos name `CliManager` in their `cli.php`
 directly, which is what a project with no commands of its own does.
 
+### Fixture account and session commands
+
+| Command | Site | Description |
+|---|---|---|
+| `test:user:create` | `daemon` | Create a verified fixture user and identity through the users library |
+| `test:session:bind` | `daemon` | Bind an idle anonymous fixture session to an existing user through the sessions library |
+
+```text
+test:user:create <email> <passwordHash|none> [--phone=<E.164>] [--theme=light|dark|system]
+test:session:bind <sessionToken> <userId>
+```
+
+`test:user:create` accepts a recognized password hash, or `none` for a magic-link identity.
+The optional phone creates a verified SMS identity; the account theme defaults to `null`.
+The user, identity and current legal acceptances are written in one transaction, and the
+users-library hook runs after commit. It creates a new fixture rather than upserting an
+existing identity. Success prints JSON with `userId`, `email` and `name`; it does not print
+the password hash.
+
+`test:session:bind` accepts only an existing idle anonymous session and an active,
+unblocked user. It refuses a session with an owner, impersonation state, pending
+registration or second-factor state, a pending acknowledgement, or a blocked-user marker.
+It binds through the ordinary session authentication path and records the sign-in without
+rotating the session token or sending a registration acknowledgement. Success prints JSON
+with `sessionId` and `userId`; it does not print the session token. It refuses an already
+authenticated session rather than taking it over.
+
 ### Time-based features: no universal clock
 
 There is deliberately **no injectable clock, `now()` override, or global time-mock** in the
@@ -248,7 +275,9 @@ can inspect a network-partitioned node that cannot reach MySQL either), the clus
 family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills
 beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
-running), `test:notification:emit`, `test:account:force-purge`, `test:verification:sweep`,
+running), `test:notification:emit`, `test:user:create` and `test:session:bind` (the CLI sends
+each to its owning library and prints the reply; database work stays in the daemon),
+`test:account:force-purge`, `test:verification:sweep`,
 `test:legal:hold`, `test:i18n:language:on <code>`, `test:i18n:language:off <code>`,
 `test:i18n:language:delete <code>`,
 `test:i18n:locale:on <code>`, `test:i18n:country:off <code>` and `test:i18n:country:on <code>` (every row they cause is written by

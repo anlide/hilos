@@ -9,10 +9,10 @@ import {
   clickSubmit,
   gotoAuthReturn,
   gotoPage,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
-import { signUp } from '../helpers/session.js'
 
 /** The subject of the notice that a removal was asked for. */
 const RESET_REQUESTED_SUBJECT = 'Removal of two-step verification requested'
@@ -37,10 +37,10 @@ test('announces a removal by mail, and its link cancels it without signing in', 
   // The notice is mandatory, yet it still rides only a channel the stand has
   // switched on, to an address the person has proven there.
   const admin = await freshPage(browser)
-  await signUpAdmin(expect, admin, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, admin)
   await gotoPage(expect, admin, '/hilos/communications')
   await enableEmailChannel(admin)
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile/security')
   await connectFirstApp(page, PASSWORD)
 

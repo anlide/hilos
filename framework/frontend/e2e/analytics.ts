@@ -58,14 +58,6 @@ export async function readAnalyticsBrowserSession(
 /** A journal rotates within ten seconds; allow its writer to load that file too. */
 export const ANALYTICS_WRITER_TIMEOUT_MS = 20_000
 
-/**
- * Continue closes the registration and is the last action a tab records before
- * a spec moves on (authActions.ts, the `done` step). The writer loads a node's
- * journal files in order, so once it is loaded, every earlier action of the
- * same tab is loaded too.
- */
-export const ANALYTICS_SIGN_UP_LAST_ACTION = 'hilos_dismiss_session_ack'
-
 /** One action of a browser session, as the session page draws its row. */
 export interface AnalyticsActionRow {
   rowKey: number
@@ -153,23 +145,38 @@ const sessionListSurface = {
   link: SESSION_LIST_LINK,
 }
 
-/** Wait on the real journal writer, using the existing bounded stand probe. */
+/**
+ * Wait on the real journal writer for a session and, when given, its action.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param sendCommand The stand's command-channel request function.
+ * @param userId The last signed-in user's positive integer id.
+ * @param expectedAction An action whose arrival the caller needs to observe.
+ */
 export async function waitAnalyticsBrowserSession(
   expect: Expect,
   sendCommand: Parameters<typeof readAnalyticsBrowserSession>[0],
   userId: number,
+  expectedAction?: string,
 ): Promise<AnalyticsBrowserSession> {
   await expect
     .poll(
-      async () =>
-        (
-          await readAnalyticsBrowserSession(sendCommand, userId)
-        ).actionNames.includes(ANALYTICS_SIGN_UP_LAST_ACTION),
+      async () => {
+        const session = await readAnalyticsBrowserSession(sendCommand, userId)
+        return (
+          session.browserSessionId !== null &&
+          (expectedAction === undefined ||
+            session.actionNames.includes(expectedAction))
+        )
+      },
       { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
     )
     .toBe(true)
   const session = await readAnalyticsBrowserSession(sendCommand, userId)
   expect(session.browserSessionId).not.toBeNull()
+  if (expectedAction !== undefined) {
+    expect(session.actionNames).toContain(expectedAction)
+  }
   return session
 }
 

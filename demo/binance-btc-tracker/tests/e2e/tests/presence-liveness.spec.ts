@@ -1,11 +1,11 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   openRawWebSocket,
   typeInto,
   gotoPage,
-  signUpAdmin,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Presence over silent sockets (HIL-1566). The master pings a browser socket that
@@ -92,8 +92,8 @@ test('says a person probably offline while every socket of theirs is silent', as
   page,
 }) => {
   // Two silences waited into doubt and one into the close, 15 s of the stand's
-  // clock on its own, on top of two sign-ups: 25.5 s on an idle box (scale 1),
-  // most of the 30 s cap, and the stand's clock does not stretch with the load.
+  // clock on its own, on top of account preparation: 25.5 s on the original
+  // idle run, most of the 30 s cap; the stand's clock does not stretch with load.
   test.slow()
   const use = test.info().project.use
   const personContext = await browser.newContext({
@@ -101,11 +101,11 @@ test('says a person probably offline while every socket of theirs is silent', as
     ignoreHTTPSErrors: use.ignoreHTTPSErrors,
   })
   try {
-    await signUpAdmin(expect, page)
+    await grantAdminToSelf(expect, page)
     const personPage = await personContext.newPage()
-    const person = await signUp(expect, personPage)
-    // A fresh document spends a rotation the sign-up may have left in flight, so
-    // the cookie the raw sockets present is the one the person's session ends on.
+    const person = await createTestUser(expect, personPage)
+    // A fresh document proves the raw sockets will present this person's
+    // established session cookie.
     await gotoPage(expect, personPage, '/')
     await expect(personPage.getByTestId('self-user')).toHaveText(person.name)
     // The person's own tab answers every ping; it leaves, and the raw sockets are

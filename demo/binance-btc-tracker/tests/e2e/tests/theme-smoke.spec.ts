@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  signUp,
+  createTestUser,
   THEME_PICK_STORAGE_KEY,
   chooseHeaderTheme,
   emulateSystemTheme,
@@ -16,7 +16,7 @@ test('the signed-in BTC Tracker header saves a theme, keeps it on reload and res
   page,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await chooseHeaderTheme(expect, page, 'dark')
   await expectThemeHeader(expect, page, 'dark')
   await expectThemeMode(expect, page, 'dark')

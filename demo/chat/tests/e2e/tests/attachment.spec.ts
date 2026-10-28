@@ -27,8 +27,9 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
+  createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { logout, orphanSessionToken, signUp } from '../helpers/session.js'
+import { logout, orphanSessionToken } from '../helpers/session.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
@@ -114,7 +115,7 @@ test('a 5 MB file is ready on the composer within two seconds', async ({
     mimeType: 'text/plain',
     buffer: speedFile(),
   }
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const watch = await watchUploadReady(
     page.getByTestId('attach-button-input'),
@@ -168,7 +169,7 @@ test('a sent image opens from the feed, and its address refuses a request withou
   request,
   browser,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const key = modelKey()
   const text = `attachment ${key}`
@@ -244,7 +245,7 @@ test('a sent image opens from the feed, and its address refuses a request withou
 test('a picture dropped on the composer is sent with the message', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const key = modelKey()
   const text = `dropped ${key}`
@@ -275,7 +276,7 @@ test('a picture dropped on the composer is sent with the message', async ({
 test('a file of a type the chat does not take is refused with the server sentence', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   await page.getByTestId('attach-button-input').setInputFiles({
     name: `${modelKey()}.png`,
@@ -300,7 +301,7 @@ test('a ready file survives a dropped connection and is sent with the message', 
   page,
 }) => {
   await armSocketDrop(page)
-  await signUp(expect, page)
+  await createTestUser(expect, page)
 
   const key = modelKey()
   const text = `after drop ${key}`
@@ -330,7 +331,7 @@ test('a ready file survives a dropped connection and is sent with the message', 
 // From the acceptance of HIL-139: the client drops its list when the person
 // behind it changes, so signing out and back in starts with no chips.
 test('signing out drops the files waiting for a message', async ({ page }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await attachPng(page, `${modelKey()}.png`)
 
   await logout(expect, page)
@@ -348,7 +349,7 @@ test('identifier input keeps its prefix and drops only keys pressed during recon
   const reconnect = await controlSocketReconnect(page)
   const sockets = watchOpenedSockets(page)
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await attachPng(page, `${modelKey()}.png`)
     await logout(expect, page)
     await expect(page.getByTestId('attachments-file')).toHaveCount(0)
@@ -475,7 +476,7 @@ test('signing out waits for rotation before typing the original identifier', asy
   let settled = false
   let signingOut: Promise<void> | undefined
   try {
-    const user = await signUp(expect, page)
+    const user = await createTestUser(expect, page)
     await attachPng(page, `${modelKey()}.png`)
     const document = await watchClientDocument(page)
     try {
@@ -707,8 +708,8 @@ test.describe('the shared browser upload pool', () => {
       traces.push(ta)
       const tb = watchUploadFrames(b, 'second-person', record)
       traces.push(tb)
-      const ua = await signUp(expect, a)
-      const ub = await signUp(expect, b)
+      const ua = await createTestUser(expect, a)
+      const ub = await createTestUser(expect, b)
       expect(ua.userId).not.toBe(ub.userId)
       record({ kind: 'people', people: [ua, ub] })
       await setAdmin(ua.userId, true)
@@ -840,9 +841,9 @@ test.describe('the shared browser upload pool', () => {
       const tc = watchUploadFrames(c, 'waiting-person', record)
       traces.push(tc)
       const unusedCredits = await tb.holdCredits()
-      const ua = await signUp(expect, a)
-      const ub = await signUp(expect, b)
-      const uc = await signUp(expect, c)
+      const ua = await createTestUser(expect, a)
+      const ub = await createTestUser(expect, b)
+      const uc = await createTestUser(expect, c)
       expect(new Set([ua.userId, ub.userId, uc.userId]).size).toBe(3)
       record({ kind: 'people', people: [ua, ub, uc] })
       await setAdmin(uc.userId, true)

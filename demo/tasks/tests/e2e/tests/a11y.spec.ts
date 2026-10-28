@@ -6,7 +6,7 @@ import {
   logout,
   openSignIn,
   PASSWORD,
-  signUp,
+  createTestUser,
   expectAnalyticsOverview,
   expectCommunicationsAccessibility,
   expectDesktopShell,
@@ -166,7 +166,7 @@ test('the home page exposes a single top-level heading', async ({ page }) => {
 test('password visibility toggle operates from keyboard on sign-in', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await logout(expect, page)
   await openSignIn(expect, page)
   await expect(page.getByTestId('auth-surface')).toBeVisible()
@@ -323,7 +323,7 @@ test('the default language deletion explanation is named, keyboard readable and 
 test('the Time zone dialog is named, keyboard operable and returns focus on Escape and Close', async ({
   page,
 }) => {
-  await signUp(expect, page)
+  await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   const change = page.getByTestId('profile-time-zone-change')
   await expect(change).toHaveAccessibleName('Change')
@@ -364,7 +364,7 @@ test('the Time zone dialog is named, keyboard operable and returns focus on Esca
 test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
   page,
 }) => {
-  const user = await signUp(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toHaveText(user.name)

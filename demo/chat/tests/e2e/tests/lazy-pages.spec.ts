@@ -30,10 +30,11 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_REFUSED,
-  signUpAdmin,
+  createTestUser,
+  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
-import { logout, signUp } from '../helpers/session.js'
+import { logout } from '../helpers/session.js'
 
 // The production artifact supplies the graph and the real server supplies every
 // access verdict. No product global, fake backend or guessed chunk hash is used.
@@ -117,8 +118,8 @@ test('cold public footer, home and history stay eager', async ({ page }) => {
 test('holds selected project code after the server answer, then reuses it through history', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
-  // A new document discards registration's module map before selecting any admin page.
+  await grantAdminToSelf(expect, page)
+  // A new document discards the setup's module map before selecting any admin page.
   await gotoPage(expect, page, '/')
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
@@ -197,7 +198,7 @@ for (const outcome of ['success', 'failure'] as const) {
   test(`late ${outcome} of an abandoned module keeps home current`, async ({
     page,
   }) => {
-    await signUpAdmin(expect, page, { entryId: 'message-signin' })
+    await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/')
     const report = await readClientBundleReport(page)
     const selected = selectLazyBundle(report, LOGS_MODULE)
@@ -232,7 +233,7 @@ for (const outcome of ['success', 'failure'] as const) {
 test('a real chunk failure gives a safe local 503 and SPA home recovery', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/')
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
@@ -285,7 +286,7 @@ test('a real chunk failure gives a safe local 503 and SPA home recovery', async 
 test('cold allowed admin deep link waits for the real permitting response', async ({
   page,
 }) => {
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   const report = await readClientBundleReport(page)
   const selected = selectLazyBundle(report, SETTINGS_MODULE)
   const answer = await holdPageReply(page, SETTINGS_KEY)
@@ -328,7 +329,7 @@ for (const visitor of ['guest', 'non-admin'] as const) {
     test(`cold ${visitor} refusal wins over module ${outcome}`, async ({
       page,
     }) => {
-      if (visitor === 'non-admin') await signUp(expect, page)
+      if (visitor === 'non-admin') await createTestUser(expect, page)
       const report = await readClientBundleReport(page)
       const selected = selectLazyBundle(report, SETTINGS_MODULE)
       const held = await holdClientBundle(page, selected.entry)
@@ -387,7 +388,7 @@ for (const visitor of ['guest', 'non-admin'] as const) {
 test('signing in after a guest refusal uses the loaded descriptor without another download', async ({
   page,
 }) => {
-  const person = await signUp(expect, page)
+  const person = await createTestUser(expect, page)
   await setAdmin(person.userId, true)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
@@ -427,7 +428,7 @@ test('reconnect retains the mounted admin page and uses its loaded section', asy
 }) => {
   await armSocketDrop(page)
   const handshakes = watchHandshakeFrames(page)
-  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, SETTINGS_PATH)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const mounted = await page.getByTestId('hilos-viewport-table').elementHandle()

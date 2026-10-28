@@ -2,6 +2,8 @@ import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 
 import {
   signUp,
+  createTestUser,
+  createTestAdmin,
   APPEARANCE_PATH,
   THEME_DEFAULT_KEY,
   THEME_PICK_STORAGE_KEY,
@@ -23,7 +25,7 @@ import {
   expectPageReady,
   gotoPage,
   PAGE_READY,
-  signUpAdmin,
+  grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -45,7 +47,7 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
   baseURL,
 }) => {
   await emulateSystemTheme(page, 'light')
-  await signUpAdmin(expect, page)
+  await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos', PAGE_READY)
   await expect(
     page.getByTestId('dashboard-card-hilos_appearance'),
@@ -180,10 +182,10 @@ test('Appearance default theme reaches guests and accounts without overriding a 
   page: admin,
   baseURL,
 }) => {
-  // Two registrations plus three visitors and live setting delivery.
+  // Account preparation plus three visitors and live setting delivery.
   test.slow()
   await emulateSystemTheme(admin, 'light')
-  await signUpAdmin(expect, admin)
+  await grantAdminToSelf(expect, admin)
   const contexts: BrowserContext[] = []
   try {
     await gotoPage(expect, admin, APPEARANCE_PATH, PAGE_READY)
@@ -207,7 +209,7 @@ test('Appearance default theme reaches guests and accounts without overriding a 
     }
     const [, person, lightGuest] = visitors
     await chooseHeaderTheme(expect, lightGuest, 'light')
-    await signUp(expect, person)
+    await createTestUser(expect, person)
     for (const visitor of visitors) {
       await expectThemeMode(expect, visitor, 'light')
       expect(
@@ -263,10 +265,10 @@ test('Appearance switching restores guest and account Dark choices without reloa
   page: admin,
   baseURL,
 }) => {
-  // Two registrations, two observers and both live switching transitions.
+  // Account preparation, guest registration and both live switching transitions.
   test.slow()
   await emulateSystemTheme(admin, 'light')
-  await signUpAdmin(expect, admin)
+  await grantAdminToSelf(expect, admin)
   const contexts: BrowserContext[] = []
   try {
     await gotoPage(expect, admin, APPEARANCE_PATH, PAGE_READY)
@@ -338,7 +340,7 @@ test('both Appearance windows support keyboard, focus and discard', async ({
   await emulateSystemTheme(page, 'light')
   await gotoPage(expect, page, '/', PAGE_READY)
   await chooseHeaderTheme(expect, page, 'light')
-  await signUpAdmin(expect, page)
+  await createTestAdmin(expect, page, { themePick: 'light' })
   await gotoPage(expect, page, APPEARANCE_PATH, PAGE_READY)
   await expectThemeMode(expect, page, 'light')
   await expectAppearanceRows(expect, page)
