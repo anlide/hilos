@@ -7,8 +7,8 @@
 -- the DB; only a block that actually fired is persisted here so it survives a
 -- restart and is visible to every worker.
 --
--- `scope` is {ip, session}. `identity` is the throttle key: a client IP or the
--- sha256 hex of a session token (utf8mb4_bin for exact / case-sensitive match).
+-- `scope` is {ip, session, email}. `identity` is the throttle key: a client IP or the
+-- sha256 hex of a session token or normalized email (utf8mb4_bin for exact / case-sensitive match).
 -- `action` is the page action name that was throttled. `level` is the ladder
 -- step (0-based); `blocked_until` is when the block lifts (NULL = not currently
 -- blocked, only the cooled-down level is retained). Uniqueness is per triple so
@@ -16,7 +16,7 @@
 
 CREATE TABLE `hilos_auth_block` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `scope` ENUM('ip', 'session') NOT NULL,
+    `scope` ENUM('ip', 'session', 'email') NOT NULL,
     `identity` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `action` VARCHAR(64) NOT NULL,
     `level` TINYINT UNSIGNED NOT NULL DEFAULT 0,

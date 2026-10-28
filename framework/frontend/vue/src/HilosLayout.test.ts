@@ -498,6 +498,7 @@ describe('HilosLayout public Status exception (HIL-1690)', () => {
   function publicShell(feed: ReturnType<typeof shellFeed>) {
     const modalOpen = ref(false)
     const mutate = vi.fn()
+    const actions = new ActionLifecycle(feed.connection)
     const currentRoute = createSignal<PageRouteMatch>({
       page: HilosPages.PUBLIC_STATUS,
       params: {},
@@ -507,7 +508,8 @@ describe('HilosLayout public Status exception (HIL-1690)', () => {
       props: { connection: feed.connection },
       attachTo: document.body,
       slots: {
-        default: () => h(HilosStatusPage, { connection: feed.connection }),
+        default: () =>
+          h(HilosStatusPage, { connection: feed.connection, actions }),
         user: () =>
           h(
             HilosModal,

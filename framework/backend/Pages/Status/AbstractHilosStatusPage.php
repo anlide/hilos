@@ -66,6 +66,7 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
 
     public const array READS_DB = [
         ...parent::READS_DB, HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
+        HilosDbContext::statusSubscribers,
     ];
 
     public const array READS_RT = [...parent::READS_RT, HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM];
@@ -86,7 +87,9 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
             return !isset($change->row[Setting::key]) || $change->row[Setting::key] === StatusSettingsCatalog::PUBLISH_DELAY_SECONDS;
         }
 
-        return in_array($change->sourceKey, [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates], true);
+        return in_array($change->sourceKey, [
+            HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers,
+        ], true);
     }
 
     /**

@@ -1,0 +1,23 @@
+{
+    "format": 1,
+    "id": "20261028002725141545_HIL-1691_status_subscribers",
+    "parts": [
+        {
+            "unit": "status_subscriber",
+            "introducesUnit": true,
+            "up": "create_hilos_status_subscriber.sql",
+            "down": "create_hilos_status_subscriber_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "18962a8e4eee76f7c6454b0fdfac4cc533056030deb96ffd95b2c6e9b1eb86fb",
+            "afterStubDownSha256": "1989af400b2b333b4e8dec23c200469e11ea1d419bd5874948ed3a278dfa1470"
+        },
+        {
+            "unit": "auth_block",
+            "up": "auth_block_email_scope.sql",
+            "down": "auth_block_email_scope_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "cbdfb27b48de22db0694133163a0639416292c92dfc542cf041d11f7b7a54f51",
+            "afterStubDownSha256": "91fcb28d04011680c145d30175c8220c8ef459778799558ebf97ed81eb4a8c8c"
+        }
+    ]
+}

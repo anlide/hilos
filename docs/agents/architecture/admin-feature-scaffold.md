@@ -1,12 +1,12 @@
 # Architecture: Admin Feature Scaffold
 
 Read this before generating the activation of a framework-owned admin feature —
-settings, hilos-users, Analytics, Moderation and future ones like roles — in a
-project. Moderation's recipe below marks the code still owned by future leaves.
-This is a generation recipe for an AI agent: given a framework admin feature, produce
-the project-side code that activates it. The normative boundary and the two
-modes live in [admin-features.md](admin-features.md); this file is the
-per-feature generation order.
+settings, hilos-users, Status, Analytics, Moderation and future ones like roles
+— in a project. Moderation's recipe below marks the code still owned by future
+leaves. This is a generation recipe for an AI agent: given a framework admin
+feature, produce the project-side code that activates it. The normative
+boundary and the two modes live in [admin-features.md](admin-features.md); this
+file is the per-feature generation order.
 
 **Scope: framework-owned features only.** A project's own divergent admin table
 (the chat demo's bots table, Mode 2) is not scaffolded here — that is authoring
@@ -567,6 +567,60 @@ Environment and Env mismatch — through thin wrappers with the project's `conne
 context, as for the Logs pages; Agents also receives the project's action lifecycle.
 Tasks supplies these React mounts and polls supplies the Angular mounts. The context-required SDK pages stay outside the default admin view map.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
+
+### status — Status section
+
+Status is a framework-owned Mode-1 feature. The project supplies its public
+component catalog, activates the feature and binds the framework pages and
+tables; it does not copy the incident machine, subscriber storage, guest-action
+handling or table implementation. Follow
+[status-page.md](status-page.md#components-and-activation) for the full
+contract.
+
+1. Declare `HilosFeature::STATUS` in the project `FEATURES` and merge
+   `StatusSettingsCatalog` into its settings catalog. Status requires `DAEMON`,
+   `NOTIFICATION_DELIVERY` and `AUTH_THROTTLE`, the shared
+   `MailDeliveryChannelAgent`, the Status agent pair, the catalog fragment, the
+   Status database tables, three pages and two page-table bindings. Startup
+   validates these obligations.
+2. Run `db:framework:pull` and apply the generated project migrations for the
+   existing `status_incident`, `status_incident_update` and `status_subscriber`
+   schema units. The same immutable change generates the separate `auth_block`
+   scope upgrade pair that adds `email` to its existing enum. The framework
+   migration catalog already carries these generated pairs; use the ordinary
+   migration path rather than writing a project schema.
+3. Register `StatusAgent` and `StatusAgentDaemon` in `AGENTS` with cluster
+   scope and policy placement. The owner remains the writer of incident,
+   timeline and subscriber rows and the host of the guest subscription actions.
+4. Register the thin Overview, Components and Subscribers pages in `PAGES`.
+   Each uses the project's existing `HILOS_INDEX` as
+   `SUBSCRIPTION_AGENT_TYPE`; no new page-serving agent is needed. The framework
+   page catalog places Components and Subscribers under the shared Status head.
+5. Register `HilosStatusComponentsTable` and
+   `HilosStatusSubscribersTable` in `TABLES`. Bind the Components table to the
+   Components page and the Subscribers table to the Subscribers page in
+   `PAGE_TABLES`; Overview receives its data in the existing `page_response`
+   and has no table binding. The current framework tables read their sources
+   through `Hilos::$db` and `Hilos::$rt`, so they need no new project
+   `TableContext` property.
+6. Set `HILOS_STATUS_URL` to an absolute public HTTP or HTTPS `/status` address.
+   The root `.env.example` leaves it blank; each demo environment example names
+   its own local address, and each test compose file points at that demo's
+   frontend `/status`.
+7. In Chat and Binance BTC Tracker, mount the public Vue reader from
+   `@hilos/vue/status` with `{connection, actions}` and mount the three admin
+   pages from `@hilos/vue/admin/status` through thin wrappers carrying the
+   existing Status context. Core keys `HilosPages.STATUS`,
+   `HilosPages.STATUS_COMPONENTS` and `HilosPages.STATUS_SUBSCRIBERS` map to
+   `/hilos/status`, `/hilos/status/components` and
+   `/hilos/status/subscribers`; `HilosPages.PUBLIC_STATUS` is the separate
+   `/status` file-reader route. React and Angular backends are ready, but their
+   Status views stay in the unbuilt-page set until HIL-1695 and HIL-1696; do not
+   expose empty tabs.
+
+The shared framework tables and the existing project `TableContext` remain the
+only table binding path. Do not generate a second subscription table, a project
+mail queue, an alternate public URL handler, or a Status CLI scaffold.
 
 ### analytics — the Analytics section
 

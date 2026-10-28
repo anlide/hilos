@@ -156,6 +156,30 @@ $this->sendToAgent('moderate_bot_request', $data);
 // → AGENT_SIGNAL type → topology registry → target agent
 ```
 
+## Throttle verdict routes
+
+A throttled action's verdict returns to the agent whose worker parked it. For
+an agent action that is the action host itself; for a page action it is the
+page's `SUBSCRIPTION_AGENT_TYPE`. The parking agent class declares its own
+`THROTTLE_VERDICT_SIGNAL` and owns that name in `AGENT_SIGNALS` with the exact
+`ThrottleVerdictSignalData` DTO. If it is registered `INDEXED`, the signal
+declaration names `agentIndex` with `AgentSignalConfigKey::INDEX_FIELD` so the
+answer reaches the same parking instance. A signal name still belongs to one
+agent only.
+
+`AbstractAgent::THROTTLE_VERDICT_SIGNAL` defaults to
+`HILOS_AUTH_THROTTLE_VERDICT`, which remains the route of the ordinary auth
+library. Status overrides its signal name with `STATUS_THROTTLE_VERDICT`; it
+does not also declare the auth verdict signal. `PageSignalRouter` receives the
+parking agent's declared name, and `ThrottleVerdictRoute` resolves the check's
+`agentType` through the active project facade. `TopologyValidator` checks the
+per-agent name, exact DTO, route owner and indexed field. An unknown or invalid
+route is diagnosed; it does not fall back to the users library or fabricate an
+allowed verdict. This is a specific throttle reverse route, not a new generic
+signal-routing mechanism. See
+[Auth Throttle](../architecture/auth-throttle.md#each-parking-agent-owns-its-verdict-signal)
+for the dispatch and outage-grace behavior.
+
 ## Indexed agent signals
 
 Multi-instance agents (one process per entity, keyed by `agentIndex`) can be

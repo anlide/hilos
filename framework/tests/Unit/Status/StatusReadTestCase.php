@@ -28,6 +28,8 @@ use Hilos\Database\Object\Item\StatusIncidentUpdate as ObjectStatusIncidentUpdat
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
+use Hilos\Database\View\Collection\StatusSubscribers;
+use Hilos\Status\StatusSubscriberCountsData;
 use Hilos\Database\View\Collection\Settings;
 use Hilos\Database\View\Collection\Users;
 use Hilos\Database\View\Collection\AccountDeletions;
@@ -225,6 +227,7 @@ final class StatusProjectionDbContext extends HilosDbContext
         $this->setRepresent(self::statusIncidentUpdates, StatusIncidentUpdates::class);
         $this->_objectCollections[self::settings] = ObjectSettings::initEmpty();
         $this->setRepresent(self::settings, Settings::class);
+        $this->_dbItemCollections[self::statusSubscribers] = StatusProjectionSubscribers::initEmpty();
     }
 
     /**
@@ -278,5 +281,15 @@ final class StatusProjectionIncidents extends StatusIncidents
             throw new DatabaseException('Incident storage unavailable');
         }
         return parent::whereColumnIn($column, ...$values);
+    }
+}
+
+/** The aggregate query is a separate typed boundary from incident fixture rows. */
+final class StatusProjectionSubscribers extends StatusSubscribers
+{
+    /** @return StatusSubscriberCountsData Known empty subscriber set */
+    public function counts(): StatusSubscriberCountsData
+    {
+        return new StatusSubscriberCountsData(0, 0, 0, 0);
     }
 }

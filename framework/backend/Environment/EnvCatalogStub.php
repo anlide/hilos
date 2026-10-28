@@ -45,6 +45,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 120,
                 emptyIsMissing: true,
             ) + [EnvCatalogConstants::CATALOG_ENTRY_MIN_VALUE => 1],
+            EnvConstants::HILOS_STATUS_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::WORKER_COMM_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
             EnvConstants::COMMAND_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '127.0.0.1', emptyIsMissing: true, perNode: true),

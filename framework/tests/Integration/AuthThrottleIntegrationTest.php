@@ -5,14 +5,28 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleGate;
+use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Auth\Throttle\ThrottleScope;
+use Hilos\Auth\Throttle\ThrottleVerdictRoute;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Status\StatusAgent;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\CliCommands;
+use Hilos\Auth\Throttle\ThrottleCommandConstants;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
@@ -20,6 +34,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -32,7 +48,10 @@ use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\AuthAttempt;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Status\DTO\StatusSubscribeActionDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use ReflectionProperty;
 
 /**
  * The anti-abuse throttle across the two stores it keeps its state in (HIL-420).
@@ -72,6 +91,8 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     /** First ladder step in this case, in seconds. */
     private const int FIRST_STEP = 30;
 
+    private string $previousApp;
+
     private ?DbContext $previousDb = null;
 
     private ?EnvAccessor $previousEnv = null;
@@ -79,6 +100,9 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     private ?RtContext $previousRt = null;
 
     private ?SignalRouter $previousSignalRouter = null;
+
+    /** @var array<string, mixed> Source bus restored after installing the facade's cache mirror */
+    private array $previousSourceBus = [];
 
     /**
      * @throws DatabaseException When a stub statement fails
@@ -90,10 +114,18 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         self::runStubs(down: true);
         self::runStubs(down: false);
 
+        $this->previousApp = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, AuthThrottleTestHilos::class);
         $this->previousDb = Hilos::$db;
         $this->previousEnv = Hilos::$env;
         $this->previousRt = Hilos::$rt;
         $this->previousSignalRouter = Hilos::$sr;
+
+        foreach (['mirrors', 'reactions', 'provenance'] as $property) {
+            $this->previousSourceBus[$property] = new ReflectionProperty(SourceChangeBus::class, $property)->getValue();
+        }
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
 
         $db = new AuthThrottleTestDbContext();
         $db->configure();
@@ -103,7 +135,7 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
         $this->configureThrottle(enabled: true);
 
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new AuthThrottleTestSignalRouter();
         $this->mountCounters();
     }
 
@@ -118,10 +150,15 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
             putenv($knob);
         }
 
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousApp);
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$rt = $this->previousRt;
         Hilos::$env = $this->previousEnv;
         Hilos::$db = $this->previousDb;
+
+        foreach ($this->previousSourceBus as $property => $value) {
+            new ReflectionProperty(SourceChangeBus::class, $property)->setValue(null, $value);
+        }
 
         self::runStubs(down: true);
 
@@ -152,6 +189,75 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         $block = Hilos::$db->authBlocks->findByKey(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION);
         $this->assertNotNull($block);
         $this->assertSame(1, $block->level);
+    }
+
+    public function testBothParkingHostsUseOneCounterAndReceiveTheirOwnAllowAndDeny(): void
+    {
+        AuthThrottleTestHilos::validateTopology();
+        $agent = $this->startedAgent();
+        $hosts = [HilosAgentType::HILOS_USERS_LIBRARY, HilosAgentType::HILOS_STATUS];
+        foreach ([true, false] as $allowed) {
+            foreach ($hosts as $host) {
+                $check = new ThrottleCheckSignalData(
+                    ThrottleScope::SESSION,
+                    self::SESSION_IDENTITY,
+                    self::ACTION,
+                    self::ACCEPT_KEY,
+                    self::REQUEST_KEY,
+                    $host,
+                );
+                $verdict = $this->judgeCheck($agent, $check);
+                $this->assertSame($allowed, $verdict->allowed);
+                $this->assertSame(self::REQUEST_KEY, $verdict->requestKey);
+                $this->assertSame($allowed ? null : self::FIRST_STEP, $verdict->retryAfter);
+            }
+        }
+        $this->assertSame(self::MAX_SESSION + 1, $this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY)?->count);
+        $this->assertCount(1, Hilos::$db->authBlocks->findActive(date('Y-m-d H:i:s', 0)));
+    }
+
+    public function testResetClearsTheSharedCounterAndBlockForBothHosts(): void
+    {
+        $agent = $this->startedAgent();
+        $this->spendTheSessionWindow($agent);
+        $agent->onSignalCommand(
+            new CommandRequestDTO('reset-both-hosts', CliCommands::THROTTLE_TEST_RESET),
+            SignalSource::DAEMON,
+            CliCommands::THROTTLE_TEST_RESET,
+        );
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) instanceof SignalDTO) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        $this->assertCount(1, $replies);
+        $reply = $replies[0];
+        $this->assertTrue($reply->isOk());
+        $this->assertSame('reset-both-hosts', $reply->correlationId);
+        $this->assertSame([
+            ThrottleCommandConstants::FIELD_COUNTERS_CLEARED => 1,
+            ThrottleCommandConstants::FIELD_BLOCKS_CLEARED => 1,
+        ], $reply->payload);
+        $this->assertNull($this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY));
+        $this->assertSame([], Hilos::$db->authBlocks->findActive(date('Y-m-d H:i:s', 0)));
+        foreach ([HilosAgentType::HILOS_USERS_LIBRARY, HilosAgentType::HILOS_STATUS] as $host) {
+            $this->assertTrue($this->judgeCheck($agent, new ThrottleCheckSignalData(
+                ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, self::ACCEPT_KEY, self::REQUEST_KEY, $host,
+            ))->allowed);
+        }
+    }
+
+    public function testUnknownParkingHostGetsNoFallbackVerdict(): void
+    {
+        $agent = $this->startedAgent();
+        $agent->onSignalAgent(new AgentSignalData(new ThrottleCheckSignalData(
+            ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, self::ACCEPT_KEY, self::REQUEST_KEY, 'unknown-parking-host',
+        )), SignalSource::WORKER, HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK);
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) instanceof SignalDTO) {
+            $this->assertNotSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        }
+        $this->assertSame(1, $this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY)?->count);
     }
 
     public function testABlockOutlivesTheProcessThatDecidedIt(): void
@@ -189,6 +295,93 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         $address = $this->counter(ThrottleScope::IP, self::CLIENT_IP);
         $this->assertNotNull($address);
         $this->assertSame(1, $address->count);
+    }
+
+    public function testOneEmailBudgetIsSharedAcrossDifferentAddressesAndSessions(): void
+    {
+        $agent = $this->startedAgent();
+        for ($attempt = 0; $attempt <= self::MAX_SESSION; $attempt++) {
+            $checks = $this->guestChecks(' Reader@Example.TEST ', '198.51.100.' . ($attempt + 1), 'browser-' . $attempt);
+            $this->assertCount(3, $checks);
+            foreach ($checks as $check) {
+                $verdict = $this->judgeCheck($agent, $check);
+                $this->assertSame($check->scope !== ThrottleScope::EMAIL || $attempt < self::MAX_SESSION, $verdict->allowed);
+            }
+        }
+
+        $emailIdentity = ThrottleIdentity::forEmail('reader@example.test');
+        $block = Hilos::$db->authBlocks->findByKey(ThrottleScope::EMAIL, $emailIdentity, HilosSignalConstants::STATUS_SUBSCRIBE);
+        $this->assertNotNull($block);
+        $this->assertSame(1, $block->level);
+
+        // Reusing a browser and IP does not share the first address's email budget with another address.
+        foreach ($this->guestChecks('another@example.test', '198.51.100.1', 'browser-0') as $check) {
+            $this->assertTrue($this->judgeCheck($agent, $check)->allowed);
+        }
+        $other = $this->counter(ThrottleScope::EMAIL, ThrottleIdentity::forEmail('another@example.test'), HilosSignalConstants::STATUS_SUBSCRIBE);
+        $this->assertNotNull($other);
+        $this->assertSame(1, $other->count);
+    }
+
+    public function testDifferentEmailBudgetsStillShareTheirCommonIpBudget(): void
+    {
+        $agent = $this->startedAgent();
+        for ($attempt = 0; $attempt <= self::MAX_IP; $attempt++) {
+            foreach ($this->guestChecks('reader' . $attempt . '@example.test', self::CLIENT_IP, 'browser-' . $attempt) as $check) {
+                $verdict = $this->judgeCheck($agent, $check);
+                $this->assertSame($check->scope !== ThrottleScope::IP || $attempt < self::MAX_IP, $verdict->allowed);
+            }
+        }
+    }
+
+    public function testEmailBlocksReplayAfterRestartAndTheWorkerRefusesThemLocally(): void
+    {
+        $agent = $this->startedAgent();
+        $check = $this->guestChecks('reader@example.test', self::CLIENT_IP, 'browser')[2];
+        for ($attempt = 0; $attempt <= self::MAX_SESSION; $attempt++) {
+            $this->judgeCheck($agent, $check);
+        }
+
+        $this->mountCounters();
+        $restarted = $this->startedAgent();
+        $this->assertNotNull((new ThrottleGate())->blockedSeconds($check, microtime(true)));
+        $verdict = $this->judgeCheck($restarted, $check);
+        $this->assertFalse($verdict->allowed);
+        $this->assertNotNull($verdict->retryAfter);
+        $this->assertGreaterThan(0, $verdict->retryAfter);
+        $this->assertLessThanOrEqual(self::FIRST_STEP, $verdict->retryAfter);
+    }
+
+    public function testSuccessfulAuthenticationClearsOnlySessionBlocksInBothStores(): void
+    {
+        $agent = $this->startedAgent();
+        $checks = $this->guestChecks('reader@example.test', self::CLIENT_IP, 'browser');
+        for ($attempt = 0; $attempt <= self::MAX_IP; $attempt++) {
+            foreach ($checks as $check) {
+                $this->judgeCheck($agent, $check);
+            }
+        }
+        foreach ($checks as $check) {
+            $this->assertNotNull(Hilos::$db->authBlocks->findByKey($check->scope, $check->identity, $check->action));
+        }
+
+        $agent->onSignalAgent(
+            new AgentSignalData(new ThrottleSuccessSignalData($checks[1]->identity)),
+            SignalSource::WORKER,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED,
+        );
+        foreach ($checks as $check) {
+            $counter = $this->counter($check->scope, $check->identity, $check->action);
+            $block = Hilos::$db->authBlocks->findByKey($check->scope, $check->identity, $check->action);
+            if ($check->scope === ThrottleScope::SESSION) {
+                $this->assertNull($counter);
+                $this->assertNull($block);
+            } else {
+                $this->assertNotNull($counter);
+                $this->assertNotNull($block);
+                $this->assertFalse($this->judgeCheck($agent, $check)->allowed);
+            }
+        }
     }
 
     public function testAServedBlockIsDroppedButOneStillInForceIsNot(): void
@@ -240,6 +433,7 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     {
         $rt = new AuthThrottleTestRtContext();
         $rt->mountFeatureRuntime([new AuthThrottleFeature()]);
+        $rt->bindStateCollectionNames();
         Hilos::$rt = $rt;
 
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_AUTH_THROTTLE);
@@ -272,20 +466,54 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
      */
     private function judge(AuthThrottleAgent $agent, string $scope): ThrottleVerdictSignalData
     {
-        $agent->onSignalAgent(
-            new AgentSignalData(new ThrottleCheckSignalData(
-                scope: $scope,
-                identity: $scope === ThrottleScope::SESSION ? self::SESSION_IDENTITY : self::CLIENT_IP,
-                action: self::ACTION,
+        return $this->judgeCheck($agent, new ThrottleCheckSignalData(
+            scope: $scope,
+            identity: $scope === ThrottleScope::SESSION ? self::SESSION_IDENTITY : self::CLIENT_IP,
+            action: self::ACTION,
+            acceptKey: self::ACCEPT_KEY,
+            requestKey: self::REQUEST_KEY,
+            agentType: HilosAgentType::HILOS_USERS_LIBRARY,
+        ));
+    }
+
+    /**
+     * @param string $email Submitted guest address
+     * @param string $clientIp Browser's client address
+     * @param string $sessionToken Browser's session token
+     * @return list<ThrottleCheckSignalData> Checks from the same gate used by the worker
+     */
+    private function guestChecks(string $email, string $clientIp, string $sessionToken): array
+    {
+        $dto = new StatusSubscribeActionDTO($email);
+
+        return (new ThrottleGate())->checksFor(
+            new WebSocketActionSignalDTO(
                 acceptKey: self::ACCEPT_KEY,
-                requestKey: self::REQUEST_KEY,
-                agentType: HilosAgentType::HILOS_AUTH_THROTTLE,
-            )),
+                action: $dto->getAction(),
+                data: $dto->toArray(),
+                clientIp: $clientIp,
+                sessionIdentity: ThrottleIdentity::forSession($sessionToken),
+            ),
+            self::REQUEST_KEY,
+            new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_STATUS),
+            $dto,
+        );
+    }
+
+    /**
+     * @param AuthThrottleAgent $agent Agent owning both stores
+     * @param ThrottleCheckSignalData $check Attempt sent by the gate
+     * @return ThrottleVerdictSignalData Verdict for this check
+     */
+    private function judgeCheck(AuthThrottleAgent $agent, ThrottleCheckSignalData $check): ThrottleVerdictSignalData
+    {
+        $agent->onSignalAgent(
+            new AgentSignalData($check),
             SignalSource::WORKER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK,
         );
 
-        $verdict = $this->lastVerdict();
+        $verdict = $this->lastVerdict(ThrottleVerdictRoute::signalFor($check->agentType), $check->agentType);
         $this->assertNotNull($verdict);
 
         return $verdict;
@@ -306,16 +534,23 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     /**
      * Drains the signal queue and returns the last verdict it held.
      *
+     * @param string $expectedSignal The parking host's declared answer
+     * @param string $expectedHost Parking host that must receive the answer
      * @return ?ThrottleVerdictSignalData Verdict the agent queued, or null when it queued none
      */
-    private function lastVerdict(): ?ThrottleVerdictSignalData
+    private function lastVerdict(string $expectedSignal, string $expectedHost): ?ThrottleVerdictSignalData
     {
         $verdict = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
-            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
+            if (!in_array($signal->signalName->getName(), [
+                HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT,
+                HilosSignalConstants::STATUS_THROTTLE_VERDICT,
+            ], true)) {
                 continue;
             }
 
+            $this->assertSame($expectedSignal, $signal->signalName->getName());
+            $this->assertEquals([new AgentDestination($expectedHost)], Hilos::$sr->getDestinations($signal));
             $payload = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
             if ($payload instanceof ThrottleVerdictSignalData) {
                 $verdict = $payload;
@@ -330,14 +565,15 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
      *
      * @param string $scope Throttle scope
      * @param string $identity Identity within the scope
+     * @param string $action Guarded action
      * @return ?AuthAttempt Counter, or null when the key has none
      */
-    private function counter(string $scope, string $identity): ?AuthAttempt
+    private function counter(string $scope, string $identity, string $action = self::ACTION): ?AuthAttempt
     {
         $attempts = Hilos::$rt?->hilosAuthAttempts;
         $this->assertInstanceOf(AuthAttempts::class, $attempts);
 
-        return $attempts[StateAuthAttempt::keyFor($scope, $identity, self::ACTION)];
+        return $attempts[StateAuthAttempt::keyFor($scope, $identity, $action)];
     }
 
     /**
@@ -377,5 +613,53 @@ final class AuthThrottleTestRtContext extends RtContext
      */
     public function configure(): void
     {
+    }
+}
+
+final class AuthThrottleTestUsersAgent extends AbstractUsersLibraryAgent
+{
+}
+
+final class AuthThrottleTestUsersAgentDaemon extends AbstractAgentDaemon
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+
+    /** @return bool The fixture uses a regular worker, as the users library does */
+    public function requiresMonopolisticProcess(): bool
+    {
+        return false;
+    }
+}
+
+final class AuthThrottleTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_AUTH_THROTTLE => [
+            AgentRegistryKey::WORKER => AuthThrottleAgent::class,
+            AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
+        ],
+        HilosAgentType::HILOS_USERS_LIBRARY => [
+            AgentRegistryKey::WORKER => AuthThrottleTestUsersAgent::class,
+            AgentRegistryKey::DAEMON => AuthThrottleTestUsersAgentDaemon::class,
+        ],
+        HilosAgentType::HILOS_STATUS => [
+            AgentRegistryKey::WORKER => StatusAgent::class,
+            AgentRegistryKey::DAEMON => StatusAgentDaemon::class,
+        ],
+    ];
+
+    /** @return HilosDbContext Test's mounted durable throttle state */
+    protected static function createDb(): HilosDbContext
+    {
+        return new AuthThrottleTestDbContext();
+    }
+}
+
+final class AuthThrottleTestSignalRouter extends SignalRouter
+{
+    /** @return class-string<Hilos> The active integration topology */
+    protected function hilosClass(): string
+    {
+        return AuthThrottleTestHilos::class;
     }
 }

@@ -1,5 +1,9 @@
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
-import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import {
+  type HilosConnection,
+  type ConnectionState,
+} from '../../../src/connection/HilosConnection.js'
+import { PROTECTED_MODE_INACTIVE } from '../../../src/protocol/protectedMode.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { bindAdminAccess } from '../../../src/session/adminAccess.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -39,6 +43,7 @@ export function overview(
     publishDelaySeconds: 60,
     maintenance: null,
     incidents: [incident()],
+    subscribers: { confirmedCount: 0, pendingCount: 0 },
     ...overrides,
   }
 }
@@ -49,8 +54,18 @@ export function harness(page: string = HilosPages.STATUS) {
   const viewports: unknown[] = []
   const rendered: unknown[] = []
   const registered = new Map<string, unknown>()
+  const focuses: unknown[] = []
+  const facets: unknown[] = []
+  let connectionState: ConnectionState = 'connected'
+  let protectedMode = PROTECTED_MODE_INACTIVE
   const connection = {
     projectTimeZone: 'UTC',
+    get state() {
+      return connectionState
+    },
+    get protectedMode() {
+      return protectedMode
+    },
     on(event: string, listener: (value: unknown) => void) {
       const bucket = listeners.get(event) ?? new Set()
       listeners.set(event, bucket)
@@ -58,6 +73,7 @@ export function harness(page: string = HilosPages.STATUS) {
       return () => bucket.delete(listener)
     },
     sendAction(action: string, data: unknown, requestId?: string) {
+      if (connectionState !== 'connected' || protectedMode.active) return false
       sent.push({ action, data, requestId })
       return true
     },
@@ -67,6 +83,14 @@ export function harness(page: string = HilosPages.STATUS) {
     },
     sendTableRendered(...args: unknown[]) {
       rendered.push(args)
+      return true
+    },
+    sendTableRowFocus(...args: unknown[]) {
+      focuses.push(args)
+      return true
+    },
+    sendTableFacets(...args: unknown[]) {
+      facets.push(args)
       return true
     },
     registerTableWindow(key: string, source: unknown) {
@@ -96,9 +120,21 @@ export function harness(page: string = HilosPages.STATUS) {
     viewports,
     rendered,
     registered,
+    focuses,
+    facets,
     releaseAccess,
     emit(event: string, value: unknown) {
       for (const listener of [...(listeners.get(event) ?? [])]) listener(value)
+    },
+    connect(state: ConnectionState) {
+      connectionState = state
+      for (const listener of [...(listeners.get('state') ?? [])])
+        listener(state)
+    },
+    freeze(active: boolean) {
+      protectedMode = { ...PROTECTED_MODE_INACTIVE, active }
+      for (const listener of [...(listeners.get('protectedMode') ?? [])])
+        listener(protectedMode)
     },
     setOverview(data: unknown) {
       scopes.page()?.data.set('status', data)

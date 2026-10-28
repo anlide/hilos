@@ -16,12 +16,20 @@ import {
   typeInto,
   PAGE_REFUSED,
   gotoPage,
+  trackedActionReplies,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import {
   readPasswordResetCode,
   readRegisterCode,
 } from '../../../../../framework/frontend/scripts/mail.mjs'
+import {
+  resetAuthThrottle,
+  THROTTLE_REASON,
+  THROTTLE_SESSION_LIMIT,
+  THROTTLE_WINDOW_MS,
+} from '../../../../../framework/frontend/scripts/authThrottle.mjs'
 
 // Sign-in e2e for the binance-btc-tracker demo. Nothing about the machine is
 // this demo's, so what is proved here is the ACTIVATION — that the framework
@@ -192,4 +200,66 @@ test('shows the surface in place of an admin page a guest is refused', async ({
   // sentence itself is pinned by the SDK unit; e2e pins only the word, so that
   // rewording the copy stays one file of work (HIL-776).
   await expect(page.getByTestId('page-error')).not.toContainText(/guest/i)
+})
+
+test('the users verdict host rate-limits wrong passwords and holds the right password too', async ({
+  page,
+}) => {
+  test.slow() // Registration, SMTP confirmation and twelve guarded sign-in replies.
+  const log = watchDeliveryFrames(page)
+  try {
+    await resetAuthThrottle()
+    const email = uniqueEmail()
+    await gotoPage(expect, page, '/')
+    await openSignIn(expect, page)
+    await register(expect, page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(expect, page)
+    await openSignIn(expect, page)
+    await enterIdentifierAndPassword(expect, page, email, 'wrong password')
+    const started = performance.now()
+    for (let attempt = 0; attempt < THROTTLE_SESSION_LIMIT; attempt++) {
+      const since = log.sent.length
+      if (attempt > 0)
+        await typeInto(page.getByTestId('auth-password'), 'wrong password')
+      await clickSubmit(expect, page.getByTestId('auth-submit'))
+      await waitAuthSettled(expect, page)
+      await expect(page.getByTestId('auth-error')).toBeVisible()
+      await expect
+        .poll(() => trackedActionReplies(log, 'hilos_login', since).length)
+        .toBe(1)
+      const reply = trackedActionReplies(log, 'hilos_login', since)[0]
+      expect(reply.frame.type).toBe('action_error')
+      expect(reply.data.errorCode).not.toBe('rate_limited')
+    }
+    for (const password of ['wrong password', PASSWORD]) {
+      const since = log.sent.length
+      await typeInto(page.getByTestId('auth-password'), password)
+      await clickSubmit(expect, page.getByTestId('auth-submit'))
+      await waitAuthSettled(expect, page)
+      await expect(page.getByTestId('auth-error')).toContainText(
+        THROTTLE_REASON,
+      )
+      await expect
+        .poll(() => trackedActionReplies(log, 'hilos_login', since).length)
+        .toBe(1)
+      const reply = trackedActionReplies(log, 'hilos_login', since)[0]
+      expect(reply.frame.type).toBe('action_error')
+      expect(reply.data).toMatchObject({
+        errorCode: 'rate_limited',
+        reason: THROTTLE_REASON,
+        retryAfter: expect.any(Number),
+      })
+      expect(reply.data.retryAfter).toBeGreaterThan(0)
+      await expect(page.getByTestId('self-anonymous')).toBeVisible()
+    }
+    expect(performance.now() - started).toBeLessThan(THROTTLE_WINDOW_MS)
+  } finally {
+    await test.info().attach('users-live-throttle', {
+      body: JSON.stringify(log),
+      contentType: 'application/json',
+    })
+    log.stop()
+    await resetAuthThrottle()
+  }
 })

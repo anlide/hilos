@@ -177,11 +177,13 @@ class PageSignalRouter
      * @param AbstractPageFactory $pageFactory Page factory for resolving pages
      * @param ActionRouteConfig $actionRoutes Action-to-page route config
      * @param ?SignalRouteConfig $signalRoutes Optional signal-to-page route config; empty config when null
+     * @param string $throttleVerdictSignal Verdict name declared by this router's parking agent
      */
     public function __construct(
         private AbstractPageFactory $pageFactory,
         private ActionRouteConfig $actionRoutes,
         ?SignalRouteConfig $signalRoutes = null,
+        private string $throttleVerdictSignal = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT,
     ) {
         $this->signalRoutes = $signalRoutes ?? new SignalRouteConfig();
         $this->throttleGate = new ThrottleGate();
@@ -1376,7 +1378,7 @@ class PageSignalRouter
         }
 
         $requestKey = $data->acceptKey . '#' . ++$this->deferredSequence;
-        $checks = $this->throttleGate->checksFor($data, $requestKey, $host->getAgentSignalSource());
+        $checks = $this->throttleGate->checksFor($data, $requestKey, $host->getAgentSignalSource(), $dto);
         if ($checks === []) {
             return false;
         }
@@ -2487,7 +2489,7 @@ class PageSignalRouter
      */
     public function dispatchAgentSignal(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name === HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
+        if ($name === $this->throttleVerdictSignal) {
             if ($data->data instanceof ThrottleVerdictSignalData) {
                 $this->applyThrottleVerdict($data->data);
                 return;
@@ -2502,7 +2504,7 @@ class PageSignalRouter
             // and still catches a topology that never went past the validator at all - a unit
             // test building the router directly, without Hilos::init().
             Logger::error(
-                HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT
+                $this->throttleVerdictSignal
                     . ' arrived as ' . $data->data::class . '; the page agent must declare it in AGENT_SIGNALS'
                     . ' with ' . ThrottleVerdictSignalData::class,
             );

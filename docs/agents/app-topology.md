@@ -96,6 +96,18 @@ table contexts when they can read the project registry.
   signals before dispatch; `PageSignalRouter` uses
   `HilosPageFactory::createPageSignalPayloadDTO()` for page-routed agent
   signals.
+- A throttled action's verdict route is declared by the agent whose worker
+  parks it. That is the action host for an agent action, or the page's
+  `SUBSCRIPTION_AGENT_TYPE` for a page action. Its worker class sets
+  `THROTTLE_VERDICT_SIGNAL` and declares that exact name in `AGENT_SIGNALS`
+  with `ThrottleVerdictSignalData`; an indexed parking agent also declares
+  `AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'`. Each name still maps to
+  one agent. `AbstractAgent` defaults to `HILOS_AUTH_THROTTLE_VERDICT`, which
+  remains on the ordinary auth library; `StatusAgent` uses its own
+  `STATUS_THROTTLE_VERDICT` and does not duplicate the auth route. Startup
+  validates the reverse declaration. See
+  [signals/routing.md](signals/routing.md#throttle-verdict-routes) and
+  [auth-throttle.md](architecture/auth-throttle.md#each-parking-agent-owns-its-verdict-signal).
 - `Hilos::TABLES` registers server table definition classes keyed by table
   name.
 - `Hilos::BROWSER_TABLES` registers browser-only table config classes keyed by
@@ -148,8 +160,7 @@ routing boundary.
 
 ## Feature Declaration
 
-Framework features — `settings`, `hilos_users`, `backup`, `logs`,
-`notifications`, `notification_delivery`, `uploads`, `files` — are switched on in one place:
+Framework features are switched on in one place:
 
 ```php
 protected const array FEATURES = [

@@ -43,6 +43,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlIndexType;
@@ -527,12 +528,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * The pattern is built per field, because the declaration says how each field is matched: a
      * star is a mask in a field declared as one and a character everywhere else.
      *
+     * Subclasses may extend this condition with their typed window filters; queryPage and
+     * containsRow both read it so membership and the displayed set keep one predicate.
+     *
      * @param TableQueryDTO $query Window query carrying the search term and the fields it reads
      * @return array{0: string, 1: list<SqlParam>} Raw WHERE clause, empty when nothing is searched, and its params
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
-    private function searchCondition(TableQueryDTO $query): array
+    protected function searchCondition(TableQueryDTO $query): array
     {
         $search = TableSearchTerm::normalize($query->search);
         if ($search === null) {
@@ -573,6 +578,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @throws DatabaseException If the database query fails
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
     {
@@ -638,6 +644,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -835,7 +842,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     ): array {
         $condition = $keyset->toSql($table);
         foreach ($keyset->getParams() as $value) {
-            $filtersParam[] = SqlParam::auto($value);
+            $filtersParam[] = is_bool($value) ? SqlParam::bool($value) : SqlParam::auto($value);
         }
 
         return [$filters === '' ? $condition : "({$filters}) AND {$condition}", $filtersParam];

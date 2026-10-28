@@ -181,13 +181,37 @@ export async function gotoMaintenance(
  *
  * @param expect The calling spec's Playwright expect.
  * @param page The guest browser, including before its first socket welcome.
+ * @param path Public address, including a delivered subscription fragment.
  */
 export async function gotoPublicStatus(
   expect: Expect,
   page: Page,
+  path = '/status',
 ): Promise<void> {
-  await page.goto('/status')
+  // Keep cold mail entry separate from links delivered to a mounted reader.
+  // Chromium otherwise treats a link into the open /status as a hash change.
+  if (path.includes('#')) await page.goto('about:blank')
+  await page.goto(path)
   await expect(page.getByTestId('public-status-components')).toBeVisible()
+}
+
+/**
+ * Follow a delivered capability inside the already mounted public reader.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page The browser already showing /status.
+ * @param link The delivered mail address with its capability fragment.
+ */
+export async function openMountedStatusMailLink(
+  expect: Expect,
+  page: Page,
+  link: string,
+): Promise<void> {
+  await markDocument(page)
+  await page.goto(link)
+  await expectDocumentUnchanged(expect, page)
+  const target = new URL(link)
+  await expect(page).toHaveURL(`${target.origin}${target.pathname}`)
 }
 
 /** The live connection indicator the shell keeps at every state, freeze included. */

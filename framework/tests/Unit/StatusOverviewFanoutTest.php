@@ -33,7 +33,8 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
     /** @return iterable<string, array{string, string, TableMutationType}> All relevant source mutations */
     public static function facts(): iterable
     {
-        foreach ([SourceChange::KIND_DB => [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings],
+        foreach ([SourceChange::KIND_DB => [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
+            HilosDbContext::statusSubscribers],
             SourceChange::KIND_RT => [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM]] as $kind => $keys) {
             foreach ($keys as $source) {
                 foreach (TableMutationType::cases() as $mutation) {
@@ -312,7 +313,7 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         self::assertSame(AbstractHilosStatusPage::PAGE, $reply->pageKey);
         self::assertSame('Status', $reply->payload->data['pageLabel']);
         self::assertSame('Status', $reply->payload->data['pageHeadOwner']['label']);
-        self::assertCount(2, $reply->payload->data['pageTabs']);
+        self::assertCount(3, $reply->payload->data['pageTabs']);
         self::assertSame([], $reply->payload->windows);
         self::assertSame($reply->toArray(), PageResponseSignalData::fromArray($reply->toArray())->toArray());
         return $reply->payload->data['status'];

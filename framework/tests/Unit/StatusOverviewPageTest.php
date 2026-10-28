@@ -43,6 +43,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
         self::assertSame(['operationalCount' => 1, 'totalCount' => 2], $reply->payload->data['status']['components']);
         self::assertSame(300, $reply->payload->data['status']['publishDelaySeconds']);
         self::assertNull($reply->payload->data['status']['maintenance']);
+        self::assertSame(['confirmedCount' => 0, 'pendingCount' => 0], $reply->payload->data['status']['subscribers']);
         self::assertSame('Status', $reply->payload->data['pageHeadOwner']['label']);
         self::assertSame('bi-activity', $reply->payload->data['pageHeadOwner']['icon']);
         self::assertSame([
@@ -52,6 +53,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Overview'],
             ['page' => HilosPageConstants::HILOS_STATUS_COMPONENTS, 'label' => 'Components'],
+            ['page' => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS, 'label' => 'Subscribers'],
         ], $reply->payload->data['pageTabs']);
         self::assertSame([], $reply->payload->windows);
         self::assertSame($reply->toArray(), PageResponseSignalData::fromArray($reply->toArray())->toArray());

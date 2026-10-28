@@ -82,11 +82,15 @@ export async function expectTableTotal(
  * Read the row keys of the window, in the order the rows are drawn.
  *
  * @param page The Playwright page showing the table.
+ * @param tableId The declared data-id of this table root.
  * @returns The row keys, first row first.
  */
-export async function tableRowKeys(page: Page): Promise<string[]> {
+export async function tableRowKeys(
+  page: Page,
+  tableId = TABLE,
+): Promise<string[]> {
   const ids = await page
-    .getByTestId(TABLE)
+    .getByTestId(tableId)
     .locator(ROWS)
     .evaluateAll((elements) =>
       elements.map((element) => element.getAttribute('data-id') ?? ''),
@@ -192,6 +196,18 @@ export async function settleRemovedRow(
     await apply.click()
   }
   await expect(control).toHaveCount(0)
+}
+
+/** Ask for the current window through its announced-rows control. */
+export async function showAnnouncedRows(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  const show = page.getByTestId('hilos-table-announce-show')
+  await expect(show).toBeVisible()
+  await expect(show).toBeEnabled()
+  await show.click()
+  await expect(show).toBeHidden()
 }
 
 /**

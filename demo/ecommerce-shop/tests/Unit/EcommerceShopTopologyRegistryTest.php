@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Unit;
 
+use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
+use Hilos\Core\Page\PageSignalRouter;
+use ReflectionClass;
+use ReflectionMethod;
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\State\Item\HilosProfileNameChange;
@@ -47,11 +52,15 @@ use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusComponentsPage;
+use Demo\EcommerceShop\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusRemoveSubscriberActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
@@ -210,7 +219,14 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
+use Hilos\Status\DTO\StatusRemoveSubscriberSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
+use Hilos\Status\DTO\StatusConfirmSubscriptionActionDTO;
+use Hilos\Status\DTO\StatusSubscribeActionDTO;
+use Hilos\Status\DTO\StatusUnsubscribeActionDTO;
+use Hilos\Status\DTO\StatusUnsubscribePreviewActionDTO;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Status\StatusAgent;
 use Hilos\Status\StatusSettingsCatalog;
 
@@ -278,7 +294,20 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertFalse($daemon->requiresMonopolisticProcess());
     }
 
-    /** Status owns its collector response and three internal writes, with no client actions. */
+    public function testWorkerFactoryReadsEachParkingAgentsVerdictDeclaration(): void
+    {
+        $manager = new ReflectionClass(EcommerceShopWorkerManager::class)->newInstanceWithoutConstructor();
+        $factory = new ReflectionMethod(EcommerceShopWorkerManager::class, 'createPageSignalRouter');
+        $name = new ReflectionProperty(PageSignalRouter::class, 'throttleVerdictSignal');
+        $status = $factory->invoke($manager, new StatusAgent());
+        $users = $factory->invoke($manager, TopologyAgentFactory::createWorker(Hilos::class, HilosAgentType::HILOS_USERS_LIBRARY, null));
+        self::assertInstanceOf(PageSignalRouter::class, $status);
+        self::assertInstanceOf(PageSignalRouter::class, $users);
+        self::assertSame(HilosSignalConstants::STATUS_THROTTLE_VERDICT, $name->getValue($status));
+        self::assertSame(HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT, $name->getValue($users));
+    }
+
+    /** Status owns typed guest actions beside the collector response and internal writes. */
     public function testStatusConsumerAndInternalOperationsHaveTypedRoutes(): void
     {
         self::assertSame([
@@ -286,6 +315,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosSignalConstants::STATUS_CANCEL_PUBLICATION => StatusCancelPublicationSignalData::class,
             HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
+            HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+            HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         ], StatusAgent::AGENT_SIGNALS);
         self::assertSame(DaemonPictureWatchSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH]);
@@ -303,7 +334,30 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::STATUS_ADD_UPDATE]);
         self::assertArrayNotHasKey(HilosSignalConstants::STATUS_ADD_UPDATE, Hilos::getActionAgentRoutes());
         self::assertNotContains(HilosSignalConstants::STATUS_ADD_UPDATE, StatusAgent::AUTH_ACTIONS);
-        self::assertSame([], StatusAgent::AGENT_ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::STATUS_SUBSCRIBE => StatusSubscribeActionDTO::class,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM => StatusConfirmSubscriptionActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW => StatusUnsubscribePreviewActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE => StatusUnsubscribeActionDTO::class,
+        ], StatusAgent::AGENT_ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::STATUS_SUBSCRIBE,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE,
+        ], StatusAgent::THROTTLED_ACTIONS);
+        self::assertSame([], StatusAgent::AUTH_ACTIONS);
+        self::assertSame([HilosDbContext::sessions], StatusAgent::READS_DB);
+        self::assertSame([HilosClusterNode::RT_COLLECTION], StatusAgent::READS_RT);
+        foreach ([
+            HilosSignalConstants::STATUS_SUBSCRIBE => StatusSubscribeActionDTO::class,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM => StatusConfirmSubscriptionActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW => StatusUnsubscribePreviewActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE => StatusUnsubscribeActionDTO::class,
+        ] as $action => $dto) {
+            self::assertSame(HilosAgentType::HILOS_STATUS, Hilos::getAgentActionRoutes()[$action]);
+            self::assertSame($dto, Hilos::getAgentActionDtoRoutes()[$action]);
+        }
     }
 
     /** The project inherits Service and merges the live publication-delay setting. */
@@ -325,18 +379,25 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         ], EcommerceShopSettingsCatalog::getCatalog()[StatusSettingsCatalog::PUBLISH_DELAY_SECONDS]);
     }
 
-    /** Status requires its existing machine storage and both project-bound admin pages. */
+    /** Status requires its storage and all project-bound admin pages. */
     public function testStatusRequirementsAndSchemaSelectionAreComplete(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::STATUS);
         $requirements = $definition->requirements();
-        self::assertSame([HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY], $requirements->requires);
+        self::assertSame(
+            [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY, HilosFeature::AUTH_THROTTLE], $requirements->requires,
+        );
         self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
+        self::assertSame([HilosAgentType::HILOS_MAIL], $requirements->requiredSharedAgents);
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
-        self::assertSame(['hilos_status_incident', 'hilos_status_incident_update'], $requirements->requiredDbTables);
-        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class], $requirements->requiredPages);
-        self::assertSame([HilosStatusComponentsTable::class], $requirements->requiredTables);
-        self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class], $requirements->requiredPageTables);
+        self::assertSame(
+            ['hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber'], $requirements->requiredDbTables,
+        );
+        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class, AbstractHilosStatusSubscribersPage::class],
+            $requirements->requiredPages);
+        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class], $requirements->requiredTables);
+        self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
+            AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -348,6 +409,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([
             'status_incident' => [['hilos_status_incident'], [], 0],
             'status_incident_update' => [['hilos_status_incident_update'], ['status_incident'], 0],
+            'status_subscriber' => [['hilos_status_subscriber'], [], 0],
         ], $statusUnits);
     }
 
@@ -480,6 +542,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             LicensePage::PAGE => LicensePage::class,
             StatusPage::PAGE => StatusPage::class,
             StatusComponentsPage::PAGE => StatusComponentsPage::class,
+            StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
         ], Hilos::PAGES);
     }
 
@@ -528,6 +591,28 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
         self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame(StatusSubscribersPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_SUBSCRIBERS]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusSubscribersPage::PAGE]);
+        self::assertSame(HilosStatusSubscribersTable::class, Hilos::TABLES[HilosStatusSubscribersTable::TABLE]);
+        self::assertSame([HilosStatusSubscribersTable::TABLE => []], Hilos::PAGE_TABLES[StatusSubscribersPage::PAGE]);
+        self::assertSame([
+            HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE => HilosStatusRemoveSubscriberActionDTO::class,
+        ], StatusSubscribersPage::ACTIONS);
+        self::assertSame(StatusSubscribersPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE]);
+        self::assertSame(HilosStatusRemoveSubscriberActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE]);
+        self::assertNotContains(HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE, StatusSubscribersPage::READING_ACTIONS);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_SUBSCRIBERS,
+            StatusSubscribersPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(StatusSubscribersPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_WRITE_DONE]);
         self::assertSame([
             HilosSignalConstants::HILOS_STATUS_CANCEL_PUBLICATION => HilosStatusIncidentActionDTO::class,
             HilosSignalConstants::HILOS_STATUS_PUBLISH_NOW => HilosStatusIncidentActionDTO::class,
@@ -954,6 +1039,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::STATUS_CANCEL_PUBLICATION => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::STATUS_PUBLISH_NOW => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::STATUS_ADD_UPDATE => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_THROTTLE_VERDICT => HilosAgentType::HILOS_STATUS,
             ],
             Hilos::getAgentSignalRoutes(),
         );
@@ -1094,6 +1181,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::STATUS_SUBSCRIBE => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE => HilosAgentType::HILOS_STATUS,
         ], Hilos::getAgentActionRoutes());
         $this->assertSame(ThemePickActionDTO::class,
             Hilos::getAgentActionDtoRoutes()[HilosSignalConstants::HILOS_THEME_PICK]);

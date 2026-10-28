@@ -18,6 +18,9 @@ import {
   gotoMaintenance,
   gotoPage,
   grantAdminToSelf,
+  markDocument,
+  expectSelfReload,
+  expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   enterProtectedMode,
@@ -76,6 +79,13 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
   expect(watch?.states).toEqual(['held', 'ready'])
   // And in between the shell drew nothing: the navbar was never in the document.
   expect(watch?.brand).toBe(false)
+
+  // Inactive answers before the resumed roster broadcasts the lift. Keep this
+  // document alive until its reload settles, before the next test navigates.
+  await markDocument(page)
+  await openProtectedModeIfAny()
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await expectPageReady(expect, page)
 })
 
 test('two administrators close the system by hand, one lets the other in with a code, and that one opens it', async ({

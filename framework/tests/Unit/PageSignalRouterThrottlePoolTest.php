@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -38,7 +39,9 @@ use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Status\DTO\StatusSubscribeActionDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -118,6 +121,150 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
             $checks,
         ));
         $this->assertSame($checks[0]->requestKey, $checks[1]->requestKey);
+    }
+
+    public function testOptedInPayloadAddsANormalizedEmailCheckAndWaitsForAllThreeVerdicts(): void
+    {
+        $page = $this->dispatchAction(HilosSignalConstants::STATUS_SUBSCRIBE, payload: ['email' => ' Reader@Example.TEST ']);
+        $checks = $this->queuedChecks();
+
+        $this->assertFalse($page->handled);
+        $this->assertCount(3, $checks);
+        $this->assertSame([ThrottleScope::IP, ThrottleScope::SESSION, ThrottleScope::EMAIL], array_column($checks, 'scope'));
+        $this->assertSame(
+            [self::CLIENT_IP, self::SESSION_IDENTITY, ThrottleIdentity::forEmail('reader@example.test')],
+            array_column($checks, 'identity'),
+        );
+        foreach ($checks as $check) {
+            $this->assertSame($checks[0]->requestKey, $check->requestKey);
+            $this->assertSame(self::ACCEPT_KEY, $check->acceptKey);
+            $this->assertSame(HilosSignalConstants::STATUS_SUBSCRIBE, $check->action);
+        }
+
+        foreach ($checks as $index => $check) {
+            $this->deliverVerdict($page->router, new ThrottleVerdictSignalData($check->requestKey, true));
+            $this->assertSame($index === 2, $page->handled);
+        }
+        $this->assertInstanceOf(StatusSubscribeActionDTO::class, $page->handledDto);
+        $this->assertSame('reader@example.test', $page->handledDto->email);
+        $this->assertNull($page->actionException);
+    }
+
+    /** @return iterable<string, array{int}> Position of the refusing scope */
+    public static function refusalPositions(): iterable
+    {
+        yield 'IP' => [0];
+        yield 'session' => [1];
+        yield 'email' => [2];
+    }
+
+    #[DataProvider('refusalPositions')]
+    public function testAnyOfThreeRefusalsPreventsDispatchEvenWhenOtherVerdictsAllow(int $refusing): void
+    {
+        $page = $this->dispatchAction(HilosSignalConstants::STATUS_SUBSCRIBE, payload: ['email' => 'reader@example.test']);
+        $checks = $this->queuedChecks();
+        $this->assertCount(3, $checks);
+
+        foreach ($checks as $index => $check) {
+            $this->deliverVerdict(
+                $page->router,
+                new ThrottleVerdictSignalData($check->requestKey, $index !== $refusing, self::RETRY_AFTER),
+            );
+        }
+        $this->assertFalse($page->handled);
+        $this->assertInstanceOf(ActionRateLimitedException::class, $page->actionException);
+        $this->assertSame(self::RETRY_AFTER, $page->actionException->retryAfter);
+    }
+
+    public function testSeparateVerdictNamesIsolatePoolsEvenWithTheSameRequestKey(): void
+    {
+        $auth = $this->dispatchAction(HilosSignalConstants::STATUS_SUBSCRIBE, payload: ['email' => 'reader@example.test']);
+        $authChecks = $this->queuedChecks();
+        $status = $this->dispatchAction(
+            HilosSignalConstants::STATUS_SUBSCRIBE,
+            payload: ['email' => 'reader@example.test'],
+            verdictSignal: HilosSignalConstants::STATUS_THROTTLE_VERDICT,
+        );
+        $statusChecks = $this->queuedChecks();
+        $this->assertCount(3, $authChecks);
+        $this->assertCount(3, $statusChecks);
+        $this->assertSame($authChecks[0]->requestKey, $statusChecks[0]->requestKey);
+        $allow = new AgentSignalData(new ThrottleVerdictSignalData($authChecks[0]->requestKey, true));
+        $deny = new AgentSignalData(new ThrottleVerdictSignalData($authChecks[0]->requestKey, false, self::RETRY_AFTER));
+
+        // Cross-delivery must neither spend an allow nor settle the other pool with a deny.
+        $auth->router->dispatchAgentSignal($deny, SignalSource::AGENT, HilosSignalConstants::STATUS_THROTTLE_VERDICT);
+        $status->router->dispatchAgentSignal($deny, SignalSource::AGENT, HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT);
+        $this->assertNull($auth->actionException);
+        $this->assertNull($status->actionException);
+        foreach ($authChecks as $index => $check) {
+            $auth->router->dispatchAgentSignal($allow, SignalSource::AGENT, HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT);
+            $this->assertSame($index === 2, $auth->handled);
+            $this->assertFalse($status->handled);
+        }
+
+        $status->router->dispatchAgentSignal($deny, SignalSource::AGENT, HilosSignalConstants::STATUS_THROTTLE_VERDICT);
+        $this->assertInstanceOf(ActionRateLimitedException::class, $status->actionException);
+        $this->assertSame(self::RETRY_AFTER, $status->actionException->retryAfter);
+        foreach ($statusChecks as $check) {
+            $status->router->dispatchAgentSignal($allow, SignalSource::AGENT, HilosSignalConstants::STATUS_THROTTLE_VERDICT);
+        }
+        $this->assertFalse($status->handled);
+        $this->assertNull($auth->actionException);
+    }
+
+    /** @return iterable<string, array{bool}> Silence inside and beyond the outage grace */
+    public static function statusGrace(): iterable
+    {
+        yield 'inside grace' => [false];
+        yield 'beyond grace' => [true];
+    }
+
+    #[DataProvider('statusGrace')]
+    public function testConfiguredStatusVerdictKeepsTheExistingGraceAndIgnoresLateVerdicts(bool $zeroGrace): void
+    {
+        putenv(EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS->name . '=1');
+        if ($zeroGrace) {
+            HilosFacade::$setting = new SettingsAccessor(ThrottlePoolTestZeroGraceCatalog::class);
+        }
+        $page = $this->dispatchAction(
+            ThrottlePoolTestPage::THROTTLED_ACTION,
+            verdictSignal: HilosSignalConstants::STATUS_THROTTLE_VERDICT,
+        );
+        $key = $this->queuedChecks()[0]->requestKey;
+        usleep(5000);
+        $page->router->releaseExpiredDeferredActions();
+        $this->assertSame(!$zeroGrace, $page->handled);
+        if ($zeroGrace) {
+            $this->assertInstanceOf(ActionRateLimitedException::class, $page->actionException);
+            $this->assertSame(1, $page->actionException->retryAfter);
+        } else {
+            $this->assertNull($page->actionException);
+        }
+        $page->router->dispatchAgentSignal(
+            new AgentSignalData(new ThrottleVerdictSignalData($key, $zeroGrace, self::RETRY_AFTER)),
+            SignalSource::AGENT,
+            HilosSignalConstants::STATUS_THROTTLE_VERDICT,
+        );
+        $this->assertSame(!$zeroGrace, $page->handled);
+    }
+
+    public function testRawEmailOnAnActionWithoutTheInterfaceDoesNotOptItIn(): void
+    {
+        $page = $this->dispatchAction(ThrottlePoolTestPage::THROTTLED_ACTION, payload: ['email' => 'reader@example.test']);
+
+        $this->assertFalse($page->handled);
+        $this->assertSame([ThrottleScope::IP, ThrottleScope::SESSION], array_column($this->queuedChecks(), 'scope'));
+    }
+
+    public function testAnEmailBlockInTheReplicaRefusesWithoutRequestingAnyVerdict(): void
+    {
+        $this->blockKey(ThrottleScope::EMAIL, ThrottleIdentity::forEmail('reader@example.test'), HilosSignalConstants::STATUS_SUBSCRIBE);
+        $page = $this->dispatchAction(HilosSignalConstants::STATUS_SUBSCRIBE, payload: ['email' => 'READER@example.test']);
+
+        $this->assertFalse($page->handled);
+        $this->assertInstanceOf(ActionRateLimitedException::class, $page->actionException);
+        $this->assertSame([], $this->queuedChecks());
     }
 
     public function testTheActionRunsOnlyOnceEveryKeyHasAllowedIt(): void
@@ -245,24 +392,33 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
      *
      * @param string $action Action name to dispatch
      * @param ?string $requestId Client-minted request id, or null for an untracked action
+     * @param array<string, mixed> $payload Payload to parse before asking for verdicts
+     * @param string $verdictSignal Parking agent's own answer name
      * @return ThrottlePoolTestPage Page the action was routed to
      * @throws PageNotFoundException When the fixture page cannot be resolved
      */
-    private function dispatchAction(string $action, ?string $requestId = null): ThrottlePoolTestPage
-    {
+    private function dispatchAction(
+        string $action,
+        ?string $requestId = null,
+        array $payload = [],
+        string $verdictSignal = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT,
+    ): ThrottlePoolTestPage {
         $factory = new ThrottlePoolTestPageFactory(new ThrottlePoolTestAgent());
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig([
                 ThrottlePoolTestPage::THROTTLED_ACTION => ThrottlePoolTestPage::PAGE,
                 ThrottlePoolTestPage::OPEN_ACTION => ThrottlePoolTestPage::PAGE,
+                HilosSignalConstants::STATUS_SUBSCRIBE => ThrottlePoolTestPage::PAGE,
             ]),
+            throttleVerdictSignal: $verdictSignal,
         );
 
         $router->dispatchAction(
             new WebSocketActionSignalDTO(
                 acceptKey: self::ACCEPT_KEY,
                 action: $action,
+                data: $payload,
                 requestId: $requestId,
                 clientIp: self::CLIENT_IP,
                 sessionIdentity: self::SESSION_IDENTITY,
@@ -319,8 +475,9 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
      *
      * @param string $scope Throttle scope to block
      * @param string $identity Identity to block
+     * @param string $action Guarded action to block
      */
-    private function blockKey(string $scope, string $identity): void
+    private function blockKey(string $scope, string $identity, string $action = ThrottlePoolTestPage::THROTTLED_ACTION): void
     {
         $rt = new ThrottlePoolTestRtContext();
         $rt->mountFeatureRuntime([new AuthThrottleFeature()]);
@@ -331,8 +488,8 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
 
         $attempts = $rt->hilosAuthAttempts;
         $this->assertInstanceOf(AuthAttempts::class, $attempts);
-        $attempts->actions->open($scope, $identity, ThrottlePoolTestPage::THROTTLED_ACTION);
-        $attempts[StateAuthAttempt::keyFor($scope, $identity, ThrottlePoolTestPage::THROTTLED_ACTION)]
+        $attempts->actions->open($scope, $identity, $action);
+        $attempts[StateAuthAttempt::keyFor($scope, $identity, $action)]
             ?->actions->block(1, microtime(true) + self::RETRY_AFTER, microtime(true));
     }
 }
@@ -345,9 +502,11 @@ final class ThrottlePoolTestPage extends AbstractPage
 
     public const string OPEN_ACTION = 'read_something';
 
-    public const array THROTTLED_ACTIONS = [self::THROTTLED_ACTION];
+    public const array THROTTLED_ACTIONS = [self::THROTTLED_ACTION, HilosSignalConstants::STATUS_SUBSCRIBE];
 
     public bool $handled = false;
+
+    public ?ActionPayloadDTO $handledDto = null;
 
     public ?Throwable $actionException = null;
 
@@ -363,12 +522,13 @@ final class ThrottlePoolTestPage extends AbstractPage
      *
      * @param string $acceptKey WebSocket accept key (unused)
      * @param string $action Action name (unused)
-     * @param ActionPayloadDTO $dto Action payload (unused)
+     * @param ActionPayloadDTO $dto Parsed payload captured after the throttle wait
      * @return ?ActionReplyDTO Always null; the fixture only records that it ran
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         $this->handled = true;
+        $this->handledDto = $dto;
 
         return null;
     }
@@ -414,6 +574,18 @@ final class ThrottlePoolTestPage extends AbstractPage
  */
 final class ThrottlePoolTestPageFactory extends AbstractPageFactory
 {
+    /**
+     * @param string $action Action being parsed
+     * @param array<string, mixed> $data Wire payload
+     * @return ActionPayloadDTO Opted-in DTO for subscribe, existing passthrough for the old cases
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        return $action === HilosSignalConstants::STATUS_SUBSCRIBE
+            ? StatusSubscribeActionDTO::fromArray($data)
+            : parent::createActionPayloadDTO($action, $data);
+    }
+
     /**
      * Creates the throttled test page.
      *

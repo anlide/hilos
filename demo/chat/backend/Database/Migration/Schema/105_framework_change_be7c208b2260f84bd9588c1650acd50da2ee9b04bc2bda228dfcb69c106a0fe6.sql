@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["auth_block"],"parts":[{"changeId":"20261028002725141545_HIL-1691_status_subscribers","unit":"auth_block","upSha256":"019bdcc4818f10727ceb1242a43fedbe496ea4fe7868b53d5a25620f5515c856","downSha256":"038296396eb4c787eba64f3ece8467755847990404fbb9f8a149d86bb65a58dc"}],"upSha256":"019bdcc4818f10727ceb1242a43fedbe496ea4fe7868b53d5a25620f5515c856","downSha256":"038296396eb4c787eba64f3ece8467755847990404fbb9f8a149d86bb65a58dc"}
+ALTER TABLE `hilos_auth_block` MODIFY COLUMN `scope` ENUM('ip', 'session', 'email') NOT NULL;

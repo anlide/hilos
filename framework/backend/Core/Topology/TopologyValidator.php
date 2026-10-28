@@ -2544,12 +2544,17 @@ final class TopologyValidator
             $parkingSources[$pageClass::SUBSCRIPTION_AGENT_TYPE][] = "PAGES[{$page}]";
         }
 
-        $verdict = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
         $verdictDto = ThrottleVerdictSignalData::class;
         $indexField = ThrottleVerdictSignalData::agentIndex;
         foreach ($parkingSources as $agentType => $sources) {
             $where = "AGENTS[{$agentType}] class {$agentClasses[$agentType]}";
             $parks = 'parks throttled actions (' . implode(', ', $sources) . ')';
+            $verdict = $agentClasses[$agentType]::THROTTLE_VERDICT_SIGNAL;
+            if ($verdict === '') {
+                $errors[] = "{$where} {$parks} but THROTTLE_VERDICT_SIGNAL must be a non-empty signal name";
+                continue;
+            }
+
             $holder = $agentSignalRoutes[$verdict] ?? null;
             if ($holder === null) {
                 $errors[] = "{$where} {$parks} but no agent declares {$verdict} in AGENT_SIGNALS: its parked"
@@ -2560,8 +2565,8 @@ final class TopologyValidator
             if ($holder !== $agentType) {
                 $errors[] = "{$where} {$parks} but {$verdict} is declared by AGENTS[{$holder}]: the verdict is"
                     . ' addressed to whoever declares it, so these parked actions wait out the verdict deadline and'
-                    . ' then run unguarded. One agent holds throttled actions per application, because an agent'
-                    . ' signal names one agent type and cannot read it from the payload.';
+                    . ' then run unguarded. Each parking agent must own its THROTTLE_VERDICT_SIGNAL, because an'
+                    . ' agent signal names one agent type and cannot read it from the payload.';
                 continue;
             }
 

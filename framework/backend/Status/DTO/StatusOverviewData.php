@@ -29,6 +29,7 @@ final readonly class StatusOverviewData
     public const string operation = 'operation';
     public const string startedAt = 'startedAt';
     public const string incidents = 'incidents';
+    public const string subscribers = 'subscribers';
 
     /**
      * @param bool $healthKnown All component verdicts and DB facts are available
@@ -39,6 +40,7 @@ final readonly class StatusOverviewData
      * @param ?string $maintenanceOperation Current protected operation, or null
      * @param ?int $maintenanceStartedAt Start epoch milliseconds UTC, or null
      * @param ?list<StatusIncidentData> $incidents Open facts in catalog order, or null when unavailable
+     * @param ?StatusSubscriberCountsData $subscribers Current subscriber counts, or null when unavailable
      */
     public function __construct(
         public bool $healthKnown,
@@ -49,6 +51,7 @@ final readonly class StatusOverviewData
         public ?string $maintenanceOperation,
         public ?int $maintenanceStartedAt,
         public ?array $incidents,
+        public ?StatusSubscriberCountsData $subscribers,
     ) {
     }
 
@@ -98,6 +101,7 @@ final readonly class StatusOverviewData
             $maintenance && Hilos::$rt->hilosProtectedModeRuntime->startedAt !== null
                 ? Hilos::$rt->hilosProtectedModeRuntime->startedAt * TimeConstants::MS_PER_SECOND : null,
             $incidents,
+            StatusSubscriberCountsData::read(),
         );
     }
 
@@ -114,6 +118,7 @@ final readonly class StatusOverviewData
                 self::phase => WireField::notPersonal(), self::operation => WireField::notPersonal(), self::startedAt => WireField::notPersonal(),
             ]),
             self::incidents => WireField::each(StatusIncidentData::wireFields()),
+            self::subscribers => WireField::each(StatusSubscriberCountsData::wireFields()),
         ];
     }
 
@@ -130,6 +135,7 @@ final readonly class StatusOverviewData
             ],
             self::incidents => $this->incidents === null ? null
                 : array_map(static fn (StatusIncidentData $incident): array => $incident->toArray(), $this->incidents),
+            self::subscribers => $this->subscribers?->toArray(),
         ];
     }
 }

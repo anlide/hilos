@@ -607,6 +607,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Components',
         ],
+        HilosPageConstants::HILOS_STATUS_SUBSCRIBERS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Subscribers',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who receives email about outages.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Subscribers',
+        ],
 
         // — Automation & intelligence —
         HilosPageConstants::HILOS_ANALYTICS => [

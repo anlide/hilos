@@ -15,6 +15,7 @@ import {
   subscribeSignal,
   type ReadonlySignal,
 } from '../../state/signal.js'
+import { statusSubscriberCountsSchema } from './hilosStatusSubscribers.js'
 
 /** Page-data key in the existing page_response payload. */
 export const HILOS_STATUS_DATA = 'status'
@@ -84,6 +85,7 @@ export const statusOverviewSchema = z
       .readonly()
       .nullable(),
     incidents: z.array(statusIncidentSchema).readonly().nullable(),
+    subscribers: statusSubscriberCountsSchema.nullable(),
   })
   .readonly()
 
@@ -93,7 +95,7 @@ export type HilosStatusIncidentUpdate = z.infer<
   typeof statusIncidentUpdateSchema
 >
 
-/** Both Status pages bind the project's existing singletons. */
+/** Status pages bind the project's existing singletons. */
 export interface HilosStatusContext {
   readonly scopes: ScopeManager
   readonly connection: HilosConnection

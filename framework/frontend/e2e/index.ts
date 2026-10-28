@@ -179,6 +179,7 @@ export {
   TABLE,
   settleRemovedRow,
   shownByTestId,
+  showAnnouncedRows,
   tableTextToggle,
   expectTableTextControl,
   tableRowKeyByText,
@@ -452,6 +453,28 @@ export {
 export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
 export { expectAccessLossNotice } from './accessLoss.js'
+export {
+  trackedActionReplies,
+  expectTrackedActionReply,
+} from './actionReplies.js'
+
+export {
+  STATUS_SUBSCRIBERS_PATH,
+  subscribeToStatus,
+  openStatusMailLink,
+  applyStatusSubscribers,
+  statusSubscriberId,
+  expectStatusMailAlternatives,
+  statusSubscriberFrames,
+  statusSubscriberWindow,
+  expectStatusSubscriberCounts,
+  expectStatusSubscriberDeparture,
+  removeStatusSubscriber,
+  expectStatusSubscribersAccessibility,
+  expectStatusSubscriberRemoveDialog,
+  expectStatusSubscribeDialog,
+  expectStatusUnsubscribeDialog,
+} from './statusSubscriptions.js'
 
 export {
   expectModerationKindHead,
@@ -495,6 +518,7 @@ export {
   gotoMaintenance,
   gotoAdmitted,
   gotoPublicStatus,
+  openMountedStatusMailLink,
   markDocument,
   expectDocumentUnchanged,
   expectSelfReload,

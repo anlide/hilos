@@ -198,6 +198,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('moderation_rule', 'hilos_moderation_rule'),
             $this->tableUnit('status_incident', 'hilos_status_incident'),
             $this->tableUnit('status_incident_update', 'hilos_status_incident_update', ['status_incident']),
+            $this->tableUnit('status_subscriber', 'hilos_status_subscriber'),
             new FrameworkSchemaUnit(
                 'analytics',
                 FrameworkTablesWithoutEntity::analyticsTables(),

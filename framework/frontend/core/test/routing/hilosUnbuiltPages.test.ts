@@ -10,6 +10,21 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
+  it('serves Status Subscribers only in Vue', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_SUBSCRIBERS]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.STATUS_SUBSCRIBERS)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.STATUS_SUBSCRIBERS)).toBe(
+      true,
+    )
+    expect(
+      hilosUnbuiltPages('angular').has(HilosPages.STATUS_SUBSCRIBERS),
+    ).toBe(true)
+  })
   it('serves the session list in Vue while keeping session detail served', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_BROWSER_SESSIONS]).toEqual([
       'react',

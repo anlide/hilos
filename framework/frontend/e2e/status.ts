@@ -4,6 +4,7 @@ import {
   type HilosStatusOverviewData,
 } from '../core/src/admin/status/index.js'
 import { deliveryObject, watchDeliveryFrames } from './deliveryFrames.js'
+import { clickSubmit } from './input.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 
 export const STATUS_PATH = '/hilos/status'
@@ -50,11 +51,11 @@ export function watchStatusFrames(page: Page) {
   }
 }
 
-/** The shared head, two real addresses and the section's sole heading. */
+/** The shared head, three real addresses and the section's sole heading. */
 export async function expectStatusHead(
   expect: Expect,
   page: Page,
-  components = false,
+  components: boolean | 'subscribers' = false,
 ): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText('Status')
@@ -64,14 +65,20 @@ export async function expectStatusHead(
   ).toHaveText(['Hilos', 'Status'])
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Status pages')
-  await expect(tabs.getByRole('link')).toHaveCount(2)
+  await expect(tabs.getByRole('link')).toHaveCount(3)
   for (const [key, label, href, active] of [
     ['hilos_status', 'Overview', STATUS_PATH, !components],
     [
       'hilos_status_components',
       'Components',
       STATUS_COMPONENTS_PATH,
-      components,
+      components === true,
+    ],
+    [
+      'hilos_status_subscribers',
+      'Subscribers',
+      '/hilos/status/subscribers',
+      components === 'subscribers',
     ],
   ] as const) {
     const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
@@ -93,11 +100,7 @@ export async function submitStatusIncident(
   const start = log.frames.length
   const sentStart = log.sent.length
   const button = page.getByTestId('hilos-status-incident-confirm')
-  await button.scrollIntoViewIfNeeded()
-  await expect(button).toBeVisible()
-  await expect(button).toBeEnabled()
-  await button.focus()
-  await button.click()
+  await clickSubmit(expect, button)
   await expect(page.getByTestId('hilos-status-incident-form')).toBeHidden()
   const requests = log.sent.slice(sentStart).filter(({ wire }) => {
     const frame = deliveryObject(wire)

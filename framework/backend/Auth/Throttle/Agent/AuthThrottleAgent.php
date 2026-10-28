@@ -10,12 +10,14 @@ use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleCommandConstants;
 use Hilos\Auth\Throttle\ThrottlePolicy;
 use Hilos\Auth\Throttle\ThrottleScope;
+use Hilos\Auth\Throttle\ThrottleVerdictRoute;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
@@ -45,8 +47,8 @@ use Throwable;
  *
  * It answers one question, over one signal: a worker that could not settle an attempt from
  * its own replica asks {@see HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK}, and the
- * verdict goes back over {@see HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT} to the
- * page agent that parked the action. All the arithmetic - the window, the ladder, the
+ * verdict goes back over the parking agent's own THROTTLE_VERDICT_SIGNAL to the
+ * agent that parked the action. All the arithmetic - the window, the ladder, the
  * durable write - lives here, so a worker never reaches the database on the auth path.
  *
  * On start it replays the blocks that have not lifted out of `hilos_auth_block` into the
@@ -460,8 +462,15 @@ final class AuthThrottleAgent extends AbstractAgent
      */
     private function answer(ThrottleCheckSignalData $check, bool $allowed, ?int $retryAfter): void
     {
+        try {
+            $signal = ThrottleVerdictRoute::signalFor($check->agentType);
+        } catch (LogicException $failure) {
+            $this->logAgentError($failure->getMessage());
+            return;
+        }
+
         $this->sendToAgent(
-            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT,
+            $signal,
             new ThrottleVerdictSignalData($check->requestKey, $allowed, $retryAfter, $check->agentIndex),
         );
     }

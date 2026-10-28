@@ -36,6 +36,9 @@ enum EnvConstants
     /** @var string Public Status heartbeat staleness threshold in seconds; positive integer, default 120 */
     case STATUS_STALE_AFTER_SECONDS;
 
+    /** @var string Absolute public /status address used by subscription mail; empty disables new requests */
+    case HILOS_STATUS_URL;
+
     /** @var string Worker communication host */
     case WORKER_COMM_HOST;
 

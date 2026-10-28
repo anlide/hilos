@@ -57,6 +57,7 @@ use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StatusIncidents as DbCollectionStatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates as DbCollectionStatusIncidentUpdates;
+use Hilos\Database\View\Collection\StatusSubscribers as DbCollectionStatusSubscribers;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
@@ -94,6 +95,7 @@ use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StatusIncidentsActions;
 use Hilos\Database\Actions\Collection\StatusIncidentUpdatesActions;
+use Hilos\Database\Actions\Collection\StatusSubscribersActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\UserMergesActions;
 use Hilos\Database\Actions\Collection\UserPhotosActions;
@@ -121,6 +123,7 @@ use Hilos\Database\Actions\Item\SecondFactorResetActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\StatusIncidentActions;
+use Hilos\Database\Actions\Item\StatusSubscriberActions;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Actions\Item\UserRenameActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
@@ -184,6 +187,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionChangeLogValues $changeLogValues
  * @property-read DbCollectionStatusIncidents $statusIncidents Status candidates and durable history, mounted only for STATUS
  * @property-read DbCollectionStatusIncidentUpdates $statusIncidentUpdates Immutable Status timeline, mounted only for STATUS
+ * @property-read DbCollectionStatusSubscribers $statusSubscribers Independent Status email subscriptions, mounted only for STATUS
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -199,6 +203,7 @@ abstract class HilosDbContext extends DbContext
     public const string identities = 'identities';
     public const string statusIncidents = 'statusIncidents';
     public const string statusIncidentUpdates = 'statusIncidentUpdates';
+    public const string statusSubscribers = 'statusSubscribers';
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
@@ -626,6 +631,13 @@ abstract class HilosDbContext extends DbContext
                 Objects::LAZY_STRATEGY_KEY,
                 DbCollectionStatusIncidentUpdates::class,
                 StatusIncidentUpdatesActions::class,
+            );
+            $this->mountFramework(
+                self::statusSubscribers,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusSubscribers::class,
+                StatusSubscribersActions::class,
+                StatusSubscriberActions::class,
             );
         }
 

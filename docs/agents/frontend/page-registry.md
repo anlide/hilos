@@ -121,6 +121,14 @@ facts for this route, not a new rule for ordinary pages. App page-key mirroring,
 subscription waiting, access handling and the action lifecycle remain unchanged
 for every ordinary page.
 
+The router compares the pathname on `popstate`. A fragment-only `popstate`,
+such as native skip-link navigation, leaves the current route and any page
+subscription in place and does not restart page loading. Explicit `navigate()`
+calls and pathname changes, including route parameter changes, still apply the
+new route. The behavior is covered by
+`framework/frontend/core/test/routing/HilosRouter.test.ts` and the live public
+Status accessibility check.
+
 ## What the SDK provides
 
 Three `@hilos/core` exports carry the half of the wiring that is identical in

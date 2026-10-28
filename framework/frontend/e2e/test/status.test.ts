@@ -2,6 +2,11 @@ import { EventEmitter } from 'node:events'
 import type { Expect, Page } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
 import { submitStatusIncident, watchStatusFrames } from '../status.js'
+import {
+  statusSubscriberFrames,
+  statusSubscriberWindow,
+} from '../statusSubscriptions.js'
+import { watchDeliveryFrames } from '../deliveryFrames.js'
 
 const status = {
   healthKnown: true,
@@ -9,6 +14,7 @@ const status = {
   publishDelaySeconds: 300,
   maintenance: null,
   incidents: [],
+  subscribers: { confirmedCount: 0, pendingCount: 0 },
 }
 const overview = {
   type: 'page_response',
@@ -138,17 +144,123 @@ describe('Status incident acknowledgement correlation', () => {
       // false, without spending a real Playwright timeout in this unit test.
       const check = Object.assign(
         (value: unknown) =>
-          value === button
-            ? { toBeVisible() {}, toBeEnabled() {} }
-            : value === form
-              ? { toBeHidden() {} }
-              : expect(value),
+          typeof value === 'function'
+            ? { toPass: async () => value() }
+            : value === button
+              ? { toBeVisible() {}, toBeEnabled() {} }
+              : value === form
+                ? { toBeHidden() {} }
+                : expect(value),
         { any: expect.any, poll: (read: () => unknown) => expect(read()) },
       ) as unknown as Expect
       try {
         const result = submitStatusIncident(check, page, log, action, 7)
         if (mismatch === 'none') await result
         else await expect(result).rejects.toThrow()
+      } finally {
+        log.stop()
+      }
+    })
+  }
+})
+
+describe('Status subscriber deliveries', () => {
+  for (const batch of [false, true]) {
+    it(`selects only the subscriber table and page in ${batch ? 'batched' : 'single'} packets`, () => {
+      const page = new EventEmitter()
+      const socket = new EventEmitter()
+      const log = watchDeliveryFrames(page as unknown as Page)
+      page.emit('websocket', socket)
+      const selected = {
+        page: 'hilos_status_subscribers',
+        tableKey: 'hilosStatusSubscribers',
+        rowKey: 7,
+        kind: 'row_removed',
+        reason: 'deleted',
+        own: false,
+      }
+      const frames = [
+        { type: 'table_viewport_delta', data: selected },
+        {
+          type: 'table_viewport_delta',
+          data: { ...selected, page: 'another_page' },
+        },
+        {
+          type: 'table_viewport_delta',
+          data: { ...selected, tableKey: 'anotherTable' },
+        },
+        { type: 'table_window', data: selected },
+        { type: 'table_viewport_delta', data: null },
+      ]
+      try {
+        const packets = batch
+          ? [{ type: 'signal_batch', data: { frames } }]
+          : frames
+        for (const frame of packets)
+          socket.emit('framereceived', { payload: JSON.stringify(frame) })
+        expect(statusSubscriberFrames(log, 'table_viewport_delta')).toEqual([
+          selected,
+        ])
+        expect(statusSubscriberFrames(log, 'table_window')).toEqual([selected])
+        expect(statusSubscriberFrames(log, 'table_viewport_announce')).toEqual(
+          [],
+        )
+      } finally {
+        log.stop()
+      }
+      expect(page.listenerCount('websocket')).toBe(0)
+      expect(socket.listenerCount('framereceived')).toBe(0)
+    })
+  }
+})
+
+describe('Status subscriber window correlation', () => {
+  for (const mismatch of [
+    'none',
+    'socket',
+    'request',
+    'page',
+    'table',
+    'older',
+    'superseded',
+  ] as const) {
+    it(`uses the newest request on its physical socket: ${mismatch}`, () => {
+      const page = new EventEmitter()
+      const socket = new EventEmitter()
+      const log = watchDeliveryFrames(page as unknown as Page)
+      page.emit('websocket', socket)
+      const request = {
+        type: 'table_viewport',
+        page: 'hilos_status_subscribers',
+        tableKey: 'hilosStatusSubscribers',
+        requestId: 'viewport-2',
+      }
+      socket.emit('framesent', { payload: JSON.stringify(request) })
+      const data = {
+        page: mismatch === 'page' ? 'other' : request.page,
+        tableKey: mismatch === 'table' ? 'other' : request.tableKey,
+        requestId: mismatch === 'request' ? 'viewport-1' : request.requestId,
+        rows: [{ rowKey: 7 }],
+      }
+      socket.emit('framereceived', {
+        payload: JSON.stringify({
+          type: 'signal_batch',
+          data: { frames: [{ type: 'table_window', data }] },
+        }),
+      })
+      if (mismatch === 'socket')
+        log.packets[0] = { ...log.packets[0], socket: 2 }
+      if (mismatch === 'older')
+        log.packets[0] = { ...log.packets[0], at: log.sent[0].at - 1 }
+      if (mismatch === 'superseded')
+        socket.emit('framesent', {
+          payload: JSON.stringify({ ...request, requestId: 'viewport-3' }),
+        })
+      try {
+        expect(statusSubscriberWindow(log)).toEqual(
+          mismatch === 'none' ? data : undefined,
+        )
+        expect(statusSubscriberWindow(log, log.sent.length)).toBeUndefined()
       } finally {
         log.stop()
       }

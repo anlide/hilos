@@ -3179,17 +3179,28 @@ final class HilosSignalConstants
     /** Empty hint after a public Status file pair or heartbeat is successfully published. */
     public const string STATUS_FILES_CHANGED = 'status_files_changed';
 
+    /** Guest actions for confirming and ending a Status email subscription. */
+    public const string STATUS_SUBSCRIBE = 'status_subscribe';
+    public const string STATUS_SUBSCRIPTION_CONFIRM = 'status_subscription_confirm';
+    public const string STATUS_UNSUBSCRIBE_PREVIEW = 'status_unsubscribe_preview';
+    public const string STATUS_UNSUBSCRIBE = 'status_unsubscribe';
+
     /** Browser metadata for the Status overview and component window. */
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS = 'subscription_page_hilos_status';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS = 'subscription_page_hilos_status_components';
+    public const string SUBSCRIPTION_PAGE_HILOS_STATUS_SUBSCRIBERS = 'subscription_page_hilos_status_subscribers';
 
     /** ADMIN page actions; the Status owner receives separate internal asks. */
     public const string HILOS_STATUS_CANCEL_PUBLICATION = 'hilos_status_cancel_publication';
     public const string HILOS_STATUS_PUBLISH_NOW = 'hilos_status_publish_now';
     public const string HILOS_STATUS_ADD_UPDATE = 'hilos_status_add_update';
+    public const string HILOS_STATUS_SUBSCRIBER_REMOVE = 'hilos_status_subscriber_remove';
 
     /** Status writer's answer to the Overview gatekeeper. */
     public const string HILOS_STATUS_WRITE_DONE = 'hilos_status_write_done';
+
+    /** Status writer's answer to the Subscribers gatekeeper. */
+    public const string HILOS_STATUS_SUBSCRIBER_WRITE_DONE = 'hilos_status_subscriber_write_done';
 
     /** Gatekeeper asks the Status owner to suppress a current candidate's publication. */
     public const string STATUS_CANCEL_PUBLICATION = 'status_cancel_publication';
@@ -3199,6 +3210,12 @@ final class HilosSignalConstants
 
     /** Gatekeeper asks the Status owner to append immutable team text to a published incident. */
     public const string STATUS_ADD_UPDATE = 'status_add_update';
+
+    /** ADMIN gatekeeper asks the Status owner to remove one subscription by primary id. */
+    public const string STATUS_REMOVE_SUBSCRIBER = 'status_remove_subscriber';
+
+    /** Throttle verdict addressed to the Status action dispatcher. */
+    public const string STATUS_THROTTLE_VERDICT = 'status_throttle_verdict';
 
     /** Whole live process roster from a master to its own Daemon node agent (HIL-1372). */
     public const string DAEMON_MASTER_PROCESS_ROSTER = 'daemon_master_process_roster';

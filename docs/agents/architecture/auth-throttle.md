@@ -20,27 +20,35 @@ parked until the verdict lands, or let straight through.
 
 ## The Key: Scope, Identity, Action
 
-A throttle key is the triple `(scope, identity, action)`. There are exactly two
-scopes (`ThrottleScope`): `ip`, keyed on the client address and shared by
-everyone behind one NAT, and `session`, keyed on one browser. Which address counts
-as the client's is a configured decision behind a proxy — see *Which Address The IP
-Scope Counts*.
+A throttle key is the triple `(scope, identity, action)`. The ordinary scopes in
+`ThrottleScope` are `ip`, keyed on the client address and shared by everyone
+behind one NAT, and `session`, keyed on one browser. A third scope, `email`, is
+opt-in for an action payload implementing `ThrottleEmailIdentityInterface`;
+today `StatusSubscribeActionDTO` is the only such payload. Which address counts
+as the client's is a configured decision behind a proxy — see *Which Address
+The IP Scope Counts*.
 
-An action is keyed once per scope, and **both are counted**: passing one limit
-does not excuse the other, and a refusal by either refuses the action. An IP is
-allowed more attempts than a session on purpose — the IP limit is a ceiling on a
-crowd, the session limit a ceiling on one person. For the same reason a
-successful authentication clears the `session` scope and **never** the `ip`
-scope: one abusive browser must not lift the IP-wide pressure it created.
+An action is keyed against every available identity, and each identity is
+counted: passing one limit does not excuse another, and a refusal by any key
+refuses the action. Ordinary auth actions use the IP and any available session
+key. An opted-in email action adds an email key as well. An IP is allowed more
+attempts than a session on purpose — the IP limit is a ceiling on a crowd, the session
+limit a ceiling on one browser. The email key reuses the session limit across
+browsers. A successful authentication clears only the `session` scope, never
+the shared `ip` or `email` budgets.
 
-The session identity is the sha256 digest of the session token, never the token
-(`ThrottleIdentity::forSession`, the one place that recipe exists). The action
-reaches the analytics journal with only the fields its DTO declares secret
-masked ([dto-convention.md](../signals/dto-convention.md), "Secret fields of an
-action payload"), and the session identity rides in the signal envelope rather
-than in a DTO field, so no declaration covers it: a raw token there would become
-a replayable credential sitting in a table. The digest keys the same counter and
-cannot be presented as a session.
+The session identity is the SHA-256 digest of the session token, never the
+token (`ThrottleIdentity::forSession`, the one place that recipe exists). The
+email identity is the SHA-256 digest of `email:` plus the action DTO's validated,
+normalized address (`ThrottleIdentity::forEmail`). The domain tag prevents the
+same string from sharing a key between email and session scopes. A payload's
+`SECRET_FIELDS` declaration masks its address before the action reaches the
+analytics journal ([dto-convention.md](../signals/dto-convention.md), "Secret
+fields of an action payload"). The throttle stores only the digest as an
+identity; Status keeps its subscription address in its own DB row. The session
+identity rides in the signal envelope rather than in a DTO field, so no
+declaration covers it: a raw token there would become a replayable credential
+sitting in a table. Neither digest can be presented as the original credential.
 
 A scope with nothing to key on is dropped rather than keyed on a placeholder: one
 shared empty identity would let strangers spend each other's budget.
@@ -126,9 +134,10 @@ owner is too. The registry places it with `AgentRegistryKey::PLACEMENT =>
 AgentPlacement::POLICY`, the way the entity libraries are placed — the placement
 policy picks its node, and it is deliberately **not** pinned to the leader, which
 would buy the guard nothing. A worker on any node reads its own replica and asks the
-agent wherever it runs; the check and the verdict cross nodes over the ordinary
-peer delivery, with no route of their own. All the arithmetic and the durable write
-live in the agent. The worker reads the grace through the same settings accessor
+agent wherever it runs; the check crosses nodes over ordinary peer delivery, and
+the answer returns over the parking agent's declared verdict signal (see
+*Each Parking Agent Owns Its Verdict Signal*). All the arithmetic and the durable
+write live in the agent. The worker reads the grace through the same settings accessor
 from its full local ORM copy, only on a pass that found a verdict gone missing;
 there is no separate fresh SQL query for that check.
 
@@ -150,6 +159,11 @@ The state has two halves and they survive differently:
   unique index. `onStart()` replays every block still in force into the counters;
   without that replay, restarting the daemon would be a way to have a block
   forgotten.
+
+The existing `scope` column and RT `scope` field accept `ip`, `session` and
+`email`; the email value extends the enum without adding a DB column or RT item
+field. The migration catalog adds `email` to the existing `hilos_auth_block`
+enum and removes email-scope rows before a down migration narrows it again.
 
 An escalation writes the runtime row first and the database second, so a database
 that is slow or down delays the *record* of the block rather than the block itself.
@@ -181,11 +195,36 @@ requiring a signed-in session are absent on purpose — nothing there to brute f
 
 **The list obliges the agent whose worker parks the action, not the one who wrote
 the list.** An agent listing its own actions parks them itself; a page listing its
-actions parks them in the agent named by its `SUBSCRIPTION_AGENT_TYPE`, and that
-agent is the one that has to be able to receive a verdict. The verdict travels by
-signal name, and an agent signal names one agent type and cannot read the addressee
-out of the payload — so the doors an application guards are all held by **exactly
-one agent**. A start where they are not is refused; see the workflow below.
+actions parks them in the agent named by its `SUBSCRIPTION_AGENT_TYPE`. Each
+action has one parking agent, but different pages or actions may be parked by
+different agents. Every parking agent must be able to receive the verdict for
+the actions it holds; see the workflow below.
+
+### Each Parking Agent Owns Its Verdict Signal
+
+The parking agent declares its answer name in
+`AbstractAgent::THROTTLE_VERDICT_SIGNAL` and owns that name in
+`AGENT_SIGNALS` with the exact `ThrottleVerdictSignalData` DTO. The default is
+`hilos_auth_throttle_verdict`; `AbstractUsersLibraryAgent` keeps that route for
+the ordinary auth doors. `StatusAgent` overrides the name with
+`status_throttle_verdict` and declares that name for its throttle verdict. Do
+not register the auth verdict signal on Status.
+
+`AuthThrottleAgent` reads the parking `agentType` from the unchanged
+`ThrottleCheckSignalData`, resolves that agent's declared name through the
+stateless `ThrottleVerdictRoute`, and sends the unchanged verdict DTO. Each
+signal name still routes to exactly one agent. `TopologyValidator` checks that
+the parking agent itself owns its declared signal with the exact DTO and, for
+an `INDEXED` parking agent, `AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'`.
+It retains the one-signal-to-one-agent rule.
+
+`PageSignalRouter` accepts its host's verdict name as its final optional
+constructor argument, defaulting to the auth signal. Each demo's worker factory
+passes the registered agent class's `THROTTLE_VERDICT_SIGNAL`, so a page action
+returns to its own subscription agent. An unknown type or invalid declaration
+is diagnosed without routing to the users library or inventing an allowed
+verdict. If no answer arrives, the existing deadline and outage-grace behavior
+above remains in force. The resolver is not a generic dynamic signal router.
 
 ## What The Client Sees
 
@@ -214,7 +253,7 @@ Every number but one is an env value with a default. The source of truth is
 |---|---|---|
 | `HILOS_AUTH_THROTTLE_ENABLED` | whether the layer refuses anything at all | on |
 | `HILOS_AUTH_THROTTLE_WINDOW` | window length in seconds | 60 |
-| `HILOS_AUTH_THROTTLE_MAX_SESSION` | attempts one session may make on one action per window | 10 |
+| `HILOS_AUTH_THROTTLE_MAX_SESSION` | attempts one session, or one opted-in email identity, may make on one action per window | 10 |
 | `HILOS_AUTH_THROTTLE_MAX_IP` | attempts one IP may make on one action per window | 30 |
 | `HILOS_AUTH_THROTTLE_STEPS` | ladder, comma-separated seconds | `30,120,600,3600` |
 | `HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS` | how long a parked action waits for its verdict | 1000 |
@@ -371,13 +410,15 @@ theirs to document; these are signposts only.
    rather than guard nothing in silence:
    - on an agent host, every name in `THROTTLED_ACTIONS` is checked against that
      agent's own `AGENT_ACTIONS`, so a name it does not own is refused;
-   - the agent whose worker parks the action — the host itself on an agent, the
-     `SUBSCRIPTION_AGENT_TYPE` agent on a page — has to be able to take the verdict.
-     It is refused when nobody declares `hilos_auth_throttle_verdict` in
-     `AGENT_SIGNALS`, when another agent declares it, when it is declared without
-     `ThrottleVerdictSignalData`, and, on an agent registered `INDEXED`, when it is
-     declared without `AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'` — the
-     field naming the instance that is holding the action.
+   - for every parking agent — the agent itself for its actions, or a page's
+     `SUBSCRIPTION_AGENT_TYPE` for that page's actions — its registered worker
+     class must declare a non-empty `THROTTLE_VERDICT_SIGNAL`, own that name in
+     `AGENT_SIGNALS` with exactly `ThrottleVerdictSignalData`, and, when
+     `INDEXED`, declare `AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'`.
+     A route owned by another agent or a duplicate signal owner is refused.
+     `ThrottleVerdictRoute` resolves the declared route from the active project
+     topology; an invalid route is diagnosed without a fallback to the users
+     library or an invented allowed verdict.
 
 ## Anti-Patterns
 

@@ -279,7 +279,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /**
      * @var list<string> Action names of this agent the anti-abuse layer rate-limits (HIL-420).
      *     Read by the action dispatcher exactly as a page's THROTTLED_ACTIONS is; the agent
-     *     must also declare HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS with
+     *     must also declare its THROTTLE_VERDICT_SIGNAL in AGENT_SIGNALS with
      *     {@see ThrottleVerdictSignalData}, because the verdict is addressed back to whoever
      *     parked the action. An indexed agent declares it with
      *     AgentSignalConfigKey::INDEX_FIELD => 'agentIndex' as well, since the verdict names
@@ -287,6 +287,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     {@see TopologyValidator} rather than left to go silently unanswered.
      */
     public const array THROTTLED_ACTIONS = [];
+
+    /** Each parking agent owns a distinct verdict signal carrying ThrottleVerdictSignalData. */
+    public const string THROTTLE_VERDICT_SIGNAL = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
 
     private const float CRON_REPORT_REANNOUNCE_SECONDS = 60.0;
 

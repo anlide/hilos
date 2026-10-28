@@ -147,6 +147,9 @@ final class HilosPageConstants
     /** @var string Read-only Status component window */
     public const string HILOS_STATUS_COMPONENTS = 'hilos_status_components';
 
+    /** @var string Status subscriber administration */
+    public const string HILOS_STATUS_SUBSCRIBERS = 'hilos_status_subscribers';
+
     /** @var string Hilos maintenance section - the freeze and the verifier circle (HIL-1119) */
     public const string HILOS_MAINTENANCE = 'hilos_maintenance';
 

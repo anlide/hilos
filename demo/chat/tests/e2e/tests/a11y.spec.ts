@@ -46,7 +46,33 @@ import {
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
   watchProfileRenameStatus,
+  STATUS_PATH,
+  expectStatusHead,
+  expectPublicStatusAccessibility,
+  expectPublicStatusPair,
+  expectPublicStatusReadOnly,
+  gotoPublicStatus,
+  grantAdminToSelf,
+  watchPublicStatus,
+  STATUS_SUBSCRIBERS_PATH,
+  expectStatusSubscribersAccessibility,
+  expectStatusSubscriberRemoveDialog,
+  expectStatusSubscribeDialog,
+  expectStatusUnsubscribeDialog,
+  expectTrackedActionReply,
+  openStatusMailLink,
+  removeStatusSubscriber,
+  statusSubscriberId,
+  subscribeToStatus,
+  uniqueEmail,
+  watchHeight,
+  deliveryObject,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import {
+  STATUS_CONFIRM_SUBJECT,
+  statusMailLinks,
+} from '../../../../../framework/frontend/scripts/statusMail.mjs'
 
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
@@ -1198,4 +1224,152 @@ test('Change Log table owner names its navigation and viewport for tracked and u
             .length,
       ),
   ).toBe(0)
+})
+
+test('Status Subscribers names its table and destructive dialog, supports keyboard sorting and explains viewer controls', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  const guestContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+  })
+  const guest = await guestContext.newPage()
+  const viewer = await guestContext.newPage()
+  const logs = [page, guest, viewer].map(watchDeliveryFrames)
+  const email = uniqueEmail()
+  try {
+    await gotoPublicStatus(expect, guest)
+    await expect(guest.getByTestId('conn-state')).toHaveText('connected')
+    await subscribeToStatus(expect, guest, logs[1], email)
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, STATUS_PATH)
+    const link = page.getByTestId('hilos-page-tab-hilos_status_subscribers')
+    await link.focus()
+    await link.press('Enter')
+    await expectPageReady(expect, page)
+    await expectStatusHead(expect, page, 'subscribers')
+    await expect(page.getByTestId('page-title')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    )
+    const skip = page.getByTestId('skip-to-content')
+    const beforeSkip = logs[0].sent.length
+    await skip.focus()
+    await skip.press('Enter')
+    await expect(page.getByRole('main')).toBeFocused()
+    await expectPageReady(expect, page)
+    expect(
+      logs[0].sent
+        .slice(beforeSkip)
+        .filter(({ wire }) => deliveryObject(wire).type === 'page_subscribe'),
+    ).toEqual([])
+    await expectStatusSubscribersAccessibility(expect, page, logs[0])
+    const id = await statusSubscriberId(expect, page, email)
+    await expect(
+      shownByTestId(page, `hilos-status-subscriber-confirmed-${id}`),
+    ).toHaveText('Awaiting confirmation')
+    await expectStatusSubscriberRemoveDialog(expect, page, id)
+    await setAdminViewMode(true)
+    await gotoPage(expect, viewer, STATUS_SUBSCRIBERS_PATH)
+    await expectStatusHead(expect, viewer, 'subscribers')
+    const trash = shownByTestId(viewer, `hilos-status-subscriber-remove-${id}`)
+    await expect(trash).toBeDisabled()
+    await expect(trash).toHaveAccessibleDescription(
+      'View mode · You can look around, but not change anything.',
+    )
+    await expect(
+      shownByTestId(viewer, `hilos-status-subscriber-email-${id}`).getByTestId(
+        'hilos-hidden',
+      ),
+    ).toHaveText('Hidden')
+    expect(JSON.stringify(logs[2].packets)).not.toContain(email)
+    expect(await viewer.locator('body').textContent()).not.toContain(email)
+    await removeStatusSubscriber(expect, page, logs[0], id)
+  } finally {
+    await test.info().attach('status-subscribers-accessibility-wire', {
+      body: JSON.stringify(logs),
+      contentType: 'application/json',
+    })
+    for (const log of logs) log.stop()
+    await guestContext.close()
+    await setAdminViewMode(false)
+  }
+})
+
+test('public Status subscription and mailed unsubscribe expose named keyboard dialogs and announced feedback', async ({
+  page,
+}) => {
+  const log = watchPublicStatus(page)
+  const email = uniqueEmail()
+  try {
+    await gotoPublicStatus(expect, page)
+    await expectPublicStatusPair(expect, page, log, ({ status }) =>
+      status.components.every((component) => component.state === 'operational'),
+    )
+    await expectPublicStatusAccessibility(expect, page, 'Service')
+    expectPublicStatusReadOnly(expect, log)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    const room = await watchHeight(
+      page.getByTestId('public-status-subscription-slot'),
+    )
+    await expectStatusSubscribeDialog(expect, page)
+    const errorRoom = await watchHeight(
+      page.getByTestId('status-subscription-error-slot'),
+    )
+    await typeInto(page.getByTestId('status-subscription-email'), 'invalid')
+    await clickSubmit(expect, page.getByTestId('status-subscription-submit'))
+    await expect(page.getByTestId('status-subscription-error')).toBeVisible()
+    await expect(page.getByTestId('status-subscription-submit')).toBeEnabled()
+    await expect(page.getByTestId('status-subscription-email')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    await errorRoom.unchanged()
+    const since = log.wire.sent.length
+    await typeInto(page.getByTestId('status-subscription-email'), email)
+    await clickSubmit(expect, page.getByTestId('status-subscription-submit'))
+    await expect(page.getByTestId('status-subscription-form')).toBeHidden()
+    await expectTrackedActionReply(
+      expect,
+      log.wire,
+      'status_subscribe',
+      since,
+      { status: 'check_inbox' },
+    )
+    await expect(
+      page.getByTestId('public-status-subscription-live'),
+    ).toHaveAttribute('role', 'status')
+    await expect(
+      page.getByTestId('public-status-subscription-live'),
+    ).toHaveText('Check your inbox')
+    await room.unchanged()
+    const links = statusMailLinks(
+      await waitForMailTo(email, STATUS_CONFIRM_SUBJECT),
+    )
+    await openStatusMailLink(expect, page, links.unsubscribe)
+    await expectStatusUnsubscribeDialog(expect, page, email)
+    await openStatusMailLink(expect, page, links.unsubscribe)
+    const removing = log.wire.sent.length
+    await clickSubmit(expect, page.getByTestId('status-subscription-submit'))
+    await expect(page.getByTestId('status-subscription-form')).toBeHidden()
+    await expectTrackedActionReply(
+      expect,
+      log.wire,
+      'status_unsubscribe',
+      removing,
+      { status: 'unsubscribed' },
+    )
+    await expect(
+      page.getByTestId('public-status-subscription-live'),
+    ).toHaveText('You are unsubscribed')
+  } finally {
+    await log.stop()
+    await test.info().attach('status-subscriptions-accessibility-wire', {
+      body: JSON.stringify(log),
+      contentType: 'application/json',
+    })
+  }
 })

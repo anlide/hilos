@@ -7,7 +7,7 @@ namespace Hilos\Auth\Throttle;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
- * ThrottleIdentity - how a session becomes a throttle key (HIL-420).
+ * ThrottleIdentity - how sessions and normalized addresses become throttle keys.
  *
  * One recipe in one place, because two of them would be a bug nobody sees: the master
  * composes the identity when it stamps an action ({@see WebSocketClient}) and the session
@@ -22,6 +22,18 @@ final class ThrottleIdentity
 {
     /** Digest the session identity is composed with. */
     private const string ALGORITHM = 'sha256';
+
+    /** Separates an address digest from the digest of the same string used as a session token. */
+    private const string EMAIL_DOMAIN_TAG = 'email:';
+
+    /**
+     * @param string $normalizedEmail Validated address normalized by the action DTO
+     * @return string Domain-separated digest shared by all browsers using this address
+     */
+    public static function forEmail(string $normalizedEmail): string
+    {
+        return hash(self::ALGORITHM, self::EMAIL_DOMAIN_TAG . $normalizedEmail);
+    }
 
     /**
      * The throttle identity of a session token.

@@ -8,6 +8,7 @@ use ArrayAccess;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
@@ -477,6 +478,7 @@ abstract class TableDefinition implements ArrayAccess
      * @throws InvalidArgumentException When the object type does not match the collection
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableSnapshotDTO
     {
@@ -526,6 +528,7 @@ abstract class TableDefinition implements ArrayAccess
      * @throws DatabaseException When query execution fails
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     protected function containsRowInDbCollection(
         DbCollection $collection,

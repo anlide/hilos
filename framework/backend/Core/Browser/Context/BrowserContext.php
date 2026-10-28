@@ -63,6 +63,8 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Pages\AbstractHilosI18nPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
+use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Status\DTO\StatusSubscriberCountsData;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
@@ -2054,9 +2056,41 @@ abstract class BrowserContext
             }
         }
 
-        if ($this->databaseBack) {
+        $databaseBack = $this->databaseBack;
+        if ($databaseBack) {
             $this->databaseBack = false;
             $this->tryEveryDebt($signalTables, $guardAllows, $failedSubscriptions, $contained);
+            // A successful overview can carry unavailable counts without owing a whole page.
+            // The database recovery fact brings those counts back through its usual full answer.
+            foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+                if ($page !== HilosPageConstants::HILOS_STATUS || isset($failedSubscriptions[$acceptKey])
+                    || isset($this->publishedWholeThisFlush[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+                    continue;
+                }
+                $contained = [...$contained, ...$this->resendWholePage($page, (string) $acceptKey)];
+                unset($signalTables[$acceptKey]);
+            }
+        }
+
+        // Counts are page data: publishing them must not rebuild a held table window and
+        // apply another reader's pending membership changes. One projection per flush.
+        $subscriberCountsChanged = array_any($this->changes->all(),
+            AbstractHilosStatusSubscribersPage::observesOverviewChange(...))
+            || isset($this->staleness[ProtectedModeRuntime::RT_ITEM]) || $databaseBack;
+        if ($subscriberCountsChanged) {
+            foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+                if ($page !== HilosPageConstants::HILOS_STATUS_SUBSCRIBERS || isset($failedSubscriptions[$acceptKey])
+                    || isset($this->publishedWholeThisFlush[$acceptKey])) {
+                    continue;
+                }
+                $this->publishPageData($page, (string) $acceptKey,
+                    static fn (): PagePayload => new PagePayload(data: [
+                        StatusSubscriberCountsData::DATA => StatusSubscriberCountsData::read()?->toArray(),
+                    ]),
+                    [StatusSubscriberCountsData::DATA => WireField::each(StatusSubscriberCountsData::wireFields())]);
+            }
         }
 
         $this->recountMarkedWindows($failedSubscriptions);

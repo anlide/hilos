@@ -80,7 +80,9 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusComponentsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
@@ -324,6 +326,7 @@ class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
+        StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
     ];
 
     public const array GROUPS = [
@@ -500,6 +503,7 @@ class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
         BinanceBtcTrackerTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
+        HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -639,6 +643,7 @@ class Hilos extends HilosFacade
             BinanceBtcTrackerTableContext::hilosI18nCountryNames => [],
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
+        StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
     ];
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
@@ -27,19 +28,33 @@ use Hilos\Database\Actions\Item\StatusIncidentActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\StatusIncident;
 use Hilos\Database\Entity\Item\StatusIncidentUpdate;
+use Hilos\Database\Entity\Item\StatusSubscriber;
+use Hilos\Database\View\Collection\StatusSubscribers;
+use Hilos\Database\Actions\Collection\StatusSubscribersActions;
+use Hilos\Database\Actions\Item\StatusSubscriberActions;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
+use Hilos\Status\DTO\StatusRemoveSubscriberSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
+use Hilos\Status\DTO\StatusConfirmSubscriptionActionDTO;
+use Hilos\Status\DTO\StatusSubscribeActionDTO;
+use Hilos\Status\DTO\StatusUnsubscribeActionDTO;
+use Hilos\Status\DTO\StatusUnsubscribePreviewActionDTO;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Status\StatusAgent;
 use Hilos\Status\StatusSettingsCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -75,13 +90,17 @@ final class StatusFeatureActivationTest extends TestCase
         self::assertInstanceOf(StatusFeature::class, $definition);
         self::assertTrue($definition->mountsRuntime());
         self::assertEquals(new FeatureRequirements(
-            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class],
-            requiredTables: [HilosStatusComponentsTable::class],
-            requiredPageTables: [AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class],
+            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class, AbstractHilosStatusSubscribersPage::class],
+            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class],
+            requiredPageTables: [
+                AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
+                AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
+            ],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
+            requiredSharedAgents: [MailDeliveryChannelAgent::AGENT_TYPE],
             requiredCatalogFragments: [StatusSettingsCatalog::class],
-            requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY],
-            requiredDbTables: [StatusIncident::_table, StatusIncidentUpdate::_table],
+            requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY, HilosFeature::AUTH_THROTTLE],
+            requiredDbTables: [StatusIncident::_table, StatusIncidentUpdate::_table, StatusSubscriber::_table],
         ), $definition->requirements());
         self::assertFalse((new StatusAgentDaemon())->requiresMonopolisticProcess());
     }
@@ -90,13 +109,30 @@ final class StatusFeatureActivationTest extends TestCase
     {
         (new FeatureActivationValidator(new StatusActivationRegistry()))->validate(StatusEnabledHilos::class);
         (new FeatureActivationValidator(new StatusActivationRegistry()))->validate(StatusDisabledHilos::class);
+        (new FeatureActivationValidator(new StatusActivationRegistry()))->validate(StatusMailWithoutStatusHilos::class);
         self::assertSame([
             HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
             HilosSignalConstants::STATUS_CANCEL_PUBLICATION => StatusCancelPublicationSignalData::class,
             HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
+            HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+            HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         ], StatusAgent::AGENT_SIGNALS);
-        self::assertSame([], StatusAgent::AGENT_ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::STATUS_SUBSCRIBE => StatusSubscribeActionDTO::class,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM => StatusConfirmSubscriptionActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW => StatusUnsubscribePreviewActionDTO::class,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE => StatusUnsubscribeActionDTO::class,
+        ], StatusAgent::AGENT_ACTIONS);
+        self::assertSame([
+            HilosSignalConstants::STATUS_SUBSCRIBE,
+            HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW,
+            HilosSignalConstants::STATUS_UNSUBSCRIBE,
+        ], StatusAgent::THROTTLED_ACTIONS);
+        self::assertSame([], StatusAgent::AUTH_ACTIONS);
+        self::assertSame([HilosDbContext::sessions], StatusAgent::READS_DB);
+        self::assertSame([HilosClusterNode::RT_COLLECTION], StatusAgent::READS_RT);
     }
 
     /** @return iterable<string, array{?FsContext}> Missing filesystem or missing registration */
@@ -142,7 +178,12 @@ final class StatusFeatureActivationTest extends TestCase
         yield 'no pages' => [StatusNoPagesHilos::class, 'page'];
         yield 'no table' => [StatusNoTableHilos::class, 'table'];
         yield 'no binding' => [StatusNoBindingHilos::class, 'binds'];
+        yield 'no subscriber page' => [StatusNoSubscriberPageHilos::class, 'page'];
+        yield 'no subscriber table' => [StatusNoSubscriberTableHilos::class, 'table'];
+        yield 'no subscriber binding' => [StatusNoSubscriberBindingHilos::class, 'binds'];
         yield 'no dependencies' => [StatusNoDependenciesHilos::class, 'HilosFeature::DAEMON'];
+        yield 'no auth throttle' => [StatusNoThrottleHilos::class, 'HilosFeature::AUTH_THROTTLE'];
+        yield 'no mail agent' => [StatusNoMailHilos::class, 'hilos_mail'];
         yield 'no owner pair' => [StatusNoOwnerHilos::class, 'is not registered in AGENTS'];
         yield 'no daemon' => [StatusNoDaemonHilos::class, 'does not declare both a worker and a daemon'];
         yield 'no setting fragment' => [StatusNoFragmentHilos::class, 'does not fold in'];
@@ -174,15 +215,18 @@ final class StatusFeatureActivationTest extends TestCase
         $disabled->configure();
         self::assertArrayNotHasKey(HilosDbContext::statusIncidents, $disabled->getMountedEntities());
         self::assertArrayNotHasKey(HilosDbContext::statusIncidentUpdates, $disabled->getMountedEntities());
+        self::assertArrayNotHasKey(HilosDbContext::statusSubscribers, $disabled->getMountedEntities());
         self::assertNotContains(HilosDbContext::statusIncidents, $disabled->processWideReadsForTest());
         self::assertNotContains(HilosDbContext::statusIncidentUpdates, $disabled->processWideReadsForTest());
+        self::assertNotContains(HilosDbContext::statusSubscribers, $disabled->processWideReadsForTest());
 
         $binding->setValue(null, StatusEnabledHilos::class);
         $enabled = new StatusFoundationDbContext();
         $enabled->configure();
         self::assertSame(StatusIncident::class, $enabled->getMountedEntities()[HilosDbContext::statusIncidents]);
         self::assertSame(StatusIncidentUpdate::class, $enabled->getMountedEntities()[HilosDbContext::statusIncidentUpdates]);
-        foreach ([HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates] as $key) {
+        self::assertSame(StatusSubscriber::class, $enabled->getMountedEntities()[HilosDbContext::statusSubscribers]);
+        foreach ([HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers] as $key) {
             self::assertSame(Objects::LAZY_STRATEGY_KEY, $enabled->mountedObjectCollection($key)->getLazyStrategy());
             self::assertFalse($enabled->mountedObjectCollection($key)->isAllLoaded());
         }
@@ -193,6 +237,9 @@ final class StatusFeatureActivationTest extends TestCase
         self::assertSame(StatusIncidentUpdates::class, $mounts[HilosDbContext::statusIncidentUpdates]->collection);
         self::assertSame(StatusIncidentUpdatesActions::class, $mounts[HilosDbContext::statusIncidentUpdates]->actions);
         self::assertNull($mounts[HilosDbContext::statusIncidentUpdates]->itemActions);
+        self::assertSame(StatusSubscribers::class, $mounts[HilosDbContext::statusSubscribers]->collection);
+        self::assertSame(StatusSubscribersActions::class, $mounts[HilosDbContext::statusSubscribers]->actions);
+        self::assertSame(StatusSubscriberActions::class, $mounts[HilosDbContext::statusSubscribers]->itemActions);
     }
 
     public function testTheOwnerHasExactlyTheApprovedOperations(): void
@@ -200,11 +247,12 @@ final class StatusFeatureActivationTest extends TestCase
         self::assertSame([
             HilosDbContext::statusIncidents => [TruthSourceOperation::Add, TruthSourceOperation::Update],
             HilosDbContext::statusIncidentUpdates => [TruthSourceOperation::Add],
+            HilosDbContext::statusSubscribers => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         ], StatusAgent::OWNS_DB);
         self::assertSame([HilosStatusComponent::RT_COLLECTION => TruthSourceOperation::ALL], StatusAgent::OWNS_RT);
         self::assertSame([HilosStatusComponent::RT_COLLECTION], array_keys(OwnershipDeclaration::rtCollectionsOf(StatusAgent::class)));
         self::assertSame(
-            [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates],
+            [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers],
             array_keys(OwnershipDeclaration::dbCollectionsOf(StatusAgent::class)),
         );
     }
@@ -220,6 +268,7 @@ final class StatusActivationRegistry extends FeatureRegistry
             new StatusFeature(),
             new StatusPrerequisiteFeature(HilosFeature::DAEMON),
             new StatusPrerequisiteFeature(HilosFeature::NOTIFICATION_DELIVERY),
+            new StatusPrerequisiteFeature(HilosFeature::AUTH_THROTTLE),
         ];
     }
 }
@@ -254,14 +303,30 @@ final class StatusActivationComponentsPage extends AbstractHilosStatusComponents
     public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 }
 
+final class StatusActivationSubscribersPage extends AbstractHilosStatusSubscribersPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
 abstract class StatusEnabledHilos extends Hilos
 {
     public const array PAGES = [StatusActivationPage::PAGE => StatusActivationPage::class,
-        StatusActivationComponentsPage::PAGE => StatusActivationComponentsPage::class];
-    public const array TABLES = [HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class];
-    public const array PAGE_TABLES = [StatusActivationComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []]];
-    public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [HilosAgentType::HILOS_INDEX => []];
-    protected const array FEATURES = [HilosFeature::STATUS, HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY];
+        StatusActivationComponentsPage::PAGE => StatusActivationComponentsPage::class,
+        StatusActivationSubscribersPage::PAGE => StatusActivationSubscribersPage::class];
+    public const array TABLES = [HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
+        HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class];
+    public const array PAGE_TABLES = [StatusActivationComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
+        StatusActivationSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []]];
+    public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [
+        HilosAgentType::HILOS_INDEX => [],
+        MailDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
+        ],
+    ];
+    protected const array FEATURES = [
+        HilosFeature::STATUS, HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY, HilosFeature::AUTH_THROTTLE,
+    ];
     protected const string SETTINGS_CATALOG = StatusSettingsCatalog::class;
 
     /** Checks storage after the fixture context is configured. */
@@ -282,9 +347,30 @@ abstract class StatusDisabledHilos extends Hilos
     }
 }
 
+abstract class StatusMailWithoutStatusHilos extends StatusDisabledHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_INDEX => [],
+        MailDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
+        ],
+    ];
+}
+
 abstract class StatusNoDependenciesHilos extends StatusEnabledHilos
 {
     protected const array FEATURES = [HilosFeature::STATUS];
+}
+
+abstract class StatusNoThrottleHilos extends StatusEnabledHilos
+{
+    protected const array FEATURES = [HilosFeature::STATUS, HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY];
+}
+
+abstract class StatusNoMailHilos extends StatusEnabledHilos
+{
+    public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [HilosAgentType::HILOS_INDEX => []];
 }
 
 abstract class StatusNoOwnerHilos extends StatusEnabledHilos
@@ -383,4 +469,20 @@ final class StatusActivationFsContext extends FsContext
     {
         $this->registerDirectory(self::STATUS, '/uncreated/status', DirectoryScope::CLUSTER);
     }
+}
+
+abstract class StatusNoSubscriberPageHilos extends StatusEnabledHilos
+{
+    public const array PAGES = [StatusActivationPage::PAGE => StatusActivationPage::class,
+        StatusActivationComponentsPage::PAGE => StatusActivationComponentsPage::class];
+}
+
+abstract class StatusNoSubscriberTableHilos extends StatusEnabledHilos
+{
+    public const array TABLES = [HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class];
+}
+
+abstract class StatusNoSubscriberBindingHilos extends StatusEnabledHilos
+{
+    public const array PAGE_TABLES = [StatusActivationComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []]];
 }

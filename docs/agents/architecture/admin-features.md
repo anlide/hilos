@@ -112,19 +112,34 @@ For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 Status is another Mode-1 feature: the project declares activation and public
-components, while the framework owns the outage machine, two admin pages and
-the read-only Components table. `StatusFeature` validates both pages, the table
-and the Components page-table binding alongside the existing agent, catalog and
-database requirements. All six demo backends activate it with thin page
-bindings. Read [status-page.md](status-page.md) before binding it.
+components, while the framework owns the outage machine, three admin pages and
+two tables: the read-only Components table and the Subscribers viewport.
+`StatusFeature` validates all three pages, both tables, the Components and
+Subscribers page-table bindings, and the existing agent, catalog, database and
+feature dependencies. The Overview owns the shared Status head; Components
+and Subscribers are its child tabs. All six demo backends activate it with thin
+page and table bindings. Read [status-page.md](status-page.md) before binding
+it.
 
 The Overview keeps its three incident writes on the `ADMIN` page and forwards
 them to the Status owner through the existing gatekeeper handover; Components
-has no actions. The view-mode bridge leaves permitted fields visible to a viewer
-and refuses those writes. Chat and Binance BTC Tracker mount the Vue pages;
-React and Angular remain unbuilt until HIL-1695 and HIL-1696.
-The public `/status` surface reads nginx files even under freeze; it is separate
-from the admin table and does not read its mirror or wait for `page_response`.
+has no actions. The Subscribers page keeps its removal action and forwards the
+exact subscriber id through a separate handover to that owner. Its browser
+action is not moved to the agent. Guest subscribe, confirm, unsubscribe-preview
+and unsubscribe actions are independent actions owned by the Status agent; they
+do not open or mutate the admin viewport. The Overview and Subscribers pages
+both read the `statusSubscribers` DB source and carry fresh counts in their
+ordinary `page_response` data. An unavailable count is `null`; zero is sent
+only for a known empty set.
+
+The view-mode bridge leaves permitted fields visible, sends subscriber email as
+`HiddenValue`, removes email search/sort paths for a viewer, and refuses
+subscriber removal even if a valid id is forged. The trash control is disabled
+for a viewer. Chat and Binance BTC Tracker mount the Vue pages; React and
+Angular Status views remain unbuilt until HIL-1695 and HIL-1696, so they do not
+show empty Status tabs. The public `/status` surface reads nginx files even
+under freeze; it is separate from the admin table and does not read its mirror
+or wait for `page_response`.
 
 The project must NOT copy the table query, the catalog-merge, the value-source
 logic, or the action routing. Those are framework-owned.

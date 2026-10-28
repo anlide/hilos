@@ -91,7 +91,9 @@ use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\Status\StatusPage;
 use Demo\Polls\Pages\Hilos\Status\StatusComponentsPage;
+use Demo\Polls\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\AppearancePage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
@@ -362,6 +364,7 @@ final class Hilos extends HilosFacade
         SecurityImpersonationPage::PAGE => SecurityImpersonationPage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
+        StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
     ];
 
     public const array GROUPS = [
@@ -564,6 +567,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
+        HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -777,6 +781,7 @@ final class Hilos extends HilosFacade
             PollsTableContext::hilosI18nCountryNames => [],
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
+        StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
     ];
 
     /**

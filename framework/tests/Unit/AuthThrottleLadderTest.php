@@ -108,6 +108,7 @@ final class AuthThrottleLadderTest extends TestCase
         $policy = $this->policy();
 
         $this->assertSame(2, $policy->maxFor(ThrottleScope::SESSION));
+        $this->assertSame(2, $policy->maxFor(ThrottleScope::EMAIL));
         $this->assertSame(5, $policy->maxFor(ThrottleScope::IP));
     }
 
@@ -122,6 +123,7 @@ final class AuthThrottleLadderTest extends TestCase
 
         $this->assertSame(1.0, $policy->windowSeconds);
         $this->assertSame(1, $policy->maxFor(ThrottleScope::SESSION));
+        $this->assertSame(1, $policy->maxFor(ThrottleScope::EMAIL));
         $this->assertSame(1, $policy->maxFor(ThrottleScope::IP));
         $this->assertSame([30, 120, 600, 3600], $policy->steps);
     }

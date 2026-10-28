@@ -24,6 +24,7 @@ use Hilos\Hilos;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 
@@ -209,7 +210,8 @@ final class PageCatalogResolverTest extends TestCase
     public function testStatusSharesItsCatalogHeadAndOmitsAnUnservedChild(): void
     {
         StatusPageCatalogHilos::initBrowser();
-        foreach ([HilosPageConstants::HILOS_STATUS, HilosPageConstants::HILOS_STATUS_COMPONENTS] as $page) {
+        foreach ([HilosPageConstants::HILOS_STATUS, HilosPageConstants::HILOS_STATUS_COMPONENTS,
+            HilosPageConstants::HILOS_STATUS_SUBSCRIBERS] as $page) {
             $head = PageCatalogResolver::head($page, new PageRouteParams([]));
             self::assertSame([
                 'page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Status',
@@ -222,6 +224,7 @@ final class PageCatalogResolverTest extends TestCase
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Overview'],
                 ['page' => HilosPageConstants::HILOS_STATUS_COMPONENTS, 'label' => 'Components'],
+                ['page' => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS, 'label' => 'Subscribers'],
             ], $head->pageTabs);
         }
         StatusPageCatalogOverviewOnlyHilos::initBrowser();
@@ -2003,7 +2006,8 @@ abstract class DaemonPageHeadTestHilos extends Hilos
 abstract class StatusPageCatalogHilos extends Hilos
 {
     public const array PAGES = [StatusPageCatalogPage::PAGE => StatusPageCatalogPage::class,
-        StatusPageCatalogComponentsPage::PAGE => StatusPageCatalogComponentsPage::class];
+        StatusPageCatalogComponentsPage::PAGE => StatusPageCatalogComponentsPage::class,
+        StatusPageCatalogSubscribersPage::PAGE => StatusPageCatalogSubscribersPage::class];
 }
 
 abstract class StatusPageCatalogOverviewOnlyHilos extends Hilos
@@ -2191,4 +2195,9 @@ final class ConditionalTableHeadPage extends AbstractPage
     {
         return $ownerParams->getString('tableId') === 'tracked';
     }
+}
+
+final class StatusPageCatalogSubscribersPage extends AbstractHilosStatusSubscribersPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 }

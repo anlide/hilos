@@ -34,6 +34,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 
 /**
  * Table definition for bot administration rows and actions.
@@ -243,6 +244,7 @@ final class BotsTable extends TableDefinition implements ViewportTable
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws InvalidArgumentException When an argument is invalid
      * @throws LogicException When an internal invariant is violated
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

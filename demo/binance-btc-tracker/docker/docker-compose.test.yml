@@ -100,6 +100,13 @@ services:
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - HILOS_STATUS_URL=https://binance-btc-tracker-nginx-test/status
+      # Both browser throttle hosts are proved against this enabled policy.
+      # Keep the named limits in scripts/authThrottle.mjs in sync.
+      - HILOS_AUTH_THROTTLE_ENABLED=true
+      - HILOS_AUTH_THROTTLE_WINDOW=60
+      - HILOS_AUTH_THROTTLE_MAX_SESSION=10
+      - HILOS_AUTH_THROTTLE_MAX_IP=30
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091

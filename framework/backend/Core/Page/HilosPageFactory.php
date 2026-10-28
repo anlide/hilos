@@ -71,6 +71,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_BACKUP => true,
         HilosPageConstants::HILOS_STATUS => true,
         HilosPageConstants::HILOS_STATUS_COMPONENTS => true,
+        HilosPageConstants::HILOS_STATUS_SUBSCRIBERS => true,
         HilosPageConstants::HILOS_MAINTENANCE => true,
         HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => true,
         HilosPageConstants::HILOS_DAEMON => true,

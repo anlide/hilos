@@ -4,7 +4,7 @@ import type { HilosStatusContext } from '@hilos/core/admin/status'
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'
 
-/** The project binding shared by both Status pages. */
+/** The project binding shared by the Status pages. */
 export const hilosStatusContext: HilosStatusContext = {
   scopes,
   connection,

@@ -129,6 +129,20 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
                 $origins[] = $install;
             }
+            $subscriberIndices = [104, 63, 63, 49, 49, 49];
+            $base = $project->root . '/' . sprintf('%03d', $subscriberIndices[$index]) . '_framework_install_status_subscriber';
+            $install = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+            self::assertSame(['status_subscriber'], $install->units);
+            self::assertCount(1, $install->parts);
+            $origins[] = $install;
+            $base = $project->root . '/' . sprintf('%03d', $subscriberIndices[$index] + 1)
+                . '_framework_change_be7c208b2260f84bd9588c1650acd50da2ee9b04bc2bda228dfcb69c106a0fe6';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['auth_block'], $change->units);
+            self::assertCount(1, $change->parts);
+            $origins[] = $change;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

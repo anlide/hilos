@@ -5,10 +5,11 @@ machine, publishing its public files, building its admin section, or reading
 `/status` without a connection or under a freeze.
 
 This document records the Status backend built by HIL-1688, the admin surface
-built by HIL-1689, and the public file publisher and reader built by HIL-1690.
-Subscribers and mail, scheduled works and actual maintenance periods, admin
-history, separate cluster/failover proof, and the React and Angular views remain
-with HIL-1691 through HIL-1696 where their markers say so.
+built by HIL-1689, the public file publisher and reader built by HIL-1690, and
+the subscriber lifecycle and outage mail built by HIL-1691. Scheduled works
+and actual maintenance periods, admin history, separate cluster/failover proof,
+and the React and Angular views remain with HIL-1692 through HIL-1696 where
+their markers say so.
 
 ## Core Rule
 
@@ -27,10 +28,11 @@ typed backend read projection. HIL-1689 adds the Overview and Components admin
 pages, the read-only component viewport, the Overview's incident actions and
 the Vue views mounted by Chat and Binance BTC Tracker. HIL-1690 adds the public
 file pair, its browser reader and the publisher's narrow freeze exception.
-Later leaves own subscribers or their mail (HIL-1691); scheduled works and
-actual maintenance periods (HIL-1692); the admin history UI (HIL-1693); separate
-cluster/failover proof (HIL-1694); and React and Angular views (HIL-1695 and
-HIL-1696).
+HIL-1691 adds account-independent email subscriptions, the Subscribers admin
+page, and best-effort outage mail to confirmed recipients. Scheduled works and
+actual maintenance periods remain with HIL-1692; the admin history UI with
+HIL-1693; separate cluster/failover proof with HIL-1694; and React and Angular
+views with HIL-1695 and HIL-1696.
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -41,11 +43,12 @@ Status does not introduce another collector, storage transport or time helper.
 
 `HilosFeature::STATUS` is a framework-owned [Mode 1 feature](admin-features.md):
 the project activates it and declares its component content; it does not copy
-the outage machine. `StatusFeature` requires `DAEMON` and
-`NOTIFICATION_DELIVERY`, the `HILOS_STATUS` agent, the `StatusSettingsCatalog`
-fragment, the `hilos_status_incident` and `hilos_status_incident_update`
-tables, both Status pages, `HilosStatusComponentsTable`, and the
-Components-to-table binding. It mounts the feature-owned runtime collection.
+the outage machine. `StatusFeature` requires `DAEMON`, `NOTIFICATION_DELIVERY`
+and `AUTH_THROTTLE`, the `HILOS_STATUS` agent, the shared mail-delivery agent,
+the `StatusSettingsCatalog` fragment, the `hilos_status_incident`,
+`hilos_status_incident_update` and `hilos_status_subscriber` tables, all three
+Status pages, both Status tables, and the Components and Subscribers
+page-to-table bindings. It mounts the feature-owned runtime collection.
 
 ### Activation Recipe
 
@@ -66,17 +69,18 @@ timeout, and does not require a monopolistic process. Scope determines how many
 instances a component expects; placement determines which node hosts the owner.
 Merge `StatusSettingsCatalog::getCatalog()` into the project's settings catalog.
 Then run `db:framework:pull` for that project. It copies the missing primary
-schema migration pairs from the framework's `status_incident` and
-`status_incident_update` units; the second unit depends on the first. The pull
-does not apply SQL. Commit the generated pairs with the project and apply them
-through the ordinary `db:migration:up` command. Do not hand-write or copy these
-migrations.
-All six demos in this repository activate the feature, register the pair and
-merge the settings fragment; their schema pairs came from the same framework
-pull. Each also registers thin project subclasses for both Status pages,
-registers `HilosStatusComponentsTable`, and binds that table only to the
-Components page in `PAGE_TABLES`. Feature activation validates these
-requirements at startup.
+schema migration pairs from the framework's `status_incident`,
+`status_incident_update` and `status_subscriber` units; the update unit depends
+on the incident unit. The pull also includes the generated `auth_block` scope
+upgrade pair that adds the `email` value to its existing enum. It does not apply
+SQL. Commit the generated pairs with the project and apply them through the
+ordinary `db:migration:up` command. Do not hand-write or copy these migrations.
+All six demos in this repository activate the feature, register the Status
+owner pair and merge the settings fragment; their schema pairs came from the
+same framework pull. Each also registers thin project subclasses for all three
+Status pages and both Status tables, then binds Components and Subscribers to
+their pages in `PAGE_TABLES`. Feature activation validates these requirements
+at startup.
 
 The project Hilos class declares `protected const array STATUS_COMPONENTS = []`
 (`Hilos::STATUS_COMPONENTS`). Its catalog boundary has this shape:
@@ -136,19 +140,21 @@ bypass is added.
 
 ### Admin Pages
 
-The built admin section has two routed pages: `hilos_status` at `/hilos/status`
-and `hilos_status_components` at `/hilos/status/components`. Both have empty
-route params, use `PageReach::ROUTE`, and inherit the `ADMIN` access level from
+The built backend section has three routed pages: `hilos_status` at
+`/hilos/status`, `hilos_status_components` at `/hilos/status/components`, and
+`hilos_status_subscribers` at `/hilos/status/subscribers`. All have empty route
+params, use `PageReach::ROUTE`, and inherit the `ADMIN` access level from
 `AbstractHilosPage`. `Status` is a child of Dashboard and is opted into the
 shared page head with label and breadcrumb `Status`, icon `bi-activity`, and
 lead `A public status page: service health, incidents, and planned work.`
-`Components` is its child and the only other current tab. Scheduled works,
-Subscribers and History are not admin pages in this build.
+`Components` and `Subscribers` are its children and current tabs. Scheduled
+works and History are not admin pages in this build.
 
 Both first renders use the existing `page_response`. Overview data is
 `page_response.data.status`, assembled temporarily by
-`StatusOverviewData::read()` from the catalog, current component counts, open
-incidents and their updates, the publication-delay setting, and protected mode:
+`StatusOverviewData::read()` from the catalog, current component and subscriber
+counts, open incidents and their updates, the publication-delay setting, and
+protected mode:
 
 ```text
 status = {
@@ -158,7 +164,8 @@ status = {
   maintenance: null | {
     phase: string, operation: string | null, startedAt: int | null
   },
-  incidents: null | Incident[]
+  incidents: null | Incident[],
+  subscribers: null | {confirmedCount: int, pendingCount: int}
 }
 Incident = {
   incidentId: int, componentKey: string, componentName: string,
@@ -183,7 +190,9 @@ component declaration order; each update timeline is newest first by `(at, id)`.
 `operational`. Unknown counts or facts never become healthy or zero, and
 maintenance takes display priority while available incident cards remain
 visible. Only open incidents and their own updates are read; there is no ended
-history, subscriber data, delivery count or public-file data in this payload.
+history, subscriber address, delivery count or public-file data in this payload.
+The separate subscriber count object is null when its DB source is unavailable
+and contains zeroes only when the aggregate proves an empty set.
 
 `StatusIncidentData` and `StatusIncidentUpdateData` build only the open incident
 and its own timeline projection. The DTO uses `WireField::column()` for
@@ -194,10 +203,20 @@ mode, personal incident-update text becomes `HiddenValue`; the row and timeline
 remain. Viewer permissions and hidden-field behavior follow
 [admin view mode](admin-view-mode.md).
 
-The two `BROWSER.SIGNAL` declarations use
-`subscription_page_hilos_status` and
-`subscription_page_hilos_status_components`. These are metadata names, not
+The three `BROWSER.SIGNAL` declarations use
+`subscription_page_hilos_status`,
+`subscription_page_hilos_status_components`, and
+`subscription_page_hilos_status_subscribers`. These are metadata names, not
 additional frames: page state still arrives in the existing `page_response`.
+The Overview's `status.subscribers` and the Subscribers page's top-level
+`statusSubscribers` carry `{confirmedCount, pendingCount}` in that answer. Both
+pages declare reads of `statusSubscribers` and rebuild their current counts on
+committed subscriber changes; neither adds a count action or signal. Counts do
+not wait behind the viewport's Show/Apply boundary, and a known zero does not
+collapse or replace a held viewport window.
+The internal `Hilos\Status\StatusSubscriberCountsData` aggregate also carries
+`total` and `maxSubscriberId` for the owner's audience cutoff; only
+`{confirmedCount, pendingCount}` crosses the page-response boundary.
 
 The Components page's first viewport is
 `page_response.windows.hilosStatusComponents`. Its row key is `componentKey`;
@@ -213,6 +232,22 @@ API. Its counts, incidents and freeze dependencies are declared through
 `ROWS`, so ordinary multi-row deltas, pending/Apply and source-staleness
 behavior apply.
 
+The Subscribers page binds the standard DB viewport table
+`hilosStatusSubscribers`. Its `subscriber` slot contains exactly
+`{id: int, email: string | HiddenValue, subscribedAt: int, confirmed: bool}`.
+The table searches email, filters by a strict boolean `confirmed`, and sorts by
+email, `subscribedAt` or `confirmed`, with the primary id settling ties. Its
+default order is `subscribedAt DESC, id DESC`. The collection predicate adds
+the confirmation filter for the window, facets and membership check. In admin
+view mode the email is `HiddenValue`; search and sort over that hidden field
+have no side channel, while the nonpersonal confirmation filter remains. The
+trash action is disabled for a viewer and a forged valid-id action is refused
+by the server. The table uses the ordinary Show/Apply taxonomy: new rows above
+or inside a held window wait for Show, shown moves and removals wait for Apply,
+values update immediately, departed placeholders carry no row data and preserve
+the held geometry, and the initiating admin's own removal applies immediately.
+Counts remain independent of that held window.
+
 The three write actions — `hilos_status_cancel_publication`,
 `hilos_status_publish_now`, and `hilos_status_add_update` — belong to Overview
 and are not reading actions. The page keeps their browser action names and
@@ -224,35 +259,53 @@ update uses `HilosStatusAddUpdateActionDTO {incidentId: int > 0, text: string}`.
 The tracked action's `requestId` travels in the existing envelope, not these
 DTOs. The exact `incidentId` target is preserved, and the page acknowledges
 only after commit or refusal. Components declares no actions. The six thin
-project bindings use the existing `HILOS_INDEX`; there is no new agent type. No
-DB/RT fields or truth-source ownership changed; the new action and reply
-declarations reuse existing page and agent signal envelopes.
+project bindings use the existing `HILOS_INDEX`; there is no new agent type. The
+incident actions add no incident/RT fields or change their existing owner; they
+reuse existing page and agent signal envelopes. Subscriber storage and its
+owner are separate and described below.
+
+The Subscribers page owns the separate `hilos_status_subscriber_remove`
+`ADMIN` action with `HilosStatusRemoveSubscriberActionDTO {subscriberId: int
+> 0}`. It keeps that action name, forwards the exact id in
+`StatusRemoveSubscriberSignalData` to `StatusAgent`, and waits on
+`hilos_status_subscriber_write_done`. The owner rechecks the fixed page/action
+gate and freeze before deleting the row in its transaction. The internal ask is
+not an `AGENT_ACTION`; the guest subscription actions remain on the Status
+owner and do not share the admin removal path.
 
 Overview source changes use the existing guarded `PageResender` /
 `resendPageWhole()` path. The narrow `hilos_status` branches in
 `BrowserContext::addBrowserChange()` and `addBrowserStaleness()` reuse the
 subscription guards and `publishedWholeThisFlush`; they add no timer, cache or
-generic fan-out. Components remains a separate page subscription, so an
-Overview re-answer does not reset its viewport.
+generic fan-out. Components and Subscribers remain separate page subscriptions,
+so an Overview re-answer does not reset either table viewport.
 
-The framework's core module binds `page_response.data.status` through strict
-schemas and the existing `pageDataSignal`; it performs no mount fetch. Its
-state and incident controllers retain the captured `incidentId`, draft, busy,
-refusal and timeout lifecycle. A live update cannot retarget the dialog to a
-new incident for the same component. A suppressed candidate remains `Checking`
-with “Publication canceled manually”; reaching countdown zero does not publish
-it or create a server fact. Moments use `formatMoment()` in the reader's zone;
-the countdown uses the server clock through `toLocal()` and
-`formatCountdown()`.
+The framework's core module binds `page_response.data.status` and the
+Subscribers page's `page_response.data.statusSubscribers` through strict schemas
+and the existing `pageDataSignal`; it performs no mount fetch. Its state and
+incident controllers retain the captured `incidentId`, draft, busy, refusal and
+timeout lifecycle. A live update cannot retarget the dialog to a new incident
+for the same component. A suppressed candidate remains `Checking` with
+“Publication canceled manually”; reaching countdown zero does not publish it
+or create a server fact. Moments use `formatMoment()` in the reader's zone; the
+countdown uses the server clock through `toLocal()` and `formatCountdown()`.
 
-The SDK exports the implementation lazily from `@hilos/core/admin/status` and
-`@hilos/vue/admin/status`, while keeping compatibility-root exports. Status is
-not imported by either package's eager `base` entry or Vue's default
-`hilosAdminViews()` map. Chat and Binance BTC Tracker mount thin Vue wrappers
-over the framework pages with their existing scope, connection and action
-singletons. The public `/status` route is the framework-owned client file reader;
-it has no backend page, catalog entry or `page_response` subscription. React and
-Angular Status views intentionally remain unbuilt until HIL-1695 and HIL-1696.
+The SDK exports the admin implementation lazily from
+`@hilos/core/admin/status` and `@hilos/vue/admin/status`, while keeping
+compatibility-root exports. The public reader and its subscription controller
+are exported from `@hilos/core/status`; the Vue page is exported from
+`@hilos/vue/status` and the compatibility root with required props
+`{connection, actions}`. Its subscription modal is controller-owned: Subscribe
+appears in a body row below the navigation-only shared header, not in a header
+button slot. `HilosStatusSubscribersPage` from `@hilos/vue/admin/status` takes
+`HilosStatusSubscribersContext`, the existing `{scopes, connection, actions}`
+Status context. Status is not imported by either package's eager `base` entry
+or Vue's default `hilosAdminViews()` map. Chat and Binance BTC Tracker mount
+thin Vue wrappers for the public reader and all three admin pages. The public
+`/status` route is the framework-owned client file reader; it has no backend
+page, catalog entry or `page_response` subscription. React and Angular Status
+views remain unbuilt until HIL-1695 and HIL-1696, so their Status tabs stay out
+of the admin navigation.
 
 The project also registers the shared Status directory, mounts the same volume
 for every node's nginx, and binds the public page to the framework reader.
@@ -305,8 +358,10 @@ Restarting or moving it preserves the continuous fact, detection moment,
 publication deadline and suppression decision in the primary database; it
 rebuilds observations from a fresh full picture.
 
-The same owner holds subscriber records.
-(not in the code yet — HIL-1691)
+The same `StatusAgent` owns Add, Update and Remove on the lazy
+`Hilos::$db->statusSubscribers` collection. Its primary-table rows are not
+journaled and have no user or session foreign key; the schema and link lifecycle
+are described in [Subscribers And Mail](#subscribers-and-mail).
 
 The same owner holds scheduled works and the history of actual maintenance
 periods. Their exact DB/RT entities, fields and action payloads belong to the
@@ -484,29 +539,132 @@ restarts or severity changes do not enqueue another candidate notice.
 
 Only confirmed subscribers receive publication, team-update and resolution
 mail. They receive no candidate mail, including for a short candidate or a
-manually suppressed publication. A repeated observation or competing timer and
-button must not send the same notification twice.
-(not in the code yet — HIL-1691)
+manually suppressed publication. These committed timeline events feed the
+best-effort subscriber mail work described in
+[Subscribers And Mail](#subscribers-and-mail); they are separate from the
+candidate notice queue above.
 
 Admin history retains ended candidates with their reasons, published outages
 and completed works. A short or suppressed candidate never remains in public
 history.
 (not in the code yet — HIL-1693)
 
-### Subscribers And Scheduled Works
+### Subscribers And Mail
 
-Subscription needs no account: an address receives a confirmation email and
-joins delivery only after confirmation. Mail carries an unsubscribe link; an
-administrator can remove a subscriber. Throttle by address and IP. Keep all
-addresses, confirmation/unsubscribe tokens and session time zones out of the
-public files. Subscriber delivery uses the universal recipient-zone choice in
+Subscriptions are account-independent. The lazy
+`Hilos::$db->statusSubscribers` collection maps to the non-journaled primary
+table `hilos_status_subscriber`; `StatusAgent` is its only cluster writer for
+Add, Update and Remove. The row has exactly these persisted columns:
+`id`, `email`, `subscribed_at`, `confirmed`, `confirmed_at`,
+`confirmation_token_hash`, `confirmation_expires_at`, `unsubscribe_token`, and
+`browser_time_zone`. It has no user or session foreign key. The email is trimmed,
+lowercased, validated and unique, with a 254-character limit.
+
+Confirmation and unsubscribe capabilities are 32 random bytes encoded as 64
+hexadecimal characters. The raw confirmation value exists only in the ephemeral
+post-write result passed to mail; the DB stores its SHA-256 hash and a 24-hour
+expiry. The confirm action uses one conditional update, so one concurrent caller
+wins and the hash and expiry are cleared when it succeeds. Resending to a
+pending address replaces its challenge and expiry. A confirmed address receives
+no new confirmation mail. The permanent unsubscribe capability is held in the
+DB only, outside ORM hydration; deleting a row revokes both capabilities. A
+later row has a new id and new capability, so an old link cannot affect it.
+
+The entity classifies `email` as `FAKE_EMAIL`; it classifies
+`confirmation_token_hash`, `unsubscribe_token` and `browser_time_zone` as
+`NULLIFY`; the remaining row columns are `notPersonal`. Unique indexes cover
+email and both token columns. Additional indexes support `(subscribed_at DESC,
+id DESC)`, `(email, id)`, `(confirmed, id)`, `(confirmed, subscribed_at DESC,
+id DESC)`, and `(confirmed, email, id)`. The secret columns are deliberately
+excluded from the ORM row projection; there is no subscription journal or
+delivery outbox.
+
+The guest action names and DTOs belong to `StatusAgent::AGENT_ACTIONS`:
+
+| Action | DTO payload | Reply |
+|---|---|---|
+| `status_subscribe` | `StatusSubscribeActionDTO {email: string}` | `{status: 'check_inbox'}` for new, pending or confirmed addresses |
+| `status_subscription_confirm` | `StatusConfirmSubscriptionActionDTO {token: string}` | `{status: 'subscribed'}` for the atomic winner |
+| `status_unsubscribe_preview` | `StatusUnsubscribePreviewActionDTO {token: string}` | `{maskedEmail: string}` |
+| `status_unsubscribe` | `StatusUnsubscribeActionDTO {token: string}` | `{status: 'unsubscribed'}`, including when its row was already removed |
+
+The email and every token DTO mark their secret payload field in
+`SECRET_FIELDS`; token values must be exactly 64 hex characters. Confirmation
+and preview reject malformed or unknown capabilities with a generic domain
+refusal. Preview never returns a full address. These WebSocket actions require
+no account and have no public HTTP mutation route. All four pass through the
+shared throttle. The opt-in email identity exists only on
+`StatusSubscribeActionDTO`; its normalized address is converted to a
+domain-separated SHA-256 key and never stored as the throttle identity.
+
+`HILOS_STATUS_URL` is the configured absolute public `/status` address used in
+mail. It accepts only HTTP or HTTPS with no credentials, query or fragment. A
+missing or invalid value refuses a subscribe before it writes a row or issues
+a token; confirmation and unsubscribe do not need to read it again. The root
+`.env.example` leaves it blank, all six demo `.env.example` files give their
+local `/status` address, and each test compose file supplies the matching demo
+frontend address.
+
+For a new row, the server snapshots the browser zone from the connection's
+session source and session record. It stores only the normalized IANA zone, not
+the session or account. Existing rows keep that snapshot on resend. Mail uses
+the shared recipient-zone rule in
 [Server Text And Human-Readable Exports](time-zones.md#server-text-and-human-readable-exports)
-(HIL-1578), not a Status-specific time-zone policy. For a no-account recipient
-with a saved browser zone, select it with
-`TimeHelper::serverTextTimeZone(browserTimeZone: $savedBrowserTimeZone)` and
-render the text with the selected zone's offset and name. Exact records and
-guest action forms belong to the subscriber implementation.
-(not in the code yet — HIL-1691)
+(HIL-1578), through
+`TimeHelper::serverTextTimeZone(browserTimeZone: $savedZone)`, and prints the
+selected zone's offset and name.
+
+Confirmation links use `#status-confirm=<token>` and unsubscribe links use
+`#status-unsubscribe=<token>`; neither capability is placed in a path or query.
+The Vue reader's mounted controller reads its initial address and listens to
+`hashchange` and `popstate` for new links on the same pathname. It removes each
+owned fragment immediately with
+`history.replaceState` before dispatch, and keeps the token only in mounted
+memory and the correlated action body. It sends one automatic confirmation or
+unsubscribe preview after a usable connection exists. An unsubscribe requires
+an explicit confirmation; Keep does not delete. A disconnected or frozen
+browser waits for the live action path, and no optimistic success or retry loop
+is shown. The history rewrite does not trigger a route transition or loading
+cycle; see
+[the public Status route](../frontend/page-registry.md#the-public-status-route).
+Unrelated anchors leave the operation and file reader alone. A link arriving
+while a request is busy or another token is retained is scrubbed and ignored;
+the current operation keeps its request and token, with no link queue. A later
+navigation can present that link again after the operation finishes or Keep
+releases it. Unmount removes both address listeners and discards the private
+token; a captured callback cannot restart a disposed controller.
+
+Confirmation mail is registered as `status.subscription.confirm`. Published
+incidents, team updates and resolutions use
+`status.outage.published`, `status.outage.update` and
+`status.outage.resolved`. Each template has plain text and escaped HTML and
+uses the existing `MailLetterFrameResolver`, `HilosMailer`, raw mail pool and
+address shard. The confirmation parameters are `projectName`, `statusUrl`,
+`confirmUrl`, `unsubscribeUrl` and `expiresAtLabel`. Outage mail carries
+`projectName`, `statusUrl`, `unsubscribeUrl`, `componentName`, `severity`,
+`text`, `detectedAtLabel`, `eventAtLabel` and, for resolution,
+`resolvedAtLabel`. `MAIL_FROM_NAME` falls back to `Service`; `locale: null`
+selects the project's explicit default locale under the existing mail
+template contract. Mail carries only approved public words, with no internal
+agent, node or exception detail. It does not use the Notification feature or a
+Delivery journal.
+
+After a published, team or resolved timeline transaction commits,
+`Database::afterCommit()` captures a detached immutable notice. The private
+`StatusSubscriberMailTask` captures the event, the maximum subscriber id, the
+validated links and project name. Its recipient query is bounded to confirmed
+rows with `confirmed_at <= eventAt` and `id <= maxSubscriberId`; before each
+send the owner rechecks the primary id and confirmation. One task is drained
+per tick, with at most 32 recipient attempts and a cooperative 20 ms portion
+budget after at least one attempt. The cursor advances before mail handoff, so
+an ambiguous send is not replayed. These tasks are private best-effort memory;
+stop, freeze or restart discards them and there is no history replay. A lost
+task or an SMTP result that is ambiguous after queueing is accepted. SMTP is not
+exactly once. Confirmation mail is also issued only after its transaction
+commits. Subscriber addresses, capabilities and saved zones never enter the
+public files or public JSON v1; the public schema and heartbeat are unchanged.
+
+### Scheduled Works And Maintenance Periods
 
 Scheduling, changing or canceling works publishes the announcement change and
 sends mail. Schedule clocks never enter or leave protected mode. Actual work
@@ -709,10 +867,12 @@ reactions only; it does not unblock shell requests, actions or modal controls.
 Other pages keep their existing rules. React and Angular remain unbuilt until
 HIL-1695 and HIL-1696.
 
-Do not show the subscription button without a usable live connection. Public
+Do not show the subscription button without a usable live connection. Every
+subscription action and subscriber mail pass checks that the Status database
+source is ready and the freeze permits the work; an occupied or unavailable
+freeze runtime refuses the operation before subscriber access or mail. Public
 file reading grants no offline mutation path or permission to bypass a freeze
 for subscription actions.
-(not in the code yet — HIL-1691)
 
 The publisher's file half survives full freeze, or normal Maintenance would
 become “not responding” after the stale threshold. `HILOS_STATUS` is preserved
@@ -723,7 +883,8 @@ master I/O, child process or background process.
 
 In every occupied freeze phase, the Status owner publishes from a detached
 sanitized snapshot and the freeze fact. It does not read DB-backed Status data
-or settings, observe components, perform ORM actions or deliver durable mail.
+or settings, observe components, perform ORM actions or deliver subscriber or
+other durable mail.
 Its public files contain no operation or phase, node/process/network details,
 agent type, internal error, subscriber address, token or session time zone.
 Entry abandons the owner's observation baseline and partial public build; after
@@ -750,7 +911,9 @@ current validation surfaces.
 | SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs` | Core and Vue export `/admin/status` lazily; eager base closures remain free of Status. React and Angular have no Status view entry yet. |
 | Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | Landed by HIL-1690 |
 | Public route, Vue page and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts` | Core route and Vue views are built; React and Angular public views remain with HIL-1695 and HIL-1696 |
-| Subscribers and their mail | — | (not in the code yet — HIL-1691) |
+| Guest subscriptions, primary storage, links and mail | `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusSubscriptionLink.php`, `framework/backend/Status/StatusSubscriberMailTask.php`, `framework/backend/Database/Entity/Item/StatusSubscriber.php`, `framework/backend/Database/Actions/Collection/StatusSubscribersActions.php`, `framework/backend/Database/Actions/Item/StatusSubscriberActions.php`, `framework/backend/Mail/Template/Status*MailTemplate.php`; `framework/tests/Unit/StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`, `StatusMailTemplatesTest.php`; `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`, `StatusSubscriberStorageIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php`, `StatusSubscriberMailIntegrationTest.php` | Landed by HIL-1691; storage, guest actions and best-effort mail are documented above |
+| Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, other four SDK views remain unbuilt |
+| Email throttle scope and per-parking-agent verdict route | `framework/backend/Auth/Throttle/ThrottleEmailIdentityInterface.php`, `ThrottleIdentity.php`, `ThrottleVerdictRoute.php`, `framework/backend/Status/StatusAgent.php`, `framework/backend/Core/Topology/TopologyValidator.php`, `framework/backend/Core/Page/PageSignalRouter.php`; `framework/tests/Unit/ThrottleVerdictRouteTest.php`, `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`, `PageSignalRouterThrottlePoolTest.php`; `framework/tests/Integration/AuthThrottleIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php` | Landed by HIL-1691; the ordinary auth verdict remains on its existing host |
 | Scheduled works, actual maintenance periods and Completed delivery | — | (not in the code yet — HIL-1692) |
 | Admin history | — | (not in the code yet — HIL-1693) |
 | Separate cluster and failover proof | — | (not in the code yet — HIL-1694) |
@@ -758,42 +921,58 @@ current validation surfaces.
 | Angular UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1696) |
 
 PR-133 through PR-135 and PR-204 through PR-209 remain the code leaves' design
-promises. HIL-1685 neither implements nor closes them. Exact HIL-1691 and
-HIL-1692 storage schemas and admin and guest action DTOs remain with their
-implementation interviews and the ordinary contract approval gate. Remove a
-future marker only in the commit that lands its behavior, following
+promises. HIL-1685 neither implements nor closes them. HIL-1691's subscriber
+schema, guest and admin action DTOs, and mail tasks are implemented in the
+source paths above. HIL-1692 storage schemas and action DTOs remain with that
+leaf and the ordinary contract approval gate. Remove a future marker only in
+the commit that lands its behavior, following
 [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ## Validation
 
-The public Status checks are split across these existing layers:
+Status checks are split across these existing layers:
 
-- Backend serialization and recovery: `framework/tests/Unit/StatusPublicFilesTest.php` and `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`.
-- Core file parsing, pair coherence, freshness, hint/poll lifecycle, calendar and time zone: `framework/frontend/core/test/status/statusFiles.test.ts`, `publicStatus.test.ts` and `derivedStatus.test.ts`.
-- Vue rendering and the public 90/30 strip: `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; the shared theme shell is covered by `framework/frontend/vue/src/HilosLayout.test.ts`.
-- Real browser/daemon behavior and nginx boundary: `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`. Both specs use light color scheme with the demo's Desktop Chrome project; they do not claim dark or narrow-viewport E2E coverage.
+- The feature contract and page/table binding are guarded by
+  `framework/tests/Unit/StatusFeatureActivationTest.php` and the six demo
+  `*TopologyRegistryTest` files.
+- Subscriber schema, storage, atomic confirmation, guest action replies,
+  removal handover, and committed mail are covered by
+  `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`,
+  `StatusSubscriberStorageIntegrationTest.php`,
+  `StatusSubscriptionIntegrationTest.php`,
+  `StatusSubscriberAdminIntegrationTest.php` and
+  `StatusSubscriberMailIntegrationTest.php`. Unit coverage includes
+  `StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`,
+  `StatusSubscriberTableTest.php` and `StatusMailTemplatesTest.php`.
+- The throttle's per-host route, DTO, indexed address and shared email scope are
+  covered by `ThrottleVerdictRouteTest.php`,
+  `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`,
+  `PageSignalRouterThrottlePoolTest.php` and
+  `AuthThrottleIntegrationTest.php`.
+- Core file parsing, pair coherence, freshness, hint/poll lifecycle, calendar
+  and time zone are covered by
+  `framework/frontend/core/test/status/statusFiles.test.ts`,
+  `publicStatus.test.ts` and `derivedStatus.test.ts`. The subscription and
+  subscriber table controllers are covered by
+  `statusSubscription.test.ts` and
+  `admin/status/hilosStatusSubscribers.test.ts`.
+- Vue rendering is covered by the public page and modal tests and the admin
+  Subscribers page test under `framework/frontend/vue/src/`. The router's
+  fragment-only history behavior is covered by
+  `framework/frontend/core/test/routing/HilosRouter.test.ts`.
+- Real browser and Mailpit coverage is carried by
+  `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`,
+  `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`, and
+  both demos' `tests/e2e/tests/a11y.spec.ts`. These specs use light color
+  scheme and desktop Chrome; they do not claim dark-theme or narrow-viewport
+  E2E coverage.
 
-The reproducible standalone publisher fixture is
-`composer -d demo/binance-btc-tracker run test:e2e-status-full`; run it through
-the stand wrapper. `test:e2e` collects the original native Playwright selection
-once. Ordinary specs run with Status's production poll/stale defaults (30/120);
-`status.spec.ts` and the Status `a11y.spec.ts` run in a separate phase with the
-test-only 2/6 overlay. Every selected test runs once, including selections by
-file, line, grep or shard. Both phases use the shared Playwright entry and keep
-their own artifacts. A failure stays red while the remaining phase still runs.
-Unpointed `test:e2e` then adds the standalone fixture, so unpointed
-`test:e2e-full` and `test:e2e-prebuilt` include all three phases. Pointed runs
-execute only their selected browser tests. The standalone fixture also applies
-the accelerated overlay before pinning its daemon lifetime; its same-container
-recovery and independent backstop remain in effect. The unit and docs checks
-for this text change are
-`composer run test:framework:unit -- --filter AgentDocGuardTest`,
-`composer ai:install` and `composer ai:install:check`, also through the stand
-wrapper; check relative links and `git diff --check`.
-
-The day-strip suffix and reader-zone boundaries are unit-tested outside the
-browser E2E. Status uses the shared Bootstrap theme mechanism; no dark-scheme or
-narrow-viewport Status E2E is claimed. These checks do not claim an SLA or
-independent cluster/failover proof; cluster/failover evidence belongs to
-HIL-1694. No run-specific temporary paths, process ids or container ids belong
-in this canon.
+The existing standalone public-reader fixture is
+`composer -d demo/binance-btc-tracker run test:e2e-status-full`. Mail tests
+prove MIME content and escaped HTML, not rendering in a real mail client. The
+real-client rendering and plain-text checks in
+[manual-checks.md](../manual-checks.md#mail), items 1 and 5, remain unchecked
+for owner acceptance. Status uses the shared Bootstrap theme mechanism; no SLA
+or independent cluster/failover proof is claimed here. Cluster/failover
+evidence belongs to HIL-1694. No run-specific temporary paths, process ids or
+container ids belong in this canon.

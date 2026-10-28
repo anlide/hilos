@@ -1690,7 +1690,7 @@ final class TopologyValidatorTest extends TestCase
                     . ' parks throttled actions (its own THROTTLED_ACTIONS) but '
                     . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . ' is declared by AGENTS['
                     . TopologyThrottleVerdictAgent::AGENT_TYPE . ']',
-                'One agent holds throttled actions per application',
+                'Each parking agent must own its THROTTLE_VERDICT_SIGNAL',
             ],
         );
     }
@@ -1734,6 +1734,77 @@ final class TopologyValidatorTest extends TestCase
         TopologyThrottleVerdictHilos::validateTopology();
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testTwoParkingAgentsMayOwnDifferentTypedVerdictNames(): void
+    {
+        TopologyThrottleTwoHostsHilos::validateTopology();
+        $this->assertSame([
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => TopologyThrottleVerdictAgent::AGENT_TYPE,
+            HilosSignalConstants::STATUS_THROTTLE_VERDICT => TopologyThrottleSecondHostAgent::AGENT_TYPE,
+        ], TopologyThrottleTwoHostsHilos::getAgentSignalRoutes());
+    }
+
+    public function testAParkingAgentIsRefusedForEmptyVerdictName(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleEmptyNameHilos::validateTopology();
+            },
+            [
+                'THROTTLE_VERDICT_SIGNAL must be a non-empty signal name',
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedForMissingOwnVerdictRoute(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleMissingOwnHilos::validateTopology();
+            },
+            [
+                'no agent declares status_throttle_verdict in AGENT_SIGNALS',
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedForWrongVerdictDto(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleWrongDtoHilos::validateTopology();
+            },
+            [
+                'declares status_throttle_verdict without',
+                'the verdict arrives untyped',
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedForWrongVerdictIndex(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleWrongIndexHilos::validateTopology();
+            },
+            [
+                'is indexed and parks throttled actions',
+                "Declare AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'",
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedForDuplicateVerdictOwnership(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleDuplicateHilos::validateTopology();
+            },
+            [
+                'Agent signal hilos_auth_throttle_verdict is declared by multiple agents',
+            ],
+        );
     }
 
     public function testReadingActionsThatAreEmptyOrNotOwnedByThePageAreRefused(): void
@@ -8097,4 +8168,161 @@ final class TopologyReadingActionsNotAdminHilos extends HilosFacade
     {
         return new TopologyTestDbContext();
     }
+}
+
+class TopologyThrottleSecondHostAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'throttle_parking_agent';
+    public const string THROTTLE_VERDICT_SIGNAL = HilosSignalConstants::STATUS_THROTTLE_VERDICT;
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::STATUS_THROTTLE_VERDICT => [
+            AgentSignalConfigKey::DTO => ThrottleVerdictSignalData::class,
+            AgentSignalConfigKey::INDEX_FIELD => ThrottleVerdictSignalData::agentIndex,
+        ],
+    ];
+}
+
+final class TopologyThrottleSecondHostPage extends AbstractPage
+{
+    public const string PAGE = 'second_throttle_host';
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyThrottleSecondHostAgent::AGENT_TYPE;
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'id',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyThrottleVerdictAgent::AGENT_TYPE,
+    ];
+    public const array ACTIONS = ['second_host_action' => TopologyTestActionPayloadDTO::class];
+    public const array THROTTLED_ACTIONS = ['second_host_action'];
+}
+
+class TopologyThrottleTwoHostsHilos extends HilosFacade
+{
+    public const array PAGES = [TopologyThrottleSecondHostPage::PAGE => TopologyThrottleSecondHostPage::class];
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleSecondHostAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /** @return HilosDbContext Unconfigured context for metadata validation */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleEmptyNameAgent extends TopologyThrottleSecondHostAgent
+{
+    public const string THROTTLE_VERDICT_SIGNAL = '';
+}
+
+final class TopologyThrottleEmptyNameHilos extends TopologyThrottleTwoHostsHilos
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleEmptyNameAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyThrottleMissingOwnAgent extends TopologyThrottleSecondHostAgent
+{
+    public const array AGENT_SIGNALS = [];
+}
+
+final class TopologyThrottleMissingOwnHilos extends TopologyThrottleTwoHostsHilos
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleMissingOwnAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyThrottleWrongDtoAgent extends TopologyThrottleSecondHostAgent
+{
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::STATUS_THROTTLE_VERDICT => TopologyTestAgentSignalData::class,
+    ];
+}
+
+final class TopologyThrottleWrongDtoHilos extends TopologyThrottleTwoHostsHilos
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleWrongDtoAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyThrottleWrongIndexAgent extends TopologyThrottleSecondHostAgent
+{
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::STATUS_THROTTLE_VERDICT => [
+            AgentSignalConfigKey::DTO => ThrottleVerdictSignalData::class,
+            AgentSignalConfigKey::INDEX_FIELD => 'requestKey',
+        ],
+    ];
+}
+
+final class TopologyThrottleWrongIndexHilos extends TopologyThrottleTwoHostsHilos
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleWrongIndexAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyThrottleDuplicateAgent extends TopologyThrottleSecondHostAgent
+{
+    public const string THROTTLE_VERDICT_SIGNAL = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
+    ];
+}
+
+final class TopologyThrottleDuplicateHilos extends TopologyThrottleTwoHostsHilos
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+        TopologyThrottleSecondHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleDuplicateAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
 }

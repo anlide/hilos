@@ -74,36 +74,52 @@ assert.deepEqual(
 const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
   import { HilosTableText } from '@hilos/vue/base'
-  import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal } from '@hilos/vue/admin/status'
+  import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal, HilosStatusSubscribersPage, HilosStatusRemoveSubscriberModal } from '@hilos/vue/admin/status'
   import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
   import { HilosPublicStatusPage } from '@hilos/vue'
-  import type { HilosConnection } from '@hilos/core/base'
+  import type { ActionLifecycle, HilosConnection } from '@hilos/core/base'
   import { HilosModerationPage, HilosModerationKindRulesPage } from '@hilos/vue/admin/moderation'
-  import type { HilosStatusContext, HilosStatusIncidentController } from '@hilos/core/admin/status'
-  import type { HilosModerationContext } from '@hilos/core/admin/moderation'
+  import type { HilosStatusContext, HilosStatusIncidentController, HilosStatusSubscribersContext, HilosStatusSubscriberController } from '@hilos/core/admin/status'
+  import type { HilosModerationContext, HilosModerationRulesContext } from '@hilos/core/admin/moderation'
   import type { Hideable } from '@hilos/core/base'
   type StatusProps = InstanceType<typeof HilosStatusPage>['$props']
   type ComponentsProps = InstanceType<typeof HilosStatusComponentsPage>['$props']
   type ModalProps = InstanceType<typeof HilosStatusIncidentModal>['$props']
+  type SubscribersProps = InstanceType<typeof HilosStatusSubscribersPage>['$props']
+  type RemoveProps = InstanceType<typeof HilosStatusRemoveSubscriberModal>['$props']
   type ModerationProps = InstanceType<typeof HilosModerationPage>['$props']
   type RulesProps = InstanceType<typeof HilosModerationKindRulesPage>['$props']
   type Props = InstanceType<typeof HilosTableText>['$props']
   type PublicProps = InstanceType<typeof PublicStatusPage>['$props']
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
-  const rulesContext: Same<RulesProps['context'], HilosModerationContext> = true
+  const rulesContext: Same<RulesProps['context'], HilosModerationRulesContext> = true
   void rulesContext
   const exactValue: Same<Props['value'], Hideable<string>> = true
   const statusContext: Same<StatusProps['context'], HilosStatusContext> = true
   const componentsContext: Same<ComponentsProps['context'], HilosStatusContext> = true
   const moderationContext: Same<ModerationProps['context'], HilosModerationContext> = true
   const incidentController: Same<ModalProps['controller'], HilosStatusIncidentController> = true
+  const subscribersContext: Same<SubscribersProps['context'], HilosStatusSubscribersContext> = true
+  const subscriberController: Same<RemoveProps['controller'], HilosStatusSubscriberController> = true
+  void subscribersContext
+  void subscriberController
+  // @ts-expect-error Subscribers requires the existing project context.
+  const missingSubscribers: SubscribersProps = {}
+  // @ts-expect-error Removal requires the page-owned controller.
+  const missingRemove: RemoveProps = {}
   const publicConnection: Same<PublicProps['connection'], HilosConnection> = true
+  const publicActions: Same<PublicProps['actions'], ActionLifecycle> = true
   const publicAlias: Same<typeof PublicStatusPage, typeof HilosPublicStatusPage> = true
   declare const connection: HilosConnection
-  const coldStatus: PublicProps = { connection }
-  // @ts-expect-error Public Status requires only the project's singleton connection.
+  declare const actions: ActionLifecycle
+  const coldStatus: PublicProps = { connection, actions }
+  void publicActions
+  // @ts-expect-error Public Status requires the project's singleton connection and actions.
   const missingConnection: PublicProps = {}
+  // @ts-expect-error The tracked lifecycle is required even on an offline mount.
+  const missingActions: PublicProps = { connection }
+  void missingActions
   // @ts-expect-error There is no controller injection or second polling engine.
   const controller: PublicProps['controller'] = {}
   // @ts-expect-error A Status page requires the project's typed context.
@@ -313,7 +329,7 @@ try {
             }
             export async function loadStatus() {
               const section = await import('@hilos/vue/admin/status')
-              return ['HilosStatusPage', 'HilosStatusComponentsPage', 'HilosStatusIncidentModal'].every(
+              return ['HilosStatusPage', 'HilosStatusComponentsPage', 'HilosStatusIncidentModal', 'HilosStatusSubscribersPage', 'HilosStatusRemoveSubscriberModal'].every(
                 key => section[key] !== undefined && section[key] === root[key],
               ) && !(HilosPages.STATUS in hilosAdminViews()) && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews())
             }

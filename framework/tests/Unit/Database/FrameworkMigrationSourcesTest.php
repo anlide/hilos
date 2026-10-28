@@ -73,7 +73,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
-        $this->assertCount(45, $schema->allUnits());
+        $this->assertCount(46, $schema->allUnits());
         $this->assertSame(
             [
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',

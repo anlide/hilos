@@ -1,9 +1,11 @@
+import { writeFile } from 'node:fs/promises'
 import { expect as baseExpect, test } from '@playwright/test'
 import {
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
   STATUS_COMPONENTS_PATH,
   STATUS_LEAD,
+  STATUS_SUBSCRIBERS_PATH,
   PUBLIC_STATUS_FILES,
   controlSocketReconnect,
   deliveryObject,
@@ -11,10 +13,15 @@ import {
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectStatusHead,
+  expectStatusSubscriberCounts,
+  expectTableTotal,
   shownByTestId,
   submitStatusIncident,
+  subscribeToStatus,
+  uniqueEmail,
   watchPublicStatus,
   watchStatusFrames,
+  watchDeliveryFrames,
   expectDocumentUnchanged,
   expectPageReady,
   expectSelfReload,
@@ -55,15 +62,32 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
 }) => {
   await grantAdminToSelf(expect, page)
   const log = watchStatusFrames(page)
+  const wire = watchDeliveryFrames(page)
+  const subscribers = await page.context().newPage()
+  const subscriberWire = watchDeliveryFrames(subscribers)
   try {
     await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
     await expectStatusHead(expect, page)
     expect(log.overviews.length).toBeGreaterThan(0)
+    // The strict Overview schema proves exact nonnegative integer fields in
+    // the first answer. Earlier specs may have left real subscribers behind.
+    expect(log.overviews[0].subscribers).not.toBeNull()
+    const counts = log.overviews[0].subscribers!
+    const { confirmedCount, pendingCount } = counts
     expect(log.overviews[0]).toMatchObject({
       components: { totalCount: 1 },
       publishDelaySeconds: 300,
       maintenance: null,
+      subscribers: counts,
     })
+    await expectStatusSubscriberCounts(
+      expect,
+      page,
+      wire,
+      confirmedCount,
+      pendingCount,
+      true,
+    )
     expect(deliveryObject(log.replies[0].data)).toMatchObject({
       pageHeadOwner: {
         page: 'hilos_status',
@@ -73,6 +97,7 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
       pageTabs: [
         { page: 'hilos_status', label: 'Overview' },
         { page: 'hilos_status_components', label: 'Components' },
+        { page: 'hilos_status_subscribers', label: 'Subscribers' },
       ],
     })
     await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
@@ -86,7 +111,17 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     await expectPageReady(expect, page)
     await expectStatusHead(expect, page)
     expect(log.overviews.length).toBeGreaterThan(beforeReload)
+    expect(log.overviews[beforeReload].subscribers).toEqual(counts)
+    await expectStatusSubscriberCounts(
+      expect,
+      page,
+      wire,
+      confirmedCount,
+      pendingCount,
+      true,
+    )
 
+    const beforeDashboard = log.overviews.length
     await gotoPage(expect, page, '/hilos', PAGE_READY)
     const card = page.getByTestId('dashboard-card-hilos_status')
     await expect(card).toContainText(STATUS_LEAD)
@@ -94,6 +129,16 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     await card.click()
     await expectPageReady(expect, page)
     await expectStatusHead(expect, page)
+    expect(log.overviews.length).toBeGreaterThan(beforeDashboard)
+    expect(log.overviews[beforeDashboard].subscribers).toEqual(counts)
+    await expectStatusSubscriberCounts(
+      expect,
+      page,
+      wire,
+      confirmedCount,
+      pendingCount,
+      true,
+    )
     await page.getByTestId('hilos-status-components-link').click()
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(new RegExp(`${STATUS_COMPONENTS_PATH}$`))
@@ -127,14 +172,174 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
     await filter.getByTestId('hilos-dropdown-toggle').click()
     await filter.getByTestId('hilos-dropdown-option-0').click()
     await expect(component).toBeVisible()
+    const beforeReturn = log.overviews.length
     await page.getByTestId('hilos-page-tab-hilos_status').click()
     await expectPageReady(expect, page)
     await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+    expect(log.overviews.length).toBeGreaterThan(beforeReturn)
+    expect(log.overviews[beforeReturn].subscribers).toEqual(counts)
+    await expectStatusSubscriberCounts(
+      expect,
+      page,
+      wire,
+      confirmedCount,
+      pendingCount,
+      true,
+    )
+    // Read the independent table in a second tab, preserving this smoke's
+    // original Overview -> Settings navigation and its subscription lifecycle.
+    await expect(
+      page.getByTestId('hilos-status-subscribers-link'),
+    ).toHaveAttribute('href', STATUS_SUBSCRIBERS_PATH)
+    await gotoPage(expect, subscribers, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
+    await expectStatusHead(expect, subscribers, 'subscribers')
+    await expect(subscribers.getByTestId('hilos-table-search')).toHaveValue('')
+    await expect(
+      subscribers
+        .getByTestId('hilos-table-filter-confirmed')
+        .getByTestId('hilos-dropdown-toggle'),
+    ).toHaveText('Confirmed: Any')
+    await expectStatusSubscriberCounts(
+      expect,
+      subscribers,
+      subscriberWire,
+      confirmedCount,
+      pendingCount,
+    )
+    const total = confirmedCount + pendingCount
+    await expectTableTotal(expect, subscribers, total)
+    const subscribersReply = subscriberWire.packets
+      .flatMap((packet) => packet.frames)
+      .map(({ wire }) => deliveryObject(wire))
+      .find(
+        (frame) =>
+          frame.type === 'page_response' &&
+          deliveryObject(frame.data).page === 'hilos_status_subscribers',
+      )
+    const payload = deliveryObject(
+      deliveryObject(subscribersReply?.data).payload,
+    )
+    expect(deliveryObject(payload.data).statusSubscribers).toEqual(counts)
+    const window = deliveryObject(
+      deliveryObject(payload.windows).hilosStatusSubscribers,
+    )
+    expect(window).toMatchObject({ totalCount: total, totalExact: true })
+    console.info('Status smoke live subscriber aggregate', {
+      firstOverview: counts,
+      firstSubscribers: deliveryObject(payload.data).statusSubscribers,
+      unfilteredTableTotal: window.totalCount,
+    })
     await page.getByTestId('hilos-status-settings-link').click()
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/hilos\/settings$/)
   } finally {
+    await test.info().attach('status-smoke-first-answers-and-counts', {
+      body: JSON.stringify({ overview: wire, subscribers: subscriberWire }),
+      contentType: 'application/json',
+    })
     log.stop()
+    wire.stop()
+    subscriberWire.stop()
+    await subscribers.close()
+  }
+})
+
+test('Subscribers returns through the live Overview tab on the same document and socket', async ({
+  page,
+}) => {
+  // A nonempty opening window is essential: there must be an entity reference
+  // to resolve when the departing page scope changes. Own the precondition.
+  const seed = watchPublicStatus(page)
+  try {
+    await gotoPublicStatus(expect, page)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await subscribeToStatus(expect, page, seed.wire, uniqueEmail())
+  } finally {
+    seed.stop()
+  }
+  await grantAdminToSelf(expect, page)
+  const log = watchStatusFrames(page)
+  const wire = watchDeliveryFrames(page)
+  const errors: string[] = []
+  const consoleMessages: string[] = []
+  const navigations: string[] = []
+  page.on('pageerror', (error) => errors.push(error.stack ?? error.message))
+  page.on('console', (message) =>
+    consoleMessages.push(`${message.type()}: ${message.text()}`),
+  )
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations.push(frame.url())
+  })
+  try {
+    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+    await expectStatusHead(expect, page)
+    await markDocument(page)
+    expect(wire.connections).toHaveLength(1)
+    const socket = wire.connections[0].socket
+    const counts = log.overviews[0].subscribers!
+    expect(counts).not.toBeNull()
+    expect(counts.confirmedCount + counts.pendingCount).toBeGreaterThan(0)
+    const since = wire.sent.length
+    const beforeReturn = log.overviews.length
+    await page.getByTestId('hilos-status-subscribers-link').click()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(new RegExp(`${STATUS_SUBSCRIBERS_PATH}$`))
+    await expectStatusHead(expect, page, 'subscribers')
+    await expectStatusSubscriberCounts(
+      expect,
+      page,
+      wire,
+      counts.confirmedCount,
+      counts.pendingCount,
+    )
+    const total = counts.confirmedCount + counts.pendingCount
+    await expectTableTotal(expect, page, total)
+    await expectDocumentUnchanged(expect, page)
+    await page.getByTestId('hilos-page-tab-hilos_status').click()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(new RegExp(`${STATUS_PATH}$`))
+    await expectStatusHead(expect, page)
+    expect(log.overviews.length).toBeGreaterThan(beforeReturn)
+    expect(log.overviews[beforeReturn].subscribers).toEqual(counts)
+    const subscriptions = wire.sent
+      .slice(since)
+      .filter(({ wire }) => deliveryObject(wire).type === 'page_subscribe')
+    expect(subscriptions.map(({ socket, wire }) => ({ socket, wire }))).toEqual(
+      [
+        {
+          socket,
+          wire: {
+            type: 'page_subscribe',
+            page: 'hilos_status_subscribers',
+            params: {},
+          },
+        },
+        {
+          socket,
+          wire: { type: 'page_subscribe', page: 'hilos_status', params: {} },
+        },
+      ],
+    )
+    await expectDocumentUnchanged(expect, page)
+    expect(wire.connections).toEqual([
+      { socket, opened: wire.connections[0].opened },
+    ])
+    expect(errors).toEqual([])
+    expect(
+      consoleMessages.filter((message) => message.startsWith('error:')),
+    ).toEqual([])
+  } finally {
+    const path = test.info().outputPath('status-subscribers-live-return.json')
+    await writeFile(
+      path,
+      JSON.stringify({ wire, errors, consoleMessages, navigations }),
+    )
+    await test.info().attach('status-subscribers-live-return', {
+      path,
+      contentType: 'application/json',
+    })
+    log.stop()
+    wire.stop()
   }
 })
 

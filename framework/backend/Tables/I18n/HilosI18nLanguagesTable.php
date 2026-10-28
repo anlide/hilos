@@ -12,6 +12,7 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -309,6 +310,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
      * @throws InvalidFormatException When a projected language ID is not positive
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

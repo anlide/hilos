@@ -145,6 +145,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_status_add_update',
         'hilos_status_cancel_publication',
         'hilos_status_publish_now',
+        'hilos_status_subscriber_remove',
         'hilos_user_admin_set',
         'hilos_user_block_set',
         'hilos_user_deletion_set',
@@ -267,6 +268,25 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         foreach ($actions as $action => $pageClass) {
             self::assertSame(PageUnauthorizedException::class, self::refusalOf($pageClass, self::ANONYMOUS_KEY, $action), $action);
             self::assertSame(PageForbiddenException::class, self::refusalOf($pageClass, self::VISITOR_KEY, $action), $action);
+        }
+    }
+
+    public function testSubscriberRemoveIsKnownAndRefusedBeforeTheWriter(): void
+    {
+        $pageClass = Hilos::PAGES[HilosPageConstants::HILOS_STATUS_SUBSCRIBERS];
+        $action = HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE;
+        self::assertArrayHasKey($action, $pageClass::ACTIONS);
+        foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $this->drainSignals();
+            $this->dispatch($pageClass::PAGE, $acceptKey, $action, ['subscriberId' => 1], 'subscriber-remove');
+            $frames = [];
+            while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                $frames[] = $frame;
+            }
+            self::assertCount(1, $frames, 'Only a refusal; no internal writer ask');
+            self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
+            self::assertSame('view_mode', $frames[0]->data->data->errorCode);
+            self::assertSame('subscriber-remove', $frames[0]->data->data->requestId);
         }
     }
 

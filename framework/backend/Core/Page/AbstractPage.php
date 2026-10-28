@@ -145,7 +145,7 @@ abstract class AbstractPage implements ActionHostInterface
      * The list obliges the agent, not the page: a listed action is parked in the
      * worker of the {@see self::SUBSCRIPTION_AGENT_TYPE} agent, and the verdict is
      * addressed back there by signal name. That agent must therefore declare
-     * HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS with
+     * its own THROTTLE_VERDICT_SIGNAL in AGENT_SIGNALS with
      * {@see ThrottleVerdictSignalData} - and, when it is registered indexed, with
      * AgentSignalConfigKey::INDEX_FIELD => 'agentIndex', which names the parking
      * instance. A start whose page lists actions its agent cannot be answered

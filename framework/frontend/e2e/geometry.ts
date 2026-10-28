@@ -729,13 +729,17 @@ export async function fitsInScrollport(element: Locator): Promise<void> {
  * scroll can fall between them.
  *
  * @param page The Playwright page showing the table.
+ * @param tableId The declared data-id of this table root.
  * @returns A bookmark of the first row's distance from the root's top edge.
  */
-export async function watchFirstRowTop(page: Page): Promise<Watched> {
-  const what = `${TABLE} first row top relative to its root`
+export async function watchFirstRowTop(
+  page: Page,
+  tableId = TABLE,
+): Promise<Watched> {
+  const what = `${tableId} first row top relative to its root`
 
   return take(what, () =>
-    page.getByTestId(TABLE).evaluate(
+    page.getByTestId(tableId).evaluate(
       (root, { selector, what }) => {
         const row = root.querySelector(selector)
         if (

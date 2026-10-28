@@ -141,6 +141,7 @@ services:
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - HILOS_STATUS_URL=https://chat-nginx-test/status
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - HILOS_LEGAL_EXPORT_XACCEL_LOCATION=/__hilos_legal_export
       - WORKER_COMM_HOST=0.0.0.0

@@ -92,14 +92,17 @@ final class ThrottlePolicy
      *
      * An IP is allowed more than a session on purpose: everyone behind one NAT shares it,
      * so the IP limit is a ceiling on a crowd while the session limit is a ceiling on one
-     * browser.
+     * browser. An opted-in email uses the session limit across all browsers.
      *
      * @param string $scope Throttle scope, one of {@see ThrottleScope}
      * @return int Attempts allowed in one window
      */
     public function maxFor(string $scope): int
     {
-        return $scope === ThrottleScope::SESSION ? $this->maxPerSession : $this->maxPerIp;
+        return match ($scope) {
+            ThrottleScope::SESSION, ThrottleScope::EMAIL => $this->maxPerSession,
+            default => $this->maxPerIp,
+        };
     }
 
     /**

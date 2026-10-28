@@ -53,6 +53,7 @@ export const HilosPages = {
   MAINTENANCE_WORDS: 'hilos_maintenance_words',
   STATUS: 'hilos_status',
   STATUS_COMPONENTS: 'hilos_status_components',
+  STATUS_SUBSCRIBERS: 'hilos_status_subscribers',
   GUARDIAN: 'hilos_guardian',
   GUARDIAN_AGENT: 'hilos_guardian_agent',
   I18N: 'hilos_i18n',
@@ -222,6 +223,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.STATUS]: { path: '/hilos/status', admin: true },
   [HilosPages.STATUS_COMPONENTS]: {
     path: '/hilos/status/components',
+    admin: true,
+  },
+  [HilosPages.STATUS_SUBSCRIBERS]: {
+    path: '/hilos/status/subscribers',
     admin: true,
   },
   [HilosPages.GUARDIAN]: { path: '/hilos/guardian', admin: true },

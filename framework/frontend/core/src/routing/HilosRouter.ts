@@ -350,7 +350,11 @@ export function createHilosRouter(
     },
     start: () => {
       apply(env.pathname())
-      detachPopState = env.onPopState(() => apply(env.pathname()))
+      detachPopState = env.onPopState(() => {
+        const pathname = env.pathname()
+        // Native fragment links also raise popstate; they keep the current page.
+        if (pathname !== currentPath.get()) apply(pathname)
+      })
     },
     stop: () => {
       detachPopState?.()

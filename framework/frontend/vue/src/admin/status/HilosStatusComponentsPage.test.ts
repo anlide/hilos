@@ -80,6 +80,7 @@ describe('HilosStatusComponentsPage with the real viewport renderer', () => {
     ).toEqual([
       ['Overview', undefined],
       ['Components', 'page'],
+      ['Subscribers', undefined],
     ])
     const table = wrapper.get('table')
     expect(table.attributes('aria-labelledby')).toBe(

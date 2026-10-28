@@ -1,28 +1,51 @@
-<!-- Public Status reads only the core file controller, even before handshake.
-The mount owns one reader; the Vue state below remembers only a focused day. -->
+<!-- Public Status reads files even before handshake. The mount also owns one
+subscription controller; its actions never delay or replace the file reader. -->
 <script setup lang="ts">
 import {
   formatMoment,
   hilosTimeZone,
+  type ActionLifecycle,
   type HilosConnection,
 } from '@hilos/core/base'
 import {
   createPublicStatus,
+  createStatusSubscription,
+  STATUS_SUBSCRIPTION_COPY,
   type PublicStatusDay,
   type PublicStatusDayStrip,
   type PublicStatusState,
 } from '@hilos/core/status'
 import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
 
+import HilosFormError from '../HilosFormError.vue'
 import HilosStaticPage from '../HilosStaticPage.vue'
 import { useSignal } from '../useSignal.js'
+import HilosStatusSubscriptionModal from './HilosStatusSubscriptionModal.vue'
 
 const props = defineProps<{
   /** The project's connection singleton; no session answer is required. */
   connection: HilosConnection
+  /** The project's existing lifecycle for correlated public actions. */
+  actions: ActionLifecycle
 }>()
 
 const reader = createPublicStatus(props.connection)
+const subscription = createStatusSubscription({
+  connection: props.connection,
+  actions: props.actions,
+})
+const subscriptionUsable = useSignal(subscription.usable)
+const subscriptionDialog = useSignal(subscription.dialog)
+const subscriptionStep = useSignal(subscription.step)
+const subscriptionError = useSignal(subscription.error)
+const subscriptionSuccess = useSignal(subscription.success)
+const subscriptionProgress = computed(() =>
+  subscriptionStep.value === 'waiting'
+    ? STATUS_SUBSCRIPTION_COPY.waiting
+    : subscriptionStep.value === 'pending'
+      ? 'Waiting for confirmation…'
+      : '',
+)
 const projection = useSignal(reader.projection)
 const freshness = useSignal(reader.freshness)
 const banner = useSignal(reader.banner)
@@ -97,12 +120,79 @@ function componentName(key: string): string {
   )
 }
 
-onMounted(() => reader.start())
-onUnmounted(() => reader.dispose())
+onMounted(() => {
+  subscription.start()
+  reader.start()
+})
+onUnmounted(() => {
+  subscription.dispose()
+  reader.dispose()
+})
 </script>
 
 <template>
   <HilosStaticPage title="System status" icon="bi-activity">
+    <div class="hilos-stack mb-3">
+      <div
+        class="invisible d-flex justify-content-end"
+        aria-hidden="true"
+        inert
+      >
+        <span class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-envelope me-1" aria-hidden="true"></i>
+          {{ STATUS_SUBSCRIPTION_COPY.subscribe }}
+        </span>
+      </div>
+      <div v-if="subscriptionUsable" class="d-flex justify-content-end">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          data-id="public-status-subscribe"
+          @click="subscription.open()"
+        >
+          <i class="bi bi-envelope me-1" aria-hidden="true"></i>
+          {{ STATUS_SUBSCRIPTION_COPY.subscribe }}
+        </button>
+      </div>
+    </div>
+    <div
+      class="hilos-stack small mb-3"
+      data-id="public-status-subscription-slot"
+    >
+      <div
+        class="alert alert-secondary mb-0 invisible"
+        aria-hidden="true"
+        inert
+      >
+        {{ STATUS_SUBSCRIPTION_COPY.waiting }}
+      </div>
+      <template v-if="!subscriptionDialog">
+        <div
+          v-if="subscriptionSuccess || subscriptionProgress"
+          class="alert mb-0"
+          :class="subscriptionSuccess ? 'alert-success' : 'alert-secondary'"
+          data-id="public-status-subscription-notice"
+        >
+          {{ subscriptionSuccess || subscriptionProgress }}
+        </div>
+      </template>
+      <HilosFormError
+        :message="subscriptionDialog ? null : subscriptionError"
+        data-id="public-status-subscription-error"
+        announce
+      />
+    </div>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-id="public-status-subscription-live"
+    >
+      {{
+        subscriptionDialog ? '' : subscriptionSuccess || subscriptionProgress
+      }}
+    </div>
     <div
       class="visually-hidden"
       role="status"
@@ -391,5 +481,18 @@ onUnmounted(() => reader.dispose())
     <p class="small text-body-secondary" data-id="public-status-last-update">
       Last update from the system: {{ lastUpdate ?? 'Unknown' }}
     </p>
+    <div class="hilos-stack small text-body-secondary">
+      <p class="invisible mb-0" aria-hidden="true" inert>
+        Subscribed already? Every letter has a link to unsubscribe.
+      </p>
+      <p
+        v-if="subscriptionUsable"
+        class="mb-0"
+        data-id="public-status-subscription-hint"
+      >
+        Subscribed already? Every letter has a link to unsubscribe.
+      </p>
+    </div>
+    <HilosStatusSubscriptionModal :controller="subscription" />
   </HilosStaticPage>
 </template>

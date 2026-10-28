@@ -66,7 +66,9 @@ use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusComponentsPage;
+use Demo\OnlineTesting\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
@@ -287,6 +289,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
+        StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
     ];
 
     public const array GROUPS = [
@@ -450,6 +453,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         OnlineTestingTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
+        HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -583,6 +587,7 @@ final class Hilos extends HilosFacade
             OnlineTestingTableContext::hilosI18nCountryNames => [],
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
+        StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
     ];
 
     /**

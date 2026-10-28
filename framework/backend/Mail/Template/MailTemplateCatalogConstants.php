@@ -51,6 +51,18 @@ final class MailTemplateCatalogConstants
     /** Template key: a durable notification delivered by email. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 
+    /** Template key: confirm a guest subscription to public Status updates. */
+    public const string STATUS_SUBSCRIPTION_CONFIRM = 'status.subscription.confirm';
+
+    /** Template key: a newly published public outage. */
+    public const string STATUS_OUTAGE_PUBLISHED = 'status.outage.published';
+
+    /** Template key: a public team update to an outage. */
+    public const string STATUS_OUTAGE_UPDATE = 'status.outage.update';
+
+    /** Template key: a published outage has recovered. */
+    public const string STATUS_OUTAGE_RESOLVED = 'status.outage.resolved';
+
     /**
      * Template key: a node frozen for maintenance with nothing happening behind it (HIL-482).
      *

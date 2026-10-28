@@ -790,6 +790,35 @@ describe('createHilosRouter', () => {
     expect(calls.at(-1)).toEqual({ page: 'dash', params: {} })
   })
 
+  it('keeps the delivered route and subscription across fragment-only history, then follows changed route params', () => {
+    const { env, pop } = fakeEnvironment('/user/42')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    const deliveredRoute = navigator.currentRoute.get()
+    let departures = 0
+    navigator.onLeave(() => departures++)
+
+    // The browser's skip link changes its hash, leaving pathname unchanged.
+    pop('/user/42')
+    pop('/user/42')
+
+    expect(navigator.currentRoute.get()).toBe(deliveredRoute)
+    expect(calls).toEqual([{ page: 'user', params: { id: '42' } }])
+    expect(departures).toBe(0)
+    expect(navigator.pageLoading.get()).toBe(false)
+
+    pop('/user/43')
+    pop('/user/42')
+
+    expect(calls).toEqual([
+      { page: 'user', params: { id: '42' } },
+      { page: 'user', params: { id: '43' } },
+      { page: 'user', params: { id: '42' } },
+    ])
+    expect(departures).toBe(2)
+  })
+
   it('stops tracking history on stop', () => {
     const { env, pop, isPopAttached } = fakeEnvironment('/')
     const { pages, calls } = fakePages()

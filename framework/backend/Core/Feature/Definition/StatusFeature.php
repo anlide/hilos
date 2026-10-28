@@ -10,6 +10,8 @@ use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\StatusIncident;
 use Hilos\Database\Entity\Item\StatusIncidentUpdate;
+use Hilos\Database\Entity\Item\StatusSubscriber;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosStatusComponents as StateHilosStatusComponents;
 use Hilos\Runtime\State\Item\HilosStatusComponent as StateHilosStatusComponent;
@@ -20,7 +22,9 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
+use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 
 /** Framework Status machine and its project-bound admin pages. */
 final class StatusFeature extends FeatureDefinition
@@ -35,13 +39,17 @@ final class StatusFeature extends FeatureDefinition
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
-            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class],
-            requiredTables: [HilosStatusComponentsTable::class],
-            requiredPageTables: [AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class],
+            requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class, AbstractHilosStatusSubscribersPage::class],
+            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class],
+            requiredPageTables: [
+                AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
+                AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
+            ],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
+            requiredSharedAgents: [MailDeliveryChannelAgent::AGENT_TYPE],
             requiredCatalogFragments: [StatusSettingsCatalog::class],
-            requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY],
-            requiredDbTables: [StatusIncident::_table, StatusIncidentUpdate::_table],
+            requires: [HilosFeature::DAEMON, HilosFeature::NOTIFICATION_DELIVERY, HilosFeature::AUTH_THROTTLE],
+            requiredDbTables: [StatusIncident::_table, StatusIncidentUpdate::_table, StatusSubscriber::_table],
         );
     }
 

@@ -3,16 +3,23 @@ import {
   HilosPages,
   ScopeManager,
   bindAdminAccess,
+  bindPageScope,
   createSignal,
+  hilosUnbuiltPages,
+  PROTECTED_MODE_INACTIVE,
+  type ConnectionState,
   type HilosConnection,
   type HilosRouter,
   type HilosPageIdentity,
   type PageRouteMatch,
+  type TableRow,
 } from '@hilos/core/base'
 import type {
   HilosStatusContext,
   HilosStatusIncident,
   HilosStatusOverviewData,
+  HilosStatusSubscribersData,
+  HilosStatusSubscriberRow,
 } from '@hilos/core/admin/status'
 
 export function incident(
@@ -35,6 +42,64 @@ export function incident(
     ...overrides,
   }
 }
+
+/** A raw four-field subscriber slot, normalized by the actual viewport binding. */
+export function subscriberRow(
+  overrides: Partial<HilosStatusSubscriberRow> = {},
+): TableRow {
+  const subscriber: HilosStatusSubscriberRow = {
+    id: 7,
+    email: 'reader@example.net',
+    subscribedAt: 1_800_000_000_000,
+    confirmed: false,
+    ...overrides,
+  }
+  return { rowKey: String(subscriber.id), slots: { subscriber } }
+}
+
+/** Real page ingestion keeps count fan-out independent of the viewport's Apply. */
+export function statusSubscribersHarness(viewer = false) {
+  const h = statusHarness(HilosPages.STATUS_SUBSCRIBERS)
+  if (viewer) h.viewer()
+  const pages = bindPageScope(h.context.connection, h.context.scopes)
+  pages.subscribe(HilosPages.STATUS_SUBSCRIBERS)
+  const answer = (payload: Record<string, unknown>) =>
+    h.emit('projectSignal', {
+      type: 'page_response',
+      data: { page: HilosPages.STATUS_SUBSCRIBERS, payload },
+    })
+  return {
+    ...h,
+    window(rows: readonly TableRow[] = [subscriberRow()], filter = {}) {
+      answer({
+        windows: {
+          hilosStatusSubscribers: {
+            rows,
+            totalCount: rows.length,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            limit: 25,
+            sort: [{ field: 'subscribedAt', direction: 'desc' }],
+            filter,
+          },
+        },
+      })
+    },
+    counts(counts: HilosStatusSubscribersData) {
+      answer({ data: { statusSubscribers: counts } })
+    },
+    delta(data: Record<string, unknown>) {
+      h.emit('tableViewportDelta', {
+        data: {
+          page: HilosPages.STATUS_SUBSCRIBERS,
+          tableKey: 'hilosStatusSubscribers',
+          ...data,
+        },
+      })
+    },
+  }
+}
 export function overview(
   overrides: Partial<HilosStatusOverviewData> = {},
 ): HilosStatusOverviewData {
@@ -44,6 +109,7 @@ export function overview(
     publishDelaySeconds: 60,
     maintenance: null,
     incidents: [incident()],
+    subscribers: { confirmedCount: 0, pendingCount: 0 },
     ...overrides,
   }
 }
@@ -53,12 +119,24 @@ export function statusHarness(page: string = HilosPages.STATUS) {
   const listeners = new Map<string, Set<(value: unknown) => void>>()
   const sent: { action: string; data: unknown; requestId?: string }[] = []
   const viewports: unknown[][] = []
+  const focuses: unknown[][] = []
+  const facets: unknown[][] = []
+  const rendered: unknown[][] = []
   const registered = new Set<string>()
   const emit = (event: string, value: unknown): void => {
     for (const listener of [...(listeners.get(event) ?? [])]) listener(value)
   }
+  let connectionState: ConnectionState = 'connected'
+  let protectedMode = PROTECTED_MODE_INACTIVE
   const connection = {
     projectTimeZone: 'UTC',
+    get state() {
+      return connectionState
+    },
+    get protectedMode() {
+      return protectedMode
+    },
+    forgetPageFrames() {},
     on(event: string, listener: (value: unknown) => void) {
       const bucket = listeners.get(event) ?? new Set()
       listeners.set(event, bucket)
@@ -73,7 +151,16 @@ export function statusHarness(page: string = HilosPages.STATUS) {
       viewports.push(args)
       return true
     },
-    sendTableRendered() {
+    sendTableRendered(...args: unknown[]) {
+      rendered.push(args)
+      return true
+    },
+    sendTableRowFocus(...args: unknown[]) {
+      focuses.push(args)
+      return true
+    },
+    sendTableFacets(...args: unknown[]) {
+      facets.push(args)
       return true
     },
     registerTableWindow(key: string) {
@@ -98,6 +185,7 @@ export function statusHarness(page: string = HilosPages.STATUS) {
     [HilosPages.DASHBOARD]: '/hilos',
     [HilosPages.STATUS]: '/hilos/status',
     [HilosPages.STATUS_COMPONENTS]: '/hilos/status/components',
+    [HilosPages.STATUS_SUBSCRIBERS]: '/hilos/status/subscribers',
     [HilosPages.SETTINGS]: '/hilos/settings',
     [HilosPages.MAINTENANCE]: '/hilos/maintenance',
   }
@@ -128,10 +216,12 @@ export function statusHarness(page: string = HilosPages.STATUS) {
       pageTabs: [
         { page: HilosPages.STATUS, label: 'Overview' },
         { page: HilosPages.STATUS_COMPONENTS, label: 'Components' },
+        { page: HilosPages.STATUS_SUBSCRIBERS, label: 'Subscribers' },
       ],
     }),
     dashboardSections: createSignal(undefined),
-    resolvePath: (key) => paths[key],
+    resolvePath: (key) =>
+      hilosUnbuiltPages('vue').has(key) ? undefined : paths[key],
     clearPageError() {},
     denyCurrentPage() {},
     awaitPageAnswer() {},
@@ -146,8 +236,19 @@ export function statusHarness(page: string = HilosPages.STATUS) {
     router,
     sent,
     viewports,
+    focuses,
+    facets,
+    rendered,
     registered,
     emit,
+    connect(state: ConnectionState) {
+      connectionState = state
+      emit('state', state)
+    },
+    freeze(active: boolean) {
+      protectedMode = { ...PROTECTED_MODE_INACTIVE, active }
+      emit('protectedMode', protectedMode)
+    },
     setOverview(data: unknown) {
       scopes.page()?.data.set('status', data)
     },

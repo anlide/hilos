@@ -34,6 +34,7 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
             'publishDelaySeconds' => 300,
             'maintenance' => null,
             'incidents' => [],
+            'subscribers' => ['confirmedCount' => 0, 'pendingCount' => 0],
         ], StatusOverviewData::read()->toArray());
         self::assertSame([EntityStatusIncident::active_component_key, ['zeta', 'alpha']], $this->database->statusIncidents->selection);
     }
@@ -169,6 +170,7 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
         $visible = ViewerFields::hide($payload, $fields, $columnShown,
             static fn (string $key): bool => Hilos::$setting->visibleInAdminViewMode($key));
         self::assertSame(300, $visible['status']['publishDelaySeconds']);
+        self::assertSame(['confirmedCount' => 0, 'pendingCount' => 0], $visible['status']['subscribers']);
         self::assertSame(HiddenValue::mark(), $visible['status']['incidents'][0]['updates'][0]['text']);
         self::assertSame('Team <text>', $payload['status']['incidents'][0]['updates'][0]['text']);
         self::assertNull($visible['status']['maintenance']);

@@ -14,6 +14,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -33,9 +34,9 @@ use Hilos\Utils\Logger;
  * dispatcher stay a page dispatcher: it asks whether this action is refused, parked or free,
  * and never learns what a scope or a ladder is.
  *
- * An action is keyed twice, once per scope: the IP a crowd shares and the session one browser
- * holds. Both are counted, so passing one limit does not excuse the other, and a refusal by
- * either refuses the action.
+ * An action is keyed by the IP a crowd shares and the session one browser holds. Payloads
+ * implementing ThrottleEmailIdentityInterface add the normalized address as a third key.
+ * Every key is counted, and a refusal by any key refuses the action.
  *
  * The gate also remembers whether the agent is answering at all (HIL-1280). A verdict that does
  * not arrive in time is this server's failure, so within the grace of
@@ -91,12 +92,14 @@ final class ThrottleGate
      * @param WebSocketActionSignalDTO $data Action being dispatched
      * @param string $requestKey Key the parked action is held under
      * @param SignalSourceInterface $pageAgent Signal source of the page agent that parks it
+     * @param ?ActionPayloadDTO $dto Parsed payload, optionally opting into the email scope
      * @return list<ThrottleCheckSignalData> Checks to send, empty when the action cannot be keyed at all
      */
     public function checksFor(
         WebSocketActionSignalDTO $data,
         string $requestKey,
         SignalSourceInterface $pageAgent,
+        ?ActionPayloadDTO $dto = null,
     ): array {
         $agentType = $pageAgent->getType();
         if ($agentType === null) {
@@ -109,7 +112,7 @@ final class ThrottleGate
         }
 
         $checks = [];
-        foreach ($this->identities($data) as $scope => $identity) {
+        foreach ($this->identities($data, $dto) as $scope => $identity) {
             $checks[] = new ThrottleCheckSignalData(
                 scope: $scope,
                 identity: $identity,
@@ -268,9 +271,10 @@ final class ThrottleGate
      * The identity of each scope this action can be counted against.
      *
      * @param WebSocketActionSignalDTO $data Action being dispatched
+     * @param ?ActionPayloadDTO $dto Parsed payload, optionally opting into the email scope
      * @return array<string, string> Identity per {@see ThrottleScope}, keyless scopes omitted
      */
-    private function identities(WebSocketActionSignalDTO $data): array
+    private function identities(WebSocketActionSignalDTO $data, ?ActionPayloadDTO $dto): array
     {
         $identities = [];
         if ($data->clientIp !== null) {
@@ -278,6 +282,9 @@ final class ThrottleGate
         }
         if ($data->sessionIdentity !== null) {
             $identities[ThrottleScope::SESSION] = $data->sessionIdentity;
+        }
+        if ($dto instanceof ThrottleEmailIdentityInterface) {
+            $identities[ThrottleScope::EMAIL] = ThrottleIdentity::forEmail($dto->throttleEmail());
         }
 
         return $identities;

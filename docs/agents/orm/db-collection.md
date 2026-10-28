@@ -352,6 +352,14 @@ convention.
 | Page response assembly | Page handler, using existing DB APIs only |
 | Table query/result shaping | Table layer, delegating DB behavior to collections/actions |
 
+For a typed filter that belongs to every page query of one DB-backed Object
+collection, override its protected `searchCondition(TableQueryDTO)` and call
+`parent::searchCondition()` before adding bound `SqlParam` values. The shared
+`queryPage()` and `containsRow()` readers both use this predicate, so window
+membership stays aligned with the filter. `StatusSubscribers` uses this seam
+for its strict boolean `confirmed` filter, shared by windows, facets and row
+membership; see [the Status Subscribers table](../architecture/status-page.md#admin-pages).
+
 ## Anti-Patterns
 
 Do not introduce Repository or Service classes on top of `DbCollection`:

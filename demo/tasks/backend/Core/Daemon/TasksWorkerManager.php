@@ -63,6 +63,6 @@ final class TasksWorkerManager extends WorkerManager
         $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
         $signalRoutes = new SignalRouteConfig(Hilos::getPageSignalRoutes());
 
-        return new PageSignalRouter($pageFactory, $actionRoutes, $signalRoutes);
+        return new PageSignalRouter($pageFactory, $actionRoutes, $signalRoutes, $agent::THROTTLE_VERDICT_SIGNAL);
     }
 }

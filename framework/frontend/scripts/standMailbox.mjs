@@ -38,6 +38,7 @@ const POLL_INTERVALS = [100, 250, 500, 1000]
  * @typedef {object} InterceptedMail
  * @property {string} subject Subject line — for a channel letter, the message text itself.
  * @property {string} text Plain-text body.
+ * @property {string} [html] HTML alternative, when supplied by the interceptor.
  */
 
 /**
@@ -220,10 +221,14 @@ async function entriesTo(mailbox, address) {
  */
 async function readMessage(mailbox, id) {
   const response = await request(mailbox, `/api/v1/message/${id}`)
-  /** @type {{ Subject: string, Text: string }} */
+  /** @type {{ Subject: string, Text: string, HTML?: string }} */
   const message = await response.json()
 
-  return { subject: message.Subject, text: message.Text }
+  return {
+    subject: message.Subject,
+    text: message.Text,
+    ...(typeof message.HTML === 'string' ? { html: message.HTML } : {}),
+  }
 }
 
 /**

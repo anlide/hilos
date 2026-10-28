@@ -71,7 +71,9 @@ use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusComponentsPage;
+use Demo\EcommerceShop\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
@@ -280,6 +282,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
+        StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
     ];
 
     public const array GROUPS = [
@@ -443,6 +446,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         EcommerceShopTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
+        HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -570,6 +574,7 @@ final class Hilos extends HilosFacade
             EcommerceShopTableContext::hilosNotificationDeliveries => [],
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
+        StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
     ];
 
     /**

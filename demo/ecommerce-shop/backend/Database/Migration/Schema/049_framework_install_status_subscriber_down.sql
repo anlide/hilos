@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["status_subscriber"],"parts":[{"changeId":"20261028002725141545_HIL-1691_status_subscribers","unit":"status_subscriber","upSha256":"18962a8e4eee76f7c6454b0fdfac4cc533056030deb96ffd95b2c6e9b1eb86fb","downSha256":"1989af400b2b333b4e8dec23c200469e11ea1d419bd5874948ed3a278dfa1470"}],"upSha256":"18962a8e4eee76f7c6454b0fdfac4cc533056030deb96ffd95b2c6e9b1eb86fb","downSha256":"1989af400b2b333b4e8dec23c200469e11ea1d419bd5874948ed3a278dfa1470"}
+DROP TABLE IF EXISTS `hilos_status_subscriber`;

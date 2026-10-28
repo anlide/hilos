@@ -54,6 +54,18 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::NOTIFICATION_GENERIC => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => GenericNotificationMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::STATUS_SUBSCRIPTION_CONFIRM => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusSubscriptionConfirmMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_OUTAGE_PUBLISHED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusOutagePublishedMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_OUTAGE_UPDATE => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusOutageUpdateMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_OUTAGE_RESOLVED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusOutageResolvedMailTemplate::class,
+            ],
             MailTemplateCatalogConstants::PROTECTED_MODE_STUCK => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeStuckMailTemplate::class,
             ],

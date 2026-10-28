@@ -2,7 +2,7 @@
 // table: a row per person, the gray "Merged" badge beside the name of an account
 // folded into another one (HIL-1292), and the presence badge in its three words
 // (HIL-1566), live and apart from the mark of a source gone quiet.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
@@ -20,6 +20,7 @@ import type {
   HilosRouter,
   HilosUsersContext,
   PageRouteMatch,
+  TableViewportDescriptor,
 } from '@hilos/core'
 
 import { HilosUsersPage } from '../src/admin/users/HilosUsersPage.js'
@@ -135,10 +136,15 @@ function liveUsers(users: UserSeed[]): LiveUsers {
   }
   // The window this table would be served, by whichever road it arrives on: the page's
   // own answer at bind time, or a reply to a window the reader changed.
-  const serveWindow = (page = 'hilos_users', tableKey = 'hilosUsers'): void => {
+  const serveWindow = (
+    page = 'hilos_users',
+    tableKey = 'hilosUsers',
+    requestId?: string,
+  ): void => {
     const data = {
       page,
       tableKey,
+      ...(requestId === undefined ? {} : { requestId }),
       rows: users.map(wireRow),
       totalCount: users.length,
       offset: 0,
@@ -162,9 +168,14 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(page: string, tableKey: string): boolean {
+    sendTableViewport(
+      page: string,
+      tableKey: string,
+      descriptor: TableViewportDescriptor,
+    ): boolean {
       viewportRequestCount++
-      serveWindow(page, tableKey)
+      // A reply completes this request; the unsolicited first window has no id.
+      serveWindow(page, tableKey, descriptor.requestId)
 
       return true
     },
@@ -225,6 +236,7 @@ describe('HilosUsersPage', () => {
   afterEach(() => {
     cleanup()
     for (const release of readerTimeZoneReleases.splice(0)) release()
+    vi.useRealTimers()
   })
 
   it('renders a row per user with name, presence, and sessions', () => {
@@ -244,6 +256,7 @@ describe('HilosUsersPage', () => {
   })
 
   it('reformats activity in place without resetting the search or requesting a new viewport', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const zone = readerTimeZone()
     readerTimeZoneReleases.push(zone.release)
     await act(async () => {
@@ -299,8 +312,14 @@ describe('HilosUsersPage', () => {
     const viewportRequests = live.viewportRequests()
     const row = container.querySelector('[data-id="hilos-table-row-1"]')
 
+    expect(viewportRequests).toBe(1)
+    expect(row).not.toBeNull()
+
     await act(async () => {
       zone.choose('Pacific/Kiritimati')
+      // Cross the delayed skeleton boundary too: the search reply must have
+      // completed its request, however long the reader-zone update takes.
+      await vi.runOnlyPendingTimersAsync()
     })
     const after = formatMoment(0)
 

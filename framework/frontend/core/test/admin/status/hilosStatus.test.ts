@@ -67,6 +67,24 @@ describe('Status wire schema', () => {
     ).toEqual([])
   })
 
+  it('requires exact nonnegative subscriber counts and preserves unavailable', () => {
+    expect(
+      statusOverviewSchema.parse(overview({ subscribers: null })).subscribers,
+    ).toBeNull()
+    for (const subscribers of [
+      {},
+      { confirmedCount: 0 },
+      { pendingCount: 0 },
+      { confirmedCount: -1, pendingCount: 0 },
+      { confirmedCount: 0, pendingCount: 0.5 },
+      { confirmedCount: 0, pendingCount: 0, total: 0 },
+    ]) {
+      expect(
+        statusOverviewSchema.safeParse({ ...overview(), subscribers }).success,
+      ).toBe(false)
+    }
+  })
+
   it('requires every nullable key at every depth, and rejects extra keys', () => {
     for (const key of Object.keys(overview())) {
       const wire = { ...overview() } as Record<string, unknown>

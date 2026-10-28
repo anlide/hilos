@@ -244,7 +244,6 @@ subscription. This does not enable shell requests, actions or modal controls,
 and does not change the connection policy for other pages. See
 [Status reading](../architecture/status-page.md#reading-status).
 Its subscription button is absent without usable live connection.
-(not in the code yet — HIL-1691)
 
 ## Stale data
 

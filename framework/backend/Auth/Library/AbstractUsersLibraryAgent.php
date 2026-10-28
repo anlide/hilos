@@ -380,10 +380,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
     /**
-     * The throttle verdict is declared HERE and must not be declared by a second agent of
-     * the project: routing picks the verdict's destination from whoever declared it, and
-     * this is the agent whose dispatcher parks the throttled sign-in commands and waits for
-     * it. Declaring it elsewhere takes the answer away from the pool that is waiting (HIL-420).
+     * This library owns its throttle verdict name: its dispatcher parks the sign-in commands
+     * and waits for that answer. Other parking agents declare their own verdict names so
+     * routing returns each answer to the pool that is waiting (HIL-420).
      * The admin card also hands deletion requests here, because this library owns their rows
      * and publishes the account's state after scheduling or canceling them (HIL-304). It hands
      * a rename here too (HIL-771): this library asks the person's agent to write it, and tells

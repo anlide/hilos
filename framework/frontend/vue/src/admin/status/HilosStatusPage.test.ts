@@ -41,7 +41,7 @@ async function page(data?: unknown) {
 }
 
 describe('HilosStatusPage', () => {
-  it('uses the real shared head with one h1, two route links and only the active tab current', async () => {
+  it('uses the real shared head with one h1, three route links and only the active tab current', async () => {
     const { wrapper, sent } = await page(overview())
     expect(wrapper.findAll('h1').map((h) => h.text())).toEqual(['Status'])
     const tabs = wrapper.get('nav[aria-label="Status pages"]')
@@ -56,6 +56,7 @@ describe('HilosStatusPage', () => {
     ).toEqual([
       ['Overview', '/hilos/status', 'page'],
       ['Components', '/hilos/status/components', undefined],
+      ['Subscribers', '/hilos/status/subscribers', undefined],
     ])
     expect(wrapper.get('[data-id="hilos-status-components-link"]').text()).toBe(
       '0 / 2 operational · View component health',
@@ -64,6 +65,51 @@ describe('HilosStatusPage', () => {
       wrapper.get('[data-id="hilos-status-settings-link"]').attributes('href'),
     ).toBe('/hilos/settings')
     expect(sent).toEqual([])
+  })
+  it('links to Subscribers and renders authoritative counts, zero and unavailable in the same tile frame', async () => {
+    const { wrapper, setOverview, sent, viewports } = await page(
+      overview({ subscribers: null }),
+    )
+    const tile = wrapper.get('[data-id="hilos-status-subscribers-tile"]')
+    const frame = tile.element
+    const confirmed = () =>
+      tile.get('[data-id="hilos-status-subscribers-tile-confirmed"]').text()
+    const pending = () =>
+      tile.get('[data-id="hilos-status-subscribers-tile-pending"]').text()
+    expect([confirmed(), pending()]).toEqual(['—', '—'])
+    expect(
+      tile.get('[data-id="hilos-status-subscribers-tile-unavailable"]').text(),
+    ).toBe('Subscriber data is unavailable.')
+    expect(
+      tile.get('[data-id="hilos-status-subscribers-link"]').attributes('href'),
+    ).toBe('/hilos/status/subscribers')
+    for (const counts of [
+      { confirmedCount: 0, pendingCount: 0 },
+      { confirmedCount: 214, pendingCount: 3 },
+    ]) {
+      setOverview(overview({ subscribers: counts }))
+      await nextTick()
+      expect([confirmed(), pending()]).toEqual([
+        String(counts.confirmedCount),
+        String(counts.pendingCount),
+      ])
+      expect(
+        tile
+          .find('[data-id="hilos-status-subscribers-tile-unavailable"]')
+          .exists(),
+      ).toBe(false)
+      expect(
+        wrapper.get('[data-id="hilos-status-subscribers-tile"]').element,
+      ).toBe(frame)
+    }
+    setOverview(overview({ subscribers: null }))
+    await nextTick()
+    expect([confirmed(), pending()]).toEqual(['—', '—'])
+    expect(
+      tile.find('.hilos-stack > .invisible[aria-hidden="true"]').exists(),
+    ).toBe(true)
+    expect(sent).toEqual([])
+    expect(viewports).toEqual([])
   })
   it('waits for data and paints green only for fully known operational health', async () => {
     const { wrapper, setOverview } = await page()

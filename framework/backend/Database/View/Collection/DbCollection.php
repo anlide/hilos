@@ -33,6 +33,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\HilosException;
 use IteratorAggregate;
 
@@ -589,6 +590,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -627,6 +629,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws DatabaseException On query or connection error
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
     {
@@ -653,6 +656,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
      * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function queryPageItems(TableQueryDTO $query): array
     {

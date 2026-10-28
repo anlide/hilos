@@ -125,6 +125,11 @@ const pages: Record<string, PageView<Component>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.STATUS_SUBSCRIBERS]: lazyPage(() =>
+    import('./views/Hilos/Status/Subscribers/Subscribers.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.COMMUNICATIONS]: lazyPage(() =>
     import('./views/Hilos/Communications/Communications.vue').then(
       (m) => m.default,

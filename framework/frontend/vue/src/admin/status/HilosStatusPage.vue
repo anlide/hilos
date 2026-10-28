@@ -6,6 +6,7 @@ import {
   createHilosStatusIncidentController,
   HILOS_STATUS_COPY,
   HILOS_STATUS_ACTION_COPY,
+  HILOS_STATUS_SUBSCRIBERS_COPY,
   type HilosStatusContext,
 } from '@hilos/core/admin/status'
 import { inject, onMounted, onUnmounted } from 'vue'
@@ -241,7 +242,7 @@ onUnmounted(() => {
         </div>
       </section>
       <div class="row g-3">
-        <div class="col-md-6">
+        <div class="col-md-4">
           <section class="card h-100">
             <div class="card-body">
               <h2 class="h6">{{ HILOS_STATUS_COPY.components }}</h2>
@@ -256,7 +257,56 @@ onUnmounted(() => {
             </div>
           </section>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
+          <section class="card h-100" data-id="hilos-status-subscribers-tile">
+            <div class="card-body">
+              <h2 class="h6">
+                {{ HILOS_STATUS_SUBSCRIBERS_COPY.subscribers }}
+              </h2>
+              <dl class="mb-2">
+                <div class="d-flex gap-2">
+                  <dt>{{ HILOS_STATUS_SUBSCRIBERS_COPY.confirmed }}</dt>
+                  <dd
+                    class="mb-0"
+                    data-id="hilos-status-subscribers-tile-confirmed"
+                  >
+                    {{ overview.subscribers?.confirmedCount ?? '—' }}
+                  </dd>
+                </div>
+                <div class="d-flex gap-2">
+                  <dt>
+                    {{ HILOS_STATUS_SUBSCRIBERS_COPY.awaitingConfirmation }}
+                  </dt>
+                  <dd
+                    class="mb-0"
+                    data-id="hilos-status-subscribers-tile-pending"
+                  >
+                    {{ overview.subscribers?.pendingCount ?? '—' }}
+                  </dd>
+                </div>
+              </dl>
+              <div class="hilos-stack mb-2">
+                <p class="invisible mb-0" aria-hidden="true">
+                  {{ HILOS_STATUS_SUBSCRIBERS_COPY.unavailable }}
+                </p>
+                <p
+                  v-if="overview.subscribers === null"
+                  class="text-body-secondary mb-0"
+                  data-id="hilos-status-subscribers-tile-unavailable"
+                >
+                  {{ HILOS_STATUS_SUBSCRIBERS_COPY.unavailable }}
+                </p>
+              </div>
+              <HilosLink
+                v-if="router?.resolvePath(HilosPages.STATUS_SUBSCRIBERS)"
+                :to="router.resolvePath(HilosPages.STATUS_SUBSCRIBERS)!"
+                data-id="hilos-status-subscribers-link"
+                >{{ HILOS_STATUS_SUBSCRIBERS_COPY.subscribers }}</HilosLink
+              >
+            </div>
+          </section>
+        </div>
+        <div class="col-md-4">
           <section class="card h-100">
             <div class="card-body">
               <h2 class="h6">{{ HILOS_STATUS_COPY.publishDelay }}</h2>

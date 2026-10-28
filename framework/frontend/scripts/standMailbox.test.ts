@@ -229,6 +229,25 @@ it('returns an empty listing immediately without polling', async () => {
   expect(vi.getTimerCount()).toBe(0)
 })
 
+it('preserves both delivered alternatives without deriving text from HTML', async () => {
+  vi.stubEnv('MAILPIT_URL', MAILBOX)
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(listing(['letter', ADDRESS]))
+    .mockResolvedValueOnce(
+      answer({
+        Subject: 'Status',
+        Text: 'Plain alternative',
+        HTML: '<p>HTML</p>',
+      }),
+    )
+
+  await expect(waitForMailTo(ADDRESS, 'Status')).resolves.toEqual({
+    subject: 'Status',
+    text: 'Plain alternative',
+    html: '<p>HTML</p>',
+  })
+})
+
 it('clears once at the current mailbox without decoding an empty response', async () => {
   vi.stubEnv('MAILPIT_URL', MAILBOX)
   const fetch = vi
