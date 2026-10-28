@@ -13,10 +13,17 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\View\Item\Language;
+use Hilos\Database\View\Item\LanguageName;
+use Hilos\Database\View\Item\CountryName;
+use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\DTO\I18nTestLanguageCreateDTO;
+use Hilos\I18n\DTO\I18nTestCountryCreateDTO;
+use Hilos\I18n\DTO\I18nTestLocaleCreateDTO;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
@@ -46,6 +53,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
 
     /** The test-only i18n setup is answered here because this library owns the rows of its tables. */
     public const array AGENT_COMMANDS = [
+        CliCommands::I18N_TEST_LANGUAGE_CREATE,
+        CliCommands::I18N_TEST_COUNTRY_CREATE,
+        CliCommands::I18N_TEST_LOCALE_CREATE,
+        CliCommands::I18N_TEST_LANGUAGE_CLEAR,
+        CliCommands::I18N_TEST_COUNTRY_CLEAR,
+        CliCommands::I18N_TEST_LOCALE_CLEAR,
         CliCommands::I18N_TEST_LANGUAGE_ON,
         CliCommands::I18N_TEST_LANGUAGE_OFF,
         CliCommands::I18N_TEST_LANGUAGE_DELETE,
@@ -92,6 +105,20 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
         switch ($data->command) {
+            case CliCommands::I18N_TEST_LANGUAGE_CREATE:
+                $this->handleLanguageCreateCommand($data);
+                return;
+            case CliCommands::I18N_TEST_COUNTRY_CREATE:
+                $this->handleCountryCreateCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LOCALE_CREATE:
+                $this->handleLocaleCreateCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LANGUAGE_CLEAR:
+            case CliCommands::I18N_TEST_COUNTRY_CLEAR:
+            case CliCommands::I18N_TEST_LOCALE_CLEAR:
+                $this->handleFixtureClearCommand($data);
+                return;
             case CliCommands::I18N_TEST_LANGUAGE_ON:
                 $this->handleLanguageOnCommand($data);
                 return;
@@ -449,6 +476,291 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 throw new ValidationException("Language '{$code}' is not the language names fixture.");
             }
         }
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request to create one language fixture
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleLanguageCreateCommand(CommandRequestDTO $data): void
+    {
+        try {
+            $dto = I18nTestLanguageCreateDTO::fromArray($data->payload);
+            Database::transactionStart();
+            try {
+                $language = Hilos::$db->languages->actions->create($dto->code, $dto->nativeName, $dto->rtl);
+                Hilos::$db->countryNames->actions->takeAllFromCatalog($language);
+                if ($dto->enabled) {
+                    $language->actions->switchOn();
+                }
+                Database::transactionCommit();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_ID => $language->id,
+            I18nTestCommandConstants::FIELD_CODE => $language->code,
+            I18nTestCommandConstants::FIELD_ENABLED => $language->enabled,
+        ]));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request to create one country fixture
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleCountryCreateCommand(CommandRequestDTO $data): void
+    {
+        try {
+            $dto = I18nTestCountryCreateDTO::fromArray($data->payload);
+            Database::transactionStart();
+            try {
+                $country = Hilos::$db->countries->actions->create($dto->code, $dto->currencySymbol, $dto->currencyCode);
+                if ($dto->enabled) {
+                    $country->actions->switchOn();
+                }
+                Database::transactionCommit();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_ID => $country->id,
+            I18nTestCommandConstants::FIELD_CODE => $country->code,
+            I18nTestCommandConstants::FIELD_ENABLED => $country->enabled,
+        ]));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request to create one locale fixture
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleLocaleCreateCommand(CommandRequestDTO $data): void
+    {
+        try {
+            $dto = I18nTestLocaleCreateDTO::fromArray($data->payload);
+            Database::transactionStart();
+            try {
+                if (!isset(Hilos::$db->languages[$dto->languageId])) {
+                    throw new ValidationException('Locale language does not exist');
+                }
+                if ($dto->countryId !== null && !isset(Hilos::$db->countries[$dto->countryId])) {
+                    throw new ValidationException('Locale country does not exist');
+                }
+                $code = Hilos::$db->languages[$dto->languageId]->code;
+                if ($dto->countryId !== null) {
+                    $code .= '-' . strtoupper(Hilos::$db->countries[$dto->countryId]->code);
+                }
+                $definition = BuiltInI18nCatalog::locale($code);
+                $formats = $definition === null
+                    ? new LocaleFormats(
+                        LocaleTemplates::DATE[0],
+                        LocaleTemplates::TIME[0],
+                        LocaleTemplates::NUMBER[0],
+                        LocaleTemplates::PHONE[0],
+                        LocaleTemplates::ADDRESS[0],
+                        MeasurementSystem::METRIC,
+                        LocaleTemplates::COLLATION[0],
+                    )
+                    : LocaleFormats::ofCatalog($definition);
+                $locale = Hilos::$db->locales->actions->create(
+                    Hilos::$db->languages[$dto->languageId],
+                    Hilos::$db->countries[$dto->countryId] ?? null,
+                    $formats->date,
+                    $formats->time,
+                    $formats->number,
+                    $formats->phone,
+                    $formats->address,
+                    $formats->measurement,
+                    $formats->collation,
+                );
+                if ($dto->enabled) {
+                    $locale->actions->switchOn();
+                }
+                Database::transactionCommit();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_ID => $locale->id,
+            I18nTestCommandConstants::FIELD_CODE => $locale->code,
+            I18nTestCommandConstants::FIELD_ENABLED => $locale->enabled,
+        ]));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request with exactly one code string
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleFixtureClearCommand(CommandRequestDTO $data): void
+    {
+        try {
+            $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+            $pattern = $data->command === CliCommands::I18N_TEST_LOCALE_CLEAR ? '/^[a-z]{2}(?:-[A-Z]{2})?$/D' : '/^[a-z]{2}$/D';
+            if (count($data->payload) !== 1 || !is_string($code) || preg_match($pattern, $code) !== 1) {
+                throw new ValidationException('The fixture clear command requires exactly one valid code string.');
+            }
+            switch ($data->command) {
+                case CliCommands::I18N_TEST_LANGUAGE_CLEAR:
+                    if ($code === DefaultLanguage::code()) {
+                        throw new ValidationException('The default language cannot be removed by test cleanup.');
+                    }
+                    if (isset(Hilos::$db->languages[$code])) {
+                        $this->clearLanguageFixture(Hilos::$db->languages[$code]->id);
+                    }
+                    break;
+                case CliCommands::I18N_TEST_COUNTRY_CLEAR:
+                    if (BuiltInI18nCatalog::country($code) !== null) {
+                        throw new ValidationException('A built-in country cannot be removed by test cleanup.');
+                    }
+                    if (isset(Hilos::$db->countries[$code])) {
+                        $this->clearCountryFixture(Hilos::$db->countries[$code]->id);
+                    }
+                    break;
+                case CliCommands::I18N_TEST_LOCALE_CLEAR:
+                    if ($code === DefaultLanguage::code()) {
+                        throw new ValidationException('The default locale cannot be removed by test cleanup.');
+                    }
+                    if (isset(Hilos::$db->locales[$code])) {
+                        $this->clearLocaleFixture(Hilos::$db->locales[$code]->id);
+                    }
+                    break;
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_CODE => $code,
+        ]));
+    }
+
+    /**
+     * Captures the dependent set before its base-name cascades change membership.
+     * Each base and the language keep their own transaction; the graph has no outer one.
+     *
+     * @param int $languageId Captured fixture language primary id
+     * @throws HilosException When lookup, ownership or a guarded action refuses cleanup
+     */
+    private function clearLanguageFixture(int $languageId): void
+    {
+        $languageNames = Hilos::$db->languageNames->filter(
+            static fn (LanguageName $name): bool => $name->languageId === $languageId || $name->inLanguageId === $languageId,
+        );
+        foreach ($languageNames as $name) {
+            if (isset(Hilos::$db->languageNames[$name->id])) {
+                Hilos::$db->languageNames[$name->id]->actions->delete();
+            }
+        }
+        $countryNames = Hilos::$db->countryNames->filter(static fn (CountryName $name): bool => $name->languageId === $languageId);
+        foreach ($countryNames as $name) {
+            if (isset(Hilos::$db->countryNames[$name->id])) {
+                Hilos::$db->countryNames[$name->id]->actions->delete();
+            }
+        }
+        $locales = Hilos::$db->locales->filter(static fn (Locale $locale): bool => $locale->languageId === $languageId);
+        foreach ($locales as $locale) {
+            $this->clearLocaleFixture($locale->id);
+        }
+        if (Hilos::$db->languages[$languageId]->enabled) {
+            Hilos::$db->languages[$languageId]->actions->switchOff();
+        }
+        Hilos::$db->languages[$languageId]->actions->delete();
+    }
+
+    /**
+     * Captures names before base cascades and locales before removing the country.
+     *
+     * @param int $countryId Captured fixture country primary id
+     * @throws HilosException When lookup, ownership or a guarded action refuses cleanup
+     */
+    private function clearCountryFixture(int $countryId): void
+    {
+        $names = Hilos::$db->countryNames->filter(static fn (CountryName $name): bool => $name->countryId === $countryId);
+        foreach ($names as $name) {
+            if (isset(Hilos::$db->countryNames[$name->id])) {
+                Hilos::$db->countryNames[$name->id]->actions->delete();
+            }
+        }
+        $locales = Hilos::$db->locales->filter(static fn (Locale $locale): bool => $locale->countryId === $countryId);
+        foreach ($locales as $locale) {
+            $this->clearLocaleFixture($locale->id);
+        }
+        if (Hilos::$db->countries[$countryId]->enabled) {
+            Hilos::$db->countries[$countryId]->actions->switchOff();
+        }
+        Hilos::$db->countries[$countryId]->actions->delete();
+    }
+
+    /**
+     * Only a matching country default is cleared; the country's switch is restored atomically.
+     *
+     * @param int $localeId Captured fixture locale primary id
+     * @throws HilosException When lookup, ownership or a guarded action refuses cleanup
+     */
+    private function clearLocaleFixture(int $localeId): void
+    {
+        foreach (Hilos::$db->languageNames->forLocaleId($localeId) as $name) {
+            Hilos::$db->languageNames[$name->id]->actions->delete();
+        }
+        foreach (Hilos::$db->countryNames->forLocaleId($localeId) as $name) {
+            Hilos::$db->countryNames[$name->id]->actions->delete();
+        }
+        $countryId = Hilos::$db->locales[$localeId]->countryId;
+        if ($countryId !== null && Hilos::$db->countries[$countryId]->defaultLocaleId === $localeId) {
+            $enabled = Hilos::$db->countries[$countryId]->enabled;
+            Database::transactionStart();
+            try {
+                if ($enabled) {
+                    Hilos::$db->countries[$countryId]->actions->switchOff();
+                }
+                Hilos::$db->countries[$countryId]->actions->update(
+                    Hilos::$db->countries[$countryId]->currencySymbol,
+                    Hilos::$db->countries[$countryId]->currencyCode,
+                    null,
+                );
+                if ($enabled) {
+                    Hilos::$db->countries[$countryId]->actions->switchOn();
+                }
+                Database::transactionCommit();
+            } catch (Throwable $failure) {
+                Database::transactionRollbackSilent();
+                throw $failure;
+            }
+        }
+        if (Hilos::$db->locales[$localeId]->enabled) {
+            Hilos::$db->locales[$localeId]->actions->switchOff();
+        }
+        Hilos::$db->locales[$localeId]->actions->delete();
     }
 
     /**

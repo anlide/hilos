@@ -355,17 +355,30 @@ export {
 } from './daemonRestart.js'
 
 export {
+  expectBuiltInCountryCard,
   expectCountryDeleteDescription,
   expectCountryPageHead,
   expectLanguagePageHead,
   expectDefaultLanguageHeader,
   expectDeletedCountryCard,
   expectDeletedCountryCardReloaded,
+  expectI18nActionReply,
+  expectI18nLanguageCounts,
+  expectI18nLocaleFormats,
   expectI18nName,
   expectI18nPageHead,
   expectNoOtherLanguageNames,
+  cancelI18nEditor,
+  cancelI18nName,
+  confirmI18nNameDelete,
+  expandI18nNameCorrections,
+  I18N_LOCALE_FIELDS,
+  i18nCountryUpdates,
   i18nLocaleRow,
   i18nNameRow,
+  openI18nName,
+  saveI18nName,
+  selectI18nLocaleFormats,
   watchI18nLivePages,
 } from './i18n.js'
 export {

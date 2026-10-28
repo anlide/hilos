@@ -1,7 +1,10 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
+import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
+import { clickSubmit } from './input.js'
 import type { PageErrorFrameLog } from './pageErrorFrames.js'
 import { shownByTestId } from './table.js'
+import { dismissToasts } from './toasts.js'
 
 // The countries section's page key and address, the country tabs' page keys
 // and the server's 404 catalog. This folder does not import the core, so the
@@ -75,6 +78,112 @@ export function i18nLocaleRow(page: Page, localeCode: string): Locator {
   })
 }
 
+/** Read country card/list update payloads from the existing delivery observer. */
+export function i18nCountryUpdates(
+  log: DeliveryFrameLog,
+): Record<string, unknown>[] {
+  return log.sent.flatMap(({ wire }) => {
+    const frame = deliveryObject(wire)
+    return frame.type === 'action' &&
+      (frame.action === 'hilos_i18n_country_update' ||
+        frame.action === 'hilos_i18n_country_row_update')
+      ? [deliveryObject(frame.data)]
+      : []
+  })
+}
+
+/** The seven choices carried by every locale window, including an empty Add. */
+export const I18N_LOCALE_FIELDS = [
+  'date',
+  'time',
+  'number',
+  'phone',
+  'address',
+  'measurement',
+  'collation',
+] as const
+
+/** Read all saved or draft choices through the real window controls. */
+export async function expectI18nLocaleFormats(
+  expect: Expect,
+  page: Page,
+  formats: Readonly<Record<(typeof I18N_LOCALE_FIELDS)[number], string>>,
+): Promise<void> {
+  for (const field of I18N_LOCALE_FIELDS)
+    await expect(page.getByTestId(`i18n-locale-field-${field}`)).toHaveValue(
+      formats[field],
+    )
+}
+
+/** Select every format through its native binding, including the sole collation. */
+export async function selectI18nLocaleFormats(
+  page: Page,
+  formats: Readonly<Record<(typeof I18N_LOCALE_FIELDS)[number], string>>,
+): Promise<void> {
+  for (const field of I18N_LOCALE_FIELDS)
+    await page
+      .getByTestId(`i18n-locale-field-${field}`)
+      .selectOption(formats[field])
+}
+
+/** Read exact language Overview counters, including zero and countryless state. */
+export async function expectI18nLanguageCounts(
+  expect: Expect,
+  page: Page,
+  counts: {
+    names: number
+    locales: number
+    enabled: number
+    countryless: string
+  },
+): Promise<void> {
+  for (const [field, value] of [
+    ['name-count', counts.names],
+    ['locale-count', counts.locales],
+    ['enabled-locale-count', counts.enabled],
+    ['countryless-state', counts.countryless],
+  ] as const)
+    await expect(page.getByTestId(`language-overview-${field}`)).toHaveText(
+      String(value),
+    )
+}
+
+/**
+ * After UI settlement, prove one real request and its own server acknowledgement.
+ * A new document may reuse request IDs, so correlate within its socket and time.
+ * Return the sent payload for the scenario's exact data assertions.
+ */
+export function expectI18nActionReply(
+  expect: Expect,
+  log: DeliveryFrameLog,
+  after: number,
+  action: string,
+  outcome: { message: string } | { reason: string },
+): Record<string, unknown> {
+  const requests = log.sent.slice(after).filter(({ wire }) => {
+    const request = deliveryObject(wire)
+    return request.type === 'action' && request.action === action
+  })
+  expect(requests).toHaveLength(1)
+  const sent = requests[0]!
+  const request = deliveryObject(sent.wire)
+  expect(typeof request.requestId).toBe('string')
+  const replies = log.packets
+    .filter((packet) => packet.socket === sent.socket && packet.at >= sent.at)
+    .flatMap(({ frames }) => frames.map(({ wire }) => deliveryObject(wire)))
+    .filter(
+      (wire) =>
+        wire.requestId === request.requestId &&
+        deliveryObject(wire.data).action === action,
+    )
+  expect(replies).toHaveLength(1)
+  const refusal = 'reason' in outcome
+  expect(replies[0]!.type).toBe(refusal ? 'action_error' : 'action_success')
+  expect(replies[0]!.outcome).toBe(refusal ? 'fail' : 'success')
+  expect(deliveryObject(replies[0]!.data)).toMatchObject(outcome)
+  return deliveryObject(request.data)
+}
+
 /**
  * Read the button and its own visible reason in one DOM turn. A live table
  * window can replace both nodes between separate locator attribute reads.
@@ -143,6 +252,137 @@ export async function expectI18nName(
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 }
 
+/** Open a base/correction control and await the modal's named input and focus. */
+export async function openI18nName(
+  expect: Expect,
+  page: Page,
+  subject: 'language' | 'country',
+  control: string,
+): Promise<void> {
+  await dismissToasts(page)
+  await clickSubmit(
+    expect,
+    shownByTestId(page, `i18n-${subject}-name-${control}`),
+  )
+  await expect(page.getByTestId(`i18n-${subject}-name-window`)).toBeVisible()
+  const input = page.getByTestId(`i18n-${subject}-name-input`)
+  await expect(input).toBeFocused()
+  await expect(input).toHaveAccessibleName('Name')
+  // Vue renders a supplementary note; React and Angular name the hint alone.
+  const note = page.getByTestId('i18n-language-name-note')
+  const noteCount = subject === 'language' ? await note.count() : 0
+  expect(noteCount).toBeLessThanOrEqual(1)
+  if (noteCount === 1) await expect(note).toBeVisible()
+  await expect(input).toHaveAttribute(
+    'aria-describedby',
+    subject === 'language'
+      ? noteCount === 1
+        ? 'i18n-language-name-hint i18n-language-name-note'
+        : 'i18n-language-name-hint'
+      : 'i18n-country-name-hint',
+  )
+}
+
+/** Save once, settle the own reply, and return the actual correlated payload. */
+export async function saveI18nName(
+  expect: Expect,
+  page: Page,
+  subject: 'language' | 'country',
+  log: DeliveryFrameLog,
+  operation: 'add' | 'update',
+  message: string,
+  keyboard = false,
+): Promise<Record<string, unknown>> {
+  const after = log.sent.length
+  const submit = page.getByTestId(`i18n-${subject}-name-submit`)
+  if (keyboard) {
+    await expect(submit).toBeEnabled()
+    await page.getByTestId(`i18n-${subject}-name-input`).press('Enter')
+  } else await clickSubmit(expect, submit)
+  await expect(page.getByTestId(`i18n-${subject}-name-window`)).toHaveCount(0)
+  return expectI18nActionReply(
+    expect,
+    log,
+    after,
+    `hilos_i18n_${subject}_name_${operation}`,
+    { message },
+  )
+}
+
+/** Cancel once and wait for either closure or a rendered discard confirmation. */
+export async function cancelI18nEditor(
+  expect: Expect,
+  page: Page,
+  windowId: string,
+  cancelId: string,
+): Promise<void> {
+  const editor = page.getByTestId(windowId)
+  const discard = page.getByTestId('modal-confirm-discard')
+  await clickSubmit(expect, page.getByTestId(cancelId))
+  await expect
+    .poll(
+      async () => (await editor.count()) === 0 || (await discard.isVisible()),
+    )
+    .toBe(true)
+  if (await discard.isVisible()) await clickSubmit(expect, discard)
+  await expect(discard).toHaveCount(0)
+  await expect(editor).toHaveCount(0)
+}
+
+/** Cancel a name draft and settle its optional dirty-discard confirmation. */
+export async function cancelI18nName(
+  expect: Expect,
+  page: Page,
+  subject: 'language' | 'country',
+): Promise<void> {
+  await cancelI18nEditor(
+    expect,
+    page,
+    `i18n-${subject}-name-window`,
+    `i18n-${subject}-name-cancel`,
+  )
+}
+
+/** Expand a writing language once through its native correction chevron. */
+export async function expandI18nNameCorrections(
+  expect: Expect,
+  page: Page,
+  subject: 'language' | 'country',
+  languageCode: string,
+): Promise<void> {
+  const expand = i18nNameRow(page, subject, languageCode).getByTestId(
+    /^hilos-table-expand-/,
+  )
+  await clickSubmit(expect, expand)
+  await expect(expand).toHaveAttribute('aria-expanded', 'true')
+}
+
+/** Confirm one base/correction deletion and prove its own successful reply. */
+export async function confirmI18nNameDelete(
+  expect: Expect,
+  page: Page,
+  subject: 'language' | 'country',
+  log: DeliveryFrameLog,
+  correction: boolean,
+  message: string,
+): Promise<Record<string, unknown>> {
+  const after = log.sent.length
+  await clickSubmit(
+    expect,
+    page.getByTestId(`i18n-${subject}-name-delete-confirm`),
+  )
+  await expect(
+    page.getByTestId(`i18n-${subject}-name-delete-window`),
+  ).toHaveCount(0)
+  return expectI18nActionReply(
+    expect,
+    log,
+    after,
+    `hilos_i18n_${subject}_name_${correction ? 'override_delete' : 'delete'}`,
+    { message },
+  )
+}
+
 /**
  * The section keeps one owner head and three native page links on every tab.
  * Entity cards keep their own heads and never enter this row.
@@ -206,6 +446,45 @@ export async function expectI18nPageHead(
   await expect(tabs.locator('[aria-current]')).toHaveCount(1)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
   await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+}
+
+/**
+ * Read the built-in United States card and prove keyboard activation cannot
+ * open a deletion window for a row the catalog would restore.
+ *
+ * @param expect The spec's expect.
+ * @param page The country Overview page.
+ * @param deletes The number of country delete requests sent by the browser.
+ */
+export async function expectBuiltInCountryCard(
+  expect: Expect,
+  page: Page,
+  deletes: () => number,
+): Promise<void> {
+  await expect(page.getByTestId('country-card-code')).toHaveText('us')
+  await expect(page.getByTestId('country-card-currency')).toHaveText('$ USD')
+  await expect(page.getByTestId('country-card-default-locale')).toHaveText(
+    'not chosen',
+  )
+  await expect(page.getByTestId('country-card-enabled')).toHaveText('Disabled')
+  await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
+  await expect(page.getByTestId('country-card-edit')).toBeVisible()
+  await expect(page.getByTestId('country-card-switch-on')).toBeVisible()
+  const remove = page.getByTestId('country-card-delete')
+  const reason =
+    'Cannot delete: the built-in catalog knows this country and the reflow would bring it back; switch it off instead'
+  await expect(remove).toHaveAccessibleName('Delete country')
+  await expect(remove).toHaveAttribute('aria-disabled', 'true')
+  await expect(remove).toHaveAttribute(
+    'aria-describedby',
+    'country-card-delete-reason',
+  )
+  await expect(remove).toHaveAccessibleDescription(reason)
+  await remove.focus()
+  await remove.press('Enter')
+  await remove.press('Space')
+  await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
+  expect(deletes()).toBe(0)
 }
 
 /**

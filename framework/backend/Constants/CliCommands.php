@@ -265,6 +265,24 @@ final class CliCommands
      */
     public const string LEGAL_TEST_HOLD = 'test:legal:hold';
 
+    /** Create a language fixture through its owner (test-only). */
+    public const string I18N_TEST_LANGUAGE_CREATE = 'test:i18n:language:create';
+
+    /** Create a country fixture through its owner (test-only). */
+    public const string I18N_TEST_COUNTRY_CREATE = 'test:i18n:country:create';
+
+    /** Create a locale fixture through its owner (test-only). */
+    public const string I18N_TEST_LOCALE_CREATE = 'test:i18n:locale:create';
+
+    /** Clear a language fixture and its dependent rows through its owner (test-only). */
+    public const string I18N_TEST_LANGUAGE_CLEAR = 'test:i18n:language:clear';
+
+    /** Clear a country fixture and its dependent rows through its owner (test-only). */
+    public const string I18N_TEST_COUNTRY_CLEAR = 'test:i18n:country:clear';
+
+    /** Clear a locale fixture and its dependent rows through its owner (test-only). */
+    public const string I18N_TEST_LOCALE_CLEAR = 'test:i18n:locale:clear';
+
     /**
      * Create and enable a known language through the i18n library (test-only).
      *

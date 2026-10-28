@@ -4,6 +4,115 @@ const REPLY_TIMEOUT_MS = 15_000
 const sendCommand = createStandCommandChannel({ timeoutMs: REPLY_TIMEOUT_MS })
 
 /**
+ * @typedef {object} CreatedI18nFixture
+ * @property {number} id Committed row id.
+ * @property {string} code Address assigned by the library.
+ * @property {boolean} enabled Committed switch value.
+ */
+
+/**
+ * Create a language precondition without replacing an existing row.
+ *
+ * @param {object} options
+ * @param {string} options.code Reserved language code.
+ * @param {string} options.nativeName Native language name.
+ * @param {boolean} [options.rtl=false] Whether text reads right to left.
+ * @param {boolean} [options.enabled=false] Initial switch value.
+ * @returns {Promise<CreatedI18nFixture>}
+ */
+export async function createLanguage({
+  code,
+  nativeName,
+  rtl = false,
+  enabled = false,
+}) {
+  return /** @type {Promise<CreatedI18nFixture>} */ (
+    sendCommand('test:i18n:language:create', { code, nativeName, rtl, enabled })
+  )
+}
+
+/**
+ * Create a country precondition without replacing an existing row.
+ *
+ * @param {object} options
+ * @param {string} options.code Reserved country code.
+ * @param {string} options.currencySymbol Currency symbol.
+ * @param {string} options.currencyCode Currency code.
+ * @param {boolean} [options.enabled=false] Initial switch value.
+ * @returns {Promise<CreatedI18nFixture>}
+ */
+export async function createCountry({
+  code,
+  currencySymbol,
+  currencyCode,
+  enabled = false,
+}) {
+  return /** @type {Promise<CreatedI18nFixture>} */ (
+    sendCommand('test:i18n:country:create', {
+      code,
+      currencySymbol,
+      currencyCode,
+      enabled,
+    })
+  )
+}
+
+/**
+ * Create a locale precondition using formats chosen by the library.
+ *
+ * @param {object} options
+ * @param {number} options.languageId Language row id.
+ * @param {number | null} [options.countryId=null] Country row id, or countryless.
+ * @param {boolean} [options.enabled=false] Initial switch value.
+ * @returns {Promise<CreatedI18nFixture>}
+ */
+export async function createLocale({
+  languageId,
+  countryId = null,
+  enabled = false,
+}) {
+  return /** @type {Promise<CreatedI18nFixture>} */ (
+    sendCommand('test:i18n:locale:create', { languageId, countryId, enabled })
+  )
+}
+
+/**
+ * Clear an owned language and its dependencies; an absent row is already clean.
+ *
+ * @param {string} code Owned language code.
+ * @returns {Promise<{code: string}>}
+ */
+export async function clearLanguage(code) {
+  return /** @type {Promise<{code: string}>} */ (
+    sendCommand('test:i18n:language:clear', { code })
+  )
+}
+
+/**
+ * Clear an owned country through its owner, preserving built-in guards.
+ *
+ * @param {string} code Owned country code.
+ * @returns {Promise<{code: string}>}
+ */
+export async function clearCountry(code) {
+  return /** @type {Promise<{code: string}>} */ (
+    sendCommand('test:i18n:country:clear', { code })
+  )
+}
+
+/**
+ * Clear an owned locale through its owner, preserving default-locale guards.
+ *
+ * @param {string} code Owned locale code.
+ * @returns {Promise<{code: string}>}
+ */
+export async function clearLocale(code) {
+  return /** @type {Promise<{code: string}>} */ (
+    sendCommand('test:i18n:locale:clear', { code })
+  )
+}
+
+/**
  * Make one built-in language available for a browser test through its owner.
  *
  * @param {string} code Two-letter language code from the built-in catalog.

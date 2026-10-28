@@ -10,6 +10,14 @@ final class I18nTestCommandConstants
     /** @var string Request and reply key: language code */
     public const string FIELD_CODE = 'code';
 
-    /** @var string Reply key: whether the language is enabled */
+    /** @var string Request and reply key: whether the row is enabled */
     public const string FIELD_ENABLED = 'enabled';
+
+    public const string FIELD_ID = 'id';
+    public const string FIELD_NATIVE_NAME = 'nativeName';
+    public const string FIELD_RTL = 'rtl';
+    public const string FIELD_CURRENCY_SYMBOL = 'currencySymbol';
+    public const string FIELD_CURRENCY_CODE = 'currencyCode';
+    public const string FIELD_LANGUAGE_ID = 'languageId';
+    public const string FIELD_COUNTRY_ID = 'countryId';
 }
