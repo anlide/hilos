@@ -7,7 +7,12 @@ import { deliveryObject } from './deliveryFrames.js'
 import { nextClientPaint, watchClientDocument } from './lazyBundles.js'
 import type { DeliveryFrameLog } from './deliveryFrames.js'
 import type { watchTableSearch } from './tableFocus.js'
-import { daemonOverviewSchema } from '../core/src/admin/daemon/index.js'
+import {
+  daemonNodeHeadingSchema,
+  daemonNodeOverviewSchema,
+  daemonOverviewSchema,
+  daemonWebsocketsSchema,
+} from '../core/src/admin/daemon/index.js'
 import type {
   HilosDaemonNodeHeading,
   HilosDaemonNodeOverviewData,
@@ -27,6 +32,7 @@ export const DAEMON_NODE_TABS = [
   { key: 'hilos_daemon_workers', path: '/workers', label: 'Workers' },
   { key: 'hilos_daemon_agents', path: '/agents', label: 'Agents' },
   { key: 'hilos_daemon_cron', path: '/cron', label: 'Cron' },
+  { key: 'hilos_daemon_websockets', path: '/websockets', label: 'WebSockets' },
   { key: 'hilos_daemon_http_server', path: '/http', label: 'HTTP' },
   { key: 'hilos_daemon_env', path: '/env', label: 'Environment' },
   {
@@ -614,6 +620,81 @@ export async function watchDaemonCronDisplay(
       await documentWatch.dispose()
     },
   }
+}
+
+/** Observe only this node page's own delivered count, including data-only updates. */
+export function watchDaemonWebsocketsFrames(page: Page) {
+  return watchDaemonPageFrames(page, 'hilos_daemon_websockets')
+}
+
+/** Read the last delivered WebSockets slot, preserving unknown and known zero. */
+export function readDaemonWebsocketsCount(
+  frames: readonly DaemonPageFrame[],
+): number | null {
+  for (let index = frames.length - 1; index >= 0; index--) {
+    const wire = deliveryObject(frames[index].wire)
+    const data = deliveryObject(wire.data)
+    if (
+      wire.type !== 'page_response' ||
+      data.page !== 'hilos_daemon_websockets'
+    )
+      continue
+    const payload = deliveryObject(deliveryObject(data.payload).data)
+    if (!Object.hasOwn(payload, 'websockets')) continue
+    const parsed = daemonWebsocketsSchema.safeParse(payload.websockets)
+    return parsed.success && !parsed.data.dataNode
+      ? parsed.data.connections
+      : null
+  }
+  return null
+}
+
+/** The one visible number agrees with the last own delivered report, never another page. */
+export async function expectStandaloneWebsockets(
+  expect: Expect,
+  page: Page,
+  frames: readonly DaemonPageFrame[],
+  options: { showLogLinks?: boolean } = {},
+): Promise<number> {
+  await expectDaemonNodeHead(
+    expect,
+    page,
+    'hilos_daemon_websockets',
+    'standalone',
+    options,
+  )
+  await expect
+    .poll(() => readDaemonWebsocketsCount(frames), {
+      timeout: DAEMON_SOURCE_TIMEOUT_MS,
+    })
+    .not.toBeNull()
+  const tile = page.getByTestId('hilos-daemon-websockets-tile')
+  await expect(tile).toHaveCount(1)
+  await expect(tile).toContainText('WebSocket connections now')
+  await expect(tile).not.toContainText(/sessions/i)
+  await expect(tile.locator('i.bi-plug')).toHaveAttribute('aria-hidden', 'true')
+  await expect(tile.locator('[aria-live], [role="status"]')).toHaveCount(0)
+  await expect(page.getByRole('table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-daemon-websockets-note')).toHaveText(
+    'Open on this node right now',
+  )
+  await expect
+    .poll(async () => {
+      const last = frames.at(-1)
+      const count = readDaemonWebsocketsCount(frames)
+      if (count === null) return false
+      const formatted = await page.evaluate(
+        (value) => value.toLocaleString(),
+        count,
+      )
+      return (
+        (
+          await page.getByTestId('hilos-daemon-websockets-count').innerText()
+        ).trim() === formatted && frames.at(-1) === last
+      )
+    })
+    .toBe(true)
+  return readDaemonWebsocketsCount(frames)!
 }
 
 /** Read the live HTTP listener, totals and routes in either table projection. */
@@ -1293,50 +1374,77 @@ export async function expectDaemonNodeLive(
   )
 }
 
-/** One complete answer carries identity, heading and diagnostics without a data action. */
+/** Read an own delivered slot strictly; only an explicit null means no full picture. */
+export function readDaemonNodeOverview(
+  frame: DaemonPageFrame,
+): HilosDaemonNodeOverviewData | null {
+  const wire = deliveryObject(frame.wire)
+  const data = deliveryObject(wire.data)
+  if (wire.type !== 'page_response' || data.page !== 'hilos_daemon_node')
+    throw new Error('Expected the addressed Node page response.')
+  const payload = deliveryObject(deliveryObject(data.payload).data)
+  if (!Object.hasOwn(payload, 'overview'))
+    throw new Error('Expected an own Node overview slot.')
+  const overview = daemonNodeOverviewSchema.nullable().parse(payload.overview)
+  if (overview !== null && overview.nodeId !== 'standalone')
+    throw new Error('Expected the standalone Node report.')
+  return overview
+}
+
+/** One cold answer carries the head; live data supplies the full picture when ready. */
 export async function expectDaemonNodeAnswer(
   expect: Expect,
   page: Page,
   frames: readonly DaemonPageFrame[],
 ): Promise<void> {
   await expect.poll(() => frames.length).toBeGreaterThan(0)
-  const first = frames[0].wire as {
-    data: {
-      payload: {
-        data: {
-          pageHeadOwner: unknown
-          pageTabs: unknown
-          node: unknown
-          overview: {
-            nodeId: string
-            uptimeMinutes: number | null
-            environmentComparison: {
-              divergedKeys: number | null
-              sourcesDifferKeys: number | null
-            }
-          }
-        }
-      }
-    }
-  }
-  expect(first.data.payload.data.pageHeadOwner).toBeDefined()
-  expect(first.data.payload.data.pageTabs).toBeDefined()
-  expect(first.data.payload.data.node).toBeDefined()
-  const overview = first.data.payload.data.overview
-  expect(overview.nodeId).toBe('standalone')
-  expect(overview.environmentComparison).toMatchObject({
-    divergedKeys: null,
-    sourcesDifferKeys: null,
+  const initialOverview = readDaemonNodeOverview(frames[0])
+  if (initialOverview !== null)
+    expect(initialOverview.environmentComparison).toMatchObject({
+      divergedKeys: null,
+      sourcesDifferKeys: null,
+    })
+  const first = deliveryObject(
+    deliveryObject(deliveryObject(frames[0].wire).data).payload,
+  )
+  const data = deliveryObject(first.data)
+  expect(data.pageLabel).toBe('Node')
+  expect(data.pageHeadOwner).toEqual({
+    page: 'hilos_daemon_node',
+    label: 'Node',
+    lead: 'One node: processor, memory, environment summary, and maintenance.',
+    icon: 'bi-hdd-network',
   })
-  await expect(
-    page.getByTestId('hilos-daemon-environment-differences'),
-  ).toHaveText('—')
-  // A live report can replace the first answer during these checks, including
-  // at a minute boundary. Compare the screen with the latest received report.
+  expect(data.pageTabs).toEqual(
+    DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
+  )
+  expect(daemonNodeHeadingSchema.parse(data.node)).toMatchObject({
+    clustered: false,
+    state: null,
+    silentSince: null,
+  })
+  // Validate every delivered report, including intermediate nulls and malformed
+  // updates. A report arriving during DOM reads requires another comparison.
   await expect
     .poll(async () => {
-      const latest = frames.at(-1)!.wire as typeof first
-      const minutes = latest.data.payload.data.overview.uptimeMinutes
+      const latest = frames.at(-1)!
+      const reports = frames.map(readDaemonNodeOverview)
+      const overview = reports.at(-1)!
+      const displayed = (
+        await page.getByTestId('hilos-daemon-uptime').innerText()
+      ).trim()
+      const differences = (
+        await page
+          .getByTestId('hilos-daemon-environment-differences')
+          .innerText()
+      ).trim()
+      if (overview === null) return { full: false, matches: false }
+      expect(overview.nodeId).toBe('standalone')
+      expect(overview.environmentComparison).toMatchObject({
+        divergedKeys: null,
+        sourcesDifferKeys: null,
+      })
+      const minutes = overview.uptimeMinutes
       const reported =
         minutes === null
           ? '—'
@@ -1345,12 +1453,17 @@ export async function expectDaemonNodeAnswer(
             : minutes >= 60
               ? `${Math.floor(minutes / 60)} h ${minutes % 60} min`
               : `${minutes} min`
-      const displayed = (
-        await page.getByTestId('hilos-daemon-uptime').innerText()
-      ).trim()
-      return { reported, displayed, matches: displayed === reported }
+      return {
+        full: true,
+        reported,
+        displayed,
+        matches:
+          frames.at(-1) === latest &&
+          displayed === reported &&
+          differences === '—',
+      }
     })
-    .toMatchObject({ matches: true })
+    .toMatchObject({ full: true, matches: true })
 }
 
 /** Arm before navigation; observe only the mismatch page, including its later recovery. */

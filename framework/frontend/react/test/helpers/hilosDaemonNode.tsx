@@ -1,3 +1,4 @@
+import { HilosDaemonWebsocketsPage } from '../../src/admin/daemon/HilosDaemonWebsocketsPage.js'
 import { HilosDaemonEnvPage } from '../../src/admin/daemon/HilosDaemonEnvPage.js'
 import { HilosDaemonEnvOrphansPage } from '../../src/admin/daemon/HilosDaemonEnvOrphansPage.js'
 import { HilosDaemonHttpServerPage } from '../../src/admin/daemon/HilosDaemonHttpServerPage.js'
@@ -71,7 +72,7 @@ export function nodeOverview(
   }
 }
 
-/** The catalog row, including the unbuilt WebSockets address. */
+/** The catalog row of built node pages. */
 export const nodeTabs = [
   { page: HilosPages.DAEMON_NODE, label: 'Overview' },
   { page: HilosPages.DAEMON_WORKERS, label: 'Workers' },
@@ -179,6 +180,7 @@ export function nodeHarness(
       [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkersPage,
       [HilosPages.DAEMON_AGENTS]: HilosDaemonAgentsPage,
       [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
+      [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
       [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
       [HilosPages.DAEMON_ENV]: HilosDaemonEnvPage,
       [HilosPages.DAEMON_ENV_ORPHANS]: HilosDaemonEnvOrphansPage,
@@ -219,6 +221,7 @@ export function nodeHarness(
   const answer = (
     overview: HilosDaemonNodeOverviewData | null = nodeOverview(),
     heading: HilosDaemonNodeHeading = nodeHeading(),
+    data: Record<string, unknown> = {},
   ) =>
     publish({
       node: heading,
@@ -240,6 +243,7 @@ export function nodeHarness(
       ],
       pageTabs: nodeTabs,
       pageChildren: [],
+      ...data,
     })
   const refuse = () =>
     emit('projectSignal', {

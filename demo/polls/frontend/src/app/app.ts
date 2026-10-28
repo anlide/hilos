@@ -361,6 +361,11 @@ export class App {
         (module) => module.DaemonCron,
       ),
     ),
+    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
+      import('./views/hilos/daemon/websockets.js').then(
+        (module) => module.DaemonWebsockets,
+      ),
+    ),
     [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
       import('./views/hilos/daemon/http.js').then(
         (module) => module.DaemonHttp,

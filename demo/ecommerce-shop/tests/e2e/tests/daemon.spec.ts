@@ -23,6 +23,8 @@ import {
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
   watchDaemonNodeFrames,
+  watchDaemonWebsocketsFrames,
+  expectStandaloneWebsockets,
   expectDaemonNodeLive,
   expectDaemonNodeHead,
   expectStandaloneNodeOverview,
@@ -408,6 +410,39 @@ for (const viewer of [false, true]) {
       })
       log.stop()
       await cold.close()
+    }
+  })
+}
+
+for (const viewer of [false, true]) {
+  test(`WebSockets smoke keeps Ecommerce log links absent as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+    page,
+  }) => {
+    test.slow() // Registration and direct/reloaded page subscriptions are real round trips.
+    await setAdminViewMode(viewer)
+    if (!viewer) await grantAdminToSelf(expect, page)
+    const reports = watchDaemonWebsocketsFrames(page)
+    try {
+      await gotoPage(expect, page, `${DAEMON_NODE_PATH}/websockets`, PAGE_READY)
+      await expectStandaloneWebsockets(expect, page, reports.frames, {
+        showLogLinks: false,
+      })
+      reports.frames.length = 0
+      await page.reload()
+      await expectStandaloneWebsockets(expect, page, reports.frames, {
+        showLogLinks: false,
+      })
+      await expect(
+        page.getByTestId(/^hilos-daemon-(node|worker|agent)-log/),
+      ).toHaveCount(0)
+      await page.getByTestId('hilos-page-tab-hilos_daemon_http_server').click()
+      await expectDaemonPage(expect, page, 'hilos_daemon_http_server')
+      await page.getByTestId('hilos-page-tab-hilos_daemon_websockets').click()
+      await expectStandaloneWebsockets(expect, page, reports.frames, {
+        showLogLinks: false,
+      })
+    } finally {
+      reports.stop()
     }
   })
 }

@@ -149,11 +149,6 @@ export function hilosAdminViews(): Record<string, PageView<Component>> {
     [HilosPages.BILLING_REFUNDS]: lazyPage(() =>
       import('@hilos/vue/admin/billing').then((m) => m.HilosBillingRefundsPage),
     ),
-    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
-      import('@hilos/vue/admin/daemon').then(
-        (m) => m.HilosDaemonWebsocketsPage,
-      ),
-    ),
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,

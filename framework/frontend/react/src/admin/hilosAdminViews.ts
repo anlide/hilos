@@ -145,14 +145,9 @@ export function hilosAdminViews(): Record<string, PageView<ComponentType>> {
         (m) => m.HilosBillingRefundsPage,
       ),
     ),
-    // Daemon root, Workers, Agents, Cron, HTTP, Environment and Env mismatch
+    // Daemon root, Workers, Agents, Cron, WebSockets, HTTP, Environment and Env mismatch
     // require a project context and stay outside this default map.
     // Thin wrappers bind connection/scopes, and the action lifecycle for Agents.
-    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
-      import('@hilos/react/admin/daemon').then(
-        (m) => m.HilosDaemonWebsocketsPage,
-      ),
-    ),
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,

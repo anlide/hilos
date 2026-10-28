@@ -162,10 +162,10 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_NODE)).toBe(false)
   })
 
-  it('keeps WebSockets unbuilt in every view layer', () => {
+  it('opens WebSockets in every view layer', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const unbuilt = hilosUnbuiltPages(layer)
-      expect(unbuilt.has(HilosPages.DAEMON_WEBSOCKETS)).toBe(true)
+      expect(unbuilt.has(HilosPages.DAEMON_WEBSOCKETS)).toBe(false)
     }
   })
 

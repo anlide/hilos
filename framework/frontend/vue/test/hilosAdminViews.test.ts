@@ -17,6 +17,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
   for (const key of [
     HilosPages.USERS,
     HilosPages.SETTINGS,
+    HilosPages.DAEMON_WEBSOCKETS,
     HilosPages.BACKUP,
     HilosPages.I18N,
     HilosPages.COMMUNICATIONS,

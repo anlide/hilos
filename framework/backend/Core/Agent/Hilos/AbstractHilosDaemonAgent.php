@@ -22,6 +22,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPlacementPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -62,6 +63,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
         AbstractHilosDaemonHttpServerPage::onPictureForgotten();
         AbstractHilosDaemonWorkersPage::onPictureForgotten();
         AbstractHilosDaemonNodeOverviewPage::onPictureForgotten();
+        AbstractHilosDaemonWebsocketsPage::onPictureForgotten();
         AbstractHilosDaemonEnvMismatchPage::onPictureForgotten();
         AbstractHilosDaemonPage::onPictureForgotten();
         AbstractHilosDaemonPlacementPage::onPictureForgotten();
@@ -90,6 +92,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
                     AbstractHilosDaemonHttpServerPage::onPictureChanged($before);
                     AbstractHilosDaemonWorkersPage::onPictureChanged($before);
                     AbstractHilosDaemonNodeOverviewPage::onPictureChanged($before);
+                    AbstractHilosDaemonWebsocketsPage::onPictureChanged($before);
                     AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
                     AbstractHilosDaemonPage::onPictureChanged($before);
                     AbstractHilosDaemonPlacementPage::onPictureChanged($before);

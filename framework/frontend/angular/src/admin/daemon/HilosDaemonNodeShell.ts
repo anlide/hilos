@@ -179,6 +179,7 @@ export class HilosDaemonNodeShell {
           scopePage !== HilosPages.DAEMON_WORKERS &&
           scopePage !== HilosPages.DAEMON_AGENTS &&
           scopePage !== HilosPages.DAEMON_CRON &&
+          scopePage !== HilosPages.DAEMON_WEBSOCKETS &&
           scopePage !== HilosPages.DAEMON_HTTP_SERVER &&
           scopePage !== HilosPages.DAEMON_ENV &&
           scopePage !== HilosPages.DAEMON_ENV_ORPHANS

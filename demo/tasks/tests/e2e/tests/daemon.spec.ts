@@ -27,6 +27,10 @@ import {
   holdPageReply,
   countSentFrames,
   watchDaemonNodeFrames,
+  watchDaemonWebsocketsFrames,
+  readDaemonWebsocketsCount,
+  expectStandaloneWebsockets,
+  watchHeight,
   expectDaemonNodeAnswer,
   expectDaemonNodeLive,
   DAEMON_WORKERS_PATH,
@@ -521,7 +525,10 @@ test.describe('daemon node pages', () => {
           await link.press('Enter')
           await expect(cold).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
           await expectDaemonNodeHead(expect, cold, tab.key)
-          if (tab.key !== 'hilos_daemon_env')
+          if (
+            tab.key !== 'hilos_daemon_env' &&
+            tab.key !== 'hilos_daemon_websockets'
+          )
             await expectDaemonNodeTableName(expect, cold)
           if (tab.key === 'hilos_daemon_agents') {
             const restart = shownByTestId(
@@ -636,16 +643,18 @@ test.describe('daemon node pages', () => {
       await expectStandaloneCron(expect, page)
       await page.getByTestId(DAEMON_ROOT_CRUMB).click()
       await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await gotoPage(expect, page, '/hilos/daemon/standalone/websockets')
-      await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
-        'data-state',
-        'error',
-      )
-      await expect(page.getByTestId('page-error')).toHaveAttribute(
-        'data-error-code',
-        '404',
-      )
-      await expect(page.getByTestId('hilos-admin-page')).toHaveCount(0)
+      const reports = watchDaemonWebsocketsFrames(page)
+      try {
+        await gotoPage(
+          expect,
+          page,
+          '/hilos/daemon/standalone/websockets',
+          PAGE_READY,
+        )
+        await expectStandaloneWebsockets(expect, page, reports.frames)
+      } finally {
+        reports.stop()
+      }
     })
   }
 
@@ -1184,3 +1193,113 @@ test.describe('Daemon section cold navigation', () => {
     })
   }
 })
+
+for (const viewer of [false, true]) {
+  test(`WebSockets direct entry, F5 and live count with a second browser as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+    page,
+    browser,
+  }) => {
+    // Registration, reload, route recovery and two source changes each cross the real daemon.
+    test.slow()
+    await setAdminViewMode(viewer)
+    if (!viewer) await signUpAdmin(expect, page)
+    const reports = watchDaemonWebsocketsFrames(page)
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const visitorContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
+    try {
+      const requests = countSentFrames(page, '"type":"action"')
+      const viewports = countSentFrames(page, '"type":"table_viewport"')
+      await gotoPage(expect, page, `${DAEMON_NODE_PATH}/websockets`, PAGE_READY)
+      await expectStandaloneWebsockets(expect, page, reports.frames)
+      expect(requests()).toBe(0)
+      expect(viewports()).toBe(0)
+      if (viewer)
+        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      reports.frames.length = 0
+      await page.reload()
+      await expectStandaloneWebsockets(expect, page, reports.frames)
+      await page.getByTestId('hilos-page-tab-hilos_daemon_cron').click()
+      await expectDaemonPage(expect, page, 'hilos_daemon_cron')
+      const link = page.getByTestId('hilos-page-tab-hilos_daemon_websockets')
+      await expect(link).toHaveAttribute(
+        'href',
+        `${DAEMON_NODE_PATH}/websockets`,
+      )
+      await link.focus()
+      await expect(link).toBeFocused()
+      reports.frames.length = 0
+      await link.press('Enter')
+      const baseline = await expectStandaloneWebsockets(
+        expect,
+        page,
+        reports.frames,
+      )
+      const room = await watchHeight(
+        page.getByTestId('hilos-daemon-websockets-tile'),
+      )
+      const beforeOpen = reports.frames.length
+      const visitor = await visitorContext.newPage()
+      await gotoPage(expect, visitor, '/', PAGE_READY)
+      await expect
+        .poll(
+          () => readDaemonWebsocketsCount(reports.frames.slice(beforeOpen)),
+          { timeout: 10_000 },
+        )
+        .toBeGreaterThan(baseline)
+      const opened = await expectStandaloneWebsockets(
+        expect,
+        page,
+        reports.frames,
+      )
+      expect(
+        reports.frames.slice(beforeOpen).some((frame) => {
+          const wire = frame.wire as {
+            data: { payload: Record<string, unknown> }
+          }
+          return (
+            Object.keys(wire.data.payload).length === 1 &&
+            'data' in wire.data.payload
+          )
+        }),
+      ).toBe(true)
+      await room.unchanged()
+      const beforeClose = reports.frames.length
+      await visitor.close()
+      await expect
+        .poll(
+          () => {
+            const count = readDaemonWebsocketsCount(
+              reports.frames.slice(beforeClose),
+            )
+            return count !== null && count < opened
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true)
+      await expectStandaloneWebsockets(expect, page, reports.frames)
+      await room.unchanged()
+      await gotoPage(expect, page, '/hilos/daemon/unknown-node')
+      await expect(page.getByTestId('page-error')).toHaveAttribute(
+        'data-error-code',
+        '404',
+      )
+      await expect(
+        page.getByTestId('hilos-daemon-websockets-tile'),
+      ).toHaveCount(0)
+      reports.frames.length = 0
+      await page.goBack()
+      await expectStandaloneWebsockets(expect, page, reports.frames)
+    } finally {
+      await test.info().attach('daemon-websockets-frames', {
+        body: JSON.stringify(reports.frames),
+        contentType: 'application/json',
+      })
+      reports.stop()
+      await visitorContext.close()
+      await setAdminViewMode(false)
+    }
+  })
+}

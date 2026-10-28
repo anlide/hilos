@@ -298,6 +298,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.DAEMON_CRON]: lazyPage(() =>
     import('./views/Hilos/Daemon/Cron.vue').then((m) => m.default),
   ),
+  [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Websockets.vue').then((m) => m.default),
+  ),
   [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
     import('./views/Hilos/Daemon/Http.vue').then((m) => m.default),
   ),

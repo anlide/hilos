@@ -8,14 +8,12 @@ import {
 test('answers 404 for a page the view layer has not built', async ({
   page,
 }) => {
-  for (const path of ['/hilos/roles', '/hilos/daemon/standalone/websockets']) {
-    await gotoPage(expect, page, path, PAGE_REFUSED)
-    await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    const error = page.getByTestId('page-error')
-    await expect(error).toBeVisible()
-    await expect(error).toHaveAttribute('data-error-code', '404')
-    await expect(error).toContainText('Page Not Found')
-  }
+  await gotoPage(expect, page, '/hilos/roles', PAGE_REFUSED)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  const error = page.getByTestId('page-error')
+  await expect(error).toBeVisible()
+  await expect(error).toHaveAttribute('data-error-code', '404')
+  await expect(error).toContainText('Page Not Found')
 })
 
 test('draws no card for a page the view layer has not built', async ({

@@ -236,11 +236,33 @@ the election resolves.
 Each node is an entity page at `/hilos/daemon/{nodeId}`. Its catalog entry opts
 into the shared `HilosPageHead`, drawn by `HilosDaemonNodeShell` in Vue, React,
 and Angular. The owner is the node, not the Daemon root section. One head and
-one row serve Overview, Workers, Agents, Cron, HTTP, Environment, and Env
-orphans; the row's breadcrumb ends at `nodeId`, not at the current child tab.
-WebSockets remains an unbuilt catalog key. The root's Nodes diagram links to
+one row serve Overview, Workers, Agents, Cron, WebSockets, HTTP, Environment,
+and Env orphans; the row's breadcrumb ends at `nodeId`, not at the current child
+tab. The root's Nodes diagram links to
 each addressed Node Overview; the selected node remains its own entity and
 head owner.
+
+The WebSockets child at `/hilos/daemon/{nodeId}/websockets` adds its own
+`websockets` page-data field to the shared node line. The initial answer carries
+both together; the existing node-page publisher sends data-only changes and
+retries a complete answer on a later picture fact after a failed subscription.
+The shared page guards, subscription cleanup, and viewer lease apply.
+`websockets` is non-personal wire data and is projected only from the saved
+report for the addressed node: `connections` is that report's
+`standing.connections`, or null when standing is absent or the clustered node
+is a Slave; `dataNode` is true only for a clustered Slave report. A standalone
+installation has `dataNode: false`. Before a full snapshot or addressed report
+the field is null; a silent node keeps its last reported count. The page does
+not substitute another node or use session counts. Zero is a known connection
+count.
+
+The page uses the shared Node head and draws one “WebSocket connections now”
+tile. A data node shows a dash with “Data nodes do not accept browsers”; a null
+field or count shows a dash with “Waiting for the node report”; a silent node
+shows its saved count with “At the time of the last report”; otherwise the
+count is labeled “Open on this node right now”. Its tile has a static `data-id`
+and the page has no form, actions, or table. Each project's lazy page wrapper
+supplies context; the page is not in the default `hilosAdminViews` maps.
 
 For mirror-backed node pages, `DaemonNodeHeading` carries `clustered`, `state`,
 `silentSince`, and `role`. `state` remains the picture's verdict;
@@ -517,9 +539,9 @@ node ID, including on standalone installations: workers, agents, cron,
 websockets, http, env, and env/orphans. Env mismatch stays cluster-wide, at
 `/hilos/daemon/env-mismatch`.
 
-All three SDKs build ten pages: the root, Agent placement, Node, Workers,
-Agents, Cron, HTTP, Environment, Env orphans, and Env mismatch. WebSockets
-remains unbuilt in Vue, React, and Angular. The frontend mounts these pages in
+All three SDKs build eleven pages: the root, Agent placement, Node, Workers,
+Agents, Cron, WebSockets, HTTP, Environment, Env orphans, and Env mismatch.
+The frontend mounts these pages in
 the existing chat, binance-btc-tracker, tasks, polls, and ecommerce-shop UIs.
 Online-testing has no frontend Daemon section. Ecommerce activates `DAEMON`
 without `LOGS`; its root and every node head suppress log links, as do its
@@ -599,16 +621,14 @@ Changed rows still use the existing table classifier and held viewport, even
 when the summary is unchanged; a page-wide recovery answer takes priority over
 partial publications.
 
-All three SDKs build ten pages: Overview, Agent placement, Node, Workers,
-Agents, Cron, HTTP, Environment, Env orphans and Env mismatch. WebSockets
-remains unbuilt.
+All three SDKs build eleven pages: Overview, Agent placement, Node, Workers,
+Agents, Cron, WebSockets, HTTP, Environment, Env orphans and Env mismatch.
 The frontend mounts those pages in chat, binance-btc-tracker, tasks, polls and
 ecommerce-shop. Online-testing enables the backend feature without a UI.
 Ecommerce activates `DAEMON` without `LOGS`; its root and every node head
 suppress log links, as do its Workers and Agents pages.
 
-Keep WebSockets unbuilt after this section lands: it is outside this section's
-scope. For the layer-by-layer activation recipe, read
+For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon
 section*.
 

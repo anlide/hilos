@@ -145,7 +145,7 @@ describe('HilosDaemonNodeShell', () => {
     )
   })
 
-  it.each(nodeTabs.filter((tab) => tab.page !== HilosPages.DAEMON_WEBSOCKETS))(
+  it.each(nodeTabs)(
     'marks $label by page key in the one ordered link row',
     ({ page }) => {
       const nodeId = 'node /?#%2F🌍'
@@ -161,6 +161,7 @@ describe('HilosDaemonNodeShell', () => {
         'Workers',
         'Agents',
         'Cron',
+        'WebSockets',
         'HTTP',
         'Environment',
         'Env orphans',
@@ -171,9 +172,7 @@ describe('HilosDaemonNodeShell', () => {
           (link) => link.textContent,
         ),
       ).toEqual([active.label])
-      for (const tab of nodeTabs.filter(
-        (tab) => tab.page !== HilosPages.DAEMON_WEBSOCKETS,
-      )) {
+      for (const tab of nodeTabs) {
         const link = links.find((link) => link.textContent === tab.label)!
         expect(link.getAttribute('href')).toBe(
           h.router.resolvePath(tab.page, { nodeId }),
@@ -207,6 +206,7 @@ describe('HilosDaemonNodeShell', () => {
       'Workers',
       'Agents',
       'Cron',
+      'WebSockets',
       'HTTP',
       'Env orphans',
     ])
@@ -384,7 +384,7 @@ describe('HilosDaemonNodeShell', () => {
       expect(text('h1')).toEqual(['n1'])
       expect(
         document.querySelectorAll('nav[aria-label="Node pages"] a'),
-      ).toHaveLength(7)
+      ).toHaveLength(8)
       expect(el('hilos-daemon-environment-link')!.textContent).toBe(
         'On the environment page',
       )

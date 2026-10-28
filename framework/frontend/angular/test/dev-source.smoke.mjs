@@ -69,7 +69,7 @@ for (const [input] of inputs) {
 }
 for (const required of [
   'angular/src/admin/hilosAdminViews.ts',
-  'angular/src/admin/daemon/HilosDaemonPage.ts',
+  'angular/src/admin/billing/HilosBillingPage.ts',
   'angular/src/admin/communications/HilosCommunicationsPage.ts',
 ]) {
   assert.ok(owners.has(required), `Missing lazy source input: ${required}`)
@@ -126,5 +126,5 @@ for (const [name, output] of scripts) {
 }
 assert.equal(creations, 1, 'Expected exactly one HilosRouter token creation')
 console.log(
-  `Angular dev source graph: ${owners.size} SDK inputs, ${files.size} client scripts, one HilosRouter token; lazy daemon and communications verified`,
+  `Angular dev source graph: ${owners.size} SDK inputs, ${files.size} client scripts, one HilosRouter token; lazy billing and communications verified`,
 )

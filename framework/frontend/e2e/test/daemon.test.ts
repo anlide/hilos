@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import type { Expect, Page } from '@playwright/test'
 
-import { readDaemonCronMoment, readDaemonSectionOverview } from '../daemon.js'
+import {
+  DAEMON_NODE_TABS,
+  expectDaemonNodeAnswer,
+  readDaemonCronMoment,
+  readDaemonNodeOverview,
+  readDaemonSectionOverview,
+  readDaemonWebsocketsCount,
+  type DaemonPageFrame,
+} from '../daemon.js'
 import { createSocketFrameReader } from '../socket.js'
 
 const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
@@ -122,6 +131,148 @@ describe('real Cron moment evidence', () => {
   })
 })
 
+describe('cold Node answer and its delivered live overview', () => {
+  const overview = {
+    nodeId: 'standalone',
+    online: true,
+    workers: [],
+    workerRestarts24h: 0,
+    uptimeMinutes: 0,
+    measurements: null,
+    standing: { sessions: 0, connections: 0 },
+    environment: null,
+    environmentComparison: {
+      answeringNodes: 1,
+      divergedKeys: null,
+      sourcesDifferKeys: null,
+    },
+  }
+  const head = {
+    pageLabel: 'Node',
+    pageHeadOwner: {
+      page: 'hilos_daemon_node',
+      label: 'Node',
+      lead: 'One node: processor, memory, environment summary, and maintenance.',
+      icon: 'bi-hdd-network',
+    },
+    pageTabs: DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
+    node: { clustered: false, state: null, silentSince: null, role: null },
+  }
+  function frame(data: Record<string, unknown>): DaemonPageFrame {
+    const wire = {
+      type: 'page_response',
+      data: { page: 'hilos_daemon_node', payload: { data } },
+    }
+    return { type: 'page_response', raw: JSON.stringify(wire), wire }
+  }
+  function page(read: (id: string) => string): Page {
+    return {
+      getByTestId: (id: string) => ({ innerText: async () => read(id) }),
+    } as unknown as Page
+  }
+  const check = (browser: Page, frames: DaemonPageFrame[]) =>
+    expectDaemonNodeAnswer(expect as unknown as Expect, browser, frames)
+
+  it('waits past an explicit cold null for a full live report and preserves known zero', async () => {
+    const frames = [frame({ ...head, overview: null })]
+    let reads = 0
+    const browser = page((id) => {
+      reads++
+      if (reads === 2) frames.push(frame({ overview }))
+      return id === 'hilos-daemon-uptime' ? '0 min' : '—'
+    })
+    await check(browser, frames)
+    expect(reads).toBeGreaterThan(2)
+    expect(frames).toHaveLength(2)
+    expect(readDaemonNodeOverview(frames[0])).toBeNull()
+    expect(readDaemonNodeOverview(frames[1])?.uptimeMinutes).toBe(0)
+  })
+
+  it.each([
+    [0, '0 min'],
+    [null, '—'],
+    [61, '1 h 1 min'],
+    [1501, '1 d 1 h 1 min'],
+  ])('accepts a complete first reply with uptime %s', async (minutes, text) => {
+    const frames = [
+      frame({ ...head, overview: { ...overview, uptimeMinutes: minutes } }),
+    ]
+    await check(
+      page((id) => (id === 'hilos-daemon-uptime' ? text : '—')),
+      frames,
+    )
+    expect(frames).toHaveLength(1)
+  })
+
+  it('rechecks the latest report after DOM reads, including a new null before recovery', async () => {
+    const frames = [frame({ ...head, overview })]
+    let reads = 0
+    const browser = page((id) => {
+      reads++
+      if (reads === 2) frames.push(frame({ overview: null }))
+      if (reads === 4)
+        frames.push(frame({ overview: { ...overview, uptimeMinutes: 1 } }))
+      return id === 'hilos-daemon-uptime'
+        ? reads <= 4
+          ? '0 min'
+          : '1 min'
+        : '—'
+    })
+    await check(browser, frames)
+    expect(reads).toBeGreaterThan(4)
+    expect(frames).toHaveLength(3)
+  })
+
+  it.each([
+    {},
+    { overview: undefined },
+    { overview: {} },
+    { overview: { ...overview, nodeId: 'other' } },
+    { overview: { ...overview, uptimeMinutes: -1 } },
+    { overview: { ...overview, environmentComparison: null } },
+    { overview: { ...overview, standing: { connections: 0 } } },
+  ])(
+    'refuses missing or malformed slots instead of treating them as null %#',
+    (data) => {
+      expect(() => readDaemonNodeOverview(frame(data))).toThrow()
+    },
+  )
+
+  it('refuses a wrong page or envelope even when its slot is null', () => {
+    const source = frame({ overview: null })
+    for (const wire of [
+      {
+        type: 'table_window',
+        data: {
+          page: 'hilos_daemon_node',
+          payload: { data: { overview: null } },
+        },
+      },
+      {
+        type: 'page_response',
+        data: {
+          page: 'hilos_daemon_websockets',
+          payload: { data: { overview: null } },
+        },
+      },
+    ]) {
+      expect(() => readDaemonNodeOverview({ ...source, wire })).toThrow()
+    }
+  })
+
+  it.each(['pageLabel', 'pageHeadOwner', 'pageTabs', 'node'])(
+    'requires initial %s even with a legal cold null',
+    async (field) => {
+      await expect(
+        check(
+          page(() => '—'),
+          [frame({ ...head, [field]: undefined, overview: null })],
+        ),
+      ).rejects.toThrow()
+    },
+  )
+})
+
 describe('Daemon section browser projection', () => {
   const overview = {
     clustered: true,
@@ -170,5 +321,63 @@ describe('Daemon section browser projection', () => {
       }),
     )[0]!
     expect(() => readDaemonSectionOverview(frame)).toThrow()
+  })
+})
+
+describe('WebSockets evidence belongs to the last own delivered payload', () => {
+  function frame(
+    data: Record<string, unknown>,
+    page = 'hilos_daemon_websockets',
+  ): DaemonPageFrame {
+    const wire = { type: 'page_response', data: { page, payload: { data } } }
+    return { type: 'page_response', raw: JSON.stringify(wire), wire }
+  }
+  it('preserves zero and reads live count updates without taking another page standing', () => {
+    const frames = [frame({ websockets: { connections: 12, dataNode: false } })]
+    expect(readDaemonWebsocketsCount(frames)).toBe(12)
+    frames.push(frame({ websockets: { connections: 0, dataNode: false } }))
+    frames.push(
+      frame(
+        { websockets: { connections: 999, dataNode: false } },
+        'hilos_daemon_node',
+      ),
+    )
+    frames.push(frame({ node: { state: 'leader' } }))
+    expect(readDaemonWebsocketsCount(frames)).toBe(0)
+  })
+  it.each([
+    null,
+    { connections: null, dataNode: false },
+    { connections: 9, dataNode: true },
+    { connections: -1, dataNode: false },
+    { connections: 1.5, dataNode: false },
+    { connections: 3, dataNode: false, extra: true },
+  ])(
+    'does not fall back to an earlier count after the last slot became unknown %#',
+    (websockets) => {
+      const frames = [
+        frame({ websockets: { connections: 12, dataNode: false } }),
+        frame({ websockets }),
+      ]
+      expect(readDaemonWebsocketsCount(frames)).toBeNull()
+    },
+  )
+  it('does not accept a page-window count as a report', () => {
+    const report = frame({ websockets: { connections: 5, dataNode: false } })
+    const window = {
+      ...report,
+      type: 'table_window' as const,
+      wire: {
+        type: 'table_window',
+        data: {
+          page: 'hilos_daemon_websockets',
+          payload: {
+            data: { websockets: { connections: 99, dataNode: false } },
+          },
+        },
+      },
+    }
+    expect(readDaemonWebsocketsCount([report, window])).toBe(5)
+    expect(readDaemonWebsocketsCount([])).toBeNull()
   })
 })

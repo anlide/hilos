@@ -57,7 +57,7 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('n1')
   })
 
-  it.each(nodeTabs.filter((tab) => tab.page !== HilosPages.DAEMON_WEBSOCKETS))(
+  it.each(nodeTabs)(
     'marks $label by its page key in one link row',
     async ({ page }) => {
       const nodeId = 'node /?#%2F🌍'
@@ -71,6 +71,7 @@ describe('HilosDaemonNodeShell', () => {
         'Workers',
         'Agents',
         'Cron',
+        'WebSockets',
         'HTTP',
         'Environment',
         'Env orphans',
@@ -78,9 +79,7 @@ describe('HilosDaemonNodeShell', () => {
       expect(nav.findAll('[aria-current="page"]')).toHaveLength(1)
       const active = nodeTabs.find((tab) => tab.page === page)!
       expect(nav.get('[aria-current="page"]').text()).toBe(active.label)
-      for (const tab of nodeTabs.filter(
-        (tab) => tab.page !== HilosPages.DAEMON_WEBSOCKETS,
-      )) {
+      for (const tab of nodeTabs) {
         const link = nav.findAll('a').find((link) => link.text() === tab.label)!
         expect(link.element.tagName).toBe('A')
         expect(link.attributes('href')).toBe(
@@ -113,7 +112,14 @@ describe('HilosDaemonNodeShell', () => {
         .get('nav[aria-label="Node pages"]')
         .findAll('a')
         .map((link) => link.text()),
-    ).toEqual(['Overview', 'Workers', 'Agents', 'HTTP', 'Env orphans'])
+    ).toEqual([
+      'Overview',
+      'Workers',
+      'Agents',
+      'WebSockets',
+      'HTTP',
+      'Env orphans',
+    ])
     expect(h.view.find(id('log')).exists()).toBe(false)
     expect(h.view.find('[data-id="hilos-page-head-action"]').exists()).toBe(
       false,
@@ -359,7 +365,7 @@ describe('HilosDaemonNodeShell', () => {
       await nextTick()
       expect(hilosAdminAccess.get()).toBe('view')
       expect(h.view.get('h1').text()).toBe('n1')
-      expect(h.view.findAll('nav[aria-label="Node pages"] a')).toHaveLength(7)
+      expect(h.view.findAll('nav[aria-label="Node pages"] a')).toHaveLength(8)
       expect(
         h.view.get('[data-id="hilos-daemon-environment-link"]').text(),
       ).toBe('On the environment page')

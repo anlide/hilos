@@ -153,12 +153,7 @@ export function hilosAdminViews(): Record<string, PageView<Type<unknown>>> {
         (m) => m.HilosBillingRefundsPage,
       ),
     ),
-    // The seven built Daemon pages require a project context and mount directly.
-    [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
-      import('@hilos/angular/admin/daemon').then(
-        (m) => m.HilosDaemonWebsocketsPage,
-      ),
-    ),
+    // Built Daemon pages require a project context and mount directly.
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,

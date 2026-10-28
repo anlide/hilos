@@ -37,6 +37,7 @@ const currentSource = computedSignal(() => {
     page !== HilosPages.DAEMON_WORKERS &&
     page !== HilosPages.DAEMON_AGENTS &&
     page !== HilosPages.DAEMON_CRON &&
+    page !== HilosPages.DAEMON_WEBSOCKETS &&
     page !== HilosPages.DAEMON_HTTP_SERVER &&
     page !== HilosPages.DAEMON_ENV &&
     page !== HilosPages.DAEMON_ENV_ORPHANS

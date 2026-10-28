@@ -302,6 +302,9 @@ const daemonNodeValues = [
   'daemonNodeOverviewSchema',
   'readHilosDaemonNodeOverview',
   'readHilosDaemonEnvOrphansPage',
+  'DAEMON_WEBSOCKETS_DATA',
+  'daemonWebsocketsSchema',
+  'readHilosDaemonWebsockets',
 ]
 /** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
 const statusValues = [
@@ -968,6 +971,7 @@ describe('core public entries', () => {
         'HilosAnalyticsPerson',
         'HilosDaemonEnvOrphansPageState',
         'HilosDaemonNodeOverviewData',
+        'HilosDaemonWebsocketsData',
         'HilosProfileDeviceKind',
         ...i18nOverviewTypes,
         ...pageHeadTypes,

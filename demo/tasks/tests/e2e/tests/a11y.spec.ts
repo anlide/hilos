@@ -14,6 +14,8 @@ import {
   DAEMON_NODE_TABS,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
+  expectStandaloneWebsockets,
+  watchDaemonWebsocketsFrames,
   expectLanguagePageHead,
   expectPasswordVisibility,
   openProfileTimeZone,
@@ -440,20 +442,27 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 }) => {
   // Each addressed page has a real subscription and keyboard navigation.
   test.slow()
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, DAEMON_NODE_PATH)
-  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
-  for (const tab of DAEMON_NODE_TABS.slice(1)) {
-    const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
-    await link.focus()
-    await expect(link).toBeFocused()
-    await link.press('Enter')
-    await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
-    await expectDaemonNodeHead(expect, page, tab.key)
-    if (tab.key !== 'hilos_daemon_env')
-      await expectDaemonNodeTableName(expect, page)
-    await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+  const reports = watchDaemonWebsocketsFrames(page)
+  try {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, DAEMON_NODE_PATH)
     await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+    for (const tab of DAEMON_NODE_TABS.slice(1)) {
+      const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
+      await link.focus()
+      await expect(link).toBeFocused()
+      await link.press('Enter')
+      await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+      await expectDaemonNodeHead(expect, page, tab.key)
+      if (tab.key === 'hilos_daemon_websockets') {
+        await expectStandaloneWebsockets(expect, page, reports.frames)
+      } else if (tab.key !== 'hilos_daemon_env')
+        await expectDaemonNodeTableName(expect, page)
+      await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+      await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+    }
+  } finally {
+    reports.stop()
   }
 })
 

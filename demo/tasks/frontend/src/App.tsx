@@ -119,6 +119,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.DAEMON_AGENTS]: lazyPage(() =>
     import('./views/Hilos/Daemon/Agents.js').then((m) => m.default),
   ),
+  [HilosPages.DAEMON_WEBSOCKETS]: lazyPage(() =>
+    import('./views/Hilos/Daemon/Websockets.js').then((m) => m.default),
+  ),
   [HilosPages.DAEMON_HTTP_SERVER]: lazyPage(() =>
     import('./views/Hilos/Daemon/Http.js').then((m) => m.default),
   ),
