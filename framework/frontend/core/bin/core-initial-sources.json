@@ -380,8 +380,8 @@
     "outputSha256": "f56e8e58b2340dda19fc3e53a3db118bfe47b7b5a2f54d3c39a9773d420bd647"
   },
   "src/profile/profileSignInMethods.ts": {
-    "sourceSha256": "ccf5b47e1b12f7c9a7de7742eb26b2ada4bc08da8dbe7a493b1bb76aea109733",
-    "outputSha256": "bb21d514cf68cb696ebb19fae310d031ec596eadbb9809270eeb2a7cc86b41e8"
+    "sourceSha256": "04a0fe1f5a0b5f5b0da9a94e98994df3caa58f33a00de628f29241a6aa519b23",
+    "outputSha256": "b36bd14121d45fb8e98ae3bd1fcd80f275d584d55e578660bb9f351116d16ff9"
   },
   "src/profile/secondFactor.ts": {
     "sourceSha256": "735c333e251cb929fa502e4e3946e74fdd064b6b324eac843e100146817d590f",

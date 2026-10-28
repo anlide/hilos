@@ -29,6 +29,10 @@ import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
 
 import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
+import {
+  hilosAuthMethodIcon,
+  hilosProfileSignInIcon,
+} from '../auth/authMethodIcons.js'
 import HilosActionError from '../HilosActionError.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
@@ -386,6 +390,11 @@ onUnmounted(() => {
         data-id="profile-identity-item"
         :data-identity-key="method.key"
       >
+        <i
+          :class="hilosProfileSignInIcon(method)"
+          class="fs-5 text-body-secondary flex-shrink-0"
+          aria-hidden="true"
+        ></i>
         <div class="flex-grow-1 text-break">
           <div class="fw-semibold" data-id="identity-type">
             {{ title(method) }}
@@ -400,23 +409,12 @@ onUnmounted(() => {
           >
             {{ subtitles.get(method.key) }}
           </div>
-          <span
-            v-if="method.verified"
-            class="badge text-bg-success"
-            data-id="identity-verified"
-            >Verified</span
-          >
-          <span
-            v-else
-            class="badge text-bg-secondary"
-            data-id="identity-unverified"
-            >Unverified</span
-          >
           <div
             v-if="!method.canUnlink"
             class="small text-warning-emphasis"
             data-id="identity-unlink-blocked"
           >
+            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
             {{ HILOS_PROFILE_SIGN_IN_COPY.onlyMethod }}
           </div>
         </div>
@@ -447,7 +445,8 @@ onUnmounted(() => {
       :disabled="addOpening && addPressed !== 'add'"
       data-id="profile-sign-in-add"
       @click="openAdd()"
-      >Add a way to sign in</LoadingButton
+      ><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add a way to sign
+      in</LoadingButton
     >
 
     <HilosModal
@@ -578,7 +577,8 @@ onUnmounted(() => {
                   class="btn btn-outline-secondary"
                   ><span class="d-flex align-items-center gap-3 text-start"
                     ><i
-                      class="bi bi-box-arrow-in-right fs-5"
+                      :class="hilosAuthMethodIcon(way.key)"
+                      class="fs-5"
                       aria-hidden="true"
                     ></i
                     ><span
@@ -666,7 +666,8 @@ onUnmounted(() => {
                   @click="flow.chooseProvider(way.key)"
                   ><span class="d-flex align-items-center gap-3 text-start"
                     ><i
-                      class="bi bi-box-arrow-in-right fs-5"
+                      :class="hilosAuthMethodIcon(way.key)"
+                      class="fs-5"
                       aria-hidden="true"
                     ></i
                     ><span

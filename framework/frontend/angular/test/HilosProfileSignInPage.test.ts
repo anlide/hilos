@@ -85,6 +85,67 @@ const MAGIC_LINK = resolveHilosProfileSignInMethods(
   [],
 )
 const LINK_AND_PASSKEY = [...MAGIC_LINK, ...PASSKEY_ONLY]
+const PROFILE_METHODS = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 10,
+      type: 'password',
+      provider: null,
+      identifier: 'a@example.test',
+      verified: true,
+    },
+    {
+      id: 11,
+      type: 'sms',
+      provider: null,
+      identifier: '+15551234567',
+      verified: true,
+    },
+    {
+      id: 12,
+      type: 'sms',
+      provider: null,
+      identifier: '+15557654321',
+      verified: false,
+    },
+    {
+      id: 13,
+      type: 'magic_link',
+      provider: null,
+      identifier: 'b@example.test',
+      verified: true,
+    },
+    {
+      id: 14,
+      type: 'oauth',
+      provider: 'oauth:github',
+      identifier: 'octocat',
+      verified: true,
+    },
+    {
+      id: 15,
+      type: 'oauth',
+      provider: 'oauth:google',
+      identifier: 'c@example.test',
+      verified: true,
+    },
+    {
+      id: 16,
+      type: 'oauth',
+      provider: 'oauth:other',
+      identifier: 'other-account',
+      verified: false,
+    },
+    {
+      id: 17,
+      type: 'passkey',
+      provider: null,
+      identifier: 'opaque',
+      verified: true,
+    },
+  ],
+  [],
+)
 
 /** Feed the framework list and normalized identities to the page scope. */
 function setMethods(
@@ -231,6 +292,109 @@ function setup(
 afterEach(() => {
   vi.useRealTimers()
 })
+
+it('renders each profile method with its glyph and normalized subtitle', () => {
+  const { node } = setup(NO_STEP, PROFILE_METHODS, [
+    ...OFFERED,
+    { key: 'oauth:google', name: 'Google' },
+    { key: 'oauth:other', name: 'Other' },
+  ])
+  const rows = [
+    ['10', 'bi-lock', 'Password', 'a@example.test'],
+    ['11', 'bi-phone', 'Phone', '+15551234567 · verified'],
+    ['12', 'bi-phone', 'Phone', '+15557654321'],
+    ['13', 'bi-envelope', 'Email link', 'b@example.test'],
+    ['14', 'bi-github', 'GitHub', 'octocat'],
+    ['15', 'bi-google', 'Google', 'c@example.test'],
+    ['16', 'bi-box-arrow-in-right', 'Other', 'other-account'],
+  ] as const
+  for (const [key, glyph, title, subtitle] of rows) {
+    const row = fixtureRow(node, key)
+    expect(Array.from(row.querySelector('i')!.classList).sort()).toEqual(
+      ['bi', glyph, 'fs-5', 'text-body-secondary', 'flex-shrink-0'].sort(),
+    )
+    expect(
+      row.querySelector('[data-id="identity-type"]')?.textContent?.trim(),
+    ).toBe(title)
+    expect(
+      row.querySelector('[data-id="identity-identifier"]')?.textContent?.trim(),
+    ).toBe(subtitle)
+    expect(row.querySelector('[data-id="identity-verified"]')).toBeNull()
+    expect(row.querySelector('[data-id="identity-unverified"]')).toBeNull()
+  }
+  const passkey = fixtureRow(node, '17')
+  expect(passkey.querySelector('i')?.className).toContain('bi-fingerprint')
+  expect(
+    passkey
+      .querySelector('[data-id="identity-passkey-added"]')
+      ?.textContent?.trim(),
+  ).toBe('Passkey')
+  const add = node('profile-sign-in-add')
+  expect(add.querySelector('i')?.className).toBe('bi bi-plus-lg me-1')
+  expect(add.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+  expect(add.textContent).toContain('Add a way to sign in')
+})
+
+it('uses provider glyphs in the live chooser and its inert twin', async () => {
+  const { fixture, node } = setup(NO_STEP, MAGIC_LINK, [
+    ...OFFERED,
+    { key: 'oauth:google', name: 'Google' },
+    { key: 'oauth:other', name: 'Other' },
+  ])
+  node('profile-sign-in-add').click()
+  await settle(fixture)
+  const twin = (fixture.nativeElement as HTMLElement).querySelector(
+    '[data-id="profile-sign-in-add-modal"] .invisible[inert].d-flex',
+  )!
+  for (const [provider, glyph] of [
+    ['github', 'bi-github'],
+    ['google', 'bi-google'],
+    ['other', 'bi-box-arrow-in-right'],
+  ]) {
+    const live = node(`profile-oauth-link-oauth:${provider}`)
+    const copy = Array.from(twin.querySelectorAll('span.btn')).find((choice) =>
+      choice.textContent?.includes(
+        provider === 'github'
+          ? 'Continue with GitHub'
+          : provider === 'google'
+            ? 'Continue with Google'
+            : 'Continue with Other',
+      ),
+    )!
+    for (const choice of [live, copy]) {
+      expect(Array.from(choice.querySelector('i')!.classList).sort()).toEqual(
+        ['bi', glyph, 'fs-5'].sort(),
+      )
+      expect(choice.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
+    }
+  }
+})
+
+it('keeps Change available and explains why the sole password cannot be removed', () => {
+  const { node, setMethods } = setup()
+  setMethods(PROFILE_METHODS.slice(0, 1))
+  const change = node('profile-password-change') as HTMLButtonElement
+  const remove = node('identity-unlink') as HTMLButtonElement
+  expect(change.disabled).toBe(false)
+  expect(remove.disabled).toBe(true)
+  expect(node('identity-unlink-blocked').textContent).toContain(
+    'You cannot remove your only login method',
+  )
+  expect(node('identity-unlink-blocked').querySelector('i')?.className).toBe(
+    'bi bi-exclamation-triangle me-1',
+  )
+})
+
+function fixtureRow(
+  node: (id: string) => HTMLElement,
+  key: string,
+): HTMLElement {
+  return node('profile-identities-list').querySelector(
+    `[data-identity-key="${key}"]`,
+  )!
+}
 
 /**
  * Let the answers the page awaits arrive, and draw what they changed.

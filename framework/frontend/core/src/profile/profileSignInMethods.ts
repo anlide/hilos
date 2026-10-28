@@ -209,6 +209,8 @@ export function hilosProfileSignInTitle(
 export function hilosProfileSignInSubtitle(
   method: HilosProfileSignInMethod,
 ): string {
+  if (method.type === SMS_METHOD_KEY && method.verified)
+    return `${method.identifier} · verified`
   if (method.type !== 'passkey') return method.identifier
   const addedAt =
     method.addedAt === null

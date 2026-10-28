@@ -1276,6 +1276,9 @@ describe('HilosAuthSurface', () => {
     })
     await flush()
 
+    expect(
+      byId('auth-icon-magic-link')?.querySelector('i')?.className,
+    ).toContain('bi-envelope')
     fireEvent.click(byId('auth-icon-magic-link') as Element)
     await flush()
 
@@ -2294,6 +2297,9 @@ describe('HilosAuthSurface', () => {
   it('answers a provider trip that failed with a refusal on the form', async () => {
     const world = oauthTripWorld()
     render(<HilosAuthSurface context={world.context} />)
+    expect(
+      byId('auth-icon-oauth-github')?.querySelector('i')?.className,
+    ).toContain('bi-github')
     fireEvent.click(byId('auth-icon-oauth-github') as Element)
     await flush()
     // Parked on the trip: the waiting screen, not the field.

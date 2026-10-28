@@ -1337,6 +1337,9 @@ describe('HilosAuthSurface', () => {
     await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
     await flush(wrapper)
 
+    expect(
+      wrapper.get('[data-id="auth-icon-magic-link"]').get('i').classes(),
+    ).toContain('bi-envelope')
     await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
     await flush(wrapper)
 
@@ -2685,6 +2688,9 @@ describe('HilosAuthSurface', () => {
     const wrapper = mount(HilosAuthSurface, {
       props: { context: world.context },
     })
+    expect(
+      wrapper.get('[data-id="auth-icon-oauth-github"]').get('i').classes(),
+    ).toContain('bi-github')
     await wrapper.find('[data-id="auth-icon-oauth-github"]').trigger('click')
     await flush(wrapper)
     // Parked on the trip: the waiting screen, not the field.

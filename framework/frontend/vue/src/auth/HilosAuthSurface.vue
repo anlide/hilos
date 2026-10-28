@@ -57,11 +57,9 @@ import {
   hilosTimeZone,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
-  MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
-  PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
   sessionAuthMethods,
@@ -90,6 +88,7 @@ import HilosModal from '../HilosModal.vue'
 import HilosQrCode from '../HilosQrCode.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
+import { hilosAuthMethodIcon } from './authMethodIcons.js'
 import HilosAuthStepTail from './HilosAuthStepTail.vue'
 import HilosCookiesRefused from './HilosCookiesRefused.vue'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
@@ -116,19 +115,9 @@ const context = props.context
 const authActions = createAuthActions(context)
 const oauth = createOAuthLogin(context)
 
-// Bootstrap icons per method and per channel. The view owns both maps and the
-// core contract carries neither: an icon is a property of this surface's design
-// language, and a method the framework knows about must not be able to
-// prescribe one. An unlisted key still renders — with the generic glyph — which
-// is what keeps the surface agnostic about the set it is given.
-const METHOD_ICONS: Record<string, string> = {
-  [PASSKEY_FLOW_METHOD.key]: 'bi bi-fingerprint',
-  [MAGIC_LINK_FLOW_METHOD.key]: 'bi bi-envelope',
-  'oauth:github': 'bi bi-github',
-  'oauth:google': 'bi bi-google',
-}
-
-/** The glyph an unlisted method or channel key falls back to. */
+// Bootstrap channel icons belong to this view; the core channel descriptors
+// carry no presentation data. Unlisted channels still render a generic glyph.
+/** The glyph an unlisted channel key falls back to. */
 const GENERIC_ICON = 'bi bi-box-arrow-in-right'
 
 const CHANNEL_ICONS: Record<string, string> = {
@@ -851,7 +840,7 @@ function channelDataId(key: string): string {
  * @returns The Bootstrap icon classes.
  */
 function methodIcon(key: string): string {
-  return METHOD_ICONS[key] ?? GENERIC_ICON
+  return hilosAuthMethodIcon(key)
 }
 
 /**

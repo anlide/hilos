@@ -47,6 +47,30 @@ describe('profile sign-in projection', () => {
       ),
     ).toBe(true)
   })
+  it.each([
+    { verified: true, subtitle: '+15551234567 · verified' },
+    { verified: false, subtitle: '+15551234567' },
+  ])(
+    'formats a phone subtitle with verified=$verified',
+    ({ verified, subtitle }) => {
+      const [method] = resolveHilosProfileSignInMethods(
+        [{ ...password, type: 'sms', identifier: '+15551234567', verified }],
+        [],
+      )
+      expect(method.verified).toBe(verified)
+      expect(hilosProfileSignInSubtitle(method)).toBe(subtitle)
+    },
+  )
+  it.each(['password', 'magic_link', 'oauth'])(
+    'keeps the identifier subtitle for a verified %s method',
+    (type) => {
+      const [method] = resolveHilosProfileSignInMethods(
+        [{ ...password, type }],
+        [],
+      )
+      expect(hilosProfileSignInSubtitle(method)).toBe(password.identifier)
+    },
+  )
   it('formats enrollment across midnight and falls back for an absent or invalid moment', () => {
     const [method] = resolveHilosProfileSignInMethods(
       [key],

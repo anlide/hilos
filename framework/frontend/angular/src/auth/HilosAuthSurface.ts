@@ -72,8 +72,6 @@ import {
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
-  MAGIC_LINK_FLOW_METHOD,
-  PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
   sessionAuthMethods,
@@ -121,6 +119,7 @@ import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { hilosSignal } from '../hilosSignal.js'
 import { HilosCookiesRefused } from './HilosCookiesRefused.js'
+import { hilosAuthMethodIcon } from './authMethodIcons.js'
 import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
@@ -154,18 +153,6 @@ const EMPTY_FORM: AuthFlowForm = {
 }
 
 const IDLE_DETECTION: DetectionState = { status: 'idle', result: null }
-
-// Bootstrap icons per method and per channel. The view owns both maps and the
-// core contract carries neither: an icon is a property of this surface's design
-// language, and a method the framework knows about must not be able to
-// prescribe one. An unlisted key still renders — with the generic glyph — which
-// is what keeps the surface agnostic about the set it is given.
-const METHOD_ICONS: Record<string, string> = {
-  [PASSKEY_FLOW_METHOD.key]: 'bi bi-fingerprint',
-  [MAGIC_LINK_FLOW_METHOD.key]: 'bi bi-envelope',
-  'oauth:github': 'bi bi-github',
-  'oauth:google': 'bi bi-google',
-}
 
 /** The glyph an unlisted method or channel key falls back to. */
 const GENERIC_ICON = 'bi bi-box-arrow-in-right'
@@ -3088,7 +3075,7 @@ export class HilosAuthSurface {
    * @returns The Bootstrap icon classes.
    */
   protected methodIcon(key: string): string {
-    return METHOD_ICONS[key] ?? GENERIC_ICON
+    return hilosAuthMethodIcon(key)
   }
 
   /**

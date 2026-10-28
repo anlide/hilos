@@ -25,6 +25,10 @@ import {
 } from '@hilos/core/base'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
+import {
+  hilosAuthMethodIcon,
+  hilosProfileSignInIcon,
+} from '../auth/authMethodIcons.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -337,6 +341,10 @@ export function HilosProfileSignInPage({
             data-id="profile-identity-item"
             data-identity-key={method.key}
           >
+            <i
+              className={`${hilosProfileSignInIcon(method)} fs-5 text-body-secondary flex-shrink-0`}
+              aria-hidden="true"
+            ></i>
             <div className="flex-grow-1 text-break">
               <div className="fw-semibold" data-id="identity-type">
                 {title(method)}
@@ -351,26 +359,15 @@ export function HilosProfileSignInPage({
               >
                 {hilosProfileSignInSubtitle(method)}
               </div>
-              {method.verified ? (
-                <span
-                  className="badge text-bg-success"
-                  data-id="identity-verified"
-                >
-                  Verified
-                </span>
-              ) : (
-                <span
-                  className="badge text-bg-secondary"
-                  data-id="identity-unverified"
-                >
-                  Unverified
-                </span>
-              )}
               {!method.canUnlink ? (
                 <div
                   className="small text-warning-emphasis"
                   data-id="identity-unlink-blocked"
                 >
+                  <i
+                    className="bi bi-exclamation-triangle me-1"
+                    aria-hidden="true"
+                  ></i>
                   {HILOS_PROFILE_SIGN_IN_COPY.onlyMethod}
                 </div>
               ) : null}
@@ -406,6 +403,7 @@ export function HilosProfileSignInPage({
         data-id="profile-sign-in-add"
         onClick={() => openAdd()}
       >
+        <i className="bi bi-plus-lg me-1" aria-hidden="true"></i>
         Add a way to sign in
       </LoadingButton>
       <HilosModal
@@ -584,7 +582,7 @@ export function HilosProfileSignInPage({
                   <span key={way.key} className="btn btn-outline-secondary">
                     <span className="d-flex align-items-center gap-3 text-start">
                       <i
-                        className="bi bi-box-arrow-in-right fs-5"
+                        className={`${hilosAuthMethodIcon(way.key)} fs-5`}
                         aria-hidden="true"
                       ></i>
                       <span>
@@ -687,7 +685,7 @@ export function HilosProfileSignInPage({
                     >
                       <span className="d-flex align-items-center gap-3 text-start">
                         <i
-                          className="bi bi-box-arrow-in-right fs-5"
+                          className={`${hilosAuthMethodIcon(way.key)} fs-5`}
                           aria-hidden="true"
                         ></i>
                         <span>

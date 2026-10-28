@@ -294,6 +294,110 @@ function heldReply(action: string) {
 }
 
 describe('profile sign-in page dialogs', () => {
+  it('decorates each normalized method and keeps verification in the phone subtitle', () => {
+    const initial = resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          identifier: 'a@example.test',
+          verified: true,
+          provider: null,
+        },
+        {
+          id: 2,
+          type: 'sms',
+          identifier: '+15551234567',
+          verified: true,
+          provider: null,
+        },
+        {
+          id: 3,
+          type: 'sms',
+          identifier: '+15557654321',
+          verified: false,
+          provider: null,
+        },
+        {
+          id: 4,
+          type: 'magic_link',
+          identifier: 'a@example.test',
+          verified: true,
+          provider: null,
+        },
+        {
+          id: 5,
+          type: 'oauth',
+          identifier: 'octocat',
+          verified: true,
+          provider: 'oauth:github',
+        },
+        {
+          id: 6,
+          type: 'oauth',
+          identifier: 'a@example.test',
+          verified: true,
+          provider: 'oauth:google',
+        },
+        {
+          id: 7,
+          type: 'oauth',
+          identifier: 'another-account',
+          verified: false,
+          provider: 'oauth:other',
+        },
+        {
+          id: 8,
+          type: 'passkey',
+          identifier: 'opaque',
+          verified: true,
+          provider: null,
+        },
+      ],
+      [{ identityId: 8, label: 'Laptop key', createdAt: 1767227400000 }],
+    )
+    const world = setup(NO_STEP, initial, [
+      ...OFFERED,
+      { key: 'oauth:google', name: 'Google' },
+      { key: 'oauth:other', name: 'Other' },
+    ])
+    const rows = [
+      ['1', 'bi-lock', 'Password', 'a@example.test'],
+      ['2', 'bi-phone', 'Phone', '+15551234567 · verified'],
+      ['3', 'bi-phone', 'Phone', '+15557654321'],
+      ['4', 'bi-envelope', 'Email link', 'a@example.test'],
+      ['5', 'bi-github', 'GitHub', 'octocat'],
+      ['6', 'bi-google', 'Google', 'a@example.test'],
+      ['7', 'bi-box-arrow-in-right', 'Other', 'another-account'],
+      ['8', 'bi-fingerprint', 'Laptop key', null],
+    ] as const
+    for (const [key, glyph, name, subtitle] of rows) {
+      const row = world.wrapper.get(`[data-identity-key="${key}"]`)
+      const icon = row.get('i')
+      expect(icon.classes()).toEqual([
+        'bi',
+        glyph,
+        'fs-5',
+        'text-body-secondary',
+        'flex-shrink-0',
+      ])
+      expect(icon.attributes('aria-hidden')).toBe('true')
+      expect(row.get('[data-id="identity-type"]').text()).toBe(name)
+      if (subtitle !== null)
+        expect(row.get('[data-id="identity-identifier"]').text()).toBe(subtitle)
+      else
+        expect(row.get('[data-id="identity-passkey-added"]').text()).toMatch(
+          /^Passkey · added /,
+        )
+      expect(row.find('[data-id="identity-verified"]').exists()).toBe(false)
+      expect(row.find('[data-id="identity-unverified"]').exists()).toBe(false)
+    }
+    const add = world.wrapper.get('[data-id="profile-sign-in-add"]')
+    expect(add.get('i').classes()).toEqual(['bi', 'bi-plus-lg', 'me-1'])
+    expect(add.get('i').attributes('aria-hidden')).toBe('true')
+    expect(add.text()).toBe('Add a way to sign in')
+  })
+
   it.each(['unlink', 'add'] as const)(
     'reformats the passkey date without a server frame and keeps the %s dialog',
     async (dialog) => {
@@ -523,7 +627,11 @@ describe('profile sign-in page dialogs', () => {
     expect((byId(way.code) as HTMLInputElement).value).toBe('')
   })
   it('asks the server before opening and starts at the chooser when no step is needed', async () => {
-    const world = setup()
+    const world = setup(NO_STEP, methods, [
+      ...OFFERED,
+      { key: 'oauth:google', name: 'Google' },
+      { key: 'oauth:other', name: 'Other' },
+    ])
     await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
     await flushPromises()
     expect(world.dispatch).toHaveBeenCalledWith(
@@ -536,6 +644,25 @@ describe('profile sign-in page dialogs', () => {
     expect(document.querySelector('.modal-title')?.textContent).toBe(
       'Add a way to sign in',
     )
+    const twin = byId('profile-sign-in-add-modal').querySelector(
+      '.invisible[inert].d-flex',
+    )!
+    expect(twin.getAttribute('aria-hidden')).toBe('true')
+    for (const [provider, label, glyph] of [
+      ['github', 'Continue with GitHub', 'bi-github'],
+      ['google', 'Continue with Google', 'bi-google'],
+      ['other', 'Continue with Other', 'bi-box-arrow-in-right'],
+    ]) {
+      const live = byId(`profile-oauth-link-oauth:${provider}`)
+      const copy = Array.from(twin.children).find((node) =>
+        node.textContent?.includes(label),
+      )!
+      for (const node of [live, copy]) {
+        const icon = node.querySelector('i')!
+        expect(Array.from(icon.classList)).toEqual(['bi', glyph, 'fs-5'])
+        expect(icon.getAttribute('aria-hidden')).toBe('true')
+      }
+    }
   })
   it('opens at the confirmation step, confirms with Enter in the password field, then shows the chooser', async () => {
     const world = setup(PASSWORD_STEP)
@@ -600,6 +727,9 @@ describe('profile sign-in page dialogs', () => {
     expect(
       world.wrapper.get('[data-id="identity-unlink-blocked"]').text(),
     ).toBe('You cannot remove your only login method')
+    const warning = world.wrapper.get('[data-id="identity-unlink-blocked"] i')
+    expect(warning.classes()).toEqual(['bi', 'bi-exclamation-triangle', 'me-1'])
+    expect(warning.attributes('aria-hidden')).toBe('true')
     expect(
       world.wrapper
         .get('[data-id="profile-password-change"]')

@@ -40,6 +40,10 @@ import {
 } from '@hilos/core/base'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
+import {
+  hilosAuthMethodIcon,
+  hilosProfileSignInIcon,
+} from '../auth/authMethodIcons.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -123,6 +127,11 @@ let signInSequence = 0
             data-id="profile-identity-item"
             [attr.data-identity-key]="method.key"
           >
+            <i
+              [class]="profileSignInIcon(method)"
+              class="fs-5 text-body-secondary flex-shrink-0"
+              aria-hidden="true"
+            ></i>
             <div class="flex-grow-1 text-break">
               <div class="fw-semibold" data-id="identity-type">
                 {{ title(method) }}
@@ -137,22 +146,15 @@ let signInSequence = 0
               >
                 {{ subtitle(method) }}
               </div>
-              @if (method.verified) {
-                <span class="badge text-bg-success" data-id="identity-verified"
-                  >Verified</span
-                >
-              } @else {
-                <span
-                  class="badge text-bg-secondary"
-                  data-id="identity-unverified"
-                  >Unverified</span
-                >
-              }
               @if (!method.canUnlink) {
                 <div
                   class="small text-warning-emphasis"
                   data-id="identity-unlink-blocked"
                 >
+                  <i
+                    class="bi bi-exclamation-triangle me-1"
+                    aria-hidden="true"
+                  ></i>
                   {{ copy.onlyMethod }}
                 </div>
               }
@@ -192,6 +194,7 @@ let signInSequence = 0
         data-id="profile-sign-in-add"
         (click)="openAdd()"
       >
+        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
         Add a way to sign in
       </button>
       <hilos-modal
@@ -315,7 +318,8 @@ let signInSequence = 0
                   <span class="btn btn-outline-secondary"
                     ><span class="d-flex align-items-center gap-3 text-start"
                       ><i
-                        class="bi bi-box-arrow-in-right fs-5"
+                        [class]="authMethodIcon(way.key)"
+                        class="fs-5"
                         aria-hidden="true"
                       ></i
                       ><span
@@ -405,7 +409,8 @@ let signInSequence = 0
                     >
                       <span class="d-flex align-items-center gap-3 text-start"
                         ><i
-                          class="bi bi-box-arrow-in-right fs-5"
+                          [class]="authMethodIcon(way.key)"
+                          class="fs-5"
                           aria-hidden="true"
                         ></i
                         ><span
@@ -588,6 +593,8 @@ export class HilosProfileSignInPage {
   protected readonly sendProgressDetailsClass = SEND_PROGRESS_DETAILS_CLASS
   protected readonly sendAgainLabel = SEND_AGAIN_LABEL
   protected readonly subtitle = hilosProfileSignInSubtitle
+  protected readonly authMethodIcon = hilosAuthMethodIcon
+  protected readonly profileSignInIcon = hilosProfileSignInIcon
   protected readonly unlinkKey = signal<string | null>(null)
   protected readonly unlinkMethod = computed(() =>
     this.methods().find((method) => method.key === this.unlinkKey()),

@@ -952,6 +952,9 @@ describe('HilosAuthSurface', () => {
     })
     const fixture = mountSurface({ context, gate: world.gate })
     expect(byId(fixture, 'auth-icon-passkey')).not.toBeNull()
+    expect(
+      byId(fixture, 'auth-icon-passkey')?.querySelector('i')?.className,
+    ).toContain('bi-fingerprint')
 
     // The frame the settings library sends lands in the same session slot.
     context.scopes.session.data.set('authMethods', [
@@ -1078,6 +1081,9 @@ describe('HilosAuthSurface', () => {
   it('answers a provider trip that failed with a refusal on the form', async () => {
     const world = oauthTripWorld()
     const fixture = mountSurface(world)
+    expect(
+      byId(fixture, 'auth-icon-oauth-github')?.querySelector('i')?.className,
+    ).toContain('bi-github')
     byId(fixture, 'auth-icon-oauth-github')?.click()
     await flush(fixture)
     // Parked on the trip: the waiting screen, not the field.
