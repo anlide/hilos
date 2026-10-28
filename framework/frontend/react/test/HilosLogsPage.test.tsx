@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import {
+  formatLogsOverviewRecentAt,
+  formatLogsOverviewRotationAt,
+} from '@hilos/core/admin/logs'
 import {
   HIDDEN_VALUE,
   HilosPages,
   OVERVIEW_SIGNAL,
   createSignal,
 } from '@hilos/core'
+import { hilosBrowserTimeZone, hilosTimeZone } from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosLogsOverview,
@@ -18,6 +23,7 @@ import type {
 
 import { HilosLogsPage } from '../src/admin/logs/HilosLogsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 /** One node's row as the backend puts it on the wire. */
 function node(
@@ -139,11 +145,16 @@ function router(identity: HilosPageIdentity | undefined): HilosRouter {
 function makeConnection(): {
   connection: HilosConnection
   push: (frame: HilosLogsOverview) => void
+  listenerRegistrations: () => number
+  pushedFrames: () => number
 } {
   const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  let listenerRegistrations = 0
+  let pushedFrames = 0
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') {
+        listenerRegistrations += 1
         listeners.push(
           listener as unknown as (signal: {
             type: string
@@ -158,7 +169,10 @@ function makeConnection(): {
 
   return {
     connection,
+    listenerRegistrations: () => listenerRegistrations,
+    pushedFrames: () => pushedFrames,
     push(frame: HilosLogsOverview): void {
+      pushedFrames += 1
       act(() => {
         for (const listener of listeners) {
           listener({ type: OVERVIEW_SIGNAL, data: frame })
@@ -189,6 +203,102 @@ function textOf(container: HTMLElement, id: string): string {
 
 describe('HilosLogsPage', () => {
   afterEach(cleanup)
+
+  it('reformats overview moments live without another frame or losing the selected tab', () => {
+    const reader = readerTimeZone()
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const initialZone =
+      browserZone === 'Asia/Tokyo' ? 'Pacific/Honolulu' : 'Asia/Tokyo'
+    const nextZone =
+      browserZone === 'America/New_York' ? 'Europe/Warsaw' : 'America/New_York'
+    act(() => reader.choose(initialZone))
+
+    const moment = '2026-10-24T03:30:00.000Z'
+    const { connection, push, listenerRegistrations, pushedFrames } =
+      makeConnection()
+    const container = mountPage(connection)
+
+    try {
+      push(
+        overview({
+          lastRotationAt: moment,
+          nodes: [
+            node({ nodeId: 'node-1', lastRotationAt: moment }),
+            node({ nodeId: 'node-2', lastRotationAt: 'not-a-moment' }),
+          ],
+          recentErrors: [failure()],
+          recentWarnings: [
+            failure({ at: moment, message: 'Slow query' }),
+            failure({ at: 'not-a-moment', message: 'Unparseable time' }),
+          ],
+        }),
+      )
+      fireEvent.click(byId(container, 'hilos-logs-recent-tab-warnings')!)
+
+      const rotation = textOf(container, 'hilos-logs-tile-rotation')
+      const nodeRow = byId(
+        container,
+        'hilos-logs-node-node-1',
+      ) as HTMLTableRowElement
+      const invalidNodeRow = byId(
+        container,
+        'hilos-logs-node-node-2',
+      ) as HTMLTableRowElement
+      const recentRows = container.querySelectorAll(
+        '[data-id="hilos-logs-recent-row"]',
+      )
+      const recentRow = recentRows[0] as HTMLElement
+      const invalidRecentRow = recentRows[1] as HTMLElement
+      const warningTab = byId(container, 'hilos-logs-recent-tab-warnings')
+      const daemonTile = textOf(container, 'hilos-logs-tile-daemon')
+      const rotationBefore = formatLogsOverviewRotationAt(moment)
+      const recentBefore = formatLogsOverviewRecentAt(moment)
+      const registrationsBeforeZoneChange = listenerRegistrations()
+      const framesBeforeZoneChange = pushedFrames()
+
+      expect(rotation).toBe(rotationBefore)
+      expect(nodeRow.cells[1]?.textContent).toBe(rotationBefore)
+      expect(invalidNodeRow.cells[1]?.textContent).toBe('—')
+      expect(recentRow.children[1]?.textContent).toBe(recentBefore)
+      expect(invalidRecentRow.children[1]?.textContent).toBe('—')
+      expect(warningTab?.getAttribute('aria-selected')).toBe('true')
+
+      act(() => reader.choose(nextZone))
+
+      expect(hilosTimeZone.get()).toBe(nextZone)
+      expect(nextZone).not.toBe(browserZone)
+      expect(pushedFrames()).toBe(framesBeforeZoneChange)
+      expect(listenerRegistrations()).toBe(registrationsBeforeZoneChange)
+      expect(byId(container, 'hilos-logs-node-node-1')).toBe(nodeRow)
+      expect(container.querySelector('[data-id="hilos-logs-recent-row"]')).toBe(
+        recentRow,
+      )
+      expect(textOf(container, 'hilos-logs-tile-rotation')).toBe(
+        formatLogsOverviewRotationAt(moment),
+      )
+      expect(textOf(container, 'hilos-logs-tile-rotation')).not.toBe(
+        rotationBefore,
+      )
+      expect(nodeRow.cells[1]?.textContent).toBe(
+        formatLogsOverviewRotationAt(moment),
+      )
+      expect(nodeRow.cells[1]?.textContent).not.toBe(rotationBefore)
+      expect(recentRow.children[1]?.textContent).toBe(
+        formatLogsOverviewRecentAt(moment),
+      )
+      expect(recentRow.children[1]?.textContent).not.toBe(recentBefore)
+      expect(invalidNodeRow.cells[1]?.textContent).toBe('—')
+      expect(invalidRecentRow.children[1]?.textContent).toBe('—')
+      expect(byId(container, 'hilos-logs-recent-tab-warnings')).toBe(warningTab)
+      expect(warningTab?.getAttribute('aria-selected')).toBe('true')
+      expect(textOf(container, 'hilos-logs-tile-daemon')).toBe(daemonTile)
+      expect(daemonTile).toContain('4')
+      expect(daemonTile).toContain('220.0 MB')
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
 
   it('draws a hidden recent message and forecast as separate marks', () => {
     const { connection, push } = makeConnection()

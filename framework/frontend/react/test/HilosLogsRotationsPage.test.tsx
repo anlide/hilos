@@ -22,9 +22,15 @@ import type {
   ProjectSignal,
   TableViewportDescriptor,
 } from '@hilos/core'
+import {
+  formatMoment,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '@hilos/core/base'
 
 import { HilosLogsRotationsPage } from '../src/admin/logs/HilosLogsRotationsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 /** A header as the page answers a subscription with it. */
 function header(
@@ -738,8 +744,83 @@ describe('HilosLogsRotationsPage', () => {
       document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
         ?.textContent,
     ).toContain(
-      `The cleaner may delete this batch after ${new Date(1800086400000).toLocaleString()}.`,
+      `The cleaner may delete this batch after ${formatMoment(1800086400000, { kind: 'dateTime' }) ?? '—'}.`,
     )
+  })
+
+  it('reformats batch and open undo moments without replacing its window or filter', () => {
+    const reader = readerTimeZone()
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const initialZone =
+      browserZone === 'Asia/Tokyo' ? 'Pacific/Honolulu' : 'Asia/Tokyo'
+    const nextZone =
+      browserZone === 'America/New_York' ? 'Europe/Warsaw' : 'America/New_York'
+    act(() => reader.choose(initialZone))
+
+    const pruneNotBefore = Date.parse('2026-10-24T03:30:00.000Z')
+    const { connection, sent, focus, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    try {
+      pushHeader(header({ nodes: ['node-1'] }))
+      pushWindow([
+        batch({
+          rowKey: 'node-1:0',
+          batchAt: 0,
+          node: 'node-1',
+          retentionState: 'taken',
+          pruneNotBefore,
+        }),
+      ])
+
+      const table = container.querySelector('table')
+      const row = container.querySelector('[data-id^="hilos-table-row-"]')
+      expect(row?.textContent).toContain(
+        formatMoment(0, { kind: 'dateTime' }) ?? '—',
+      )
+      expect(formatMoment(0, { kind: 'dateTime' })).not.toBe('—')
+
+      const search = byId(container, 'hilos-table-search') as HTMLInputElement
+      fireEvent.change(search, { target: { value: '1970' } })
+      const sentBeforeOpen = sent.length
+      fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
+
+      const confirm = document.querySelector(
+        '[data-id="hilos-rotation-undo-confirm"]',
+      )
+      const deadline = document.querySelector(
+        '[data-id="hilos-rotation-undo-deadline"]',
+      )
+      expect(deadline?.textContent).toBe(
+        `The cleaner may delete this batch after ${formatMoment(pruneNotBefore, { kind: 'dateTime' }) ?? '—'}.`,
+      )
+      expect(confirm).not.toBeNull()
+
+      const sentBeforeZoneChange = sent.length
+      const focusBeforeZoneChange = [...focus]
+      act(() => reader.choose(nextZone))
+
+      expect(hilosTimeZone.get()).toBe(nextZone)
+      expect(nextZone).not.toBe(browserZone)
+      expect(sent).toHaveLength(sentBeforeZoneChange)
+      expect(sentBeforeZoneChange).toBe(sentBeforeOpen)
+      expect(focus).toEqual(focusBeforeZoneChange)
+      expect(container.querySelector('table')).toBe(table)
+      expect(container.querySelector('[data-id^="hilos-table-row-"]')).toBe(row)
+      expect(row?.textContent).toContain(
+        formatMoment(0, { kind: 'dateTime' }) ?? '—',
+      )
+      expect(deadline?.textContent).toBe(
+        `The cleaner may delete this batch after ${formatMoment(pruneNotBefore, { kind: 'dateTime' }) ?? '—'}.`,
+      )
+      expect(search.value).toBe('1970')
+      expect(
+        document.querySelector('[data-id="hilos-rotation-undo-confirm"]'),
+      ).toBe(confirm)
+    } finally {
+      cleanup()
+      reader.release()
+    }
   })
 
   /**
@@ -758,6 +839,25 @@ describe('HilosLogsRotationsPage', () => {
       document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
         ?.textContent,
     ).toContain('as soon as it next runs')
+  })
+
+  it('keeps an invalid non-null undo deadline distinct from no deadline', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({
+        retentionState: 'taken',
+        pruneNotBefore: 8640000000000001,
+      }),
+    ])
+    fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent,
+    ).toBe('The cleaner may delete this batch after —.')
   })
 
   it("withdraws under its own action name, and closes only on the server's word", async () => {

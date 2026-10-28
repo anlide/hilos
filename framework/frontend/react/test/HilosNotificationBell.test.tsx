@@ -4,10 +4,12 @@ import {
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
 } from '@hilos/core'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { hilosBrowserTimeZone, hilosTimeZone } from '@hilos/core/base'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosNotificationBell } from '../src/HilosNotificationBell.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 // The React bell renders its dropdown only while open (the Vue bell keeps it in the
 // DOM via v-show), so tests open the menu before asserting on its contents.
@@ -49,6 +51,14 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+function formatIndependent(moment: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(moment)
+}
+
 describe('HilosNotificationBell', () => {
   it('links the toggle to the menu and shows the unread badge with a hidden count label', () => {
     const { connection } = fakeConnection()
@@ -85,6 +95,101 @@ describe('HilosNotificationBell', () => {
 
     fireEvent.click(byId('hilos-notification-toggle') as Element)
     expect(byId('hilos-notification-menu')?.textContent).toContain('First')
+  })
+
+  it('formats epoch moments in the live reader zone without closing or moving focus', () => {
+    const reader = readerTimeZone()
+    try {
+      const moment = Date.parse('2026-10-24T03:30:00Z')
+      const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+      const readerZone =
+        browserZone === 'Pacific/Honolulu' ? 'Asia/Tokyo' : 'Pacific/Honolulu'
+      const store = createHilosNotificationStore()
+      store.ingestSnapshot({
+        recent: [
+          {
+            id: 1,
+            userId: 42,
+            type: 'system',
+            severity: 'info',
+            title: 'Known moment',
+            body: 'UTC epoch milliseconds',
+            readAt: null,
+            createdAt: moment,
+          },
+          {
+            id: 2,
+            userId: 42,
+            type: 'system',
+            severity: 'info',
+            title: 'Epoch zero',
+            readAt: null,
+            createdAt: 0,
+          },
+          {
+            id: 3,
+            userId: 42,
+            type: 'system',
+            severity: 'info',
+            title: 'No moment',
+            readAt: null,
+            createdAt: null,
+          },
+          {
+            id: 4,
+            userId: 42,
+            type: 'system',
+            severity: 'info',
+            title: 'Invalid moment',
+            readAt: null,
+            createdAt: 8_640_000_000_000_001,
+          },
+        ],
+        unreadCount: 4,
+      })
+      const { connection } = fakeConnection()
+      act(() => reader.choose('UTC'))
+      render(<HilosNotificationBell connection={connection} store={store} />)
+
+      const toggle = byId('hilos-notification-toggle') as HTMLButtonElement
+      fireEvent.click(toggle)
+      const menu = byId('hilos-notification-menu')
+      const markRead = byId(
+        'hilos-notification-mark-read-1',
+      ) as HTMLButtonElement
+      markRead.focus()
+
+      expect(byId('hilos-notification-time-1')?.textContent).toBe(
+        formatIndependent(moment, 'UTC'),
+      )
+      expect(byId('hilos-notification-time-2')?.textContent).toBe(
+        formatIndependent(0, 'UTC'),
+      )
+      expect(byId('hilos-notification-time-3')?.textContent).toBe('')
+      expect(byId('hilos-notification-time-4')?.textContent).toBe('')
+      expect(readerZone).not.toBe(browserZone)
+
+      const notifications = store.notifications.get()
+      act(() => reader.choose(readerZone))
+
+      expect(hilosTimeZone.get()).toBe(readerZone)
+      expect(store.notifications.get()).toBe(notifications)
+      expect(byId('hilos-notification-menu')).toBe(menu)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(document.activeElement).toBe(markRead)
+      expect(byId('hilos-notification-time-1')?.textContent).toBe(
+        formatIndependent(moment, readerZone),
+      )
+      expect(byId('hilos-notification-time-2')?.textContent).toBe(
+        formatIndependent(0, readerZone),
+      )
+      expect(byId('hilos-notification-time-2')?.textContent).not.toBe('')
+      expect(byId('hilos-notification-time-3')?.textContent).toBe('')
+      expect(byId('hilos-notification-time-4')?.textContent).toBe('')
+    } finally {
+      cleanup()
+      reader.release()
+    }
   })
 
   it('shows the empty state when there are no notifications', () => {

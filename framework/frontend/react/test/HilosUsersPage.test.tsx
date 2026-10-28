@@ -3,9 +3,10 @@
 // folded into another one (HIL-1292), and the presence badge in its three words
 // (HIL-1566), live and apart from the mark of a source gone quiet.
 import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  formatMoment,
   HIDDEN_VALUE,
   ScopeManager,
   createSignal,
@@ -23,6 +24,9 @@ import type {
 
 import { HilosUsersPage } from '../src/admin/users/HilosUsersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
+
+const readerTimeZoneReleases: Array<() => void> = []
 
 function router(): HilosRouter {
   return {
@@ -85,6 +89,8 @@ function wireRow(user: UserSeed): Record<string, unknown> {
 /** A seeded context and the live frames its table hears after the first window. */
 interface LiveUsers {
   context: HilosUsersContext
+  /** Number of server viewport requests made by this test connection. */
+  viewportRequests(): number
   /**
    * A person's row changed in place.
    *
@@ -119,6 +125,7 @@ function liveUsers(users: UserSeed[]): LiveUsers {
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  let viewportRequestCount = 0
   const delta = (data: Record<string, unknown>): void => {
     for (const listener of deltaListeners) {
       listener({
@@ -156,6 +163,7 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(page: string, tableKey: string): boolean {
+      viewportRequestCount++
       serveWindow(page, tableKey)
 
       return true
@@ -184,6 +192,7 @@ function liveUsers(users: UserSeed[]): LiveUsers {
       actions: new ActionLifecycle(connection as ActionLifecycleSource),
       users: collection,
     },
+    viewportRequests: () => viewportRequestCount,
     update(user: UserSeed): void {
       delta({ kind: 'row_updated', rowKey: user.id, row: wireRow(user) })
     },
@@ -213,7 +222,10 @@ function twoUsers(): HilosUsersContext {
 }
 
 describe('HilosUsersPage', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    for (const release of readerTimeZoneReleases.splice(0)) release()
+  })
 
   it('renders a row per user with name, presence, and sessions', () => {
     const { container } = render(
@@ -229,6 +241,83 @@ describe('HilosUsersPage', () => {
     expect(container.querySelector('.text-bg-success')?.textContent).toBe(
       'online',
     )
+  })
+
+  it('reformats activity in place without resetting the search or requesting a new viewport', async () => {
+    const zone = readerTimeZone()
+    readerTimeZoneReleases.push(zone.release)
+    await act(async () => {
+      zone.choose('Asia/Tokyo')
+    })
+    const alice = {
+      id: 1,
+      name: 'Person 1',
+      lastActivity: 0,
+      presence: 'offline',
+      onlineSessionCount: 0,
+    }
+    const live = liveUsers([
+      alice,
+      {
+        id: 2,
+        name: 'Person 2',
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+      {
+        id: 3,
+        name: 'Person 3',
+        lastActivity: Number.NaN,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+    ])
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={live.context} />
+      </HilosRouterContext.Provider>,
+    )
+    const before = formatMoment(0)
+    const search = container.querySelector(
+      '[data-id="hilos-table-search"]',
+    ) as HTMLInputElement
+
+    expect(
+      container.querySelector('[data-id="hilos-table-row-1"]')?.textContent,
+    ).toContain(before)
+    expect(
+      container.querySelector('[data-id="hilos-table-row-2"]')?.textContent,
+    ).toContain('—')
+    expect(
+      container.querySelector('[data-id="hilos-table-row-3"]')?.textContent,
+    ).toContain('—')
+
+    await act(async () => {
+      fireEvent.change(search, { target: { value: 'Person 1' } })
+    })
+    const viewportRequests = live.viewportRequests()
+    const row = container.querySelector('[data-id="hilos-table-row-1"]')
+
+    await act(async () => {
+      zone.choose('Pacific/Kiritimati')
+    })
+    const after = formatMoment(0)
+
+    expect(after).not.toBe(before)
+    expect(
+      container.querySelector('[data-id="hilos-table-row-1"]')?.textContent,
+    ).toContain(after)
+    expect(container.querySelector('[data-id="hilos-table-row-1"]')).toBe(row)
+    expect(search.value).toBe('Person 1')
+    expect(live.viewportRequests()).toBe(viewportRequests)
+    expect(
+      [1, 2, 3].map((id) =>
+        container
+          .querySelector(`[data-id="hilos-table-row-${id}"]`)
+          ?.getAttribute('data-id'),
+      ),
+    ).toEqual(['hilos-table-row-1', 'hilos-table-row-2', 'hilos-table-row-3'])
   })
 
   it('fills the trailing actions cell from the rowActions render prop', () => {

@@ -14,7 +14,13 @@ import {
   LOGS_READ_LINES_ACTION,
   createPageRouter,
   createSignal,
+  logLineClock,
 } from '@hilos/core'
+import {
+  formatMoment,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import type {
   Hideable,
   HilosConnection,
@@ -25,9 +31,11 @@ import type {
 
 import { HilosLogsViewPage } from '../src/admin/logs/HilosLogsViewPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000000
+const INVALID_BATCH = 8640000000000001
 
 const LATEST_BATCH = BATCH + 200000
 
@@ -623,7 +631,7 @@ describe('HilosLogsViewPage', () => {
       const source = byId(container, 'hilos-log-source') as HTMLSelectElement
       expect(source.value).toBe(String(LATEST_BATCH))
       expect(source.selectedOptions[0].textContent).toBe(
-        `Batch — ${new Date(LATEST_BATCH).toLocaleString()}`,
+        `Batch — ${formatMoment(LATEST_BATCH, { kind: 'dateTime' }) ?? '—'}`,
       )
       expect(sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
       expect(sent.at(-1)?.data).toMatchObject({
@@ -945,7 +953,7 @@ describe('HilosLogsViewPage', () => {
     expect(source.value).toBe(String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0].textContent).toBe(
-      `Batch — ${new Date(BATCH).toLocaleString()} (unavailable)`,
+      `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'} (unavailable)`,
     )
     expect(
       (byId(container, 'hilos-log-stream') as HTMLSelectElement).value,
@@ -958,8 +966,144 @@ describe('HilosLogsViewPage', () => {
     expect(source.value).toBe(String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0].textContent).toBe(
-      `Batch — ${new Date(BATCH).toLocaleString()}`,
+      `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'}`,
     )
+  })
+
+  it('reformats batch labels and core rows live without resetting the viewer controls', async () => {
+    const reader = readerTimeZone()
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const initialZone =
+      browserZone === 'Asia/Tokyo' ? 'Pacific/Honolulu' : 'Asia/Tokyo'
+    const nextZone =
+      browserZone === 'America/New_York' ? 'Europe/Warsaw' : 'America/New_York'
+    act(() => reader.choose(initialZone))
+
+    const moment = '2026-10-24T03:30:00.000Z'
+    const navigator = router({
+      nodeId: 'node-2',
+      source: String(BATCH),
+      stream: 'agent-chat.log',
+    })
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {}, navigator)
+
+    try {
+      const picture = archivedStreamCatalog()
+      picture.nodes[0]!.batches.push(INVALID_BATCH)
+      picture.nodes[0]!.streams[1]!.batchTimestamps.push(INVALID_BATCH)
+      pushCatalog(picture)
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          {
+            time: moment,
+            text: 'Action failed {"trace":"#0 Broken.php(12)"}',
+            level: 'ERROR',
+            isContinuation: false,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      const source = byId(container, 'hilos-log-source') as HTMLSelectElement
+      const stream = byId(container, 'hilos-log-stream') as HTMLSelectElement
+      const level = byId(container, 'hilos-log-level') as HTMLSelectElement
+      fireEvent.change(level, { target: { value: 'ERROR' } })
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          {
+            time: moment,
+            text: 'Action failed {"trace":"#0 Broken.php(12)"}',
+            level: 'ERROR',
+            isContinuation: false,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      const entry = byId(container, 'hilos-log-entry') as HTMLElement
+      const stackToggle = byId(
+        container,
+        'hilos-log-stack-toggle',
+      ) as HTMLButtonElement
+      fireEvent.click(stackToggle)
+      const stack = byId(container, 'hilos-log-stack') as HTMLElement
+      const search = byId(container, 'hilos-log-substring') as HTMLInputElement
+      fireEvent.change(search, { target: { value: 'deadlock' } })
+      const sentBeforeZoneChange = sent.length
+
+      expect(source.selectedOptions[0]?.textContent).toBe(
+        `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'}`,
+      )
+      expect(
+        source.querySelector(`option[value="${INVALID_BATCH}"]`)?.textContent,
+      ).toBe('Batch — —')
+      expect(entry.textContent).toContain(logLineClock(moment))
+      expect(stack.textContent).toContain('#0 Broken.php(12)')
+      expect(stackToggle.getAttribute('aria-expanded')).toBe('true')
+      expect(byId(container, 'hilos-log-search-pending')).not.toBeNull()
+      expect(
+        (byId(container, 'hilos-log-follow') as HTMLInputElement).checked,
+      ).toBe(true)
+
+      act(() => reader.choose(nextZone))
+
+      expect(hilosTimeZone.get()).toBe(nextZone)
+      expect(nextZone).not.toBe(browserZone)
+      expect(sent).toHaveLength(sentBeforeZoneChange)
+      expect(byId(container, 'hilos-log-source')).toBe(source)
+      expect(byId(container, 'hilos-log-stream')).toBe(stream)
+      expect(byId(container, 'hilos-log-entry')).toBe(entry)
+      expect(byId(container, 'hilos-log-stack')).toBe(stack)
+      expect(stackToggle.getAttribute('aria-expanded')).toBe('true')
+      expect(entry.textContent).toContain(logLineClock(moment))
+      expect(source.selectedOptions[0]?.textContent).toBe(
+        `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'}`,
+      )
+      expect(
+        source.querySelector(`option[value="${INVALID_BATCH}"]`)?.textContent,
+      ).toBe('Batch — —')
+      expect(search.value).toBe('deadlock')
+      expect(byId(container, 'hilos-log-search-pending')).not.toBeNull()
+      expect(level.value).toBe('ERROR')
+      expect(
+        (byId(container, 'hilos-log-follow') as HTMLInputElement).checked,
+      ).toBe(true)
+
+      const unavailableCatalog = archivedStreamCatalog()
+      unavailableCatalog.nodes[0]!.batches = [LATEST_BATCH]
+      unavailableCatalog.nodes[0]!.streams[1]!.batchTimestamps = [LATEST_BATCH]
+      pushCatalog(unavailableCatalog)
+      answer(sent.at(-1)?.requestId, {
+        readable: false,
+        lines: [],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled()
+
+      const sentBeforeUnavailableZoneChange = sent.length
+      act(() => reader.choose(initialZone))
+
+      expect(sent).toHaveLength(sentBeforeUnavailableZoneChange)
+      expect(source.value).toBe(String(BATCH))
+      expect(source.selectedOptions[0]?.textContent).toBe(
+        `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'} (unavailable)`,
+      )
+      expect(stream.value).toBe('agent-chat.log')
+      expect(search.value).toBe('deadlock')
+      expect(level.value).toBe('ERROR')
+      expect(byId(container, 'hilos-log-search-pending')).not.toBeNull()
+    } finally {
+      cleanup()
+      reader.release()
+    }
   })
 
   it('keeps the Earlier button dark until there is a page before this one', () => {

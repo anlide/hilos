@@ -20,7 +20,12 @@
 // owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import {
+  formatMoment,
+  HILOS_PAGE_ROUTES,
+  hilosTimeZone,
+  HilosPages,
+} from '@hilos/core/base'
 import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
@@ -87,7 +92,7 @@ const RETENTION_CLASS: Record<string, string> = {
  * @param row The batch the cell speaks for.
  */
 function batchTime(row: HilosLogRotationRow): string {
-  return new Date(row.batchAt).toLocaleString()
+  return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
 }
 
 /**
@@ -132,6 +137,7 @@ function offersUndo(row: HilosLogRotationRow): boolean {
 export function HilosLogsRotationsPage({
   context,
 }: HilosLogsRotationsPageProps) {
+  useSignal(hilosTimeZone)
   // The navigator the switch reads its entry value from and writes its choice to;
   // mounted without one, the screen opens on All and leaves the address alone.
   const router = useContext(HilosRouterContext)
@@ -228,7 +234,7 @@ export function HilosLogsRotationsPage({
   const undoDeadline =
     undoRow?.pruneNotBefore == null
       ? 'The cleaner may delete this batch as soon as it next runs.'
-      : `The cleaner may delete this batch after ${new Date(undoRow.pruneNotBefore).toLocaleString()}.`
+      : `The cleaner may delete this batch after ${formatMoment(undoRow.pruneNotBefore, { kind: 'dateTime' }) ?? '—'}.`
 
   const [legendOpen, setLegendOpen] = useState(false)
 

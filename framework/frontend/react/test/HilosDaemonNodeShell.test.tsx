@@ -1,21 +1,113 @@
 import { act, cleanup } from '@testing-library/react'
 import { bindAdminAccess, HilosPages, hilosAdminAccess } from '@hilos/core/base'
-import { afterEach, describe, expect, it } from 'vitest'
+import * as core from '@hilos/core/base'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   nodeHarness,
   nodeHeading,
   nodeOverview,
   nodeTabs,
 } from './helpers/hilosDaemonNode.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 const el = (name: string) =>
   document.querySelector<HTMLElement>(`[data-id="${name}"]`)
 const node = (name: string) => el(`hilos-daemon-node-${name}`)
 const text = (selector: string) =>
   [...document.querySelectorAll(selector)].map((item) => item.textContent)
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe('HilosDaemonNodeShell', () => {
+  it.each([false, true])(
+    'follows the reader zone independently on an actual child=%s and releases its subscription',
+    (child) => {
+      const resolved = new Intl.DateTimeFormat().resolvedOptions()
+      vi.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'resolvedOptions',
+      ).mockReturnValue({
+        ...resolved,
+        timeZone: 'America/New_York',
+      })
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T00:15:00Z'))
+      const reader = readerTimeZone()
+      const subscribe = core.subscribeSignal
+      const deliveries = vi.fn()
+      const releases: ReturnType<typeof vi.fn>[] = []
+      vi.spyOn(core, 'subscribeSignal').mockImplementation(
+        <T,>(source: core.ReadonlySignal<T>, listener: (value: T) => void) => {
+          if (source !== core.hilosTimeZone) return subscribe(source, listener)
+          const stop = vi.fn(
+            subscribe(source, (value) => {
+              deliveries(value)
+              listener(value)
+            }),
+          )
+          releases.push(stop)
+          return stop
+        },
+      )
+      try {
+        act(() => reader.choose('UTC'))
+        const h = nodeHarness({
+          shell: !child,
+          child,
+          page: HilosPages.DAEMON_ENV,
+        })
+        const at = Date.parse('2026-10-24T03:30:00Z')
+        act(() =>
+          h.answer(null, nodeHeading({ state: 'silent', silentSince: at })),
+        )
+        const heading = h.scopes.pageDataSignal('node').get()
+        const head = el('hilos-page-head')
+        const body = child
+          ? h.view.container.querySelector('table')
+          : el('node-child-body')
+        expect(body).not.toBeNull()
+        const requests = h.sendViewport.mock.calls.length
+        const registrations = h.registerTableWindow.mock.calls.length
+        for (const [own, zone] of [
+          ['UTC', 'UTC'],
+          ['Pacific/Honolulu', 'Pacific/Honolulu'],
+          [null, 'America/New_York'],
+        ] as const) {
+          act(() => reader.choose(own))
+          const time = new Intl.DateTimeFormat(undefined, {
+            timeZone: zone,
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(at)
+          expect(node('silent')!.textContent).toBe(
+            `Silent since today, ${time}`,
+          )
+          expect(h.scopes.pageDataSignal('node').get()).toBe(heading)
+          expect(el('hilos-page-head')).toBe(head)
+          expect(
+            child
+              ? h.view.container.querySelector('table')
+              : el('node-child-body'),
+          ).toBe(body)
+          expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+          expect(h.registerTableWindow).toHaveBeenCalledTimes(registrations)
+          expect(h.send).not.toHaveBeenCalled()
+          expect(h.sendAction).not.toHaveBeenCalled()
+        }
+        expect(releases).toHaveLength(child ? 2 : 1)
+        const delivered = deliveries.mock.calls.length
+        h.view.unmount()
+        for (const stop of releases) expect(stop).toHaveBeenCalledTimes(1)
+        act(() => reader.choose('Asia/Tokyo'))
+        expect(deliveries).toHaveBeenCalledTimes(delivered)
+      } finally {
+        cleanup()
+        reader.release()
+      }
+    },
+  )
+
   it('waits in the real entity skeleton and shows the bound name in its first committed paint', () => {
     const h = nodeHarness()
     expect(el('hilos-page-head-skeleton')).not.toBeNull()

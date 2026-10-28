@@ -54,6 +54,7 @@ import {
   HILOS_USER_ANALYTICS_LINK_LABEL,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
+  HILOS_USER_OVERVIEW_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_PRESENCE_WIDEST_LABEL,
   hilosPresenceBadge,
@@ -197,6 +198,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   // every action section, which the core leaves empty for it.
   const mergedNotice = hilosUserMergedNotice(standing)
   const mergedCopy = HILOS_USER_MERGED_COPY
+  const overviewCopy = HILOS_USER_OVERVIEW_COPY
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now())
   useEffect(() => {
     setLifecycleNow(Date.now())
@@ -786,6 +788,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 <dt className="col-sm-3">User ID</dt>
                 <dd className="col-sm-9" data-id="hilos-user-id">
                   {detail.id}
+                </dd>
+                <dt className="col-sm-3">{overviewCopy.timeZone}</dt>
+                <dd className="col-sm-9" data-id="hilos-user-time-zone">
+                  <HilosHideable value={detail.timeZone}>
+                    {(value) => value ?? overviewCopy.automaticTimeZone}
+                  </HilosHideable>
                 </dd>
                 <dt className="col-sm-3">Online sessions</dt>
                 <dd className="col-sm-9" data-id="hilos-user-sessions">

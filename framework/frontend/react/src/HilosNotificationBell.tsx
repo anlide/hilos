@@ -15,6 +15,8 @@
 // by color alone — an unread row is bold and carries a visually-hidden "Unread"
 // marker (styling-rules.md, accessibility.md). Bootstrap classes only.
 import {
+  formatMoment,
+  hilosTimeZone,
   hilosNotifications,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
@@ -44,6 +46,7 @@ export function HilosNotificationBell({
   connection,
   store = hilosNotifications,
 }: HilosNotificationBellProps) {
+  useSignal(hilosTimeZone)
   const notifications = useSignal(store.notifications)
   const unreadCount = useSignal(store.unreadCount)
   // The badge caps its label so a runaway count never breaks the bell's layout.
@@ -164,10 +167,10 @@ export function HilosNotificationBell({
     connection.sendAction(NOTIFICATION_ACTION_MARK_ALL_READ, {})
   }
 
-  // A notification's timestamp, formatted for the reader's locale; the wire value
-  // is an ISO string, absent only on a malformed row.
+  // A notification carries UTC epoch milliseconds; format the absolute moment
+  // in the current reader zone and leave missing or invalid moments blank.
   function formatTime(row: HilosNotification): string {
-    return row.createdAt ? new Date(row.createdAt).toLocaleString() : ''
+    return formatMoment(row.createdAt ?? '', { kind: 'dateTime' }) ?? ''
   }
 
   return (
@@ -245,7 +248,10 @@ export function HilosNotificationBell({
                         {row.body}
                       </div>
                     )}
-                    <div className="small text-body-tertiary">
+                    <div
+                      className="small text-body-tertiary"
+                      data-id={`hilos-notification-time-${row.id}`}
+                    >
                       {formatTime(row)}
                     </div>
                   </div>

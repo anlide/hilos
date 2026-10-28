@@ -149,6 +149,11 @@ export function HilosLegalAcceptancesPage({
                 )}
               </>
             ),
+            [HilosLegalRowKey.acceptedAt]: (row) => (
+              <span data-id="legal-acceptance-accepted-at">
+                {row.acceptedAt}
+              </span>
+            ),
             [HILOS_TABLE_ACTIONS_KEY]: (row) => (
               <HilosLink
                 to={resolveHilosPath(HilosPages.USER, {

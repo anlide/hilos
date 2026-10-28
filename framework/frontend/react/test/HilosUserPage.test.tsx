@@ -17,6 +17,7 @@ import {
   bindSessionScope,
   createSignal,
   entityCollection,
+  formatMoment,
   USER_ENTITY_TYPE,
   userFromFields,
 } from '@hilos/core'
@@ -29,6 +30,9 @@ import type {
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
+
+const readerTimeZoneReleases: Array<() => void> = []
 
 function router(overrides: Partial<HilosRouter> = {}): HilosRouter {
   return {
@@ -414,6 +418,7 @@ function renderPage(context: HilosUsersContext, value: HilosRouter = router()) {
 describe('HilosUserPage', () => {
   afterEach(() => {
     cleanup()
+    for (const release of readerTimeZoneReleases.splice(0)) release()
     document.body.classList.remove('modal-open')
   })
 
@@ -436,6 +441,89 @@ describe('HilosUserPage', () => {
     expect(
       container.querySelector('[data-id="hilos-user-sessions"]')?.textContent,
     ).toBe('2')
+  })
+
+  it('shows the read-only time zone as explicit, automatic, or hidden', async () => {
+    const world = userContext(true)
+    const page = world.scopes.page()!
+    const { container } = renderPage(world)
+    const row = byId('hilos-user-time-zone')!
+
+    expect(row.previousElementSibling?.textContent).toBe('Time zone')
+    expect(row.textContent).toBe('Automatic — follows the browser')
+
+    await act(async () => {
+      page.entities.upsert(
+        { type: 'user', id: 1 },
+        { timeZone: 'Pacific/Honolulu' },
+      )
+    })
+    expect(row.textContent).toBe('Pacific/Honolulu')
+
+    await act(async () => {
+      page.entities.upsert({ type: 'user', id: 1 }, { timeZone: HIDDEN_VALUE })
+    })
+    expect(row.querySelector('[data-id="hilos-hidden"]')?.textContent).toBe(
+      'Hidden',
+    )
+    expect(row.outerHTML).not.toContain('Pacific/Honolulu')
+    expect(
+      row.querySelectorAll('button, a, input, select, textarea'),
+    ).toHaveLength(0)
+
+    await act(async () => {
+      page.entities.upsert({ type: 'user', id: 1 }, { timeZone: null })
+    })
+    expect(row.textContent).toBe('Automatic — follows the browser')
+    expect(
+      container.querySelector('[data-id="hilos-user-edit"]'),
+    ).not.toBeNull()
+  })
+
+  it('reformats card and merge-candidate activity for the reader without resetting the open picker', async () => {
+    const zone = readerTimeZone()
+    readerTimeZoneReleases.push(zone.release)
+    await act(async () => {
+      zone.choose('Asia/Tokyo')
+    })
+    const world = userContext(true, true)
+    const page = world.scopes.page()!
+    page.entities.upsert({ type: 'user', id: 1 }, { lastActivity: 0 })
+    page.entities.upsert({ type: 'user', id: 2 }, { lastActivity: 0 })
+    renderPage(world)
+    const before = formatMoment(0)
+
+    expect(byId('hilos-user-last-activity')?.textContent).toBe(before)
+
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-open')!)
+    })
+    const search = byId('hilos-table-search') as HTMLInputElement
+    await act(async () => {
+      fireEvent.change(search, { target: { value: 'Bob' } })
+      fireEvent.click(byId('hilos-user-merge-row-2')!)
+    })
+    const candidateRow = byId('hilos-table-row-2')
+    const selected = byId('hilos-user-merge-row-2') as HTMLInputElement
+    expect(candidateRow?.textContent).toContain(before)
+    expect(selected.checked).toBe(true)
+
+    await act(async () => {
+      zone.choose('Pacific/Kiritimati')
+    })
+    const after = formatMoment(0)
+
+    expect(after).not.toBe(before)
+    expect(byId('hilos-user-last-activity')?.textContent).toBe(after)
+    expect(byId('hilos-table-row-2')?.textContent).toContain(after)
+    expect(byId('hilos-table-row-2')).toBe(candidateRow)
+    expect(byId('hilos-table-search')).toBe(search)
+    expect((byId('hilos-table-search') as HTMLInputElement).value).toBe('Bob')
+    expect(byId('hilos-user-merge-row-2')).toBe(selected)
+    expect((byId('hilos-user-merge-row-2') as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect(byId('hilos-user-merge-cancel')).not.toBeNull()
   })
 
   it('shows the merge zone only when enabled and locks Next without a candidate', async () => {

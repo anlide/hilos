@@ -1,5 +1,5 @@
-// The existing cron picture in its reported order, with no search or sorting.
-import { useContext, useEffect, useMemo } from 'react'
+// The existing cron picture, with project-zone expressions and reader-zone runs.
+import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   createHilosDaemonCronTable,
   DAEMON_CRON_NAME_FIELD,
@@ -18,7 +18,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
@@ -50,6 +50,16 @@ export function HilosDaemonCronPage({
   const reported = useSignal(
     useMemo(() => readDaemonCronReported(context.scopes), [context]),
   )
+  useSignal(hilosTimeZone)
+  const [projectTimeZone, setProjectTimeZone] = useState(
+    () => context.connection.projectTimeZone,
+  )
+  useEffect(() => {
+    setProjectTimeZone(context.connection.projectTimeZone)
+    return context.connection.on('handshake', () => {
+      setProjectTimeZone(context.connection.projectTimeZone)
+    })
+  }, [context.connection])
   const rows = useSignal(cron.controller.rows)
   const rules = rows.flatMap(({ row }) => (row === null ? [] : [row]))
   const emptyState = daemonCronEmptyState(heading, reported)
@@ -110,6 +120,20 @@ export function HilosDaemonCronPage({
           )}
         </div>
       )}
+      <p
+        className="small text-body-secondary mb-2"
+        data-id="hilos-daemon-cron-time-zone"
+      >
+        <i className="bi bi-clock me-1" aria-hidden="true" />
+        Expressions use the project time zone —{' '}
+        <span
+          className="font-monospace text-break"
+          data-id="hilos-daemon-cron-project-time-zone"
+        >
+          {projectTimeZone ?? '—'}
+        </span>
+        . Run times use your time zone.
+      </p>
       <HilosViewportTable
         controller={cron.controller}
         cells={{

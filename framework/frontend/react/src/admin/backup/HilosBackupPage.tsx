@@ -63,12 +63,14 @@ import {
 } from '@hilos/core/admin/backup'
 import {
   HILOS_TABLE_ACTIONS_KEY,
+  formatMoment,
   HilosPages,
   backupProgressPercent,
   createBackupProgressClock,
   createHilosRestoreProgress,
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
+  hilosTimeZone,
   isHiddenValue,
 } from '@hilos/core/base'
 import type { Hideable, HilosProgressAnchors } from '@hilos/core/base'
@@ -173,6 +175,7 @@ function outOfReachClass(row: HilosBackupRow): string | undefined {
  * @param props The project context (scope stores + action lifecycle).
  */
 export function HilosBackupPage({ context }: HilosBackupPageProps) {
+  useSignal(hilosTimeZone)
   // Create dialog: the table's main action opens it, the scope is picked inside, and
   // the command leaves from its confirm button as a tracked action. Its state stands
   // above the table factory because the opener goes into it as an argument — and the
@@ -533,8 +536,11 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         tableProgress={(progress) => formatBackupRunCaption(progress)}
         cells={{
           [BACKUP_CREATED_AT_FIELD]: (row) => (
-            <span className={outOfReachClass(row)}>
-              {row.createdAt || '—'}
+            <span
+              className={outOfReachClass(row)}
+              data-id="hilos-backup-created-at"
+            >
+              {formatMoment(row.createdAt, { kind: 'dateTime' }) ?? '—'}
               {isBackupOutOfReach(row) ? (
                 <>
                   {' '}
@@ -568,6 +574,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           [BACKUP_CHECKSUM_STATE_FIELD]: (row) => (
             <span className={outOfReachClass(row)}>
               <span
+                data-id="hilos-backup-checksum"
                 className={
                   isBackupChecksumMismatch(row)
                     ? 'text-danger fw-semibold'
@@ -581,6 +588,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           [BACKUP_SHIP_STATE_FIELD]: (row) => (
             <span className={outOfReachClass(row)}>
               <span
+                data-id="hilos-backup-shipping"
                 className={
                   isBackupShipFailed(row)
                     ? 'text-danger fw-semibold'
@@ -1057,9 +1065,12 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </button>
         )}
       >
-        <p className="mb-2">
-          Finished {outcomeRow?.restoreFinishedAt || '—'} ·{' '}
-          <span className="fw-semibold">{outcomeRow?.restoreOutcome}</span>
+        <p className="mb-2" data-id="hilos-backup-restore-outcome-finished">
+          Finished{' '}
+          {formatMoment(outcomeRow?.restoreFinishedAt ?? '', {
+            kind: 'dateTime',
+          }) ?? '—'}{' '}
+          · <span className="fw-semibold">{outcomeRow?.restoreOutcome}</span>
         </p>
         {outcomeRow?.restoreDatabaseTouched ? (
           <p className="mb-2">

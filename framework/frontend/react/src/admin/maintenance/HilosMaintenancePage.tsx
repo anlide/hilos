@@ -10,9 +10,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionError,
+  formatMoment,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   isHiddenValue,
+  hilosTimeZone,
 } from '@hilos/core/base'
 import {
   createHilosMaintenanceActions,
@@ -82,6 +84,7 @@ function describeManualError(
  * @param props The project's connection, scopes and action lifecycle.
  */
 export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
+  useSignal(hilosTimeZone)
   const stateHandle = useMemo(
     () => createHilosMaintenanceState(context),
     [context],
@@ -384,7 +387,11 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                       {HILOS_MAINTENANCE_STATE_COPY.closedSince}
                     </dt>
                     <dd className="col-sm-9">
-                      <code>{stateCard.startedAt ?? '—'}</code>
+                      <code data-id="hilos-maintenance-started-at">
+                        {formatMoment(stateCard.startedAt ?? '', {
+                          kind: 'dateTime',
+                        }) ?? '—'}
+                      </code>
                       <span className="text-body-secondary ms-2">
                         {stateCard.elapsed}
                       </span>
@@ -406,7 +413,11 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                       {HILOS_MAINTENANCE_STATE_COPY.started}
                     </dt>
                     <dd className="col-sm-9">
-                      <code>{stateCard.startedAt ?? '—'}</code>
+                      <code data-id="hilos-maintenance-started-at">
+                        {formatMoment(stateCard.startedAt ?? '', {
+                          kind: 'dateTime',
+                        }) ?? '—'}
+                      </code>
                     </dd>
                   </>
                 )}

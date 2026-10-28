@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { HilosLegalAcceptancesPage } from '../src/admin/legal/HilosLegalAcceptancesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {
+  hilosBrowserTimeZone,
+  hilosTimeZone,
   createSignal,
   HIDDEN_VALUE,
   HilosPages,
@@ -12,6 +14,7 @@ import {
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
+import { readerTimeZone } from './readerTimeZone.js'
 
 /** The acceptance's person fields, as the server sent them to this viewer. */
 interface PersonFields {
@@ -19,9 +22,17 @@ interface PersonFields {
   email: unknown
 }
 
+interface AcceptanceFixture extends PersonFields {
+  rowKey: number
+  acceptedAt: unknown
+}
+
+const ACCEPTED_AT = Date.parse('2026-10-24T03:30:00Z')
+
 /** The live window is real; only its transport is replaced, and the rows arrive by `push`. */
 function harness() {
   const listeners: Array<(frame: never) => void> = []
+  const requests = { registrations: 0, viewports: 0, windows: 0 }
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.LEGAL_ACCEPTANCES)
   const context = {
@@ -31,9 +42,13 @@ function harness() {
         if (event === 'tableWindow') listeners.push(listener)
         return () => {}
       },
-      registerTableWindow() {},
+      registerTableWindow() {
+        requests.registrations += 1
+      },
       unregisterTableWindow() {},
-      sendTableViewport() {},
+      sendTableViewport() {
+        requests.viewports += 1
+      },
       sendTableRendered() {},
       sendTableFacets() {},
       sendTableRowFocus() {},
@@ -52,29 +67,29 @@ function harness() {
   return {
     context,
     router,
-    push({ name, email }: PersonFields) {
+    requests,
+    push(acceptances: AcceptanceFixture[]) {
+      requests.windows += 1
       for (const listener of listeners)
         listener({
           data: {
             page: HilosPages.LEGAL_ACCEPTANCES,
             tableKey: 'hilosLegalAcceptances',
-            rows: [
-              {
-                rowKey: 42,
-                slots: {
-                  acceptance: {
-                    userId: 9,
-                    name,
-                    email,
-                    document: 'terms',
-                    revisionId: 'current',
-                    declared: true,
-                    acceptedAt: '2026-09-27 12:00:00',
-                  },
+            rows: acceptances.map(({ rowKey, name, email, acceptedAt }) => ({
+              rowKey,
+              slots: {
+                acceptance: {
+                  userId: rowKey,
+                  name,
+                  email,
+                  document: 'terms',
+                  revisionId: 'current',
+                  declared: true,
+                  acceptedAt,
                 },
               },
-            ],
-            totalCount: 1,
+            })),
+            totalCount: acceptances.length,
             totalExact: true,
             firstAnchor: null,
             lastAnchor: null,
@@ -92,13 +107,21 @@ function mountOver(person: PersonFields): HTMLElement {
       <HilosLegalAcceptancesPage context={h.context} />
     </HilosRouterContext.Provider>,
   )
-  act(() => h.push(person))
+  act(() => h.push([{ rowKey: 42, ...person, acceptedAt: ACCEPTED_AT }]))
   return view.container.querySelector(
     '[data-id="legal-acceptance-row"]',
   ) as HTMLElement
 }
 
 afterEach(cleanup)
+
+function formatIndependent(moment: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(moment)
+}
 
 describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
   it('draws the mark for a hidden name and a hidden email, and says nothing about email', () => {
@@ -114,6 +137,89 @@ describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
     expect(record.querySelector('strong')?.textContent).toBe('Reader')
     expect(record.textContent).toContain('No verified email')
     expect(record.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+  })
+
+  it('draws accepted moments live in the reader zone without replacing the table window', () => {
+    const reader = readerTimeZone()
+    try {
+      const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+      const readerZone =
+        browserZone === 'Pacific/Honolulu' ? 'Asia/Tokyo' : 'Pacific/Honolulu'
+      const h = harness()
+      act(() => reader.choose('UTC'))
+      const view = render(
+        <HilosRouterContext.Provider value={h.router}>
+          <HilosLegalAcceptancesPage context={h.context} />
+        </HilosRouterContext.Provider>,
+      )
+      const table = view.container.querySelector('table')
+      const fixtures: AcceptanceFixture[] = [
+        {
+          rowKey: 42,
+          name: 'Reader',
+          email: 'reader@example.com',
+          acceptedAt: ACCEPTED_AT,
+        },
+        {
+          rowKey: 43,
+          name: 'Epoch',
+          email: 'epoch@example.com',
+          acceptedAt: 0,
+        },
+        {
+          rowKey: 44,
+          name: 'Missing',
+          email: 'missing@example.com',
+          acceptedAt: null,
+        },
+        {
+          rowKey: 45,
+          name: 'Invalid',
+          email: 'invalid@example.com',
+          acceptedAt: 8_640_000_000_000_001,
+        },
+      ]
+      act(() => h.push(fixtures))
+
+      const acceptanceTime = (rowKey: number): HTMLElement =>
+        view.container.querySelector(
+          `[data-id="hilos-table-row-${rowKey}"] [data-id="legal-acceptance-accepted-at"]`,
+        ) as HTMLElement
+      const firstRow = view.container.querySelector(
+        '[data-id="hilos-table-row-42"]',
+      )
+      expect(acceptanceTime(42).textContent).toBe(
+        formatIndependent(ACCEPTED_AT, 'UTC'),
+      )
+      expect(acceptanceTime(42).textContent).not.toBe('')
+      expect(acceptanceTime(43).textContent).toBe(formatIndependent(0, 'UTC'))
+      expect(acceptanceTime(43).textContent).not.toBe('')
+      expect(acceptanceTime(44).textContent).toBe('—')
+      expect(acceptanceTime(45).textContent).toBe('—')
+      expect(readerZone).not.toBe(browserZone)
+
+      const beforeZoneChange = { ...h.requests }
+      act(() => reader.choose(readerZone))
+
+      expect(hilosTimeZone.get()).toBe(readerZone)
+      expect(h.requests).toEqual(beforeZoneChange)
+      expect(view.container.querySelector('table')).toBe(table)
+      expect(
+        view.container.querySelector('[data-id="hilos-table-row-42"]'),
+      ).toBe(firstRow)
+      expect(acceptanceTime(42).textContent).toBe(
+        formatIndependent(ACCEPTED_AT, readerZone),
+      )
+      expect(acceptanceTime(43).textContent).toBe(
+        formatIndependent(0, readerZone),
+      )
+      expect(acceptanceTime(43).textContent).not.toBe('')
+      expect(acceptanceTime(44).textContent).toBe('—')
+      expect(acceptanceTime(45).textContent).toBe('—')
+    } finally {
+      cleanup()
+      reader.release()
+    }
   })
 })
 

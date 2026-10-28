@@ -17,6 +17,11 @@ import {
   createSignal,
   hilosToasts,
 } from '@hilos/core'
+import {
+  formatMoment,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -33,6 +38,7 @@ import type {
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 const CIRCLE_TABLE = 'hilosVerifierCircle'
 
@@ -430,6 +436,159 @@ function openAndType(typed: string): void {
   fireEvent.change(addField() as HTMLInputElement, { target: { value: typed } })
 }
 
+describe('HilosMaintenancePage reader-zone moments', () => {
+  it.each([true, false])(
+    'reformats the held startedAt and keeps its circle draft when manual=%s',
+    async (manual) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+      vi.setSystemTime(new Date('2026-01-01T00:32:35.123Z'))
+      const reader = readerTimeZone()
+      const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+      const firstZone =
+        browserZone === 'America/Los_Angeles' || browserZone === 'Europe/Kyiv'
+          ? 'Pacific/Honolulu'
+          : 'America/Los_Angeles'
+      const nextZone =
+        browserZone === 'Europe/Kyiv' || browserZone === 'Pacific/Honolulu'
+          ? 'Asia/Tokyo'
+          : 'Europe/Kyiv'
+      const startedAt = '2026-01-01T00:30:05.123456Z'
+
+      try {
+        act(() => reader.choose(firstZone))
+        const { context, pushState } = seededContext([ANN])
+        const view = mountPage(context)
+        const state = maintenanceState({
+          phase: 'verifying',
+          operation: manual ? 'manual_maintenance' : 'restore',
+          manual,
+          startedAt,
+          passCount: 2,
+        })
+        await settled(() => pushState(state))
+
+        const card = byId(
+          `hilos-maintenance-state-${manual ? 'manual' : 'operation'}`,
+        )
+        const timestamp = byId('hilos-maintenance-started-at')
+        const table = view.container.querySelector('table')
+        const row = view.container.querySelector(
+          'table [data-id="hilos-table-row-1"]',
+        )
+        expect(firstZone).not.toBe(browserZone)
+        expect(timestamp?.textContent).toBe(
+          formatMoment(startedAt, { kind: 'dateTime' }),
+        )
+        const firstTimestamp = timestamp?.textContent
+        expect(card?.textContent).toContain('verifying')
+        expect(byId('hilos-maintenance-pass-count')?.textContent).toBe('2')
+
+        openAndType('reviewer@example.test')
+        const field = addField()
+        const dialog = field?.closest('[role="dialog"]')
+        const confirm = addConfirm()
+        field?.focus()
+        expect(confirm.disabled).toBe(false)
+
+        act(() => reader.choose(nextZone))
+
+        expect(nextZone).not.toBe(browserZone)
+        expect(hilosTimeZone.get()).toBe(nextZone)
+        expect(timestamp?.textContent).toBe(
+          formatMoment(startedAt, { kind: 'dateTime' }),
+        )
+        expect(timestamp?.textContent).not.toBe(firstTimestamp)
+        expect(card).toBe(
+          byId(`hilos-maintenance-state-${manual ? 'manual' : 'operation'}`),
+        )
+        expect(card?.textContent).toContain('verifying')
+        expect(byId('hilos-maintenance-pass-count')?.textContent).toBe('2')
+        expect(view.container.querySelector('table')).toBe(table)
+        expect(
+          view.container.querySelector('table [data-id="hilos-table-row-1"]'),
+        ).toBe(row)
+        expect(field).toBe(addField())
+        expect(field?.value).toBe('reviewer@example.test')
+        expect(document.activeElement).toBe(field)
+        expect(field?.closest('[role="dialog"]')).toBe(dialog)
+        expect(addConfirm()).toBe(confirm)
+        expect(confirm.disabled).toBe(false)
+
+        if (manual) {
+          expect(card?.textContent).toContain('2 minutes ago')
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(30_000)
+          })
+          expect(card?.textContent).toContain('3 minutes ago')
+          expect(timestamp?.textContent).toBe(
+            formatMoment(startedAt, { kind: 'dateTime' }),
+          )
+        } else {
+          expect(card?.textContent).not.toContain('minutes ago')
+          expect(card?.textContent).not.toContain(
+            HILOS_MAINTENANCE_STATE_COPY.justNow,
+          )
+        }
+        expect(state.startedAt).toBe(startedAt)
+        view.unmount()
+      } finally {
+        cleanup()
+        reader.release()
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it('treats an ISO UTC epoch-zero startedAt as a moment and rejects absent or invalid values', async () => {
+    const reader = readerTimeZone()
+    const epochZero = '1970-01-01T00:00:00.000000Z'
+
+    try {
+      act(() => reader.choose('Pacific/Kiritimati'))
+      const { context, pushState } = seededContext([])
+      mountPage(context)
+
+      for (const manual of [true, false]) {
+        await settled(() =>
+          pushState(
+            maintenanceState({
+              phase: 'verifying',
+              operation: manual ? 'manual_maintenance' : 'restore',
+              manual,
+              startedAt: epochZero,
+            }),
+          ),
+        )
+        expect(byId('hilos-maintenance-started-at')?.textContent).toBe(
+          formatMoment(epochZero, { kind: 'dateTime' }),
+        )
+        expect(byId('hilos-maintenance-started-at')?.textContent).not.toBe('—')
+
+        for (const startedAt of [
+          null,
+          'malformed',
+          '2026-02-30T00:00:00.000000Z',
+        ]) {
+          await settled(() =>
+            pushState(
+              maintenanceState({
+                phase: 'verifying',
+                operation: manual ? 'manual_maintenance' : 'restore',
+                manual,
+                startedAt,
+              }),
+            ),
+          )
+          expect(byId('hilos-maintenance-started-at')?.textContent).toBe('—')
+        }
+      }
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
+})
+
 describe('HilosMaintenancePage', () => {
   it('offers enable only after the open frame arrives', async () => {
     const { context, pushState } = seededContext([])
@@ -531,13 +690,14 @@ describe('HilosMaintenancePage', () => {
   it('renders only the planned operation lines in the frozen card', async () => {
     const { context, pushState } = seededContext([])
     await mountPage(context)
+    const startedAt = '2026-10-10T10:00:00.000000Z'
 
     await settled(() =>
       pushState(
         maintenanceState({
           phase: 'verifying',
           operation: 'restore',
-          startedAt: '2026-10-10T10:00:00+00:00',
+          startedAt,
           passCount: 2,
         }),
       ),
@@ -551,7 +711,9 @@ describe('HilosMaintenancePage', () => {
       HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
     )
     expect(card.textContent).toContain('restore')
-    expect(card.textContent).toContain('2026-10-10T10:00:00+00:00')
+    expect(card.textContent).toContain(
+      formatMoment(startedAt, { kind: 'dateTime' }) ?? '—',
+    )
     expect(card.textContent).not.toContain('Initiator')
     expect(card.querySelector('button')).toBeNull()
   })

@@ -47,7 +47,9 @@ import {
 import {
   HilosPages,
   createSignal,
+  formatMoment,
   hilosAdminAccess,
+  hilosTimeZone,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
 } from '@hilos/core/base'
 import type {
@@ -91,10 +93,10 @@ function sourceValue(source: typeof LOG_SOURCE_LIVE | number | null): string {
 /**
  * The label of one archived batch in the source select.
  *
- * @param batch The batch's rotation moment, in seconds.
+ * @param batch The batch's rotation moment, in UTC epoch milliseconds.
  */
 function batchLabel(batch: number): string {
-  return new Date(batch).toLocaleString()
+  return formatMoment(batch, { kind: 'dateTime' }) ?? '—'
 }
 
 /**
@@ -106,6 +108,7 @@ function batchLabel(batch: number): string {
 export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   // HilosAdminPage provides the context to its children, not to this parent.
   const viewMode = useSignal(hilosAdminAccess) === 'view'
+  useSignal(hilosTimeZone)
   const router = useContext(HilosRouterContext)
   // The address IS what this screen is showing, so the navigator is what it reads
   // and writes. A router-less mount (none in practice) still reads files — it just

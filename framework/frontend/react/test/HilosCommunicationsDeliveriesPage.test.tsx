@@ -12,6 +12,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
 } from '@hilos/core'
 import type {
   HilosConnection,
@@ -28,6 +30,7 @@ import {
   channelEl,
   channelSummary,
 } from './hilosCommunicationsHarness.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
@@ -88,12 +91,15 @@ function seededContext(
 ): {
   context: HilosDeliveriesContext
   sent: SentAction[]
+  requests: { registrations: number; viewports: number; windows: number }
   answer: (requestId: string) => void
 } {
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.COMMUNICATIONS_DELIVERIES)
   const windowListeners = new Set<Listener>()
+  const requests = { registrations: 0, viewports: 0, windows: 0 }
   const serveWindow = (): void => {
+    requests.windows += 1
     const data = {
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
       tableKey: TABLE,
@@ -118,11 +124,13 @@ function seededContext(
 
   const connection = {
     registerTableWindow(): void {
+      requests.registrations += 1
       serveWindow()
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(): boolean {
+      requests.viewports += 1
       serveWindow()
 
       return true
@@ -170,6 +178,7 @@ function seededContext(
       actions,
     },
     sent,
+    requests,
     answer(requestId: string): void {
       for (const listener of successListeners) {
         listener({
@@ -212,6 +221,14 @@ function retryState(rowKey: string) {
     ariaBusy: button.getAttribute('aria-busy'),
     ariaDisabled: button.getAttribute('aria-disabled'),
   }
+}
+
+function formatIndependent(moment: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(moment)
 }
 
 const RESTING = {
@@ -405,4 +422,98 @@ it('draws the channel shared head and journal without a duplicate channel plaque
   act(() => h.putSummary({ ...channelSummary, label: 'Live mail' }))
   expect(channelEl('hilos-page-head-title')?.textContent).toBe('Live mail')
   expect(h.sent).toEqual([])
+})
+
+it('updates formatted delivery moments live without a new window or losing table state', () => {
+  vi.useFakeTimers()
+  const reader = readerTimeZone()
+  try {
+    const createdAt = Date.parse('2026-10-24T03:30:00Z')
+    const deliveredAt = createdAt + 15_000
+    const invalidMoment = 8_640_000_000_000_001
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const readerZone =
+      browserZone === 'Pacific/Honolulu' ? 'Asia/Tokyo' : 'Pacific/Honolulu'
+    const { context, requests } = seededContext(
+      { ...FAILED_DELIVERY, createdAt, deliveredAt },
+      {
+        '58': { ...FAILED_DELIVERY, createdAt: 0, deliveredAt: null },
+        '59': {
+          ...FAILED_DELIVERY,
+          createdAt: invalidMoment,
+          deliveredAt: invalidMoment,
+        },
+      },
+    )
+    act(() => reader.choose('UTC'))
+    renderPage(context)
+
+    const search = document.querySelector(
+      '[data-id="hilos-table-search"]',
+    ) as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'backup' } })
+    act(() => vi.advanceTimersByTime(300))
+    expect(search.value).toBe('backup')
+    fireEvent.click(
+      document.querySelector(
+        'table [data-id="hilos-table-expand-57"]',
+      ) as Element,
+    )
+
+    const table = document.querySelector('table')
+    const row57 = document.querySelector('table [data-id="hilos-table-row-57"]')
+    const cells57 = row57?.querySelectorAll('td')
+    const row58 = document.querySelector('table [data-id="hilos-table-row-58"]')
+    const cells58 = row58?.querySelectorAll('td')
+    const row59 = document.querySelector('table [data-id="hilos-table-row-59"]')
+    const cells59 = row59?.querySelectorAll('td')
+    expect(cells57?.[0]?.textContent?.trim()).toBe(
+      formatIndependent(createdAt, 'UTC'),
+    )
+    expect(cells57?.[4]?.textContent?.trim()).toBe(
+      formatIndependent(deliveredAt, 'UTC'),
+    )
+    expect(cells58?.[0]?.textContent?.trim()).toBe(formatIndependent(0, 'UTC'))
+    expect(cells58?.[0]?.textContent?.trim()).not.toBe('')
+    expect(cells58?.[4]?.textContent?.trim()).toBe('—')
+    expect(cells59?.[0]?.textContent?.trim()).toBe('—')
+    expect(cells59?.[4]?.textContent?.trim()).toBe('—')
+    expect(table?.querySelector('dd')?.textContent).toContain('Backup is ready')
+    expect(readerZone).not.toBe(browserZone)
+
+    const beforeZoneChange = { ...requests }
+    act(() => reader.choose(readerZone))
+
+    expect(hilosTimeZone.get()).toBe(readerZone)
+    expect(requests).toEqual(beforeZoneChange)
+    expect(document.querySelector('table')).toBe(table)
+    expect(document.querySelector('table [data-id="hilos-table-row-57"]')).toBe(
+      row57,
+    )
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-table-search"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('backup')
+    expect(table?.querySelector('dd')?.textContent).toContain('Backup is ready')
+    expect(row57?.querySelectorAll('td')[0]?.textContent?.trim()).toBe(
+      formatIndependent(createdAt, readerZone),
+    )
+    expect(row57?.querySelectorAll('td')[4]?.textContent?.trim()).toBe(
+      formatIndependent(deliveredAt, readerZone),
+    )
+    expect(row58?.querySelectorAll('td')[0]?.textContent?.trim()).toBe(
+      formatIndependent(0, readerZone),
+    )
+    expect(row58?.querySelectorAll('td')[0]?.textContent?.trim()).not.toBe('')
+    expect(row58?.querySelectorAll('td')[4]?.textContent?.trim()).toBe('—')
+    expect(row59?.querySelectorAll('td')[0]?.textContent?.trim()).toBe('—')
+    expect(row59?.querySelectorAll('td')[4]?.textContent?.trim()).toBe('—')
+  } finally {
+    cleanup()
+    reader.release()
+    vi.useRealTimers()
+  }
 })

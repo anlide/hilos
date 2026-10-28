@@ -5,6 +5,7 @@ import {
   createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
+  createHilosTimeZonePicker,
   hilosChildLinks,
   HilosPages,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
@@ -15,6 +16,7 @@ import {
   hilosProfileSectionId,
   type HilosProfileBinding,
   type HilosProfilePageContext,
+  type HilosTimeZonePicker,
 } from '@hilos/core/base'
 import { HilosAvatar } from '../HilosAvatar.js'
 import { HilosLink } from '../HilosLink.js'
@@ -27,6 +29,7 @@ import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
 import { HilosProfilePhoto } from './HilosProfilePhoto.js'
 import { HilosProfileTheme } from './HilosProfileTheme.js'
+import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
 
 /**
  * Pass the same two objects on every render — module constants or memoized: a
@@ -41,7 +44,7 @@ export interface HilosProfilePageProps {
 
 /**
  * The profile root (HIL-1169): the person's own line, the Account rows (Name,
- * Email, Theme), a row per catalog section with its live summary, and the
+ * Email, Time zone, Theme), a row per catalog section with its live summary, and the
  * danger zone.
  */
 export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
@@ -104,12 +107,28 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
   const name = useSignal(binding.name)
   const emailOpening = useSignal(email.busy)
   const theme = useSignal(root.theme)
+  const timeZone = useSignal(root.timeZone)
   const impersonation = useSignal(hilosImpersonation)
   const [themeOpen, setThemeOpen] = useState(false)
-  // A sign-out takes the Theme window away with the page; it must not come
-  // back by itself with the next sign-in.
+  const [timeZoneOpen, setTimeZoneOpen] = useState(false)
+  const [timeZoneOwner, setTimeZoneOwner] = useState<{
+    context: HilosProfilePageContext
+    picker: HilosTimeZonePicker
+  } | null>(null)
+  // Disposal is final: each setup, including StrictMode replay, owns a fresh
+  // picker. A changed context takes its old adapter away before the next setup.
   useEffect(() => {
-    if (!signedIn) setThemeOpen(false)
+    const picker = createHilosTimeZonePicker(context)
+    setTimeZoneOwner({ context, picker })
+    return () => picker.dispose()
+  }, [context])
+  // A sign-out takes the choice windows away with the page; they must not come
+  // back by themselves with the next sign-in.
+  useEffect(() => {
+    if (!signedIn) {
+      setThemeOpen(false)
+      setTimeZoneOpen(false)
+    }
   }, [signedIn])
 
   // Nobody signed in, or the session is not known yet: a placeholder, never page
@@ -216,6 +235,38 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
               </LoadingButton>
             </div>
           ) : null}
+          <div
+            className="d-flex align-items-center gap-3 py-3 border-bottom"
+            data-id="profile-time-zone-row"
+          >
+            <i
+              className="bi bi-clock fs-5 text-body-secondary"
+              aria-hidden="true"
+            />
+            <div className="flex-grow-1 text-break">
+              <div className="fw-semibold small">{COPY.timeZone}</div>
+              <div
+                className="small text-body-secondary"
+                data-id="profile-time-zone"
+              >
+                {timeZone}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={impersonation !== null}
+              aria-describedby={
+                impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+              }
+              data-id="profile-time-zone-change"
+              onClick={() => {
+                if (hilosImpersonation.get() === null) setTimeZoneOpen(true)
+              }}
+            >
+              {COPY.change}
+            </button>
+          </div>
           {theme !== null ? (
             <div className="d-flex align-items-center gap-3 py-3 border-bottom">
               <i
@@ -304,6 +355,13 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
       {photoEnabled ? <HilosProfilePhoto flow={photoFlow} /> : null}
       <HilosProfileEmailChange flow={email} />
       <HilosProfileTheme open={themeOpen} onClose={() => setThemeOpen(false)} />
+      {timeZoneOwner?.context === context ? (
+        <HilosProfileTimeZone
+          open={timeZoneOpen}
+          onClose={() => setTimeZoneOpen(false)}
+          picker={timeZoneOwner.picker}
+        />
+      ) : null}
     </section>
   )
 }

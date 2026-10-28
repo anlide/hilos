@@ -43,6 +43,12 @@ import {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  readDaemonCronMoment,
+  expectDaemonCronMoments,
+  watchDaemonCronDisplay,
+  watchSocketFrames,
+  deliveryObject,
+  type SocketFrame,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
   expectStandaloneEnvOrphans,
@@ -67,6 +73,55 @@ import {
 // Kit unit tests cover Cron idle/empty and cluster mismatches (P-572);
 // cluster coverage lives in binance-btc-tracker's tests/e2e/cluster/daemon/daemon.spec.ts.
 const DATABASE_HOST = 'tasks-mysql-test'
+
+test.describe('Cron time zones', () => {
+  test.use({ timezoneId: 'America/Los_Angeles', colorScheme: 'light' })
+
+  test('labels the delivered project zone separately from reader run times', async ({
+    page,
+  }) => {
+    const frames: SocketFrame[] = []
+    const socket = watchSocketFrames(page, (frame) => frames.push(frame))
+    try {
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
+      await expectStandaloneCron(expect, page)
+      const welcomes = frames
+        .map(({ wire }) => deliveryObject(wire))
+        .filter(({ type }) => type === 'handshake')
+      expect(welcomes.length).toBeGreaterThan(0)
+      const projectZone = deliveryObject(welcomes.at(-1)?.data).projectTimeZone
+      expect(projectZone).toEqual(expect.any(String))
+      expect(projectZone).not.toBe('America/Los_Angeles')
+      await expect(
+        page.getByTestId('hilos-daemon-cron-project-time-zone'),
+      ).toHaveText(projectZone as string)
+      await expect(page.getByTestId('hilos-daemon-cron-time-zone')).toHaveText(
+        `Expressions use the project time zone — ${projectZone}. Run times use your time zone.`,
+      )
+
+      const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
+      await expect
+        .poll(() => readDaemonCronMoment(frames, rowKey))
+        .toBeDefined()
+      const display = await watchDaemonCronDisplay(expect, page, rowKey)
+      try {
+        await expectDaemonCronMoments(
+          expect,
+          page,
+          frames,
+          rowKey,
+          'America/Los_Angeles',
+        )
+        await display.unchanged()
+      } finally {
+        await display.dispose()
+      }
+    } finally {
+      socket.stop()
+    }
+  })
+})
 
 test.describe('daemon overview', () => {
   test.afterEach(() => setAdminViewMode(false))

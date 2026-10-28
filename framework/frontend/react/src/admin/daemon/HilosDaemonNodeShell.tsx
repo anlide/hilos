@@ -8,7 +8,7 @@ import {
   readHilosDaemonNodeOverview,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -76,6 +76,7 @@ export function HilosDaemonNodeShell({
   // The hook re-renders this subtree before paint; the head reads the bound name.
   usePageInstanceName(context.scopes, HilosPages.DAEMON_NODE, name)
   const current = useSignal(currentSource)
+  useSignal(hilosTimeZone)
   const heading = current?.heading
   const logPath =
     current && showLogLinks

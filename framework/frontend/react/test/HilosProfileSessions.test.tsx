@@ -8,10 +8,15 @@ import {
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core'
+import { hilosTimeZone } from '@hilos/core/base'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
+import { readerTimeZone } from './readerTimeZone.js'
+
+const readerTimeZoneReleases: Array<() => void> = []
 
 afterEach(() => {
   cleanup()
+  for (const release of readerTimeZoneReleases.splice(0)) release()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -93,6 +98,217 @@ function setup(
 }
 
 describe('HilosProfileSessions (React)', () => {
+  it.each([
+    ['Europe/Kyiv', 'Device 1 · Europe/Kyiv'],
+    [null, 'Device 1'],
+  ])(
+    'shows the stored browser zone %s beside the device',
+    (browserTimeZone, caption) => {
+      setup([
+        {
+          ...makeSession(1),
+          browserTimeZone,
+        },
+      ])
+
+      expect(byId('profile-session-device').textContent).toBe(caption)
+    },
+  )
+
+  it('reformats moments for the reader while retaining the browser zone, expanded tabs, and revoke dialog', async () => {
+    const zone = readerTimeZone()
+    readerTimeZoneReleases.push(zone.release)
+    await act(async () => {
+      zone.choose('Asia/Tokyo')
+    })
+    const createdAt = 1767227400000
+    const lastSeenAt = 1767227460000
+    const expiresAt = 1767313800000
+    const connectedAt = 1767227520000
+    const sessions: HilosProfileSession[] = [
+      {
+        ...makeSession(1, { current: true }),
+        browserTimeZone: 'Europe/Kyiv',
+        createdAt,
+        expiresAt,
+        tabs: [makeTab('tab-current', { connectedAt, current: true })],
+      },
+      {
+        ...makeSession(2),
+        lastSeenAt,
+        expiresAt,
+      },
+    ]
+    const before = {
+      created: formatProfileDateTime(createdAt),
+      lastSeen: formatProfileDateTime(lastSeenAt),
+      expires: formatProfileDateTime(expiresAt),
+      connected: formatProfileDateTime(connectedAt),
+    }
+    const { view } = setup(sessions)
+    const rows = sessionRows()
+
+    expect(hilosTimeZone.get()).toBe('Asia/Tokyo')
+    expect(rows[0]?.textContent).toContain(`created ${before.created}`)
+    expect(rows[0]?.textContent).toContain(`expires ${before.expires}`)
+    expect(rows[1]?.textContent).toContain(`last seen ${before.lastSeen}`)
+    expect(byId('profile-session-device').textContent).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+
+    await act(async () => {
+      fireEvent.click(byId('profile-session-tabs'))
+      fireEvent.click(
+        sessionRows()[1]!.querySelector('[data-id="profile-session-revoke"]')!,
+      )
+    })
+    const tab = byId('profile-session-tab')
+    const dialog = byId('profile-session-end-confirm')
+    expect(tab.textContent).toContain(`opened ${before.connected}`)
+    expect(dialog).not.toBeNull()
+
+    await act(async () => {
+      zone.choose('America/New_York')
+    })
+    const after = {
+      created: formatProfileDateTime(createdAt),
+      lastSeen: formatProfileDateTime(lastSeenAt),
+      expires: formatProfileDateTime(expiresAt),
+      connected: formatProfileDateTime(connectedAt),
+    }
+
+    expect(hilosTimeZone.get()).toBe('America/New_York')
+    expect(after.created).not.toBe(before.created)
+    expect(after.lastSeen).not.toBe(before.lastSeen)
+    expect(after.expires).not.toBe(before.expires)
+    expect(after.connected).not.toBe(before.connected)
+    expect(sessionRows()[0]).toBe(rows[0])
+    expect(sessionRows()[0]?.textContent).toContain(`created ${after.created}`)
+    expect(sessionRows()[0]?.textContent).toContain(`expires ${after.expires}`)
+    expect(sessionRows()[1]?.textContent).toContain(
+      `last seen ${after.lastSeen}`,
+    )
+    expect(byId('profile-session-tab')).toBe(tab)
+    expect(tab.textContent).toContain(`opened ${after.connected}`)
+    expect(
+      sessionRows()[0]!
+        .querySelector('[data-id="profile-session-tabs"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(byId('profile-session-device').textContent).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+    expect(byId('profile-session-end-confirm')).toBe(dialog)
+    view.unmount()
+  })
+
+  it('keeps epoch zero and null session moments visible across a DST reader-zone change', async () => {
+    const zone = readerTimeZone()
+    readerTimeZoneReleases.push(zone.release)
+    await act(async () => {
+      zone.choose('UTC')
+    })
+    const epoch = 0
+    const dstBoundaryAt = Date.parse('2026-03-29T01:30:00Z')
+    const sessions: HilosProfileSession[] = [
+      {
+        ...makeSession(1, { current: true }),
+        browserTimeZone: 'Europe/Kyiv',
+        createdAt: epoch,
+        lastSeenAt: epoch,
+        expiresAt: epoch,
+        tabs: [
+          makeTab('tab-epoch', { connectedAt: epoch, current: true }),
+          makeTab('tab-dst', { connectedAt: dstBoundaryAt }),
+        ],
+      },
+      {
+        ...makeSession(2),
+        createdAt: dstBoundaryAt,
+        lastSeenAt: epoch,
+        expiresAt: null,
+      },
+    ]
+    const before = {
+      epoch: formatProfileDateTime(epoch),
+      dstBoundary: formatProfileDateTime(dstBoundaryAt),
+      never: formatProfileDateTime(null),
+    }
+    const { view } = setup(sessions)
+    const rows = sessionRows()
+
+    expect(hilosTimeZone.get()).toBe('UTC')
+    expect(before.epoch).not.toBe('')
+    expect(before.epoch).not.toBe('0')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.textContent).toContain(`created ${before.epoch}`)
+    expect(rows[0]?.textContent).toContain(`expires ${before.epoch}`)
+    expect(rows[1]?.textContent).toContain(`created ${before.dstBoundary}`)
+    expect(rows[1]?.textContent).toContain(`last seen ${before.epoch}`)
+    expect(rows[1]?.textContent).toContain(`expires ${before.never}`)
+    expect(byId('profile-session-device').textContent).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+
+    await act(async () => {
+      fireEvent.click(
+        rows[0]!.querySelector('[data-id="profile-session-tabs"]')!,
+      )
+      fireEvent.click(
+        rows[1]!.querySelector('[data-id="profile-session-revoke"]')!,
+      )
+    })
+    const tabs = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-id="profile-session-tab"]',
+      ),
+    ]
+    const dialog = byId('profile-session-end-confirm')
+    expect(tabs).toHaveLength(2)
+    expect(tabs[0]?.textContent).toContain(`opened ${before.epoch}`)
+    expect(tabs[1]?.textContent).toContain(`opened ${before.dstBoundary}`)
+    expect(
+      rows[0]!
+        .querySelector('[data-id="profile-session-tabs"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true')
+
+    await act(async () => {
+      zone.choose('Europe/London')
+    })
+    const after = {
+      epoch: formatProfileDateTime(epoch),
+      dstBoundary: formatProfileDateTime(dstBoundaryAt),
+      never: formatProfileDateTime(null),
+    }
+
+    expect(hilosTimeZone.get()).toBe('Europe/London')
+    expect(after.epoch).not.toBe(before.epoch)
+    expect(after.dstBoundary).not.toBe(before.dstBoundary)
+    expect(after.never).toBe(before.never)
+    expect(after.never).toBe('never')
+    expect(sessionRows()[0]).toBe(rows[0])
+    expect(sessionRows()[1]).toBe(rows[1])
+    expect(rows[0]?.textContent).toContain(`created ${after.epoch}`)
+    expect(rows[0]?.textContent).toContain(`expires ${after.epoch}`)
+    expect(rows[1]?.textContent).toContain(`created ${after.dstBoundary}`)
+    expect(rows[1]?.textContent).toContain(`last seen ${after.epoch}`)
+    expect(rows[1]?.textContent).toContain(`expires ${after.never}`)
+    expect(byId('profile-session-tab')).toBe(tabs[0])
+    expect(tabs[0]?.textContent).toContain(`opened ${after.epoch}`)
+    expect(tabs[1]?.textContent).toContain(`opened ${after.dstBoundary}`)
+    expect(
+      rows[0]!
+        .querySelector('[data-id="profile-session-tabs"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(byId('profile-session-device').textContent).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+    expect(byId('profile-session-end-confirm')).toBe(dialog)
+    view.unmount()
+  })
+
   it('formats a live tab directly from epoch milliseconds', async () => {
     setup([
       {

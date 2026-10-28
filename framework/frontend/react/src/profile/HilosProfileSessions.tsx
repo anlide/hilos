@@ -1,6 +1,7 @@
 import {
   endableProfileSessionCount,
   formatProfileDateTime,
+  hilosTimeZone,
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
@@ -9,6 +10,7 @@ import { useState } from 'react'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
+import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 
 /** Props for {@link HilosProfileSessions}. */
@@ -35,6 +37,7 @@ export function HilosProfileSessions({
   sessions,
   actions,
 }: HilosProfileSessionsProps) {
+  useSignal(hilosTimeZone)
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   const [endingSessionId, setEndingSessionId] = useState<number | null>(null)
   const [endOthersOpen, setEndOthersOpen] = useState(false)
@@ -137,6 +140,11 @@ export function HilosProfileSessions({
                   </h3>
                   <div data-id="profile-session-device">
                     {session.deviceName ?? 'Unknown device'}
+                    {session.browserTimeZone !== null ? (
+                      <span className="text-body-secondary">
+                        {` · ${session.browserTimeZone}`}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="small text-body-secondary">
                     {`created ${formatProfileDateTime(session.createdAt)} · last seen ${

@@ -12,10 +12,13 @@ import {
   bindSessionScope,
   bindSignOut,
   bindThemeState,
+  bindTimeZoneState,
+  applyServerTime,
   createSignal,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
+  ingest,
   PROFILE_RENAME_MEMORY_STORAGE_KEY,
   readProfileRenameMemory,
   resolveHilosProfileSignInMethods,
@@ -45,6 +48,7 @@ const themeActions = {
 
 let releaseTheme: (() => void) | undefined
 let releaseSession: (() => void) | undefined
+let releaseTimeZone: (() => void) | undefined
 const renameDisposers: Array<() => void> = []
 
 beforeEach(() => sessionStorage.clear())
@@ -57,6 +61,12 @@ afterEach(() => {
   releaseTheme = undefined
   releaseSession?.()
   releaseSession = undefined
+  releaseTimeZone?.()
+  releaseTimeZone = undefined
+  vi.clearAllTimers()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  applyServerTime(Date.now())
   setHilosThemePick(null)
   const restore = bindThemeState(
     { on: () => () => {} } as unknown as HilosConnection,
@@ -71,6 +81,7 @@ function fakeConnection() {
   const listeners: ((signal: ProjectSignal) => void)[] = []
 
   return {
+    projectTimeZone: 'UTC',
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
         listeners.push(listener as (signal: ProjectSignal) => void)
@@ -430,6 +441,7 @@ function accountThemePage() {
     scopes,
     actions,
   )
+  releaseTimeZone = bindTimeZoneState(connection as unknown as HilosConnection)
   act(() => setHilosThemePick(null))
   const signIn = (
     themePick: ThemePick,
@@ -437,6 +449,7 @@ function accountThemePage() {
       switchingEnabled: true,
       defaultTheme: 'system',
     },
+    timeZone: string | null = null,
   ) =>
     connection.emit('handshake_response', {
       entities: {
@@ -445,6 +458,7 @@ function accountThemePage() {
           name: 'Ann Lee',
           themePick,
           themePickInitialized: themePick !== null,
+          timeZone,
         },
       },
       data: { themeSettings: settings },
@@ -455,17 +469,29 @@ function accountThemePage() {
     connection,
     scopes,
   } as unknown as HilosProfilePageContext
-  render(
+  const binding = nameOnly()
+  const view = render(
     <StrictMode>
       <HilosRouterContext.Provider value={router}>
-        <HilosProfilePage context={context} binding={nameOnly()} />
+        <HilosProfilePage context={context} binding={binding} />
       </HilosRouterContext.Provider>
     </StrictMode>,
   )
   const themeCalls = () =>
     dispatch.mock.calls.filter(([action]) => action === 'hilos_theme_pick')
+  const timeZoneCalls = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_time_zone_pick')
 
-  return { connection, scopes, signIn, themeCalls }
+  return {
+    connection,
+    scopes,
+    signIn,
+    themeCalls,
+    timeZoneCalls,
+    view,
+    context,
+    binding,
+  }
 }
 
 function element(id: string): HTMLButtonElement {
@@ -475,25 +501,29 @@ function element(id: string): HTMLButtonElement {
   return found
 }
 
-it('places the Theme row after Email, or after Name without an address', () => {
+it('places Time zone before Theme, after Email or after Name without an address', () => {
   bindTheme({ switchingEnabled: true, defaultTheme: 'system' })
   setup(nameOnly(), true, VERIFIED_EMAIL)
   let rows = accountRows()
-  expect(rows).toHaveLength(3)
+  expect(rows).toHaveLength(4)
   expect(rows[0]?.querySelector('[data-id="profile-name"]')).not.toBeNull()
   expect(rows[1]?.querySelector('[data-id="profile-email"]')).not.toBeNull()
-  expect(rows[2]?.querySelector('[data-id="profile-theme"]')).not.toBeNull()
-  expect(rows[2]?.querySelector('i')?.classList).toContain('bi-circle-half')
+  expect(rows[2]?.querySelector('[data-id="profile-time-zone"]')).not.toBeNull()
+  expect(rows[2]?.querySelector('i')?.classList).toContain('bi-clock')
+  expect(rows[2]?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+  expect(rows[3]?.querySelector('[data-id="profile-theme"]')).not.toBeNull()
+  expect(rows[3]?.querySelector('i')?.classList).toContain('bi-circle-half')
   expect(
-    rows[2]?.querySelector('[data-id="profile-theme-change"]')?.textContent,
+    rows[3]?.querySelector('[data-id="profile-theme-change"]')?.textContent,
   ).toBe('Change')
   cleanup()
 
   setup(nameOnly())
   rows = accountRows()
-  expect(rows).toHaveLength(2)
+  expect(rows).toHaveLength(3)
   expect(rows[0]?.querySelector('[data-id="profile-name"]')).not.toBeNull()
-  expect(rows[1]?.querySelector('[data-id="profile-theme"]')).not.toBeNull()
+  expect(rows[1]?.querySelector('[data-id="profile-time-zone"]')).not.toBeNull()
+  expect(rows[2]?.querySelector('[data-id="profile-theme"]')).not.toBeNull()
   expect(document.querySelector('[data-id="profile-email"]')).toBeNull()
 })
 
@@ -635,6 +665,162 @@ it.each(['off', 'signout', 'impersonation'] as const)(
       document.querySelector('[data-id="profile-theme-change"]'),
     ).not.toBeNull()
     expect(document.querySelector('[data-id="profile-theme-modal"]')).toBeNull()
+  },
+)
+
+it('keeps the effect-owned time zone picker live after StrictMode replay', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  vi.setSystemTime(new Date('2026-01-01T00:00:10Z'))
+  applyServerTime(Date.now())
+  const resolved = new Intl.DateTimeFormat().resolvedOptions()
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...resolved,
+    timeZone: 'Europe/Warsaw',
+  })
+  const { scopes, signIn, timeZoneCalls } = accountThemePage()
+  act(() =>
+    ingest(scopes.openPage(HilosPages.PROFILE), {
+      lists: {
+        profileTimeZones: {
+          cleared: true,
+          items: ['UTC', 'Asia/Tokyo', 'Europe/Warsaw'].map((timeZone) => ({
+            itemKey: timeZone,
+            slots: { timeZone },
+          })),
+        },
+      },
+    }),
+  )
+  expect(element('profile-time-zone').textContent).toBe(
+    'Europe/Warsaw · automatic',
+  )
+  expect(
+    element('profile-time-zone-row').querySelector('.fw-semibold')?.textContent,
+  ).toBe('Time zone')
+  const change = element('profile-time-zone-change')
+  change.focus()
+  fireEvent.click(change)
+  expect(document.activeElement).toBe(element('profile-time-zone-search'))
+  expect(element('profile-time-zone-option-UTC').textContent).toContain('00:00')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(50000)
+  })
+  expect(element('profile-time-zone-option-UTC').textContent).toContain('00:01')
+  fireEvent.change(element('profile-time-zone-search'), {
+    target: { value: 'tokyo' },
+  })
+  expect(
+    element('profile-time-zone-modal').querySelectorAll('.list-group button'),
+  ).toHaveLength(1)
+  signIn(null, undefined, 'Asia/Tokyo')
+  expect(element('profile-time-zone').textContent).toBe('Asia/Tokyo')
+  expect(
+    element('profile-time-zone-option-Asia/Tokyo').getAttribute('aria-current'),
+  ).toBe('true')
+  expect(
+    (element('profile-time-zone-search') as unknown as HTMLInputElement).value,
+  ).toBe('tokyo')
+  await act(async () => {
+    fireEvent.click(element('profile-time-zone-option-Asia/Tokyo'))
+  })
+  expect(timeZoneCalls()).toEqual([
+    ['hilos_time_zone_pick', { timeZone: 'Asia/Tokyo' }],
+  ])
+  expect(
+    document.querySelector('[data-id="profile-time-zone-modal"]'),
+  ).toBeNull()
+  expect(document.activeElement).toBe(change)
+  fireEvent.click(change)
+  await act(async () => {
+    fireEvent.click(element('profile-time-zone-automatic'))
+  })
+  expect(timeZoneCalls()).toEqual([
+    ['hilos_time_zone_pick', { timeZone: 'Asia/Tokyo' }],
+    ['hilos_time_zone_pick', { timeZone: null }],
+  ])
+  expect(element('profile-time-zone').textContent).toBe('Asia/Tokyo')
+  signIn(null, undefined, null)
+  expect(element('profile-time-zone').textContent).toBe(
+    'Europe/Warsaw · automatic',
+  )
+})
+
+it('replaces the time zone owner on context change and sends only through the current picker', async () => {
+  const tab = accountThemePage()
+  tab.signIn(null, undefined, 'Asia/Tokyo')
+  fireEvent.click(element('profile-time-zone-change'))
+  fireEvent.change(element('profile-time-zone-search'), {
+    target: { value: 'old search' },
+  })
+  const dispatch = vi.fn(() => ({
+    loading: createSignal(false),
+    done: Promise.resolve({}),
+  }))
+  const next = {
+    ...tab.context,
+    actions: { dispatch } as unknown as ActionLifecycle,
+  }
+  tab.view.rerender(
+    <StrictMode>
+      <HilosRouterContext.Provider value={router}>
+        <HilosProfilePage context={next} binding={tab.binding} />
+      </HilosRouterContext.Provider>
+    </StrictMode>,
+  )
+  fireEvent.change(element('profile-time-zone-search'), {
+    target: { value: 'tokyo' },
+  })
+  expect(
+    element('profile-time-zone-option-Asia/Tokyo').getAttribute('aria-current'),
+  ).toBe('true')
+  await act(async () => {
+    fireEvent.click(element('profile-time-zone-option-Asia/Tokyo'))
+  })
+  expect(tab.timeZoneCalls()).toEqual([])
+  expect(dispatch).toHaveBeenCalledWith('hilos_time_zone_pick', {
+    timeZone: 'Asia/Tokyo',
+  })
+  expect(
+    document.querySelector('[data-id="profile-time-zone-modal"]'),
+  ).toBeNull()
+})
+
+it('describes the time zone Change lock with the impersonation strip', () => {
+  const { scopes } = accountThemePage()
+  act(() => scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 }))
+  const change = element('profile-time-zone-change')
+  expect(change.disabled).toBe(true)
+  expect(change.getAttribute('aria-describedby')).toBe(
+    HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  )
+  fireEvent.click(change)
+  expect(
+    document.querySelector('[data-id="profile-time-zone-modal"]'),
+  ).toBeNull()
+})
+
+it.each(['signout', 'impersonation'] as const)(
+  'takes the time zone window away on %s and keeps it closed after return',
+  (cause) => {
+    const { scopes, connection, signIn } = accountThemePage()
+    fireEvent.click(element('profile-time-zone-change'))
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).not.toBeNull()
+    if (cause === 'signout')
+      connection.emit('handshake_response', { entities: { currentUser: null } })
+    else
+      act(() =>
+        scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 }),
+      )
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).toBeNull()
+    act(() => scopes.session.data.set('impersonatedBy', null))
+    signIn(null)
+    expect(
+      document.querySelector('[data-id="profile-time-zone-modal"]'),
+    ).toBeNull()
   },
 )
 

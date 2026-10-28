@@ -16,6 +16,7 @@ import {
   expectDaemonNodeTableName,
   expectLanguagePageHead,
   expectPasswordVisibility,
+  openProfileTimeZone,
   shownByTestId,
   watchClientDocument,
   DAEMON_ROOT_PATH,
@@ -315,6 +316,47 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
+})
+
+test('the Time zone dialog is named, keyboard operable and returns focus on Escape and Close', async ({
+  page,
+}) => {
+  await signUp(expect, page)
+  await gotoPage(expect, page, '/profile')
+  const change = page.getByTestId('profile-time-zone-change')
+  await expect(change).toHaveAccessibleName('Change')
+  await change.focus()
+  await change.press('Enter')
+
+  const dialog = page.getByTestId('modal')
+  const search = page.getByTestId('profile-time-zone-search')
+  await expect(dialog).toHaveRole('dialog')
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await expect(dialog).toHaveAccessibleName('Time zone')
+  await expect(search).toHaveAccessibleName('Search time zones')
+  await expect(search).toBeFocused()
+  await typeInto(search, 'new york')
+  const option = page.getByTestId('profile-time-zone-option-America/New_York')
+  await expect(option).toBeVisible()
+  await search.press('Tab')
+  await expect(option).toBeFocused()
+  await option.press('Tab')
+  const close = page.getByTestId('profile-time-zone-close')
+  await expect(close).toHaveAccessibleName('Close')
+  await expect(close).toBeFocused()
+  await close.press('Tab')
+  await expect(page.getByTestId('modal-close')).toBeFocused()
+  await page.getByTestId('modal-close').press('Tab')
+  await expect(search).toBeFocused()
+  await search.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(change).toBeFocused()
+
+  await openProfileTimeZone(expect, page)
+  await close.focus()
+  await close.press('Enter')
+  await expect(dialog).toBeHidden()
+  await expect(change).toBeFocused()
 })
 
 test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({

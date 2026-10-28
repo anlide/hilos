@@ -3,7 +3,7 @@
 // hidden, and every control of the page a viewer finds standing — create, delete,
 // keep, restore, reopen and the bulk delete — with Cancel and Clear alive.
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -13,6 +13,11 @@ import {
   bindSessionScope,
   createSignal,
 } from '@hilos/core'
+import {
+  formatMoment,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -26,6 +31,7 @@ import type {
 
 import { HilosBackupPage } from '../src/admin/backup/HilosBackupPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 const BACKUPS_TABLE = 'hilosBackups'
 const ARCHIVE_ID = '2026-09-10_03-00-00'
@@ -56,7 +62,7 @@ function router(): HilosRouter {
 }
 
 interface BackupSlot {
-  createdAt: string
+  createdAt: string | null
   env: string
   scope: string
   sizeBytes: number
@@ -77,7 +83,7 @@ interface BackupFixture {
 const ARCHIVE_FIXTURE: BackupFixture = {
   id: ARCHIVE_ID,
   backup: {
-    createdAt: '2026-09-10T03:00:00+00:00',
+    createdAt: '2026-09-10T03:00:00.000000Z',
     env: 'dev',
     scope: 'full',
     sizeBytes: 1048576,
@@ -252,6 +258,229 @@ function inTable<T extends HTMLElement = HTMLElement>(id: string): T | null {
 afterEach(() => {
   cleanup()
   document.body.classList.remove('modal-open')
+})
+
+describe('HilosBackupPage reader-zone moments', () => {
+  it('reformats held backup moments without replacing its table, filters, or open outcome', () => {
+    const reader = readerTimeZone()
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const firstZone =
+      browserZone === 'America/Los_Angeles' || browserZone === 'Europe/Kyiv'
+        ? 'Pacific/Honolulu'
+        : 'America/Los_Angeles'
+    const nextZone =
+      browserZone === 'Europe/Kyiv' || browserZone === 'Pacific/Honolulu'
+        ? 'Asia/Tokyo'
+        : 'Europe/Kyiv'
+    const createdAt = '2026-01-01T00:30:05.123456Z'
+    const verifiedAt = '2026-01-02T00:30:06.123456Z'
+    const shippedAt = '2026-01-03T00:30:07.123456Z'
+    const restoreFinishedAt = '2026-01-04T00:30:08.123456Z'
+
+    try {
+      const browserCreatedAt = formatMoment(createdAt, { kind: 'dateTime' })
+      act(() => reader.choose(firstZone))
+      const context = seededContext([
+        {
+          id: ARCHIVE_ID,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            createdAt,
+            verifiedAt,
+            shipState: 'shipped',
+            shippedAt,
+            restoreOutcome: 'success',
+            restoreFinishedAt,
+          },
+        },
+      ])
+      const registrations = vi.spyOn(context.connection, 'registerTableWindow')
+      const viewport = vi.spyOn(context.connection, 'sendTableViewport')
+      const container = mountPage(context)
+      viewport.mockReturnValue(true)
+      expect(registrations).toHaveBeenCalledTimes(1)
+
+      const search = byId<HTMLInputElement>('hilos-table-search')
+      fireEvent.change(search as HTMLInputElement, {
+        target: { value: 'archive' },
+      })
+      fireEvent.click(
+        byId('hilos-table-filter-scope')?.querySelector(
+          'button',
+        ) as HTMLElement,
+      )
+      fireEvent.click(byId('hilos-dropdown-option-0') as HTMLElement)
+      fireEvent.click(byId('hilos-table-filter-from') as HTMLElement)
+      fireEvent.change(
+        byId<HTMLInputElement>('hilos-table-filter-from-from') as HTMLElement,
+        { target: { value: '2025-12-31' } },
+      )
+      fireEvent.change(
+        byId<HTMLInputElement>('hilos-table-filter-from-to') as HTMLElement,
+        { target: { value: '2026-01-04' } },
+      )
+
+      const table = container.querySelector('table')
+      const row = inTable(`hilos-table-row-${ARCHIVE_ID}`)
+      fireEvent.click(
+        inTable(`hilos-backup-restore-outcome-${ARCHIVE_ID}`) as HTMLElement,
+      )
+      const outcome = byId('hilos-backup-restore-outcome-finished')
+      const dialog = outcome?.closest('[role="dialog"]')
+      const before = {
+        createdAt: inTable('hilos-backup-created-at')?.textContent,
+        checksum: inTable('hilos-backup-checksum')?.textContent,
+        shipping: inTable('hilos-backup-shipping')?.textContent,
+      }
+      const firstOutcome = `Finished ${formatMoment(restoreFinishedAt, { kind: 'dateTime' }) ?? '—'} · success`
+
+      expect(firstZone).not.toBe(browserZone)
+      expect(hilosTimeZone.get()).toBe(firstZone)
+      expect(before.createdAt).toBe(
+        formatMoment(createdAt, { kind: 'dateTime' }),
+      )
+      expect(before.createdAt).not.toBe(browserCreatedAt)
+      expect(before.checksum).toBe(
+        `✓ ${formatMoment(verifiedAt, { kind: 'date' }) ?? '—'}`,
+      )
+      expect(before.shipping).toBe(
+        `✓ ${formatMoment(shippedAt, { kind: 'date' }) ?? '—'}`,
+      )
+      expect(outcome?.textContent?.trim()).toBe(firstOutcome)
+
+      act(() => reader.choose(nextZone))
+
+      const after = {
+        createdAt: inTable('hilos-backup-created-at')?.textContent,
+        checksum: inTable('hilos-backup-checksum')?.textContent,
+        shipping: inTable('hilos-backup-shipping')?.textContent,
+      }
+      const latestRequest = viewport.mock.calls.at(-1)
+
+      expect(nextZone).not.toBe(browserZone)
+      expect(hilosTimeZone.get()).toBe(nextZone)
+      expect(after.createdAt).toBe(
+        formatMoment(createdAt, { kind: 'dateTime' }),
+      )
+      expect(after.createdAt).not.toBe(before.createdAt)
+      expect(after.checksum).toBe(
+        `✓ ${formatMoment(verifiedAt, { kind: 'date' }) ?? '—'}`,
+      )
+      expect(after.checksum).not.toBe(before.checksum)
+      expect(after.shipping).toBe(
+        `✓ ${formatMoment(shippedAt, { kind: 'date' }) ?? '—'}`,
+      )
+      expect(after.shipping).not.toBe(before.shipping)
+      expect(outcome?.textContent?.trim()).toBe(
+        `Finished ${formatMoment(restoreFinishedAt, { kind: 'dateTime' }) ?? '—'} · success`,
+      )
+      expect(outcome).toBe(byId('hilos-backup-restore-outcome-finished'))
+      expect(outcome?.closest('[role="dialog"]')).toBe(dialog)
+      expect(container.querySelector('table')).toBe(table)
+      expect(inTable(`hilos-table-row-${ARCHIVE_ID}`)).toBe(row)
+      expect(search?.value).toBe('archive')
+      expect(byId('hilos-table-filter-scope')?.textContent).toContain(
+        'Full (schema + all data)',
+      )
+      expect(byId('hilos-table-filter-from')?.textContent).toContain(
+        '2025-12-31 – 2026-01-04',
+      )
+      expect(latestRequest?.[2]?.filter).toMatchObject({
+        scope: 'full',
+        from: '2025-12-31',
+        to: '2026-01-04',
+        timeZone: nextZone,
+      })
+      expect(registrations).toHaveBeenCalledTimes(1)
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
+
+  it('keeps an ISO UTC epoch-zero backup moment valid', () => {
+    const reader = readerTimeZone()
+    const epochZero = '1970-01-01T00:00:00.000000Z'
+
+    try {
+      act(() => reader.choose('Pacific/Kiritimati'))
+      const context = seededContext([
+        {
+          id: ARCHIVE_ID,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            createdAt: epochZero,
+            verifiedAt: epochZero,
+            shipState: 'shipped',
+            shippedAt: epochZero,
+            restoreOutcome: 'success',
+            restoreFinishedAt: epochZero,
+          },
+        },
+      ])
+      mountPage(context)
+
+      expect(inTable('hilos-backup-created-at')?.textContent).toBe(
+        formatMoment(epochZero, { kind: 'dateTime' }),
+      )
+      expect(inTable('hilos-backup-created-at')?.textContent).not.toBe('—')
+      expect(inTable('hilos-backup-checksum')?.textContent).toBe(
+        `✓ ${formatMoment(epochZero, { kind: 'date' })}`,
+      )
+      expect(inTable('hilos-backup-shipping')?.textContent).toBe(
+        `✓ ${formatMoment(epochZero, { kind: 'date' })}`,
+      )
+      fireEvent.click(
+        inTable(`hilos-backup-restore-outcome-${ARCHIVE_ID}`) as HTMLElement,
+      )
+      expect(
+        byId('hilos-backup-restore-outcome-finished')?.textContent?.trim(),
+      ).toBe(
+        `Finished ${formatMoment(epochZero, { kind: 'dateTime' })} · success`,
+      )
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
+
+  it.each([null, 'malformed', '2026-02-30T00:00:00.000000Z'])(
+    'keeps the absent marker for an unrepresentable backup moment: %s',
+    (moment) => {
+      const reader = readerTimeZone()
+
+      try {
+        const context = seededContext([
+          {
+            id: ARCHIVE_ID,
+            backup: {
+              ...ARCHIVE_FIXTURE.backup,
+              createdAt: moment,
+              verifiedAt: moment,
+              shipState: 'shipped',
+              shippedAt: moment,
+              restoreOutcome: 'success',
+              restoreFinishedAt: moment,
+            },
+          },
+        ])
+        mountPage(context)
+
+        expect(inTable('hilos-backup-created-at')?.textContent).toBe('—')
+        expect(inTable('hilos-backup-checksum')?.textContent).toBe('✓')
+        expect(inTable('hilos-backup-shipping')?.textContent).toBe('✓')
+        fireEvent.click(
+          inTable(`hilos-backup-restore-outcome-${ARCHIVE_ID}`) as HTMLElement,
+        )
+        expect(byId('hilos-backup-restore-outcome-finished')?.textContent).toBe(
+          'Finished — · success',
+        )
+      } finally {
+        cleanup()
+        reader.release()
+      }
+    },
+  )
 })
 
 describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
@@ -431,6 +660,65 @@ describe('HilosBackupPage in the admin view mode', () => {
       },
     }
   }
+
+  it('keeps a typed restore confirmation while the backup reader filter syncs', () => {
+    const reader = readerTimeZone()
+    const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
+    const firstZone =
+      browserZone === 'America/Los_Angeles' || browserZone === 'Europe/Kyiv'
+        ? 'Pacific/Honolulu'
+        : 'America/Los_Angeles'
+    const nextZone =
+      browserZone === 'Europe/Kyiv' || browserZone === 'Pacific/Honolulu'
+        ? 'Asia/Tokyo'
+        : 'Europe/Kyiv'
+
+    try {
+      act(() => reader.choose(firstZone))
+      const { actions, dispatched } = makeActions()
+      const context = seededContext([ARCHIVE_FIXTURE], actions, {
+        backupRestore: { uiEnabled: true, targetEnv: 'dev' },
+      })
+      bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+      const registrations = vi.spyOn(context.connection, 'registerTableWindow')
+      const viewport = vi
+        .spyOn(context.connection, 'sendTableViewport')
+        .mockReturnValue(true)
+      const container = mountPage(context)
+      const table = container.querySelector('table')
+      const row = inTable(`hilos-table-row-${ARCHIVE_ID}`)
+
+      fireEvent.click(
+        inTable(`hilos-backup-restore-${ARCHIVE_ID}`) as HTMLElement,
+      )
+      const input = byId<HTMLInputElement>('hilos-backup-restore-id')
+      fireEvent.change(input as HTMLInputElement, {
+        target: { value: ARCHIVE_ID },
+      })
+      const dialog = input?.closest('[role="dialog"]')
+      const confirm = byId<HTMLButtonElement>('hilos-backup-restore-confirm')
+
+      expect(confirm?.disabled).toBe(false)
+      act(() => reader.choose(nextZone))
+
+      expect(hilosTimeZone.get()).toBe(nextZone)
+      expect(input).toBe(byId('hilos-backup-restore-id'))
+      expect(input?.value).toBe(ARCHIVE_ID)
+      expect(confirm).toBe(byId('hilos-backup-restore-confirm'))
+      expect(confirm?.disabled).toBe(false)
+      expect(input?.closest('[role="dialog"]')).toBe(dialog)
+      expect(container.querySelector('table')).toBe(table)
+      expect(inTable(`hilos-table-row-${ARCHIVE_ID}`)).toBe(row)
+      expect(registrations).toHaveBeenCalledTimes(1)
+      expect(viewport.mock.calls.at(-1)?.[2]?.filter).toMatchObject({
+        timeZone: nextZone,
+      })
+      expect(dispatched).toHaveLength(0)
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
 
   it('a viewer opens the create dialog, may pick a scope and has nothing to start it with', async () => {
     const { actions, dispatched } = makeActions()
