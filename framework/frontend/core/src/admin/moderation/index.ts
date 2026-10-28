@@ -44,3 +44,11 @@ export {
   type HilosModerationRuleDeleteTarget,
   type HilosModerationRuleDelete,
 } from './hilosModerationRuleDelete.js'
+
+export {
+  HILOS_MODERATION_RULE_UPDATE_ACTION,
+  HILOS_MODERATION_RULE_EDIT_COPY,
+  createHilosModerationRuleEdit,
+  type HilosModerationRuleEditTarget,
+  type HilosModerationRuleEdit,
+} from './hilosModerationRuleEdit.js'

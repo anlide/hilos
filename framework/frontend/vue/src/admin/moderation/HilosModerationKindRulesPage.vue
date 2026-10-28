@@ -3,9 +3,11 @@ import {
   createHilosModerationKind,
   createHilosModerationRuleAdd,
   createHilosModerationRuleDelete,
+  createHilosModerationRuleEdit,
   createHilosModerationRules,
   HILOS_MODERATION_COPY,
   HILOS_MODERATION_RULE_DELETE_COPY,
+  HILOS_MODERATION_RULE_EDIT_COPY,
   type HilosModerationRulesContext,
 } from '@hilos/core/admin/moderation'
 import {
@@ -23,6 +25,7 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import HilosModerationRuleAdd from './HilosModerationRuleAdd.vue'
 import HilosModerationRuleDelete from './HilosModerationRuleDelete.vue'
+import HilosModerationRuleEdit from './HilosModerationRuleEdit.vue'
 
 const props = defineProps<{ context: HilosModerationRulesContext }>()
 const router = inject(hilosRouterKey)
@@ -46,6 +49,7 @@ const add = createHilosModerationRuleAdd(
   rules.current,
 )
 const remove = createHilosModerationRuleDelete(props.context, detail.row, rules)
+const edit = createHilosModerationRuleEdit(props.context, detail.row, rules)
 const row = useSignal(detail.row)
 const unavailable = useSignal(detail.unavailable)
 const columns = useSignal(detail.controller.frame.columns)
@@ -68,11 +72,13 @@ onMounted(() => {
   rules.start()
   add.start()
   remove.start()
+  edit.start()
 })
 onUnmounted(() => {
   unbindName()
   add.dispose()
   remove.dispose()
+  edit.dispose()
   detail.dispose()
   rules.dispose()
 })
@@ -121,19 +127,32 @@ onUnmounted(() => {
       >
         <template #cell-rule="{ row: rule }">{{ rule.rule }}</template>
         <template #cell-actions="{ row: rule }">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-danger"
-            :title="HILOS_MODERATION_RULE_DELETE_COPY.open"
-            :aria-label="HILOS_MODERATION_RULE_DELETE_COPY.open"
-            :data-id="`hilos-moderation-rule-delete-open-${rule.id}`"
-            @click="remove.open(String(rule.id))"
-          >
-            <i class="bi bi-trash" aria-hidden="true"></i>
-            <span class="d-md-none ms-1">{{
-              HILOS_MODERATION_RULE_DELETE_COPY.confirm
-            }}</span>
-          </button>
+          <div class="d-flex gap-1 justify-content-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              :title="HILOS_MODERATION_RULE_EDIT_COPY.open"
+              :aria-label="HILOS_MODERATION_RULE_EDIT_COPY.open"
+              :data-id="`hilos-moderation-rule-edit-open-${rule.id}`"
+              @click="edit.open(String(rule.id))"
+            >
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+              <span class="d-md-none ms-1">Edit</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              :title="HILOS_MODERATION_RULE_DELETE_COPY.open"
+              :aria-label="HILOS_MODERATION_RULE_DELETE_COPY.open"
+              :data-id="`hilos-moderation-rule-delete-open-${rule.id}`"
+              @click="remove.open(String(rule.id))"
+            >
+              <i class="bi bi-trash" aria-hidden="true"></i>
+              <span class="d-md-none ms-1">{{
+                HILOS_MODERATION_RULE_DELETE_COPY.confirm
+              }}</span>
+            </button>
+          </div>
         </template>
         <template #empty>
           <div class="text-center py-4" role="status">
@@ -185,5 +204,6 @@ onUnmounted(() => {
     </div>
     <HilosModerationRuleAdd :add="add" />
     <HilosModerationRuleDelete :remove="remove" />
+    <HilosModerationRuleEdit :edit="edit" />
   </HilosAdminPage>
 </template>

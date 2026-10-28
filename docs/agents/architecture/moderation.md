@@ -471,6 +471,26 @@ the page's success sentence for the single success toast. The refusal stays
 with the open form. This path uses the existing handover and source-change
 fan-out: it adds no refresh request or second row store.
 
+The Rules page's browser action `hilos_moderation_rule_update` uses
+`HilosModerationRuleUpdateActionDTO` with `id`, `kind`, raw `rule` and raw
+`expectedRule`; the positive `id` captures one row, and `kind` is its published
+catalog key. After the same `ADMIN`, standing and freeze gates and
+published-kind check, the page uses `HandoverGatekeeperTrait` to forward a
+`ModerationRuleUpdateSignalData` over `moderation_rule_update` to the single
+`ModerationRulesLibraryAgent`. The ordinary action envelope carries its
+`requestId`. The library rechecks the published kind, reads exactly
+`Hilos::$db->moderationRules[$id]`, verifies that the row exists, belongs to the
+kind and still has the exact `expectedRule`, then calls that item's
+`actions->update($rule)`. A missing row, kind mismatch or stale text is refused;
+a missing ID is never replaced by another row, and no version or ABA history is
+kept. The existing ORM stores accepted text as given and rejects text that is
+blank after trimming or over the TEXT column's byte limit; its ownership and
+persistence checks still apply. The existing correlated
+`HandoverAnswerSignalData` returns success only after the write, with
+`Rule in "<title>" saved.` for one local success toast. A refusal or timeout
+stays in the open form with its draft and no failure toast or automatic retry;
+a ready-answer transport failure does not replay the write.
+
 Before answering either kind page, `onSubscribeBeforeResponse()` consumes the
 connection's reported table windows and installs the canonical metadata
 viewport. `hilosModerationKinds` is filtered by the route's `kind`, limited to
@@ -504,24 +524,48 @@ is blocked in the browser and the server's `ADMIN` gate refuses the page action
 before it reaches the writer.
 
 The first own rule makes `ownRuleCount` nonzero and replaces the built-ins as a
-whole, so the built-in panel disappears. The next moderation check reads fresh
-`effectiveForKind()` rules as before. Existing source-change fan-out and the
-table's Apply behavior remain unchanged.
+whole, so the built-in panel disappears. The next moderation check after an Add,
+Edit or Delete reads fresh `effectiveForKind()` rules as before. Existing
+source-change fan-out and the table's Apply behavior remain unchanged.
+
+Edit is available only on an own rule, in the same Rules actions column as
+Delete. `createHilosModerationRuleEdit(context, kind, rules)` opens only a fresh
+focused row in the current Rules scope and kind, and captures its `id`, `kind`
+and title. It uses `createHilosRowEdit` with `hilosTableRowEditSource` and one
+editable field, the raw `rule` text. The shared row-edit session owns the
+baseline, draft and incoming value: an untouched incoming value updates the
+field with a notice, an identical value is not a conflict, and differing edits
+offer Keep mine or Take theirs before the baseline advances. The update's
+`expectedRule` comes from the focused live row inside the save callback after
+the session has checked its verdict; the callback's row argument is the opening
+snapshot.
+
+The modal is titled `Edit rule · <title>` and contains one Rule field. Blank,
+unchanged, conflicted or gone rows are not sent. If the row disappears, the
+draft stays with a Deleted notice; dirty state is measured from the accepted
+baseline and the shared discard confirmation applies. While saving, the
+session rejects another submit, the UI disables the field and Cancel, and the
+busy modal refuses user close; the standard delayed busy indicator remains in
+use. Action errors stay above the field, and the edit notice and conflict
+choices stay below it. In view mode, a viewer may open the form, edit a local
+draft and choose a conflict, but browser submission is blocked and the server
+`ADMIN` gate rejects a forged write.
+Changing the route or kind, or disposing the page, releases focus and isolates
+a late result from a later opening. Ordinary source-change fan-out supplies
+live values; other viewers use the existing table Apply for moves and removals.
+Edit adds no optimistic patch, subscription, refresh request or row store.
 
 The core `HilosModerationRulesContext` extends the existing
-`HilosModerationContext` with the `actions` lifecycle used by
-`createHilosModerationRuleAdd`; the base context stays sufficient for the root
-and Overview. Chat passes its existing `actions` singleton through
-`hilosModerationContext`. The Add API is exported from the moderation section,
-and Vue's `HilosModerationKindRulesPage` from the lazy Vue moderation section;
-neither is added to compatibility root or base exports. The Vue kind Overview
-continues to receive the project's base context through Chat's lazy
-`ModerationKind.vue` wrapper. The Rules view receives the extended context
-through Chat's lazy `Rules.vue` wrapper.
-
-The remaining rule action and its dialog validation belong to a separate leaf:
-
-- Edit a custom rule. (not in the code yet — HIL-1633)
+`HilosModerationContext` with the `actions` lifecycle used by the Add and Edit
+factories; the base context stays sufficient for the root and Overview. Chat
+passes its existing `actions` singleton through `hilosModerationContext`. The
+Add and Edit APIs are exported from the lazy core moderation section, and Vue's
+`HilosModerationKindRulesPage` from the lazy Vue moderation section; the edit
+modal has no separate public Vue export. These APIs are not added to
+compatibility root or base exports. The Vue kind Overview continues to receive
+the project's base context through Chat's lazy `ModerationKind.vue` wrapper.
+The Rules view receives the extended context through Chat's lazy `Rules.vue`
+wrapper.
 
 Delete is available from the Rules row action and opens one confirmation dialog
 for the selected rule. The dialog keeps the displayed rule text as its
@@ -564,12 +608,12 @@ There is no verdict journal and no per-kind on/off switch in this design.
 queue and its signals, the moderator, its profiles and settings, the profile
 photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), the
 kinds/rules browser tables registered by Chat (HIL-1628), and the section pages
-with the Vue Rules Add and Delete flows and their focused e2e coverage.
+with Vue Rules Add, Edit and Delete flows and their focused e2e coverage.
 
-**Not built yet:** chat as a consumer (HIL-1627); Edit (HIL-1633);
-React/tasks and Angular/polls SDK mounts
-(HIL-1636/HIL-1637); the broader moderation e2e coverage and cluster coverage
-(HIL-1638/HIL-1639); enabling profile photos in tasks/polls (HIL-1644/HIL-1645).
+**Not built yet:** chat as a consumer (HIL-1627); React/tasks and Angular/polls
+SDK mounts (HIL-1636/HIL-1637); the broader moderation e2e coverage and cluster
+coverage (HIL-1638/HIL-1639); enabling profile photos in tasks/polls
+(HIL-1644/HIL-1645).
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

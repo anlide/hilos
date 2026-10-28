@@ -15,6 +15,7 @@ import {
   createHilosModerationKind,
   createHilosModerationRules,
   createHilosModerationRuleDelete,
+  createHilosModerationRuleEdit,
   moderationKindRulesPath,
   resolveHilosModerationRuleRow,
 } from '../../../src/admin/moderation/index.js'
@@ -427,6 +428,53 @@ describe('moderation Rules', () => {
     expect(remove.notice.get()?.kind).toBe('deleted')
     expect(remove.openState.get()).toBe(true)
     remove.close()
+    expect(h.rules.controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('wires Edit to normalized focused rows and shares one actions column with Delete', () => {
+    const h = setup()
+    h.start()
+    h.answer()
+    const edit = createHilosModerationRuleEdit(
+      { ...h, actions: new ActionLifecycle(h.connection) },
+      h.detail.row,
+      h.rules,
+    )
+    cleanups.push(edit.dispose)
+    edit.start()
+    const columns = h.rules.controller.frame.columns.get()
+    expect(columns.filter((column) => column.key === 'actions')).toEqual([
+      {
+        key: 'actions',
+        label: '',
+        reads: ['id', 'kind', 'rule'],
+        headerClass: 'text-end',
+        cellClass: 'text-end text-nowrap',
+      },
+    ])
+    expect(edit.open('1')).toBe(true)
+    expect(h.sent.at(-1)).toEqual({
+      type: 'table_row_focus',
+      page: PAGE,
+      tableKey: TABLE,
+      rowKey: '1',
+    })
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_removed',
+      rowKey: '1',
+      reason: 'left_set',
+      row: wireRule(1, 'first', '  Raw outside\n'),
+    })
+    h.rules.controller.apply()
+    expect(h.rules.controller.rows.get()[0].placeholder).toBe(true)
+    expect(h.rules.current.get()).toBe(true)
+    expect(edit.form.get()).toEqual({ rule: '  Raw outside\n' })
+    expect(edit.notice.get()?.kind).toBe('updated')
+    expect(edit.state.get().gone).toBe(false)
+    edit.close()
+    expect(h.sent.at(-1)).toMatchObject({ type: 'table_row_focus', rowKey: '' })
     expect(h.rules.controller.focusedRow.get()).toBeUndefined()
   })
 

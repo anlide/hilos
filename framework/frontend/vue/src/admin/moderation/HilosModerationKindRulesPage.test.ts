@@ -23,6 +23,7 @@ import {
 
 import HilosModerationKindRulesPage from './HilosModerationKindRulesPage.vue'
 import HilosModerationRuleDelete from './HilosModerationRuleDelete.vue'
+import HilosModerationRuleEdit from './HilosModerationRuleEdit.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import HilosView from '../../HilosView.vue'
@@ -219,16 +220,25 @@ async function harness(
     answer,
     update,
     sent,
-    reply(requestId: string, success = true) {
+    reply(
+      requestId: string,
+      success = true,
+      action = 'hilos_moderation_rule_delete',
+    ) {
       listeners.get('message')?.({
         data: JSON.stringify({
           type: success ? 'action_success' : 'action_error',
           requestId,
           outcome: success ? 'success' : 'fail',
           data: {
-            action: 'hilos_moderation_rule_delete',
+            action,
             ...(success
-              ? { message: 'Rule removed from "Profile name".' }
+              ? {
+                  message:
+                    action === 'hilos_moderation_rule_update'
+                      ? 'Rule updated for "Profile name".'
+                      : 'Rule removed from "Profile name".',
+                }
               : { reason: 'The rule changed. Confirm again.' }),
           },
         }),
@@ -285,7 +295,7 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
     ).toBe(false)
-    expect(view.find('button[aria-label*="Edit"]').exists()).toBe(false)
+    expect(view.findAll('button[aria-label="Edit rule"]')).toHaveLength(2)
     expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(2)
     expect(
       view
@@ -322,6 +332,228 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       document.querySelector('[data-id="hilos-moderation-rule-add"]'),
     ).toBeNull()
+  })
+
+  it.each(['hilos-table-row-1', 'hilos-table-card-1'])(
+    'opens the real Edit from %s with fresh focus, live conflict and guarded discard, then disposes on navigation',
+    async (projection) => {
+      const { view, sent, receive, first, navigation } = await harness()
+      receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: RULES,
+        kind: 'row_moved',
+        rowKey: '1',
+        position: 0,
+        row: {
+          rowKey: '1',
+          slots: { rule: { id: 1, kind: first.kind, rule: 'Fresh rule' } },
+        },
+      })
+      await nextTick()
+      const opener = view.get<HTMLButtonElement>(
+        `[data-id="${projection}"] [data-id="hilos-moderation-rule-edit-open-1"]`,
+      )
+      expect(opener.attributes('aria-label')).toBe('Edit rule')
+      expect(opener.get('i').attributes('aria-hidden')).toBe('true')
+      expect(opener.get('span').text()).toBe('Edit')
+      expect(opener.get('span').classes()).toContain('d-md-none')
+      expect(
+        opener.element.parentElement?.classList.contains('justify-content-end'),
+      ).toBe(true)
+      opener.element.focus()
+      await opener.trigger('click')
+      await flushPromises()
+      expect(
+        document.querySelectorAll('[data-id="hilos-moderation-rule-edit"]'),
+      ).toHaveLength(1)
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-id="hilos-moderation-rule-edit-rule"]',
+      )!
+      expect(textarea.value).toBe('Fresh rule')
+      expect(document.activeElement).toBe(textarea)
+      expect(
+        sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+      ).toMatchObject({ rowKey: '1' })
+      textarea.value = 'Local draft'
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: RULES,
+        kind: 'row_updated',
+        rowKey: '1',
+        row: {
+          rowKey: '1',
+          slots: {
+            rule: { id: 1, kind: first.kind, rule: 'Changed elsewhere' },
+          },
+        },
+      })
+      await nextTick()
+      expect(
+        document.querySelector('[data-id="conflict-choices"]'),
+      ).not.toBeNull()
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-id="hilos-moderation-rule-edit-cancel"]',
+        )!
+        .click()
+      await flushPromises()
+      document
+        .querySelector<HTMLButtonElement>('[data-id="modal-confirm-cancel"]')!
+        .click()
+      await flushPromises()
+      expect(textarea.value).toBe('Local draft')
+      expect(document.activeElement).toBe(textarea)
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-id="hilos-moderation-rule-edit-cancel"]',
+        )!
+        .click()
+      await flushPromises()
+      document
+        .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')!
+        .click()
+      await flushPromises()
+      expect(
+        sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+      ).toMatchObject({ rowKey: '' })
+      await opener.trigger('click')
+      await flushPromises()
+      navigation.navigate('/hilos/moderation/second/rules')
+      await flushPromises()
+      expect(
+        document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
+      ).toBeNull()
+      expect(sent.filter((frame) => frame.type === 'action')).toEqual([])
+    },
+  )
+
+  it('saves the selected own row once, receives the ordinary source echo and closes on its ack', async () => {
+    const { view, sent, receive, first, ruleAnswer, reply } = await harness()
+    ruleAnswer(['First rule', 'Second rule'])
+    await nextTick()
+    await view
+      .get('tbody [data-id="hilos-moderation-rule-edit-open-2"]')
+      .trigger('click')
+    await flushPromises()
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[data-id="hilos-moderation-rule-edit-rule"]',
+    )!
+    expect(textarea.value).toBe('Second rule')
+    const raw = '  Edited second\nrule\n'
+    textarea.value = raw
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-moderation-rule-edit-submit"]',
+      )!
+      .click()
+    const request = sent.filter((frame) => frame.type === 'action').at(-1)!
+    expect(request).toMatchObject({
+      action: 'hilos_moderation_rule_update',
+      data: { id: 2, kind: first.kind, rule: raw, expectedRule: 'Second rule' },
+    })
+    expect(view.get('tbody').text()).toContain('Second rule')
+    receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: RULES,
+      kind: 'row_updated',
+      rowKey: '2',
+      own: true,
+      row: {
+        rowKey: '2',
+        slots: { rule: { id: 2, kind: first.kind, rule: raw } },
+      },
+    })
+    await nextTick()
+    expect(view.get('tbody').text()).toContain('Edited second\nrule')
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
+    ).not.toBeNull()
+    reply(String(request.requestId), true, 'hilos_moderation_rule_update')
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
+    ).toBeNull()
+    expect(sent.filter((frame) => frame.type === 'action')).toHaveLength(1)
+    expect(sent.filter((frame) => frame.type === 'table_viewport')).toEqual([])
+    expect(
+      hilosToasts.toasts
+        .get()
+        .map(({ message, severity, repeats }) => [message, severity, repeats]),
+    ).toEqual([['Rule updated for "Profile name".', 'success', 1]])
+  })
+
+  it.each([true, false])(
+    'disposes an in-flight Edit on unmount and ignores its late result (%s)',
+    async (success) => {
+      const { view, sent, reply } = await harness()
+      await view
+        .get('tbody [data-id="hilos-moderation-rule-edit-open-1"]')
+        .trigger('click')
+      await flushPromises()
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-id="hilos-moderation-rule-edit-rule"]',
+      )!
+      textarea.value = 'Pending draft'
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      await nextTick()
+      textarea.form!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+      const request = sent.filter((frame) => frame.type === 'action').at(-1)!
+      view.unmount()
+      await flushPromises()
+      expect(
+        document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
+      ).toBeNull()
+      expect(
+        sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+      ).toMatchObject({ rowKey: '' })
+      reply(String(request.requestId), success, 'hilos_moderation_rule_update')
+      await flushPromises()
+      expect(hilosToasts.toasts.get()).toEqual([])
+    },
+  )
+
+  it('keeps Edit open for a viewer while the real admin shell guards Save, forged click and submit', async () => {
+    const { view, sent } = await harness({}, { viewer: true })
+    const opener = view.get<HTMLButtonElement>(
+      'tbody [data-id="hilos-moderation-rule-edit-open-1"]',
+    )
+    expect(opener.element.disabled).toBe(false)
+    await opener.trigger('click')
+    await flushPromises()
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '[data-id="hilos-moderation-rule-edit-rule"]',
+    )!
+    textarea.value = 'Viewer draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(textarea.disabled).toBe(false)
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-moderation-rule-edit-submit"]',
+    )!
+    expect(button.disabled).toBe(true)
+    button.click()
+    view
+      .getComponent(HilosModerationRuleEdit)
+      .getComponent(LoadingButton)
+      .vm.$emit('click', new MouseEvent('click'))
+    textarea.form!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    expect(sent.filter((frame) => frame.type === 'action')).toEqual([])
+    view.unmount()
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
+    ).toBeNull()
+    expect(
+      sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+    ).toMatchObject({ rowKey: '' })
   })
 
   it.each(['hilos-table-row-1', 'hilos-table-card-1'])(
@@ -506,6 +738,8 @@ describe('HilosModerationKindRulesPage', () => {
     ])
     expect(builtIn.find('script').exists()).toBe(false)
     expect(builtIn.text()).toContain('Your first rule replaces them all.')
+    expect(view.findAll('button[aria-label="Edit rule"]')).toHaveLength(0)
+    expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(0)
     update({ ...first, title: 'Renamed kind', defaultRules: [] })
     await nextTick()
     expect(view.text()).toContain(

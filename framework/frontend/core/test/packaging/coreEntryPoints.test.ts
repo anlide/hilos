@@ -26,6 +26,7 @@ import * as moderation from '../../src/admin/moderation/index.js'
 import * as moderationKind from '../../src/admin/moderation/hilosModerationKind.js'
 import * as moderationRuleAdd from '../../src/admin/moderation/hilosModerationRuleAdd.js'
 import * as moderationRuleDelete from '../../src/admin/moderation/hilosModerationRuleDelete.js'
+import * as moderationRuleEdit from '../../src/admin/moderation/hilosModerationRuleEdit.js'
 import * as moderationRules from '../../src/admin/moderation/hilosModerationRules.js'
 import * as security from '../../src/admin/security/index.js'
 import * as settings from '../../src/admin/settings/index.js'
@@ -487,6 +488,15 @@ const adminModerationRuleDeleteTypes = [
   'HilosModerationRuleDeleteTarget',
   'HilosModerationRuleDelete',
 ]
+const adminModerationRuleEditValues = [
+  'HILOS_MODERATION_RULE_UPDATE_ACTION',
+  'HILOS_MODERATION_RULE_EDIT_COPY',
+  'createHilosModerationRuleEdit',
+]
+const adminModerationRuleEditTypes = [
+  'HilosModerationRuleEditTarget',
+  'HilosModerationRuleEdit',
+]
 /** The standalone noisy-column viewport's explicit public additions. */
 const changeLogNoisyValues = [
   'CHANGE_LOG_NOISY_COLUMN_FIELD',
@@ -776,6 +786,19 @@ describe('core public entries', () => {
           ).toBe(true)
         } else if (
           entry === './admin/moderation' &&
+          adminModerationRuleEditValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              moderationRuleEdit[name as keyof typeof moderationRuleEdit],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
+          entry === './admin/moderation' &&
           adminModerationKindValues.includes(name)
         ) {
           expect(root, name).not.toHaveProperty(name)
@@ -820,6 +843,7 @@ describe('core public entries', () => {
         ...maintenanceWordsValues,
         ...adminModerationRuleAddValues,
         ...adminModerationRuleDeleteValues,
+        ...adminModerationRuleEditValues,
       ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
@@ -1147,6 +1171,13 @@ describe('core public entries', () => {
       ...adminModerationRuleDeleteValues,
       ...adminModerationRuleDeleteTypes,
     ]
+    const ruleEditExports = exportsOf(
+      'admin/moderation/hilosModerationRuleEdit.ts',
+    )
+    const ruleEditNames = [
+      ...adminModerationRuleEditValues,
+      ...adminModerationRuleEditTypes,
+    ]
     const kindExports = exportsOf('admin/moderation/hilosModerationKind.ts')
     const kindNames = [
       ...adminModerationKindValues,
@@ -1228,6 +1259,13 @@ describe('core public entries', () => {
           expect(symbol, `${entry}:${name}`).toBe(ruleDeleteExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
+          ruleEditNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(ruleEditExports.get(name))
+        } else if (
+          entry === 'admin/moderation/index.ts' &&
           kindNames.includes(name)
         ) {
           expect(root.has(name), name).toBe(false)
@@ -1263,6 +1301,7 @@ describe('core public entries', () => {
         ...wordsNames,
         ...ruleAddNames,
         ...ruleDeleteNames,
+        ...ruleEditNames,
       ].sort(),
     )
   }, 30_000)

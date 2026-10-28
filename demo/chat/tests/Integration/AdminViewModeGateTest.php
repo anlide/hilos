@@ -141,6 +141,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_impersonate_start',
         'hilos_moderation_rule_add',
         'hilos_moderation_rule_delete',
+        'hilos_moderation_rule_update',
         'hilos_status_add_update',
         'hilos_status_cancel_publication',
         'hilos_status_publish_now',
@@ -309,6 +310,34 @@ final class AdminViewModeGateTest extends IntegrationTestCase
                     self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
                     self::assertSame($requestId, $frames[0]->data->data->requestId);
                     self::assertSame(HilosSignalConstants::HILOS_MODERATION_RULE_DELETE, $frames[0]->data->data->action);
+                    $expectedCode = $viewMode ? 'view_mode' : ($acceptKey === self::ANONYMOUS_KEY ? 'unauthorized' : 'forbidden');
+                    self::assertSame($requestId === null && $expectedCode === 'forbidden' ? null : $expectedCode,
+                        $frames[0]->data->data->errorCode);
+                    self::assertNull($frames[0]->data->data->errorType);
+                    self::assertNull($frames[0]->data->data->errorDetail);
+                }
+            }
+        }
+    }
+
+    public function testForgedRuleUpdatesNeverReachTheWriterFromAViewerOrVisitor(): void
+    {
+        foreach ([true, false] as $viewMode) {
+            $this->switchMode($viewMode);
+            foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+                foreach ([null, 'forged-update'] as $requestId) {
+                    $this->drainSignals();
+                    $this->dispatch(HilosPageConstants::HILOS_MODERATION_KIND_RULES, $acceptKey,
+                        HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE,
+                        ['id' => 7, 'kind' => 'hilos_profile_name', 'rule' => 'Forged edit', 'expectedRule' => 'Captured rule'], $requestId);
+                    $frames = [];
+                    while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                        $frames[] = $frame;
+                    }
+                    self::assertCount(1, $frames, 'Emit and forged submit both refuse without an internal writer ask');
+                    self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
+                    self::assertSame($requestId, $frames[0]->data->data->requestId);
+                    self::assertSame(HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE, $frames[0]->data->data->action);
                     $expectedCode = $viewMode ? 'view_mode' : ($acceptKey === self::ANONYMOUS_KEY ? 'unauthorized' : 'forbidden');
                     self::assertSame($requestId === null && $expectedCode === 'forbidden' ? null : $expectedCode,
                         $frames[0]->data->data->errorCode);

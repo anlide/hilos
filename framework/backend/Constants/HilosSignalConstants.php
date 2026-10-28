@@ -2443,6 +2443,12 @@ final class HilosSignalConstants
     /** Internal confirmed removal for the single rules writer. */
     public const string MODERATION_RULE_DELETE = 'moderation_rule_delete';
 
+    /** Edit an own moderation rule through the ADMIN Rules page. */
+    public const string HILOS_MODERATION_RULE_UPDATE = 'hilos_moderation_rule_update';
+
+    /** Internal edit with the captured saved text for the single rules writer. */
+    public const string MODERATION_RULE_UPDATE = 'moderation_rule_update';
+
     /** Rules library → Rules page: outcome of the handed-over write. */
     public const string HILOS_MODERATION_RULE_WRITE_DONE = 'hilos_moderation_rule_write_done';
 

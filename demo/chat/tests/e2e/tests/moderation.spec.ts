@@ -33,8 +33,8 @@ import { picture } from '../helpers/profilePhoto.js'
 
 // Framework moderation kinds, Overview, Rules and mutations, carried by chat.
 // Expectations come from the kind declarations, moderation profile defaults
-// and seed 006_framework_moderation_rules. Only the last test adds and deletes
-// its own photo rule, after proving the real model request that used it.
+// and seed 006_framework_moderation_rules. Only the last test adds, edits and
+// deletes its own photo rule, proving the model request uses the edited policy.
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 // Keep the seeded assertions ahead of the rule that replaces the photo defaults.
@@ -815,15 +815,16 @@ test('displays moderation kinds in admin view mode with view-mode banner', async
   }
 })
 
-test('uses an added photo rule after F5, then deletes it with own echo, observer Apply and built-in fallback', async ({
+test('resolves a photo rule Edit conflict, uses the saved policy after F5, then deletes it with own echo, observer Apply and built-in fallback', async ({
   page,
 }) => {
   const sends = countSentFrames(page, 'hilos_moderation_rule_add')
+  const updates = countSentFrames(page, 'hilos_moderation_rule_update')
   const deletes = countSentFrames(page, 'hilos_moderation_rule_delete')
   await signUpAdmin(expect, page, { entryId: 'message-signin' })
-  const key = modelKey()
-  // Only the policy carries the model key: no name, picture or file can match it.
-  const rule = `Allow ordinary profile photos. Policy marker: ${key}.`
+  const initialKey = modelKey()
+  const initialRule = `Allow ordinary profile photos. Policy marker: ${initialKey}.`
+  const editOwn = watchDeliveryFrames(page)
   await gotoPage(
     expect,
     page,
@@ -836,7 +837,10 @@ test('uses an added photo rule after F5, then deletes it with own echo, observer
   await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
   const dialog = page.getByTestId('modal')
   await expect(dialog).toHaveAccessibleName('Add rule · Profile photo')
-  await typeInto(page.getByTestId('hilos-moderation-rule-add-rule'), rule)
+  await typeInto(
+    page.getByTestId('hilos-moderation-rule-add-rule'),
+    initialRule,
+  )
   await clickSubmit(
     expect,
     page.getByTestId('hilos-moderation-rule-add-submit'),
@@ -848,11 +852,173 @@ test('uses an added photo rule after F5, then deletes it with own echo, observer
   await expect(toast).toContainText('Rule added to "Profile photo".')
   await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
   expect(sends()).toBe(1)
-  await expectModerationOwnRules(expect, page, [rule])
+  await expectModerationOwnRules(expect, page, [initialRule])
   const table = page.getByTestId('hilos-moderation-rules-table')
   const rowId = await table.locator(ROWS).getAttribute('data-id')
   expect(rowId).toMatch(/^hilos-table-row-\d+$/)
   const id = rowId!.slice(ROW_PREFIX.length)
+
+  // Only the edited policy carries the new key: name, picture and file cannot match.
+  const key = modelKey()
+  expect(key).not.toBe(initialKey)
+  const rule = `  Allow ordinary profile photos. Edited policy marker: ${key}.  `
+  const otherRule =
+    'Allow ordinary profile photos and drawings. Another tab saved this.'
+  const editor = await page.context().newPage()
+  const editForeign = watchDeliveryFrames(editor)
+  const otherUpdates = countSentFrames(editor, 'hilos_moderation_rule_update')
+  try {
+    await gotoPage(
+      expect,
+      editor,
+      '/hilos/moderation/hilos_profile_photo/rules',
+      PAGE_READY,
+    )
+    await expectModerationOwnRules(expect, editor, [initialRule])
+    await expectModerationRulesOpening(expect, editForeign, {
+      ...DECLARED_KINDS[1],
+      ownRules: [initialRule],
+    })
+    await toast.getByTestId('hilos-toast-close').click()
+    await expect(toast).toHaveCount(0)
+    const document = await watchClientDocument(page)
+    const otherDocument = await watchClientDocument(editor)
+    try {
+      const ownBefore = editOwn.sent.length
+      const foreignBefore = editForeign.sent.length
+      const editOpenerId = `hilos-moderation-rule-edit-open-${id}`
+      const field = page.getByTestId('hilos-moderation-rule-edit-rule')
+      const save = page.getByTestId('hilos-moderation-rule-edit-submit')
+      await clickSubmit(expect, shownByTestId(page, editOpenerId))
+      await expect(dialog).toHaveAccessibleName('Edit rule · Profile photo')
+      await expect(field).toHaveValue(initialRule)
+      await typeInto(field, rule)
+      await expect(save).toBeEnabled()
+      expect(updates()).toBe(0)
+
+      await clickSubmit(expect, shownByTestId(editor, editOpenerId))
+      const otherDialog = editor.getByTestId('modal')
+      await expect(otherDialog).toHaveAccessibleName(
+        'Edit rule · Profile photo',
+      )
+      await expect(
+        editor.getByTestId('hilos-moderation-rule-edit-rule'),
+      ).toHaveValue(initialRule)
+      await typeInto(
+        editor.getByTestId('hilos-moderation-rule-edit-rule'),
+        otherRule,
+      )
+      await clickSubmit(
+        expect,
+        editor.getByTestId('hilos-moderation-rule-edit-submit'),
+      )
+      await expect(otherDialog).toBeHidden()
+      const message = 'Rule in "Profile photo" saved.'
+      const otherToast = editor.getByTestId('hilos-toast-success')
+      await expect(otherToast).toHaveCount(1)
+      await expect(otherToast).toContainText(message)
+      await expect(otherToast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
+      expect(otherUpdates()).toBe(1)
+
+      await expect(page.getByTestId('conflict-choices')).toBeVisible()
+      await expect(
+        page.getByTestId('hilos-moderation-rule-edit-notice'),
+      ).toHaveText(`Rule changed elsewhere to "${otherRule}".`)
+      await expect(field).toHaveValue(rule)
+      await expect(save).toBeDisabled()
+      await expect(toast).toHaveCount(0)
+      expect(updates()).toBe(0)
+      await expectModerationOwnRules(expect, page, [otherRule])
+      await expectModerationOwnRules(expect, editor, [otherRule])
+      await test.info().attach('photo-rule-edit-conflict', {
+        body: await dialog.screenshot(),
+        contentType: 'image/png',
+      })
+      await otherToast.getByTestId('hilos-toast-close').click()
+      await expect(otherToast).toHaveCount(0)
+
+      await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
+      await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-moderation-rule-edit-notice'),
+      ).toHaveCount(0)
+      await expect(field).toHaveValue(rule)
+      await clickSubmit(expect, save)
+      // Closing follows this tab's correlated acknowledgement, before table checks.
+      await expect(dialog).toBeHidden()
+      await expect(toast).toHaveCount(1)
+      await expect(toast).toContainText(message)
+      await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
+      expect(updates()).toBe(1)
+      expect(otherUpdates()).toBe(1)
+      expect(sends()).toBe(1)
+      await expectModerationOwnRules(expect, page, [rule])
+      await expectModerationOwnRules(expect, editor, [rule])
+      await expect(otherToast).toHaveCount(0)
+
+      for (const [log, after, expectedRule, savedRule] of [
+        [editForeign, foreignBefore, initialRule, otherRule],
+        [editOwn, ownBefore, otherRule, rule],
+      ] as const) {
+        const requests = log.sent.slice(after).filter(({ wire }) => {
+          const request = deliveryObject(wire)
+          return (
+            request.type === 'action' &&
+            request.action === 'hilos_moderation_rule_update'
+          )
+        })
+        expect(requests).toHaveLength(1)
+        const sent = requests[0]!
+        const request = deliveryObject(sent.wire)
+        expect(request).toMatchObject({
+          action: 'hilos_moderation_rule_update',
+          requestId: expect.any(String),
+          data: {
+            id: Number(id),
+            kind: 'hilos_profile_photo',
+            rule: savedRule,
+            expectedRule,
+          },
+        })
+        expect(
+          log.packets
+            .filter(({ socket, at }) => socket === sent.socket && at >= sent.at)
+            .flatMap(({ frames }) =>
+              frames.map(({ wire }) => deliveryObject(wire)),
+            )
+            .filter((wire) => wire.requestId === request.requestId),
+        ).toEqual([
+          expect.objectContaining({
+            type: 'action_success',
+            outcome: 'success',
+            data: expect.objectContaining({
+              action: 'hilos_moderation_rule_update',
+              message,
+            }),
+          }),
+        ])
+        expect(
+          log.sent
+            .slice(after)
+            .filter(({ wire }) =>
+              ['table_viewport', 'page_subscribe', 'page_resubscribe'].includes(
+                String(deliveryObject(wire).type),
+              ),
+            ),
+        ).toEqual([])
+        expect(log.connections).toHaveLength(1)
+      }
+      await document.unchanged()
+      await otherDocument.unchanged()
+    } finally {
+      await document.dispose()
+      await otherDocument.dispose()
+    }
+  } finally {
+    editOwn.stop()
+    editForeign.stop()
+    await editor.close()
+  }
 
   await page.reload()
   await expectPageReady(expect, page)
@@ -959,7 +1125,10 @@ test('uses an added photo rule after F5, then deletes it with own echo, observer
       }),
     ])
 
-    await expectDataFreeDeparture(expect, page, id, 'Removed', [openerId])
+    await expectDataFreeDeparture(expect, page, id, 'Removed', [
+      `hilos-moderation-rule-edit-open-${id}`,
+      openerId,
+    ])
     await expect(table.getByTestId('hilos-table-count')).toHaveText(
       '0 – 0 of 0',
     )
@@ -977,7 +1146,10 @@ test('uses an added photo rule after F5, then deletes it with own echo, observer
     await expect(observer.getByTestId('hilos-toast-success')).toHaveCount(0)
     await clickSubmit(expect, observer.getByTestId('hilos-table-apply'))
     await expect(observer.getByTestId('hilos-table-apply')).toHaveCount(0)
-    await expectDataFreeDeparture(expect, observer, id, 'Removed', [openerId])
+    await expectDataFreeDeparture(expect, observer, id, 'Removed', [
+      `hilos-moderation-rule-edit-open-${id}`,
+      openerId,
+    ])
     await expect(observer.getByTestId('hilos-table-count')).toHaveText(
       '0 – 0 of 0',
     )
