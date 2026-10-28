@@ -25,6 +25,7 @@ import type {
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
+import { HilosTableText } from '../src/HilosTableText.js'
 import {
   HilosTableSelectionEdgeContext,
   type HilosTableSelectionEdge,
@@ -3114,9 +3115,9 @@ function tableGeometryDOM() {
         id.startsWith('hilos-table-progress-row-') ||
         this.classList.contains('hilos-table-work-reserve')
       )
-        return rect(card ? 450 : 81.25, card ? 24.5 : 18.5)
+        return rect(card ? 450 : 40 + layout.main, card ? 24.5 : 18.5)
       if (id.startsWith('hilos-table-row-detail-'))
-        return rect(card ? 380 : 99.75, 60.25)
+        return rect(card ? 380 : 58.5 + layout.main, 60.25)
       if (this.matches('.hilos-button-row')) return rect(400, 46)
       if (this.matches('.hilos-table-replacement-row'))
         return rect(0, layout.reason + 1)
@@ -3227,13 +3228,23 @@ describe('HilosViewportTable connected geometry', () => {
       search?: boolean
       bulk?: boolean
       names?: string[]
+      text?: 'text' | 'parts'
     } = {},
   ) {
     const { controller } = makeController({
       title: 'Geometry',
       search: options.search ? {} : undefined,
+      ...(options.text
+        ? { rowHeight: { mode: 'lines', count: 2 } as const }
+        : {}),
       columns: [
-        { key: 'name', label: 'Name', source: 'user', sortable: true },
+        {
+          key: 'name',
+          label: 'Name',
+          source: 'user',
+          sortable: true,
+          heightContent: options.text,
+        },
         { key: 'badge', label: 'Status', card: 'badge' },
         { key: 'actions', label: '' },
         ...(options.detail === false
@@ -3330,6 +3341,400 @@ describe('HilosViewportTable connected geometry', () => {
       )
       ?.style.getPropertyValue('--hilos-table-record-px')
   }
+
+  function textDOM() {
+    const dom = tableGeometryDOM()
+    const overflow = { height: 80 }
+    for (const property of [
+      'clientWidth',
+      'clientHeight',
+      'scrollWidth',
+      'scrollHeight',
+    ] as const)
+      vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(() =>
+        property === 'clientHeight'
+          ? 40
+          : property === 'scrollHeight'
+            ? overflow.height
+            : 200,
+      )
+    return { ...dom, overflow }
+  }
+
+  function textControls(container: HTMLElement) {
+    return [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-id="hilos-table-text-toggle"]',
+      ),
+    ]
+  }
+
+  it.each(['text', 'parts'] as const)(
+    'connects real %s consumers on the first committed reader, independently of row detail',
+    (text) => {
+      const dom = textDOM()
+      const { controller, registrations } = make({ text, names: ['a'] })
+      const { container } = render(
+        <HilosViewportTable
+          controller={controller}
+          cells={{
+            name: (row) =>
+              text === 'parts' ? (
+                <HilosTableText value={row.name} />
+              ) : (
+                <em>{row.name}</em>
+              ),
+            badge: () => <span className="badge">Ready</span>,
+            actions: () => <button type="button">Act</button>,
+          }}
+          details={{
+            detail: () => <button type="button">Detail action</button>,
+          }}
+        />,
+      )
+      dom.flush()
+      const [wide, card] = textControls(container)
+      expect(registrations).toHaveLength(1)
+      expect(wide.getAttribute('aria-label')).toBe('Show in full: Name')
+      expect(wide.getAttribute('aria-controls')).not.toBe(
+        card.getAttribute('aria-controls'),
+      )
+      expect(container.querySelector('span.fw-medium')).toBeNull()
+      expect(
+        container.querySelector(
+          '.card-body > div > div.fw-medium .hilos-table-text',
+        ),
+      ).not.toBeNull()
+      fireEvent.click(wide)
+      expect(
+        textControls(container).map((button) => button.textContent),
+      ).toEqual(['Collapse', 'Collapse'])
+      expect(controller.rows.get()[0].expanded).toBe(false)
+      fireEvent.click(
+        container.querySelector('[data-id="hilos-table-expand-a"]')!,
+      )
+      expect(controller.rows.get()[0].expanded).toBe(true)
+      expect(
+        textControls(container).every(
+          (button) => button.getAttribute('aria-expanded') === 'true',
+        ),
+      ).toBe(true)
+      const detail = container.querySelector(
+        '[data-id="hilos-table-row-detail-a"]',
+      )!
+      expect(detail.querySelector('.hilos-table-text')).toBeNull()
+      expect(detail.querySelector('button')?.textContent).toBe('Detail action')
+      expect(wide.getAttribute('aria-controls')).not.toBe(detail.id)
+      expect(container.querySelector('.ms-auto .hilos-table-text')).toBeNull()
+      expect(
+        container.querySelector('.hilos-button-row .hilos-table-text'),
+      ).toBeNull()
+    },
+  )
+
+  it.each(['text', 'parts'] as const)(
+    'keeps the same focused %s button across live renderer changes and collapse',
+    (text) => {
+      const dom = textDOM()
+      const { controller } = make({ text, names: ['a'], bulk: true })
+      const { container } = render(
+        <HilosViewportTable
+          controller={controller}
+          cells={{
+            name: (row) =>
+              text === 'parts' ? (
+                <HilosTableText value={row.name} />
+              ) : (
+                <em>{row.name}</em>
+              ),
+          }}
+        />,
+      )
+      dom.flush()
+      const button = textControls(container)[0]
+      act(() => button.focus())
+      fireEvent.click(button)
+      act(() =>
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Moved live text' } },
+        }),
+      )
+      expect(textControls(container)[0]).toBe(button)
+      expect(button.textContent).toBe('Collapse')
+      expect(controller.rows.get()[0].pending).toBe('move')
+      dom.overflow.height = 40
+      act(() =>
+        controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Short' } },
+        }),
+      )
+      dom.flush()
+      expect(textControls(container)[0]).toBe(button)
+      expect(button.textContent).toBe('Collapse')
+      expect(document.activeElement).toBe(button)
+      expect(controller.rows.get()[0].selected).toBe(false)
+      expect(controller.rows.get()[0].expanded).toBe(false)
+      fireEvent.click(button)
+      dom.flush()
+      expect(textControls(container)).toEqual([button])
+      expect(button.textContent).toBe('Show in full')
+      expect(document.activeElement).toBe(button)
+      act(() => button.blur())
+      expect(textControls(container)).toHaveLength(0)
+    },
+  )
+
+  it.each(['reset', 'replacement', 'refusal', 'reuse', 'controller'] as const)(
+    'rebinds the real consumer after %s with empty intent and rejects old queued work',
+    (change) => {
+      const dom = textDOM()
+      const first = make({ text: 'parts', names: ['a'] })
+      const second = make({ text: 'parts', names: ['a'] })
+      const cells = { name: (row: Row) => <HilosTableText value={row.name} /> }
+      const { container, rerender, unmount } = render(
+        <StrictMode>
+          <HilosViewportTable controller={first.controller} cells={cells} />
+        </StrictMode>,
+      )
+      dom.flush()
+      const old = textControls(container)[0]
+      expect(first.controller.expandedText.get().size).toBe(0)
+      const queued = [...dom.frames.values()]
+      const resizes = [...dom.resizes]
+      const command = vi.spyOn(first.controller, 'expandText')
+      act(() => {
+        if (change === 'reset') first.controller.resetWindowRequests()
+        if (change === 'replacement') snapshot(first.controller, ['a'])
+        if (change === 'refusal') first.controller.ingestRefusal('forbidden')
+        if (change === 'reuse') {
+          depart(first.controller)
+          snapshot(first.controller, ['a'])
+        }
+      })
+      if (change === 'controller')
+        rerender(
+          <StrictMode>
+            <HilosViewportTable controller={second.controller} cells={cells} />
+          </StrictMode>,
+        )
+      act(() => {
+        for (const callback of queued) callback(0)
+        for (const observer of resizes) observer.fire()
+      })
+      dom.flush()
+      expect(old.isConnected).toBe(false)
+      fireEvent.click(old)
+      expect(command).not.toHaveBeenCalled()
+      if (change === 'refusal' || change === 'reset') {
+        expect(textControls(container)).toHaveLength(0)
+        if (change === 'refusal')
+          expect(container.textContent).not.toContain('Private')
+        else {
+          act(() => snapshot(first.controller, ['a']))
+          dom.flush()
+          expect(textControls(container)).toHaveLength(2)
+        }
+      } else {
+        expect(textControls(container)).toHaveLength(2)
+        expect(
+          textControls(container).every(
+            (button) => button.textContent === 'Show in full',
+          ),
+        ).toBe(true)
+      }
+      unmount()
+      act(() => {
+        for (const callback of queued) callback(0)
+        for (const observer of resizes) observer.fire()
+      })
+      expect(container.textContent).toBe('')
+    },
+  )
+
+  it('distinguishes missing card renderers from empty declared regions and preserves wide cells', () => {
+    tableGeometryDOM()
+    const { controller } = makeController({
+      title: 'Empty renderers',
+      rowHeight: { mode: 'lines', count: 2 },
+      columns: [
+        { key: 'name', label: 'Name', card: 'title', heightContent: 'text' },
+        { key: 'empty', label: 'Empty', heightContent: 'text' },
+        { key: 'missing', label: 'Missing', heightContent: 'text' },
+        { key: 'intrinsic', label: 'Intrinsic' },
+      ],
+    })
+    targets.push(controller)
+    snapshot(controller, ['a'])
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{
+          name: () => null,
+          empty: () => null,
+          intrinsic: () => <button type="button">Act</button>,
+        }}
+      />,
+    )
+    const card = container.querySelector('[data-id="hilos-table-card-a"]')!
+    expect(card.textContent).toContain('Empty')
+    expect(card.textContent).not.toContain('Missing')
+    expect(card.querySelectorAll('.hilos-table-text-lines-2')).toHaveLength(2)
+    expect(
+      card.querySelector('button')?.closest('.hilos-table-text'),
+    ).toBeNull()
+    const row = container.querySelector('[data-id="hilos-table-row-a"]')!
+    expect(row.querySelectorAll('td')).toHaveLength(5)
+    expect(row.querySelectorAll('.hilos-table-text-lines-2')).toHaveLength(3)
+  })
+
+  it('captures expanded text plus work/detail synchronously, holds pending removal, and retires both projections data-free', () => {
+    const dom = textDOM()
+    const { controller, captures, registrations } = make({
+      text: 'parts',
+      names: ['a'],
+    })
+    work(controller)
+    const renderers = content()
+    const name = vi.fn((row: Row) => <HilosTableText value={row.name} />)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        {...renderers}
+        cells={{ ...renderers.cells, name }}
+      />,
+    )
+    dom.flush()
+    dom.layout.main = 180.5
+    dom.layout.card = 500.75
+    fireEvent.click(textControls(container)[0])
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-table-expand-a"]')!,
+    )
+    dom.flush()
+    act(() => depart(controller, 'a', false))
+    expect(textControls(container).map((button) => button.textContent)).toEqual(
+      ['Collapse', 'Collapse'],
+    )
+    expect(container.textContent).toContain('Private a')
+    captures.mockClear()
+    name.mockClear()
+    renderers.details.detail.mockClear()
+    renderers.rowProgress.mockClear()
+    const stop = subscribeSignal(controller.rows, () => {
+      expect(captures).toHaveBeenCalledTimes(1)
+      expect(
+        captures.mock.calls[0][0].records.find(
+          (sample: { measurement: { layout: { projection: string } } }) =>
+            sample.measurement.layout.projection === 'wide',
+        ).extent,
+      ).toMatchObject({ main: 180.5, work: 18.5, detail: 60.25 })
+    })
+    try {
+      act(() => controller.apply())
+    } finally {
+      stop()
+    }
+    expect(captures).toHaveBeenCalledTimes(1)
+    expect(pixels(container, 'wide')).toBe('258.25')
+    expect(pixels(container, 'card')).toBe('508.75')
+    expect(registrations[0].record('a', 'wide')?.retained).toBe(259.25)
+    expect(container.textContent).not.toContain('Private')
+    expect(
+      container.querySelector(
+        '.hilos-table-text, [data-id="hilos-table-text-toggle"], [data-id^="project-action-"], [data-id^="hilos-table-row-detail-"], [role="progressbar"]',
+      ),
+    ).toBeNull()
+    expect(name).not.toHaveBeenCalled()
+    expect(renderers.details.detail).not.toHaveBeenCalled()
+    expect(renderers.rowProgress).not.toHaveBeenCalled()
+    expect(controller.expandedText.get().size).toBe(0)
+    dom.layout.main = 10
+    dom.layout.card = 30
+    fireEvent(window, new Event('resize'))
+    dom.flush()
+    expect(pixels(container, 'wide')).toBe('258.25')
+    expect(pixels(container, 'card')).toBe('508.75')
+  })
+
+  it.each(['search', 'root', 'outside'] as const)(
+    'returns focus from a departing disclosure through the existing %s path',
+    (fallback) => {
+      const dom = textDOM()
+      const { controller } = make({
+        text: 'parts',
+        names: ['a'],
+        search: fallback !== 'root',
+      })
+      const { container } = render(
+        <HilosViewportTable
+          controller={controller}
+          cells={{ name: (row) => <HilosTableText value={row.name} /> }}
+        />,
+      )
+      dom.flush()
+      const button = textControls(container)[0]
+      const other = document.createElement('button')
+      other.textContent = 'Outer choice'
+      document.body.append(other)
+      extras.push(other)
+      act(() => button.focus())
+      if (fallback === 'outside') other.focus()
+      act(() => depart(controller))
+      const expected =
+        fallback === 'outside'
+          ? other
+          : fallback === 'search'
+            ? container.querySelector('[data-id="hilos-table-search"]')
+            : container.querySelector('[data-id="hilos-viewport-table"]')
+      expect(document.activeElement).toBe(expected)
+      expect(textControls(container)).toHaveLength(0)
+    },
+  )
+
+  it.each([false, true])(
+    'returns a departed disclosure through the modal path, honoring a nearer offer (%s)',
+    (nearer) => {
+      const dom = textDOM()
+      const { controller } = make({ text: 'parts', names: ['a'], search: true })
+      const cells = { name: (row: Row) => <HilosTableText value={row.name} /> }
+      const draw = (open: boolean) => (
+        <>
+          <HilosViewportTable controller={controller} cells={cells} />
+          <HilosModal open={open} title="Read text" initialFocus="dialog">
+            Modal body
+          </HilosModal>
+        </>
+      )
+      const { container, rerender } = render(draw(false))
+      dom.flush()
+      const other = document.createElement('button')
+      document.body.append(other)
+      extras.push(other)
+      const offer = nearer
+        ? registerFocusReturnFallback(
+            container.querySelector('.table-responsive')!,
+            () => other,
+          )
+        : () => {}
+      act(() => textControls(container)[0].focus())
+      rerender(draw(true))
+      const modal = document.querySelector('[role="dialog"]')!
+      expect(document.activeElement).toBe(modal)
+      act(() => depart(controller))
+      expect(document.activeElement).toBe(modal)
+      rerender(draw(false))
+      expect(document.activeElement).toBe(
+        nearer
+          ? other
+          : container.querySelector('[data-id="hilos-table-search"]'),
+      )
+      offer()
+    },
+  )
 
   it('captures every connected record before a destructive batch and sizes the first replacement in both projections', () => {
     const dom = tableGeometryDOM()

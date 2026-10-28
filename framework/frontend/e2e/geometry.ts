@@ -1045,28 +1045,44 @@ export async function settleTableLayout(page: Page): Promise<void> {
   })
 }
 
+/** A connected layout read is distinct from the layout a browser can paint. */
+interface TableHandoffFrame {
+  readonly fixed: boolean
+  readonly paint: boolean
+  readonly bounds: readonly number[]
+  readonly text: readonly {
+    readonly height: number
+    readonly lineHeight: number
+    readonly rootFont: number
+    readonly open: boolean
+  }[]
+}
+
 /**
- * Arm before mounting a table. Observe its actual auto layout and the first
- * fixed layout while every value is still connected, including calibration
- * frames; a baseline taken after calibration cannot establish this handoff.
+ * Arm before mounting a table. Observe its actual auto layout and first fixed
+ * layout, including calibration. A reading policy also checks every paint's
+ * reserve and block bounds; pending DOM guards may change height before paint,
+ * while the auto-to-fixed inline tracks must still agree on every native read.
  *
  * @param expect The spec's expect.
  * @param page The page about to mount the table.
  * @param bodyId The stable body surrounding the mount.
+ * @param readingPolicy A declared text policy whose pending guard can change height.
  * @returns An observation using the same evidence/check lifetime as departures.
  */
 export async function watchTableHandoff(
   expect: Expect,
   page: Page,
   bodyId: string,
+  readingPolicy?: TableTextPolicy,
 ): Promise<TableGeometryWatch> {
   const root = page.getByTestId(bodyId)
   await root.evaluate((root) => {
-    const readings: { fixed: boolean; bounds: number[] }[] = []
+    const readings: TableHandoffFrame[] = []
     let stopped = false
     let frame = 0
     const original = Element.prototype.getBoundingClientRect
-    function sample() {
+    function sample(paint = false) {
       const table = root.querySelector('table')
       if (!table || !table.checkVisibility()) return
       const origin = original.call(table)
@@ -1076,6 +1092,7 @@ export async function watchTableHandoff(
       if (rows.length === 0) return
       readings.push({
         fixed: table.classList.contains('hilos-table-fixed'),
+        paint,
         bounds: [...cells, ...rows].flatMap((element) => {
           const box = original.call(element)
           return [
@@ -1085,11 +1102,20 @@ export async function watchTableHandoff(
             (box.right - origin.left) / zoom,
           ]
         }),
+        text: [
+          ...table.querySelectorAll<HTMLElement>('.hilos-table-text[id]'),
+        ].map((node) => ({
+          height: original.call(node).height / node.currentCSSZoom,
+          lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight),
+          rootFont: Number.parseFloat(
+            getComputedStyle(document.documentElement).fontSize,
+          ),
+          open: node.classList.contains('is-open'),
+        })),
       })
     }
-    // Vue can finish its mount and fixed-layout patch before a mutation callback.
-    // Observe the adapter's actual connected auto-layout read synchronously;
-    // preserve every native result and use native reads internally to avoid recursion.
+    // A view can finish its mount and fixed-layout patch before mutation delivery.
+    // Native reads preserve that calibration without treating it as a painted frame.
     function observed(this: Element): DOMRect {
       const result = original.call(this)
       if (!stopped && this === root.querySelector('table') && this.isConnected)
@@ -1099,10 +1125,10 @@ export async function watchTableHandoff(
     Element.prototype.getBoundingClientRect = observed
     function tick() {
       if (stopped) return
-      sample()
+      sample(true)
       frame = requestAnimationFrame(tick)
     }
-    const observer = new MutationObserver(sample)
+    const observer = new MutationObserver(() => sample())
     observer.observe(root, { attributes: true, subtree: true, childList: true })
     Object.assign(root, {
       __hilosHandoff: {
@@ -1121,7 +1147,7 @@ export async function watchTableHandoff(
   })
   type HandoffRoot = HTMLElement & {
     __hilosHandoff: {
-      readings: { fixed: boolean; bounds: number[] }[]
+      readings: TableHandoffFrame[]
       stop(): void
     }
   }
@@ -1143,10 +1169,50 @@ export async function watchTableHandoff(
       for (const reading of fixed) {
         expect(reading.bounds.length).toBe(before.length)
         for (let index = 0; index < before.length; index++) {
+          // A pending text DOM verdict is allowed to add its cap before paint.
+          // Inline tracks still agree through all intermediate connected reads.
+          if (readingPolicy && index % 4 < 2) continue
           expect(
             Math.abs(reading.bounds[index]! - before[index]!),
             `handoff boundary ${index}: ${before[index]} -> ${reading.bounds[index]}`,
           ).toBeLessThanOrEqual(SLACK_PX)
+        }
+      }
+      if (readingPolicy) {
+        const paints = all.filter((reading) => reading.paint)
+        expect(
+          paints.length,
+          'first and subsequent native paints were observed',
+        ).toBeGreaterThan(0)
+        const firstPaint = paints[0]!
+        for (const paint of paints) {
+          expect(
+            paint.fixed,
+            'fixed tracks are ready before the first paint',
+          ).toBe(true)
+          expect(paint.bounds.length).toBe(firstPaint.bounds.length)
+          for (let index = 0; index < paint.bounds.length; index++)
+            expect(
+              Math.abs(paint.bounds[index]! - firstPaint.bounds[index]!),
+              `paint boundary ${index}: ${firstPaint.bounds[index]} -> ${paint.bounds[index]}`,
+            ).toBeLessThanOrEqual(SLACK_PX)
+          expect(
+            paint.text.length,
+            'paint contains the declared reading windows',
+          ).toBeGreaterThan(0)
+          for (const text of paint.text) {
+            expect(text.open).toBe(false)
+            if (readingPolicy.mode !== 'content') {
+              const reserve =
+                readingPolicy.mode === 'lines'
+                  ? readingPolicy.count * text.lineHeight
+                  : readingPolicy.rem * text.rootFont
+              expect(
+                Math.abs(text.height - reserve),
+                'the declared cap is ready before the first paint',
+              ).toBeLessThanOrEqual(SLACK_PX)
+            }
+          }
         }
       }
     },

@@ -14,6 +14,7 @@ import {
   type TableFocusReturnRow,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
+  type TableGeometryRecord,
   type TableGeometryRegistration,
   type TableGeometrySample,
   type TableProjection,
@@ -100,6 +101,7 @@ export function useTableViewportGeometry(
   root: RefObject<HTMLElement | null>,
   table: RefObject<HTMLTableElement | null>,
   columnKeys: readonly string[],
+  isCurrentRecord?: (record: TableGeometryRecord) => boolean,
 ) {
   const bindings = useMemo<Bindings>(
     () => ({ elements: new Map(), mount: null }),
@@ -175,6 +177,14 @@ export function useTableViewportGeometry(
     ) => current?.recordPixels(rowKey, occurrence, projection),
     workPixels: (rowKey: string, projection: TableProjection) =>
       current?.workPixels(rowKey, projection) ?? 0,
+    // Text views consume the existing mount's exact committed scope reader.
+    recordReader: (
+      rowKey: string,
+      occurrence: number,
+      projection: TableProjection,
+    ): (() => TableGeometryRecord | null) =>
+      current?.recordReader(rowKey, occurrence, projection, isCurrentRecord) ??
+      (() => null),
     layoutChanged,
   }
 }
@@ -191,7 +201,7 @@ function createMount(
   const shells = new Map<string, Shell>()
   // Immutable owner snapshots, refreshed outside render: record() lazily mints
   // measurement state. Rendering a newly published occurrence must not do that.
-  const snapshots = new Map<string, TableRecordGeometry>()
+  let snapshots = new Map<string, TableRecordGeometry>()
   let tracks: TableColumnTracks | null = null
   let trackWidths: readonly number[] = []
   let reasonFloors = { wide: 0, card: 0 }
@@ -479,17 +489,50 @@ function createMount(
 
   function publish(): void {
     if (stopped) return
-    snapshots.clear()
+    const previous = snapshots
+    snapshots = new Map()
+    let scopeChanged = false
     for (const record of elements.values()) {
       const state = registration.record(record.rowKey, record.projection)
-      if (state?.record.occurrence === record.occurrence)
-        snapshots.set(`${record.projection}:${record.rowKey}`, state)
+      if (state?.record.occurrence !== record.occurrence) continue
+      const id = `${record.projection}:${record.rowKey}`
+      snapshots.set(id, state)
+      const before = previous.get(id)
+      if (before?.record !== state.record || before.reason !== state.reason)
+        scopeChanged = true
     }
+    // A new ref can arrive after the owner's notification, including a hidden
+    // projection with no measurable box. Bind its identity on the next render.
+    if (scopeChanged || previous.size !== snapshots.size) refresh()
     const next = registration.tracks()
     if (next !== tracks) {
       tracks = next
       trackWidths = next?.widths ?? []
       corrections = 0
+    }
+  }
+
+  /** Capture one committed identity; an unbound reader stays unbound forever. */
+  function recordReader(
+    rowKey: string,
+    occurrence: number,
+    projection: TableProjection,
+    isCurrentRecord?: (record: TableGeometryRecord) => boolean,
+  ): () => TableGeometryRecord | null {
+    const id = `${projection}:${rowKey}`
+    const identity = snapshots.get(id)?.record
+    return () => {
+      if (
+        stopped ||
+        bindings.mount?.registration !== registration ||
+        identity?.occurrence !== occurrence ||
+        (isCurrentRecord && !isCurrentRecord(identity))
+      )
+        return null
+      const state = snapshots.get(id)
+      return state?.reason === null && state.record === identity
+        ? identity
+        : null
     }
   }
 
@@ -767,6 +810,7 @@ function createMount(
     active: () => !stopped,
     rememberFocus,
     recordPixels,
+    recordReader,
     workPixels,
     invalidate,
     observe: (node: HTMLElement) => observer?.observe(node),
@@ -785,6 +829,7 @@ function createMount(
       }
       for (const id of shells.keys()) if (!elements.has(id)) shells.delete(id)
       measure()
+      publish()
     },
     dispose(): void {
       stopped = true

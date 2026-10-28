@@ -907,8 +907,9 @@ a new window, and Apply does not Show.
 
 The shared core retention/ingress mechanism and Vue, React, and Angular DOM
 geometry are built. The shared core also declares and validates text-height
-policies. Vue renders the declared text and parts regions; React and Angular
-share the Sass catalog but their text renderers remain future work.
+policies. Vue and React render the declared text and parts regions. Angular
+shares the Sass catalog and full-footprint geometry; its text renderer is still
+future work (not in the code yet — HIL-1754).
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from
@@ -995,20 +996,59 @@ work, and hidden value marks stay outside that window. Calls without either
 declaration keep the intrinsic render, `renderedKeys`, and wire behavior already
 in use.
 
-Vue's `text` mode accepts ordinary inline cell-slot content. It checks the
-rendered DOM, including descendants of child components; an unsafe slot stays
+Vue and React `text` modes accept ordinary inline cell content. Each checks the
+rendered DOM descendants and their computed display; unsafe content stays
 intrinsic and receives a diagnostic in development. Before the first positive
-DOM check, the pending slot gets wrapping only, never a cap. `parts` mode uses the
-public `HilosTableText` component with `value: Hideable<string>` for the main
-text beside unconstrained content. A limited parts value has exactly one such
-text region. It has no arbitrary child-slot API: the parts context is internal
-to the SDK. A page continues to use the ordinary `HilosViewportTable` cell slot
-and places `HilosTableText` there; `HilosTableValue` and its context are internal
-mount machinery, not project components. Internally, `HilosTableValue` reads
-only the controller's existing `frame`, `expandedText`, and `expandText`, plus
-the exact-record reader, column key, field label, `heightContent`, and projection;
-its context supplies the policy, record scope, and parts-region registration.
-An empty declared text region still
+DOM check, content gets wrapping only, never a cap. `parts` mode uses the public
+`HilosTableText` component with `value: Hideable<string>` for the main text
+beside unconstrained content. React also exports `HilosTableTextProps`, whose
+only prop is `value: Hideable<string>`. The React component and its props type
+are re-exported from the existing root and `/base` entries. A limited parts
+value has exactly one such text region. It has no arbitrary child-slot API: the
+parts context is internal to the SDK. A page uses the ordinary
+`HilosViewportTable` cell renderer and returns `HilosTableText` there;
+`HilosTableValue` and its context are internal mount machinery, not project
+components. In React, for example, the
+frame declares the participating column and row-height policy; a controller
+constructed with that frame is rendered through the usual cell renderer, which
+puts the text beside metadata:
+
+```tsx
+import type {
+  Hideable,
+  HilosTableFrame,
+  TableViewportController,
+} from '@hilos/core/base'
+import { HilosTableText, HilosViewportTable } from '@hilos/react/base'
+
+type Row = { readonly name: Hideable<string>; readonly metadata: string }
+
+const frame: HilosTableFrame = {
+  rowHeight: { mode: 'lines', count: 2 },
+  columns: [{ key: 'name', label: 'Name', heightContent: 'parts' }],
+}
+
+function Rows({ controller }: { controller: TableViewportController<Row> }) {
+  return (
+    <HilosViewportTable
+      controller={controller}
+      cells={{
+        name: (row) => (
+          <div className="d-flex gap-2">
+            <HilosTableText value={row.name} />
+            <span>{row.metadata}</span>
+          </div>
+        ),
+      }}
+    />
+  )
+}
+```
+
+Internally, `HilosTableValue` reads only the controller's existing `frame`,
+`expandedText`, and `expandText`, plus the exact-record reader, column key,
+field label, `heightContent`, and projection; its context supplies the policy,
+record scope, and parts-region registration. An empty declared text region still
 reserves its preset. A missing card renderer creates no field. A hidden-value
 mark remains outside the cap while an inert empty region keeps the preset's
 minimum reserve; it has no reading control.
@@ -1020,21 +1060,25 @@ plus exactly two runtime helpers:
 `hilosTableTextClass(height: HilosTableRowHeight): string`. Each helper has one
 function identity across those entries, and the types are exported through both.
 The public `HilosTableText` export likewise has one component identity from the
-existing Vue root and `/base`; no package subpath was added, and the common
-`/base` closure remains free of admin implementations.
+existing Vue and React root and `/base` entries; no package subpath was added,
+and each `/base` closure remains free of admin implementations.
 
 The controller exposes
 `expandedText: ReadonlySignal<ReadonlyMap<number, ReadonlySet<string>>>`, a
 read-only map from geometry occurrence to open column keys, independent of
 row-detail expansion. `expandText` takes a `TableGeometryRecord`, a column key,
 and an expanded boolean; it accepts only the geometry owner's exact current
-record. Vue's existing `useTableViewportGeometry.recordReader` captures the
-registration, mount, window, occurrence, and projection identity and returns
-`null` when that record is no longer current. `TableViewportController.isTextRecordCurrent()`
-is a read-only verdict; it does not create an identity. The geometry reader
-tracks its existing revision even when the intent map is empty, so resets
-recheck the captured record. A fresh occurrence never inherits intent from a
-reused row key, and stale identities cannot change it.
+record. Vue and React's existing `useTableViewportGeometry.recordReader` captures
+the registration, mount, window, occurrence, and projection identity and returns
+`null` when that record is no longer current. In React, the reader is created
+from a committed geometry snapshot, and `HilosViewportTable` supplies the
+controller's `isTextRecordCurrent()` predicate; the predicate is a read-only
+verdict and creates no identity or second geometry registration. A reader made
+before its snapshot is bound stays `null`; a later committed geometry refresh
+provides a reader for the exact owner-issued record. Reset, refusal, or departure
+makes an old reader return `null` immediately, including while the intent map is
+empty. A fresh occurrence never inherits intent from a reused row key, and stale
+identities cannot change it.
 
 Intent survives live updates, moves, and a pending foreign removal until Apply.
 It is cleared at final departure or eviction, on a replacement window,
@@ -1046,13 +1090,34 @@ DOM before its destructive write; departed records retain numeric geometry
 only. Both mounted projections release their text controls, observers, and DOM
 bindings when the record or controller leaves.
 
-Vue's existing `ResizeObserver` measures both the actual capped window and its
-one live, uncapped content node; mutation observation and exact scope guards
-keep asynchronous reads bound to that registration. The natural content node is
-observed because font or spacing changes can alter its scroll extent while a
-fixed rem window keeps the same box size. Hidden or zero-size projections do
-not reset intent, and expanded natural content is never treated as a collapsed
-overflow measurement. There is no hidden clone, injected probe, or polling.
+Vue and React observe both the actual capped window and its one live, uncapped
+content node with `ResizeObserver`; mutation observers and exact scope guards
+keep asynchronous reads bound to the current registration and record. The
+natural content node is observed because font or spacing changes can alter its
+scroll extent while a fixed rem window keeps the same box size. Only a usable
+collapsed box is measured. Hidden or zero-size projections do not reset intent,
+and expanded natural content is never treated as a collapsed overflow
+measurement. There is no hidden clone, injected probe, or polling.
+
+React registers its parts region in a layout effect after commit and checks the
+committed registration count directly, before the state snapshot is published.
+Registration cleanup is idempotent, so StrictMode's setup/cleanup replay leaves
+the next setup with a fresh binding and the correct region count. The reading
+hook binds DOM refs after commit, uses `useId` for the projection-local
+text/control relationship, and keeps DOM handles, focus, and the last usable
+overflow measurement with that mount. Each command and asynchronous callback
+rechecks the exact controller, record, column, and projection scope. Measurement
+runs only after commit and for a usable collapsed box; hidden or zero-size
+projections keep both intent and the last usable overflow value, and expanded
+natural content never replaces that collapsed measurement. Cleanup cancels its
+scheduled frame, disconnects observers, removes listeners, and clears callback
+tickets, including the callback waiting on `document.fonts.ready`. Rendering on
+the server does not need DOM globals or create a geometry registration. The
+reading control is a native button (`Show in full` / `Collapse`) with the field
+label in its accessible name; Enter and Space do not activate the table row or
+its other controls. An expanded value keeps `Collapse` after live shortening.
+After collapse, the same focused button reads `Show in full` and stays until
+blur even if the text no longer overflows; collapsing does not move focus.
 
 ## The count and its ceiling
 

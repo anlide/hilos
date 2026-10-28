@@ -52,6 +52,7 @@ export { HilosSkeleton, type HilosSkeletonProps } from '../HilosSkeleton.js'
 export { HilosAvatar, type HilosAvatarProps } from '../HilosAvatar.js'
 export { HilosHiddenMark } from '../HilosHiddenMark.js'
 export { HilosHideable, type HilosHideableProps } from '../HilosHideable.js'
+export { HilosTableText, type HilosTableTextProps } from '../HilosTableText.js'
 export { ErrorPage, type ErrorPageProps } from '../ErrorPage.js'
 export {
   HilosMaintenance,

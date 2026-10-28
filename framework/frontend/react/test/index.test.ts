@@ -32,6 +32,7 @@ import {
   HilosSkeleton,
   HilosAvatar,
   HilosSwitch,
+  HilosTableText,
   HilosTakeoverViewOnlyContext,
   HilosThemeMenu,
   HilosView,
@@ -57,6 +58,7 @@ import type {
   HilosAnalyticsPersonPageProps,
   HilosAppearancePageProps,
   HilosPageHeadProps,
+  HilosTableTextProps,
 } from '../src/index.js'
 import * as base from '../src/base/index.js'
 
@@ -168,6 +170,18 @@ it('exports the shared page head once, from the base entry the root re-exports',
     Parameters<typeof HilosPageHead>[0]
   >().toEqualTypeOf<HilosPageHeadProps>()
   expectTypeOf<base.HilosPageHeadProps>().toEqualTypeOf<HilosPageHeadProps>()
+})
+
+it('exports only the public parts text component with one root/base identity', () => {
+  expect(base.HilosTableText).toBe(HilosTableText)
+  expectTypeOf<
+    Parameters<typeof HilosTableText>[0]
+  >().toEqualTypeOf<HilosTableTextProps>()
+  expectTypeOf<base.HilosTableTextProps>().toEqualTypeOf<HilosTableTextProps>()
+  expectTypeOf<keyof HilosTableTextProps>().toEqualTypeOf<'value'>()
+  expect(base).not.toHaveProperty('HilosTableValue')
+  expect(base).not.toHaveProperty('HilosTableTextContext')
+  expect(base).not.toHaveProperty('useTableTextReading')
 })
 
 it('exports the live instance name hook once, from the base entry the root re-exports', () => {

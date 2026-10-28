@@ -1,26 +1,37 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
+  HIDDEN_VALUE,
   Scope,
   TableViewportController,
   hilosTableRemovalReason,
   ingest,
+  isHiddenValue,
   subscribeSignal,
   type EntityRef,
   type HilosTableFrame,
+  type HilosTableLineCount,
+  type HilosTableRowHeight,
+  type HilosTableTextRem,
+  type Hideable,
   type TableRow,
   type TableViewportDescriptor,
 } from '@hilos/core/base'
 import {
   HilosModal,
+  HilosTableText,
   HilosViewportTable,
   HilosTableSelectionEdgeContext,
   useSignal,
 } from '@hilos/react'
 
+type HeightMode = 'default' | 'content' | 'lines' | 'height'
+type HeightContent = 'text' | 'parts'
+
 interface RecordValue {
   readonly name: string
   readonly paragraph: string
+  readonly hiddenParagraph: boolean
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
@@ -31,6 +42,28 @@ const SOURCE = 'record'
 const PARAGRAPH =
   'A paragraph near its wrapping boundary keeps the same lines when the widest name leaves the list. The surviving content must keep exactly these lines throughout every departure.'
 const EXPANDED = `${PARAGRAPH} ${PARAGRAPH} ${PARAGRAPH}`
+const LINE_COUNTS: readonly HilosTableLineCount[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+]
+const TEXT_REMS: readonly HilosTableTextRem[] = [2, 3, 4.5, 6, 9, 12]
+const TEXT_SAMPLES = {
+  short: 'Short value',
+  empty: '',
+  long: `${Array.from({ length: 24 }, () => PARAGRAPH).join(' ')} LAST READABLE LINE`,
+  longer: `${Array.from({ length: 48 }, () => PARAGRAPH).join(' ')} LAST READABLE LINE`,
+  newline: `${Array.from({ length: 16 }, (_, index) => `Explicit line ${index + 1}`).join('\n')}\nLAST READABLE LINE`,
+  token: `${'UnbrokenToken'.repeat(200)}ENDTOKEN`,
+  hidden: '',
+} as const
+type TextSample = keyof typeof TEXT_SAMPLES
+const READING_SAMPLES = {
+  a: 'long',
+  b: 'short',
+  c: 'empty',
+  d: 'newline',
+  e: 'token',
+  g: 'short',
+} as const satisfies Partial<Record<(typeof KEYS)[number], TextSample>>
 const ARCHIVE_COLUMNS = [
   ['environment', 'Environment', 'Production'],
   ['scope', 'Scope', 'Full'],
@@ -45,6 +78,44 @@ const raw = (key: string): TableRow => ({
   rowKey: key,
   slots: { [SOURCE]: entityRef(key) },
 })
+
+interface UnsafeTextRendererProps {
+  readonly rowKey: string
+  readonly value: string
+  readonly onAction: () => void
+}
+
+function UnsafeTextRenderer({
+  rowKey,
+  value,
+  onAction,
+}: UnsafeTextRendererProps) {
+  return (
+    <>
+      <span data-id={`geometry-text-${rowKey}`}>{value}</span>
+      <a
+        href="#geometry-reading-note"
+        data-id={`geometry-unsafe-link-${rowKey}`}
+      >
+        Unsafe reading link
+      </a>
+      <button
+        type="button"
+        data-id={`geometry-unsafe-action-${rowKey}`}
+        onClick={onAction}
+      >
+        Inspect unsafe text
+      </button>
+      <div data-id={`geometry-unsafe-block-${rowKey}`}>Block content</div>
+      <span
+        className="badge text-bg-info"
+        data-id={`geometry-unsafe-badge-${rowKey}`}
+      >
+        Unsafe metadata
+      </span>
+    </>
+  )
+}
 
 /** Synthetic inputs stay in this fixture mount; all geometry belongs to the SDK. */
 export function TableGeometryFixture() {
@@ -64,6 +135,15 @@ export function TableGeometryFixture() {
   )
   const [navigation, setNavigation] = useState('search')
   const [snapshot, setSnapshot] = useState('short')
+  const [heightMode, setHeightMode] = useState<HeightMode>('default')
+  const [lineCount, setLineCount] = useState<HilosTableLineCount>(3)
+  const [textRem, setTextRem] = useState<HilosTableTextRem>(4.5)
+  const [heightContent, setHeightContent] = useState<HeightContent>('text')
+  const [mountedHeightContent, setMountedHeightContent] =
+    useState<HeightContent>('text')
+  const [readingSamples, setReadingSamples] = useState(false)
+  const [payload, setPayload] = useState<TextSample>('long')
+  const [textRenderer, setTextRenderer] = useState<'safe' | 'unsafe'>('safe')
   const [position, setPosition] = useState(0)
   const [syncSeen, setSyncSeen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -74,7 +154,20 @@ export function TableGeometryFixture() {
   function write(key: string, fields: Partial<RecordValue>): void {
     ingest(scope, { entities: { [SOURCE]: { id: key, ...fields } } })
   }
-  function makeController(search = true, archive = false) {
+  function makeController(
+    search = true,
+    archive = false,
+    reading = readingSamples,
+    readingContent = heightContent,
+  ) {
+    const rowHeight: HilosTableRowHeight | undefined =
+      !reading || heightMode === 'default'
+        ? undefined
+        : heightMode === 'content'
+          ? { mode: 'content' }
+          : heightMode === 'lines'
+            ? { mode: 'lines', count: lineCount }
+            : { mode: 'height', rem: textRem }
     const frame: HilosTableFrame = {
       title: 'Geometry records',
       subtitle: 'Synthetic controller ingress; no server delivery is claimed.',
@@ -94,6 +187,7 @@ export function TableGeometryFixture() {
           key: 'paragraph',
           label: 'Description',
           source: SOURCE,
+          ...(reading ? { heightContent: readingContent } : {}),
           progress: true,
         },
         { key: 'badge', label: 'Status', source: SOURCE, card: 'badge' },
@@ -118,6 +212,7 @@ export function TableGeometryFixture() {
           detailWide: true,
         },
       ],
+      ...(rowHeight ? { rowHeight } : {}),
       bulkActions: [
         {
           key: 'inspect',
@@ -138,6 +233,7 @@ export function TableGeometryFixture() {
         return {
           name: String(fields?.name ?? ''),
           paragraph: String(fields?.paragraph ?? ''),
+          hiddenParagraph: fields?.hiddenParagraph === true,
           badge: String(fields?.badge ?? ''),
           detail: String(fields?.detail ?? ''),
           expandable: fields?.expandable !== false,
@@ -147,18 +243,38 @@ export function TableGeometryFixture() {
       sendViewport: (descriptor) => setRequests((old) => [...old, descriptor]),
     })
   }
-  function seed(owner: TableViewportController<RecordValue>): void {
-    for (const key of TARGETS)
+  function seed(
+    owner: TableViewportController<RecordValue>,
+    reading = readingSamples,
+    readingContent = mountedHeightContent,
+  ): void {
+    for (const key of TARGETS) {
+      const sample: TextSample | undefined = reading
+        ? key === 'f'
+          ? readingContent === 'parts'
+            ? 'hidden'
+            : 'short'
+          : READING_SAMPLES[key as keyof typeof READING_SAMPLES]
+        : undefined
       write(key, {
         name:
-          key === 'b'
-            ? 'The widest unbroken name WWWWWWWWWWWWWWWW'
-            : `Record ${key}`,
-        paragraph: key === 'c' ? EXPANDED : PARAGRAPH,
+          reading && sample !== undefined
+            ? `Record ${key}`
+            : key === 'b'
+              ? 'The widest unbroken name WWWWWWWWWWWWWWWW'
+              : `Record ${key}`,
+        paragraph:
+          sample !== undefined
+            ? TEXT_SAMPLES[sample]
+            : key === 'c'
+              ? EXPANDED
+              : PARAGRAPH,
+        hiddenParagraph: sample === 'hidden',
         badge: 'Available',
         detail: `Private detail for ${key}. ${EXPANDED}`,
         expandable: true,
       })
+    }
     owner.ingestWindow(KEYS.map(raw), KEYS.length, true, null, null, 10)
   }
   const [controller, setController] = useState(() => {
@@ -173,6 +289,7 @@ export function TableGeometryFixture() {
   const tableWork = useSignal(controller.progress.table)
   const bulkWork = useSignal(controller.progress.bulk)
   const report = useSignal(controller.bulk.report)
+  const textIntent = useSignal(controller.expandedText)
 
   useEffect(() => () => controller.dispose(), [controller])
   // Expose an existing projection at the configured desktop viewport. No product
@@ -182,11 +299,17 @@ export function TableGeometryFixture() {
     const cards = bodyRef.current?.querySelector(
       '[data-id="hilos-table-cards"]',
     )
+    if (readingSamples) {
+      wide?.classList.add('d-none', 'd-md-block')
+      cards?.classList.add('d-md-none')
+      cards?.classList.remove('d-none')
+      return
+    }
     wide?.classList.remove('d-md-block')
     cards?.classList.remove('d-md-none')
     wide?.classList.toggle('d-none', projection !== 'wide')
     cards?.classList.toggle('d-none', projection !== 'card')
-  }, [projection, mounted, controller, edge])
+  }, [projection, mounted, controller, edge, readingSamples])
 
   function reset(): void {
     seed(controller)
@@ -211,6 +334,7 @@ export function TableGeometryFixture() {
         write(target, {
           expandable: detail !== 'absent',
           paragraph: expandedText ? EXPANDED : PARAGRAPH,
+          hiddenParagraph: false,
         })
         controller.ingestDelta({
           kind: 'row_stale',
@@ -265,6 +389,7 @@ export function TableGeometryFixture() {
       write(target, {
         name: `Replacement ${target}`,
         paragraph: 'New short value',
+        hiddenParagraph: false,
         detail: 'New detail',
         expandable: true,
       })
@@ -287,6 +412,7 @@ export function TableGeometryFixture() {
           write(target, {
             name: 'Normalized replacement',
             paragraph: 'short',
+            hiddenParagraph: false,
             detail: '',
           }),
       )
@@ -349,6 +475,7 @@ export function TableGeometryFixture() {
         write(key, {
           name: `Fresh ${key}`,
           paragraph: 'Fresh short value',
+          hiddenParagraph: false,
           detail: 'Fresh detail',
           expandable: true,
         })
@@ -382,9 +509,43 @@ export function TableGeometryFixture() {
   }
   function replace(search = true): void {
     previous.current = controller
-    const owner = makeController(search, icons)
-    seed(owner)
+    const reading = readingSamples
+    const readingContent = reading ? heightContent : mountedHeightContent
+    const owner = makeController(search, icons, reading, readingContent)
+    seed(owner, reading, readingContent)
     setController(owner)
+    if (reading) setMountedHeightContent(readingContent)
+  }
+  function startReading(): void {
+    previous.current = controller
+    const owner = makeController(true, icons, true, heightContent)
+    seed(owner, true, heightContent)
+    setReadingSamples(true)
+    setMountedHeightContent(heightContent)
+    setController(owner)
+  }
+  function readingValue(row: RecordValue): Hideable<string> {
+    return row.hiddenParagraph ? HIDDEN_VALUE : row.paragraph
+  }
+  function changeText(): void {
+    controller.withPresentationUpdate(
+      { kind: 'rows', rowKeys: [target] },
+      () => {
+        write(target, {
+          paragraph: TEXT_SAMPLES[payload],
+          hiddenParagraph: payload === 'hidden',
+        })
+        controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: target,
+          row: raw(target),
+        })
+      },
+    )
+  }
+  function immediateDeparture(): void {
+    flushSync(() => changeText())
+    depart(true)
   }
   function updateLive(): void {
     controller.withPresentationUpdate(
@@ -393,6 +554,7 @@ export function TableGeometryFixture() {
         write(target, {
           name: `Updated ${target}`,
           paragraph: EXPANDED,
+          hiddenParagraph: false,
           detail: `Updated detail. ${EXPANDED} ${EXPANDED}`,
         })
         controller.ingestDelta({
@@ -542,7 +704,10 @@ export function TableGeometryFixture() {
       data-id="geometry-fixture"
       onKeyDown={(event) => {
         // Fixture ingress keys preserve the user's current focus during delivery.
-        if (event.key === 'F8') {
+        if (event.key === 'F7') {
+          event.preventDefault()
+          changeText()
+        } else if (event.key === 'F8') {
           event.preventDefault()
           depart(true)
         }
@@ -575,6 +740,68 @@ export function TableGeometryFixture() {
         {select('edge', 'Selection edge', edge, ['start', 'end'], (value) =>
           setEdge(value as 'start' | 'end'),
         )}
+        {select(
+          'height-mode',
+          'Row height',
+          heightMode,
+          ['default', 'content', 'lines', 'height'],
+          (value) => setHeightMode(value as HeightMode),
+        )}
+        {select(
+          'lines',
+          'Lines',
+          String(lineCount),
+          LINE_COUNTS.map(String),
+          (value) => setLineCount(Number(value) as HilosTableLineCount),
+        )}
+        {select('rem', 'Rem', String(textRem), TEXT_REMS.map(String), (value) =>
+          setTextRem(Number(value) as HilosTableTextRem),
+        )}
+        {select(
+          'height-content',
+          'Height content',
+          heightContent,
+          ['text', 'parts'],
+          (value) => setHeightContent(value as HeightContent),
+        )}
+        {select(
+          'text-renderer',
+          'Text renderer',
+          textRenderer,
+          ['safe', 'unsafe'],
+          (value) => setTextRenderer(value as 'safe' | 'unsafe'),
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          data-id="geometry-reading"
+          onClick={startReading}
+        >
+          Create reading controller
+        </button>
+        {select(
+          'payload',
+          'Live text',
+          payload,
+          Object.keys(TEXT_SAMPLES),
+          (value) => setPayload(value as TextSample),
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          data-id="geometry-value"
+          onClick={changeText}
+        >
+          Publish text
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          data-id="geometry-immediate"
+          onClick={immediateDeparture}
+        >
+          Publish and remove before observer
+        </button>
         {select(
           'projection',
           'Projection',
@@ -647,6 +874,12 @@ export function TableGeometryFixture() {
         data-range={`${footer.firstRow}:${footer.lastRow}`}
         data-body={body}
         data-selected={JSON.stringify(selected)}
+        data-text-intent={JSON.stringify(
+          [...textIntent].map(([occurrence, columns]) => [
+            occurrence,
+            [...columns],
+          ]),
+        )}
         data-identities={rows
           .map((row) => `${row.rowKey}:${row.occurrence}`)
           .join(',')}
@@ -674,11 +907,71 @@ export function TableGeometryFixture() {
                     {icons ? `2026-10-21 11:13 ${key}` : row.name}
                   </span>
                 ),
-                paragraph: (row, key) => (
-                  <p className="mb-0" data-id={`geometry-text-${key}`}>
-                    {icons ? 'Completed archive' : row.paragraph}
-                  </p>
-                ),
+                paragraph: (row, key) => {
+                  if (!readingSamples)
+                    return (
+                      <p className="mb-0" data-id={`geometry-text-${key}`}>
+                        {icons ? 'Completed archive' : row.paragraph}
+                      </p>
+                    )
+                  const value = readingValue(row)
+                  const hidden = isHiddenValue(value)
+                  if (mountedHeightContent === 'parts')
+                    return (
+                      <div
+                        data-id={`geometry-text-${key}`}
+                        data-text-hidden={hidden ? 'true' : 'false'}
+                      >
+                        <HilosTableText value={value} />
+                        <span
+                          className="badge text-bg-info"
+                          data-id="geometry-text-badge"
+                        >
+                          Plain text metadata
+                        </span>
+                        <a
+                          href="#geometry-reading-note"
+                          data-id="geometry-text-link"
+                        >
+                          Reading note
+                        </a>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          data-id="geometry-text-action"
+                          onClick={() =>
+                            setActionLog((old) => [
+                              ...old,
+                              `${key}:text-action`,
+                            ])
+                          }
+                        >
+                          Inspect text
+                        </button>
+                      </div>
+                    )
+                  if (textRenderer === 'unsafe')
+                    return (
+                      <UnsafeTextRenderer
+                        rowKey={key}
+                        value={hidden ? '' : value}
+                        onAction={() =>
+                          setActionLog((old) => [
+                            ...old,
+                            `${key}:unsafe-text-action`,
+                          ])
+                        }
+                      />
+                    )
+                  return (
+                    <span
+                      data-id={`geometry-text-${key}`}
+                      data-text-hidden={hidden ? 'true' : 'false'}
+                    >
+                      {hidden ? 'Hidden' : value}
+                    </span>
+                  )
+                },
                 badge: (row, key) => (
                   <span
                     className="badge text-bg-success"

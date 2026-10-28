@@ -45,6 +45,7 @@ import type {
   // Aliased because the component drawing one of these carries the same name.
   HilosTableProgress as TableProgressBar,
   TableSort,
+  TableProjection,
   TableViewportController,
   TableViewportRow,
 } from '@hilos/core/base'
@@ -54,6 +55,7 @@ import { HilosTableEmptyState } from './HilosTableEmptyState.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
+import { HilosTableValue } from './HilosTableValue.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosTableSelectionEdgeContext } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
@@ -215,6 +217,7 @@ export function HilosViewportTable<R>({
     root,
     table,
     columnKeys,
+    (record) => controller.isTextRecordCurrent(record),
   )
   const previousColumns = useRef(frameColumns)
   useLayoutEffect(() => {
@@ -433,12 +436,33 @@ export function HilosViewportTable<R>({
     )
   }
 
-  // The cells of one row of a table: one per column left standing in the
-  // row, the content from the page's renderer for that column and the class from the
-  // column itself. The cell stands even where the page gave no renderer: a row one
-  // cell short is a row narrower than its header (Flow F3). A merged tail message
-  // starting from fromColumn replaces tail cells with a single cell spanning them
-  // (mockups/admin/maintenance).
+  // Both projections read the same occurrence through the existing geometry mount.
+  function cellValue(
+    column: HilosTableColumn,
+    view: TableViewportRow<R>,
+    record: R,
+    projection: TableProjection,
+  ): ReactNode {
+    return (
+      <HilosTableValue
+        controller={controller}
+        readRecord={geometry.recordReader(
+          view.rowKey,
+          view.occurrence,
+          projection,
+        )}
+        columnKey={column.key}
+        label={column.label}
+        heightContent={column.heightContent}
+        projection={projection}
+      >
+        {cells?.[column.key]?.(record, view.rowKey)}
+      </HilosTableValue>
+    )
+  }
+
+  // One cell per column even without a renderer, so the row matches its header.
+  // A merged tail message replaces the remaining cells from fromColumn onward.
   function declaredCells(view: TableViewportRow<R>, record: R): ReactNode {
     const rowCells = hilosTableRowMessageCells(rowColumns, view.rowMessage)
 
@@ -464,9 +488,9 @@ export function HilosViewportTable<R>({
             <span className="d-inline-flex align-items-center gap-1">
               {cells?.[cell.key]?.(record, view.rowKey)}
             </span>
-          ) : (
-            cells?.[cell.key]?.(record, view.rowKey)
-          )}
+          ) : column ? (
+            cellValue(column, view, record, 'wide')
+          ) : null}
         </td>
       )
     })
@@ -545,9 +569,9 @@ export function HilosViewportTable<R>({
         <div className="d-flex flex-wrap align-items-start gap-2 mb-1">
           {selectionEdge === 'start' ? selectBox : null}
           {hasCell(layout.title) ? (
-            <span className="fw-medium">
-              {cells?.[layout.title.key]?.(record, rowKey)}
-            </span>
+            <div className="fw-medium">
+              {cellValue(layout.title, view, record, 'card')}
+            </div>
           ) : null}
           {hasCell(layout.badge) ? (
             <span className="ms-auto">
@@ -590,7 +614,7 @@ export function HilosViewportTable<R>({
                         {field.label}
                       </dt>
                       <dd className="col-7 mb-0">
-                        {cells?.[field.key]?.(record, rowKey)}
+                        {cellValue(field, view, record, 'card')}
                       </dd>
                     </Fragment>
                   )
@@ -601,7 +625,7 @@ export function HilosViewportTable<R>({
                       {field.label}
                     </dt>
                     <dd className="col-7 mb-0">
-                      {cells?.[field.key]?.(record, rowKey)}
+                      {cellValue(field, view, record, 'card')}
                     </dd>
                   </Fragment>
                 ))}

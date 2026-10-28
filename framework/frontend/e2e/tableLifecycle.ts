@@ -39,6 +39,8 @@ export interface TableAllocationWatch extends TableGeometryWatch {
  * Observe a projection's own occupied allocation on mutation and every frame.
  * A hidden tree has no sample; its zero rectangles cannot become a baseline.
  * The generic path checks the first visible allocation against real Sass chrome.
+ * connectedReads also records synchronous live reads before an immediate departure,
+ * where neither a mutation delivery nor an animation frame can see the new extent.
  */
 export async function watchTableAllocation(
   expect: Expect,
@@ -47,21 +49,23 @@ export async function watchTableAllocation(
   projection: 'wide' | 'card',
   generic = false,
   liveKey = rowKey,
+  connectedReads = false,
 ): Promise<TableAllocationWatch> {
   const handle = await page.evaluateHandle(
-    ({ rowKey, projection, liveKey }) => {
+    ({ rowKey, projection, liveKey, connectedReads }) => {
       const root = document.querySelector('[data-id="hilos-viewport-table"]')!
       const frames: AllocationFrame[] = []
       let stopped = false
       let raf = 0
       const selector = `[data-id="hilos-table-${projection === 'wide' ? 'row' : 'card'}-${rowKey}"]`
       const occurrence = root.querySelector(selector)
+      const original = Element.prototype.getBoundingClientRect
       const px = (value: string) => Number.parseFloat(value) || 0
       function sample() {
         if (stopped) return
         const node = root.querySelector<HTMLElement>(selector)
         if (!node?.isConnected || !node.checkVisibility()) return
-        const first = node.getBoundingClientRect()
+        const first = original.call(node)
         // CSS zoom changes viewport rectangles. The retained allocation is in
         // local CSS px; margins/computed Sass values already use that unit.
         const zoom = node.currentCSSZoom
@@ -76,7 +80,7 @@ export async function watchTableAllocation(
         const twins = room.querySelector<HTMLElement>(
           '.hilos-table-reason-twins',
         )!
-        const reasonBox = twins.getBoundingClientRect()
+        const reasonBox = original.call(twins)
         if (projection === 'wide') {
           for (
             let next = node.nextElementSibling;
@@ -89,13 +93,11 @@ export async function watchTableAllocation(
               )
             )
               break
-            if (next.checkVisibility())
-              bottom = next.getBoundingClientRect().bottom
+            if (next.checkVisibility()) bottom = original.call(next).bottom
           }
           chrome =
-            (room
-              .querySelector('.hilos-table-replacement-row')!
-              .getBoundingClientRect().height -
+            (original.call(room.querySelector('.hilos-table-replacement-row')!)
+              .height -
               reasonBox.height) /
             zoom
         } else {
@@ -119,7 +121,7 @@ export async function watchTableAllocation(
         frames.push({
           extent: (bottom - first.top) / zoom,
           floor:
-            (readable?.getBoundingClientRect().height ?? reasonBox.height) /
+            (readable ? original.call(readable).height : reasonBox.height) /
               zoom +
             chrome +
             gap,
@@ -131,9 +133,9 @@ export async function watchTableAllocation(
             chrome +
             gap,
           width: first.width / zoom,
-          liveHeight: (live?.getBoundingClientRect().height ?? 0) / zoom,
+          liveHeight: (live ? original.call(live).height : 0) / zoom,
           tracks: [...root.querySelectorAll('thead th')].map(
-            (cell) => cell.getBoundingClientRect().width / zoom,
+            (cell) => original.call(cell).width / zoom,
           ),
           font: style.fontFamily,
           rootFont: getComputedStyle(document.documentElement).fontSize,
@@ -144,6 +146,13 @@ export async function watchTableAllocation(
           sameOccurrence: node === occurrence,
         })
       }
+      // Use native results internally so observing the adapter's read cannot recurse.
+      function observed(this: Element): DOMRect {
+        const result = original.call(this)
+        if (!stopped && this === occurrence && this.isConnected) sample()
+        return result
+      }
+      if (connectedReads) Element.prototype.getBoundingClientRect = observed
       function tick() {
         sample()
         if (!stopped) raf = requestAnimationFrame(tick)
@@ -165,10 +174,15 @@ export async function watchTableAllocation(
           stopped = true
           cancelAnimationFrame(raf)
           observer.disconnect()
+          if (
+            connectedReads &&
+            Element.prototype.getBoundingClientRect === observed
+          )
+            Element.prototype.getBoundingClientRect = original
         },
       }
     },
-    { rowKey, projection, liveKey },
+    { rowKey, projection, liveKey, connectedReads },
   )
   const read = () =>
     handle.evaluate((watch) => {

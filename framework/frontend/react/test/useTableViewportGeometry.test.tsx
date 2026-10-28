@@ -15,6 +15,7 @@ import {
   bindTableViewport,
   subscribeSignal,
   type HilosConnection,
+  type TableGeometryRecord,
   type TableGeometryRegistration,
   type TableViewportGeometryView,
 } from '@hilos/core/base'
@@ -70,6 +71,7 @@ function instrument(target: TableViewportController<string>) {
         ...owner,
         dispose: vi.fn(owner.dispose),
         measure: vi.fn(owner.measure),
+        measurement: vi.fn(owner.measurement),
         record: vi.fn(owner.record),
         invalidateLayout: vi.fn(owner.invalidateLayout),
       }
@@ -100,7 +102,13 @@ function Harness({
 }) {
   const root = useRef<HTMLDivElement>(null)
   const table = useRef<HTMLTableElement>(null)
-  const geometry = useTableViewportGeometry(facade, root, table, keys)
+  const geometry = useTableViewportGeometry(
+    facade,
+    root,
+    table,
+    keys,
+    (record) => target.isTextRecordCurrent(record),
+  )
   const rows = useSignal(target.rows)
   const progress = useSignal(target.progress.rows)
   onRender?.(geometry)
@@ -533,11 +541,17 @@ describe('React table geometry commit boundary', () => {
           const owner = source.registrations.at(-1)
           if (!owner) return
           const before = vi.mocked(owner.record).mock.calls.length
+          const measurements = vi.mocked(owner.measurement).mock.calls.length
           for (const row of target.rows.get()) {
             geometry.recordPixels(row.rowKey, row.occurrence, 'wide')
             geometry.workPixels(row.rowKey, 'wide')
+            for (const projection of ['wide', 'card'] as const)
+              geometry.recordReader(row.rowKey, row.occurrence, projection)()
           }
           renderReads.push(vi.mocked(owner.record).mock.calls.length - before)
+          expect(vi.mocked(owner.measurement).mock.calls.length).toBe(
+            measurements,
+          )
         }}
       />,
     )
@@ -961,6 +975,324 @@ describe('React table geometry layout lifetime', () => {
   })
 })
 
+describe('React exact geometry record readers', () => {
+  it('binds the first committed owner identity and never fills an initially unbound reader', () => {
+    numericDOM()
+    const target = controller(['a'])
+    const source = instrument(target)
+    const occurrence = target.rows.get()[0]!.occurrence
+    const readers: (() => TableGeometryRecord | null)[] = []
+    let geometry!: Geometry
+    render(
+      <Harness
+        target={target}
+        facade={source.facade}
+        onRender={(value) => {
+          readers.push(value.recordReader('a', occurrence, 'wide'))
+        }}
+        onCommit={(value) => {
+          geometry = value
+        }}
+      />,
+    )
+    const owner = source.registrations[0]!
+    const identity = owner.measurement('a', 'wide')!.record
+    expect(source.registrations).toHaveLength(1)
+    expect(readers[0]!()).toBeNull()
+    expect(readers.at(-1)!()).toBe(identity)
+    const wide = geometry.recordReader('a', occurrence, 'wide')
+    const card = geometry.recordReader('a', occurrence, 'card')
+    expect(wide).not.toBe(card)
+    expect(wide()).toBe(identity)
+    expect(card()).toBe(owner.measurement('a', 'card')!.record)
+    expect(geometry.recordReader('a', occurrence + 1, 'wide')()).toBeNull()
+    expect(geometry.recordReader('absent', occurrence, 'card')()).toBeNull()
+
+    act(() => owner.invalidateLayout('wide'))
+    expect(wide()).toBe(identity)
+    expect(card()).toBe(identity)
+    expect(readers[0]!()).toBeNull()
+  })
+
+  it('commits a newly rendered hidden occurrence without waiting for a measurement notification', () => {
+    const { layout } = numericDOM()
+    layout.wideHidden = true
+    layout.cardHidden = true
+    const target = controller([])
+    const source = instrument(target)
+    const readers: (() => TableGeometryRecord | null)[] = []
+    render(
+      <Harness
+        target={target}
+        facade={source.facade}
+        onRender={(geometry) => {
+          const row = target.rows.get()[0]
+          if (row)
+            readers.push(
+              geometry.recordReader(row.rowKey, row.occurrence, 'card'),
+            )
+        }}
+      />,
+    )
+    act(() => snapshot(target, ['a']))
+    const owner = source.registrations[0]!
+    expect(owner.measure).not.toHaveBeenCalled()
+    expect(owner.tracks()).toBeNull()
+    expect(readers[0]!()).toBeNull()
+    expect(readers.at(-1)!()).toBe(owner.measurement('a', 'card')!.record)
+    expect(source.registrations).toHaveLength(1)
+  })
+
+  it('keeps both readers through live updates, reorder and pending departure until Apply', () => {
+    numericDOM()
+    const target = controller()
+    const source = instrument(target)
+    let geometry!: Geometry
+    render(
+      <Harness
+        target={target}
+        facade={source.facade}
+        onCommit={(value) => {
+          geometry = value
+        }}
+      />,
+    )
+    const occurrence = target.rows.get()[0]!.occurrence
+    const readers = (['wide', 'card'] as const).map((projection) =>
+      geometry.recordReader('a', occurrence, projection),
+    )
+    const identity = readers[0]!()!
+    act(() => {
+      target.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'updated' } },
+      })
+      expect(readers.map((read) => read())).toEqual([identity, identity])
+      target.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        own: true,
+        row: { rowKey: 'a', slots: { name: 'moved' } },
+        position: 1,
+      })
+      expect(readers.every((read) => read() === identity)).toBe(true)
+    })
+    expect(target.rows.get().map((row) => row.rowKey)).toEqual(['b', 'a'])
+    act(() => {
+      depart(target, 'a', false)
+      expect(readers.every((read) => read() === identity)).toBe(true)
+    })
+    act(() => {
+      target.apply()
+      // The DOM has not flushed: the readers already refuse final departure.
+      expect(readers.map((read) => read())).toEqual([null, null])
+    })
+    expect(target.expandedText.get().size).toBe(0)
+    expect(source.registrations).toHaveLength(1)
+  })
+
+  it.each([
+    'reset',
+    'refusal',
+    'window',
+    'search',
+    'reuse',
+    'departure',
+  ] as const)(
+    'retires the saved scope synchronously on %s with no expanded text',
+    (change) => {
+      numericDOM()
+      const target = controller(['a'])
+      const source = instrument(target)
+      const renders = vi.fn()
+      let geometry!: Geometry
+      render(
+        <Harness
+          target={target}
+          facade={source.facade}
+          onRender={renders}
+          onCommit={(value) => {
+            geometry = value
+          }}
+        />,
+      )
+      const occurrence = target.rows.get()[0]!.occurrence
+      const wide = geometry.recordReader('a', occurrence, 'wide')
+      const card = geometry.recordReader('a', occurrence, 'card')
+      const identity = wide()
+      expect(identity).not.toBeNull()
+      const intent = target.expandedText.get()
+      const before = renders.mock.calls.length
+      act(() => {
+        if (change === 'reset') target.resetWindowRequests()
+        if (change === 'refusal') target.ingestRefusal('forbidden')
+        if (change === 'window') snapshot(target, ['a'])
+        if (change === 'search') target.setSearch('another window')
+        if (change === 'reuse')
+          target.ingestOwnCreate(
+            { rowKey: 'a', slots: { name: 'reused' } },
+            0,
+            1,
+            true,
+            null,
+            null,
+          )
+        if (change === 'departure') depart(target)
+        expect(renders).toHaveBeenCalledTimes(before)
+        expect(wide()).toBeNull()
+        expect(card()).toBeNull()
+      })
+      expect(target.expandedText.get()).toBe(intent)
+      expect(renders.mock.calls.length).toBeGreaterThan(before)
+      if (change === 'reset' || change === 'search') {
+        // Reset keeps its geometry identity; search reissues it. Both leave an
+        // outgoing row whose inactive text window only the controller knows.
+        const outgoing = source.registrations[0]!.measurement(
+          'a',
+          'wide',
+        )!.record
+        if (change === 'reset') expect(outgoing).toBe(identity)
+        else expect(outgoing).not.toBe(identity)
+        expect(geometry.recordReader('a', occurrence, 'wide')()).toBeNull()
+        expect(geometry.recordReader('a', occurrence, 'card')()).toBeNull()
+      }
+      act(() => snapshot(target, ['a']))
+      const next = geometry.recordReader(
+        'a',
+        target.rows.get()[0]!.occurrence,
+        'wide',
+      )
+      expect(next()).toBe(
+        source.registrations[0]!.measurement('a', 'wide')!.record,
+      )
+      expect(next()).not.toBe(identity)
+      expect(wide()).toBeNull()
+      expect(card()).toBeNull()
+    },
+  )
+
+  it('gives replacement controllers and remounts their own binding without reviving saved readers', async () => {
+    numericDOM()
+    const events = observers()
+    const first = controller(['a'])
+    const old = instrument(first)
+    const second = controller(['a'])
+    const next = instrument(second)
+    let geometry!: Geometry
+    const committed = (value: Geometry) => {
+      geometry = value
+    }
+    const view = render(
+      <Harness target={first} facade={old.facade} onCommit={committed} />,
+    )
+    const previous = geometry.recordReader(
+      'a',
+      first.rows.get()[0]!.occurrence,
+      'wide',
+    )
+    const previousIdentity = previous()
+    expect(previousIdentity).not.toBeNull()
+    events.resizes[0]!.fire()
+    const late = [...events.queued.values()]
+    const replacementRenders: (() => TableGeometryRecord | null)[] = []
+    view.rerender(
+      <Harness
+        target={second}
+        facade={next.facade}
+        onCommit={committed}
+        onRender={(value) => {
+          replacementRenders.push(
+            value.recordReader('a', second.rows.get()[0]!.occurrence, 'wide'),
+          )
+        }}
+      />,
+    )
+    const replacement = replacementRenders.at(-1)!
+    expect(replacementRenders[0]!()).toBeNull()
+    expect(replacement()).toBe(
+      next.registrations[0]!.measurement('a', 'wide')!.record,
+    )
+    expect(replacement()).not.toBe(previousIdentity)
+    expect(previous()).toBeNull()
+    view.unmount()
+    expect(replacement()).toBeNull()
+    render(
+      <Harness target={second} facade={next.facade} onCommit={committed} />,
+    )
+    const remounted = geometry.recordReader(
+      'a',
+      second.rows.get()[0]!.occurrence,
+      'card',
+    )
+    const identity = next.registrations[1]!.measurement('a', 'card')!.record
+    expect(remounted()).toBe(identity)
+    await act(async () => {
+      late.forEach((callback) => callback(0))
+      events.resizes[0]!.fire()
+      events.mutations[0]!.fire()
+      events.ready()
+      await Promise.resolve()
+    })
+    expect(previous()).toBeNull()
+    expect(replacement()).toBeNull()
+    expect(remounted()).toBe(identity)
+    expect(old.registrations).toHaveLength(1)
+    expect(next.registrations).toHaveLength(2)
+  })
+
+  it('keeps StrictMode replay and late callbacks inside their registration lifetime', async () => {
+    numericDOM()
+    const events = observers()
+    const target = controller(['a'])
+    const source = instrument(target)
+    const readers: (() => TableGeometryRecord | null)[] = []
+    const tree = (
+      <StrictMode>
+        <Harness
+          target={target}
+          facade={source.facade}
+          onCommit={(geometry) => {
+            readers.push(
+              geometry.recordReader(
+                'a',
+                target.rows.get()[0]!.occurrence,
+                'wide',
+              ),
+            )
+          }}
+        />
+      </StrictMode>
+    )
+    const view = render(tree)
+    expect(source.registrations).toHaveLength(2)
+    expect(source.registrations[0]!.dispose).toHaveBeenCalledTimes(1)
+    const replayed = readers.at(-1)!
+    expect(readers[0]!()).toBeNull()
+    expect(replayed()).toBe(
+      source.registrations[1]!.measurement('a', 'wide')!.record,
+    )
+    events.resizes[1]!.fire()
+    const late = [...events.queued.values()]
+    view.unmount()
+    expect(readers.every((read) => read() === null)).toBe(true)
+    render(tree)
+    const remounted = readers.at(-1)!
+    const identity = source.registrations[3]!.measurement('a', 'wide')!.record
+    await act(async () => {
+      late.forEach((callback) => callback(0))
+      events.resizes[1]!.fire()
+      events.mutations[1]!.fire()
+      events.ready()
+      await Promise.resolve()
+    })
+    expect(readers[0]!()).toBeNull()
+    expect(replayed()).toBeNull()
+    expect(remounted()).toBe(identity)
+    expect(source.registrations).toHaveLength(4)
+  })
+})
+
 describe('React table geometry lifecycle and focus', () => {
   it('replays StrictMode setup and releases every observer, registration and queued callback', async () => {
     const { reads } = numericDOM()
@@ -1180,7 +1512,16 @@ describe('React table geometry lifecycle and focus', () => {
     vi.stubGlobal('HTMLElement', undefined)
     try {
       const markup = renderToStaticMarkup(
-        <Harness target={target} facade={source.facade} />,
+        <Harness
+          target={target}
+          facade={source.facade}
+          onRender={(geometry) => {
+            const row = target.rows.get()[0]!
+            expect(
+              geometry.recordReader(row.rowKey, row.occurrence, 'wide')(),
+            ).toBeNull()
+          }}
+        />,
       )
       expect(markup).toContain('control-a')
       expect(source.registrations).toEqual([])
