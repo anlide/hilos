@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import * as analytics from '../../src/admin/analytics/index.js'
 import * as analyticsOverview from '../../src/admin/analytics/hilosAnalyticsOverview.js'
 import * as analyticsPeople from '../../src/admin/analytics/hilosAnalyticsPeople.js'
@@ -246,6 +246,15 @@ const tableTextTypes = [
   'HilosTableLineCount',
   'HilosTableTextRem',
   'HilosTableRowHeight',
+]
+/** Local view declarations have one public owner in root and base. */
+const tableViewValues = ['TABLE_VIEW_COPY', 'hilosTableViews']
+const tableViewTypes = ['HilosTableView', 'HilosTableViews']
+/** Browser preference binding and declaration share one eager implementation. */
+const tableViewPreferenceValues = [
+  'TABLE_VIEW_STORAGE_KEY',
+  'TABLE_VIEW_BROWSER_VALUE',
+  'bindTableViewPreference',
 ]
 /** Table row message additions, shared by root and base. */
 const tableRowMessageValues = ['hilosTableRowMessageCells']
@@ -547,6 +556,8 @@ const expectedValues = [
   ...profileNameStateValues,
   ...profileRenameMemoryValues,
   ...tableTextValues,
+  ...tableViewValues,
+  ...tableViewPreferenceValues,
   ...tableRowMessageValues,
   ...tableFocusReturnValues,
   ...moderationValues,
@@ -863,6 +874,8 @@ describe('core public entries', () => {
       ...profileNameStateValues,
       ...profileRenameMemoryValues,
       ...tableTextValues,
+      ...tableViewValues,
+      ...tableViewPreferenceValues,
       ...tableRowMessageValues,
       ...tableFocusReturnValues,
       ...moderationValues,
@@ -911,6 +924,17 @@ describe('core public entries', () => {
     expect(logs.LOGS_SETTINGS_SIGNAL_SCHEMAS).toBe(
       base.LOGS_SETTINGS_SIGNAL_SCHEMAS,
     )
+  })
+
+  it('shares all three geometry projections with logical focus return through root and base', () => {
+    expectTypeOf<core.TableProjection>().toEqualTypeOf<
+      'wide' | 'card' | 'tiles'
+    >()
+    expectTypeOf<base.TableProjection>().toEqualTypeOf<core.TableProjection>()
+    expectTypeOf<
+      base.TableFocusReturnRow['projection']
+    >().toEqualTypeOf<core.TableProjection>()
+    expectTypeOf<core.TableFocusReturnRow>().toEqualTypeOf<base.TableFocusReturnRow>()
   })
 
   it('shares the restore shell implementation with every compatibility path', async () => {
@@ -1056,6 +1080,7 @@ describe('core public entries', () => {
         ...profileRenameMemoryTypes,
         ...rowEditTypes,
         ...tableTextTypes,
+        ...tableViewTypes,
         ...tableRowMessageTypes,
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
@@ -1084,6 +1109,9 @@ describe('core public entries', () => {
       ...rowEditTypes,
       ...tableTextTypes,
       ...tableTextValues,
+      ...tableViewTypes,
+      ...tableViewValues,
+      ...tableViewPreferenceValues,
       ...tableRowMessageTypes,
       ...tableRowMessageValues,
       ...tableFocusReturnTypes,
@@ -1120,6 +1148,14 @@ describe('core public entries', () => {
     const focusReturnExports = exportsOf('dom/tableFocusReturn.ts')
     for (const name of [...tableFocusReturnValues, ...tableFocusReturnTypes]) {
       expect(root.get(name), name).toBe(focusReturnExports.get(name))
+    }
+    const viewExports = exportsOf('table/tableView.ts')
+    for (const name of [...tableViewValues, ...tableViewTypes]) {
+      expect(root.get(name), name).toBe(viewExports.get(name))
+    }
+    const preferenceExports = exportsOf('table/tableViewPreference.ts')
+    for (const name of tableViewPreferenceValues) {
+      expect(root.get(name), name).toBe(preferenceExports.get(name))
     }
     const overviewExports = exportsOf(
       'admin/analytics/hilosAnalyticsOverview.ts',
@@ -1339,6 +1375,29 @@ describe('core public entries', () => {
       'state/signal.ts',
       'table/tableTextExpansion.ts',
     ])
+    expect(runtimeClosure('table/tableViewportGeometry.ts')).toEqual([
+      'state/signal.ts',
+      'table/tableViewportGeometry.ts',
+    ])
+    expect(runtimeClosure('dom/tableFocusReturn.ts')).toEqual([
+      'connection/interactionBlock.ts',
+      'dom/focusTrap.ts',
+      'dom/tableFocusReturn.ts',
+      'state/signal.ts',
+    ])
+    expect(closure).toContain('table/tableView.ts')
+    expect(runtimeClosure('table/tableView.ts')).toEqual([
+      'table/hilosTableColumn.ts',
+      'table/tableView.ts',
+    ])
+    expect(closure).toContain('table/tableViewPreference.ts')
+    expect(runtimeClosure('table/tableViewPreference.ts')).toEqual([
+      'browser/browserStorage.ts',
+      'browser/browserValue.ts',
+      'browser/browserValueChanges.ts',
+      'state/signal.ts',
+      'table/tableViewPreference.ts',
+    ])
     expect(closure).toContain('table/tableRowMessage.ts')
     expect(runtimeClosure('table/tableRowMessage.ts')).toEqual([
       'table/hilosTableColumn.ts',
@@ -1397,6 +1456,9 @@ describe('core public entries', () => {
     'table/tableRowMessage.ts',
     'table/tableTextExpansion.ts',
     'table/tableTextHeight.ts',
+    'table/tableSortOrder.ts',
+    'table/tableView.ts',
+    'table/tableViewPreference.ts',
     'table/tableViewportGeometry.ts',
     'legal/legalTerms.ts',
     'legal/legalPublicDocument.ts',

@@ -35,6 +35,7 @@ export {
   expectTableWrappingStress,
   expectTableRecordWrappingStress,
   settleTableLayout,
+  expectTableTilePictures,
   tableTextRegion,
   expectTableTextTrack,
   watchTableTextRoom,
@@ -44,6 +45,7 @@ export {
   expectTableIntrinsicRows,
   type TableTextPolicy,
   type TableGeometryPlan,
+  type TableGeometryProjection,
   type TableGeometryWatch,
   Watched,
 } from './geometry.js'
@@ -92,6 +94,8 @@ export {
 } from './deliverySettings.js'
 export {
   watchTableAllocation,
+  expectTableTileDeparture,
+  watchTableGeometryCallbacks,
   setTableEnvironment,
   loadLateTableFont,
   expectTableLayoutZoom,

@@ -386,6 +386,17 @@ export {
   hilosTableRowHeight,
   hilosTableTextClass,
 } from './table/tableTextHeight.js'
+export {
+  type HilosTableView,
+  type HilosTableViews,
+  TABLE_VIEW_COPY,
+  hilosTableViews,
+} from './table/tableView.js'
+export {
+  TABLE_VIEW_STORAGE_KEY,
+  TABLE_VIEW_BROWSER_VALUE,
+  bindTableViewPreference,
+} from './table/tableViewPreference.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export {
   type HilosTableRowMessage,

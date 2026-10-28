@@ -757,16 +757,22 @@ export async function watchFirstRowTop(page: Page): Promise<Watched> {
   )
 }
 
+/** Every independently measured renderer projection. */
+export type TableGeometryProjection = 'wide' | 'card' | 'tiles'
+
 /** Stable identities selected by a scenario, all measured against one body. */
 export interface TableGeometryPlan {
   readonly bodyId: string
-  readonly projection: 'wide' | 'card'
+  readonly projection: TableGeometryProjection
   readonly rowKeys: readonly string[]
   readonly lastKey: string
 }
 
 interface TableBounds {
-  readonly records: Record<string, { top: number; bottom: number }>
+  readonly records: Record<
+    string,
+    { top: number; bottom: number; left: number; right: number }
+  >
   readonly tracks: readonly { left: number; right: number }[]
   readonly marks: Record<string, { left: number; right: number } | null>
   readonly occupiedBottom: number
@@ -830,6 +836,7 @@ export async function watchTableGeometry(
     const frames: TableFrame[] = []
     let stopped = false
     let frame = 0
+    const prefix = { wide: 'row', card: 'card', tiles: 'tile' }[plan.projection]
     function read(): TableBounds {
       const origin = root.getBoundingClientRect()
       const zoom = root.currentCSSZoom
@@ -841,7 +848,7 @@ export async function watchTableGeometry(
         node instanceof HTMLElement &&
         node.checkVisibility({ visibilityProperty: true })
       function record(key: string) {
-        const id = `hilos-table-${plan.projection === 'wide' ? 'row' : 'card'}-${key}`
+        const id = `hilos-table-${prefix}-${key}`
         const main = root.querySelector<HTMLElement>(`[data-id="${id}"]`)
         if (!visible(main)) throw new Error(`Missing visible record ${id}`)
         const first = main.getBoundingClientRect()
@@ -863,15 +870,24 @@ export async function watchTableGeometry(
         } else {
           const style = getComputedStyle(main)
           bottom += (Number.parseFloat(style.marginBottom) || 0) * zoom
+          if (plan.projection === 'tiles') {
+            // The persistent Bootstrap column owns the grid's vertical gutter.
+            bottom +=
+              (Number.parseFloat(
+                getComputedStyle(main.parentElement!).marginTop,
+              ) || 0) * zoom
+          }
         }
         return {
           top: (first.top - origin.top) / zoom,
           bottom: (bottom - origin.top) / zoom,
+          left: (first.left - origin.left) / zoom,
+          right: (first.right - origin.left) / zoom,
         }
       }
       for (const key of plan.rowKeys) {
         records[key] = record(key)
-        const id = `hilos-table-${plan.projection === 'wide' ? 'row' : 'card'}-${key}`
+        const id = `hilos-table-${prefix}-${key}`
         const mark = root.querySelector(`[data-id="${id}"] .hilos-table-marks`)
         // The inert sizing twin is invisible but still occupies layout room.
         // A display:none branch, in contrast, has no client rects.
@@ -1043,6 +1059,72 @@ export async function settleTableLayout(page: Page): Promise<void> {
       ),
     )
   })
+}
+
+/** Check decoded pictures and the used, equal 4:3 picture/empty-image frames. */
+export async function expectTableTilePictures(
+  expect: Expect,
+  page: Page,
+  pictureKeys: readonly string[],
+  emptyKeys: readonly string[],
+): Promise<string> {
+  for (const key of pictureKeys) {
+    const picture = page
+      .getByTestId(`hilos-table-tile-image-${key}`)
+      .locator('img')
+    await expect(picture).toBeVisible()
+    await expect
+      .poll(() =>
+        picture.evaluate(
+          (node: HTMLImageElement) =>
+            node.complete && node.naturalWidth > 0 && node.naturalHeight > 0,
+        ),
+      )
+      .toBe(true)
+  }
+  for (const key of emptyKeys) {
+    const frame = page.getByTestId(`hilos-table-tile-image-${key}`)
+    await expect(frame).toHaveText('No image')
+    await expect(frame.locator('img')).toHaveCount(0)
+  }
+  const frames = await page.getByTestId('hilos-table-tiles').evaluate(
+    (root, keys) =>
+      keys.map((key) => {
+        const frame = root.querySelector<HTMLElement>(
+          `[data-id="hilos-table-tile-image-${key}"]`,
+        )!
+        const box = frame.getBoundingClientRect()
+        const tile = root.querySelector(`[data-id="hilos-table-tile-${key}"]`)!
+        return {
+          key,
+          width: box.width,
+          height: box.height,
+          pictures: tile.querySelectorAll('img').length,
+          outsideFrame: [...tile.querySelectorAll('img')].filter(
+            (image) => !frame.contains(image),
+          ).length,
+        }
+      }),
+    [...pictureKeys, ...emptyKeys],
+  )
+  expect(frames.length).toBeGreaterThan(1)
+  for (const frame of frames) {
+    expect(frame.width).toBeGreaterThan(0)
+    expect(
+      Math.abs(frame.height - (frame.width * 3) / 4),
+      'used 4:3 image frame',
+    ).toBeLessThanOrEqual(SLACK_PX)
+    expect(
+      Math.abs(frame.height - frames[0]!.height),
+      'image and No image take equal room',
+    ).toBeLessThanOrEqual(SLACK_PX)
+    expect(
+      frame.outsideFrame,
+      'the ordinary picture column is not repeated in the tile body',
+    ).toBe(0)
+    expect(frame.pictures).toBe(pictureKeys.includes(frame.key) ? 1 : 0)
+  }
+  return JSON.stringify(frames, null, 2)
 }
 
 /** A connected layout read is distinct from the layout a browser can paint. */

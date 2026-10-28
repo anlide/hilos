@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_VIEW_COPY,
   TableViewportController,
 } from '@hilos/core/base'
 import type {
@@ -116,6 +117,173 @@ function mountBar(controller: TableViewportController<unknown>) {
 }
 
 describe('HilosTableBar', () => {
+  it.each([false, true])(
+    'keeps one native view group with no other controls, bulk enabled: %s',
+    async (bulk) => {
+      const { controller, sent } = makeController({
+        title: 'Pictures',
+        columns: COLUMNS,
+        views: {
+          tableKey: 'pictures',
+          order: ['table', 'tiles'],
+          imageColumn: 'name',
+        },
+        ...(bulk
+          ? {
+              bulkActions: [
+                {
+                  key: 'archive',
+                  label: 'Archive',
+                  refusalTitle: 'Cannot archive',
+                  run: () => {
+                    throw new Error('Not pressed')
+                  },
+                },
+              ],
+            }
+          : {}),
+      })
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'A' } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      const wrapper = mount(HilosTableBar, {
+        props: { controller, titleId: 'pictures-title' },
+        attachTo: document.body,
+      })
+      const group = wrapper.get('[data-id="hilos-table-view"]')
+      expect(group.attributes('role')).toBe('group')
+      expect(group.attributes('aria-label')).toBe(TABLE_VIEW_COPY.group)
+      expect(
+        group
+          .findAll('button')
+          .map((button) => [
+            button.text(),
+            button.attributes('type'),
+            button.attributes('aria-pressed'),
+          ]),
+      ).toEqual([
+        ['Table', 'button', 'true'],
+        ['Tiles', 'button', 'false'],
+      ])
+      expect(
+        group
+          .findAll('i')
+          .map((icon) => [icon.classes(), icon.attributes('aria-hidden')]),
+      ).toEqual([
+        [['bi', 'me-1', 'bi-list-ul'], 'true'],
+        [['bi', 'me-1', 'bi-grid-3x2-gap'], 'true'],
+      ])
+      if (bulk) {
+        controller.selectRow('a', true)
+        await wrapper.vm.$nextTick()
+        expect(
+          wrapper.get('[data-id="hilos-table-selection"]').classes(),
+        ).not.toContain('invisible')
+        expect(
+          group.element.closest('.invisible, [aria-hidden="true"], [inert]'),
+        ).toBeNull()
+      }
+      const tiles = group.get('[data-id="hilos-table-view-tiles"]')
+      ;(tiles.element as HTMLButtonElement).focus()
+      // happy-dom does not synthesize a native keyboard click. Send its key
+      // events and the browser's resulting click, with no custom key handler.
+      await tiles.trigger('keydown', { key: 'Enter' })
+      await tiles.trigger('click', { detail: 0 })
+      await tiles.trigger('keyup', { key: 'Enter' })
+      expect(document.activeElement).toBe(tiles.element)
+      expect(controller.frame.view.get()).toBe('tiles')
+      expect(tiles.attributes('aria-pressed')).toBe('true')
+      expect(
+        group
+          .get('[data-id="hilos-table-view-table"]')
+          .attributes('aria-pressed'),
+      ).toBe('false')
+      expect(wrapper.findAll('[data-id="hilos-table-view"]')).toHaveLength(1)
+      expect(sent).toEqual([])
+      expect(controller.selection.count.get()).toBe(bulk ? 1 : 0)
+      wrapper.unmount()
+      controller.dispose()
+    },
+  )
+
+  it('offers no view group without a views declaration', () => {
+    const { controller } = makeController({ columns: COLUMNS })
+    const wrapper = mountBar(controller)
+    expect(wrapper.find('[data-id="hilos-table-view"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-controls"]').exists()).toBe(
+      false,
+    )
+    wrapper.unmount()
+    controller.dispose()
+  })
+
+  it('shows all core order options at every width in Tiles and restores narrow-only items in Table', async () => {
+    const { controller, sent } = makeController(
+      {
+        columns: ORDERED_COLUMNS,
+        views: {
+          tableKey: 'ordered-pictures',
+          order: ['table', 'tiles'],
+          imageColumn: 'channel',
+        },
+      },
+      undefined,
+      [],
+    )
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      20,
+      OPENING_ORDER,
+      [],
+    )
+    const wrapper = mountBar(controller)
+    const options = () => wrapper.findAll('[data-id^="hilos-table-order-"]')
+    expect(options().map((option) => option.classes('d-md-none'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ])
+    expect(
+      wrapper.get('[data-id="hilos-table-controls"]').classes(),
+    ).not.toContain('d-md-none')
+    await wrapper.get('[data-id="hilos-table-view-tiles"]').trigger('click')
+    expect(options().map((option) => option.text())).toEqual([
+      'Date ↓',
+      'Kind ↑',
+      'Kind ↓',
+      'Date ↑',
+    ])
+    expect(options().map((option) => option.classes('d-md-none'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+    expect(
+      wrapper.get('[data-id="hilos-table-order"]').classes(),
+    ).not.toContain('d-md-none')
+    await wrapper.get('[data-id="hilos-table-view-table"]').trigger('click')
+    expect(options().map((option) => option.classes('d-md-none'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ])
+    expect(sent).toEqual([])
+    wrapper.unmount()
+    controller.dispose()
+  })
+
   it('shows the declared title and subtitle, the title carrying the given id', () => {
     const { controller } = makeController({
       title: 'Backups',

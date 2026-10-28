@@ -1,10 +1,14 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { h, nextTick, ref, shallowRef } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createSSRApp, h, nextTick, ref, shallowRef } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import {
   createSignal,
+  eraseBrowserValues,
   HIDDEN_VALUE,
   registerFocusReturnFallback,
+  TABLE_VIEW_BROWSER_VALUE,
+  TABLE_VIEW_STORAGE_KEY,
   TableViewportController,
 } from '@hilos/core/base'
 import type {
@@ -18,6 +22,7 @@ import type {
 } from '@hilos/core/base'
 
 import HilosModal from './HilosModal.vue'
+import HilosTableRecordCard from './HilosTableRecordCard.vue'
 import HilosTableText from './HilosTableText.vue'
 import HilosTableValue from './HilosTableValue.vue'
 import HilosViewportTable from './HilosViewportTable.vue'
@@ -1235,7 +1240,14 @@ describe('HilosViewportTable drawing a row as a card', () => {
   it('lays the card out the way the core projected it', () => {
     const { controller } = makeController(CARD_FRAME)
     window(controller)
-    const card = mountCards(controller).find('[data-id="hilos-table-card-a"]')
+    const wrapper = mountCards(controller)
+    const renderers = wrapper.findAllComponents(HilosTableRecordCard)
+    expect(renderers).toHaveLength(2)
+    const card = wrapper.get('[data-id="hilos-table-card-a"]')
+    expect(renderers[0]!.element).toBe(card.element)
+    const inputs = renderers[0]!.props() as { view: unknown; card: unknown }
+    expect(inputs.view).toBe(controller.rows.get()[0])
+    expect(inputs.card).toBe(controller.frame.card.get())
 
     expect(card.find('.named').text()).toBe('Alice')
     // The title and the badge are drawn bare; only fields carry a label.
@@ -3520,6 +3532,7 @@ describe('HilosViewportTable text integration', () => {
     owners.splice(0).forEach((owner) => owner.dispose())
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    localStorage.clear()
     document.body.replaceChildren()
   })
 
@@ -3528,6 +3541,7 @@ describe('HilosViewportTable text integration', () => {
     let long = true
     let cardVisible = true
     let cardLong = true
+    let tileLong = true
     const frames = new Map<number, FrameRequestCallback>()
     const observers: {
       changed: () => void
@@ -3573,6 +3587,8 @@ describe('HilosViewportTable text integration', () => {
     )
     const card = (node: HTMLElement) =>
       node.closest('[data-id="hilos-table-cards"]') !== null
+    const tile = (node: HTMLElement) =>
+      node.closest('[data-id="hilos-table-tiles"]') !== null
     const style = window.getComputedStyle.bind(window)
     vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => {
       const result = style(node)
@@ -3601,6 +3617,8 @@ describe('HilosViewportTable text integration', () => {
           return new DOMRect(0, 40, 400, 40.25 + extra)
         if (this.dataset.id === 'hilos-table-card-a')
           return new DOMRect(0, 300, 400, 260.75 + opened(this))
+        if (this.dataset.id === 'hilos-table-tile-a')
+          return new DOMRect(0, 300, 200, 420.75 + opened(this))
         if (this.dataset.id === 'hilos-table-progress-row-a')
           return new DOMRect(0, 80.25 + extra, 400, 18.5)
         if (this.dataset.id === 'hilos-table-row-detail-a')
@@ -3627,7 +3645,9 @@ describe('HilosViewportTable text integration', () => {
           if (!cardVisible && card(this)) return 0
           if (property === 'clientHeight') return 40
           if (property === 'scrollHeight')
-            return (card(this) ? cardLong : long) ? 80 : 40
+            return (tile(this) ? tileLong : card(this) ? cardLong : long)
+              ? 80
+              : 40
           return 200
         },
       )
@@ -3642,6 +3662,10 @@ describe('HilosViewportTable text integration', () => {
       },
       shortenCard() {
         cardLong = false
+        observers.forEach((observer) => observer.changed())
+      },
+      shortenTiles() {
+        tileLong = false
         observers.forEach((observer) => observer.changed())
       },
       hideCard() {
@@ -3660,7 +3684,10 @@ describe('HilosViewportTable text integration', () => {
     }
   }
 
-  function textTable(columns?: () => readonly HilosTableColumn[]) {
+  function textTable(
+    columns?: () => readonly HilosTableColumn[],
+    tiles = false,
+  ) {
     const mode = shallowRef<'text' | 'parts' | 'unsafe'>('text')
     const value = shallowRef('Complete live name')
     const note = shallowRef<string | typeof HIDDEN_VALUE>('Complete note')
@@ -3668,6 +3695,15 @@ describe('HilosViewportTable text integration', () => {
       title: 'Text values',
       search: {},
       rowHeight: { mode: 'lines', count: 2 },
+      ...(tiles
+        ? {
+            views: {
+              tableKey: 'reading',
+              order: ['table', 'tiles'] as const,
+              imageColumn: 'picture',
+            },
+          }
+        : {}),
       columns: columns ?? [
         { key: 'name', label: 'Name', heightContent: 'text' },
         { key: 'note', label: 'Note', heightContent: 'parts' },
@@ -3676,6 +3712,7 @@ describe('HilosViewportTable text integration', () => {
         { key: 'missing', label: 'Missing', heightContent: 'parts' },
         { key: 'actions', label: 'Actions' },
         { key: 'detail', label: 'Detail', detail: true },
+        ...(tiles ? [{ key: 'picture', label: 'Picture' }] : []),
       ],
     })
     owners.push(controller)
@@ -3705,6 +3742,12 @@ describe('HilosViewportTable text integration', () => {
         ],
         'cell-badge': () => h('span', { class: 'badge' }, 'Active'),
         'cell-empty': () => [],
+        ...(tiles
+          ? {
+              'cell-picture': () =>
+                h('img', { src: '/test/text-picture.png', alt: 'Record' }),
+            }
+          : {}),
         'cell-actions': () => h('button', { 'data-id': 'text-action' }, 'Act'),
         'detail-detail': () => 'private detail',
         'row-progress': () => 'private work',
@@ -3714,6 +3757,66 @@ describe('HilosViewportTable text integration', () => {
     const card = () => wrapper.get('[data-id="hilos-table-card-a"]')
     return { wrapper, controller, snapshot, wide, card, value, note, mode }
   }
+
+  it('keeps tile text/parts overflow independent while sharing logical expansion with Table', async () => {
+    const dom = textDOM()
+    const f = textTable(undefined, true)
+    await dom.flush()
+    const tile = () => f.wrapper.get('[data-id="hilos-table-tile-a"]')
+    const read = f.wrapper
+      .findAllComponents(HilosTableRecordCard)
+      .find(
+        (view) =>
+          (view.props() as { projection: string }).projection === 'tiles',
+      )!
+      .getComponent(HilosTableValue)
+      .props('readRecord')
+    const record = read()
+    expect(record).not.toBeNull()
+    const ids = f.wrapper
+      .findAll('.hilos-table-text[id]')
+      .map((text) => text.attributes('id'))
+    expect(new Set(ids).size).toBe(9)
+    dom.shortenTiles()
+    await dom.flush()
+    expect(tile().find('[data-id="hilos-table-text-toggle"]').exists()).toBe(
+      false,
+    )
+    expect(f.wide().find('[aria-label="Show in full: Name"]').exists()).toBe(
+      true,
+    )
+    await f.card().get('[aria-label="Show in full: Name"]').trigger('click')
+    f.controller.setView('tiles')
+    await dom.flush()
+    const toggle = tile().get('[aria-label="Collapse: Name"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.attributes('aria-controls')).toBe(
+      tile().get('.hilos-table-text.is-open').attributes('id'),
+    )
+    expect(tile().findAll('.is-open')).toHaveLength(1)
+    expect(tile().find('[aria-label="Collapse: Note"]').exists()).toBe(false)
+    const image = tile().get('img')
+    expect(image.element.closest('.hilos-table-text')).toBeNull()
+    expect(tile().findAll('img')).toHaveLength(1)
+    expect(tile().get('.badge').element.closest('.hilos-table-text')).toBeNull()
+    const button = toggle.element as HTMLButtonElement
+    button.focus()
+    await toggle.trigger('click')
+    await dom.flush()
+    expect(tile().get('[aria-label="Show in full: Name"]').element).toBe(button)
+    expect(document.activeElement).toBe(button)
+    button.blur()
+    await dom.flush()
+    expect(tile().find('[data-id="hilos-table-text-toggle"]').exists()).toBe(
+      false,
+    )
+    f.controller.setView('table')
+    await dom.flush()
+    expect(read()).toBe(record)
+    expect(f.wide().find('[aria-label="Show in full: Name"]').exists()).toBe(
+      true,
+    )
+  })
 
   it('connects text/parts in both projections, preserving missing/empty renderers and valid card blocks', async () => {
     const dom = textDOM()
@@ -4079,6 +4182,7 @@ describe('HilosViewportTable text integration', () => {
 describe('HilosViewportTable modal focus lifetime', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    localStorage.clear()
     document.body.replaceChildren()
   })
 
@@ -4088,7 +4192,7 @@ describe('HilosViewportTable modal focus lifetime', () => {
     marked = true,
   }: {
     search?: boolean
-    projection?: 'wide' | 'card'
+    projection?: 'wide' | 'card' | 'tiles'
     marked?: boolean
   } = {}) {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
@@ -4100,7 +4204,19 @@ describe('HilosViewportTable modal focus lifetime', () => {
     )
     const { controller } = makeController({
       title: 'People',
-      columns: COLUMNS,
+      columns:
+        projection === 'tiles'
+          ? [...COLUMNS, { key: 'picture', label: 'Picture' }]
+          : COLUMNS,
+      ...(projection === 'tiles'
+        ? {
+            views: {
+              tableKey: 'focus-people',
+              order: ['table', 'tiles'] as const,
+              imageColumn: 'picture',
+            },
+          }
+        : {}),
       ...(search ? { search: {} } : {}),
     })
     function snapshot(name = 'Alice') {
@@ -4166,17 +4282,25 @@ describe('HilosViewportTable modal focus lifetime', () => {
       },
       { attachTo: document.body },
     )
-    function show(next: 'wide' | 'card') {
+    function show(next: 'wide' | 'card' | 'tiles') {
       const wide = wrapper.get('.table-responsive').element as HTMLElement
       const cards = wrapper.get('[data-id="hilos-table-cards"]')
         .element as HTMLElement
       wide.hidden = next !== 'wide'
       cards.hidden = next !== 'card'
+      if (projection === 'tiles') {
+        const tiles = wrapper.get('[data-id="hilos-table-tiles"]')
+          .element as HTMLElement
+        tiles.hidden = next !== 'tiles'
+        controller.setView(next === 'tiles' ? 'tiles' : 'table')
+      }
     }
     show(projection)
-    function control(target: 'wide' | 'card' = projection): HTMLElement {
+    function control(
+      target: 'wide' | 'card' | 'tiles' = projection,
+    ): HTMLElement {
       return wrapper.get(
-        `${target === 'wide' ? 'tr' : '[role="list"]'} [data-id="open-person"]`,
+        `${target === 'wide' ? 'tr' : target === 'card' ? '[data-id="hilos-table-cards"] [role="list"]' : '[data-id="hilos-table-tiles"] [role="list"]'} [data-id="open-person"]`,
       ).element as HTMLElement
     }
     const opener = control()
@@ -4222,6 +4346,26 @@ describe('HilosViewportTable modal focus lifetime', () => {
       close,
     }
   }
+
+  it('returns only to a current visible Tiles logical control, otherwise to search', async () => {
+    const f = fixture({ projection: 'tiles' })
+    await f.activate()
+    f.snapshot('Fresh person')
+    await nextTick()
+    const current = f.control('tiles')
+    expect(current).not.toBe(f.opener)
+    await f.close()
+    expect(document.activeElement).toBe(current)
+    current.click()
+    await flushPromises()
+    f.snapshot('Another person')
+    f.show('wide')
+    await nextTick()
+    await f.close()
+    expect(document.activeElement).toBe(
+      f.wrapper.get('[data-id="hilos-table-search"]').element,
+    )
+  })
 
   it('returns to the connected opener after a live value update', async () => {
     const f = fixture()
@@ -4432,4 +4576,344 @@ describe('HilosViewportTable modal focus lifetime', () => {
       next.dispose()
     },
   )
+})
+
+describe('HilosViewportTable Tiles mount', () => {
+  beforeEach(() => {
+    // happy-dom binds Storage methods through a Proxy. Give each preference
+    // scenario its own store so a restored instance spy cannot seed the next.
+    vi.stubGlobal('localStorage', new Storage())
+  })
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  function fixture(
+    tableKey = 'pictures',
+    overrides: Partial<HilosTableFrame> = {},
+  ) {
+    const rendered = vi.fn()
+    const sent = vi.fn()
+    const controller = new TableViewportController<unknown>({
+      resolve: (row) => row.slots,
+      sendViewport: sent,
+      sendRendered: rendered,
+      frame: {
+        title: 'Pictures',
+        columns: [
+          { key: 'name', label: 'Name', sortable: true },
+          { key: 'picture', label: 'Picture' },
+        ],
+        views: { tableKey, order: ['table', 'tiles'], imageColumn: 'picture' },
+        ...overrides,
+      },
+    })
+    return { controller, sent, rendered }
+  }
+
+  function rows(controller: TableViewportController<unknown>) {
+    controller.ingestWindow(
+      [
+        { rowKey: 'b', slots: { name: 'Second' } },
+        { rowKey: 'a', slots: { name: 'First' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  it('renders one ordered window and one Bar/Live/Footer while switching only Bootstrap visibility', async () => {
+    const f = fixture()
+    rows(f.controller)
+    const wrapper = mountTable(f.controller)
+    const original = f.controller.rows.get()
+    const rendered = f.rendered.mock.calls.slice()
+    const grid = wrapper.get('[data-id="hilos-table-tiles"] [role="list"]')
+    expect(grid.classes()).toEqual([
+      'row',
+      'row-cols-2',
+      'row-cols-md-3',
+      'row-cols-xl-4',
+      'g-3',
+    ])
+    expect(grid.attributes('aria-labelledby')).toBe(
+      wrapper.get('table').attributes('aria-labelledby'),
+    )
+    expect(
+      grid
+        .findAll('[role="listitem"]')
+        .map((item) => item.get('.card').attributes('data-id')),
+    ).toEqual(['hilos-table-tile-b', 'hilos-table-tile-a'])
+    expect(wrapper.get('[data-id="hilos-table-tiles"]').classes()).toContain(
+      'd-none',
+    )
+    expect(wrapper.get('.table-responsive').classes()).toEqual([
+      'table-responsive',
+      'position-relative',
+      'd-none',
+      'd-md-block',
+    ])
+    expect(wrapper.get('[data-id="hilos-table-cards"]').classes()).toContain(
+      'd-md-none',
+    )
+    await wrapper.get('[data-id="hilos-table-view-tiles"]').trigger('click')
+    expect(wrapper.get('.table-responsive').classes()).not.toContain(
+      'd-md-block',
+    )
+    expect(wrapper.get('.table-responsive').classes()).toContain('d-none')
+    expect(wrapper.get('[data-id="hilos-table-cards"]').classes()).toContain(
+      'd-none',
+    )
+    expect(
+      wrapper.get('[data-id="hilos-table-cards"]').classes(),
+    ).not.toContain('d-md-none')
+    expect(
+      wrapper.get('[data-id="hilos-table-tiles"]').classes(),
+    ).not.toContain('d-none')
+    expect(f.controller.rows.get()).toBe(original)
+    expect(f.rendered.mock.calls).toEqual(rendered)
+    expect(f.sent).not.toHaveBeenCalled()
+    expect(wrapper.findAll('[data-id="hilos-table-title"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-id="hilos-table-live-status"]')).toHaveLength(
+      1,
+    )
+    expect(wrapper.findAll('[data-id="hilos-table-count"]')).toHaveLength(1)
+    await wrapper.get('[data-id="hilos-table-view-table"]').trigger('click')
+    expect(wrapper.get('.table-responsive').classes()).toContain('d-md-block')
+    expect(wrapper.get('[data-id="hilos-table-cards"]').classes()).toContain(
+      'd-md-none',
+    )
+    expect(wrapper.get('[data-id="hilos-table-tiles"]').classes()).toContain(
+      'd-none',
+    )
+    wrapper.unmount()
+    f.controller.dispose()
+  })
+
+  it.each([
+    'empty',
+    'empty_filtered',
+    'page_filtered',
+    'empty_page',
+    'unavailable',
+    'loading',
+  ] as const)(
+    'uses the existing %s body decision without a fake list item',
+    async (state) => {
+      vi.useFakeTimers()
+      const press = vi.fn()
+      const f = fixture('states', {
+        search: {},
+        empty: {
+          title: 'No pictures yet',
+          hint: 'Your pictures will appear here.',
+        },
+        mainAction: { label: 'Add picture', press },
+        ...(state === 'page_filtered'
+          ? { filteredEmpty: 'page' as const }
+          : {}),
+      })
+      const wrapper = mountTable(f.controller)
+      f.controller.setView('tiles')
+      if (state === 'empty_page') {
+        f.controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Earlier row' } }],
+          30,
+          true,
+          null,
+          null,
+          10,
+        )
+        f.controller.setPage(2)
+        f.sent.mockClear()
+      }
+      if (state === 'empty_filtered' || state === 'page_filtered')
+        f.controller.setSearch('needle')
+      if (state === 'loading') {
+        rows(f.controller)
+        f.controller.setSort('name')
+        vi.advanceTimersByTime(399)
+        await nextTick()
+        expect(
+          wrapper
+            .get('[data-id="hilos-table-tiles"]')
+            .find('[data-id="hilos-table-loading"]')
+            .exists(),
+        ).toBe(false)
+        vi.advanceTimersByTime(1)
+      } else if (state === 'unavailable')
+        f.controller.ingestRefusal('internal_error')
+      else
+        f.controller.ingestWindow(
+          [],
+          state === 'empty_page' ? 20 : 0,
+          true,
+          null,
+          null,
+          10,
+        )
+      await nextTick()
+      const tileRoot = wrapper.get('[data-id="hilos-table-tiles"]')
+      expect(tileRoot.find('[role="list"], [role="listitem"]').exists()).toBe(
+        false,
+      )
+      expect(wrapper.findAll('[data-id="hilos-table-view"]')).toHaveLength(1)
+      if (state === 'empty' || state === 'page_filtered') {
+        expect(tileRoot.get('[data-id="hilos-table-empty-title"]').text()).toBe(
+          'No pictures yet',
+        )
+        await tileRoot
+          .get('[data-id="hilos-table-empty-action"]')
+          .trigger('click')
+        expect(press).toHaveBeenCalledTimes(1)
+      } else if (state === 'empty_filtered') {
+        expect(
+          tileRoot.get('[data-id="hilos-table-no-matches-terms"]').text(),
+        ).toBe('No rows match “needle”')
+        await tileRoot
+          .get('[data-id="hilos-table-no-matches-reset"]')
+          .trigger('click')
+        expect(f.sent.mock.calls.at(-1)?.[0].filter).toEqual({})
+      } else if (state === 'empty_page') {
+        expect(
+          tileRoot.get('[data-id="hilos-table-empty-page"]').text(),
+        ).toContain('Nothing on this page')
+        await tileRoot
+          .get('[data-id="hilos-table-empty-page-back"]')
+          .trigger('click')
+        expect(f.sent).toHaveBeenCalledTimes(1)
+      } else if (state === 'unavailable') {
+        expect(
+          tileRoot.get('[data-id="hilos-table-unavailable-title"]').text(),
+        ).toBe('List unavailable')
+        expect(tileRoot.find('button').exists()).toBe(false)
+      } else {
+        expect(
+          tileRoot
+            .get('[data-id="hilos-table-loading"]')
+            .attributes('aria-busy'),
+        ).toBe('true')
+        expect(tileRoot.get('[role="status"]').text()).toBe('Loading…')
+        expect(
+          tileRoot.findAll('[data-id="hilos-table-skeleton-row"]'),
+        ).toHaveLength(2)
+        expect(tileRoot.findAll('.ratio-4x3')).toHaveLength(2)
+      }
+      wrapper.unmount()
+      f.controller.dispose()
+    },
+  )
+
+  it('restores only after mount and releases the old preference owner on replacement and unmount', async () => {
+    const f = fixture()
+    // Seed the read seam; the core binding remains the sole storage writer.
+    const read = vi.spyOn(localStorage, 'getItem').mockReturnValue(
+      JSON.stringify({
+        version: 1,
+        views: { pictures: 'tiles', other: 'table' },
+      }),
+    )
+    const write = vi.spyOn(localStorage, 'setItem')
+    const html = await renderToString(
+      createSSRApp({
+        render: () => h(HilosViewportTable, { controller: f.controller }),
+      }),
+    )
+    expect(html).toContain('hilos-table-tiles')
+    expect(read).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+    expect(f.controller.frame.view.get()).toBe('table')
+    const wrapper = mountTable(f.controller)
+    await nextTick()
+    expect(f.controller.frame.view.get()).toBe('tiles')
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-view-tiles"]')
+        .attributes('aria-pressed'),
+    ).toBe('true')
+    expect(write).not.toHaveBeenCalled()
+    const next = fixture('other')
+    await wrapper.setProps({ controller: next.controller })
+    f.controller.setView('table')
+    await nextTick()
+    expect(write).not.toHaveBeenCalled()
+    await wrapper.get('[data-id="hilos-table-view-tiles"]').trigger('click')
+    expect(write.mock.calls[0]?.[0]).toBe(TABLE_VIEW_STORAGE_KEY)
+    expect(JSON.parse(write.mock.calls[0]![1])).toEqual({
+      version: 1,
+      views: { pictures: 'tiles', other: 'tiles' },
+    })
+    expect(write).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    next.controller.setView('table')
+    f.controller.setView('tiles')
+    expect(write).toHaveBeenCalledTimes(1)
+    f.controller.dispose()
+    next.controller.dispose()
+  })
+
+  it.each(['same-tab', 'storage-remove', 'storage-clear'] as const)(
+    'uses core erasure for %s and removes both listeners on unmount',
+    async (kind) => {
+      const f = fixture()
+      const wrapper = mountTable(f.controller)
+      await wrapper.get('[data-id="hilos-table-view-tiles"]').trigger('click')
+      const write = vi.spyOn(localStorage, 'setItem')
+      const erase = () => {
+        if (kind === 'same-tab')
+          eraseBrowserValues([TABLE_VIEW_BROWSER_VALUE], {
+            sessionCookieName: undefined,
+          })
+        else {
+          localStorage.removeItem(TABLE_VIEW_STORAGE_KEY)
+          globalThis.dispatchEvent(
+            new StorageEvent('storage', {
+              key: kind === 'storage-clear' ? null : TABLE_VIEW_STORAGE_KEY,
+              newValue: null,
+              storageArea: localStorage,
+            }),
+          )
+        }
+      }
+      erase()
+      await nextTick()
+      expect(f.controller.frame.view.get()).toBe('table')
+      expect(write).not.toHaveBeenCalled()
+      f.controller.setView('tiles')
+      wrapper.unmount()
+      erase()
+      expect(f.controller.frame.view.get()).toBe('tiles')
+      expect(write).toHaveBeenCalledTimes(1)
+      f.controller.dispose()
+    },
+  )
+
+  it('leaves a mounted view in place on another tab choice and reads it at the next mount', async () => {
+    const f = fixture()
+    const wrapper = mountTable(f.controller)
+    const value = JSON.stringify({ version: 1, views: { pictures: 'tiles' } })
+    vi.spyOn(localStorage, 'getItem').mockReturnValue(value)
+    globalThis.dispatchEvent(
+      new StorageEvent('storage', {
+        key: TABLE_VIEW_STORAGE_KEY,
+        newValue: value,
+        storageArea: localStorage,
+      }),
+    )
+    await nextTick()
+    expect(f.controller.frame.view.get()).toBe('table')
+    wrapper.unmount()
+    const next = fixture()
+    const nextWrapper = mountTable(next.controller)
+    await nextTick()
+    expect(next.controller.frame.view.get()).toBe('tiles')
+    nextWrapper.unmount()
+    next.controller.dispose()
+    f.controller.dispose()
+  })
 })

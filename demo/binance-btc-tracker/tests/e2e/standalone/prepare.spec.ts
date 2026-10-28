@@ -64,6 +64,7 @@ test('prepare an accepted public archive through real loss, publication and reso
     windowRequestId?: string
     settledAt?: number
     rows?: readonly string[]
+    publicationAcceptedAt?: number
     restartSettledAt?: number
     recoveryObservedAt?: number
   } = {}
@@ -151,29 +152,40 @@ test('prepare an accepted public archive through real loss, publication and reso
       staleAfterSeconds: 6,
     })
     let detectedAt = 0
-    await withStatusAgentLoss(expect, workers, admin, async () => {
-      const expect = pausedExpect
-      await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
-      const incident = admin.latest()!.incidents![0]
-      detectedAt = incident.detectedAt
-      await page
-        .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
-        .click()
-      await submitStatusIncident(
-        expect,
-        page,
-        admin,
-        'hilos_status_publish_now',
-        incident.incidentId,
-      )
-      await expectPublicStatusPair(expect, guest, log, ({ status }) =>
+    // Hold the worker through real loss and the publication's server success.
+    // Observe its open HTTP/DOM projection concurrently: reader convergence
+    // must not keep the worker stopped until its independent watchdog fires.
+    // Settle both tasks before cleanup, including when either assertion fails.
+    const publication = await Promise.allSettled([
+      withStatusAgentLoss(expect, workers, admin, async () => {
+        const expect = pausedExpect
+        await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
+        const incident = admin.latest()!.incidents![0]
+        detectedAt = incident.detectedAt
+        await page
+          .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
+          .click()
+        await submitStatusIncident(
+          expect,
+          page,
+          admin,
+          'hilos_status_publish_now',
+          incident.incidentId,
+        )
+        preparation.publicationAcceptedAt = Date.now()
+      }).then(() => {
+        preparation.restartSettledAt = performance.now()
+      }),
+      expectPublicStatusPair(expect, guest, log, ({ status }) =>
         status.outages.some(
           (outage) =>
             outage.detectedAt === detectedAt && outage.resolvedAt === null,
         ),
-      )
-    })
-    preparation.restartSettledAt = performance.now()
+      ),
+    ])
+    for (const result of publication) {
+      if (result.status === 'rejected') throw result.reason
+    }
     // The restart reply precedes the collector's next whole node report.
     // Settle the real recovery before checking its published HTTP/DOM pair;
     // an intervening heartbeat can still carry the open outage revision.

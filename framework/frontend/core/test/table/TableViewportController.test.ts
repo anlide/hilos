@@ -4187,7 +4187,7 @@ describe('TableViewportController retained presentation', () => {
     expect(capture).toHaveBeenCalledTimes(1)
     expect(
       capture.mock.calls[0]?.[0].records.map((ticket) => ticket.record.rowKey),
-    ).toEqual(['d', 'd', 'f', 'f'])
+    ).toEqual(['d', 'd', 'd', 'f', 'f', 'f'])
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
       'c',
       'e',
@@ -4248,7 +4248,7 @@ describe('TableViewportController retained presentation', () => {
       first.capture.mock.calls[0]?.[0].records.map(
         (ticket) => ticket.record.rowKey,
       ),
-    ).toEqual(['a', 'a', 'b', 'b'])
+    ).toEqual(['a', 'a', 'a', 'b', 'b', 'b'])
   })
 
   it('captures early work before dropping its payload and merges fresh remaining parts once', () => {

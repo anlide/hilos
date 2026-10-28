@@ -16,6 +16,7 @@ import { SESSION_ROTATE_BROWSER_VALUE } from '../connection/createHilosConnectio
 import { PROTECTED_MODE_HINT_BROWSER_VALUE } from '../connection/maintenanceHint.js'
 import { PROTECTED_MODE_PASS_BROWSER_VALUE } from '../connection/protectedModePass.js'
 import { PROFILE_RENAME_BROWSER_VALUE } from '../profile/profileRenameMemory.js'
+import { TABLE_VIEW_BROWSER_VALUE } from '../table/tableViewPreference.js'
 import {
   THEME_PICK_BROWSER_VALUE,
   THEME_SETTINGS_BROWSER_VALUE,
@@ -41,6 +42,7 @@ export const HILOS_BROWSER_VALUES: readonly HilosBrowserValue[] = [
   THEME_PICK_BROWSER_VALUE,
   THEME_SETTINGS_BROWSER_VALUE,
   PROFILE_RENAME_BROWSER_VALUE,
+  TABLE_VIEW_BROWSER_VALUE,
 ]
 
 /**

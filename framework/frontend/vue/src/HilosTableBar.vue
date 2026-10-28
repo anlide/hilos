@@ -15,6 +15,7 @@ import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
+  TABLE_VIEW_COPY,
   hilosTableOrderMenuNarrowOnly,
 } from '@hilos/core/base'
 import type {
@@ -50,6 +51,8 @@ const title = declaration.title
 const subtitle = declaration.subtitle
 const searchBox = declaration.search
 const mainAction = declaration.mainAction
+const views = declaration.views
+const tableView = useSignal(props.controller.frame.view)
 
 // The search placeholder doubles as the field's accessible name: the field
 // carries no visible label, and two different strings would name it twice.
@@ -99,6 +102,7 @@ const controlsNarrowOnly = computed(
     !searchBox &&
     filters.value.length === 0 &&
     !mainAction &&
+    !views &&
     orderMenuNarrowOnly.value,
 )
 
@@ -175,165 +179,203 @@ function onSearchInput(event: Event): void {
 
     <div
       v-if="selectionEnabled"
-      class="hilos-stack align-items-center mb-3"
-      data-id="hilos-table-bar-slot"
+      class="d-flex flex-wrap align-items-center gap-2 mb-3"
     >
       <div
-        v-if="
-          searchBox || filters.length > 0 || mainAction || orders.length > 0
-        "
-        class="d-flex flex-wrap align-items-center gap-2"
-        :class="{ invisible: selectionPanel, 'd-md-none': controlsNarrowOnly }"
-        :aria-hidden="selectionPanel ? 'true' : undefined"
-        data-id="hilos-table-controls"
+        class="hilos-stack align-items-center flex-grow-1 min-w-0"
+        data-id="hilos-table-bar-slot"
       >
         <div
-          v-if="searchBox"
-          class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
+          v-if="
+            searchBox || filters.length > 0 || mainAction || orders.length > 0
+          "
+          class="d-flex flex-wrap align-items-center gap-2"
+          :class="{
+            invisible: selectionPanel,
+            'd-md-none': controlsNarrowOnly,
+          }"
+          :aria-hidden="selectionPanel ? 'true' : undefined"
+          data-id="hilos-table-controls"
         >
-          <span class="input-group-text">
-            <i class="bi bi-search" aria-hidden="true"></i>
-          </span>
-          <input
-            type="search"
-            class="form-control"
-            :placeholder="searchPlaceholder"
-            :aria-label="searchPlaceholder"
-            :value="search"
-            :data-autofocus="autofocusSearch ? '' : undefined"
-            data-id="hilos-table-search"
-            @input="onSearchInput"
-          />
-          <button
-            v-if="search !== ''"
-            type="button"
-            class="btn btn-outline-secondary"
-            aria-label="Clear search"
-            data-id="hilos-table-search-clear"
-            @click="controller.setSearch('')"
+          <div
+            v-if="searchBox"
+            class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
           >
-            <i class="bi bi-x-lg" aria-hidden="true"></i>
-          </button>
-        </div>
+            <span class="input-group-text">
+              <i class="bi bi-search" aria-hidden="true"></i>
+            </span>
+            <input
+              type="search"
+              class="form-control"
+              :placeholder="searchPlaceholder"
+              :aria-label="searchPlaceholder"
+              :value="search"
+              :data-autofocus="autofocusSearch ? '' : undefined"
+              data-id="hilos-table-search"
+              @input="onSearchInput"
+            />
+            <button
+              v-if="search !== ''"
+              type="button"
+              class="btn btn-outline-secondary"
+              aria-label="Clear search"
+              data-id="hilos-table-search-clear"
+              @click="controller.setSearch('')"
+            >
+              <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
+          </div>
 
-        <!-- Below md the controls leave the bar for the modal below, and the
+          <!-- Below md the controls leave the bar for the modal below, and the
         button that opens it takes their place. The search does not go with them:
         it is the main way to narrow a set, and hiding it behind a button would
         hide exactly what the table was opened for. -->
-        <div
-          v-if="filters.length > 0"
-          class="d-none d-md-flex flex-wrap align-items-center gap-2"
-        >
-          <HilosTableFilterControl
-            v-for="view in filters"
-            :key="filterKey(view)"
-            :view="view"
-            :controller="controller"
-            placement="bar"
-          />
-        </div>
+          <div
+            v-if="filters.length > 0"
+            class="d-none d-md-flex flex-wrap align-items-center gap-2"
+          >
+            <HilosTableFilterControl
+              v-for="view in filters"
+              :key="filterKey(view)"
+              :view="view"
+              :controller="controller"
+              placement="bar"
+            />
+          </div>
 
-        <span
-          v-if="activeFilterCount > 0"
-          class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-          data-id="hilos-table-filter-badge"
-        >
-          {{ filterCountLabel }}
-          <button
-            type="button"
-            class="btn-close ms-1"
-            aria-label="Reset filters"
-            data-id="hilos-table-filter-reset"
-            @click="controller.resetFilters()"
-          ></button>
-        </span>
+          <span
+            v-if="activeFilterCount > 0"
+            class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+            data-id="hilos-table-filter-badge"
+          >
+            {{ filterCountLabel }}
+            <button
+              type="button"
+              class="btn-close ms-1"
+              aria-label="Reset filters"
+              data-id="hilos-table-filter-reset"
+              @click="controller.resetFilters()"
+            ></button>
+          </span>
 
-        <!-- Outside the row that leaves the bar below md: the menu is the only way
+          <!-- Outside the row that leaves the bar below md: the menu is the only way
         to change the order on a narrow screen, where the header of a column is out
         of reach, so hiding it behind the Filters button would remove it. Below md
         it carries every sortable column in both directions as well; above md those
         items hide, and a menu of nothing else hides with them. -->
-        <div
-          v-if="orders.length > 0"
-          class="w-auto"
-          :class="{ 'd-md-none': orderMenuNarrowOnly }"
-          data-id="hilos-table-order"
-        >
-          <HilosDropdown
-            :model-value="activeOrderKey"
-            :options="orderOptions"
-            :menu-aria-label="TABLE_ORDER_COPY.menu"
-            @update:model-value="onOrder"
+          <div
+            v-if="orders.length > 0"
+            class="w-auto"
+            :class="{ 'd-md-none': orderMenuNarrowOnly }"
+            data-id="hilos-table-order"
           >
-            <template #toggle>
-              <span class="text-truncate"
-                >{{ TABLE_ORDER_COPY.menu }}: {{ orderLabel }}</span
-              >
-            </template>
-            <template #option="{ option, selected, select }">
-              <button
-                type="button"
-                class="dropdown-item d-flex align-items-center justify-content-between gap-2"
-                :class="{
-                  active: selected,
-                  'd-md-none': narrowOrderKeys.has(option.value),
-                }"
-                role="option"
-                :aria-selected="selected"
-                :data-id="`hilos-table-order-${option.value}`"
-                @click="select()"
-              >
-                <span class="text-truncate">{{ option.label }}</span>
-                <template v-if="staleOrderKeys.has(option.value)">
+            <HilosDropdown
+              :model-value="activeOrderKey"
+              :options="orderOptions"
+              :menu-aria-label="TABLE_ORDER_COPY.menu"
+              @update:model-value="onOrder"
+            >
+              <template #toggle>
+                <span class="text-truncate"
+                  >{{ TABLE_ORDER_COPY.menu }}: {{ orderLabel }}</span
+                >
+              </template>
+              <template #option="{ option, selected, select }">
+                <button
+                  type="button"
+                  class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+                  :class="{
+                    active: selected,
+                    'd-md-none': narrowOrderKeys.has(option.value),
+                  }"
+                  role="option"
+                  :aria-selected="selected"
+                  :data-id="`hilos-table-order-${option.value}`"
+                  @click="select()"
+                >
+                  <span class="text-truncate">{{ option.label }}</span>
+                  <template v-if="staleOrderKeys.has(option.value)">
+                    <i
+                      class="bi bi-snow"
+                      :data-id="`hilos-table-order-stale-${option.value}`"
+                      aria-hidden="true"
+                    ></i>
+                    <span class="visually-hidden">{{
+                      TABLE_STALENESS_COPY.sortWarning
+                    }}</span>
+                  </template>
                   <i
-                    class="bi bi-snow"
-                    :data-id="`hilos-table-order-stale-${option.value}`"
+                    v-if="selected"
+                    class="bi bi-check2 flex-shrink-0"
                     aria-hidden="true"
                   ></i>
-                  <span class="visually-hidden">{{
-                    TABLE_STALENESS_COPY.sortWarning
-                  }}</span>
-                </template>
-                <i
-                  v-if="selected"
-                  class="bi bi-check2 flex-shrink-0"
-                  aria-hidden="true"
-                ></i>
-              </button>
-            </template>
-          </HilosDropdown>
-        </div>
+                </button>
+              </template>
+            </HilosDropdown>
+          </div>
 
-        <!-- The button says only its word: the number of filters holding a value is
+          <!-- The button says only its word: the number of filters holding a value is
         said once, on the badge above, which stays on a narrow screen because the
         reset lives nowhere else. -->
-        <button
-          v-if="filters.length > 0"
-          type="button"
-          class="btn btn-sm btn-outline-secondary d-md-none"
-          data-id="hilos-table-filters-open"
-          @click="filtersOpen = true"
-        >
-          Filters
-        </button>
+          <button
+            v-if="filters.length > 0"
+            type="button"
+            class="btn btn-sm btn-outline-secondary d-md-none"
+            data-id="hilos-table-filters-open"
+            @click="filtersOpen = true"
+          >
+            Filters
+          </button>
 
+          <button
+            v-if="mainAction"
+            type="button"
+            class="btn btn-sm btn-primary ms-auto"
+            data-id="hilos-table-main-action"
+            @click="mainAction.press()"
+          >
+            {{ mainAction.label }}
+          </button>
+        </div>
+
+        <HilosTableSelection :controller="controller" :shown="selectionPanel" />
+      </div>
+      <div
+        v-if="views"
+        class="btn-group btn-group-sm ms-auto flex-shrink-0"
+        role="group"
+        :aria-label="TABLE_VIEW_COPY.group"
+        data-id="hilos-table-view"
+      >
         <button
-          v-if="mainAction"
+          v-for="choice in views.order"
+          :key="choice"
           type="button"
-          class="btn btn-sm btn-primary ms-auto"
-          data-id="hilos-table-main-action"
-          @click="mainAction.press()"
+          class="btn btn-outline-secondary"
+          :class="{ active: tableView === choice }"
+          :aria-pressed="tableView === choice"
+          :data-id="`hilos-table-view-${choice}`"
+          @click="controller.setView(choice)"
         >
-          {{ mainAction.label }}
+          <i
+            :class="[
+              'bi me-1',
+              choice === 'table' ? 'bi-list-ul' : 'bi-grid-3x2-gap',
+            ]"
+            aria-hidden="true"
+          ></i
+          >{{ TABLE_VIEW_COPY[choice] }}
         </button>
       </div>
-
-      <HilosTableSelection :controller="controller" :shown="selectionPanel" />
     </div>
 
     <div
       v-else-if="
-        searchBox || filters.length > 0 || mainAction || orders.length > 0
+        searchBox ||
+        filters.length > 0 ||
+        mainAction ||
+        orders.length > 0 ||
+        views
       "
       class="d-flex flex-wrap align-items-center gap-2 mb-3"
       :class="{ 'd-md-none': controlsNarrowOnly }"
@@ -468,6 +510,34 @@ function onSearchInput(event: Event): void {
       >
         Filters
       </button>
+
+      <div
+        v-if="views"
+        class="btn-group btn-group-sm ms-auto flex-shrink-0"
+        role="group"
+        :aria-label="TABLE_VIEW_COPY.group"
+        data-id="hilos-table-view"
+      >
+        <button
+          v-for="choice in views.order"
+          :key="choice"
+          type="button"
+          class="btn btn-outline-secondary"
+          :class="{ active: tableView === choice }"
+          :aria-pressed="tableView === choice"
+          :data-id="`hilos-table-view-${choice}`"
+          @click="controller.setView(choice)"
+        >
+          <i
+            :class="[
+              'bi me-1',
+              choice === 'table' ? 'bi-list-ul' : 'bi-grid-3x2-gap',
+            ]"
+            aria-hidden="true"
+          ></i
+          >{{ TABLE_VIEW_COPY[choice] }}
+        </button>
+      </div>
 
       <button
         v-if="mainAction"

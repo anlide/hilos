@@ -1,3 +1,4 @@
+import type { TableProjection } from '../table/tableViewportGeometry.js'
 import { available } from './focusTrap.js'
 
 const FOCUS_RETURN_ATTRIBUTE = 'data-hilos-focus-return'
@@ -5,7 +6,7 @@ const FOCUS_RETURN_ATTRIBUTE = 'data-hilos-focus-return'
 /** The current mounted record parts of one table projection, never placeholders. */
 export interface TableFocusReturnRow {
   readonly rowKey: string
-  readonly projection: 'wide' | 'card'
+  readonly projection: TableProjection
   readonly parts: readonly HTMLElement[]
 }
 

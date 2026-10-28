@@ -11,6 +11,8 @@ import {
   type TableTextOverflow,
 } from '../src/useTableTextOverflow.js'
 
+type FixtureProjection = Extract<TableProjection, 'wide' | 'card'>
+
 // Mocked boxes prove measurement wiring and lifetime, never CSS wrapping.
 // The real font/wrapping/visible-control proof belongs to the browser slice.
 interface Metrics {
@@ -188,7 +190,7 @@ function browser(
 function fixture(
   dom: ReturnType<typeof browser>,
   initial = owner(),
-  projections: readonly TableProjection[] = ['wide', 'card'],
+  projections: readonly FixtureProjection[] = ['wide', 'card'],
 ) {
   const controller = shallowRef(initial.controller)
   const record = shallowRef<TableGeometryRecord | null>(initial.record())
@@ -203,7 +205,7 @@ function fixture(
   const adapters = new Map<TableProjection, TableTextOverflow>()
   const targets = new Map<TableProjection, HTMLElement>()
   const contents = new Map<TableProjection, HTMLElement>()
-  const boxes: Record<TableProjection, Metrics> = {
+  const boxes: Record<FixtureProjection, Metrics> = {
     wide: { width: 200, height: 40, scrollWidth: 200, scrollHeight: 40 },
     card: { width: 100, height: 40, scrollWidth: 100, scrollHeight: 80 },
   }
@@ -212,7 +214,7 @@ function fixture(
   const Projection = defineComponent({
     props: { projection: { type: String, required: true } },
     setup(props) {
-      const projection = props.projection as TableProjection
+      const projection = props.projection as FixtureProjection
       const target = shallowRef<HTMLElement | null>(null)
       const content = shallowRef<HTMLElement | null>(null)
       const adapter = useTableTextOverflow(

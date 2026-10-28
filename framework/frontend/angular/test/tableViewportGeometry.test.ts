@@ -778,6 +778,7 @@ describe('Angular table geometry (numeric DOM seam)', () => {
     try {
       const wide = registration.measurement('a', 'wide')
       const card = registration.measurement('a', 'card')
+      const tiles = registration.measurement('a', 'tiles')
       const layout = registration.layout('wide')
       const update = vi.fn()
       expect(() =>
@@ -788,6 +789,7 @@ describe('Angular table geometry (numeric DOM seam)', () => {
         records: [
           { measurement: wide, extent: null, workGap: 0 },
           { measurement: card, extent: null, workGap: 0 },
+          { measurement: tiles, extent: null, workGap: 0 },
         ],
         tracks: { layout, tracks: null },
       })

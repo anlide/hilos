@@ -12,6 +12,8 @@ import {
 import HilosTableText from './HilosTableText.vue'
 import HilosTableValue from './HilosTableValue.vue'
 
+type FixtureProjection = Extract<TableProjection, 'wide' | 'card'>
+
 const mounted: { unmount(): void }[] = []
 const owners: { dispose(): void }[] = []
 afterEach(() => {
@@ -62,7 +64,7 @@ function layout() {
     return serial
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
-  const heights: Record<TableProjection, number> = { wide: 40, card: 80 }
+  const heights: Record<FixtureProjection, number> = { wide: 40, card: 80 }
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function () {
       return new DOMRect(0, 0, 200, 40)
@@ -81,7 +83,7 @@ function layout() {
           return heights[
             (this.closest('[data-projection]')?.getAttribute(
               'data-projection',
-            ) as TableProjection) ?? 'wide'
+            ) as FixtureProjection) ?? 'wide'
           ]
         return 200
       },
@@ -103,7 +105,7 @@ function layout() {
 function fixture(
   options: {
     policy?: HilosTableRowHeight
-    projections?: TableProjection[]
+    projections?: FixtureProjection[]
     regions?: number
     columns?: string[]
   } = {},

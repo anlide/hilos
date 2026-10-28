@@ -1,6 +1,69 @@
 import type { Expect, Page } from '@playwright/test'
-import type { TableGeometryWatch } from './geometry.js'
-import { TABLE } from './table.js'
+import type { TableGeometryProjection, TableGeometryWatch } from './geometry.js'
+import { expectDataFreeDeparture, TABLE } from './table.js'
+
+/** The third projection retires data in every mounted branch, including src. */
+export async function expectTableTileDeparture(
+  expect: Expect,
+  page: Page,
+  rowKey: string,
+  reason: string,
+  valueIds: readonly string[],
+): Promise<void> {
+  await expectDataFreeDeparture(expect, page, rowKey, reason, valueIds)
+  const tile = page.getByTestId(`hilos-table-tile-${rowKey}`)
+  await expect(tile.getByTestId('hilos-table-placeholder')).toHaveText(reason)
+  await expect(
+    tile.locator('img, [src], button, input, a, [tabindex], [id]'),
+  ).toHaveCount(0)
+  await expect(
+    tile.locator('[data-id]:not([data-id="hilos-table-placeholder"])'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId(`hilos-table-tile-image-${rowKey}`),
+  ).toHaveCount(0)
+}
+
+/** Save real native observer deliveries, then replay their old callback tickets. */
+export async function watchTableGeometryCallbacks(page: Page) {
+  await page.addInitScript(() => {
+    const deliveries = new Map<ResizeObserver, () => void>()
+    const NativeObserver = window.ResizeObserver
+    window.ResizeObserver = class extends NativeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super((entries, observer) => {
+          deliveries.set(observer, () => callback(entries, observer))
+          callback(entries, observer)
+        })
+      }
+    }
+    Object.assign(window, {
+      __tableGeometryCallbacks: () => [...deliveries.values()],
+    })
+  })
+  return {
+    async capture() {
+      const callbacks = await page.evaluateHandle(() =>
+        (
+          window as unknown as { __tableGeometryCallbacks(): (() => void)[] }
+        ).__tableGeometryCallbacks(),
+      )
+      return {
+        async replay(expect: Expect) {
+          const count = await callbacks.evaluate((saved) => {
+            for (const callback of saved) callback()
+            return saved.length
+          })
+          expect(
+            count,
+            'real pre-transition observer deliveries were replayed',
+          ).toBeGreaterThan(0)
+        },
+        dispose: () => callbacks.dispose(),
+      }
+    },
+  }
+}
 
 /** The DOM numbers of one projection, without exposing boxes to a spec. */
 interface AllocationFrame {
@@ -17,6 +80,7 @@ interface AllocationFrame {
   readonly spacing: string
   readonly departed: boolean
   readonly sameOccurrence: boolean
+  readonly sameShell: boolean
 }
 
 /** Condition checks operate on the same raw frames attached as evidence. */
@@ -46,7 +110,7 @@ export async function watchTableAllocation(
   expect: Expect,
   page: Page,
   rowKey: string,
-  projection: 'wide' | 'card',
+  projection: TableGeometryProjection,
   generic = false,
   liveKey = rowKey,
   connectedReads = false,
@@ -57,8 +121,10 @@ export async function watchTableAllocation(
       const frames: AllocationFrame[] = []
       let stopped = false
       let raf = 0
-      const selector = `[data-id="hilos-table-${projection === 'wide' ? 'row' : 'card'}-${rowKey}"]`
+      const prefix = { wide: 'row', card: 'card', tiles: 'tile' }[projection]
+      const selector = `[data-id="hilos-table-${prefix}-${rowKey}"]`
       const occurrence = root.querySelector(selector)
+      const shell = occurrence?.parentElement
       const original = Element.prototype.getBoundingClientRect
       const px = (value: string) => Number.parseFloat(value) || 0
       function sample() {
@@ -109,10 +175,14 @@ export async function watchTableAllocation(
             px(body.paddingTop) +
             px(body.paddingBottom)
           gap = px(style.marginBottom) + px(style.marginTop)
+          if (projection === 'tiles')
+            gap += px(getComputedStyle(node.parentElement!).marginTop)
           bottom += px(getComputedStyle(node).marginBottom) * zoom
+          if (projection === 'tiles')
+            bottom += px(getComputedStyle(node.parentElement!).marginTop) * zoom
         }
         const live = root.querySelector<HTMLElement>(
-          `[data-id="hilos-table-${projection === 'wide' ? 'row' : 'card'}-${liveKey}"]`,
+          `[data-id="hilos-table-${prefix}-${liveKey}"]`,
         )
         const style = getComputedStyle(root)
         const readable = node.querySelector<HTMLElement>(
@@ -144,6 +214,7 @@ export async function watchTableAllocation(
           spacing: `${style.lineHeight}|${style.letterSpacing}|${style.wordSpacing}`,
           departed: !!node.querySelector('[data-id="hilos-table-placeholder"]'),
           sameOccurrence: node === occurrence,
+          sameShell: node.parentElement === shell,
         })
       }
       // Use native results internally so observing the adapter's read cannot recurse.
@@ -217,6 +288,7 @@ export async function watchTableAllocation(
           continue
         }
         if (!frame.sameOccurrence) failures.push({ index, occurrence: frame })
+        if (!frame.sameShell) failures.push({ index, shell: frame })
         const expected = Math.max(
           retained ?? (generic ? frame.fallback : frame.extent),
           frame.floor,

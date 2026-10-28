@@ -30,21 +30,25 @@ function fixture(
   options: {
     cardVisible?: boolean
     wideVisible?: boolean
+    tilesVisible?: boolean
     zoom?: number
     cardChrome?: boolean
     separateBorders?: boolean
+    keyedRoot?: boolean
   } = {},
 ) {
   const owner = new TableViewportGeometry()
   owner.replaceWindow(['a', 'b'])
   const registered = vi.fn(owner.view.register)
   const current = shallowRef<typeof owner.view>({ register: registered })
+  const initial = current.value
   const departed = shallowRef(false)
   const working = shallowRef(true)
   const expanded = shallowRef(true)
   const redraw = shallowRef(0)
   const wideVisible = shallowRef(options.wideVisible ?? true)
   const cardVisible = shallowRef(options.cardVisible ?? true)
+  const tilesVisible = shallowRef(options.tilesVisible ?? false)
   const zoom = shallowRef(options.zoom ?? 1)
   const fallbackHeight = shallowRef(48)
   Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', {
@@ -65,6 +69,14 @@ function fixture(
     ['wide-reason', rect(0, 22)],
     ['wide-shell', rect(0, 23)],
     ['card-reason', rect(0, 18)],
+    ['tiles-grid', rect(300, 450, 866)],
+    ['tiles-column', rect(300, 427, 216.5)],
+    ['tiles-probe', rect(300, 50, 200)],
+    ['tiles-main', rect(300, 410.5)],
+    ['tiles-image', rect(300.75, 150.25)],
+    ['tiles-detail', rect(570, 70.5)],
+    ['tiles-work', rect(646.5, 20.25)],
+    ['tiles-reason', rect(0, 20)],
   ])
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
@@ -74,7 +86,8 @@ function fixture(
           (id.startsWith('wide') ||
             id.startsWith('header') ||
             id === 'table')) ||
-        (!cardVisible.value && id.startsWith('card'))
+        (!cardVisible.value && id.startsWith('card')) ||
+        (!tilesVisible.value && id.startsWith('tiles'))
       )
         return rect(0, 0, 0)
       const local = boxes.get(id) ?? rect(0, 0, 0)
@@ -116,18 +129,33 @@ function fixture(
         if (property === 'marginBottom' && id === 'card-main') return '8px'
         if (property === 'marginBottom' && id === 'card-detail') return '4px'
         if (property === 'marginTop' && id === 'card-work') return '6px'
+        if (
+          id === 'tiles-main' &&
+          (property === 'borderTopWidth' || property === 'borderBottomWidth')
+        )
+          return '0.75px'
+        if (
+          id === 'tiles-body' &&
+          (property === 'paddingTop' || property === 'paddingBottom')
+        )
+          return '8.25px'
+        if (property === 'marginTop' && id === 'tiles-column') return '16.5px'
+        if (property === 'marginBottom' && id === 'tiles-detail') return '4px'
+        if (property === 'marginTop' && id === 'tiles-work') return '6px'
         return Reflect.get(target, property)
       },
     })
   })
   const observed = new Set<Element>()
   let resize: (() => void) | undefined
+  const resizeCallbacks: (() => void)[] = []
   const disconnect = vi.fn(() => observed.clear())
   vi.stubGlobal(
     'ResizeObserver',
     class {
       constructor(callback: () => void) {
         resize = callback
+        resizeCallbacks.push(callback)
       }
       observe(node: Element) {
         observed.add(node)
@@ -160,7 +188,10 @@ function fixture(
           () => ['name', 'state'],
         )
         const bind =
-          (projection: 'wide' | 'card', part: 'main' | 'work' | 'detail') =>
+          (
+            projection: 'wide' | 'card' | 'tiles',
+            part: 'main' | 'work' | 'detail',
+          ) =>
           (element: unknown) =>
             adapter.bind(
               'a',
@@ -172,7 +203,13 @@ function fixture(
         return () => {
           void redraw.value
           void adapter.revision.value
-          return h('div', { ref: root, 'data-box': 'root', tabindex: -1 }, [
+          const rootProps = {
+            ref: root,
+            key: options.keyedRoot ? (current.value === initial ? 0 : 1) : 0,
+            'data-box': 'root',
+            tabindex: -1,
+          }
+          return h('div', rootProps, [
             h('div', { class: 'hilos-table-room-wide' }, [
               h(
                 'div',
@@ -313,6 +350,77 @@ function fixture(
                     ],
               ),
             ),
+            h('div', { 'data-box': 'tiles-grid' }, [
+              h('div', { class: 'col', 'data-box': 'tiles-column' }, [
+                h(
+                  'div',
+                  {
+                    class: 'hilos-table-room-tiles',
+                    'data-box': 'tiles-probe',
+                  },
+                  [
+                    h('div', {
+                      class: 'hilos-table-reason-twins',
+                      'data-box': 'tiles-reason',
+                    }),
+                    h('div', { class: 'hilos-table-fallback' }),
+                  ],
+                ),
+                h(
+                  'div',
+                  { ref: bind('tiles', 'main'), 'data-box': 'tiles-main' },
+                  [
+                    !departed.value
+                      ? h('div', { 'data-box': 'tiles-image' }, 'image slot')
+                      : null,
+                    h(
+                      'div',
+                      { class: 'card-body', 'data-box': 'tiles-body' },
+                      departed.value
+                        ? h(
+                            'div',
+                            {
+                              class: 'hilos-table-record-space',
+                              'data-tile-allocation': adapter.recordPixels(
+                                'a',
+                                owner.record('a')!.occurrence,
+                                'tiles',
+                              ),
+                            },
+                            h(
+                              'span',
+                              { 'data-box': 'tiles-reason' },
+                              'Removed',
+                            ),
+                          )
+                        : [
+                            'live tile values',
+                            expanded.value
+                              ? h(
+                                  'div',
+                                  {
+                                    ref: bind('tiles', 'detail'),
+                                    'data-box': 'tiles-detail',
+                                  },
+                                  'tile details',
+                                )
+                              : null,
+                            working.value
+                              ? h(
+                                  'div',
+                                  {
+                                    ref: bind('tiles', 'work'),
+                                    'data-box': 'tiles-work',
+                                  },
+                                  'tile work',
+                                )
+                              : null,
+                          ],
+                    ),
+                  ],
+                ),
+              ]),
+            ]),
           ])
         }
       },
@@ -338,6 +446,7 @@ function fixture(
     redraw,
     wideVisible,
     cardVisible,
+    tilesVisible,
     zoom,
     fallbackHeight,
     observed,
@@ -345,6 +454,8 @@ function fixture(
     cancel,
     depart,
     resize: () => resize?.(),
+    resizeCallbacks,
+    pendingFrame: () => pending,
     frame: () => {
       const callback = pending
       pending = undefined
@@ -355,6 +466,146 @@ function fixture(
 }
 
 describe('useTableViewportGeometry (numeric DOM stubs)', () => {
+  it.each([1, 1.25, 1.5])(
+    'captures the complete tile box and the surviving column gutter once at zoom %s',
+    async (zoom) => {
+      const f = fixture({ tilesVisible: true, zoom })
+      await nextTick()
+      expect(f.registration.record('a', 'tiles')?.live).toEqual({
+        main: 313.75,
+        work: 20.25,
+        detail: 70.5,
+        gap: 22.5,
+        total: 427,
+      })
+      expect(f.registration.record('a', 'card')?.live?.total).toBe(218.5)
+      expect(f.adapter.reasonFloors.value).toEqual({
+        wide: 22,
+        card: 18,
+        tiles: 20,
+      })
+      expect(
+        f.observed.has(f.wrapper.get('[data-box="tiles-main"]').element),
+      ).toBe(true)
+      expect(
+        f.observed.has(f.wrapper.get('[data-box="tiles-work"]').element),
+      ).toBe(true)
+      expect(
+        f.observed.has(f.wrapper.get('[data-box="tiles-detail"]').element),
+      ).toBe(true)
+      // Capture the changed main box synchronously before destroying image/body.
+      f.boxes.set('tiles-main', rect(300, 448.25))
+      f.depart()
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(464.75)
+      expect(
+        f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'tiles'),
+      ).toBe(464.75)
+      await nextTick()
+      expect(
+        f.wrapper
+          .get('[data-tile-allocation]')
+          .attributes('data-tile-allocation'),
+      ).toBe('464.75')
+      expect(f.wrapper.get('[data-box="tiles-main"]').text()).toBe('Removed')
+      expect(f.wrapper.find('[data-box="tiles-image"]').exists()).toBe(false)
+      f.tilesVisible.value = false
+      f.resize()
+      f.frame()
+      await nextTick()
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(464.75)
+    },
+  )
+
+  it('allocates only a tile shell plus its Sass fallback on first visibility, then grows only for the reason', async () => {
+    const f = fixture({ tilesVisible: false })
+    f.depart()
+    await nextTick()
+    expect(f.registration.record('a', 'tiles')?.retained).toBeNull()
+    f.tilesVisible.value = true
+    f.resize()
+    f.frame()
+    await nextTick()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(82.5)
+    expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+    f.boxes.set('tiles-reason', rect(0, 300.25))
+    f.fallbackHeight.value = 80
+    f.resize()
+    f.frame()
+    await nextTick()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(334.75)
+    f.boxes.set('tiles-reason', rect(0, 20))
+    f.fallbackHeight.value = 48
+    f.resize()
+    f.frame()
+    await nextTick()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(334.75)
+  })
+
+  it('invalidates tile layout from actual column width/count without changing the root width or retained allocation', async () => {
+    const f = fixture({ tilesVisible: true })
+    await nextTick()
+    f.depart()
+    await nextTick()
+    const previous = f.registration.layout('tiles')
+    f.boxes.set('tiles-probe', rect(300, 50, 250))
+    f.boxes.set('tiles-column', rect(300, 427, 288.6666666667))
+    f.resize()
+    f.frame()
+    expect(f.registration.layout('tiles')).not.toBe(previous)
+    await nextTick()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(427)
+  })
+
+  it('keeps tile exact readers local to the window, occurrence, registration and mount', async () => {
+    const f = fixture({ tilesVisible: true })
+    const old = f.owner.record('a')!
+    const read = f.adapter.recordReader('a', old.occurrence, 'tiles')
+    expect(read()).toBe(old)
+    f.owner.replaceWindow(['a', 'b'])
+    expect(read()).toBeNull()
+    f.redraw.value++
+    await nextTick()
+    const fresh = f.adapter.recordReader(
+      'a',
+      f.owner.record('a')!.occurrence,
+      'tiles',
+    )
+    expect(fresh()).toBe(f.owner.record('a'))
+    const next = new TableViewportGeometry()
+    next.replaceWindow(['a', 'b'])
+    f.current.value = next.view
+    expect(fresh()).toBeNull()
+    f.wrapper.unmount()
+    f.resize()
+    f.frame()
+    expect(f.observed.size).toBe(0)
+    expect(f.hasFrame()).toBe(false)
+    expect(fresh()).toBeNull()
+  })
+
+  it('makes already queued resize and frame callbacks inert after controller replacement', () => {
+    const f = fixture({ tilesVisible: true })
+    const lateResize = f.resizeCallbacks[0]!
+    f.resize()
+    const lateFrame = f.pendingFrame()!
+    const next = new TableViewportGeometry()
+    next.replaceWindow(['a', 'b'])
+    const registered = vi.fn(next.view.register)
+    f.current.value = { register: registered }
+    const registration = registered.mock.results[0]!.value
+    const layout = registration.layout('tiles')
+    const scheduled = f.pendingFrame()
+    lateResize()
+    lateFrame(0)
+    expect(f.pendingFrame()).toBe(scheduled)
+    expect(registration.layout('tiles')).toBe(layout)
+    expect(registration.record('a', 'tiles')?.live).toBeNull()
+    f.wrapper.unmount()
+    lateResize()
+    lateFrame(0)
+    expect(f.hasFrame()).toBe(false)
+  })
+
   it('reads exact live identities and retires saved readers before DOM replacement', async () => {
     const f = fixture()
     const identity = f.registration.measurement('a', 'wide')!.record
@@ -554,7 +805,11 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
         widths: [125.25, 75.5],
         tableWidth: 200.75,
       })
-      expect(f.adapter.reasonFloors.value).toEqual({ wide: 22, card: 18 })
+      expect(f.adapter.reasonFloors.value).toEqual({
+        wide: 22,
+        card: 18,
+        tiles: 0,
+      })
       f.depart()
       // The first replacement already has local numbers, before any observer.
       expect(
@@ -769,6 +1024,80 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     f.owner.addRecord('c')
     f.boxes.set('header-name', rect(0, 20, 90))
     f.redraw.value++
+    await nextTick()
+    expect(f.adapter.tracks.value).toBe(first)
+  })
+
+  it.each([
+    ['post-commit', false],
+    ['frame', false],
+    ['post-commit', true],
+    ['frame', true],
+  ] as const)(
+    'detects a layout change after replacement: first=%s, keyed root=%s',
+    async (first, keyedRoot) => {
+      const f = fixture({ cardVisible: false, keyedRoot })
+      await nextTick()
+      const root = f.wrapper.element
+      const replacement = new TableViewportGeometry()
+      replacement.replaceWindow(['a', 'b'])
+      f.current.value = replacement.view
+      if (first === 'frame') f.frame()
+      await nextTick()
+      expect(f.wrapper.element === root).toBe(!keyedRoot)
+      expect(f.adapter.tracks.value?.tableWidth).toBe(200.75)
+      f.boxes.set('root', rect(0, 600, 375))
+      f.boxes.set('header-name', rect(0, 20, 100.25))
+      f.boxes.set('header-state', rect(0, 20, 75.5, 100.25))
+      f.boxes.set('table', rect(0, 300, 175.75))
+      f.resize()
+      f.frame()
+      if (keyedRoot && first === 'post-commit') {
+        // The old root's frame must not sample its replacement. A fresh frame
+        // must still process the resize coalesced while that frame was pending.
+        expect(f.adapter.tracks.value?.tableWidth).toBe(200.75)
+        expect(f.hasFrame()).toBe(true)
+        f.frame()
+      }
+      // Release fixed tracks before Vue commits and measures the auto layout.
+      expect(f.adapter.tracks.value).toBeNull()
+      await nextTick()
+      expect(f.adapter.tracks.value).toEqual({
+        columnKeys: ['name', 'state'],
+        widths: [100.25, 75.5],
+        tableWidth: 175.75,
+      })
+    },
+  )
+
+  it('waits for a visible replacement sample and keeps it through its first frame', async () => {
+    const f = fixture({ cardVisible: false })
+    await nextTick()
+    const replacement = new TableViewportGeometry()
+    replacement.replaceWindow(['a', 'b'])
+    f.boxes.set('root', rect(0, 0, 0))
+    f.wideVisible.value = false
+    f.current.value = replacement.view
+    await nextTick()
+    expect(f.adapter.tracks.value).toBeNull()
+    f.frame()
+    expect(f.adapter.tracks.value).toBeNull()
+    f.boxes.set('root', rect(0, 600, 375))
+    f.boxes.set('header-name', rect(0, 20, 100.25))
+    f.boxes.set('header-state', rect(0, 20, 75.5, 100.25))
+    f.boxes.set('table', rect(0, 300, 175.75))
+    f.wideVisible.value = true
+    f.redraw.value++
+    await nextTick()
+    const first = f.adapter.tracks.value
+    expect(first).toEqual({
+      columnKeys: ['name', 'state'],
+      widths: [100.25, 75.5],
+      tableWidth: 175.75,
+    })
+    f.resize()
+    f.frame()
+    expect(f.adapter.tracks.value).toBe(first)
     await nextTick()
     expect(f.adapter.tracks.value).toBe(first)
   })

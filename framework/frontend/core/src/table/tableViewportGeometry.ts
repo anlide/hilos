@@ -5,8 +5,10 @@ import {
 } from '../state/signal.js'
 import { type TableRemovalReason } from './tablePlaceholder.js'
 
-/** The two independent layouts of one table view. */
-export type TableProjection = 'wide' | 'card'
+const TABLE_PROJECTIONS = Object.freeze(['wide', 'card', 'tiles'] as const)
+
+/** The independent layouts of one table view. */
+export type TableProjection = (typeof TABLE_PROJECTIONS)[number]
 
 /** Local publication boundary; identities are resolved by the geometry owner. */
 export type TablePresentationChange =
@@ -244,10 +246,9 @@ export class TableViewportGeometry {
       })
     }
     for (const mount of this.mounts) {
-      this.nextLayout(mount, 'wide')
-      this.nextLayout(mount, 'card')
       mount.tracks = null
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
+        this.nextLayout(mount, projection)
         for (const [rowKey, state] of mount.records[projection]) {
           const record = this.records.get(rowKey)
           if (record !== undefined) {
@@ -266,11 +267,11 @@ export class TableViewportGeometry {
     this.windowGeneration++
     this.records.clear()
     for (const mount of this.mounts) {
-      mount.records.wide.clear()
-      mount.records.card.clear()
       mount.tracks = null
-      this.nextLayout(mount, 'wide')
-      this.nextLayout(mount, 'card')
+      for (const projection of TABLE_PROJECTIONS) {
+        mount.records[projection].clear()
+        this.nextLayout(mount, projection)
+      }
     }
     for (const rowKey of new Set(rowKeys)) {
       this.createRecord(rowKey)
@@ -287,7 +288,7 @@ export class TableViewportGeometry {
     return identity
   }
 
-  /** Explicit edge eviction/reuse retires both projections in every mount. */
+  /** Explicit edge eviction/reuse retires every projection in every mount. */
   retireRecord(rowKey: string): void {
     this.removeRecord(rowKey)
     this.publish()
@@ -296,7 +297,7 @@ export class TableViewportGeometry {
   /** Invalidate live values in hidden projections too; reserves survive. */
   invalidateRows(rowKeys: readonly string[]): void {
     for (const mount of this.mounts) {
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
         for (const rowKey of rowKeys) {
           const record = this.records.get(rowKey)
           const state = mount.records[projection].get(rowKey)
@@ -318,7 +319,7 @@ export class TableViewportGeometry {
     }
     record.workReserved = true
     for (const mount of this.mounts) {
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
         const state = mount.records[projection].get(rowKey)
         if (state?.sample === undefined || state.sample === null) {
           continue
@@ -346,7 +347,7 @@ export class TableViewportGeometry {
     }
     record.workReserved = false
     for (const mount of this.mounts) {
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
         const state = mount.records[projection].get(rowKey)
         if (state !== undefined) {
           state.reserve = null
@@ -367,7 +368,7 @@ export class TableViewportGeometry {
       readonly retained: number | null
     }[] = []
     for (const mount of this.mounts) {
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
         const state = mount.records[projection].get(rowKey)
         if (state === undefined) {
           continue
@@ -463,8 +464,9 @@ export class TableViewportGeometry {
   private removeRecord(rowKey: string): void {
     this.records.delete(rowKey)
     for (const mount of this.mounts) {
-      mount.records.wide.delete(rowKey)
-      mount.records.card.delete(rowKey)
+      for (const projection of TABLE_PROJECTIONS) {
+        mount.records[projection].delete(rowKey)
+      }
     }
   }
 
@@ -482,8 +484,9 @@ export class TableViewportGeometry {
       layouts: {
         wide: this.layout(id, 'wide', 0),
         card: this.layout(id, 'card', 0),
+        tiles: this.layout(id, 'tiles', 0),
       },
-      records: { wide: new Map(), card: new Map() },
+      records: { wide: new Map(), card: new Map(), tiles: new Map() },
       tracks: null,
     }
     this.mounts.add(mount)
@@ -641,7 +644,7 @@ export class TableViewportGeometry {
       if (this.records.get(rowKey)?.reason !== null) {
         continue
       }
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of TABLE_PROJECTIONS) {
         const state = this.state(mount, rowKey, projection)
         if (state !== null) {
           records.push(state.measurement)
@@ -694,8 +697,9 @@ export class TableViewportGeometry {
       return
     }
     mount.capture = null
-    mount.records.wide.clear()
-    mount.records.card.clear()
+    for (const projection of TABLE_PROJECTIONS) {
+      mount.records[projection].clear()
+    }
     mount.tracks = null
     this.publish(mount)
   }

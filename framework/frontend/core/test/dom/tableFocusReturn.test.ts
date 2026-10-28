@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  available,
   FocusTrap,
   registerFocusReturnFallback,
 } from '../../src/dom/focusTrap.js'
@@ -26,7 +27,11 @@ function mountTable() {
   const capture = vi.fn((opener: HTMLElement) =>
     captureTableFocusReturnTarget(opener, () => state.rows),
   )
-  const dispose = registerFocusReturnFallback(root, () => search, capture)
+  const dispose = registerFocusReturnFallback(
+    root,
+    () => (available(search) ? search : root),
+    capture,
+  )
 
   return { root, search, state, capture, dispose }
 }
@@ -35,7 +40,7 @@ function mountTable() {
 function mountRow(
   root: HTMLElement,
   rowKey = 'row-1',
-  projection: 'wide' | 'card' = 'wide',
+  projection: TableFocusReturnRow['projection'] = 'wide',
   markup = '<button data-id="open" data-hilos-focus-return="change-log-open">Open</button>',
 ) {
   const part = document.createElement('div')
@@ -338,5 +343,86 @@ describe('captureTableFocusReturnTarget', () => {
     table.root.remove()
     trap.release()
     expect(document.activeElement).toBe(dialog)
+  })
+})
+
+describe('tile table logical focus return', () => {
+  it('returns to the marked tile replacement while wide and card contain the same address', () => {
+    const table = mountTable()
+    const original = mountRow(table.root, 'row-1', 'tiles')
+    table.state.rows = [original]
+    const { trap, dialog } = openFrom(original.control)
+    original.part.remove()
+    const wide = mountRow(table.root, 'row-1', 'wide')
+    const card = mountRow(table.root, 'row-1', 'card')
+    const tile = mountRow(table.root, 'row-1', 'tiles')
+    wide.part.hidden = true
+    card.part.setAttribute('inert', '')
+    table.state.rows = [wide, card, tile]
+    expect(document.activeElement).toBe(dialog)
+    trap.release()
+    expect(document.activeElement).toBe(tile.control)
+  })
+
+  it.each(['wide', 'card'] as const)(
+    'uses search when only a %s replacement has the tile marker',
+    (projection) => {
+      const table = mountTable()
+      const original = mountRow(table.root, 'row-1', 'tiles')
+      table.state.rows = [original]
+      const { trap } = openFrom(original.control)
+      original.part.remove()
+      table.state.rows = [mountRow(table.root, 'row-1', projection)]
+      trap.release()
+      expect(document.activeElement).toBe(table.search)
+    },
+  )
+
+  it.each([
+    'missing',
+    'ambiguous',
+    'hidden',
+    'inert',
+    'disabled',
+    'detached',
+  ] as const)(
+    'uses search for an unavailable or ambiguous tile: %s',
+    (state) => {
+      const table = mountTable()
+      const original = mountRow(table.root, 'row-1', 'tiles')
+      table.state.rows = [original]
+      const { trap } = openFrom(original.control)
+      original.part.remove()
+      const replacement = mountRow(table.root, 'row-1', 'tiles')
+      table.state.rows = [
+        mountRow(table.root, 'row-1', 'wide'),
+        mountRow(table.root, 'row-1', 'card'),
+        ...(state === 'missing' ? [] : [replacement]),
+      ]
+      if (state === 'ambiguous') {
+        replacement.part.append(replacement.control.cloneNode(true))
+      }
+      if (state === 'hidden') replacement.part.hidden = true
+      if (state === 'inert') replacement.part.setAttribute('inert', '')
+      if (state === 'disabled') replacement.control.disabled = true
+      if (state === 'detached') replacement.part.remove()
+      trap.release()
+      expect(document.activeElement).toBe(table.search)
+    },
+  )
+
+  it('uses the stable table root when the tile departed and search is hidden', () => {
+    const table = mountTable()
+    const original = mountRow(table.root, 'row-1', 'tiles')
+    table.state.rows = [original]
+    const { trap } = openFrom(original.control)
+    original.part.remove()
+    table.state.rows = [
+      mountRow(table.root, 'row-1', 'wide'),
+      mountRow(table.root, 'row-1', 'card'),
+    ]
+    table.search.hidden = true
+    trap.release()
+    expect(document.activeElement).toBe(table.root)
   })
 })

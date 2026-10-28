@@ -160,6 +160,42 @@ const offeredWithColumns: readonly HilosTableSortOrder[] = [
 ]
 
 describe('hilosTableOrderViews', () => {
+  it.each([{ composites: [] }, { composites: declared }])(
+    'offers the entire unchanged menu without headers %#',
+    ({ composites }) => {
+      const currentColumns = columns.map((column) => ({
+        ...column,
+        source: 'product',
+      }))
+      const offered = [
+        ...hilosTableColumnOrders(currentColumns),
+        ...hilosTableOfferedOrders(composites),
+      ]
+      const table = hilosTableOrderViews(
+        offered,
+        byDate,
+        byChannel,
+        currentColumns,
+        new Set(['product']),
+      )
+      const tiles = hilosTableOrderViews(
+        offered,
+        byDate,
+        byChannel,
+        currentColumns,
+        new Set(['product']),
+        false,
+      )
+      expect(tiles).toEqual(
+        table.map((item) => ({ ...item, narrowOnly: false })),
+      )
+      expect(table.some(({ narrowOnly }) => narrowOnly)).toBe(true)
+      expect(hilosTableOrderMenuNarrowOnly(tiles)).toBe(false)
+      expect(tiles.every(({ stale }) => stale)).toBe(true)
+      expect(tiles.map(({ key }) => key)).toEqual(table.map(({ key }) => key))
+    },
+  )
+
   it('offers nothing at all to a table with neither a sortable column nor a composite order', () => {
     expect(
       hilosTableOrderViews([], byDate, byDate, columns, emptyStale),

@@ -8,7 +8,9 @@ import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { type HilosTableColumn } from '../../src/table/hilosTableColumn.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
 import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
-import { createSignal } from '../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
+import { hilosTableCard } from '../../src/table/tableCard.js'
+import { type HilosTableViews } from '../../src/table/tableView.js'
 import {
   HILOS_TABLE_FACET_OPTION_LIMIT,
   type HilosTableFilterOption,
@@ -101,6 +103,238 @@ const backupsFrame: HilosTableFrame = {
 }
 
 describe('TableViewportController frame declaration', () => {
+  const views: HilosTableViews = {
+    tableKey: 'products',
+    order: ['table', 'tiles'],
+    imageColumn: 'picture',
+  }
+
+  it('defaults to table without opting into tiles', () => {
+    const { controller } = makeController(backupsFrame)
+    expect(controller.frame.view.get()).toBe('table')
+    expect(controller.frame.tileCard.get()).toBeNull()
+    expect(controller.frame.imageColumn.get()).toBeNull()
+    expect(() => controller.setView('tiles')).toThrow(TypeError)
+    expect(() => controller.setView('table')).not.toThrow()
+    controller.dispose()
+  })
+
+  it.each<{ order: HilosTableViews['order'] }>([
+    { order: ['table', 'tiles'] },
+    { order: ['tiles', 'table'] },
+  ])('opens in the first declared view $order', ({ order }) => {
+    const { controller } = makeController({
+      columns: [{ key: 'picture', label: 'Picture' }],
+      views: { ...views, order },
+    })
+    expect(controller.frame.view.get()).toBe(order[0])
+    controller.setView(order[1])
+    expect(controller.frame.view.get()).toBe(order[1])
+    expect(() => controller.setView('grid' as 'tiles')).toThrow(TypeError)
+    controller.dispose()
+  })
+
+  it('rejects an invalid views declaration before registering effects', () => {
+    expect(() => makeController({ columns: [], views })).toThrow(TypeError)
+  })
+
+  it('derives tiles without the image while preserving columns, rendered keys and the ordinary card', () => {
+    const initial: readonly HilosTableColumn[] = [
+      { key: 'picture', label: 'Picture', reads: ['imageUrl'] },
+      { key: 'name', label: 'Name' },
+      { key: 'state', label: 'State', card: 'badge' },
+      { key: 'price', label: 'Price', card: 'field' },
+      { key: 'hidden', label: 'Hidden', card: 'hidden' },
+      { key: 'description', label: 'Description', detail: true },
+      { key: 'actions', label: '', reads: [] },
+    ]
+    const columns = createSignal(initial)
+    const sentRendered: (readonly string[])[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => undefined,
+      sendRendered: (keys) => sentRendered.push(keys),
+      frame: { columns: () => columns.get(), views },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const rendered = controller.descriptor()?.rendered
+    expect(rendered).toEqual([
+      'picture',
+      'imageUrl',
+      'name',
+      'state',
+      'price',
+      'hidden',
+      'description',
+    ])
+    expect(controller.frame.columns.get()).toBe(initial)
+    expect(controller.frame.card.get()).toEqual(hilosTableCard(initial))
+    expect(controller.frame.card.get().title).toBe(initial[0])
+    expect(controller.frame.imageColumn.get()).toBe(initial[0])
+    expect(controller.frame.tileCard.get()).toEqual({
+      title: initial[1],
+      badge: initial[2],
+      fields: [initial[3]],
+      actions: initial[6],
+    })
+    controller.setView('tiles')
+    expect(controller.frame.columns.get()).toBe(initial)
+    expect(controller.descriptor()?.rendered).toBe(rendered)
+    const next = initial.map((column) => ({
+      ...column,
+      label: `${column.label}!`,
+    }))
+    columns.set(next)
+    expect(controller.frame.imageColumn.get()).toBe(next[0])
+    expect(controller.frame.tileCard.get()?.title).toBe(next[1])
+    expect(controller.frame.card.get()).toEqual(hilosTableCard(next))
+    expect(sentRendered).toEqual([])
+    controller.dispose()
+  })
+
+  it('validates the image column on every dynamic columns update', () => {
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'picture', label: 'Picture' },
+    ])
+    const { controller } = makeController({
+      columns: () => columns.get(),
+      views,
+    })
+    expect(() => columns.set([])).toThrow(TypeError)
+    expect(() =>
+      columns.set([{ key: 'picture', label: 'Picture', detail: true }]),
+    ).toThrow(TypeError)
+    const picture = { key: 'picture', label: 'New picture' }
+    columns.set([picture])
+    expect(controller.frame.imageColumn.get()).toBe(picture)
+    controller.dispose()
+    expect(() => columns.set([])).not.toThrow()
+  })
+
+  it('changes only the view with no sends or new window/row identities', () => {
+    const sent: TableViewportDescriptor[] = []
+    const rendered: (readonly string[])[] = []
+    const focused: string[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (keys) => rendered.push(keys),
+      sendFocus: (key) => focused.push(key),
+      frame: {
+        ...backupsFrame,
+        columns: [
+          { key: 'picture', label: 'Picture' },
+          { key: 'name', label: 'Name', sortable: true, heightContent: 'text' },
+          { key: 'description', label: 'Description', detail: true },
+        ],
+        rowHeight: { mode: 'lines', count: 3 },
+        views,
+      },
+    })
+    const row = { rowKey: 'a', slots: {} }
+    controller.ingestWindow([row], 30, true, { id: 1 }, { id: 1 }, 10)
+    controller.setSearch('camera')
+    controller.setFilter('kind', 'full')
+    controller.setOrder([{ field: 'name', direction: 'desc' }])
+    controller.nextPage()
+    controller.ingestWindow([row], 30, true, { id: 1 }, { id: 1 }, 10)
+    controller.selectRow('a', true)
+    controller.expandRow('a', true)
+    controller.focusRow('a')
+    const registration = controller.geometry.register(() => ({ records: [] }))
+    const record = registration.measurement('a', 'wide')!.record
+    controller.expandText(record, 'name', true)
+    controller.ingestDelta({ kind: 'row_moved', rowKey: 'a', row, position: 1 })
+    controller.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'export',
+      current: 1,
+      total: 2,
+    })
+
+    const before = {
+      rows: controller.rows.get(),
+      filter: controller.filter.get(),
+      search: controller.search.get(),
+      order: controller.order.get(),
+      footer: controller.frame.footer.get(),
+      selection: controller.selection.target.get(),
+      progress: controller.progress.rows.get(),
+      text: controller.expandedText.get(),
+      focus: controller.focusedRow.get(),
+      pending: controller.pendingCount.get(),
+      descriptor: controller.descriptor(),
+      sends: [sent.length, rendered.length, focused.length],
+    }
+    expect(before.rows[0]).toMatchObject({
+      pending: 'move',
+      selected: true,
+      expanded: true,
+    })
+    expect(before.filter).toEqual({ search: 'camera', kind: 'full' })
+    expect(before.pending).toBe(1)
+    expect(before.progress.get('a')?.fraction).toBe(0.5)
+    expect(before.footer.page).toBe(1)
+    expect(before.text.get(record.occurrence)?.has('name')).toBe(true)
+    const changes: string[] = []
+    const unsubscribe = subscribeSignal(controller.frame.view, (view) =>
+      changes.push(view),
+    )
+    controller.setView('tiles')
+    controller.setView('tiles')
+    expect(changes).toEqual(['tiles'])
+    expect(controller.rows.get()).toBe(before.rows)
+    expect(registration.measurement('a', 'wide')?.record).toBe(record)
+    expect(controller.filter.get()).toBe(before.filter)
+    expect(controller.search.get()).toBe(before.search)
+    expect(controller.order.get()).toBe(before.order)
+    expect(controller.frame.footer.get()).toBe(before.footer)
+    expect(controller.selection.target.get()).toBe(before.selection)
+    expect(controller.progress.rows.get()).toBe(before.progress)
+    expect(controller.expandedText.get()).toBe(before.text)
+    expect(controller.focusedRow.get()).toBe(before.focus)
+    expect(controller.pendingCount.get()).toBe(before.pending)
+    expect(controller.descriptor()).toEqual(before.descriptor)
+    expect(controller.descriptor()?.rendered).toBe(before.descriptor?.rendered)
+    expect([sent.length, rendered.length, focused.length]).toEqual(before.sends)
+    expect(
+      controller.frame.orders.get().every(({ narrowOnly }) => !narrowOnly),
+    ).toBe(true)
+    controller.setView('table')
+    expect(
+      controller.frame.orders.get().every(({ narrowOnly }) => narrowOnly),
+    ).toBe(true)
+    unsubscribe()
+    controller.dispose()
+  })
+
+  it('keeps the chosen view across refusal, resets and fresh windows', () => {
+    const { controller, open } = makeController({
+      columns: [{ key: 'picture', label: 'Picture' }],
+      views,
+    })
+    open([{ rowKey: 'a', slots: {} }], 1)
+    controller.setView('tiles')
+    controller.ingestRefusal('internal_error')
+    expect(controller.frame.view.get()).toBe('tiles')
+    controller.resetWindowRequests()
+    controller.resetFilters()
+    expect(controller.frame.view.get()).toBe('tiles')
+    open([{ rowKey: 'b', slots: {} }], 1)
+    expect(controller.frame.view.get()).toBe('tiles')
+    controller.dispose()
+    controller.setView('table')
+    expect(controller.frame.view.get()).toBe('tiles')
+  })
+
   it('normalizes omission without changing columns, rendered keys or the wire descriptor', () => {
     const columns = [{ key: 'name', label: 'Name', reads: ['description'] }]
     const { controller: legacy, open: openLegacy } = makeController({ columns })

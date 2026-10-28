@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "1359d05102c217fc5f898e52b4fe5843c38d229599a73db14b3baa83650870d6",
-    "outputSha256": "b306bdbca10387cbd6699468741ceb1f54583088a8e3db1e27ed61eed1abc08d"
+    "sourceSha256": "32235528e310451f58ba572fc98f92e327ac5a2708f23fd1f08dbdd6e62302e7",
+    "outputSha256": "a7e14d72589591208df1cd8ada9cd0eaebeab5a7d4493f89b6082486bf4ecb90"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "812f2e14ea7c7f7bd550aed89cc945d74858a4961c6d7f506c017094099b0edc",
@@ -112,8 +112,8 @@
     "outputSha256": "7088ec6c4e928ba0904382490519c65c6b60ef3879b84018e0c8d6315bf54303"
   },
   "src/browser/browserValues.ts": {
-    "sourceSha256": "cec849df21c29769db512c1ba161300f0e182349bd7f849399692f1651854273",
-    "outputSha256": "36d4c108c876a375f006eef12cb13590560fbe36ee15deb28f5202e6f23eb3db"
+    "sourceSha256": "bd6808ba585694ee0c6b452362dee531544af74547fea6e636d908d34b396514",
+    "outputSha256": "75eb3afb054f9e8df7e3a4743a3fe3686e18d56364d56edaee4b29fdcbb68707"
   },
   "src/conflict/rowEdit.ts": {
     "sourceSha256": "9237b8928cb4d334ba7a6692fc1e3d250c10f4ec6fe06d710fe8f57f3afea05b",
@@ -208,7 +208,7 @@
     "outputSha256": "9b7be50aa89dd54f68b577d9ac8a09cfbd099660ae24738a02f674b556e2a25a"
   },
   "src/dom/tableFocusReturn.ts": {
-    "sourceSha256": "d148310392f4a4d10b7c5925f5abaf3ae6ac8443bcb66159bf3a23894e04ed7f",
+    "sourceSha256": "3f43dab946eb5b9d09a71c0f02902bdc6b6170aefe6d669e6da211792420c63b",
     "outputSha256": "a41c55db757be0e7e342952180535f1c95f608e7e5fa3a3f03c2f489eb293011"
   },
   "src/format/bytes.ts": {
@@ -628,8 +628,8 @@
     "outputSha256": "82a42ce7b51b795b737601842d5b7a48514b3b6f898bcdb3870a9d443e44b39c"
   },
   "src/table/TableViewportController.ts": {
-    "sourceSha256": "7c5dc9c02abadfbae85c8fe6292427714cd71b3abc36ad1657670d83d1804ee5",
-    "outputSha256": "864470847135ac20c44af659b6ae0f60ddec7c9cb9219582d99cba705bed1a1d"
+    "sourceSha256": "0fbfc4d8dffc33aa61c2525e29283cda1ff00338bae82cb8bbde892bc9d695bf",
+    "outputSha256": "a9597e7d867655a8d40be3aeae733e529fd9c1d8d4165a90e23625df3eeddcc3"
   },
   "src/table/hilosTableColumn.ts": {
     "sourceSha256": "30ae4f7d042525888bc00ca9916ed291ae4adc9c5461b5bd9c317a385004776e",
@@ -648,7 +648,7 @@
     "outputSha256": "fa7bd59ebc54cd70419e716ada3bf337595b407986ae64f4bdffabc02fe7c80d"
   },
   "src/table/tableFrame.ts": {
-    "sourceSha256": "9cb655d075c6f44462c4316f32285e94cfa2faa10887c7584b5e5314c9c5fd29",
+    "sourceSha256": "47ac56aac46dce94e3e1fb09a233ccaf160c21af02b53dd5e3bb04c0e57c7a54",
     "outputSha256": "41e953ffda9087963b819617e064367243868a20266cb214a0f7810cd315b751"
   },
   "src/table/tableFrozen.ts": {
@@ -672,8 +672,8 @@
     "outputSha256": "a06b065c28b56f8547d1c2b5309dfba9f0c02c5e02c55c0d854ecdc3626aa786"
   },
   "src/table/tableSortOrder.ts": {
-    "sourceSha256": "00a045ca32fab39d0fecc2a9039981bf418fbe4b1797b6bf5287ca4511814f35",
-    "outputSha256": "916617d26ab013a59518e307149f70d3cd9adcdaea9122fa58f2d797f59881c0"
+    "sourceSha256": "98ef29d1047985cb0281535f8abb845fe9be38caa548a96b15ad85450d16dfd6",
+    "outputSha256": "aaee7ab67937c9c066084ea41310de204c83deb8a5cb284c4207c9613978a7ca"
   },
   "src/table/tableStaleness.ts": {
     "sourceSha256": "1efab036ad2bd2db6bcca6976002c2a96d7db186930a05dc6fdb45a641d40793",
@@ -687,9 +687,17 @@
     "sourceSha256": "5b8a4e8572af1b45bf5242c84571a3099d4ea04726736b4d6cca3241a0a79d3e",
     "outputSha256": "0620b819b6299c35daa990044d49905d6e2c9c2b1646d71cac254cf82d536225"
   },
+  "src/table/tableView.ts": {
+    "sourceSha256": "7f07d68bdfac9de062e87767b361933ab630b3007bab6e8c5fd3aa38686fd7d2",
+    "outputSha256": "92264b9f3899615d1f9a0590bc5c8d7d5af06117a69ecf92bd15626f7752ce7c"
+  },
+  "src/table/tableViewPreference.ts": {
+    "sourceSha256": "f15ffa03c625aa97904b63b2e89ab90bc6275b18bbb7d0b29f8b4d06d3ff428f",
+    "outputSha256": "e5bf09904d7b838d0964b453be05e4528d37ae3bdc371c0fbbb56486929ae7e3"
+  },
   "src/table/tableViewportGeometry.ts": {
-    "sourceSha256": "1ee6d39b5c5e6e126903d3421649f8d22f5bb599ec513c7a69e3f3bfa1ba16c4",
-    "outputSha256": "21e3fe71d5d58a5a991dd7866fe150d6f3955e5776ce04f51cd2ec6e2be94601"
+    "sourceSha256": "66c4398f6a617de5e93aa654ed40131be3efb52b141671631e043a8e439fbb96",
+    "outputSha256": "d08312009b33aeb3b695ea8978d3f707457a1f6239b02528f0397bc7d0413ca3"
   },
   "src/theme/themeBrowser.ts": {
     "sourceSha256": "c2a17d303ce05c4aafa6ef4c1059b3dfa618173e422f2bb3b091bca48f47f42e",

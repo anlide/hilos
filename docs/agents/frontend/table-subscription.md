@@ -225,15 +225,16 @@ and [`bindTableViewport`](../../../framework/frontend/core/src/subscription/bind
 
 ## What the page declares
 
-> **The declaration below is drawn by all three views.** Vue, React, and Angular
-> render the bar and the footer from it, with the order menu in the bar, the page
-> numbers in the footer and the place of a column in a composite order on its
-> header, and the one room of live messages above the rows with the row tint and
-> the waiting marks beside it, the bar of work under a row and the project's
-> places next to running work, the cards a table becomes on a narrow
-> screen, the panel a row and a card expand into, and the states of the body —
-> the skeleton of a late window and the two worded empty states, and the marks of
-> a quiet source on headers, on the row-state cell and on the head of a card.
+> **The shared table declaration feeds all three view kits, with per-kit
+> implementation boundaries.** Vue, React, and Angular render its bar and
+> footer: the order menu, page numbers, composite-order position on a header,
+> live-message room and row tint, waiting marks, row work and project places,
+> responsive cards, expandable detail, body states, and stale-source marks. The
+> optional `views` API below adds a Tiles renderer and browser preference in Vue;
+> React's Tiles UI is future work (not in the code yet — HIL-1761), as is
+> Angular's (not in the code yet — HIL-1762). React's built text and parts
+> renderer is described under “Declared text height and reading” and remains
+> built.
 
 **The page declares; the view draws.** The framework owns the whole bar above the
 table and the whole footer below it, and a page that wants a title, a filter, or
@@ -254,6 +255,7 @@ so a table cannot be built without its declaration.
 | `filters` | the filters offered in the bar, each a dropdown, a date range, or a toggle |
 | `mainAction` | the one button at the right of the bar, offered again by the empty state |
 | `columns` | the columns, in display order |
+| `views` | opt in to the shared `table` and `tiles` views of the same window; see “The table and Tiles views” below |
 | `bulkActions` | the operations offered for the marked rows — key, label, danger |
 | `empty` | what the table says when it is empty and nothing is filtering it |
 | `filteredEmpty: 'page'` | opt in to the page's empty content also under a filter; the default remains the framework's "Nothing found" |
@@ -268,7 +270,7 @@ array. The callback may call a page `ReadonlySignal.get()`; the controller then
 reads it reactively as the page header changes. A search placeholder likewise
 accepts fixed text or a callback returning current text. The controller exposes
 resolved `columns`, `card`, and `searchPlaceholder` signals in its frame state;
-the three views draw from these instead of reading the declaration again. Its
+the three view kits draw from these instead of reading the declaration again. Its
 offered orders, rendered fields, filter controls, and facet option declarations
 follow the same resolved arrays. If a filter disappears or its selected option
 vanishes, its value is cleared. If an active column order disappears, the window
@@ -385,8 +387,8 @@ header, the column order, and sorting never read it.
 
 The layout is derived from the resolved columns and read off the
 `frame.card` signal — when dynamic columns change with the page header, the
-card layout follows. Drawing the card is a view's job, all three views draw it,
-and what follows is what drawing it means.
+card layout follows. Drawing the card is a view's job, all three view kits draw
+it, and what follows is what drawing it means.
 
 **Which branch is seen is a matter of Bootstrap's visibility utilities, not of
 JavaScript.** The table carries `d-none d-md-block` and the cards `d-md-none`, so
@@ -445,7 +447,7 @@ without a wrapper and without spacing utilities (`me-*`, `ms-*`): a wrapper in
 the card becomes a single row item, and an outer margin eats away the width share
 of every button but the last.
 
-The contract is one in all three views — one piece of content per column, keyed
+The contract is one across the three view kits — one piece of content per column, keyed
 by the column, content only — and only the way a view takes a piece of content
 is its own (multiframework-core.md, the slot seam). Vue takes a named slot per
 column, `#cell-<key>`. React takes a map of renderers by column key, the prop
@@ -480,6 +482,138 @@ The declaration carries no counts beside its options — those are the table's t
 take, and they arrive on a frame of their own ("Facet counts" below) — and no
 executor for a bulk action: what an operation does to each row, and how it names
 the ones it left alone, is the bulk-action contract below.
+
+### The table and Tiles views
+
+`HilosTableView` in
+[`tableView.ts`](../../../framework/frontend/core/src/table/tableView.ts)
+names exactly two layouts, `'table'` and `'tiles'`; the
+responsive card remains the narrow-screen projection of `'table'`, not a third
+view choice. The optional `HilosTableFrame.views` declaration has this shape:
+
+```ts
+interface HilosTableViews {
+  readonly tableKey: string
+  readonly order: readonly ['table', 'tiles'] | readonly ['tiles', 'table']
+  readonly imageColumn: string
+}
+```
+
+`tableKey` is a non-empty, stable identity for this table in the application. It
+is not a row key, route/URL, or entity-instance key. `order` lists both views and
+its first entry is the opening default. `imageColumn` names an ordinary declared
+column that supplies each tile's picture; it cannot name the actions or a detail
+column. The validator signature is
+`hilosTableViews(value: unknown, columns: readonly HilosTableColumn[]): HilosTableViews | undefined`.
+It checks the declaration against the currently resolved columns and throws
+`TypeError` for an invalid key, order, or picture column. Dynamic column
+results pass the same validation.
+
+`HilosTableFrame` declares the optional `readonly views?: HilosTableViews`.
+The controller exposes
+`frame.view: ReadonlySignal<HilosTableView>`,
+`frame.tileCard: ReadonlySignal<HilosTableCard | null>`, and
+`frame.imageColumn: ReadonlySignal<HilosTableColumn | null>`. With no `views`
+declaration, the only available view is `'table'`, and `tileCard` and
+`imageColumn` are `null`. With `views`, `tileCard` is derived by the same
+`hilosTableCard()` helper as `frame.card`, after removing only `imageColumn`;
+`frame.columns` and the rendered-column list still contain the picture column.
+The table keeps its original columns and renderer payload in either view.
+
+`controller.setView(view: HilosTableView): void` changes this controller's
+local presentation signal. It throws `TypeError` for a view the table did not
+declare and does nothing when the value is already selected. The initial value
+is `views.order[0]`, or `'table'` without a declaration. Switching views does
+not call `sendViewport()`, `sendRendered()`, `apply()`, `reset()`, or
+`setOrder()`, replace the window, or reset its generation, occurrences, filters,
+search, order, page, selection, progress, pending changes, detail expansion, or
+expanded-text intent. A refusal, reset, or new window also leaves the selected
+view in place.
+
+`hilosTableOrderViews()` in
+[`tableSortOrder.ts`](../../../framework/frontend/core/src/table/tableSortOrder.ts)
+takes the optional last argument
+`hasColumnHeaders = true`. The controller passes `true` for the table view, which
+preserves the existing narrow-only treatment for single-column menu entries.
+Tiles has no column headers, so it passes `false`: every order-menu item is
+available at every width. The menu still offers the same orders in the same
+order; `hilosTableOrderMenuNarrowOnly()` keeps its existing behavior, and
+changing views does not sort rows in the browser.
+
+The core root and existing `/base` entry re-export `HilosTableView`,
+`HilosTableViews`, `TABLE_VIEW_COPY`, and `hilosTableViews` from their one source
+module. `TABLE_VIEW_COPY` is the shared copy (`Table`, `Tiles`, `Table view`, and
+`No image`); its catalog is marked for i18n. The same entries expose
+`TABLE_VIEW_STORAGE_KEY`, `TABLE_VIEW_BROWSER_VALUE`, and
+`bindTableViewPreference(controller): () => void` from the preference module;
+no package entry point or duplicate implementation is added.
+
+#### The browser preference
+
+The selected view is a browser-only preference registered beside its writer as
+`TABLE_VIEW_BROWSER_VALUE` in
+[`tableViewPreference.ts`](../../../framework/frontend/core/src/table/tableViewPreference.ts)
+and included in `HILOS_BROWSER_VALUES` from
+[`browserValues.ts`](../../../framework/frontend/core/src/browser/browserValues.ts),
+with the privacy label
+“Your table views in this browser.” Its `localStorage` key is
+`hilos.table.views`, and its value is one versioned document with an independent
+entry for each `tableKey`:
+
+```json
+{"version":1,"views":{"orders-table":"tiles"}}
+```
+
+It stores only table keys and view names: no rows, images, user identity,
+permissions, secrets, URLs, or query parameters. The normal browser-value erase
+includes this key; the table feature adds no separate privacy control.
+`bindTableViewPreference()` is
+browser-only and is called after mount for a controller with `views`. It reads
+through the safe `browserStorage()` accessor rather than during module
+evaluation, SSR, or render. Missing, corrupt, unsupported, or inaccessible
+storage means no restored choice; denied reads and writes leave the selection
+usable in memory. A successful restore happens before the signal subscription,
+and neither that restore nor the opening default writes storage. Subsequent
+explicit choices update this table's entry while preserving other valid table
+entries.
+
+The preference registers a callback with `onBrowserValueErased(listener)` from
+[`browserValueChanges.ts`](../../../framework/frontend/core/src/browser/browserValueChanges.ts);
+the callback compares `key` with `TABLE_VIEW_STORAGE_KEY` and resets the current mount to
+`views.order[0]` without writing that reset back. A native `storage` event for
+removal of this key or `clear()` has the same effect. A normal view choice in
+another tab does not switch an already open mount; the next mount reads the latest
+stored choice. Cleanup removes the signal and erase subscriptions and the
+storage listener. Bindings belong to a mount; there is no module-level
+controller registry. Vue binds after mount, cleans up on unmount, and releases
+the old binding when its controller is replaced, so a former `tableKey` cannot
+be written by the new table.
+
+#### Vue's Tiles renderer
+
+Vue's [`HilosTableBar`](../../../framework/frontend/vue/src/HilosTableBar.vue)
+places the same native `type="button"` group in both bar branches. The group has
+`role="group"`, is named by `TABLE_VIEW_COPY.group`, and uses `aria-pressed` for
+each choice; its choices follow `views.order`. Choosing `'tiles'` shows the grid
+while the table and its
+responsive cards are hidden. The grid uses Bootstrap's `row row-cols-2
+row-cols-md-3 row-cols-xl-4 g-3`: two, three, then four columns. Choosing
+`'table'` restores the existing wide table or responsive card at the usual
+Bootstrap breakpoint.
+
+Each tile in
+[`HilosViewportTable`](../../../framework/frontend/vue/src/HilosViewportTable.vue)
+uses the shared
+[`HilosTableRecordCard`](../../../framework/frontend/vue/src/HilosTableRecordCard.vue)
+renderer and the ordinary
+`#cell-<imageColumn>` content for its image. The picture occupies Bootstrap's
+4:3 ratio frame; when the page supplies no renderer, the same frame says “No
+image.” Removing the image column from `tileCard` prevents that picture from
+also appearing as the tile title or a body field, while the table continues to
+draw it in its ordinary column. Tile body fields, actions, selection, details,
+expanded text, row work, pending marks, and row messages continue to use the
+same controller and slots as the table/card branches. This is one window with a
+different local projection, not a second table subscription.
 
 ### The panel a row expands into
 
@@ -542,7 +676,7 @@ is left in that slot is a placeholder.
 row has a panel — the same declared fields for each. A table whose panel would be
 empty on some rows says which ones have something, with the controller option
 `expandable: (row) => boolean` over the resolved row; each displayed row carries
-the answer as `expandable`, and the three views draw the control only where it is
+the answer as `expandable`, and the three view kits draw the control only where it is
 true, in the row and in the card alike. `expandRow()` refuses to open such a row.
 A row that STOPS being expandable while open — a live update took its last
 correction away — closes, and its key leaves the open set at once: when the row
@@ -809,12 +943,33 @@ Apply resolves exactly those two, on the rows already shown:
   placeholder over a set that still has live rows elsewhere stays too.
 
 The retained geometry covers the **complete record footprint** in each mounted
-projection. The wide projection includes the main row, work, detail, and all
-gaps; the card projection includes the whole card, including its border, padding,
-and external gap once, preserving fractional CSS pixels. Vue, React, and Angular
-keep a permanent state room and the full used wide colgroup under fixed layout;
-inert stale-mark holders in the header and state/detail room preserve their
-tracks, while card geometry stays independent. Angular uses the internal
+projection. The shared `TableProjection` type is `wide | card | tiles`, and one
+`TableViewportController` owns their numeric records and layouts by mount,
+window, occurrence, and projection. Vue registers all three projections;
+React and Angular currently register `wide` and `card`. Only `wide` owns
+`TableColumnTracks`, so Tiles never changes table-column widths. The wide
+projection includes the main row, work, detail, and all gaps; the card
+projection includes its whole card, border, padding, and outside gap once,
+preserving fractional CSS pixels. `TableProjection` is re-exported by the
+existing core root and `/base` entries from
+[`tableViewportGeometry.ts`](../../../framework/frontend/core/src/table/tableViewportGeometry.ts);
+it is a DOM projection type, not a server contract.
+
+The Vue tile's main measurement is its complete card, including the image frame
+and body. Work and detail are read inside that card and counted once in the
+record extent; the card's outside margin and the surviving Bootstrap grid
+column's vertical `g-3` gutter are each included once. On departure the live
+image, slot values, work, details, and controls leave with the row. Only the
+reason and numeric allocation remain. A hidden or zero-size tile has no usable
+measurement and cannot overwrite the last allocation. The tile's inert generic
+fallback supplies the body reserve when no live measurement exists.
+
+Vue, React, and Angular keep their wide/card state rooms and the full used wide
+colgroup under fixed layout; inert stale-mark holders in the header and
+state/detail room preserve those tracks, while card geometry stays independent.
+Vue adds a separate tile state room. React and Angular's geometry adapters stay
+on their existing wide/card layouts until their Tiles renderers are built.
+Angular uses the internal
 [`createTableViewportGeometry`](../../../framework/frontend/angular/src/tableViewportGeometry.ts)
 adapter; [`HilosTableGeometryTarget`](../../../framework/frontend/angular/src/HilosTableGeometryTarget.ts)
 binds real nodes to owner-issued occurrences, and
@@ -863,24 +1018,45 @@ The mounted Vue
 and React
 [`useTableViewportGeometry`](../../../framework/frontend/react/src/useTableViewportGeometry.ts)
 hooks own their native DOM refs and observers and release them with the mount.
-Angular uses a per-controller internal adapter; its synchronous capture still
-runs through the controller's existing `geometry`/`withPresentationUpdate`
-boundary before destructive publication. `HilosViewportTable` commits the
-rendered root, table, and column-track keys from `afterRenderEffect`, while
-`ResizeObserver` refreshes the live cache after publication. Adapter disposal
-releases its geometry registration, observers, listeners, and focus fallback
-when the controller is replaced or the table is unmounted.
+Vue's hook observes the tile image/body, work, and detail parts. Angular uses a
+per-controller internal adapter; its synchronous capture still runs through
+the controller's existing `geometry`/`withPresentationUpdate` boundary before
+destructive publication. `HilosViewportTable` commits the rendered root, table,
+and column-track keys from `afterRenderEffect`, while `ResizeObserver` refreshes
+the live cache after publication. Adapter disposal releases its geometry
+registration, observers, listeners, and focus fallback when the controller is
+replaced or the table is unmounted.
 A hidden or zero-size projection supplies no measurement and does not reveal
 departed content. Inert measurement holders contain no row data, IDs, or
-focusable controls. When departure removes the active control, focus returns to
-a visible search or otherwise the table root; a focus choice made during the
-update is preserved. Static fallback geometry lives in the sanctioned Vue
+focusable controls. DOM focus return is separate from the server's `focusRow()`
+hold. `captureTableFocusReturnTarget()` in
+[`tableFocusReturn.ts`](../../../framework/frontend/core/src/dom/tableFocusReturn.ts)
+uses an explicit `data-hilos-focus-return` marker and the current row plus its
+projection as the logical address. It resolves only one available matching
+control in that same projection. If that projection is hidden after a switch to
+Tiles, or the target disappears or is ambiguous, the hidden table/card does not
+receive focus: focus returns to the visible search or otherwise the table root.
+A focus choice made during the update is preserved. The projection identity and
+DOM marker are browser-local and add no server signal, route, or DTO contract.
+Static fallback geometry lives in the sanctioned Vue
 [`hilos-styles.scss`](../../../framework/frontend/vue/src/hilos-styles.scss) and
 React [`hilos-styles.scss`](../../../framework/frontend/react/src/hilos-styles.scss)
 files and Angular's
 [`hilos-styles.scss`](../../../framework/frontend/angular/src/hilos-styles.scss),
 while validated fractional measurements pass through numeric CSS custom
-properties.
+properties. For Tiles, the Vue Sass rule subtracts the current card-body padding,
+borders, and surviving grid gutter from the retained number exactly once; it
+does not reuse the card rule's `mb-2` subtraction. The generic fallback keeps
+the same shell and gutter. Bootstrap supplies the grid, 4:3 ratio frame, and
+spacing; only measured numeric values travel through `--hilos-*` properties.
+
+The Vue layout signature reads the tile's actual width and the number of grid
+columns from DOM boxes, along with font, zoom, and spacing. It does not infer
+columns from a breakpoint query. A view or width change, font completion, and
+image load invalidate and measure the current layout after Vue commits it. Each
+observer ticket and record reader remains tied to its controller mount,
+window/occurrence, and projection; callbacks held by a replaced controller or
+old record cannot publish a measurement into the new presentation.
 
 Search, filter, order, page, Show, and refresh invalidate the prior window
 appearance. Replacement snapshots, reconnects, refusals, and resets replace its
@@ -905,11 +1081,15 @@ an arrival under search may update the count only. A
 `table_viewport_announce` changes only the count and the live room; Show requests
 a new window, and Apply does not Show.
 
-The shared core retention/ingress mechanism and Vue, React, and Angular DOM
-geometry are built. The shared core also declares and validates text-height
-policies. Vue and React render the declared text and parts regions. Angular
-shares the Sass catalog and full-footprint geometry; its text renderer is still
-future work (not in the code yet — HIL-1754).
+The shared core retention/ingress mechanism and independent wide/card/tiles
+geometry owner are built. Vue renders and measures all three projections;
+React and Angular render and measure their existing wide/card projections, with
+their Tiles UIs still future work as marked above. The shared core also declares
+and validates text-height policies. Vue and React render the declared text and
+parts regions. Angular shares the Sass catalog and full-footprint wide/card
+geometry; its text renderer is still future work (not in the code yet —
+HIL-1754). The already built React text/parts renderer remains separate from its
+future Tiles view.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from
@@ -1579,21 +1759,29 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-order-<columnKey>-desc` — the order of one column, offered below md
   alone, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
-  the one key no table declares: `hilos-table-order-opening`;
+  the one key no table declares: `hilos-table-order-opening`; when `views` is
+  declared, `hilos-table-view` names the native button group and
+  `hilos-table-view-table` / `hilos-table-view-tiles` name its choices in both
+  bar branches;
 - **rows:** `hilos-table-row-<rowKey>`, `hilos-table-cards` — the container of
-  the card branch, `hilos-table-card-<rowKey>`, `hilos-table-expand-<rowKey>`,
-  `hilos-table-row-detail-<rowKey>`, `hilos-table-placeholder`;
+  the responsive card branch, `hilos-table-card-<rowKey>`, `hilos-table-tiles` —
+  the Tiles branch, `hilos-table-tile-<rowKey>`,
+  `hilos-table-tile-image-<rowKey>` — its 4:3 image frame,
+  `hilos-table-expand-<rowKey>`, `hilos-table-row-detail-<rowKey>`,
+  `hilos-table-placeholder`;
 
-  **A row answers to its selectors twice, once per branch**, both of them
-  standing in the document and only one of them shown (the card section above).
+  **A row answers to its selectors once in each mounted projection.** The table
+  and responsive card branches stand in the document together; an opted-in Tiles
+  table adds a third branch. Only the selected view's responsive projection is
+  shown. A page's cell content is also drawn by each branch that uses it.
   Everything inside a card — the placeholder, the waiting badges, the snowflake,
   the control and the panel, the bar of the row's work, the mark checkbox, and
   any `data-id` the page wrote into a cell — carries the identifier it carries in
   the row, on purpose: the two are the same fact about the same record, and a
   second name for it would be a second thing to keep in step. **So a test names
-  the branch it means**: through `hilos-table-cards` on a narrow screen, through
-  the table on a wide one. A bare selector finds the table's copy, the table
-  being drawn first;
+  the branch it means**: through `hilos-table-cards` for a narrow card, through
+  `hilos-table-tiles` for Tiles, and through the table row on a wide screen. A
+  bare selector can find a hidden copy;
 - **the room of live messages:** `hilos-table-live-slot` — the room itself,
   `hilos-table-live-idle` — the invisible twin holding it,
   `hilos-table-live-rest` — the icons of the messages the line yielded,
@@ -1632,6 +1820,14 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-stale-row-<rowKey>` — the snowflake in a row-state cell. There is
   no `hilos-table-stale-cell`: the mark inside the cells of the lagging column is
   the page's to draw and the framework's to name for nobody (`D-051`).
+
+The shared e2e toolbox exports `TableGeometryProjection` (`wide | card | tiles`)
+and accepts it in `watchTableGeometry()` and `watchTableAllocation()`.
+`expectTableTilePictures()` checks decoded images and equal 4:3 image/empty
+frames; `expectTableTileDeparture()` checks that an exited tile keeps only its
+reason and numeric space, including the removal of the image frame and controls.
+These helpers are re-exported from
+[`framework/frontend/e2e/index.ts`](../../../framework/frontend/e2e/index.ts).
 
 ## Backend contract surface (the gate)
 

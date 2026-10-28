@@ -1784,10 +1784,10 @@ describe('bindTableViewport presentation ingress', () => {
       expect(f.capture).toHaveBeenCalledTimes(1)
       const expectedKeys =
         kind === 'window' || kind === 'page' || kind === 'own-create'
-          ? ['a', 'a', 'b', 'b']
+          ? ['a', 'a', 'a', 'b', 'b', 'b']
           : kind === 'append'
             ? []
-            : ['a', 'a']
+            : ['a', 'a', 'a']
       expect(
         f.capture.mock.calls[0]?.[0].records.map(
           (ticket) => ticket.record.rowKey,
@@ -1862,14 +1862,18 @@ describe('bindTableViewport presentation ingress', () => {
       [
         ['a', 'wide'],
         ['a', 'card'],
+        ['a', 'tiles'],
         ['b', 'wide'],
         ['b', 'card'],
+        ['b', 'tiles'],
       ],
       [
         ['a', 'wide'],
         ['a', 'card'],
+        ['a', 'tiles'],
         ['b', 'wide'],
         ['b', 'card'],
+        ['b', 'tiles'],
       ],
     ])
     expect(f.writes).toEqual([])
@@ -1892,8 +1896,10 @@ describe('bindTableViewport presentation ingress', () => {
     ).toEqual([
       ['a', 'wide'],
       ['a', 'card'],
+      ['a', 'tiles'],
       ['b', 'wide'],
       ['b', 'card'],
+      ['b', 'tiles'],
     ])
     f.capture.mockClear()
     const frame = {

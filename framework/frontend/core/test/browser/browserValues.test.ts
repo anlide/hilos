@@ -16,6 +16,10 @@ import {
   THEME_PICK_STORAGE_KEY,
   THEME_SETTINGS_STORAGE_KEY,
 } from '../../src/theme/themeBrowser.js'
+import {
+  TABLE_VIEW_BROWSER_VALUE,
+  TABLE_VIEW_STORAGE_KEY,
+} from '../../src/table/tableViewPreference.js'
 
 /** The smallest thing that answers like a `Storage`, plus a switch to make it refuse. */
 function fakeStorage(options: { throws?: boolean } = {}): Storage {
@@ -92,7 +96,7 @@ describe('the framework registry', () => {
   it('is assembled with no browser anywhere in sight', () => {
     // The whole module graph was imported by this file with none of the three
     // globals installed: /privacy is prerendered, and a declaration is data.
-    expect(HILOS_BROWSER_VALUES).toHaveLength(7)
+    expect(HILOS_BROWSER_VALUES).toHaveLength(8)
     expect(HILOS_BROWSER_VALUES.map((value) => value.key)).toContain(
       THEME_PICK_STORAGE_KEY,
     )
@@ -113,6 +117,19 @@ describe('the framework registry', () => {
       ),
     ).toEqual([PROFILE_RENAME_BROWSER_VALUE])
     expect(HILOS_BROWSER_VALUES).toContain(PROFILE_RENAME_BROWSER_VALUE)
+  })
+
+  it('declares the exact table view key, store and label beside its writer', () => {
+    expect(TABLE_VIEW_BROWSER_VALUE).toEqual({
+      store: 'local',
+      key: 'hilos.table.views',
+      label: 'Your table views in this browser',
+    })
+    expect(
+      HILOS_BROWSER_VALUES.filter(
+        (value) => value.key === TABLE_VIEW_STORAGE_KEY,
+      ),
+    ).toEqual([TABLE_VIEW_BROWSER_VALUE])
   })
 
   it('names every value in a line a person can read', () => {
@@ -141,6 +158,23 @@ describe('eraseBrowserValues', () => {
 
   afterEach(() => {
     uninstallBrowser()
+  })
+
+  it('erases the table view document from the framework registry', () => {
+    globalThis.localStorage.setItem(
+      TABLE_VIEW_STORAGE_KEY,
+      '{"version":1,"views":{"products":"tiles"}}',
+    )
+    const erased: string[] = []
+    const stop = onBrowserValueErased((key) => erased.push(key))
+    try {
+      const swept = eraseBrowserValues(HILOS_BROWSER_VALUES, noCookieName)
+      expect(swept).toContain('Your table views in this browser')
+      expect(globalThis.localStorage.getItem(TABLE_VIEW_STORAGE_KEY)).toBeNull()
+      expect(erased).toContain(TABLE_VIEW_STORAGE_KEY)
+    } finally {
+      stop()
+    }
   })
 
   it('erases both theme values from the framework registry', () => {

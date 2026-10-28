@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
+import { TABLE_VIEW_STORAGE_KEY } from '../../../../../framework/frontend/core/src/table/tableViewPreference.js'
 
 import {
   login,
@@ -77,22 +78,28 @@ test('the erase empties this browser and moves it onto a new session', async ({
     },
     requestId: null,
   })
+  const tableViews = JSON.stringify({
+    version: 1,
+    views: { 'privacy-fixture': 'tiles' },
+  })
 
   // Seed one value in each store the registry names, through the very keys the
   // framework declares — a spec that seeded keys of its own would prove the sweep
   // erases what the spec wrote, not what the framework keeps.
   const seededValues = await page.evaluate(
-    ([provider, hint, pick, settings, rename, memory]) => {
+    ([provider, hint, pick, settings, rename, memory, viewsKey, views]) => {
       const receivedSettings = localStorage.getItem(settings)
       sessionStorage.setItem(provider, 'github')
       localStorage.setItem(hint, '1')
       localStorage.setItem(pick, 'dark')
       localStorage.setItem(settings, 'stale browser copy')
       sessionStorage.setItem(rename, memory)
+      localStorage.setItem(viewsKey, views)
 
       return {
         serverSettings: receivedSettings,
         renameMemory: sessionStorage.getItem(rename),
+        tableViews: localStorage.getItem(viewsKey),
       }
     },
     [
@@ -102,11 +109,14 @@ test('the erase empties this browser and moves it onto a new session', async ({
       THEME_SETTINGS_KEY,
       PROFILE_RENAME_MEMORY_KEY,
       renameMemory,
+      TABLE_VIEW_STORAGE_KEY,
+      tableViews,
     ],
   )
   const serverSettings = seededValues.serverSettings
   expect(serverSettings).not.toBeNull()
   expect(seededValues.renameMemory).toBe(renameMemory)
+  expect(seededValues.tableViews).toBe(tableViews)
 
   // The identifier this browser arrived with: what the erase must change.
   const arrived = await cookieValue(context, isSessionCookie)
@@ -118,7 +128,10 @@ test('the erase empties this browser and moves it onto a new session', async ({
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
   await expect(
     page.getByTestId('privacy-erase-list').locator('li'),
-  ).toHaveCount(7)
+  ).toHaveCount(8)
+  await expect(page.getByTestId('privacy-erase-list')).toContainText(
+    'Your table views in this browser',
+  )
   await expect(page.getByTestId('privacy-erase-list')).toContainText(
     'Name change window',
   )
@@ -143,20 +156,22 @@ test('the erase empties this browser and moves it onto a new session', async ({
   // The browser half: the guest's choice and the other seeded values are gone.
   // The settings cache is filled again by the new session's handshake below.
   const kept = await page.evaluate(
-    ([provider, hint, pick, rename]) => [
+    ([provider, hint, pick, rename, viewsKey]) => [
       sessionStorage.getItem(provider),
       localStorage.getItem(hint),
       localStorage.getItem(pick),
       sessionStorage.getItem(rename),
+      localStorage.getItem(viewsKey),
     ],
     [
       OAUTH_PROVIDER_KEY,
       MAINTENANCE_HINT_KEY,
       THEME_PICK_KEY,
       PROFILE_RENAME_MEMORY_KEY,
+      TABLE_VIEW_STORAGE_KEY,
     ],
   )
-  expect(kept).toEqual([null, null, null, null])
+  expect(kept).toEqual([null, null, null, null, null])
 
   // The server half: the value arrives on the 101 of the reconnect the rotation
   // ticket triggers, a round trip after the outcome above was drawn.

@@ -93,7 +93,7 @@ export function useTableViewportGeometry(
   const revision = shallowRef(0)
   const tracks = shallowRef<TableColumnTracks | null>(null)
   const trackWidths = shallowRef<readonly number[]>([])
-  const reasonFloors = shallowRef({ wide: 0, card: 0 })
+  const reasonFloors = shallowRef({ wide: 0, card: 0, tiles: 0 })
   const elements = new Map<string, RecordElements>()
   const shells = new Map<string, Shell>()
   let registration: TableGeometryRegistration | null = null
@@ -130,11 +130,15 @@ export function useTableViewportGeometry(
     const style = main ? getComputedStyle(main) : null
     let chrome = 0
     let gap = 0
-    if (record.projection === 'card' && main && style) {
+    if (record.projection !== 'wide' && main && style) {
       chrome = verticalChrome(main)
       const body = main.querySelector<HTMLElement>('.card-body')
       if (body) chrome += verticalChrome(body)
       gap = pixels(style.marginTop) + pixels(style.marginBottom)
+      // The Bootstrap column survives departure. Its vertical gutter belongs to
+      // the occupied extent once, beside the complete image-and-body card box.
+      if (record.projection === 'tiles' && main.parentElement)
+        gap += pixels(getComputedStyle(main.parentElement).marginTop)
     } else if (table.value && main) {
       const cell = main.querySelector<HTMLElement>('td')
       if (cell) {
@@ -186,7 +190,7 @@ export function useTableViewportGeometry(
       ? registration?.record(rowKey, projection)?.workReserve
       : null
     const workHeight = work ? (reserve?.work ?? work.height) : 0
-    if (projection === 'card') {
+    if (projection !== 'wide') {
       const detailHeight = detail?.height ?? 0
       const previous = record.work?.previousElementSibling
       const previousBox = previous instanceof HTMLElement ? box(previous) : null
@@ -387,8 +391,24 @@ export function useTableViewportGeometry(
     const wideWidth = box(table.value?.parentElement)?.width ?? 0
     if (wideWidth > 0) wideContainerWidth = wideWidth
     const style = getComputedStyle(node)
+    const tile = probe('tiles')
+    const tileBox = box(tile)
+    const column = tile?.parentElement
+    const grid = column?.parentElement
+    const columnBox = box(column)
+    const gridBox = box(grid)
+    const tileStyle = tile ? getComputedStyle(tile) : null
+    const columnStyle = column ? getComputedStyle(column) : null
     return [
       width,
+      tileBox?.width ?? 0,
+      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+      tile ? layoutZoom(tile) : 1,
+      tileStyle?.fontSize,
+      tileStyle?.lineHeight,
+      columnStyle?.paddingLeft,
+      columnStyle?.paddingRight,
+      columnStyle?.marginTop,
       wideContainerWidth || width,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
@@ -407,13 +427,30 @@ export function useTableViewportGeometry(
   function invalidate(): void {
     registration?.invalidateLayout('wide')
     registration?.invalidateLayout('card')
+    registration?.invalidateLayout('tiles')
     calibratedLayout = null
   }
 
   function schedule(): void {
     if (!mounted || stopped || frame !== null) return
+    const owner = registration
+    const source = controller()
+    const node = root.value
     frame = requestAnimationFrame(() => {
+      if (
+        stopped ||
+        !mounted ||
+        registration !== owner ||
+        controller() !== source
+      )
+        return
       frame = null
+      if (root.value !== node) {
+        // Vue replaced the keyed root while this frame coalesced its resize.
+        // Keep this callback inert and sample the current root in a fresh frame.
+        schedule()
+        return
+      }
       const next = layoutSignature()
       if (next === '') return
       const changed = signature !== '' && signature !== next
@@ -431,11 +468,14 @@ export function useTableViewportGeometry(
   function measure(): void {
     const owner = registration
     if (!owner || !mounted || stopped || !root.value?.isConnected) return
+    // After controller replacement, Vue can sample before the scheduled frame.
+    // Sign that layout before latching tracks so the frame detects any change.
+    if (signature === '') signature = layoutSignature()
     bindFocusFallback()
     if (root.value) observer?.observe(root.value)
     if (table.value?.parentElement) observer?.observe(table.value.parentElement)
-    const floors = { wide: 0, card: 0 }
-    for (const projection of ['wide', 'card'] as const) {
+    const floors = { wide: 0, card: 0, tiles: 0 }
+    for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
         box(
           probe(projection)?.querySelector<HTMLElement>(
@@ -445,7 +485,8 @@ export function useTableViewportGeometry(
     }
     if (
       floors.wide !== reasonFloors.value.wide ||
-      floors.card !== reasonFloors.value.card
+      floors.card !== reasonFloors.value.card ||
+      floors.tiles !== reasonFloors.value.tiles
     )
       reasonFloors.value = floors
     for (const record of elements.values()) {
@@ -585,7 +626,7 @@ export function useTableViewportGeometry(
     // Card padding and its outside gap are rem-based. Sass subtracts their
     // current values from the total in the same layout, before an observer
     // could compensate a font change in a later frame.
-    if (projection === 'card') return state.retained
+    if (projection !== 'wide') return state.retained
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 
@@ -597,6 +638,21 @@ export function useTableViewportGeometry(
         ? (shells.get(key(state.record.occurrence, projection))?.gap ?? 0)
         : 0
     return Math.max(0, (state?.workReserve?.total ?? 0) - gap)
+  }
+
+  function createObserver(): ResizeObserver | undefined {
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const owner = registration
+    const source = controller()
+    return new ResizeObserver(() => {
+      if (
+        !stopped &&
+        mounted &&
+        registration === owner &&
+        controller() === source
+      )
+        schedule()
+    })
   }
 
   watch(
@@ -621,6 +677,7 @@ export function useTableViewportGeometry(
       wideContainerWidth = 0
       registration = next.register(capture)
       unsubscribe = subscribeSignal(registration.revision, publish)
+      if (mounted) observer = createObserver()
       publish()
       schedule()
     },
@@ -637,10 +694,7 @@ export function useTableViewportGeometry(
   onUpdated(measure)
   onMounted(() => {
     mounted = true
-    observer =
-      typeof ResizeObserver === 'undefined'
-        ? undefined
-        : new ResizeObserver(schedule)
+    observer = createObserver()
     if (root.value) observer?.observe(root.value)
     if (table.value?.parentElement) observer?.observe(table.value.parentElement)
     for (const record of elements.values())
@@ -701,6 +755,9 @@ export function useTableViewportGeometry(
     recordReader,
     recordPixels,
     workPixels,
-    layoutChanged: invalidate,
+    layoutChanged: () => {
+      invalidate()
+      schedule()
+    },
   }
 }

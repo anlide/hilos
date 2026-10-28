@@ -214,6 +214,7 @@ export function hilosTableOfferedOrders(
  * @param current The order the window runs in, or undefined when it runs in none.
  * @param columns The columns as the page declared them.
  * @param staleSources The sources that froze in the window.
+ * @param hasColumnHeaders Whether visible headers already offer single-column orders.
  * @returns The menu items, or an empty list when there is no menu to draw.
  */
 export function hilosTableOrderViews(
@@ -222,6 +223,7 @@ export function hilosTableOrderViews(
   current: TableSortOrder | undefined,
   columns: readonly HilosTableColumn[],
   staleSources: ReadonlySet<string>,
+  hasColumnHeaders = true,
 ): readonly HilosTableOrderView[] {
   if (offered.length === 0) {
     return []
@@ -243,7 +245,9 @@ export function hilosTableOrderViews(
       label: hilosTableOrderLabel(opening, columns),
       active: isSameOrder(opening, current),
       stale: isOrderStale(opening),
-      narrowOnly: !offered.some(({ components }) => components.length > 1),
+      narrowOnly:
+        hasColumnHeaders &&
+        !offered.some(({ components }) => components.length > 1),
     },
     ...offered
       .filter(
@@ -255,7 +259,7 @@ export function hilosTableOrderViews(
         label: hilosTableOrderLabel(components, columns),
         active: isSameOrder(components, current),
         stale: isOrderStale(components),
-        narrowOnly: components.length === 1,
+        narrowOnly: hasColumnHeaders && components.length === 1,
       })),
   ]
 }

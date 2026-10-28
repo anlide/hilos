@@ -11,6 +11,8 @@ import {
 import { HilosTableText } from '../src/HilosTableText.js'
 import { HilosTableValue } from '../src/HilosTableValue.js'
 
+type FixtureProjection = Extract<TableProjection, 'wide' | 'card'>
+
 const owners: { dispose(): void }[] = []
 afterEach(() => {
   cleanup()
@@ -70,7 +72,7 @@ function layout() {
   )
   const heights = { wide: 80, card: 80 }
   const widths = { wide: 200, card: 200 }
-  function projection(node: Element): TableProjection {
+  function projection(node: Element): FixtureProjection {
     return node
       .closest('[data-projection]')
       ?.getAttribute('data-projection') === 'card'
@@ -119,7 +121,7 @@ function layout() {
 function fixture(
   options: {
     policy?: HilosTableRowHeight
-    projections?: TableProjection[]
+    projections?: FixtureProjection[]
     columns?: string[]
     regions?: number
     heightContent?: 'text' | 'parts'

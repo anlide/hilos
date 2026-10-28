@@ -43,6 +43,7 @@ interface RecordValue {
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
+  readonly picture: string
 }
 
 const KEYS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'] as const
@@ -98,6 +99,13 @@ const snapshot = ref('short')
 const position = ref(0)
 const iconActions = ref(false)
 const focusModalOpen = ref(false)
+const tilesEnabled = ref(false)
+const ambiguousFocus = ref(false)
+// Self-contained pictures exercise native image decoding without a file service.
+const PICTURES = ['circle', 'rect', 'ellipse'].map(
+  (shape) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><${shape} fill="steelblue" x="20" y="20" width="120" height="80" cx="80" cy="60" r="40" rx="60" ry="40"/></svg>`)}`,
+)
 const ARCHIVE_COLUMNS = [
   { key: 'environment', label: 'Environment', value: 'Production' },
   { key: 'scope', label: 'Scope', value: 'Full' },
@@ -178,10 +186,12 @@ function resolve(row: TableRow): RecordValue {
     badge: String(fields?.badge ?? ''),
     detail: String(fields?.detail ?? ''),
     expandable: fields?.expandable !== false,
+    picture: String(fields?.picture ?? ''),
   }
 }
 
 function makeController(search = true): TableViewportController<RecordValue> {
+  const withTiles = tilesEnabled.value
   const rowHeight: HilosTableRowHeight | undefined =
     heightMode.value === 'default'
       ? undefined
@@ -191,7 +201,47 @@ function makeController(search = true): TableViewportController<RecordValue> {
           ? { mode: 'height', rem: textRem.value }
           : { mode: 'content' }
   return new TableViewportController<RecordValue>({
-    frame: { ...frame, rowHeight, search: search ? frame.search : undefined },
+    frame: {
+      ...frame,
+      rowHeight,
+      search: search ? frame.search : undefined,
+      ...(withTiles
+        ? {
+            views: {
+              tableKey: 'geometry-records',
+              order: ['table', 'tiles'],
+              imageColumn: 'picture',
+            },
+            columns: () => [
+              { key: 'picture', label: 'Picture', source: SOURCE },
+              ...(typeof frame.columns === 'function'
+                ? frame.columns()
+                : frame.columns
+              ).map((column) =>
+                column.key === 'badge' ? { ...column, sortable: true } : column,
+              ),
+            ],
+          }
+        : {}),
+    },
+    declaredOrders: withTiles
+      ? [
+          {
+            key: 'name-status',
+            components: [
+              { field: 'name', direction: 'asc' },
+              { field: 'badge', direction: 'desc' },
+            ],
+          },
+          {
+            key: 'status-name',
+            components: [
+              { field: 'badge', direction: 'asc' },
+              { field: 'name', direction: 'desc' },
+            ],
+          },
+        ]
+      : undefined,
     resolve,
     expandable: (row) => row.expandable,
     sendViewport: (descriptor) => {
@@ -210,6 +260,7 @@ function mirrors() {
     tableWork: useSignal(controller.value.progress.table),
     bulkWork: useSignal(controller.value.progress.bulk),
     report: useSignal(controller.value.bulk.report),
+    view: useSignal(controller.value.frame.view),
   }
 }
 let mirrorScope = effectScope()
@@ -223,6 +274,7 @@ const rows = computed(() => current.value.rows.value)
 const footer = computed(() => current.value.footer.value)
 const body = computed(() => current.value.body.value)
 const selected = computed(() => current.value.selected.value)
+const tableView = computed(() => current.value.view.value)
 const identities = computed(() =>
   rows.value.map((row) => `${row.rowKey}:${row.occurrence}`).join(','),
 )
@@ -251,6 +303,7 @@ function reset(): void {
       badge: 'Available',
       detail: `Private detail for ${key}. ${EXPANDED}`,
       expandable: true,
+      picture: key === 'd' ? '' : PICTURES[TARGETS.indexOf(key) % 3]!,
     })
   }
   if (readingSamples.value) {
@@ -278,6 +331,18 @@ function reset(): void {
     null,
     10,
   )
+  if (tilesEnabled.value) {
+    controller.value.ingestSubscriptionWindow(
+      KEYS.map(raw),
+      KEYS.length,
+      true,
+      null,
+      null,
+      10,
+      [{ field: 'name', direction: 'asc' }],
+      [],
+    )
+  }
   stale.value = false
   pending.value = 'none'
   detail.value = 'collapsed'
@@ -668,6 +733,23 @@ onScopeDispose(() => {
   <main class="container-fluid py-3" data-id="geometry-fixture">
     <h1 class="h4">Table geometry fixture</h1>
     <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+      <label class="form-check"
+        ><input
+          v-model="tilesEnabled"
+          class="form-check-input"
+          type="checkbox"
+          data-id="geometry-tiles"
+          @change="replace()"
+        />Declare table views and pictures</label
+      >
+      <label class="form-check"
+        ><input
+          v-model="ambiguousFocus"
+          class="form-check-input"
+          type="checkbox"
+          data-id="geometry-ambiguous-focus"
+        />Duplicate marked action</label
+      >
       <label
         >Target
         <select v-model="target" class="form-select" data-id="geometry-target">
@@ -1067,6 +1149,12 @@ onScopeDispose(() => {
       :data-range="`${footer.firstRow}:${footer.lastRow}`"
       :data-body="body"
       :data-selected="JSON.stringify(selected)"
+      :data-view="tableView"
+      :data-expanded="
+        JSON.stringify(
+          rows.filter((row) => row.expanded).map((row) => row.rowKey),
+        )
+      "
       :data-text-intent="
         JSON.stringify(
           [...current.expandedText.value].map(([key, columns]) => [
@@ -1086,6 +1174,15 @@ onScopeDispose(() => {
     <div data-id="geometry-body">
       <SelectionEdge v-if="tableMounted" :key="edge" :selected-edge="edge">
         <HilosViewportTable :controller="controller">
+          <template #cell-picture="{ row, rowKey }">
+            <img
+              v-if="row.picture"
+              :src="row.picture"
+              :alt="`Test picture ${rowKey}`"
+              class="w-100 h-100 object-fit-cover"
+              :data-id="`geometry-picture-${rowKey}`"
+            />
+          </template>
           <template #cell-name="{ row, rowKey }"
             ><span :data-id="`geometry-name-${rowKey}`">{{
               iconActions ? `2026-10-21 11:13 ${rowKey}` : row.name
@@ -1155,6 +1252,16 @@ onScopeDispose(() => {
               @click="focusModalOpen = true"
             >
               Inspect
+            </button>
+            <button
+              v-if="ambiguousFocus && !iconActions"
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :data-id="`geometry-action-copy-${rowKey}`"
+              data-hilos-focus-return="inspect-geometry"
+              @click="focusModalOpen = true"
+            >
+              Inspect again
             </button>
           </template>
           <template #detail-detail="{ row, rowKey }"

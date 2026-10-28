@@ -169,6 +169,7 @@ describe('TableViewportGeometry numeric measurements', () => {
     const foreign = setup().view
     measure(view, extent(30))
     measure(view, extent(140), 'card')
+    measure(view, extent(210), 'tiles')
     measure(other, extent(65))
     other.measure({
       measurement: ticket(view),
@@ -190,7 +191,9 @@ describe('TableViewportGeometry numeric measurements', () => {
     expect(foreign.record('a', 'wide')?.live).toBeNull()
     geometry.depart('a', 'left_set')
     expect(view.record('a', 'card')?.retained).toBe(142.5)
+    expect(view.record('a', 'tiles')?.retained).toBe(212.5)
     expect(other.record('a', 'card')?.retained).toBeNull()
+    expect(other.record('a', 'tiles')?.retained).toBeNull()
   })
 })
 
@@ -294,6 +297,7 @@ describe('TableViewportGeometry validity and allocation', () => {
     const { geometry, view } = setup()
     measure(view, extent(50.25, 12.5, 30, 6.25), 'wide', 'a', 2.25)
     measure(view, extent(80, 15, 40, 10), 'card', 'a', 3)
+    measure(view, extent(160.125, 18.5, 60.25, 12.125), 'tiles', 'a', 4.125)
     geometry.reserveWork('a')
     expect(view.record('a', 'wide')?.workReserve).toEqual({
       work: 12.5,
@@ -302,11 +306,13 @@ describe('TableViewportGeometry validity and allocation', () => {
     })
     // Work's payload is now gone. Main/detail can still change while Apply waits.
     measure(view, extent(60.5, 0, 25.25, 4))
+    measure(view, extent(170.25, 0, 40.5, 8), 'tiles')
     geometry.reserveWork('a')
     geometry.depart('a', 'deleted')
     expect(view.record('a', 'wide')?.retained).toBe(104.5)
     // The other projection still includes its bar and work gap: neither is added twice.
     expect(view.record('a', 'card')?.retained).toBe(145)
+    expect(view.record('a', 'tiles')?.retained).toBe(241.375)
     measure(view, extent(1))
     geometry.reserveWork('a')
     expect(view.record('a', 'wide')?.retained).toBe(104.5)
@@ -416,20 +422,23 @@ describe('TableViewportGeometry tracks and lifetime', () => {
     expect(() => geometry.view.register(() => ({ records: [] }))).toThrow()
   })
 
-  it('retains more slots than a page until an explicit window replacement, without compaction', () => {
-    const { geometry, view } = setup([])
-    for (let index = 0; index < 150; index++) {
-      const key = String(index)
-      geometry.addRecord(key)
-      measure(view, extent(30 + index / 4), 'wide', key)
-      geometry.depart(key, 'deleted')
-    }
-    expect(view.record('0', 'wide')?.retained).toBe(32.5)
-    expect(view.record('149', 'wide')?.retained).toBe(69.75)
-    geometry.replaceWindow([])
-    expect(view.record('0', 'wide')).toBeNull()
-    expect(view.record('149', 'wide')).toBeNull()
-  })
+  it.each(['wide', 'card', 'tiles'] as const)(
+    'retains more %s slots than a page until an explicit window replacement, without compaction',
+    (projection) => {
+      const { geometry, view } = setup([])
+      for (let index = 0; index < 150; index++) {
+        const key = String(index)
+        geometry.addRecord(key)
+        measure(view, extent(30 + index / 4), projection, key)
+        geometry.depart(key, 'deleted')
+      }
+      expect(view.record('0', projection)?.retained).toBe(32.5)
+      expect(view.record('149', projection)?.retained).toBe(69.75)
+      geometry.replaceWindow([])
+      expect(view.record('0', projection)).toBeNull()
+      expect(view.record('149', projection)).toBeNull()
+    },
+  )
 })
 
 describe('TableViewportGeometry synchronous presentation boundary', () => {
@@ -546,7 +555,10 @@ describe('TableViewportGeometry synchronous presentation boundary', () => {
       const capture = vi.fn((request: TableGeometryCaptureRequest) => {
         expect(
           request.records.map((measurement) => measurement.record.rowKey),
-        ).toEqual(['a', 'a', 'b', 'b'])
+        ).toEqual(['a', 'a', 'a', 'b', 'b', 'b'])
+        expect(
+          request.records.map((measurement) => measurement.layout.projection),
+        ).toEqual(['wide', 'card', 'tiles', 'wide', 'card', 'tiles'])
 
         return { records: [] as TableGeometrySample[] }
       })
@@ -554,6 +566,249 @@ describe('TableViewportGeometry synchronous presentation boundary', () => {
       const change: TablePresentationChange = { kind }
       geometry.withPresentationUpdate(change, () => geometry.replaceWindow([]))
       expect(capture).toHaveBeenCalledTimes(1)
+    },
+  )
+})
+
+describe('TableViewportGeometry tiles alongside wide and card', () => {
+  it('captures three distinct footprints before removing content and retains independent numeric allocations', () => {
+    const geometry = new TableViewportGeometry()
+    geometry.replaceWindow(['a'])
+    let content: Record<TableProjection, TableRecordExtent> | null = {
+      wide: extent(50.25, 12.5, 30, 6.25),
+      card: extent(80, 15, 40, 10),
+      tiles: extent(160.125, 18.5, 60.25, 12.125),
+    }
+    const workGaps = { wide: 2.25, card: 3, tiles: 4.125 }
+    const capture = vi.fn((request: TableGeometryCaptureRequest) => {
+      expect(content).not.toBeNull()
+      expect(request.records.map(({ layout }) => layout.projection)).toEqual([
+        'wide',
+        'card',
+        'tiles',
+      ])
+
+      return {
+        records: request.records.map((measurement) => ({
+          measurement,
+          extent: content![measurement.layout.projection],
+          workGap: workGaps[measurement.layout.projection],
+        })),
+        tracks: { layout: request.layout, tracks },
+      }
+    })
+    const view = geometry.view.register(capture)
+    const identity = geometry.record('a')
+    geometry.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {
+      geometry.reserveWork('a')
+      content = null
+      geometry.depart('a', 'left_set')
+    })
+    expect(capture).toHaveBeenCalledTimes(1)
+    for (const [projection, retained, work, gap, total] of [
+      ['wide', 99, 12.5, 2.25, 14.75],
+      ['card', 145, 15, 3, 18],
+      ['tiles', 251, 18.5, 4.125, 22.625],
+    ] as const) {
+      expect(view.record('a', projection)).toEqual({
+        record: identity,
+        reason: 'left_set',
+        live: null,
+        workReserve: { work, gap, total },
+        retained,
+      })
+    }
+    const stale = ticket(view, 'a', 'tiles')
+    view.invalidateLayout('tiles')
+    view.allocate(stale, 900, 900)
+    expect(view.record('a', 'tiles')?.retained).toBe(251)
+    view.allocate(ticket(view, 'a', 'tiles'), 900, 300.125)
+    view.allocate(ticket(view, 'a', 'tiles'), 900, 20)
+    geometry.releaseWork('a')
+    geometry.depart('a', 'deleted')
+    expect(view.record('a', 'tiles')).toMatchObject({
+      reason: 'left_set',
+      retained: 300.125,
+      workReserve: { total: 22.625 },
+    })
+    expect(view.record('a', 'wide')?.retained).toBe(99)
+    expect(view.record('a', 'card')?.retained).toBe(145)
+    expect(view.tracks()).toEqual(tracks)
+  })
+
+  it('releases all work reserves and preserves fresh independent reserves across layout and value invalidation', () => {
+    const { geometry, view } = setup()
+    measure(view, extent(40, 10, 0, 4), 'wide', 'a', 2)
+    measure(view, extent(80, 20, 0, 8), 'card', 'a', 4)
+    measure(view, extent(160, 30, 0, 12), 'tiles', 'a', 6)
+    geometry.reserveWork('a')
+    geometry.releaseWork('a')
+    for (const projection of ['wide', 'card', 'tiles'] as const) {
+      expect(view.record('a', projection)?.workReserve).toBeNull()
+    }
+    measure(view, extent(45, 11, 0, 5), 'wide', 'a', 2.5)
+    measure(view, extent(85, 21, 0, 9), 'card', 'a', 4.5)
+    measure(view, extent(165, 31, 0, 13), 'tiles', 'a', 6.5)
+    geometry.reserveWork('a')
+    const wide = ticket(view)
+    const card = ticket(view, 'a', 'card')
+    const tiles = ticket(view, 'a', 'tiles')
+    view.invalidateLayout('tiles')
+    expect(ticket(view)).toBe(wide)
+    expect(ticket(view, 'a', 'card')).toBe(card)
+    view.measure({ measurement: tiles, extent: extent(999), workGap: 0 })
+    expect(view.record('a', 'tiles')?.live).toBeNull()
+    measure(view, extent(170), 'tiles')
+    measure(view, null, 'tiles')
+    expect(view.record('a', 'tiles')?.live?.total).toBe(172.5)
+    geometry.invalidateRows(['a'])
+    view.measure({ measurement: wide, extent: extent(999), workGap: 0 })
+    view.measure({ measurement: card, extent: extent(999), workGap: 0 })
+    geometry.reserveWork('a')
+    geometry.depart('a', 'deleted')
+    for (const [projection, reserve, fallback, retained] of [
+      ['wide', 13.5, 50, 63.5],
+      ['card', 25.5, 70, 95.5],
+      ['tiles', 37.5, 90, 127.5],
+    ] as const) {
+      expect(view.record('a', projection)).toMatchObject({
+        live: null,
+        retained: null,
+        workReserve: { total: reserve },
+      })
+      view.allocate(ticket(view, 'a', projection), fallback, 20)
+      view.allocate(ticket(view, 'a', projection), 900, 20)
+      expect(view.record('a', projection)?.retained).toBe(retained)
+    }
+  })
+
+  it('keeps an unmeasurable hidden tile null until its own first visible fallback', () => {
+    const { geometry, view } = setup()
+    measure(view, extent(40), 'wide')
+    measure(view, extent(90), 'card')
+    // An adapter reports hidden or zero-size DOM as null, never zero pixels.
+    measure(view, null, 'tiles')
+    geometry.reserveWork('a')
+    geometry.depart('a', 'moved_out')
+    expect(view.record('a', 'tiles')).toMatchObject({
+      live: null,
+      retained: null,
+      workReserve: null,
+    })
+    view.allocate(ticket(view, 'a', 'tiles'), 70.25, 80.5)
+    view.invalidateLayout('tiles')
+    view.allocate(ticket(view, 'a', 'tiles'), 500, 20)
+    expect(view.record('a', 'tiles')?.retained).toBe(80.5)
+    expect(view.record('a', 'wide')?.retained).toBe(42.5)
+    expect(view.record('a', 'card')?.retained).toBe(92.5)
+  })
+
+  it('accepts column tracks only from the wide layout and leaves them intact on tile invalidation', () => {
+    const { view } = setup()
+    view.measureTracks(view.layout('tiles'), tracks)
+    expect(view.tracks()).toBeNull()
+    view.measureTracks(view.layout('wide'), tracks)
+    const wide = view.layout('wide')
+    view.invalidateLayout('tiles')
+    view.measureTracks(view.layout('tiles'), {
+      ...tracks,
+      widths: [10, 20, 30],
+      tableWidth: 60,
+    })
+    expect(view.layout('wide')).toBe(wide)
+    expect(view.tracks()).toEqual(tracks)
+  })
+
+  it.each(['wide', 'card', 'tiles'] as const)(
+    'retires %s tickets, reserves and allocations on eviction, reuse, window replacement, reset and disposal',
+    (projection) => {
+      const { geometry, view, capture } = setup()
+      measure(view, extent(120, 11, 35, 4), projection)
+      geometry.reserveWork('a')
+      geometry.depart('a', 'deleted')
+      measure(view, extent(70, 7, 12, 3), projection, 'b')
+      geometry.reserveWork('b')
+      const departed = ticket(view, 'a', projection)
+      const live = ticket(view, 'b', projection)
+      geometry.invalidateWindow()
+      const outgoing = ticket(view, 'a', projection)
+      expect(outgoing.layout).not.toBe(departed.layout)
+      expect(outgoing.record.occurrence).toBe(departed.record.occurrence)
+      expect(outgoing.record.windowGeneration).not.toBe(
+        departed.record.windowGeneration,
+      )
+      expect(view.record('a', projection)).toMatchObject({
+        retained: 170,
+        workReserve: null,
+      })
+      expect(view.record('b', projection)).toMatchObject({
+        live: null,
+        workReserve: null,
+      })
+      view.allocate(departed, 999, 999)
+      view.measure({ measurement: live, extent: extent(999), workGap: 0 })
+      expect(view.record('a', projection)?.retained).toBe(170)
+      expect(view.record('b', projection)?.live).toBeNull()
+      geometry.replaceWindow(['a'])
+      const fresh = ticket(view, 'a', projection)
+      expect(fresh.record.occurrence).not.toBe(outgoing.record.occurrence)
+      expect(view.record('b', projection)).toBeNull()
+      view.allocate(outgoing, 999, 999)
+      view.measure({ measurement: live, extent: extent(999), workGap: 0 })
+      expect(view.record('a', projection)).toMatchObject({
+        live: null,
+        retained: null,
+        workReserve: null,
+        reason: null,
+      })
+      measure(view, extent(80), projection)
+      geometry.depart('a', 'left_set')
+      const reused = geometry.addRecord('a')
+      expect(reused.occurrence).not.toBe(fresh.record.occurrence)
+      expect(view.record('a', projection)).toMatchObject({
+        live: null,
+        retained: null,
+        workReserve: null,
+        reason: null,
+      })
+      view.measure({ measurement: fresh, extent: extent(999), workGap: 0 })
+      geometry.retireRecord('a')
+      expect(view.record('a', projection)).toBeNull()
+      geometry.addRecord('a')
+      geometry.withPresentationUpdate({ kind: 'reset' }, () =>
+        geometry.replaceWindow([]),
+      )
+      expect(view.measurement('a', projection)).toBeNull()
+      geometry.addRecord('a')
+      const beforeDispose = ticket(view, 'a', projection)
+      view.dispose()
+      view.allocate(beforeDispose, 999, 999)
+      view.measure({
+        measurement: beforeDispose,
+        extent: extent(999),
+        workGap: 0,
+      })
+      expect(view.record('a', projection)).toBeNull()
+      capture.mockClear()
+      const remount = geometry.view.register(() => ({ records: [] }))
+      expect(ticket(remount, 'a', projection).layout.mount).not.toBe(
+        beforeDispose.layout.mount,
+      )
+      remount.measure({
+        measurement: beforeDispose,
+        extent: extent(999),
+        workGap: 0,
+      })
+      expect(remount.record('a', projection)?.live).toBeNull()
+      geometry.dispose()
+      remount.measure({
+        measurement: beforeDispose,
+        extent: extent(999),
+        workGap: 0,
+      })
+      geometry.withPresentationUpdate({ kind: 'reset' }, () => undefined)
+      expect(capture).not.toHaveBeenCalled()
+      expect(remount.record('a', projection)).toBeNull()
     },
   )
 })

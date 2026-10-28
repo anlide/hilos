@@ -14,6 +14,7 @@ import { type HilosTableCard } from './tableCard.js'
 import { type HilosTableSelectionTarget } from './tableSelection.js'
 import { type HilosTableOrderView } from './tableSortOrder.js'
 import { type HilosTableRowHeight } from './tableTextHeight.js'
+import { type HilosTableView, type HilosTableViews } from './tableView.js'
 
 /**
  * The search box of a table: present means the table searches, absent means it
@@ -156,6 +157,8 @@ export interface HilosTableFrame {
   /** The columns of the table, in display order. */
   readonly columns:
     readonly HilosTableColumn[] | (() => readonly HilosTableColumn[])
+  /** Opt into table and tile layouts of the same window. */
+  readonly views?: HilosTableViews
   /** Height of participating main text regions; omitted means intrinsic content. */
   readonly rowHeight?: HilosTableRowHeight
   /** The operations offered for the marked rows. */
@@ -288,6 +291,12 @@ export interface HilosTableFrameState {
   readonly declaration: HilosTableFrame
   /** The card a row projects to on a narrow screen, derived from resolved columns. */
   readonly card: ReadonlySignal<HilosTableCard>
+  /** Selected layout, local to this controller's mount. */
+  readonly view: ReadonlySignal<HilosTableView>
+  /** The tile card without its image column; null when views were not declared. */
+  readonly tileCard: ReadonlySignal<HilosTableCard | null>
+  /** The picture's ordinary column; null when views were not declared. */
+  readonly imageColumn: ReadonlySignal<HilosTableColumn | null>
   /** The columns currently offered by the page. */
   readonly columns: ReadonlySignal<readonly HilosTableColumn[]>
   /** Validated text policy local to this controller's mount lifetime. */

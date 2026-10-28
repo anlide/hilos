@@ -95,6 +95,11 @@ import {
 } from './tableTextHeight.js'
 import { type HilosTableRowMessage } from './tableRowMessage.js'
 import {
+  hilosTableViews,
+  type HilosTableView,
+  type HilosTableViews,
+} from './tableView.js'
+import {
   TableViewportGeometry,
   type TableGeometryRecord,
   type TablePresentationChange,
@@ -635,6 +640,10 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
 
+  /** The mount's validated declaration and its local layout choice. */
+  private readonly views: HilosTableViews | undefined
+  private readonly viewSignal: WritableSignal<HilosTableView>
+
   /** Counts beside the options of the dropdown filters, by filter key, laid over one frame at a time. */
   private readonly facetCountsSignal = createSignal<
     Readonly<Record<string, HilosTableFacets>>
@@ -1161,6 +1170,7 @@ export class TableViewportController<R> implements TableWindowSink {
       validateTextColumns(columns, rowHeight)
 
       return {
+        views: hilosTableViews(declaration.views, columns),
         columns,
         filters:
           typeof declaration.filters === 'function'
@@ -1173,6 +1183,8 @@ export class TableViewportController<R> implements TableWindowSink {
     // Consume once before registering effects, so invalid declarations leave no
     // subscriptions behind. Later dynamic columns pass the same validation.
     let previousTextColumns = textColumnLayout(columns.get())
+    this.views = resolvedFrame.get().views
+    this.viewSignal = createSignal(this.views?.order[0] ?? 'table')
     this.renderedKeys = computedSignal(() =>
       hilosTableRenderedKeys(columns.get()),
     )
@@ -1374,6 +1386,22 @@ export class TableViewportController<R> implements TableWindowSink {
       columns,
       rowHeight,
       card: computedSignal(() => hilosTableCard(columns.get())),
+      view: this.viewSignal,
+      tileCard: computedSignal(() =>
+        this.views === undefined
+          ? null
+          : hilosTableCard(
+              columns
+                .get()
+                .filter(({ key }) => key !== this.views?.imageColumn),
+            ),
+      ),
+      imageColumn: computedSignal(() =>
+        this.views === undefined
+          ? null
+          : (columns.get().find(({ key }) => key === this.views?.imageColumn) ??
+            null),
+      ),
       searchPlaceholder: computedSignal(() => {
         const placeholder = declaration.search?.placeholder
         return typeof placeholder === 'function' ? placeholder() : placeholder
@@ -1387,6 +1415,7 @@ export class TableViewportController<R> implements TableWindowSink {
           this.orderSignal.get(),
           columns.get(),
           hilosTableStaleSources(this.rows.get()),
+          this.viewSignal.get() === 'table',
         ),
       ),
       orderLabel: computedSignal(() =>
@@ -1542,6 +1571,26 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get frame(): HilosTableFrameState {
     return this.frameState
+  }
+
+  /**
+   * Change only the local layout, preserving the window and its reading state.
+   *
+   * @param view One of the table's declared views.
+   * @throws TypeError If the requested view is not declared.
+   */
+  setView(view: HilosTableView): void {
+    if (
+      this.views === undefined
+        ? view !== 'table'
+        : !this.views.order.includes(view)
+    ) {
+      throw new TypeError('Undeclared table view')
+    }
+    if (this.disposed || this.viewSignal.get() === view) {
+      return
+    }
+    this.viewSignal.set(view)
   }
 
   /**
