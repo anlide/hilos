@@ -13,8 +13,8 @@ off, and a confirmation that it was (HIL-483) — the badge then repaints when t
 holding node's next index arrives, not when the ack does. A taken batch carries the
 other half of that (HIL-759): a trigger that takes the word back while the batch is
 still on disk, behind a modal naming when its node's cleaner may first delete it.
-Deleting a taken batch is HIL-382, and there is no way through to the viewer yet
-because it takes no batch address (HIL-388). All table logic, the row view-model, the
+Deleting a taken batch is HIL-382. A kept batch links to the viewer by its node and
+batch timestamp (HIL-388). All table logic, the row view-model, the
 empty-state discrimination and the wording are the core headless's
 (hilosLogRotations); this view owns only the markup, so a project mounts it by passing
 its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
@@ -37,7 +37,9 @@ import {
   rotationUndoNotice,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
+  HILOS_ROTATION_STATE_KEPT,
   HILOS_ROTATION_STATE_TAKEN,
+  logViewerPath,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
   type HilosLogRotationRow,
@@ -114,6 +116,15 @@ const emptyState = computed(() =>
 function batchTime(row: HilosLogRotationRow): string {
   void timeZone.value
   return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
+}
+
+function batchViewerPath(row: HilosLogRotationRow): string {
+  return logViewerPath({
+    nodeId: row.node,
+    source: row.batchAt,
+    stream: null,
+    anchorAtMs: null,
+  })
 }
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
@@ -324,6 +335,14 @@ const legendOpen = ref(false)
       <template #cell-batchAt="{ row }">
         <div class="fw-semibold small">{{ batchTime(row) }}</div>
         <code class="small text-body-secondary">{{ row.path }}</code>
+        <span
+          v-if="row.retentionState === HILOS_ROTATION_STATE_CARRYING"
+          class="small text-body-secondary"
+          data-id="hilos-rotation-moving-address"
+        >
+          <i class="bi bi-arrow-right" aria-hidden="true"></i>
+          going to the archive
+        </span>
       </template>
       <template #cell-node="{ row }">{{ row.node }}</template>
       <template #cell-daemonFileCount="{ row }">
@@ -336,6 +355,21 @@ const legendOpen = ref(false)
         </span>
       </template>
       <template #cell-actions="{ row }">
+        <HilosLink
+          v-if="row.retentionState === HILOS_ROTATION_STATE_KEPT"
+          :to="batchViewerPath(row)"
+          class="btn btn-sm btn-outline-secondary text-nowrap"
+          data-id="hilos-rotation-view"
+        >
+          View
+        </HilosLink>
+        <span
+          v-if="row.retentionState === HILOS_ROTATION_STATE_CARRYING"
+          class="small text-body-secondary"
+          data-id="hilos-rotation-moving-wait"
+        >
+          wait until the move is over
+        </span>
         <button
           v-if="offersTakeout(row)"
           type="button"

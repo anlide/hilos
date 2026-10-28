@@ -277,6 +277,99 @@ test.afterEach(async () => {
   }
 })
 
+test('opens a new kept batch without a stream and reads only after a catalog stream is chosen', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+
+  const settings = await page.context().newPage()
+  control = settings
+  await gotoPage(expect, settings, '/hilos/settings', PAGE_READY)
+
+  // Keep the default retention protection. Only a batch newer than this real
+  // window can prove the transition; an archive left by another run cannot.
+  const before = await rowKeys(page)
+  await setSetting(settings, ROTATION_MAX_AGE, '1')
+  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+    '1 second after the last rotation',
+    { timeout: WALK_WAIT_MS },
+  )
+  await expect
+    .poll(async () => (await newBatchKeys(page, before)).length, {
+      timeout: WALK_WAIT_MS,
+    })
+    .toBeGreaterThanOrEqual(1)
+  const rowKey = (await newBatchKeys(page, before))[0]!
+  // The next rotation re-reads both batch directories. Without it, switching
+  // the trigger off leaves the first batch's carrying index until the minute
+  // walk, even after the carrier has moved it. Keep the first batch as target.
+  await expect
+    .poll(async () => (await newBatchKeys(page, before)).length, {
+      timeout: WALK_WAIT_MS,
+    })
+    .toBeGreaterThanOrEqual(2)
+  await resetSetting(settings, ROTATION_MAX_AGE)
+  await expect
+    .poll(() => rotationFrames.rotations().get(rowKey)?.retentionState, {
+      timeout: WALK_WAIT_MS,
+    })
+    .toBe('kept')
+
+  const batch = rotationFrames.rotations().get(rowKey)!
+  const batchAt = expectLogEpochMoment(expect, batch.batchAt)
+  const path = `/hilos/logs/view/${batch.node}/${batchAt}`
+  const view = shownByTestId(page, `${ROW_ID_PREFIX}${rowKey}`).getByTestId(
+    'hilos-rotation-view',
+  )
+  await expect(view).toHaveAttribute('href', path)
+  await view.click()
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(path)
+  await expect(page.getByTestId('hilos-log-source')).toHaveValue(
+    String(batchAt),
+  )
+  await expect(page.getByTestId('hilos-log-stream')).toHaveValue('')
+  await expect(page.getByTestId('hilos-log-empty-unchosen')).toBeVisible()
+  expect(rotationFrames.request('logs_read_lines')).toBeUndefined()
+
+  // The catalog travels separately from page readiness. Its actual batch
+  // membership supplies the choice, and must not silently make that choice.
+  const offeredStreams = () => {
+    const catalog = rotationFrames
+      .data('subscription_page_hilos_logs_view')
+      .at(-1)
+    const node = (Array.isArray(catalog?.nodes) ? catalog.nodes : [])
+      .map(deliveryObject)
+      .find((node) => node.nodeId === batch.node)
+    if (!Array.isArray(node?.batches) || !node.batches.includes(batchAt)) {
+      return []
+    }
+    return (Array.isArray(node.streams) ? node.streams : [])
+      .map(deliveryObject)
+      .filter(
+        (stream) =>
+          Array.isArray(stream.batchTimestamps) &&
+          stream.batchTimestamps.includes(batchAt),
+      )
+      .map((stream) => String(stream.key))
+  }
+  await expect
+    .poll(() => offeredStreams().length, { timeout: WALK_WAIT_MS })
+    .toBeGreaterThan(0)
+  await expect(page.getByTestId('hilos-log-stream')).toHaveValue('')
+  await expect(page.getByTestId('hilos-log-empty-unchosen')).toBeVisible()
+  await expect(page).toHaveURL(path)
+  expect(rotationFrames.request('logs_read_lines')).toBeUndefined()
+
+  const stream = offeredStreams()[0]!
+  await page.getByTestId('hilos-log-stream').selectOption(stream)
+  await expect(page).toHaveURL(`${path}/${stream}`)
+  await expect.poll(() => rotationFrames.ack('logs_read_lines')).toBeDefined()
+  await expectLogBatchViewer(expect, page, rotationFrames, batch, READER_ZONE)
+})
+
 // FIXME(F-018, 2026-10-22): the restart button detaches while the test scrolls to it · чужой · попытка 1 · HIL-1782
 test(
   'keeps a quiet agent log on missing live after rotation until its latest batch link is opened',

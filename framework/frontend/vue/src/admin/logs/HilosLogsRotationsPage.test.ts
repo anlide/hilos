@@ -100,6 +100,7 @@ function header(
 function router(
   params: Record<string, string> = {},
   rewrites: string[] = [],
+  navigations: string[] = [],
 ): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
@@ -118,7 +119,9 @@ function router(
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: () => {},
+    navigate: (pathname: string) => {
+      navigations.push(pathname)
+    },
     replacePath: (pathname: string) => {
       rewrites.push(pathname)
     },
@@ -141,6 +144,7 @@ function makeConnection(): {
   pushEmptyWindow: () => void
   pushWindow: (rows: Record<string, unknown>[]) => void
   pushPageWindow: (rows: Record<string, unknown>[]) => void
+  pushRowUpdated: (row: Record<string, unknown>) => void
   pushFocusedChange: (row?: Record<string, unknown>) => void
 } {
   const projectListeners: ((signal: {
@@ -238,6 +242,19 @@ function makeConnection(): {
         })
       }
     },
+    pushRowUpdated(row: Record<string, unknown>): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            tableKey: 'hilosLogRotations',
+            kind: 'row_updated',
+            rowKey: String(row.rowKey),
+            row: { rowKey: String(row.rowKey), slots: { batch: row } },
+          },
+        })
+      }
+    },
     pushHeader(frame: HilosLogRotationsHeader): void {
       for (const listener of projectListeners) {
         listener({ type: ROTATIONS_HEADER_SIGNAL, data: frame })
@@ -319,7 +336,7 @@ function batch(
   return {
     rowKey: 'node-1:1800000000',
     batchAt: 1800000000000,
-    node: null,
+    node: 'node-1',
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
@@ -649,6 +666,131 @@ describe('HilosLogsRotationsPage', () => {
         '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-takeout"]',
       ),
     ).toHaveLength(1)
+  })
+
+  it('links kept batches to their node and batch time in rows and cards', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const navigations: string[] = []
+    const wrapper = mountPage(
+      connection,
+      makeActions().actions,
+      router({}, [], navigations),
+    )
+    const batchAt = 1800000000000
+
+    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushWindow([
+      batch({ rowKey: 'node-1:1800000000', node: 'node-1', batchAt }),
+      batch({ rowKey: 'node-2:1800000000', node: 'node-2', batchAt }),
+      batch({
+        rowKey: 'node-1:1800000001',
+        node: 'node-1',
+        batchAt: batchAt + 1000,
+        retentionState: 'due',
+      }),
+      batch({
+        rowKey: 'node-1:1800000002',
+        node: 'node-1',
+        batchAt: batchAt + 2000,
+        retentionState: 'taken',
+      }),
+      batch({
+        rowKey: 'node-1:1800000003',
+        node: 'node-1',
+        batchAt: batchAt + 3000,
+        path: 'staging/2027-01-15-08-00-03Z/',
+        retentionState: 'carrying',
+      }),
+    ])
+    await nextTick()
+
+    const links = wrapper.findAll('[data-id="hilos-rotation-view"]')
+    expect(links).toHaveLength(4)
+    expect(links.map((link) => link.text())).toEqual([
+      'View',
+      'View',
+      'View',
+      'View',
+    ])
+    expect(links.map((link) => link.attributes('href')).sort()).toEqual([
+      '/hilos/logs/view/node-1/1800000000000',
+      '/hilos/logs/view/node-1/1800000000000',
+      '/hilos/logs/view/node-2/1800000000000',
+      '/hilos/logs/view/node-2/1800000000000',
+    ])
+    expect(navigations).toEqual([])
+    await links[0]!.trigger('click')
+    expect(navigations).toEqual(['/hilos/logs/view/node-1/1800000000000'])
+
+    const movingAddresses = wrapper.findAll(
+      '[data-id="hilos-rotation-moving-address"]',
+    )
+    expect(movingAddresses).toHaveLength(2)
+    for (const address of movingAddresses) {
+      expect(address.element.previousElementSibling?.textContent).toBe(
+        'staging/2027-01-15-08-00-03Z/',
+      )
+      expect(address.find('i').attributes('aria-hidden')).toBe('true')
+      expect(address.text()).toContain('going to the archive')
+    }
+    expect(
+      wrapper.findAll('[data-id="hilos-rotation-moving-wait"]'),
+    ).toHaveLength(2)
+    expect(wrapper.text()).toContain('wait until the move is over')
+    expect(wrapper.findAll('[data-id="hilos-rotation-takeout"]')).toHaveLength(
+      2,
+    )
+    expect(wrapper.findAll('[data-id="hilos-rotation-undo"]')).toHaveLength(2)
+  })
+
+  it('uses the effective node in a standalone batch link', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ rowKey: 'standalone:1800000000', node: 'standalone' })])
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-rotation-view"]').attributes('href'),
+    ).toBe('/hilos/logs/view/standalone/1800000000000')
+  })
+
+  it('repaints a carrying row as kept when its viewport delta arrives', async () => {
+    const { connection, pushHeader, pushWindow, pushRowUpdated } =
+      makeConnection()
+    const wrapper = mountPage(connection)
+    const moving = batch({
+      rowKey: 'node-1:1800000000',
+      path: 'staging/2027-01-15-08-00-00Z/',
+      retentionState: 'carrying',
+    })
+
+    pushHeader(header())
+    pushWindow([moving])
+    await nextTick()
+    expect(
+      wrapper.findAll('[data-id="hilos-rotation-moving-wait"]'),
+    ).toHaveLength(2)
+    expect(wrapper.findAll('[data-id="hilos-rotation-view"]')).toHaveLength(0)
+
+    pushRowUpdated({
+      ...moving,
+      path: 'archive/2027-01-15-08-00-00Z/',
+      retentionState: 'kept',
+    })
+    await nextTick()
+
+    expect(
+      wrapper.findAll('[data-id="hilos-rotation-moving-wait"]'),
+    ).toHaveLength(0)
+    expect(
+      wrapper.findAll('[data-id="hilos-rotation-moving-address"]'),
+    ).toHaveLength(0)
+    expect(wrapper.findAll('[data-id="hilos-rotation-view"]')).toHaveLength(2)
+    expect(
+      wrapper.find('[data-id="hilos-rotation-view"]').attributes('href'),
+    ).toBe('/hilos/logs/view/node-1/1800000000000')
   })
 
   /**
@@ -1186,8 +1328,20 @@ describe('HilosLogsRotationsPage', () => {
 
   it('a viewer filters the batches and reads the legend as an admin does', async () => {
     bindSession().handshake(null, true)
-    const { connection } = makeConnection()
+    const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ node: 'standalone', retentionState: 'kept' })])
+    await nextTick()
+
+    const viewLinks = wrapper.findAll('[data-id="hilos-rotation-view"]')
+    expect(viewLinks).toHaveLength(2)
+    expect(viewLinks[0]?.element.tagName).toBe('A')
+    expect(viewLinks[0]?.text()).toBe('View')
+    expect(viewLinks[0]?.attributes('href')).toBe(
+      '/hilos/logs/view/standalone/1800000000000',
+    )
 
     const dueSwitch = wrapper.find<HTMLInputElement>(
       '[data-id="hilos-table-filter-state"]',
