@@ -7,6 +7,7 @@ namespace Hilos\Core\Table\Definition;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
@@ -27,8 +28,8 @@ use Throwable;
  * Contract for a table that can serve a server-windowed viewport.
  *
  * A viewport table delivers a window of typed rows for a connection's descriptor
- * (getPage), declares the size and the order of the first of those windows (windowSize,
- * defaultSort), maps a source change to a row mutation (buildMutationForSourceEvent),
+ * (getPage), declares the size, order and route preset of the first window (windowSize,
+ * defaultSort, defaultFilter), maps a source change to a row mutation (buildMutationForSourceEvent),
  * and serializes a typed row into its browser-row envelope (browserRow). Together
  * these let the BrowserContext answer a table_viewport request with a table_window
  * and stream point-wise table_viewport_delta updates scoped to the window's rows —
@@ -38,7 +39,7 @@ use Throwable;
  *
  * getPage(), scopeSearch(), buildMutationForSourceEvent(), rowKeyForSourceEvent(), progressSnapshot(),
  * buildProgressForSourceEvent(), containsRow(), placeRowAgainst(), anchorForRow(), windowSize()
- * and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
+ * defaultSort() and defaultFilter() are already concrete on TableDefinition, so a TableDefinition subclass
  * satisfies them by inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
@@ -89,6 +90,18 @@ interface ViewportTable
      * @return ?TableSortOrderDTO Order the first window runs in, or null for the source's own order
      */
     public function defaultSort(): ?TableSortOrderDTO;
+
+    /**
+     * Declares the route preset for a cold window without reading its row source.
+     *
+     * Reported and held descriptors keep their own filters. The default is an empty
+     * map; tables scoped to a route derive their preset from these subscription params.
+     *
+     * @param PageRouteParams $params Route params of the page opening this window
+     * @return array<string, mixed> Open filter map for the first window
+     * @throws Throwable Whatever the concrete table raises while declaring its preset
+     */
+    public function defaultFilter(PageRouteParams $params): array;
 
     /**
      * Answers whether one row belongs to the set a window query describes.

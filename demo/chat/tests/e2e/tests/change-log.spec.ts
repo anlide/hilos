@@ -274,7 +274,11 @@ test('its registration receipt shows person and identity creation as facts witho
   const userId = await signUpAdmin(expect, page, { entryId: 'message-signin' })
   // The zone the browser names at sign-up rides the registration's receipt, so
   // the feed sums the person's entries without a key: the history names it.
-  await gotoPage(expect, page, `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`)
+  await gotoPage(
+    expect,
+    page,
+    `${CHANGE_LOG_TABLES_PATH}/hilos_user/history/${userId}`,
+  )
   await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId))
   const receiptId = await expectRegistrationHistory(expect, page)
   await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
@@ -302,7 +306,7 @@ test.describe('Change Log reader time zone', () => {
       await gotoPage(
         expect,
         page,
-        `${CHANGE_LOG_TABLES_PATH}/hilos_user/${userId}`,
+        `${CHANGE_LOG_TABLES_PATH}/hilos_user/history/${userId}`,
       )
       const receiptId = await expectRegistrationHistory(expect, page)
       await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)

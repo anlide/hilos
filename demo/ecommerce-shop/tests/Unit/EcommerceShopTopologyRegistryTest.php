@@ -61,6 +61,9 @@ use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\EcommerceShop\Pages\Hilos\Communications\CommunicationsChannelPage;
@@ -147,6 +150,8 @@ use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -351,7 +356,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
         foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
-            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class,
+            ChangeLogTableColumnsPage::class, ChangeLogTableTriggersPage::class, ChangeLogTableHistoryPage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -378,7 +384,27 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogTables]);
         self::assertSame([EcommerceShopTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogHistory]);
-        self::assertSame([EcommerceShopTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTableHistoryPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogTablePage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogTableColumns => []],
+            Hilos::PAGE_TABLES[ChangeLogTableColumnsPage::PAGE]);
+        self::assertSame(HilosChangeLogTableColumnsTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogTableColumns]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableColumnsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogTableTriggers => []],
+            Hilos::PAGE_TABLES[ChangeLogTableTriggersPage::PAGE]);
+        self::assertSame(HilosChangeLogTableTriggersTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogTableTriggers]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableTriggersPage::SUBSCRIPTION_AGENT_TYPE);
+        foreach ([
+            ChangeLogTablePage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE,
+            ChangeLogTableColumnsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_COLUMNS,
+            ChangeLogTableTriggersPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_TRIGGERS,
+            ChangeLogTableHistoryPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_HISTORY,
+        ] as $page => $signal) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
+            self::assertSame([], $page::ACTIONS);
+        }
     }
 
     /** The archive address is answered by the export owner. */
@@ -413,6 +439,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+            ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+            ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+            ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,

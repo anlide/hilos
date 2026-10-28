@@ -212,8 +212,13 @@ use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -287,6 +292,9 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+        ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+        ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -513,6 +521,8 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        PollsTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+        PollsTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
         PollsTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         PollsTableContext::settings => HilosSettingsTable::class,
@@ -641,8 +651,14 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => [
             PollsTableContext::hilosChangeLogNoisyColumns => [],
         ],
-        ChangeLogTablePage::PAGE => [
+        ChangeLogTableHistoryPage::PAGE => [
             PollsTableContext::hilosChangeLogHistory => [],
+        ],
+        ChangeLogTableColumnsPage::PAGE => [
+            PollsTableContext::hilosChangeLogTableColumns => [],
+        ],
+        ChangeLogTableTriggersPage::PAGE => [
+            PollsTableContext::hilosChangeLogTableTriggers => [],
         ],
         SettingsPage::PAGE => [
             PollsTableContext::settings => [],

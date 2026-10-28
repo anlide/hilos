@@ -88,10 +88,12 @@ Escape `_` and `%` in the database identifier used by `GRANT`, where they are
 patterns even inside backticks. The provisioning script validates names and the
 64-character limit and performs that escaping. It never clears a database.
 
-The backend registers all three journal pages and their table bindings.
-The Angular views mount all three: the dashboard at `/hilos/change-log`, Tracked
-tables at `/hilos/change-log/tables`, and one table with its history at
-`/hilos/change-log/tables/{tableId}/{record?}`.
+The backend registers all eight Change Log pages and their table bindings.
+The Angular views mount Overview at `/hilos/change-log`, Feed at
+`/hilos/change-log/feed`, Tracked tables at `/hilos/change-log/tables`,
+and Noisy columns at `/hilos/change-log/noisy`. A table's Overview is at
+`/hilos/change-log/tables/{tableId}`, with Columns at `/columns`,
+Triggers at `/triggers`, and History at `/history/{record?}` beneath that address.
 
 ## First run
 

@@ -100,6 +100,9 @@ final class PageCatalogResolverTest extends TestCase
             self::assertArrayNotHasKey(HilosPageConstants::HILOS_CHANGE_LOG, $provider::pages());
             self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
                 PageCatalogResolver::catalogOf($provider)[HilosPageConstants::HILOS_CHANGE_LOG]);
+            self::assertArrayNotHasKey(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, $provider::pages());
+            self::assertSame(HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG_TABLE],
+                PageCatalogResolver::catalogOf($provider)[HilosPageConstants::HILOS_CHANGE_LOG_TABLE]);
         }
         ChangeLogDefaultHeadHilos::initBrowser();
         self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG, new PageRouteParams([])));
@@ -138,7 +141,7 @@ final class PageCatalogResolverTest extends TestCase
             }
             self::assertSame(HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
                 PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_CHANGE_LOG_TABLE));
-            self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, new PageRouteParams([])));
+            self::assertNotNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, new PageRouteParams([])));
         }
     }
 
@@ -158,6 +161,48 @@ final class PageCatalogResolverTest extends TestCase
                 ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
             ], PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG,
                 new PageRouteParams(['variant' => 'enabled']))->pageTabs);
+        }
+    }
+
+    public function testTrackedTableRowHasFourTabsOrTwoWithoutAJournalLabelAndStopsTheSectionRow(): void
+    {
+        foreach ([TableEntityHeadHilos::class, ChatChangeLogHeadHilos::class, BinanceChangeLogHeadHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG_TABLE],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_CHANGE_LOG_TABLE]);
+            foreach ([HilosPageConstants::HILOS_CHANGE_LOG_TABLE, HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS,
+                HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS, HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY] as $page) {
+                $head = PageCatalogResolver::head($page, new PageRouteParams(['tableId' => 'tracked']));
+                self::assertSame(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, $head->pageHeadOwner['page']);
+                self::assertSame([
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS, 'label' => 'Columns'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS, 'label' => 'Triggers'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY, 'label' => 'History'],
+                ], $head->pageTabs);
+                self::assertSame([
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG, 'label' => 'Change Log'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLES, 'label' => 'Tracked tables'],
+                    ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE, 'label' => 'Tracked table'],
+                ], $head->pageBreadcrumb);
+            }
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS, 'label' => 'Triggers'],
+            ], PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
+                new PageRouteParams(['tableId' => 'untracked']))->pageTabs);
+        }
+        foreach ([ChangeLogDefaultHeadHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG_TABLE, new PageRouteParams(['tableId' => 'tracked'])));
+            self::assertSame([
+                HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS,
+                HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS,
+                HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY,
+            ], array_column(PageCatalogResolver::children(HilosPageConstants::HILOS_CHANGE_LOG_TABLE), 'page'));
         }
     }
 
@@ -2021,6 +2066,9 @@ abstract class ChangeLogHeadHilos extends Hilos
         HilosPageConstants::HILOS_CHANGE_LOG_TABLES => PageHeadTestPage::class,
         HilosPageConstants::HILOS_CHANGE_LOG_NOISY => PageHeadTestPage::class,
         HilosPageConstants::HILOS_CHANGE_LOG_TABLE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS => ConditionalTableHeadPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY => ConditionalTableHeadPage::class,
     ];
 }
 
@@ -2083,4 +2131,39 @@ abstract class BinanceChangeLogPartialHeadHilos extends BinanceChangeLogHeadHilo
         HilosPageConstants::HILOS_CHANGE_LOG_FEED => PageHeadTestConditionalTab::class,
         HilosPageConstants::HILOS_CHANGE_LOG => PageHeadTestPage::class,
     ];
+}
+
+abstract class TableEntityHeadHilos extends ChangeLogHeadHilos
+{
+    protected const string PAGE_CATALOG = TableEntityHeadCatalog::class;
+}
+
+final class TableEntityHeadCatalog implements PageCatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Fixture adoption of the nested table owner */
+    public static function pages(): array
+    {
+        return ChangeLogHeadCatalog::pages() + [HilosPageConstants::HILOS_CHANGE_LOG_TABLE => array_replace(
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG_TABLE],
+            [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+        )];
+    }
+
+    /** @return array Empty project sections */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
+final class ConditionalTableHeadPage extends AbstractPage
+{
+    /**
+     * @param PageRouteParams $ownerParams Fixture table address
+     * @return bool Whether this fixture table carries a journal label
+     */
+    public static function isTabApplicable(PageRouteParams $ownerParams): bool
+    {
+        return $ownerParams->getString('tableId') === 'tracked';
+    }
 }

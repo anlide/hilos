@@ -264,6 +264,21 @@ export class App {
         (module) => module.ChangeLogTable,
       ),
     ),
+    [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-columns.js').then(
+        (module) => module.ChangeLogTableColumns,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-triggers.js').then(
+        (module) => module.ChangeLogTableTriggers,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE_HISTORY]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-history.js').then(
+        (module) => module.ChangeLogTableHistory,
+      ),
+    ),
     // The framework OAuth admin pages (HIL-286): the framework owns the providers,
     // fields and return-address tables and their set / reset round-trips; the
     // project binds its connection, scope stores and action lifecycle

@@ -8,6 +8,7 @@ use ArrayAccess;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
@@ -421,6 +422,18 @@ abstract class TableDefinition implements ArrayAccess
     public function defaultSort(): ?TableSortOrderDTO
     {
         return null;
+    }
+
+    /**
+     * Declares the route preset of the first window; unscoped tables use an empty map.
+     *
+     * @param PageRouteParams $params Route params of the page opening this window
+     * @return array<string, mixed> Open filter map, empty by default
+     * @throws Throwable When a concrete table cannot declare its route preset
+     */
+    public function defaultFilter(PageRouteParams $params): array
+    {
+        return [];
     }
 
     /**

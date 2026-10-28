@@ -123,8 +123,8 @@ function router(tableBuilt: boolean): HilosRouter {
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page: string, params: Record<string, string> = {}) =>
-      tableBuilt && page === HilosPages.CHANGE_LOG_TABLE
-        ? `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/${encodeURIComponent(params.record ?? '')}`
+      tableBuilt && page === HilosPages.CHANGE_LOG_TABLE_HISTORY
+        ? `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/history/${encodeURIComponent(params.record ?? '')}`
         : undefined,
     ),
     clearPageError: () => {},
@@ -468,16 +468,16 @@ describe('HilosChangeLogReceiptModal', () => {
     expect(link.tagName).toBe('A')
     expect(link.textContent).toBe('bot #3, a,b')
     expect(navigator.resolvePath).toHaveBeenCalledWith(
-      HilosPages.CHANGE_LOG_TABLE,
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
       { tableId: 'bot', record: '3,a%2Cb' },
     )
     expect(link.getAttribute('href')).toBe(
-      '/hilos/change-log/tables/bot/3%2Ca%252Cb',
+      '/hilos/change-log/tables/bot/history/3%2Ca%252Cb',
     )
     link.click()
     expect(reader.close).toHaveBeenCalled()
     expect(navigator.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/3%2Ca%252Cb',
+      '/hilos/change-log/tables/bot/history/3%2Ca%252Cb',
     )
   })
 

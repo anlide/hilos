@@ -561,6 +561,194 @@ export async function expectChangeLogNoisyColumns(
   await expect(noiseTable).toContainText('Changes on every user request')
 }
 
+/**
+ * Check the adopted Vue table owner, including its declaration and native links.
+ *
+ * @param expect The spec's expect.
+ * @param page The current table page.
+ * @param table The live table name.
+ * @param currentPage The current owner page key.
+ * @param declaration Expected schema metadata from the scenario's fixture.
+ * @param recordKey The optional record route context retained by the History tab.
+ */
+export async function expectChangeLogTableHead(
+  expect: Expect,
+  page: Page,
+  table: string,
+  currentPage: string,
+  declaration: {
+    owner: 'Framework' | 'Project'
+    since: number | null
+    journaled?: boolean
+  },
+  recordKey?: string,
+): Promise<void> {
+  const journaled = declaration.journaled !== false
+  await expect(page.getByTestId('hilos-page-head')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText(table)
+  await expect(heading).toHaveClass(/\bfont-monospace\b/)
+  await expect(heading).toHaveClass(/\bfs-5\b/)
+  await expect(page).toHaveTitle(
+    new RegExp(`^${escapeRegExp(table)}(?: · .+)?$`),
+  )
+  const icon = page.getByTestId('hilos-change-log-table-head-icon')
+  await expect(icon).toHaveAttribute('aria-hidden', 'true')
+  await expect(icon).toHaveClass(/\brounded-circle\b/)
+  await expect(icon.locator('i.bi-table')).toHaveCount(1)
+  await expect(
+    page.getByTestId('hilos-change-log-table-head-badges'),
+  ).toHaveText(journaled ? `${declaration.owner} Journaled` : declaration.owner)
+  await expect(
+    page.getByTestId('hilos-change-log-table-head-description'),
+  ).toHaveText(
+    !journaled
+      ? "The entity has no journal label — this table's history is not written."
+      : declaration.since === null
+        ? ''
+        : `Journaled since migration ${String(declaration.since).padStart(3, '0')}`,
+  )
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('link')).toHaveText([
+    'Hilos',
+    'Change Log',
+    'Tracked tables',
+  ])
+  for (const [key, href] of [
+    ['hilos', '/hilos'],
+    ['hilos_change_log', CHANGE_LOG_PATH],
+    ['hilos_change_log_tables', CHANGE_LOG_TABLES_PATH],
+  ]) {
+    await expect(crumbs.getByTestId(`hilos-breadcrumb-${key}`)).toHaveAttribute(
+      'href',
+      href!,
+    )
+  }
+  await expect(crumbs.locator('[aria-current="page"]')).toHaveText(table)
+  await expect(crumbs.locator('[aria-current="page"] a')).toHaveCount(0)
+  const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveAccessibleName('Table pages')
+  await expect(tabs).toHaveRole('navigation')
+  const entries = journaled
+    ? [
+        ['', 'Overview'],
+        ['columns', 'Columns'],
+        ['triggers', 'Triggers'],
+        ['history', 'History'],
+      ]
+    : [
+        ['', 'Overview'],
+        ['triggers', 'Triggers'],
+      ]
+  await expect(tabs.getByRole('link')).toHaveText(
+    entries.map(([, label]) => label!),
+  )
+  for (const [suffix] of entries) {
+    const key = `hilos_change_log_table${suffix ? `_${suffix}` : ''}`
+    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
+    const recordSuffix =
+      suffix === 'history' && recordKey !== undefined
+        ? `/${encodeURIComponent(recordKey)}`
+        : ''
+    await expect(link).toHaveAttribute(
+      'href',
+      `${CHANGE_LOG_TABLES_PATH}/${encodeURIComponent(table)}${suffix ? `/${suffix}` : ''}${recordSuffix}`,
+    )
+    if (key === currentPage) {
+      await expect(link).toHaveAttribute('aria-current', 'page')
+      await expect(link).toHaveClass(/\bactive\b/)
+    } else {
+      await expect(link).not.toHaveAttribute('aria-current')
+      await expect(link).not.toHaveClass(/\bactive\b/)
+    }
+  }
+  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-change-log-table-header')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+}
+
+/**
+ * Keep exact legacy headings while checking all head metadata in adopted Vue.
+ *
+ * @param expect The spec's expect.
+ * @param page The current page.
+ * @param table The scenario's table fixture.
+ * @param currentPage The current table page key.
+ * @param legacyTitle The legacy page's exact catalog heading.
+ * @param recordKey The optional record route context retained by the History tab.
+ */
+async function expectTrackedTableOwnerHead(
+  expect: Expect,
+  page: Page,
+  table: string,
+  currentPage: string,
+  legacyTitle: string,
+  recordKey?: string,
+): Promise<void> {
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  if ((await heading.getAttribute('data-id')) === 'hilos-page-head-title') {
+    // These two schema fixtures are used by the shared table reading scenarios.
+    const declarations = {
+      hilos_user: { owner: 'Framework', since: 85 },
+      bot: { owner: 'Project', since: 95 },
+    } as const
+    const declaration = declarations[table as keyof typeof declarations]
+    if (!declaration) throw new Error(`No table head fixture for ${table}.`)
+    await expectChangeLogTableHead(
+      expect,
+      page,
+      table,
+      currentPage,
+      declaration,
+      recordKey,
+    )
+  } else {
+    await expect(heading).toHaveAttribute('data-id', 'hilos-admin-title')
+    await expect(heading).toHaveText(legacyTitle)
+    if (currentPage === 'hilos_change_log_table') {
+      await expect(
+        page.getByTestId('hilos-change-log-table-header'),
+      ).toContainText(table)
+    }
+  }
+}
+
+/** Overview keeps the live-table summary and no history window. */
+export async function expectTrackedTableOverview(
+  expect: Expect,
+  page: Page,
+  table: string,
+): Promise<void> {
+  await expect(page).toHaveURL(
+    new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}$`),
+  )
+  await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
+    'data-state',
+    'ready',
+  )
+  await expectTrackedTableOwnerHead(
+    expect,
+    page,
+    table,
+    'hilos_change_log_table',
+    'Tracked table',
+  )
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
+    0,
+  )
+  await expect(page.getByTestId('hilos-change-log-table-triggers')).toHaveCount(
+    0,
+  )
+}
+
 /** The record history is ready at its own address and names its filter. */
 export async function expectTrackedTableRecord(
   expect: Expect,
@@ -570,18 +758,27 @@ export async function expectTrackedTableRecord(
 ): Promise<void> {
   await expect(page).toHaveURL(
     new RegExp(
-      `${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/${escapeRegExp(recordKey)}$`,
+      `${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/history/${escapeRegExp(recordKey)}$`,
     ),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
     'ready',
   )
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
-    'Tracked table',
-  )
-  await expect(page.getByTestId('hilos-change-log-table-header')).toContainText(
+  await expectTrackedTableOwnerHead(
+    expect,
+    page,
     table,
+    'hilos_change_log_table_history',
+    'History',
+    recordKey,
+  )
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
+    0,
+  )
+  await expect(page.getByTestId('hilos-change-log-table-triggers')).toHaveCount(
+    0,
   )
   await expect(
     page.getByTestId('hilos-change-log-record-filter'),
@@ -595,18 +792,34 @@ export async function expectTrackedTableWhole(
   table: string,
 ): Promise<void> {
   await expect(page).toHaveURL(
-    new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}$`),
+    new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/history$`),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
     'ready',
   )
+  await expectTrackedTableOwnerHead(
+    expect,
+    page,
+    table,
+    'hilos_change_log_table_history',
+    'History',
+  )
   await expect(page.getByTestId('hilos-change-log-record-filter')).toHaveCount(
     0,
   )
-  await expect(page.getByTestId('hilos-viewport-table')).toContainText(
-    'All records of this table',
-  )
+  if (await page.getByTestId('hilos-page-head-title').count()) {
+    await expect(page.getByTestId('hilos-table-subtitle')).toHaveText(
+      'All records of this table',
+    )
+    await expect(
+      page.getByRole('table', { name: table, exact: true }),
+    ).toBeVisible()
+  } else {
+    await expect(page.getByTestId('hilos-viewport-table')).toContainText(
+      'All records of this table',
+    )
+  }
 }
 
 /** Treat supplied table names, record keys and field names as literal text. */

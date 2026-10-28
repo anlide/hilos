@@ -488,9 +488,33 @@ const changeLogNoisyTypes = [
   'HilosChangeLogNoisyColumnsRow',
   'HilosChangeLogNoisyColumnsTable',
 ]
+/** Explicit tracked-table metadata viewport and summary additions. */
+const changeLogTableMetadataValues = [
+  'CHANGE_LOG_TABLE_COLUMNS_NAME_FIELD',
+  'CHANGE_LOG_TABLE_COLUMNS_STORAGE_FIELD',
+  'CHANGE_LOG_TABLE_COLUMNS_MODE_FIELD',
+  'createHilosChangeLogTableColumnsTable',
+  'resolveHilosChangeLogTableColumnsRow',
+  'CHANGE_LOG_TABLE_TRIGGERS_NAME_FIELD',
+  'CHANGE_LOG_TABLE_TRIGGERS_OWNER_FIELD',
+  'CHANGE_LOG_TABLE_TRIGGERS_EVENT_FIELD',
+  'CHANGE_LOG_TABLE_TRIGGERS_WRITES_TO_FIELD',
+  'CHANGE_LOG_TABLE_TRIGGERS_MIGRATION_FIELD',
+  'createHilosChangeLogTableTriggersTable',
+  'resolveHilosChangeLogTableTriggersRow',
+  'changeLogTableJournalSince',
+  'changeLogTableColumnCounts',
+]
+const changeLogTableMetadataTypes = [
+  'HilosChangeLogTableColumnsRow',
+  'HilosChangeLogTableColumnsTable',
+  'HilosChangeLogTableTriggersRow',
+  'HilosChangeLogTableTriggersTable',
+]
 const expectedValues = [
   ...daemonNodeValues,
   ...changeLogNoisyValues,
+  ...changeLogTableMetadataValues,
   ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
   ...timeZoneValues,
   ...logViewerValues,
@@ -966,6 +990,7 @@ describe('core public entries', () => {
       [
         ...legacy.type,
         ...changeLogNoisyTypes,
+        ...changeLogTableMetadataTypes,
         'HilosProfileRenameState',
         'HilosProfileRenameFlowOptions',
         'HilosAnalyticsPerson',

@@ -60,6 +60,21 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLogTable.js').then((m) => m.default),
   ),
+  [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableColumns.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableTriggers.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE_HISTORY]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableHistory.js').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
     import('./views/Hilos/I18n/Languages/Languages.js').then((m) => m.default),
   ),

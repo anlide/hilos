@@ -600,6 +600,15 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos change log table detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE = 'subscription_page_hilos_change_log_table';
 
+    /** Subscription signal for Hilos change log table columns. */
+    public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_COLUMNS = 'subscription_page_hilos_change_log_table_columns';
+
+    /** Subscription signal for Hilos change log table triggers. */
+    public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_TRIGGERS = 'subscription_page_hilos_change_log_table_triggers';
+
+    /** Subscription signal for Hilos change log table history. */
+    public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_HISTORY = 'subscription_page_hilos_change_log_table_history';
+
     /** Client → server: read a receipt and one bounded portion of its full entries. */
     public const string HILOS_CHANGE_LOG_RECEIPT_READ = 'hilos_change_log_receipt_read';
 

@@ -26,6 +26,9 @@ import type {
 } from '@hilos/core'
 
 import { HilosChangeLogTablePage } from '../src/admin/changeLog/HilosChangeLogTablePage.js'
+import { HilosChangeLogTableColumnsPage } from '../src/admin/changeLog/HilosChangeLogTableColumnsPage.js'
+import { HilosChangeLogTableTriggersPage } from '../src/admin/changeLog/HilosChangeLogTableTriggersPage.js'
+import { HilosChangeLogTableHistoryPage } from '../src/admin/changeLog/HilosChangeLogTableHistoryPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 const HISTORY = 'hilosChangeLogHistory'
@@ -209,7 +212,7 @@ type Listener = (signal: {
 
 function harness(section: unknown = BOT) {
   const scopes = new ScopeManager()
-  const scope = scopes.openPage(HilosPages.CHANGE_LOG_TABLE)
+  const scope = scopes.openPage(HilosPages.CHANGE_LOG_TABLE_HISTORY)
   scope.data.set(CHANGE_LOG_TABLE_SECTION, section)
   const listeners = new Map<string, Set<Listener>>()
   const connection = {
@@ -240,7 +243,7 @@ function harness(section: unknown = BOT) {
   function pushWindow(rows = ROWS) {
     emit('tableWindow', {
       data: {
-        page: HilosPages.CHANGE_LOG_TABLE,
+        page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
         tableKey: HISTORY,
         rows,
         totalCount: rows.length,
@@ -256,7 +259,7 @@ function harness(section: unknown = BOT) {
     emit('projectSignal', {
       type: 'page_response',
       data: {
-        page: HilosPages.CHANGE_LOG_TABLE,
+        page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
         payload: {
           windows: {
             [HISTORY]: {
@@ -289,7 +292,7 @@ function harness(section: unknown = BOT) {
 /** Address the page as the application's route map does. */
 function tablePath(params: Record<string, string>): string {
   const record = params.record
-  return `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}${
+  return `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/history${
     record === undefined ? '' : `/${encodeURIComponent(record)}`
   }`
 }
@@ -297,7 +300,7 @@ function tablePath(params: Record<string, string>): string {
 function router(params: Record<string, string>, built = true) {
   const leaves = new Set<() => void>()
   const currentRoute = createSignal<PageRouteMatch>({
-    page: HilosPages.CHANGE_LOG_TABLE,
+    page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
     params,
     admin: true,
   })
@@ -315,7 +318,9 @@ function router(params: Record<string, string>, built = true) {
     }),
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page: string, to: Record<string, string> = {}) =>
-      built && page === HilosPages.CHANGE_LOG_TABLE ? tablePath(to) : undefined,
+      built && page === HilosPages.CHANGE_LOG_TABLE_HISTORY
+        ? tablePath(to)
+        : undefined,
     ),
     clearPageError: () => {},
     denyCurrentPage: () => {},
@@ -334,7 +339,7 @@ function router(params: Record<string, string>, built = true) {
     go(next: Record<string, string>) {
       leaves.forEach((listener) => listener())
       currentRoute.set({
-        page: HilosPages.CHANGE_LOG_TABLE,
+        page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
         params: next,
         admin: true,
       })
@@ -359,10 +364,15 @@ async function settle(): Promise<void> {
  * @param r The navigator the page reads.
  * @param push Whether to answer the history window right away.
  */
-function mountPage(h = harness(), r = router({ tableId: 'bot' }), push = true) {
+function mountPage(
+  h = harness(),
+  r = router({ tableId: 'bot' }),
+  push = true,
+  Component = HilosChangeLogTableHistoryPage,
+) {
   const result = render(
     <HilosRouterContext.Provider value={r.value}>
-      <HilosChangeLogTablePage context={h.context} />
+      <Component context={h.context} />
     </HilosRouterContext.Provider>,
   )
   if (push) act(() => h.pushWindow())
@@ -391,6 +401,30 @@ function rows(table: HTMLElement): string[][] {
   )
 }
 
+function mountOverview(
+  h = harness(),
+  r = router({ tableId: 'bot' }),
+  push = false,
+) {
+  return mountPage(h, r, push, HilosChangeLogTablePage)
+}
+
+function mountColumns(
+  h = harness(),
+  r = router({ tableId: 'bot' }),
+  push = false,
+) {
+  return mountPage(h, r, push, HilosChangeLogTableColumnsPage)
+}
+
+function mountTriggers(
+  h = harness(),
+  r = router({ tableId: 'bot' }),
+  push = false,
+) {
+  return mountPage(h, r, push, HilosChangeLogTableTriggersPage)
+}
+
 describe('HilosChangeLogTablePage', () => {
   // The receipt modal is portalled to the document body, so a page left mounted
   // would leave it there for the next case to find.
@@ -399,8 +433,8 @@ describe('HilosChangeLogTablePage', () => {
     for (const release of releases.splice(0)) release()
   })
 
-  it('draws the header, columns and service triggers of a journaled table', () => {
-    const { container } = mountPage()
+  it('draws Overview without any history bindings', () => {
+    const { container } = mountOverview()
     expect(container.querySelectorAll('h1')).toHaveLength(1)
     const header = element('hilos-change-log-table-header', container)
     expect(text(get(header, 'code'))).toBe('bot')
@@ -411,6 +445,20 @@ describe('HilosChangeLogTablePage', () => {
       formatChangeLogTableActivity({ changesLast24h: 3, lastChangeAt: null }),
     )
 
+    expect(
+      document.querySelector('[data-id="hilos-viewport-table"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-change-log-table-columns"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-change-log-table-triggers"]'),
+    ).toBeNull()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
+  it('draws Columns with schema order, modes and named cards', () => {
+    const { container } = mountColumns()
     const columns = element('hilos-change-log-table-columns', container)
     expect(text(get(columns, 'h2'))).toBe('Columns')
     const table = get(columns, 'table')
@@ -440,7 +488,10 @@ describe('HilosChangeLogTablePage', () => {
     expect(cards.textContent).toContain('Long text')
     expect(cards.textContent).toContain('Personal — only a fact')
     expect(columns.textContent).toContain(CHANGE_LOG_TABLE_COPY.noisyNote)
+  })
 
+  it('draws Triggers in service event order', () => {
+    const { container } = mountTriggers()
     const triggers = element('hilos-change-log-table-triggers', container)
     expect(text(get(triggers, 'h2'))).toBe('Journal service triggers')
     expect(rows(get(triggers, 'table'))).toEqual([
@@ -472,11 +523,10 @@ describe('HilosChangeLogTablePage', () => {
     expect(triggers.textContent).toContain(
       CHANGE_LOG_TABLE_COPY.triggersFootnote,
     )
-    expect(container.textContent).toContain(CHANGE_LOG_TABLE_COPY.historyNote)
   })
 
   it('leaves the noisy line out when no column is noisy', () => {
-    const { container } = mountPage(
+    const { container } = mountColumns(
       harness({
         ...BOT,
         columns: BOT.columns.filter(({ mode }) => mode !== 'noise'),
@@ -487,7 +537,7 @@ describe('HilosChangeLogTablePage', () => {
 
   it('draws an untracked table as its header and explanation alone', () => {
     const h = harness(SESSION)
-    const { container } = mountPage(h, router({ tableId: 'hilos_session' }))
+    const { container } = mountOverview(h, router({ tableId: 'hilos_session' }))
     const header = element('hilos-change-log-table-header', container)
     expect(text(get(header, 'code'))).toBe('hilos_session')
     expect(header.textContent).toContain('Framework')
@@ -507,7 +557,7 @@ describe('HilosChangeLogTablePage', () => {
 
   it('draws a dash in place of the zones when the section is damaged', () => {
     const h = harness({ ...BOT, owner: 'nobody' })
-    const { container } = mountPage(h)
+    const { container } = mountOverview(h)
     expect(
       container.querySelector('[data-id="hilos-change-log-table-header"]'),
     ).toBeNull()
@@ -533,14 +583,16 @@ describe('HilosChangeLogTablePage', () => {
     const row = get(container, 'table [data-id="hilos-table-row-101"]')
     const link = element('hilos-change-log-history-record-101', row)
     expect(text(link)).toBe('#57')
-    expect(link.getAttribute('href')).toBe('/hilos/change-log/tables/bot/57')
+    expect(link.getAttribute('href')).toBe(
+      '/hilos/change-log/tables/bot/history/57',
+    )
     expect(r.value.resolvePath).toHaveBeenCalledWith(
-      HilosPages.CHANGE_LOG_TABLE,
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
       { tableId: 'bot', record: '57' },
     )
     act(() => link.click())
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/57',
+      '/hilos/change-log/tables/bot/history/57',
     )
     expect(row.textContent).toContain('updated')
     expect(row.textContent).toContain('description: before → after')
@@ -575,7 +627,7 @@ describe('HilosChangeLogTablePage', () => {
     )
     act(() => h.pushPageWindow())
     expect(h.connection.sendTableViewport).toHaveBeenCalledWith(
-      HilosPages.CHANGE_LOG_TABLE,
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
       HISTORY,
       expect.objectContaining({
         filter: expect.objectContaining({ table: 'bot', record: ['57'] }),
@@ -585,12 +637,14 @@ describe('HilosChangeLogTablePage', () => {
     expect(text(plate)).toContain('Only record #57')
     expect(container.textContent).not.toContain('All records of this table')
     const clear = element('hilos-change-log-record-filter-clear', plate)
-    expect(clear.getAttribute('href')).toBe('/hilos/change-log/tables/bot')
+    expect(clear.getAttribute('href')).toBe(
+      '/hilos/change-log/tables/bot/history',
+    )
     expect(clear.getAttribute('aria-label')).toBe('Show all records')
     expect(get(clear, 'i').getAttribute('aria-hidden')).toBe('true')
     act(() => clear.click())
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot',
+      '/hilos/change-log/tables/bot/history',
     )
   })
 
@@ -608,7 +662,7 @@ describe('HilosChangeLogTablePage', () => {
     act(() => h.pushPageWindow())
     expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(1)
     expect(h.connection.sendTableViewport).toHaveBeenLastCalledWith(
-      HilosPages.CHANGE_LOG_TABLE,
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
       HISTORY,
       expect.objectContaining({
         filter: expect.objectContaining({ table: 'bot', record: ['57'] }),
@@ -639,6 +693,68 @@ describe('HilosChangeLogTablePage', () => {
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
+  it.each([
+    ['full', 'Overview'],
+    ['view', 'Overview'],
+    ['full', 'Columns'],
+    ['view', 'Columns'],
+    ['full', 'Triggers'],
+    ['view', 'Triggers'],
+  ] as const)(
+    'keeps %s metadata visible on %s without history bindings',
+    (access, part) => {
+      const h = harness()
+      bindSessionScope(h.context.connection, h.context.scopes)
+      releases.push(bindAdminAccess(h.context.scopes))
+      h.emit('projectSignal', {
+        type: 'handshake_response',
+        data: {
+          entities: {
+            currentUser: { id: 9, name: 'Ada', admin: access === 'full' },
+          },
+          data: { adminViewMode: true },
+        },
+      })
+      expect(hilosAdminAccess.get()).toBe(access)
+      const Component =
+        part === 'Overview'
+          ? HilosChangeLogTablePage
+          : part === 'Columns'
+            ? HilosChangeLogTableColumnsPage
+            : HilosChangeLogTableTriggersPage
+      const { container } = mountPage(
+        h,
+        router({ tableId: 'bot' }),
+        false,
+        Component,
+      )
+      if (part === 'Overview')
+        expect(
+          element('hilos-change-log-table-header', container).textContent,
+        ).toContain('bot')
+      else {
+        const section = element(
+          `hilos-change-log-table-${part.toLowerCase()}`,
+          container,
+        )
+        expect(section.querySelectorAll('tbody tr')).toHaveLength(
+          part === 'Columns' ? 5 : 3,
+        )
+        expect(section.textContent).toContain(
+          part === 'Columns'
+            ? 'Personal — only a fact'
+            : 'hilos_cl_bot_after_insert',
+        )
+      }
+      expect(
+        document.querySelector('[data-id="hilos-viewport-table"]'),
+      ).toBeNull()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(h.connection.registerTableWindow).not.toHaveBeenCalled()
+      expect(h.source.sent).toEqual([])
+    },
+  )
+
   it.each(['full', 'view'] as const)(
     'shows the same table under %s access and hides people from a viewer',
     (access) => {
@@ -668,19 +784,6 @@ describe('HilosChangeLogTablePage', () => {
           },
         ]),
       )
-      expect(
-        element('hilos-change-log-table-header', container).textContent,
-      ).toContain('bot')
-      expect(
-        element('hilos-change-log-table-columns', container).querySelectorAll(
-          'tbody tr',
-        ),
-      ).toHaveLength(5)
-      expect(
-        element('hilos-change-log-table-triggers', container).querySelectorAll(
-          'tbody tr',
-        ),
-      ).toHaveLength(3)
       const row = get(container, 'table [data-id="hilos-table-row-101"]')
       if (access === 'view') {
         expect(text(row)).toContain('Hidden (#3)')

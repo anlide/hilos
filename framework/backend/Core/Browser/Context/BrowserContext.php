@@ -517,6 +517,7 @@ abstract class BrowserContext
                     tableKey: $browserKey,
                     table: $viewportTable,
                     reported: $reportedWindows[$browserKey] ?? null,
+                    params: $params,
                 );
                 if ($window !== null) {
                     $windows[$browserKey] = $window;
@@ -1239,6 +1240,7 @@ abstract class BrowserContext
      * @param string $tableKey Table key the window is for
      * @param ViewportTable $table Table the window is taken from
      * @param ?TableWindowDescriptorDTO $reported Window this tab reported holding, or null when it reported none
+     * @param PageRouteParams $params Route params of this subscription
      * @return ?array<string, mixed> The `windows` section entry for this table, or null when it has none
      */
     private function subscribeTableWindow(
@@ -1247,8 +1249,23 @@ abstract class BrowserContext
         string $tableKey,
         ViewportTable $table,
         ?TableWindowDescriptorDTO $reported,
+        PageRouteParams $params,
     ): ?array {
-        $viewport = $this->viewportForViewer($page, $acceptKey, $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported));
+        try {
+            $viewport = $this->viewportForViewer(
+                $page,
+                $acceptKey,
+                $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported, $params),
+            );
+        } catch (Throwable $e) {
+            Logger::error(
+                "Browser window skipped a table that failed to declare its window: table={$tableKey}, "
+                . "page={$page}, error={$e->getMessage()}",
+            );
+            Hilos::$sr?->oweTableWindow($acceptKey, $tableKey);
+
+            return null;
+        }
         Hilos::$sr?->setTableViewport($acceptKey, $viewport);
         if ($reported !== null) {
             // The options a tab asked counts beside travel in its report for the reason its window
@@ -1315,13 +1332,16 @@ abstract class BrowserContext
      * @param string $tableKey Table key the window is for
      * @param ViewportTable $table Table whose own declaration answers for a cold entry
      * @param ?TableWindowDescriptorDTO $reported Window this tab reported holding, or null when it reported none
+     * @param PageRouteParams $params Route params of this subscription
      * @return TableViewportSubscription Viewport the window is built from
+     * @throws Throwable When the table cannot declare its cold window
      */
     private function subscriptionViewport(
         string $acceptKey,
         string $tableKey,
         ViewportTable $table,
         ?TableWindowDescriptorDTO $reported,
+        PageRouteParams $params,
     ): TableViewportSubscription {
         if ($reported !== null) {
             return new TableViewportSubscription(
@@ -1341,13 +1361,13 @@ abstract class BrowserContext
             return $held;
         }
 
-        // The three fields not named here are what HIL-787 already settled and nobody declares:
-        // no filter, no anchor and the edge of the set, which together are the first window. The
-        // drawn fields are not named either, and for another reason: they are declared by the
+        // A cold window starts at the edge of the route-scoped set, without an anchor. The
+        // drawn fields are not named, and for another reason: they are declared by the
         // tab's columns, and the server has none. The table declares them once this window has
         // reached it (declareTableRendered()); until then its rows are compared whole (HIL-880).
         return new TableViewportSubscription(
             tableKey: $tableKey,
+            filter: $table->defaultFilter($params),
             sort: $table->defaultSort(),
             limit: $table->windowSize(),
         );

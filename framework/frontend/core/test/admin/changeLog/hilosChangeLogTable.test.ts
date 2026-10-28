@@ -6,6 +6,8 @@ import {
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
   changeLogColumnModeCard,
+  changeLogTableColumnCounts,
+  changeLogTableJournalSince,
   changeLogRecordRouteParam,
   formatChangeLogColumnStorage,
   formatChangeLogHistoryChanges,
@@ -16,6 +18,7 @@ import {
   type HilosChangeLogTableDetail,
   type HilosChangeLogTableTrigger,
 } from '../../../src/admin/changeLog/hilosChangeLogTable.js'
+import { formatChangeLogColumnCounts } from '../../../src/admin/changeLog/hilosChangeLogTables.js'
 import {
   HilosPages,
   HILOS_ROUTE_DECLARATIONS,
@@ -153,6 +156,81 @@ describe('change-log table section', () => {
       readHilosChangeLogTable({ ...journaled, triggers: undefined }),
     ).toBeNull()
   })
+
+  it('finds the earliest trigger migration independently of declaration order', () => {
+    const detail = {
+      ...journaled,
+      triggers: [
+        { ...insertTrigger, validFromMigration: 82 },
+        { ...insertTrigger, event: 'UPDATE' as const, validFromMigration: 9 },
+        { ...insertTrigger, event: 'DELETE' as const, validFromMigration: 71 },
+      ],
+    }
+    expect(changeLogTableJournalSince(detail)).toBe(9)
+    expect(
+      detail.triggers.map(({ validFromMigration }) => validFromMigration),
+    ).toEqual([82, 9, 71])
+    expect(changeLogTableJournalSince(journaled)).toBe(71)
+    expect(
+      changeLogTableJournalSince({ ...journaled, triggers: [] }),
+    ).toBeNull()
+    expect(changeLogTableJournalSince(untracked)).toBeNull()
+  })
+
+  it('counts each journal mode and lets the formatter combine personal and binary as facts', () => {
+    const modes: HilosChangeLogTableColumn['mode'][] = [
+      'record_key',
+      'value',
+      'value',
+      'personal',
+      'binary',
+      'binary',
+      'noise',
+      'secret',
+      null,
+    ]
+    const detail = {
+      ...journaled,
+      columns: modes.map((mode, index) => ({
+        ...nameColumn,
+        name: `c${index}`,
+        mode,
+      })),
+    }
+    const before = structuredClone(detail)
+    const counts = changeLogTableColumnCounts(detail)
+    expect(counts).toEqual({
+      value: 2,
+      personal: 1,
+      binary: 2,
+      secret: 1,
+      noise: 1,
+    })
+    expect(formatChangeLogColumnCounts(counts)).toBe(
+      'with value 2 · as fact 3 · noisy 1 · secret 1',
+    )
+    expect(detail.columns).toHaveLength(9)
+    expect(detail).toEqual(before)
+  })
+
+  it('returns zero counts for empty, untracked and record-key-only declarations', () => {
+    for (const detail of [
+      { ...journaled, columns: [] },
+      untracked,
+      { ...journaled, columns: [journaled.columns[0]!] },
+    ]) {
+      expect(changeLogTableColumnCounts(detail)).toEqual({
+        value: 0,
+        personal: 0,
+        binary: 0,
+        secret: 0,
+        noise: 0,
+      })
+      expect(
+        formatChangeLogColumnCounts(changeLogTableColumnCounts(detail)),
+      ).toBe('—')
+    }
+  })
 })
 
 describe('change-log record route param', () => {
@@ -162,12 +240,12 @@ describe('change-log record route param', () => {
     path: string | undefined
     record: string[] | null
   } {
-    const path = router.path(HilosPages.CHANGE_LOG_TABLE, {
+    const path = router.path(HilosPages.CHANGE_LOG_TABLE_HISTORY, {
       tableId: 'bot',
       record: changeLogRecordRouteParam(key),
     })
     const match = router.match(path ?? '')
-    expect(match.page).toBe(HilosPages.CHANGE_LOG_TABLE)
+    expect(match.page).toBe(HilosPages.CHANGE_LOG_TABLE_HISTORY)
     expect(match.params.tableId).toBe('bot')
     return {
       path,
@@ -177,7 +255,7 @@ describe('change-log record route param', () => {
 
   it('addresses a numeric record in the example form', () => {
     expect(roundTrip([57])).toEqual({
-      path: '/hilos/change-log/tables/bot/57',
+      path: '/hilos/change-log/tables/bot/history/57',
       record: ['57'],
     })
   })

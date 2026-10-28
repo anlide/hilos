@@ -3,3 +3,6 @@ export { default as HilosChangeLogTablePage } from './HilosChangeLogTablePage.vu
 export { default as HilosChangeLogTablesPage } from './HilosChangeLogTablesPage.vue'
 export { default as HilosChangeLogFeedPage } from './HilosChangeLogFeedPage.vue'
 export { default as HilosChangeLogNoisyPage } from './HilosChangeLogNoisyPage.vue'
+export { default as HilosChangeLogTableColumnsPage } from './HilosChangeLogTableColumnsPage.vue'
+export { default as HilosChangeLogTableTriggersPage } from './HilosChangeLogTableTriggersPage.vue'
+export { default as HilosChangeLogTableHistoryPage } from './HilosChangeLogTableHistoryPage.vue'

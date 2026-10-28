@@ -41,6 +41,61 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
   })
 
+  it.each([
+    [HilosPages.CHANGE_LOG_TABLE, 'HILOS_CHANGE_LOG_TABLE', ''],
+    [
+      HilosPages.CHANGE_LOG_TABLE_COLUMNS,
+      'HILOS_CHANGE_LOG_TABLE_COLUMNS',
+      '/columns',
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE_TRIGGERS,
+      'HILOS_CHANGE_LOG_TABLE_TRIGGERS',
+      '/triggers',
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
+      'HILOS_CHANGE_LOG_TABLE_HISTORY',
+      '/history',
+    ],
+  ] as const)(
+    'serves table page %s directly in every kit',
+    (page, phpKey, tail) => {
+      const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+      const path = `/hilos/change-log/tables/bot${tail}`
+      expect(router.path(page, { tableId: 'bot' })).toBe(path)
+      expect(router.match(path)).toEqual({
+        page,
+        params: { tableId: 'bot' },
+        admin: true,
+      })
+      const php = readFileSync(
+        new URL(
+          '../../../../backend/Constants/HilosPageConstants.php',
+          import.meta.url,
+        ),
+        'utf8',
+      )
+      expect(php).toContain(`${phpKey} = '${page}';`)
+      for (const kit of ['vue', 'react', 'angular'] as const)
+        expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
+    },
+  )
+
+  it('refuses the removed Overview record tail and clears a record to whole History', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    expect(router.match('/hilos/change-log/tables/bot/57').page).toBeNull()
+    expect(router.match('/hilos/change-log/tables/bot/unknown').page).toBeNull()
+    expect(router.match('/hilos/change-log/tables/bot/history/57')).toEqual({
+      page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
+      params: { tableId: 'bot', record: '57' },
+      admin: true,
+    })
+    expect(
+      router.path(HilosPages.CHANGE_LOG_TABLE_HISTORY, { tableId: 'bot' }),
+    ).toBe('/hilos/change-log/tables/bot/history')
+  })
+
   it('addresses channel Configuration beside the unchanged Overview and Deliveries', () => {
     const page = HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)

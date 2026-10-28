@@ -15,6 +15,7 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
@@ -129,8 +130,126 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $viewport = Hilos::$sr->getTableViewport('ak-1', SubscribeWindowUnitTable::TABLE);
         $this->assertNotNull($viewport);
         $this->assertSame(2, $viewport->limit);
+        $this->assertSame([], $viewport->filter);
         $this->assertSame('key', $viewport->sort?->last()->field);
         $this->assertSame(['a', 'b'], $viewport->rowIds());
+    }
+
+    public function testAColdWindowTakesItsPresetFromTheSameTypedRouteParams(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        $params = new PageRouteParams(['label' => 'Beta']);
+
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', $params,
+        );
+
+        $table = Hilos::$table->get(SubscribeWindowPresetTable::TABLE);
+        $this->assertSame($params, $table->receivedParams);
+        $viewport = Hilos::$sr->getTableViewport('ak-1', SubscribeWindowPresetTable::TABLE);
+        $this->assertNotNull($viewport);
+        $this->assertSame(['label' => 'Beta'], $viewport->filter);
+        $this->assertSame(2, $viewport->limit);
+        $this->assertSame('key', $viewport->sort?->last()->field);
+        $this->assertSame(['b'], $viewport->rowIds());
+        $this->assertSame(1, self::windowOf($snapshot, SubscribeWindowPresetTable::TABLE)[TableWindowSignalData::totalCount]);
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
+        $this->assertSame([], $snapshot->refusedWindows);
+    }
+
+    public function testReportedFiltersAndBoundariesPrecedeTheRoutePresetAndTheHeldWindow(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        Hilos::$sr->setTableViewport('ak-1', new TableViewportSubscription(
+            tableKey: SubscribeWindowPresetTable::TABLE, filter: ['label' => 'Alpha'], limit: 2,
+        ));
+        Hilos::$sr->reportTableWindows('ak-1', [
+            SubscribeWindowPresetTable::TABLE => new TableWindowDescriptorDTO(
+                filter: ['label' => 'Gamma'],
+                sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)),
+                limit: 1,
+                pageIndex: 0,
+            ),
+        ]);
+
+        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams([]),
+        );
+
+        $viewport = Hilos::$sr->getTableViewport('ak-1', SubscribeWindowPresetTable::TABLE);
+        $this->assertNotNull($viewport);
+        $this->assertSame(['label' => 'Gamma'], $viewport->filter);
+        $this->assertSame(1, $viewport->limit);
+        $this->assertSame(0, $viewport->pageIndex);
+        $this->assertSame(TableConstants::ORDER_DESC, $viewport->sort?->last()->direction);
+        $this->assertSame(['c'], $viewport->rowIds());
+        $this->assertNull(Hilos::$table->get(SubscribeWindowPresetTable::TABLE)->receivedParams);
+    }
+
+    public function testAHeldDescriptorKeepsItsFilterSizeOrderAndBoundary(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        $held = new TableViewportSubscription(
+            tableKey: SubscribeWindowPresetTable::TABLE,
+            filter: ['label' => 'Alpha'],
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)),
+            limit: 1,
+            pageIndex: 0,
+        );
+        Hilos::$sr->setTableViewport('ak-1', $held);
+
+        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams([]),
+        );
+
+        $this->assertSame($held, Hilos::$sr->getTableViewport('ak-1', SubscribeWindowPresetTable::TABLE));
+        $this->assertSame(['label' => 'Alpha'], $held->filter);
+        $this->assertSame(1, $held->limit);
+        $this->assertSame(0, $held->pageIndex);
+        $this->assertSame(TableConstants::ORDER_DESC, $held->sort?->last()->direction);
+        $this->assertSame(['a'], $held->rowIds());
+        $this->assertNull(Hilos::$table->get(SubscribeWindowPresetTable::TABLE)->receivedParams);
+    }
+
+    public function testAFailedPresetDeclarationRefusesOnlyItsWindowAndKeepsTheDebt(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        ob_start();
+        try {
+            $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+                SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams([]),
+            );
+        } finally {
+            $logged = (string) ob_get_clean();
+        }
+
+        $this->assertStringContainsString('failed to declare its window', $logged);
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
+        $this->assertArrayNotHasKey(SubscribeWindowPresetTable::TABLE, $snapshot->windows);
+        $this->assertSame(
+            [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
+            self::refusalOf($snapshot, SubscribeWindowPresetTable::TABLE),
+        );
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowPresetTable::TABLE));
+        Hilos::$sr->subscribeToPage(
+            SubscribeWindowUnitBrowserContext::PRESET_PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', SubscribeWindowUnitBrowserContext::PRESET_PAGE),
+        );
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowPresetTable::TABLE));
+        $recovered = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams(['label' => 'Beta']),
+        );
+        $this->assertArrayHasKey(SubscribeWindowPresetTable::TABLE, $recovered->windows);
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowPresetTable::TABLE));
     }
 
     public function testAReportedDescriptorBeatsWhatTheTableDeclares(): void
@@ -499,6 +618,7 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
     public const string REFUSING_PAGE = 'subscribe_window_unit_refusing_page';
     public const string MIXED_PAGE = 'subscribe_window_unit_mixed_page';
     public const string SIBLINGS_PAGE = 'subscribe_window_unit_siblings_page';
+    public const string PRESET_PAGE = 'subscribe_window_unit_preset_page';
     public const string SIGNAL = 'subscribe_window_unit_signal';
 
     /**
@@ -510,7 +630,8 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
-        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE, self::MIXED_PAGE, self::SIBLINGS_PAGE], true)) {
+        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE,
+            self::MIXED_PAGE, self::SIBLINGS_PAGE, self::PRESET_PAGE], true)) {
             return null;
         }
 
@@ -535,6 +656,10 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
             self::SIBLINGS_PAGE => BrowserPageBindings::fromArray([
                 SubscribeWindowUnitTable::TABLE => [],
                 SubscribeWindowUnitTable::SIBLING_TABLE => [],
+            ]),
+            self::PRESET_PAGE => BrowserPageBindings::fromArray([
+                SubscribeWindowPresetTable::TABLE => [],
+                SubscribeWindowUnitTable::TABLE => [],
             ]),
             default => BrowserPageBindings::empty(),
         };
@@ -563,6 +688,7 @@ final class SubscribeWindowUnitTableContext extends TableContext
         );
         $this->register(SubscribeWindowRefusingTable::TABLE, new SubscribeWindowRefusingTable());
         $this->register(SubscribeWindowUnitTable::SIBLING_TABLE, new SubscribeWindowUnitTable($this->rows));
+        $this->register(SubscribeWindowPresetTable::TABLE, new SubscribeWindowPresetTable($this->rows));
     }
 }
 
@@ -576,7 +702,7 @@ final class SubscribeWindowUnitRtContext extends RtContext
     }
 }
 
-final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnapshotTable
+class SubscribeWindowUnitTable extends TableDefinition implements SelfSnapshotTable
 {
     public const string TABLE = 'subscribeWindowUnitTable';
 
@@ -696,8 +822,33 @@ final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnap
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $rows = array_map(static fn(SubscribeWindowUnitRow $row): array => $row->toArray(), $this->rows);
+        if (array_key_exists(self::FILTER_LABEL, $query->filter)) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => $row[self::FILTER_LABEL] === $query->filter[self::FILTER_LABEL],
+            ));
+        }
 
         return $this->filterInMemory($rows, $query);
+    }
+}
+
+/** Route-scoped fixture that refuses a cold entry without its required label. */
+final class SubscribeWindowPresetTable extends SubscribeWindowUnitTable
+{
+    public const string TABLE = 'subscribeWindowPresetTable';
+
+    public ?PageRouteParams $receivedParams = null;
+
+    /**
+     * @param PageRouteParams $params Typed route params from this subscription
+     * @return array<string, mixed> Label preset without source reads
+     */
+    public function defaultFilter(PageRouteParams $params): array
+    {
+        $this->receivedParams = $params;
+
+        return [self::FILTER_LABEL => $params->requireString(self::FILTER_LABEL)];
     }
 }
 

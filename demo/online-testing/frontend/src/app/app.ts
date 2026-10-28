@@ -199,6 +199,21 @@ export class App {
         (module) => module.ChangeLogTable,
       ),
     ),
+    [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-columns.js').then(
+        (module) => module.ChangeLogTableColumns,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-triggers.js').then(
+        (module) => module.ChangeLogTableTriggers,
+      ),
+    ),
+    [HilosPages.CHANGE_LOG_TABLE_HISTORY]: lazyPage(() =>
+      import('./views/hilos/change-log/change-log-table-history.js').then(
+        (module) => module.ChangeLogTableHistory,
+      ),
+    ),
     [HilosPages.LOGS]: lazyPage(() =>
       import('./views/hilos/logs/overview.js').then(
         (module) => module.LogsOverview,

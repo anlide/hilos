@@ -160,8 +160,13 @@ use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -230,6 +235,9 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+        ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+        ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -411,6 +419,8 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        OnlineTestingTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+        OnlineTestingTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
         OnlineTestingTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         OnlineTestingTableContext::settings => HilosSettingsTable::class,
@@ -485,8 +495,14 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogNoisyColumns => [],
         ],
-        ChangeLogTablePage::PAGE => [
+        ChangeLogTableHistoryPage::PAGE => [
             OnlineTestingTableContext::hilosChangeLogHistory => [],
+        ],
+        ChangeLogTableColumnsPage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogTableColumns => [],
+        ],
+        ChangeLogTableTriggersPage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogTableTriggers => [],
         ],
         SettingsPage::PAGE => [
             OnlineTestingTableContext::settings => [],

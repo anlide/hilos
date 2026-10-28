@@ -287,6 +287,8 @@ export {
   expectTrackedTablesPage,
   expectChangeLogReference,
   expectTrackedTableRecord,
+  expectChangeLogTableHead,
+  expectTrackedTableOverview,
   expectTrackedTableWhole,
 } from './changeLog.js'
 

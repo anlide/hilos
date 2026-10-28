@@ -85,6 +85,8 @@ const props = defineProps<{
   headKind?: 'section' | 'entity'
   /** The one transition the shared head offers as a button. */
   headAction?: HilosPageHeadAction
+  /** Extra presentation classes on the shared head's one h1. */
+  headTitleClass?: string
   /** The shared head's breadcrumb navigation's accessible name. */
   breadcrumbLabel?: string
   /** The shared head's tab row navigation's accessible name. */
@@ -202,6 +204,7 @@ onUnmounted(() => {
         :heading-id="headingId"
         :kind="headKind"
         :action="headAction"
+        :title-class="headTitleClass"
         :breadcrumb-label="breadcrumbLabel"
         :tabs-label="tabsLabel"
       >

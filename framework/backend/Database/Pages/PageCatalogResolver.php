@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\Pages\DTO\PageHead;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * PageCatalogResolver - Reads the page catalog: the merge, a page's identity, breadcrumb and children.
@@ -179,6 +180,7 @@ final class PageCatalogResolver
      * @param string $page Subscribing page key
      * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
      * @return ?PageHead Shared head, or null when this page has no adopted owner
+     * @throws HilosException When a page cannot read its applicability metadata
      */
     public static function head(string $page, PageRouteParams $ownerParams): ?PageHead
     {
@@ -254,6 +256,7 @@ final class PageCatalogResolver
      * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
      * @param bool $owner Whether this candidate is the row's owner
      * @return list<array{page: string, label: string}> Tab wire entries in depth-first catalog order
+     * @throws HilosException When a page cannot read its applicability metadata
      */
     private static function pageTabs(string $page, PageRouteParams $ownerParams, bool $owner = false): array
     {

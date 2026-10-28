@@ -83,6 +83,9 @@ export const HilosPages = {
   CHANGE_LOG_TABLES: 'hilos_change_log_tables',
   CHANGE_LOG_NOISY: 'hilos_change_log_noisy',
   CHANGE_LOG_TABLE: 'hilos_change_log_table',
+  CHANGE_LOG_TABLE_COLUMNS: 'hilos_change_log_table_columns',
+  CHANGE_LOG_TABLE_TRIGGERS: 'hilos_change_log_table_triggers',
+  CHANGE_LOG_TABLE_HISTORY: 'hilos_change_log_table_history',
   DAEMON: 'hilos_daemon',
   DAEMON_PLACEMENT: 'hilos_daemon_placement',
   DAEMON_NODE: 'hilos_daemon_node',
@@ -305,7 +308,19 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE]: {
-    path: '/hilos/change-log/tables/{tableId}/{record?}',
+    path: '/hilos/change-log/tables/{tableId}',
+    admin: true,
+  },
+  [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: {
+    path: '/hilos/change-log/tables/{tableId}/columns',
+    admin: true,
+  },
+  [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: {
+    path: '/hilos/change-log/tables/{tableId}/triggers',
+    admin: true,
+  },
+  [HilosPages.CHANGE_LOG_TABLE_HISTORY]: {
+    path: '/hilos/change-log/tables/{tableId}/history/{record?}',
     admin: true,
   },
   [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },

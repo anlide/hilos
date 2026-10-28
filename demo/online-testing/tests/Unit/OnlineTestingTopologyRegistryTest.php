@@ -200,8 +200,13 @@ use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -356,7 +361,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
         foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
-            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class,
+            ChangeLogTableColumnsPage::class, ChangeLogTableTriggersPage::class, ChangeLogTableHistoryPage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -383,7 +389,27 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogTables]);
         self::assertSame([OnlineTestingTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogHistory]);
-        self::assertSame([OnlineTestingTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTableHistoryPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogTablePage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogTableColumns => []],
+            Hilos::PAGE_TABLES[ChangeLogTableColumnsPage::PAGE]);
+        self::assertSame(HilosChangeLogTableColumnsTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogTableColumns]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableColumnsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogTableTriggers => []],
+            Hilos::PAGE_TABLES[ChangeLogTableTriggersPage::PAGE]);
+        self::assertSame(HilosChangeLogTableTriggersTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogTableTriggers]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableTriggersPage::SUBSCRIPTION_AGENT_TYPE);
+        foreach ([
+            ChangeLogTablePage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE,
+            ChangeLogTableColumnsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_COLUMNS,
+            ChangeLogTableTriggersPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_TRIGGERS,
+            ChangeLogTableHistoryPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_HISTORY,
+        ] as $page => $signal) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
+            self::assertSame([], $page::ACTIONS);
+        }
     }
 
     /** The archive address is answered by the export owner. */
@@ -412,6 +438,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
             ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+            ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+            ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+            ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -1077,6 +1106,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([
             OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
             OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            OnlineTestingTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+            OnlineTestingTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
             OnlineTestingTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
             OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             OnlineTestingTableContext::settings => HilosSettingsTable::class,
@@ -1117,7 +1148,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ChangeLogFeedPage::PAGE,
             ChangeLogTablesPage::PAGE,
             ChangeLogNoisyPage::PAGE,
-            ChangeLogTablePage::PAGE,
+            ChangeLogTableHistoryPage::PAGE,
+            ChangeLogTableColumnsPage::PAGE,
+            ChangeLogTableTriggersPage::PAGE,
             SettingsPage::PAGE,
             AppearancePage::PAGE,
             MaintenancePage::PAGE,

@@ -2438,6 +2438,8 @@ export {
   changeLogTableSchema,
   CHANGE_LOG_TABLE_COPY,
   readHilosChangeLogTable,
+  changeLogTableJournalSince,
+  changeLogTableColumnCounts,
   changeLogRecordRouteParam,
   readChangeLogRecordRouteParam,
   formatChangeLogColumnStorage,
@@ -2772,3 +2774,23 @@ export {
   type HilosChangeLogNoisyColumnsRow,
   type HilosChangeLogNoisyColumnsTable,
 } from './admin/changeLog/hilosChangeLogNoisyColumns.js'
+export {
+  CHANGE_LOG_TABLE_COLUMNS_NAME_FIELD,
+  CHANGE_LOG_TABLE_COLUMNS_STORAGE_FIELD,
+  CHANGE_LOG_TABLE_COLUMNS_MODE_FIELD,
+  createHilosChangeLogTableColumnsTable,
+  resolveHilosChangeLogTableColumnsRow,
+  type HilosChangeLogTableColumnsRow,
+  type HilosChangeLogTableColumnsTable,
+} from './admin/changeLog/hilosChangeLogTableColumns.js'
+export {
+  CHANGE_LOG_TABLE_TRIGGERS_NAME_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_OWNER_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_EVENT_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_WRITES_TO_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_MIGRATION_FIELD,
+  createHilosChangeLogTableTriggersTable,
+  resolveHilosChangeLogTableTriggersRow,
+  type HilosChangeLogTableTriggersRow,
+  type HilosChangeLogTableTriggersTable,
+} from './admin/changeLog/hilosChangeLogTableTriggers.js'

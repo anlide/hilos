@@ -47,6 +47,9 @@ use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
@@ -150,6 +153,8 @@ use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -234,6 +239,9 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+        ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+        ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
@@ -406,6 +414,8 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         EcommerceShopTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         EcommerceShopTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        EcommerceShopTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+        EcommerceShopTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
         EcommerceShopTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         EcommerceShopTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         EcommerceShopTableContext::hilosBackups => HilosBackupHistoryTable::class,
@@ -478,8 +488,14 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => [
             EcommerceShopTableContext::hilosChangeLogNoisyColumns => [],
         ],
-        ChangeLogTablePage::PAGE => [
+        ChangeLogTableHistoryPage::PAGE => [
             EcommerceShopTableContext::hilosChangeLogHistory => [],
+        ],
+        ChangeLogTableColumnsPage::PAGE => [
+            EcommerceShopTableContext::hilosChangeLogTableColumns => [],
+        ],
+        ChangeLogTableTriggersPage::PAGE => [
+            EcommerceShopTableContext::hilosChangeLogTableTriggers => [],
         ],
         BackupPage::PAGE => [
             EcommerceShopTableContext::hilosBackups => [],

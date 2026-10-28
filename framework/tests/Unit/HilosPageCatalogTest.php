@@ -32,10 +32,33 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 105;
+    private const int CATALOG_ENTRIES = 108;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
+
+    public function testTableEntityOwnsItsThreeChildrenWithoutDefaultHeadAdoption(): void
+    {
+        $owner = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG_TABLE];
+        self::assertTrue($owner[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
+        self::assertSame('bi-table', $owner[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertSame('One table: its journal label, columns and triggers.', $owner[PageCatalogConstants::CATALOG_ENTRY_LEAD]);
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $owner);
+        $children = [];
+        foreach (HilosPageCatalog::CATALOG as $page => $entry) {
+            if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) === HilosPageConstants::HILOS_CHANGE_LOG_TABLE) {
+                $children[$page] = $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL];
+                self::assertSame($entry[PageCatalogConstants::CATALOG_ENTRY_LABEL], $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+                self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_ENTITY, $entry);
+                self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $entry);
+            }
+        }
+        self::assertSame([
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS => 'Columns',
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS => 'Triggers',
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY => 'History',
+        ], $children);
+    }
 
     public function testEveryKeyNamesADeclaredPage(): void
     {

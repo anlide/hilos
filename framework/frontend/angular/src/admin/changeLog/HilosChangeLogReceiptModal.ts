@@ -392,7 +392,7 @@ export class HilosChangeLogReceiptModal {
     if (key === null || parts.length === 0 || parts.length !== key.length) {
       return undefined
     }
-    return this.router?.resolvePath(HilosPages.CHANGE_LOG_TABLE, {
+    return this.router?.resolvePath(HilosPages.CHANGE_LOG_TABLE_HISTORY, {
       [CHANGE_LOG_TABLE_ROUTE_PARAM]: entry.table,
       [CHANGE_LOG_RECORD_ROUTE_PARAM]: changeLogRecordRouteParam(parts),
     })

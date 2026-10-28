@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosChangeLogHistoryTable,
@@ -11,14 +11,17 @@ import {
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
-import { type ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 function rawRow(rowKey: string, slot: Record<string, unknown>): TableRow {
   return { rowKey, slots: { history: slot } }
 }
 
-function stubTable(record?: readonly (number | string)[]): {
+function stubTable(
+  record?: readonly (number | string)[],
+  pageHeading = false,
+): {
   table: ReturnType<typeof createHilosChangeLogHistoryTable>
   sent: Array<{
     page: string
@@ -57,6 +60,7 @@ function stubTable(record?: readonly (number | string)[]): {
       table: 'bot',
       record,
       fields: () => fields,
+      pageHeading,
     }),
     sent,
     fields,
@@ -117,6 +121,16 @@ describe('change-log history row', () => {
 })
 
 describe('change-log history viewport', () => {
+  it('lets an adopted page heading name the table while keeping history content', () => {
+    const { declaration } = stubTable(undefined, true).table.controller.frame
+    expect(declaration.title).toBeUndefined()
+    expect(declaration.subtitle).toBe('All records of this table')
+    expect(declaration.search?.placeholder).toBe('Who…')
+    expect(
+      stubTable([57], true).table.controller.frame.declaration.empty?.title,
+    ).toBe('No changes recorded for this record yet')
+  })
+
   it('declares sortable time, history filters and the empty state', () => {
     const { table, fields } = stubTable()
     const frame = table.controller.frame
@@ -185,6 +199,94 @@ describe('change-log history viewport', () => {
     )
   })
 
+  it('routes first windows, viewport requests and rendered fields through History', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.CHANGE_LOG_TABLE_HISTORY)
+    const listeners = new Map<string, Set<(signal: unknown) => void>>()
+    const connection = {
+      registerTableWindow: vi.fn(),
+      unregisterTableWindow: vi.fn(),
+      tableWindowDescriptors: () => ({}),
+      sendTableViewport: vi.fn(() => true),
+      sendTableRendered: vi.fn(() => true),
+      on(event: string, listener: (signal: unknown) => void) {
+        const set = listeners.get(event) ?? new Set<(signal: unknown) => void>()
+        listeners.set(event, set)
+        set.add(listener)
+        return () => set.delete(listener)
+      },
+    }
+    const table = createHilosChangeLogHistoryTable(
+      { connection: connection as unknown as HilosConnection, scopes },
+      { table: 'bot', fields: () => ['name'] },
+    )
+    table.start()
+    const firstWindow = (page: string) => ({
+      type: 'page_response',
+      data: {
+        page,
+        payload: {
+          windows: {
+            hilosChangeLogHistory: {
+              rows: [
+                rawRow('9', {
+                  createdAt: '2026-10-09T10:11:12.123Z',
+                  recordKey: [57],
+                  mutation: 'update',
+                  changes: [],
+                }),
+              ],
+              totalCount: 1,
+              totalExact: true,
+              firstAnchor: null,
+              lastAnchor: null,
+              offset: 0,
+              limit: 25,
+            },
+          },
+        },
+      },
+    })
+    for (const listener of listeners.get('projectSignal') ?? [])
+      listener(firstWindow(HilosPages.CHANGE_LOG_TABLE))
+    expect(table.controller.rows.get()).toHaveLength(0)
+    expect(connection.sendTableViewport).not.toHaveBeenCalled()
+    for (const listener of listeners.get('projectSignal') ?? [])
+      listener(firstWindow(HilosPages.CHANGE_LOG_TABLE_HISTORY))
+    expect(connection.sendTableViewport).toHaveBeenCalledWith(
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
+      'hilosChangeLogHistory',
+      expect.objectContaining({
+        rendered: expect.arrayContaining(['recordKey', 'actorId', 'receiptId']),
+      }),
+    )
+    const windowReply = (page: string) => ({
+      data: {
+        page,
+        tableKey: 'hilosChangeLogHistory',
+        ...firstWindow(page).data.payload.windows.hilosChangeLogHistory,
+      },
+    })
+    for (const listener of listeners.get('tableWindow') ?? [])
+      listener(windowReply(HilosPages.CHANGE_LOG_TABLE))
+    expect(table.controller.rows.get()).toHaveLength(0)
+    for (const listener of listeners.get('tableWindow') ?? [])
+      listener(windowReply(HilosPages.CHANGE_LOG_TABLE_HISTORY))
+    expect(table.controller.rows.get()).toHaveLength(1)
+    table.controller.setFilter('period', 'week')
+    expect(connection.sendTableViewport).toHaveBeenLastCalledWith(
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
+      'hilosChangeLogHistory',
+      expect.objectContaining({ filter: { table: 'bot', period: 'week' } }),
+    )
+    table.dispose()
+    expect(connection.unregisterTableWindow).toHaveBeenCalledWith(
+      'hilosChangeLogHistory',
+      expect.anything(),
+    )
+    expect([...listeners.values()].every((set) => set.size === 0)).toBe(true)
+  })
+
   it('keeps the table and record preset in the initial viewport and on reset', () => {
     const { table, sent } = stubTable([57])
     table.controller.ingestSubscriptionWindow(
@@ -197,7 +299,7 @@ describe('change-log history viewport', () => {
       undefined,
       [],
     )
-    expect(sent.at(-1)?.page).toBe(HilosPages.CHANGE_LOG_TABLE)
+    expect(sent.at(-1)?.page).toBe(HilosPages.CHANGE_LOG_TABLE_HISTORY)
     expect(sent.at(-1)?.tableKey).toBe('hilosChangeLogHistory')
     expect(sent.at(-1)?.descriptor.filter).toEqual({
       table: 'bot',

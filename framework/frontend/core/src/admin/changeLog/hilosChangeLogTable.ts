@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { type HilosChangeLogHistoryRow } from './hilosChangeLogHistory.js'
 import { changeLogFieldValue } from './hilosChangeLogReceipt.js'
 import { CHANGE_LOG_COLUMN_MODES } from './hilosChangeLogTablePolicies.js'
+import { type HilosChangeLogColumnCounts } from './hilosChangeLogTables.js'
 
 /** Page-data section containing one table's declaration and journal triggers. */
 export const CHANGE_LOG_TABLE_SECTION = 'changeLogTable'
@@ -95,6 +96,38 @@ export function readHilosChangeLogTable(
 ): HilosChangeLogTableDetail | null {
   const parsed = changeLogTableSchema.safeParse(raw)
   return parsed.success ? parsed.data : null
+}
+
+/**
+ * Find the earliest migration among the table's service triggers.
+ *
+ * @param detail Validated table declaration.
+ */
+export function changeLogTableJournalSince(
+  detail: HilosChangeLogTableDetail,
+): number | null {
+  let since: number | null = null
+  for (const trigger of detail.triggers) {
+    if (since === null || trigger.validFromMigration < since) {
+      since = trigger.validFromMigration
+    }
+  }
+  return since
+}
+
+/**
+ * Count declared journal modes, excluding record keys and untracked columns.
+ *
+ * @param detail Validated table declaration.
+ */
+export function changeLogTableColumnCounts(
+  detail: HilosChangeLogTableDetail,
+): HilosChangeLogColumnCounts {
+  const counts = { value: 0, personal: 0, binary: 0, secret: 0, noise: 0 }
+  for (const { mode } of detail.columns) {
+    if (mode !== null && mode !== 'record_key') counts[mode]++
+  }
+  return counts
 }
 
 /**

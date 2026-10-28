@@ -209,8 +209,13 @@ use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -285,6 +290,9 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+        ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+        ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -514,6 +522,8 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        TasksTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+        TasksTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
         TasksTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         TasksTableContext::settings => HilosSettingsTable::class,
@@ -615,8 +625,14 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => [
             TasksTableContext::hilosChangeLogNoisyColumns => [],
         ],
-        ChangeLogTablePage::PAGE => [
+        ChangeLogTableHistoryPage::PAGE => [
             TasksTableContext::hilosChangeLogHistory => [],
+        ],
+        ChangeLogTableColumnsPage::PAGE => [
+            TasksTableContext::hilosChangeLogTableColumns => [],
+        ],
+        ChangeLogTableTriggersPage::PAGE => [
+            TasksTableContext::hilosChangeLogTableTriggers => [],
         ],
         SettingsPage::PAGE => [
             TasksTableContext::settings => [],

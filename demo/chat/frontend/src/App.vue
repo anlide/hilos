@@ -163,6 +163,21 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.CHANGE_LOG_TABLE]: lazyPage(() =>
     import('./views/Hilos/ChangeLog/ChangeLogTable.vue').then((m) => m.default),
   ),
+  [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableColumns.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableTriggers.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.CHANGE_LOG_TABLE_HISTORY]: lazyPage(() =>
+    import('./views/Hilos/ChangeLog/ChangeLogTableHistory.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.SECURITY_OAUTH]: lazyPage(() =>
     import('./views/Hilos/Security/SecurityOauth.vue').then((m) => m.default),
   ),

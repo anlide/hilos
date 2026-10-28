@@ -114,9 +114,14 @@ use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
@@ -488,6 +493,9 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        ChangeLogTableColumnsPage::PAGE => ChangeLogTableColumnsPage::class,
+        ChangeLogTableTriggersPage::PAGE => ChangeLogTableTriggersPage::class,
+        ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -735,6 +743,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        ChatTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+        ChatTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
         ChatTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
         ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
@@ -1033,8 +1043,14 @@ final class Hilos extends HilosFacade
         ChangeLogNoisyPage::PAGE => [
             ChatTableContext::hilosChangeLogNoisyColumns => [],
         ],
-        ChangeLogTablePage::PAGE => [
+        ChangeLogTableHistoryPage::PAGE => [
             ChatTableContext::hilosChangeLogHistory => [],
+        ],
+        ChangeLogTableColumnsPage::PAGE => [
+            ChatTableContext::hilosChangeLogTableColumns => [],
+        ],
+        ChangeLogTableTriggersPage::PAGE => [
+            ChatTableContext::hilosChangeLogTableTriggers => [],
         ],
         ModerationPage::PAGE => [
             ChatTableContext::hilosModerationKinds => [],

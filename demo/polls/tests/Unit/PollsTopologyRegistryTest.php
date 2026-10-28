@@ -227,8 +227,13 @@ use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableColumnsPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableTriggersPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTableHistoryPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
@@ -456,7 +461,8 @@ final class PollsTopologyRegistryTest extends TestCase
     {
         self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
         foreach ([ChangeLogDashboardPage::class, ChangeLogFeedPage::class, ChangeLogTablesPage::class,
-            ChangeLogNoisyPage::class, ChangeLogTablePage::class] as $page) {
+            ChangeLogNoisyPage::class, ChangeLogTablePage::class,
+            ChangeLogTableColumnsPage::class, ChangeLogTableTriggersPage::class, ChangeLogTableHistoryPage::class] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
         }
@@ -483,7 +489,27 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogTables]);
         self::assertSame([PollsTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogHistory]);
-        self::assertSame([PollsTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+        self::assertSame([PollsTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTableHistoryPage::PAGE]);
+        self::assertArrayNotHasKey(ChangeLogTablePage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame([PollsTableContext::hilosChangeLogTableColumns => []],
+            Hilos::PAGE_TABLES[ChangeLogTableColumnsPage::PAGE]);
+        self::assertSame(HilosChangeLogTableColumnsTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogTableColumns]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableColumnsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame([PollsTableContext::hilosChangeLogTableTriggers => []],
+            Hilos::PAGE_TABLES[ChangeLogTableTriggersPage::PAGE]);
+        self::assertSame(HilosChangeLogTableTriggersTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogTableTriggers]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTableTriggersPage::SUBSCRIPTION_AGENT_TYPE);
+        foreach ([
+            ChangeLogTablePage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE,
+            ChangeLogTableColumnsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_COLUMNS,
+            ChangeLogTableTriggersPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_TRIGGERS,
+            ChangeLogTableHistoryPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_HISTORY,
+        ] as $page => $signal) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
+            self::assertSame([], $page::ACTIONS);
+        }
     }
 
     /** Legal administration is bound to its own worker, page routes and tables. */
@@ -1155,6 +1181,8 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame([
             PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
             PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            PollsTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
+            PollsTableContext::hilosChangeLogTableTriggers => HilosChangeLogTableTriggersTable::class,
             PollsTableContext::hilosChangeLogNoisyColumns => HilosChangeLogNoisyColumnsTable::class,
             PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             PollsTableContext::settings => HilosSettingsTable::class,
@@ -1213,7 +1241,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 ChangeLogFeedPage::PAGE,
                 ChangeLogTablesPage::PAGE,
                 ChangeLogNoisyPage::PAGE,
-                ChangeLogTablePage::PAGE,
+                ChangeLogTableHistoryPage::PAGE,
+                ChangeLogTableColumnsPage::PAGE,
+                ChangeLogTableTriggersPage::PAGE,
                 SettingsPage::PAGE,
                 AppearancePage::PAGE,
                 MaintenancePage::PAGE,

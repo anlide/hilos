@@ -34,6 +34,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
@@ -42,6 +44,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosChangeLogTableColumnsTable $hilosChangeLogTableColumns
+ * @property-read HilosChangeLogTableTriggersTable $hilosChangeLogTableTriggers
  * @property-read HilosChangeLogNoisyColumnsTable $hilosChangeLogNoisyColumns
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosSettingsTable $settings
@@ -75,6 +79,8 @@ final class OnlineTestingTableContext extends TableContext
 {
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosChangeLogTableColumns = HilosChangeLogTableColumnsTable::TABLE;
+    public const string hilosChangeLogTableTriggers = HilosChangeLogTableTriggersTable::TABLE;
     public const string hilosChangeLogNoisyColumns = HilosChangeLogNoisyColumnsTable::TABLE;
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;

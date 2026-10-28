@@ -21,6 +21,8 @@ import {
   watchDaemonWebsocketsFrames,
   expectHilosUserOverview,
   expectChangeLogSectionHead,
+  expectChangeLogTableHead,
+  CHANGE_LOG_TABLES_PATH,
   expectHilosUserOverviewAccessibility,
   expectModerationKindHead,
   expectPasswordVisibility,
@@ -1040,4 +1042,160 @@ test('Change Log names its section navigation and tables from one shared heading
     ).toBeVisible()
     await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
   }
+})
+
+test('Change Log table owner names its navigation and viewport for tracked and untracked tables', async ({
+  page,
+}) => {
+  await signUpAdmin(expect, page, { entryId: 'message-signin' })
+  const tablePath = `${CHANGE_LOG_TABLES_PATH}/hilos_user`
+  await gotoPage(expect, page, tablePath)
+  await expectChangeLogTableHead(
+    expect,
+    page,
+    'hilos_user',
+    'hilos_change_log_table',
+    { owner: 'Framework', since: 85 },
+  )
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+
+  const columnsTile = shownByTestId(page, 'hilos-change-log-table-link-columns')
+  await expect(columnsTile).toHaveRole('link')
+  await expect(columnsTile).toHaveAttribute('href', `${tablePath}/columns`)
+  await columnsTile.focus()
+  await expect(columnsTile).toBeFocused()
+  await columnsTile.press('Enter')
+  await expect(page).toHaveURL(`${tablePath}/columns`)
+  await expectPageReady(expect, page)
+  await expectChangeLogTableHead(
+    expect,
+    page,
+    'hilos_user',
+    'hilos_change_log_table_columns',
+    { owner: 'Framework', since: 85 },
+  )
+  await expect(
+    page.getByRole('table', { name: 'hilos_user', exact: true }),
+  ).toBeVisible()
+  expect(
+    await page
+      .locator('.bi')
+      .evaluateAll(
+        (icons) =>
+          icons.filter((icon) => icon.closest('[aria-hidden="true"]') === null)
+            .length,
+      ),
+  ).toBe(0)
+
+  const triggersTab = page.getByTestId(
+    'hilos-page-tab-hilos_change_log_table_triggers',
+  )
+  await expect(triggersTab).toHaveRole('link')
+  await triggersTab.focus()
+  await expect(triggersTab).toBeFocused()
+  await triggersTab.press('Enter')
+  await expect(page).toHaveURL(`${tablePath}/triggers`)
+  await expectPageReady(expect, page)
+  await expectChangeLogTableHead(
+    expect,
+    page,
+    'hilos_user',
+    'hilos_change_log_table_triggers',
+    { owner: 'Framework', since: 85 },
+  )
+  await expect(
+    page.getByRole('table', { name: 'hilos_user', exact: true }),
+  ).toBeVisible()
+  await expect(
+    shownByTestId(page, 'hilos-table-row-hilos_cl_hilos_user_after_insert'),
+  ).toContainText('AFTER INSERT on hilos_user')
+  expect(
+    await page
+      .locator('.bi')
+      .evaluateAll(
+        (icons) =>
+          icons.filter((icon) => icon.closest('[aria-hidden="true"]') === null)
+            .length,
+      ),
+  ).toBe(0)
+
+  const untrackedPath = `${CHANGE_LOG_TABLES_PATH}/hilos_session`
+  await gotoPage(expect, page, untrackedPath)
+  await expectChangeLogTableHead(
+    expect,
+    page,
+    'hilos_session',
+    'hilos_change_log_table',
+    { owner: 'Framework', since: null, journaled: false },
+  )
+  await expect(page).toHaveURL(untrackedPath)
+  const untrackedTabs = page.getByTestId('hilos-page-tabs')
+  await expect(untrackedTabs.getByRole('link')).toHaveText([
+    'Overview',
+    'Triggers',
+  ])
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_change_log_table_columns'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_change_log_table_history'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-change-log-table-link-columns'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-change-log-table-link-history'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-change-log-table-head-badges'),
+  ).toHaveText('Framework')
+  await expect(
+    page.getByTestId('hilos-change-log-table-head-description'),
+  ).toHaveText(
+    "The entity has no journal label — this table's history is not written.",
+  )
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
+    0,
+  )
+  await expect(page.getByTestId('hilos-change-log-table-triggers')).toHaveCount(
+    0,
+  )
+  expect(
+    await page
+      .locator('.bi')
+      .evaluateAll(
+        (icons) =>
+          icons.filter((icon) => icon.closest('[aria-hidden="true"]') === null)
+            .length,
+      ),
+  ).toBe(0)
+
+  await gotoPage(expect, page, `${untrackedPath}/triggers`)
+  await expectChangeLogTableHead(
+    expect,
+    page,
+    'hilos_session',
+    'hilos_change_log_table_triggers',
+    { owner: 'Framework', since: null, journaled: false },
+  )
+  await expect(page).toHaveURL(`${untrackedPath}/triggers`)
+  await expect(
+    page.getByRole('table', { name: 'hilos_session', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByTestId('hilos-table-empty')).toHaveCount(2)
+  await expect(
+    page.locator('table tbody tr[data-id^="hilos-table-row-"]'),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-count')).toHaveCount(0)
+  expect(
+    await page
+      .locator('.bi')
+      .evaluateAll(
+        (icons) =>
+          icons.filter((icon) => icon.closest('[aria-hidden="true"]') === null)
+            .length,
+      ),
+  ).toBe(0)
 })

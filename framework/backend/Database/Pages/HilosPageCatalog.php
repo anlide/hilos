@@ -546,8 +546,27 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Tracked table',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Tracked table',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Change history for a single table.',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-table',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One table: its journal label, columns and triggers.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG_TABLES,
+        ],
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Columns',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Columns',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How each column enters the journal.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
+        ],
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Triggers',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Triggers',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Journal service triggers of this table.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
+        ],
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'History',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'History',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Change history for a single table.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
         ],
         HilosPageConstants::HILOS_BACKUP => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Backups',

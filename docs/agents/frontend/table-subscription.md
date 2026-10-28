@@ -103,17 +103,21 @@ use and what `setPage` does not.
 
 ### The first window is declared on the backend
 
-A table's **first** window is not declared by the client at all: its size and its
-order are stated on the table definition (`windowSize()`, `defaultSort()`), and
-the page subscription builds the window from them and answers with it. There is
-one declaration of each and one reader: the window says on arrival what size and
+A table's **first** window is not declared by the client at all: its size, order
+and route preset are stated on the table definition (`windowSize()`,
+`defaultSort()`, `defaultFilter(PageRouteParams)`), and the page subscription
+builds the window from them and answers with it. The preset uses the same typed
+route params as that subscription, reads no row source, and defaults to an empty
+filter map for tables that need none. The window says on arrival what size and
 what order it ran at, and the controller takes both from there rather than
 holding an opinion beside the backend's.
 
 A tab that is already holding a window reports it instead, in the `tableWindows`
 map of its `page_subscribe`, and the server serves back what the descriptor
 names. That is what a reconnect is: the same page, the same window, the reader's
-place kept. A controller that has never received a window reports none — it does
+place kept. Without a reported descriptor, a window already held on the server
+also keeps its own filter and boundaries; both precede the cold declarations.
+A controller that has never received a window reports none — it does
 not know its own size or order until one arrives — and the table's declaration
 answers for it, which is the same cold entry a second time.
 
@@ -1639,8 +1643,9 @@ The `windows` section carries one key the reply does not, `sort`, and leaves out
 one the reply has no reason to carry either, `filter`. The order is there because
 nobody asked for it: a cold entry runs in the order the table declares on the
 backend, and the tab has no other way to learn what that is. The filter is absent
-because a second source of truth about it could only disagree — on a cold entry it
-is empty, and on a reconnect the tab sent it and still holds it.
+because a second source of truth about it could only disagree — on a cold entry
+the table declares its route preset, and on a reconnect the tab sent it and still
+holds it.
 
 Naming a frame here does not clear the gate. The leaf that implements one still
 stops and asks before touching the signal constants, the DTOs, or the routes.
@@ -1655,7 +1660,7 @@ an address does not:
 | the descriptor and the delivered keys | `framework/backend/Core/Router/TableViewportSubscription.php` |
 | the window a tab reports on its subscription | `framework/backend/Core/Table/DTO/TableWindowDescriptorDTO.php` |
 | opening each of a page's windows as it is subscribed | `framework/backend/Core/Browser/Context/BrowserContext.php` (`buildSubscribeSnapshot`, `subscribeTableWindow`, `buildTableWindow`) |
-| what the first window of a table is | `framework/backend/Core/Table/Definition/TableDefinition.php` (`windowSize`, `defaultSort`) |
+| what the first window of a table is | `framework/backend/Core/Table/Definition/TableDefinition.php` (`windowSize`, `defaultSort`, `defaultFilter`) |
 | the windows a tab is holding, and the frame that reports them | `framework/frontend/core/src/connection/HilosConnection.ts`, `framework/frontend/core/src/subscription/PageSubscription.ts` |
 | judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportArrival`, `emitViewportAppend`, `emitViewportAnnounce`, `emitTableProgress`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
 | placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |

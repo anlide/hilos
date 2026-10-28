@@ -102,6 +102,8 @@ export interface HilosChangeLogHistoryOptions {
   readonly table: string
   readonly record?: readonly (number | string)[] | null
   readonly fields: () => readonly string[]
+  /** Let an adopted page's shared heading name its table instead of a local title. */
+  readonly pageHeading?: boolean
 }
 
 /** Read a row slot as an inline record, or an empty record if malformed. */
@@ -225,7 +227,7 @@ export function createHilosChangeLogHistoryTable(
   ]
   const record = options.record ?? null
   const frame: HilosTableFrame = {
-    title: 'History',
+    ...(options.pageHeading ? {} : { title: 'History' }),
     ...(record === null ? { subtitle: 'All records of this table' } : {}),
     search: { placeholder: 'Who…' },
     filters: [
@@ -263,13 +265,13 @@ export function createHilosChangeLogHistoryTable(
     resolve: resolveHilosChangeLogHistoryRow,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.CHANGE_LOG_TABLE,
+        HilosPages.CHANGE_LOG_TABLE_HISTORY,
         CHANGE_LOG_HISTORY_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.CHANGE_LOG_TABLE,
+        HilosPages.CHANGE_LOG_TABLE_HISTORY,
         CHANGE_LOG_HISTORY_TABLE,
         rendered,
       ),
@@ -286,7 +288,7 @@ export function createHilosChangeLogHistoryTable(
           context.connection,
           context.scopes,
           {
-            page: HilosPages.CHANGE_LOG_TABLE,
+            page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
             tableKey: CHANGE_LOG_HISTORY_TABLE,
           },
           controller,

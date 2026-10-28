@@ -318,6 +318,15 @@ final class HilosPageConstants
     /** @var string Hilos — change log single tracked table detail */
     public const string HILOS_CHANGE_LOG_TABLE = 'hilos_change_log_table';
 
+    /** Hilos — change log table columns. */
+    public const string HILOS_CHANGE_LOG_TABLE_COLUMNS = 'hilos_change_log_table_columns';
+
+    /** Hilos — change log table triggers. */
+    public const string HILOS_CHANGE_LOG_TABLE_TRIGGERS = 'hilos_change_log_table_triggers';
+
+    /** Hilos — change log table history. */
+    public const string HILOS_CHANGE_LOG_TABLE_HISTORY = 'hilos_change_log_table_history';
+
     /** @var string Hilos — public About page */
     public const string HILOS_ABOUT = 'hilos_about';
 

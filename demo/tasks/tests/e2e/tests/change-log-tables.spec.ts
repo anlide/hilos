@@ -7,6 +7,8 @@ import {
   expectChangeLogNoisyColumns,
   expectChangeLogReference,
   expectTrackedTablesPage,
+  expectTrackedTableOverview,
+  expectTrackedTableWhole,
   shownByTestId,
   typeInto,
   expectPageReady,
@@ -43,12 +45,146 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   )
   await open.click()
   await expectPageReady(expect, page)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
-    'Tracked table',
+  await expectTrackedTableOverview(expect, page, 'hilos_user')
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-head')).toHaveCount(0)
+  const columnsLink = page.getByTestId(
+    'hilos-admin-child-hilos_change_log_table_columns',
   )
-  await expect(page.getByTestId('hilos-change-log-table-header')).toContainText(
-    'hilos_user',
+  await expect(columnsLink).toHaveAttribute(
+    'href',
+    '/hilos/change-log/tables/hilos_user/columns',
   )
+  await columnsLink.click()
+  await expectPageReady(expect, page)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Columns')
+  await expect(
+    page.getByTestId('hilos-change-log-table-columns'),
+  ).toContainText('last_activity')
+  await expect(page.getByTestId('hilos-change-log-table-triggers')).toHaveCount(
+    0,
+  )
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  await page.getByTestId('hilos-change-log-table-overview').click()
+  await expectTrackedTableOverview(expect, page, 'hilos_user')
+  await page
+    .getByTestId('hilos-admin-child-hilos_change_log_table_triggers')
+    .click()
+  await expectPageReady(expect, page)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Triggers')
+  await expect(
+    page.getByTestId('hilos-change-log-table-triggers'),
+  ).toContainText('hilos_cl_hilos_user_after_insert')
+  await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
+    0,
+  )
+  await page.getByTestId('hilos-change-log-table-overview').click()
+  await expectTrackedTableOverview(expect, page, 'hilos_user')
+  await page
+    .getByTestId('hilos-admin-child-hilos_change_log_table_history')
+    .click()
+  await expectTrackedTableWhole(expect, page, 'hilos_user')
+
+  const tablePath = `${CHANGE_LOG_TABLES_PATH}/hilos_user`
+  const legacyTablePages = [
+    { kind: 'overview', path: tablePath },
+    {
+      kind: 'columns',
+      path: `${tablePath}/columns`,
+      title: 'Columns',
+      body: 'hilos-change-log-table-columns',
+      content: 'last_activity',
+      otherBody: 'hilos-change-log-table-triggers',
+    },
+    {
+      kind: 'triggers',
+      path: `${tablePath}/triggers`,
+      title: 'Triggers',
+      body: 'hilos-change-log-table-triggers',
+      content: 'hilos_cl_hilos_user_after_insert',
+      otherBody: 'hilos-change-log-table-columns',
+    },
+    { kind: 'history', path: `${tablePath}/history` },
+  ] as const
+  const expectLegacyTablePage = async (
+    route: (typeof legacyTablePages)[number],
+  ) => {
+    await expect(page).toHaveURL(route.path)
+    await expectPageReady(expect, page)
+    if (route.kind === 'overview') {
+      await expectTrackedTableOverview(expect, page, 'hilos_user')
+    } else if (route.kind === 'history') {
+      await expectTrackedTableWhole(expect, page, 'hilos_user')
+      await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(1)
+      await expect(
+        page.getByTestId('hilos-change-log-table-columns'),
+      ).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-change-log-table-triggers'),
+      ).toHaveCount(0)
+    } else {
+      const heading = page.getByRole('heading', { level: 1 })
+      await expect(heading).toHaveCount(1)
+      await expect(heading).toHaveAttribute('data-id', 'hilos-admin-title')
+      await expect(heading).toHaveText(route.title)
+      await expect(page.getByTestId(route.body)).toContainText(route.content)
+      await expect(page.getByTestId(route.otherBody)).toHaveCount(0)
+      await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+    }
+    await expect(page.getByTestId('hilos-page-head')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+    if (route.kind !== 'overview') {
+      await expect(
+        page.getByTestId('hilos-change-log-table-overview'),
+      ).toHaveAttribute('href', tablePath)
+    }
+  }
+
+  for (const route of legacyTablePages) {
+    await gotoPage(expect, page, route.path)
+    await expectLegacyTablePage(route)
+    await page.reload()
+    await expectLegacyTablePage(route)
+  }
+  await gotoPage(expect, page, legacyTablePages[0].path)
+  await expectLegacyTablePage(legacyTablePages[0])
+  await page
+    .getByTestId('hilos-admin-child-hilos_change_log_table_columns')
+    .click()
+  await expectLegacyTablePage(legacyTablePages[1])
+  await page.getByTestId('hilos-change-log-table-overview').click()
+  await expectLegacyTablePage(legacyTablePages[0])
+  await page
+    .getByTestId('hilos-admin-child-hilos_change_log_table_triggers')
+    .click()
+  await expectLegacyTablePage(legacyTablePages[2])
+  await page.getByTestId('hilos-change-log-table-overview').click()
+  await expectLegacyTablePage(legacyTablePages[0])
+  await page
+    .getByTestId('hilos-admin-child-hilos_change_log_table_history')
+    .click()
+  await expectLegacyTablePage(legacyTablePages[3])
+  for (const route of [
+    legacyTablePages[0],
+    legacyTablePages[2],
+    legacyTablePages[0],
+    legacyTablePages[1],
+    legacyTablePages[0],
+  ]) {
+    await page.goBack()
+    await expectLegacyTablePage(route)
+  }
+  for (const route of [
+    legacyTablePages[1],
+    legacyTablePages[0],
+    legacyTablePages[2],
+    legacyTablePages[0],
+    legacyTablePages[3],
+  ]) {
+    await page.goForward()
+    await expectLegacyTablePage(route)
+  }
+
   await gotoPage(expect, page, CHANGE_LOG_TABLES_PATH)
 
   await expectChangeLogReference(expect, page)

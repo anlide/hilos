@@ -165,6 +165,26 @@ afterEach(() => {
 })
 
 describe('HilosPageHead', () => {
+  it('applies optional title classes to the same h1 and preserves its id and defaults', () => {
+    const plain = mountHead({ headingId: 'plain-title' })
+    expect(plain.get('h1').classes()).toEqual(['h4', 'mb-0', 'text-break'])
+    expect(plain.get('h1').attributes('id')).toBe('plain-title')
+    const dressed = mountHead({
+      headingId: 'entity-title',
+      titleClass: 'font-monospace fs-5',
+    })
+    expect(dressed.findAll('h1')).toHaveLength(1)
+    expect(dressed.get('h1').attributes('id')).toBe('entity-title')
+    expect(dressed.get('h1').classes()).toEqual([
+      'h4',
+      'mb-0',
+      'text-break',
+      'font-monospace',
+      'fs-5',
+    ])
+    expect(dressed.get('h1').text()).toBe('Demo section')
+  })
+
   it('draws a section head: its icon, its title in the one h1, its lead', () => {
     const head = mountHead({ headingId: 'page-heading' })
 

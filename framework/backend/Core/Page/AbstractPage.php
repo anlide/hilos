@@ -279,6 +279,7 @@ abstract class AbstractPage implements ActionHostInterface
      *
      * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
      * @return bool Whether this page belongs in this owner's tab row
+     * @throws HilosException When an override cannot read the owner metadata
      */
     public static function isTabApplicable(PageRouteParams $ownerParams): bool
     {
@@ -1172,6 +1173,7 @@ abstract class AbstractPage implements ActionHostInterface
      * @param string $acceptKey Connection the payload goes to
      * @param PageRouteParams $params Current subscription params for tab applicability
      * @return PagePayload Payload carrying the page identity the catalog holds
+     * @throws HilosException When a tab cannot read its applicability metadata
      */
     private function withPageIdentity(?PagePayload $payload, string $acceptKey, PageRouteParams $params): PagePayload
     {

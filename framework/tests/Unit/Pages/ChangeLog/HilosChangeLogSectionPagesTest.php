@@ -22,6 +22,9 @@ use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogFeedPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogNoisyPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTablesPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTableColumnsPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTableTriggersPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogTableHistoryPage;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogReceiptReadActionDTO;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +41,12 @@ final class HilosChangeLogSectionPagesTest extends TestCase
                 HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_FEED],
             AbstractHilosChangeLogNoisyPage::class => [HilosPageConstants::HILOS_CHANGE_LOG_NOISY,
                 HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_NOISY],
+            AbstractHilosChangeLogTableColumnsPage::class => [HilosPageConstants::HILOS_CHANGE_LOG_TABLE_COLUMNS,
+                HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_COLUMNS],
+            AbstractHilosChangeLogTableTriggersPage::class => [HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS,
+                HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_TRIGGERS],
+            AbstractHilosChangeLogTableHistoryPage::class => [HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY,
+                HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE_HISTORY],
         ] as $class => [$page, $signal]) {
             self::assertSame($page, $class::PAGE);
             self::assertSame(PageReach::ROUTE, $class::REACH);

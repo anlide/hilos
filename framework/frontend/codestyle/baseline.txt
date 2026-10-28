@@ -9,6 +9,8 @@ SHELL-PARITY framework/frontend/vue/src/HilosTableText.vue 1 # HIL-1754
 SHELL-PARITY framework/frontend/vue/src/HilosTableValue.vue 1 # HIL-1754
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPage.vue 6 # HIL-1744
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPersonPage.vue 2 # HIL-1740
+SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.vue 3 # HIL-1724
+SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTableShell.vue 3 # HIL-1724
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue 5 # HIL-1727
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguageNameWindow.vue 1 # HIL-1730
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguagePage.vue 11 # HIL-1730
