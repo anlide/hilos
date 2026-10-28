@@ -10,6 +10,7 @@ use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
@@ -238,6 +239,7 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
             self::assertSame([
                 ['page' => MaintenancePage::PAGE, 'label' => 'Overview'],
                 ['page' => MaintenanceCirclePage::PAGE, 'label' => 'Circle'],
+                ['page' => MaintenanceWordsPage::PAGE, 'label' => 'Words'],
             ], $overviewData[PageCatalogConstants::WIRE_PAGE_TABS]);
             self::assertSame([], $overviewData[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
             foreach ([

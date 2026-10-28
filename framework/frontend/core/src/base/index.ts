@@ -145,6 +145,11 @@ export {
   hilosTableTextClass,
 } from '../table/tableTextHeight.js'
 export { type HilosTableCard, hilosTableCard } from '../table/tableCard.js'
+export {
+  type HilosTableRowMessage,
+  type HilosTableRowMessageCell,
+  hilosTableRowMessageCells,
+} from '../table/tableRowMessage.js'
 export { hilosTableRenderedKeys } from '../table/tableRendered.js'
 export {
   TABLE_DETAIL_COPY,

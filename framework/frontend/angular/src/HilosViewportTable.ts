@@ -54,6 +54,7 @@ import {
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
+  hilosTableRowMessageCells,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -64,6 +65,8 @@ import type {
   HilosTableCard,
   HilosTableColumn,
   HilosTableProgress as HilosTableProgressState,
+  HilosTableRowMessage,
+  HilosTableRowMessageCell,
   HilosTableSelectionHeader,
   ReadonlySignal,
   TableSort,
@@ -426,31 +429,46 @@ export interface BulkUntouchedContext {
                     </td>
                   } @else {
                     <!-- The cell stands even where the page marked no template,
-                    or the row comes out narrower than its header (Flow F3). -->
-                    @for (column of rowColumns(); track column.key) {
-                      <td [class]="column.cellClass ?? ''">
-                        @if (column.key === actionsKey) {
-                          <span class="d-inline-flex align-items-center gap-1">
-                            @if (cellTemplate(column.key); as cell) {
-                              <ng-container
-                                [ngTemplateOutlet]="cell"
-                                [ngTemplateOutletContext]="{
-                                  $implicit: view.row,
-                                  rowKey: view.rowKey,
-                                }"
-                              />
-                            }
-                          </span>
-                        } @else if (cellTemplate(column.key); as cell) {
-                          <ng-container
-                            [ngTemplateOutlet]="cell"
-                            [ngTemplateOutletContext]="{
-                              $implicit: view.row,
-                              rowKey: view.rowKey,
-                            }"
-                          />
-                        }
-                      </td>
+                    or the row comes out narrower than its header (Flow F3). A
+                    merged tail message starting from fromColumn replaces tail
+                    cells with a single cell spanning them
+                    (mockups/admin/maintenance). -->
+                    @for (cell of rowCells(view.rowMessage); track cell.key) {
+                      @if (cell.text !== null) {
+                        <td
+                          [attr.colspan]="cell.span"
+                          class="text-body-secondary fst-italic"
+                          data-id="hilos-table-row-message"
+                        >
+                          {{ cell.text }}
+                        </td>
+                      } @else {
+                        <td [class]="columnByKey(cell.key)?.cellClass ?? ''">
+                          @if (cell.key === actionsKey) {
+                            <span
+                              class="d-inline-flex align-items-center gap-1"
+                            >
+                              @if (cellTemplate(cell.key); as template) {
+                                <ng-container
+                                  [ngTemplateOutlet]="template"
+                                  [ngTemplateOutletContext]="{
+                                    $implicit: view.row,
+                                    rowKey: view.rowKey,
+                                  }"
+                                />
+                              }
+                            </span>
+                          } @else if (cellTemplate(cell.key); as template) {
+                            <ng-container
+                              [ngTemplateOutlet]="template"
+                              [ngTemplateOutletContext]="{
+                                $implicit: view.row,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          }
+                        </td>
+                      }
                     }
                   }
                   @if (!view.placeholder) {
@@ -942,22 +960,36 @@ export interface BulkUntouchedContext {
 
                     <!-- What a column becomes on a narrow screen is a pair of a
                     label and a value, and a description list is the one markup
-                    that says so to a screen reader (Flow F10). -->
+                    that says so to a screen reader (Flow F10). A merged tail
+                    message replaces tail fields with a single phrase
+                    (mockups/admin/maintenance). -->
                     @if (cardFields().length > 0) {
                       <dl class="row mb-2 small g-0">
-                        @for (field of cardFields(); track field.column.key) {
-                          <dt class="col-5 fw-normal text-body-secondary">
-                            {{ field.column.label }}
-                          </dt>
-                          <dd class="col-7 mb-0">
-                            <ng-container
-                              [ngTemplateOutlet]="field.template"
-                              [ngTemplateOutletContext]="{
-                                $implicit: view.row,
-                                rowKey: view.rowKey,
-                              }"
-                            />
-                          </dd>
+                        @for (
+                          cell of cardCells(view.rowMessage);
+                          track cell.key
+                        ) {
+                          @if (cell.text !== null) {
+                            <dd
+                              class="col-12 mb-0 text-body-secondary fst-italic"
+                              data-id="hilos-table-row-message"
+                            >
+                              {{ cell.text }}
+                            </dd>
+                          } @else if (cardField(cell.key); as field) {
+                            <dt class="col-5 fw-normal text-body-secondary">
+                              {{ field.column.label }}
+                            </dt>
+                            <dd class="col-7 mb-0">
+                              <ng-container
+                                [ngTemplateOutlet]="field.template"
+                                [ngTemplateOutletContext]="{
+                                  $implicit: view.row,
+                                  rowKey: view.rowKey,
+                                }"
+                              />
+                            </dd>
+                          }
                         }
                       </dl>
                     }
@@ -1248,6 +1280,23 @@ export class HilosViewportTable<R> {
   protected readonly rowColumns = computed(() =>
     this.frameColumns().filter((column) => column.detail !== true),
   )
+  private readonly rowColumnsByKey = computed(
+    () => new Map(this.rowColumns().map((column) => [column.key, column])),
+  )
+
+  protected columnByKey(key: string): HilosTableColumn | undefined {
+    return this.rowColumnsByKey().get(key)
+  }
+
+  // The cells of one row of a table: ordinary cells for each declared column,
+  // or a merged tail cell spanning the remaining columns when the row carries
+  // a message (mockups/admin/maintenance).
+  protected rowCells(
+    message: HilosTableRowMessage | null | undefined,
+  ): readonly HilosTableRowMessageCell[] {
+    return hilosTableRowMessageCells(this.rowColumns(), message)
+  }
+
   // The words of the control and of an empty field — the core's, for the template.
   protected readonly detailCopy = TABLE_DETAIL_COPY
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
@@ -1271,6 +1320,35 @@ export class HilosViewportTable<R> {
       return template === undefined ? [] : [{ column, template }]
     })
   })
+  private readonly cardFieldsByKey = computed(
+    () => new Map(this.cardFields().map((field) => [field.column.key, field])),
+  )
+
+  protected cardField(key: string):
+    | {
+        readonly column: HilosTableColumn
+        readonly template: TemplateRef<HilosTableCellContext<unknown>>
+      }
+    | undefined {
+    return this.cardFieldsByKey().get(key)
+  }
+
+  // The cells of a card on a narrow screen: ordinary fields with labels, or a
+  // merged tail message spanning the remaining fields without false labels
+  // (mockups/admin/maintenance).
+  protected cardCells(
+    message: HilosTableRowMessage | null | undefined,
+  ): readonly HilosTableRowMessageCell[] {
+    const fields = this.cardFields()
+    if (fields.length === 0) {
+      return []
+    }
+
+    return hilosTableRowMessageCells(
+      fields.map((field) => field.column),
+      message,
+    )
+  }
   // The optional selection column is present only when the page declared bulk
   // operations (Flow F14).
   protected readonly selectionEnabled = computed(

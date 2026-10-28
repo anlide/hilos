@@ -64,6 +64,7 @@ use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusComponentsPage;
@@ -153,6 +154,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -235,6 +237,7 @@ final class Hilos extends HilosFacade
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
         DaemonNodePage::PAGE => DaemonNodePage::class,
@@ -408,6 +411,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         EcommerceShopTableContext::hilosBackups => HilosBackupHistoryTable::class,
         EcommerceShopTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        EcommerceShopTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         EcommerceShopTableContext::settings => HilosSettingsTable::class,
         EcommerceShopTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         EcommerceShopTableContext::hilosUsers => HilosUsersTable::class,
@@ -487,6 +491,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceCirclePage::PAGE => [
             EcommerceShopTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceWordsPage::PAGE => [
+            EcommerceShopTableContext::hilosMaintenanceWords => [],
         ],
         SettingsPage::PAGE => [
             EcommerceShopTableContext::settings => [],

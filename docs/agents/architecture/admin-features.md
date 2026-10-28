@@ -68,19 +68,22 @@ frame and the manual `maintenance_enable`, `maintenance_disable` and
 (`hilos_maintenance_circle`, `/hilos/maintenance/circle`,
 `Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage`) owns the
 verifier-circle add/remove actions and uses `HilosVerifierCircleTable`; the same
-index agent serves both, and the circle belongs to the freeze, not Backups.
-`HilosPageCatalog` opts Maintenance into the shared page head and declares Circle
-as its child, so the existing `page_response` carries Hilos › Maintenance and
-Overview/Circle tabs without child cards or new wire fields or signals.
+index agent serves both, and the circle belongs to the freeze, not Backups. Its
+child Words page (`hilos_maintenance_words`, `/hilos/maintenance/words`,
+`Hilos\Pages\Maintenance\AbstractHilosMaintenanceWordsPage`) lists stubs for
+protected-mode operations using `HilosMaintenanceWordsTable`. `HilosPageCatalog`
+opts Maintenance into the shared page head and declares Circle and Words as its
+children, so the existing `page_response` carries Hilos › Maintenance and
+Overview/Circle/Words tabs without child cards or new wire fields or signals.
 
-All six demo backends register Circle and bind its table to that page. The
-frontend is transitional: Vue renders Circle and scopes its table there; React
-and Angular still render the circle table on Overview, and their Circle page is
-unbuilt, so its tab is hidden and its direct address returns `not_served`. Those
-four demos keep the Overview page's `PAGE_TABLES` entry until HIL-1681 and
-HIL-1682. Circle actions are already owned by the Circle page, but dispatch does
-not require a subscription to it, so the transitional Overview UI can still send
-them.
+All six demo backends register Circle and Words and bind their tables to those
+pages. The frontend is transitional: Vue renders Circle and Words and scopes
+their tables there; React and Angular still render the circle table on
+Overview, and their Circle and Words pages are unbuilt, so those tabs are hidden
+and their direct addresses return `not_served`. Those four demos keep the
+Overview page's `PAGE_TABLES` entry until HIL-1681 and HIL-1682. Circle actions
+are already owned by the Circle page, but dispatch does not require a
+subscription to it, so the transitional Overview UI can still send them.
 
 Manual maintenance remains on Overview: its `maintenance_enable` action hands
 entry to the index agent and waits for confirmation

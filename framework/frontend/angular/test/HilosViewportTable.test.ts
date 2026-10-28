@@ -28,6 +28,7 @@ import type {
   HilosRouter,
   HilosTableColumn,
   HilosTableFrame,
+  HilosTableRowMessage,
   PageRouteMatch,
   TableViewportDescriptor,
 } from '@hilos/core'
@@ -253,6 +254,39 @@ class CardsTableHost {
   controller!: TableViewportController<Row>
   full = true
   withEmpty = false
+}
+
+interface WordsRow {
+  operation: string
+  title: string
+  phrase: string
+  bar: string
+  message?: HilosTableRowMessage | null
+}
+
+/** A host filling cells of words columns with row message support. */
+@Component({
+  selector: 'test-row-message-table-host',
+  imports: [HilosTableCell, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="operation" let-row>
+        <span class="op">{{ row.operation }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="title" let-row>
+        <span class="title">{{ row.title }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="phrase" let-row>
+        <span class="phrase">{{ row.phrase }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="bar" let-row>
+        <span class="bar">{{ row.bar }}</span>
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class RowMessageTableHost {
+  controller!: TableViewportController<WordsRow>
 }
 
 /** The identity a leaf answers with: its heading, and nothing below it. */
@@ -2050,6 +2084,145 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(
       cardOf(fixture, 'b').querySelector('[data-id="hilos-table-select-b"]'),
     ).not.toBeNull()
+  })
+
+  it('projects row message across wide merged tail and narrow card phrase', () => {
+    const WORDS_COLUMNS: HilosTableColumn[] = [
+      { key: 'operation', label: 'Operation' },
+      { key: 'title', label: 'Title' },
+      { key: 'phrase', label: 'Phrase' },
+      { key: 'bar', label: 'Bar' },
+    ]
+
+    const controller = new TableViewportController<WordsRow>({
+      resolve: (raw) => ({
+        operation: String(raw.slots['operation']),
+        title: String(raw.slots['title']),
+        phrase: String(raw.slots['phrase']),
+        bar: String(raw.slots['bar']),
+        message:
+          raw.slots['message'] === undefined
+            ? null
+            : (raw.slots['message'] as HilosTableRowMessage | null),
+      }),
+      sendViewport: () => {},
+      frame: { title: 'Words', columns: WORDS_COLUMNS },
+      rowMessage: (row) => row.message ?? null,
+    })
+
+    controller.ingestWindow(
+      [
+        {
+          rowKey: 'default',
+          slots: {
+            operation: 'default',
+            title: 'Maintenance in progress',
+            phrase: 'Briefly unavailable',
+            bar: 'Verification in progress',
+          },
+        },
+        {
+          rowKey: 'restore',
+          slots: {
+            operation: 'restore',
+            title: '',
+            phrase: '',
+            bar: '',
+            message: {
+              fromColumn: 'title',
+              text: 'No own entry — uses default',
+            },
+          },
+        },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+
+    const fixture = TestBed.createComponent(RowMessageTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    const normalWideRow = query(
+      fixture,
+      '[data-id="hilos-table-row-default"]',
+    ) as HTMLElement
+    const normalWideCells = normalWideRow.querySelectorAll('td')
+    expect(normalWideCells).toHaveLength(5)
+    expect(
+      normalWideRow.querySelector('[data-id="hilos-table-row-message"]'),
+    ).toBeNull()
+    expect(normalWideCells[0]?.textContent?.trim()).toBe('default')
+    expect(normalWideCells[1]?.textContent?.trim()).toBe(
+      'Maintenance in progress',
+    )
+    expect(normalWideCells[2]?.textContent?.trim()).toBe('Briefly unavailable')
+    expect(normalWideCells[3]?.textContent?.trim()).toBe(
+      'Verification in progress',
+    )
+    expect(normalWideCells[0]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[1]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[2]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[3]?.getAttribute('colspan')).toBeNull()
+
+    const messageWideRow = query(
+      fixture,
+      '[data-id="hilos-table-row-restore"]',
+    ) as HTMLElement
+    const messageWideCells = messageWideRow.querySelectorAll('td')
+    expect(messageWideCells).toHaveLength(3)
+    expect(messageWideCells[0]?.textContent?.trim()).toBe('restore')
+    expect(messageWideCells[0]?.getAttribute('colspan')).toBeNull()
+
+    const wideMessageCell = messageWideCells[1]!
+    expect(wideMessageCell.getAttribute('colspan')).toBe('3')
+    expect(wideMessageCell.classList.contains('text-body-secondary')).toBe(true)
+    expect(wideMessageCell.classList.contains('fst-italic')).toBe(true)
+    expect(wideMessageCell.getAttribute('data-id')).toBe(
+      'hilos-table-row-message',
+    )
+    expect(wideMessageCell.textContent?.trim()).toBe(
+      'No own entry — uses default',
+    )
+
+    const normalCard = query(
+      fixture,
+      '[data-id="hilos-table-card-default"]',
+    ) as HTMLElement
+    expect(normalCard.querySelector('.op')?.textContent?.trim()).toBe('default')
+    expect(
+      Array.from(normalCard.querySelectorAll('dt')).map((dt) =>
+        dt.textContent?.trim(),
+      ),
+    ).toEqual(['Title', 'Phrase', 'Bar'])
+    expect(normalCard.querySelectorAll('dd')).toHaveLength(3)
+    expect(
+      normalCard.querySelector('[data-id="hilos-table-row-message"]'),
+    ).toBeNull()
+
+    const messageCard = query(
+      fixture,
+      '[data-id="hilos-table-card-restore"]',
+    ) as HTMLElement
+    expect(messageCard.querySelector('.op')?.textContent?.trim()).toBe(
+      'restore',
+    )
+    expect(messageCard.querySelectorAll('dt')).toHaveLength(0)
+    const cardMessages = messageCard.querySelectorAll(
+      '[data-id="hilos-table-row-message"]',
+    )
+    expect(cardMessages).toHaveLength(1)
+    const cardMessage = cardMessages[0]!
+    expect(cardMessage.tagName.toLowerCase()).toBe('dd')
+    expect(cardMessage.classList.contains('col-12')).toBe(true)
+    expect(cardMessage.classList.contains('text-body-secondary')).toBe(true)
+    expect(cardMessage.classList.contains('fst-italic')).toBe(true)
+    expect(cardMessage.textContent?.trim()).toBe('No own entry — uses default')
+
+    controller.dispose()
   })
 })
 

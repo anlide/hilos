@@ -50,6 +50,7 @@ export const HilosPages = {
   BACKUP: 'hilos_backup',
   MAINTENANCE: 'hilos_maintenance',
   MAINTENANCE_CIRCLE: 'hilos_maintenance_circle',
+  MAINTENANCE_WORDS: 'hilos_maintenance_words',
   STATUS: 'hilos_status',
   STATUS_COMPONENTS: 'hilos_status_components',
   GUARDIAN: 'hilos_guardian',
@@ -209,6 +210,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.MAINTENANCE]: { path: '/hilos/maintenance', admin: true },
   [HilosPages.MAINTENANCE_CIRCLE]: {
     path: '/hilos/maintenance/circle',
+    admin: true,
+  },
+  [HilosPages.MAINTENANCE_WORDS]: {
+    path: '/hilos/maintenance/words',
     admin: true,
   },
   [HilosPages.STATUS]: { path: '/hilos/status', admin: true },

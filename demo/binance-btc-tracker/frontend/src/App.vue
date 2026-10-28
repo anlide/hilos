@@ -76,6 +76,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.MAINTENANCE_CIRCLE]: lazyPage(() =>
     import('./views/Hilos/Maintenance/Circle.vue').then((m) => m.default),
   ),
+  [HilosPages.MAINTENANCE_WORDS]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Words.vue').then((m) => m.default),
+  ),
   [HilosPages.STATUS]: lazyPage(() =>
     import('./views/Hilos/Status/Status.vue').then((m) => m.default),
   ),

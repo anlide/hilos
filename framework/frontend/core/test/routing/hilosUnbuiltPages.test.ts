@@ -85,6 +85,22 @@ describe('hilosUnbuiltPages', () => {
     ).toBe(true)
   })
 
+  it('keeps React and Angular Words views unbuilt while Vue is built by this sheet', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_WORDS]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_WORDS)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_WORDS)).toBe(
+      true,
+    )
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_WORDS)).toBe(
+      true,
+    )
+  })
+
   it('keeps React and Angular Moderation views unbuilt while Vue is built by this sheet', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual([
       'react',

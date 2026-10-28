@@ -87,6 +87,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\Status\StatusPage;
 use Demo\Polls\Pages\Hilos\Status\StatusComponentsPage;
@@ -193,6 +194,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -325,6 +327,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -517,6 +520,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         PollsTableContext::hilosUsers => HilosUsersTable::class,
         PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        PollsTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
         PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -653,6 +657,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceCirclePage::PAGE => [
             PollsTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceWordsPage::PAGE => [
+            PollsTableContext::hilosMaintenanceWords => [],
         ],
         LogsKeysPage::PAGE => [
             PollsTableContext::hilosLogKeys => [],

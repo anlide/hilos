@@ -62,6 +62,7 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusComponentsPage;
@@ -146,6 +147,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -269,6 +271,7 @@ final class Hilos extends HilosFacade
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -415,6 +418,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
         OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        OnlineTestingTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
         OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -497,6 +501,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceCirclePage::PAGE => [
             OnlineTestingTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceWordsPage::PAGE => [
+            OnlineTestingTableContext::hilosMaintenanceWords => [],
         ],
         LogsKeysPage::PAGE => [
             OnlineTestingTableContext::hilosLogKeys => [],

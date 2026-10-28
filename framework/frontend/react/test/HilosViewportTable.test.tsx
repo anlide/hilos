@@ -17,6 +17,7 @@ import type {
   HilosTableColumn,
   HilosTableFrame,
   HilosTableProgress,
+  HilosTableRowMessage,
   TableGeometryRegistration,
   TableViewportDescriptor,
 } from '@hilos/core'
@@ -1576,6 +1577,147 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(
       cardOf(container, 'b').querySelector('[data-id="hilos-table-select-b"]'),
     ).not.toBeNull()
+  })
+
+  it('projects row message across wide merged tail and narrow card phrase', () => {
+    interface WordsRow {
+      operation: string
+      title: string
+      phrase: string
+      bar: string
+      message?: HilosTableRowMessage | null
+    }
+
+    const WORDS_COLUMNS: HilosTableColumn[] = [
+      { key: 'operation', label: 'Operation' },
+      { key: 'title', label: 'Title' },
+      { key: 'phrase', label: 'Phrase' },
+      { key: 'bar', label: 'Bar' },
+    ]
+
+    const controller = new TableViewportController<WordsRow>({
+      resolve: (raw) => ({
+        operation: String(raw.slots['operation']),
+        title: String(raw.slots['title']),
+        phrase: String(raw.slots['phrase']),
+        bar: String(raw.slots['bar']),
+        message:
+          raw.slots['message'] === undefined
+            ? null
+            : (raw.slots['message'] as HilosTableRowMessage | null),
+      }),
+      sendViewport: () => {},
+      frame: { title: 'Words', columns: WORDS_COLUMNS },
+      rowMessage: (row) => row.message ?? null,
+    })
+
+    controller.ingestWindow(
+      [
+        {
+          rowKey: 'default',
+          slots: {
+            operation: 'default',
+            title: 'Maintenance in progress',
+            phrase: 'Briefly unavailable',
+            bar: 'Verification in progress',
+          },
+        },
+        {
+          rowKey: 'restore',
+          slots: {
+            operation: 'restore',
+            title: '',
+            phrase: '',
+            bar: '',
+            message: {
+              fromColumn: 'title',
+              text: 'No own entry — uses default',
+            },
+          },
+        },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{
+          operation: (row) => <span className="op">{row.operation}</span>,
+          title: (row) => <span className="title">{row.title}</span>,
+          phrase: (row) => <span className="phrase">{row.phrase}</span>,
+          bar: (row) => <span className="bar">{row.bar}</span>,
+        }}
+      />,
+    )
+
+    const normalWideRow = container.querySelector(
+      '[data-id="hilos-table-row-default"]',
+    )!
+    const normalWideCells = normalWideRow.querySelectorAll('td')
+    expect(normalWideCells).toHaveLength(5)
+    expect(
+      normalWideRow.querySelector('[data-id="hilos-table-row-message"]'),
+    ).toBeNull()
+    expect(normalWideCells[0]?.textContent).toBe('default')
+    expect(normalWideCells[1]?.textContent).toBe('Maintenance in progress')
+    expect(normalWideCells[2]?.textContent).toBe('Briefly unavailable')
+    expect(normalWideCells[3]?.textContent).toBe('Verification in progress')
+    expect(normalWideCells[0]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[1]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[2]?.getAttribute('colspan')).toBeNull()
+    expect(normalWideCells[3]?.getAttribute('colspan')).toBeNull()
+
+    const messageWideRow = container.querySelector(
+      '[data-id="hilos-table-row-restore"]',
+    )!
+    const messageWideCells = messageWideRow.querySelectorAll('td')
+    expect(messageWideCells).toHaveLength(3)
+    expect(messageWideCells[0]?.textContent).toBe('restore')
+    expect(messageWideCells[0]?.getAttribute('colspan')).toBeNull()
+
+    const wideMessageCell = messageWideCells[1]!
+    expect(wideMessageCell.getAttribute('colspan')).toBe('3')
+    expect(wideMessageCell.classList.contains('text-body-secondary')).toBe(true)
+    expect(wideMessageCell.classList.contains('fst-italic')).toBe(true)
+    expect(wideMessageCell.getAttribute('data-id')).toBe(
+      'hilos-table-row-message',
+    )
+    expect(wideMessageCell.textContent).toBe('No own entry — uses default')
+
+    const normalCard = container.querySelector(
+      '[data-id="hilos-table-card-default"]',
+    )!
+    expect(normalCard.querySelector('.op')?.textContent).toBe('default')
+    expect(
+      Array.from(normalCard.querySelectorAll('dt')).map((dt) => dt.textContent),
+    ).toEqual(['Title', 'Phrase', 'Bar'])
+    expect(normalCard.querySelectorAll('dd')).toHaveLength(3)
+    expect(
+      normalCard.querySelector('[data-id="hilos-table-row-message"]'),
+    ).toBeNull()
+
+    const messageCard = container.querySelector(
+      '[data-id="hilos-table-card-restore"]',
+    )!
+    expect(messageCard.querySelector('.op')?.textContent).toBe('restore')
+    expect(messageCard.querySelectorAll('dt')).toHaveLength(0)
+    const cardMessages = messageCard.querySelectorAll(
+      '[data-id="hilos-table-row-message"]',
+    )
+    expect(cardMessages).toHaveLength(1)
+    const cardMessage = cardMessages[0]!
+    expect(cardMessage.tagName.toLowerCase()).toBe('dd')
+    expect(cardMessage.classList.contains('col-12')).toBe(true)
+    expect(cardMessage.classList.contains('text-body-secondary')).toBe(true)
+    expect(cardMessage.classList.contains('fst-italic')).toBe(true)
+    expect(cardMessage.textContent).toBe('No own entry — uses default')
+
+    controller.dispose()
   })
 })
 

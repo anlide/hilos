@@ -38,17 +38,26 @@ export const MAINTENANCE_PATH = '/hilos/maintenance'
 export const MAINTENANCE_CIRCLE_PATH = '/hilos/maintenance/circle'
 
 /**
- * The shared Maintenance head on Overview or Circle: one h1, the owner's trail,
- * the two real links with only the rendered page current, and no child cards.
+ * The Words tab's address, copied verbatim from HilosPages.MAINTENANCE_WORDS in
+ * core/src/routing/hilosPages.ts; available in Vue until the other SDKs move.
+ */
+export const MAINTENANCE_WORDS_PATH = '/hilos/maintenance/words'
+
+/**
+ * The shared Maintenance head on Overview, Circle, or Words: one h1, the owner's trail,
+ * the three real links with only the rendered page current, and no child cards.
  *
  * @param expect The spec's expect.
- * @param page A page on Maintenance Overview or Circle in an SDK building both.
+ * @param page A page on Maintenance Overview, Circle, or Words in an SDK building them.
  * @param currentPage The key of the page on screen.
  */
 export async function expectMaintenancePageHead(
   expect: Expect,
   page: Page,
-  currentPage: 'hilos_maintenance' | 'hilos_maintenance_circle',
+  currentPage:
+    | 'hilos_maintenance'
+    | 'hilos_maintenance_circle'
+    | 'hilos_maintenance_words',
 ): Promise<void> {
   const head = page.getByTestId('hilos-page-head')
   await expect(head).toHaveCount(1)
@@ -88,10 +97,15 @@ export async function expectMaintenancePageHead(
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveCount(1)
   await expect(tabs).toHaveAccessibleName('Maintenance pages')
-  await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Circle'])
+  await expect(tabs.getByRole('link')).toHaveText([
+    'Overview',
+    'Circle',
+    'Words',
+  ])
   for (const [key, path] of [
     ['hilos_maintenance', MAINTENANCE_PATH],
     ['hilos_maintenance_circle', MAINTENANCE_CIRCLE_PATH],
+    ['hilos_maintenance_words', MAINTENANCE_WORDS_PATH],
   ] as const) {
     const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
     await expect(tab).toHaveAttribute('href', path)

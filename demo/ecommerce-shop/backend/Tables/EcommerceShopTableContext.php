@@ -33,6 +33,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -50,6 +51,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
+ * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
@@ -81,6 +83,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
+    public const string hilosMaintenanceWords = HilosMaintenanceWordsTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;

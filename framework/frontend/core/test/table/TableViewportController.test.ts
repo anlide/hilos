@@ -1098,6 +1098,7 @@ describe('TableViewportController', () => {
         expanded: false,
         expandable: true,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])
@@ -1464,6 +1465,7 @@ describe('TableViewportController', () => {
       expanded: false,
       expandable: false,
       refused: false,
+      rowMessage: null,
       staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
@@ -1540,6 +1542,7 @@ describe('TableViewportController', () => {
         expanded: false,
         expandable: false,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])
@@ -1572,6 +1575,7 @@ describe('TableViewportController', () => {
         expanded: false,
         expandable: false,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])
@@ -1604,6 +1608,7 @@ describe('TableViewportController', () => {
         expanded: false,
         expandable: false,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])
@@ -1695,6 +1700,7 @@ describe('TableViewportController', () => {
         expanded: false,
         expandable: false,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])
@@ -2127,6 +2133,7 @@ describe('TableViewportController', () => {
       expanded: false,
       expandable: false,
       refused: false,
+      rowMessage: null,
       staleSources: [],
     })
   })
@@ -5596,5 +5603,183 @@ describe('TableViewportController refused predicate', () => {
     expect(row?.highlighted).toBe(false)
     expect(row?.refused).toBe(true)
     expect(row?.pending).toBe('remove')
+  })
+})
+
+describe('TableViewportController rowMessage option', () => {
+  it('defaults to null on every row when the option is omitted', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { status: 'failed' } },
+        { rowKey: 'b', slots: { status: 'ok' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+
+    const rows = controller.rows.get()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.rowMessage).toBeNull()
+    expect(rows[1]?.rowMessage).toBeNull()
+  })
+
+  it('evaluates rowMessage according to the option callback for live rows', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      rowMessage: (row) =>
+        row.slots.usesDefault
+          ? { fromColumn: 'title', text: 'No own entry — uses default' }
+          : null,
+      sendViewport: () => {},
+      frame: {
+        columns: [
+          { key: 'operation', label: 'Operation' },
+          { key: 'title', label: 'Title' },
+          { key: 'phrase', label: 'Phrase' },
+          { key: 'bar', label: 'Bar' },
+        ],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [
+        {
+          rowKey: 'restore',
+          slots: { operation: 'restore', usesDefault: true },
+        },
+        {
+          rowKey: 'manual_maintenance',
+          slots: { operation: 'manual_maintenance', usesDefault: false },
+        },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    const rows = controller.rows.get()
+    expect(rows[0]?.rowMessage).toEqual({
+      fromColumn: 'title',
+      text: 'No own entry — uses default',
+    })
+    expect(rows[1]?.rowMessage).toBeNull()
+  })
+
+  it('always yields null for placeholder / departed rows even when rowMessage option is configured', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      rowMessage: () => ({
+        fromColumn: 'title',
+        text: 'Should never appear on placeholder',
+      }),
+      sendViewport: () => {},
+      frame: { columns: [{ key: 'operation', label: 'Operation' }] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'restore', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(controller.rows.get()[0]?.rowMessage).toEqual({
+      fromColumn: 'title',
+      text: 'Should never appear on placeholder',
+    })
+
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'restore',
+      reason: 'deleted',
+    })
+    controller.apply()
+
+    const placeholderRow = controller.rows.get()[0]
+    expect(placeholderRow?.placeholder).toBe(true)
+    expect(placeholderRow?.rowMessage).toBeNull()
+  })
+
+  it('re-evaluates rowMessage reactively on state changes without a new window', () => {
+    const override = createSignal(false)
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      rowMessage: (row) =>
+        override.get() || row.slots.usesDefault
+          ? { fromColumn: 'title', text: 'Uses default' }
+          : null,
+      sendViewport: () => {},
+      frame: { columns: [{ key: 'title', label: 'Title' }] },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: { usesDefault: false } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(controller.rows.get()[0]?.rowMessage).toBeNull()
+    override.set(true)
+    expect(controller.rows.get()[0]?.rowMessage).toEqual({
+      fromColumn: 'title',
+      text: 'Uses default',
+    })
+    override.set(false)
+    expect(controller.rows.get()[0]?.rowMessage).toBeNull()
+  })
+
+  it('preserves geometry footprint without retaining message copy or retired row payload', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      rowMessage: () => ({
+        fromColumn: 'title',
+        text: 'Temporary message copy',
+      }),
+      sendViewport: () => {},
+      frame: {
+        columns: [
+          { key: 'operation', label: 'Operation' },
+          { key: 'title', label: 'Title' },
+        ],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    // TableViewportGeometry remains the sole owner of numeric layout; neither
+    // geometry record nor controller cache retains rowMessage string.
+    const geometry = controller.geometry
+    expect(geometry).toBeDefined()
+    expect(JSON.stringify(geometry)).not.toContain('Temporary message copy')
+
+    // On departure, geometry records departure reason; no retired payload or copy is held.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(JSON.stringify(geometry)).not.toContain('Temporary message copy')
   })
 })

@@ -34,6 +34,7 @@ import {
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
+  hilosTableRowMessageCells,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -435,19 +436,40 @@ export function HilosViewportTable<R>({
   // The cells of one row of a table: one per column left standing in the
   // row, the content from the page's renderer for that column and the class from the
   // column itself. The cell stands even where the page gave no renderer: a row one
-  // cell short is a row narrower than its header (Flow F3).
-  function declaredCells(record: R, rowKey: string): ReactNode {
-    return rowColumns.map((column) => (
-      <td key={column.key} className={column.cellClass}>
-        {column.key === HILOS_TABLE_ACTIONS_KEY ? (
-          <span className="d-inline-flex align-items-center gap-1">
-            {cells?.[column.key]?.(record, rowKey)}
-          </span>
-        ) : (
-          cells?.[column.key]?.(record, rowKey)
-        )}
-      </td>
-    ))
+  // cell short is a row narrower than its header (Flow F3). A merged tail message
+  // starting from fromColumn replaces tail cells with a single cell spanning them
+  // (mockups/admin/maintenance).
+  function declaredCells(view: TableViewportRow<R>, record: R): ReactNode {
+    const rowCells = hilosTableRowMessageCells(rowColumns, view.rowMessage)
+
+    return rowCells.map((cell) => {
+      if (cell.text !== null) {
+        return (
+          <td
+            key={cell.key}
+            colSpan={cell.span}
+            className="text-body-secondary fst-italic"
+            data-id="hilos-table-row-message"
+          >
+            {cell.text}
+          </td>
+        )
+      }
+
+      const column = rowColumns.find((col) => col.key === cell.key)
+
+      return (
+        <td key={cell.key} className={column?.cellClass}>
+          {cell.key === HILOS_TABLE_ACTIONS_KEY ? (
+            <span className="d-inline-flex align-items-center gap-1">
+              {cells?.[cell.key]?.(record, view.rowKey)}
+            </span>
+          ) : (
+            cells?.[cell.key]?.(record, view.rowKey)
+          )}
+        </td>
+      )
+    })
   }
 
   // Whether the page draws anything into a column's cell. A card leaves out the
@@ -503,6 +525,12 @@ export function HilosViewportTable<R>({
       />
     ) : null
     const fields = layout.fields.filter(hasCell)
+    const cardCells =
+      view.rowMessage !== null &&
+      view.rowMessage !== undefined &&
+      fields.length > 0
+        ? hilosTableRowMessageCells(fields, view.rowMessage)
+        : null
     const bar = rowBar(rowKey)
 
     return (
@@ -534,19 +562,49 @@ export function HilosViewportTable<R>({
 
         {/* What a column becomes on a narrow screen is a pair of a label and a
             value, and a description list is the one markup that says so to a
-            screen reader (Flow F10). */}
+            screen reader (Flow F10). A merged tail message replaces tail
+            fields with a single phrase (mockups/admin/maintenance). */}
         {fields.length > 0 ? (
           <dl className="row mb-2 small g-0">
-            {fields.map((field) => (
-              <Fragment key={field.key}>
-                <dt className="col-5 fw-normal text-body-secondary">
-                  {field.label}
-                </dt>
-                <dd className="col-7 mb-0">
-                  {cells?.[field.key]?.(record, rowKey)}
-                </dd>
-              </Fragment>
-            ))}
+            {cardCells !== null
+              ? cardCells.map((cell) => {
+                  if (cell.text !== null) {
+                    return (
+                      <dd
+                        key={cell.key}
+                        className="col-12 mb-0 text-body-secondary fst-italic"
+                        data-id="hilos-table-row-message"
+                      >
+                        {cell.text}
+                      </dd>
+                    )
+                  }
+                  const field = fields.find((f) => f.key === cell.key)
+                  if (field === undefined) {
+                    return null
+                  }
+
+                  return (
+                    <Fragment key={cell.key}>
+                      <dt className="col-5 fw-normal text-body-secondary">
+                        {field.label}
+                      </dt>
+                      <dd className="col-7 mb-0">
+                        {cells?.[field.key]?.(record, rowKey)}
+                      </dd>
+                    </Fragment>
+                  )
+                })
+              : fields.map((field) => (
+                  <Fragment key={field.key}>
+                    <dt className="col-5 fw-normal text-body-secondary">
+                      {field.label}
+                    </dt>
+                    <dd className="col-7 mb-0">
+                      {cells?.[field.key]?.(record, rowKey)}
+                    </dd>
+                  </Fragment>
+                ))}
           </dl>
         ) : null}
 
@@ -956,7 +1014,7 @@ export function HilosViewportTable<R>({
                           </div>
                         </td>
                       ) : (
-                        declaredCells(view.row, view.rowKey)
+                        declaredCells(view, view.row)
                       )}
                       {!view.placeholder && view.row !== null ? (
                         <td className="text-end text-nowrap">

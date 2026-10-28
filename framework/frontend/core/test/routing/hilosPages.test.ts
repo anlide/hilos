@@ -280,6 +280,30 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
+  it('addresses Words without params under Maintenance with the PHP key and keeps it unbuilt across React and Angular', () => {
+    const page = HilosPages.MAINTENANCE_WORDS
+    const path = '/hilos/maintenance/words'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_maintenance_words')
+    expect(php).toContain(`HILOS_MAINTENANCE_WORDS = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    expect(router.match(`${path}/extra`).page).toBeNull()
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    for (const layer of ['react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    }
+  })
+
   it('addresses all five i18n detail pages by code', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const addresses = [

@@ -861,26 +861,31 @@ one rather than a re-subscribe, is the client half in
 ## Manual Maintenance: The Window Without An Operation (HIL-1291)
 
 The section has an Overview page, `hilos_maintenance` at
-`/hilos/maintenance`, and a child Circle page, `hilos_maintenance_circle` at
-`/hilos/maintenance/circle`. `AbstractHilosMaintenancePage` still owns the
+`/hilos/maintenance`, a child Circle page, `hilos_maintenance_circle` at
+`/hilos/maintenance/circle`, and a child Words page, `hilos_maintenance_words` at
+`/hilos/maintenance/words`. `AbstractHilosMaintenancePage` still owns the
 Overview state frame, subscriber tracking, and the manual enable, disable and
 pass handovers described below. `AbstractHilosMaintenanceCirclePage` is a
 separate page served by the same index agent; it owns the circle add/remove
 actions, their DTOs, validation, refusals and acknowledgements, and the
 `HilosVerifierCircleTable` row actions and viewport. Its row copy, `Hideable`
 identifier, member id, focus, dialog and online-presence behavior stay the same,
-without a card wrapper. It has no manual-state hook, subscriber or timer. The
-shared catalog head identifies the owner as Hilos › Maintenance and provides
-Overview/Circle tabs in the existing page response, without child cards or new
-wire fields or signals.
+without a card wrapper. It has no manual-state hook, subscriber or timer.
+`AbstractHilosMaintenanceWordsPage` is also served by the index agent and
+displays the project's protected-mode stub registry as a read-only table via
+`HilosMaintenanceWordsTable`, indicating default stub fallback via rowMessage for
+operations with no own entry. The shared catalog head identifies the owner as
+Hilos › Maintenance and provides Overview/Circle/Words tabs in the existing page
+response, without child cards or new wire fields or signals.
 
-All six demo backends register the Circle page and its table binding. In the
-current frontend transition, only Vue builds the Circle view. React and Angular
-keep the table on Overview and mark Circle unbuilt, so its tab is hidden and a
-direct Circle address returns `not_served`; their Overview `PAGE_TABLES` entry
-remains until HIL-1681 and HIL-1682. Circle add/remove actions are already owned
-by the Circle page, and dispatch does not require a subscription to it, so the
-existing React and Angular Overview UI continues to work.
+All six demo backends register the Circle and Words pages and their table bindings.
+In the current frontend transition, only Vue builds the Circle and Words views.
+React and Angular keep the circle table on Overview and mark Circle and Words unbuilt,
+so their tabs are hidden and a direct Circle or Words address returns `not_served`;
+their Overview `PAGE_TABLES` entry remains until HIL-1681 and HIL-1682. Circle
+add/remove actions are already owned by the Circle page, and dispatch does not
+require a subscription to it, so the existing React and Angular Overview UI
+continues to work.
 
 An agent requesting `verification_window` takes the row from `inactive` straight
 to `verifying`, skipping `activating` and `active`: no agents stop or restart and
@@ -1332,3 +1337,7 @@ Refuse loudly and before any trace of entry, as above.
   `e2e-freeze`. Teardown lifts with `protected-mode:open` and repeats while the
   close still holds the operator slot. The test driver's open does not lift a
   freeze that agent started.
+- `demo/binance-btc-tracker` e2e `maintenance-words.spec.ts` — displays the project's
+  protected-mode stub registry as a read-only table on the Words tab, verifying
+  `manual_maintenance` copy and `rowMessage` fallback for the default stub, direct
+  address entry, reload, and tab returns to Circle and Overview.

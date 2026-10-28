@@ -153,6 +153,9 @@ final class HilosPageConstants
     /** @var string Verifier circle in the maintenance section */
     public const string HILOS_MAINTENANCE_CIRCLE = 'hilos_maintenance_circle';
 
+    /** @var string Words used to announce maintenance screens (HIL-1677) */
+    public const string HILOS_MAINTENANCE_WORDS = 'hilos_maintenance_words';
+
     /** @var string Hilos daemon dashboard */
     public const string HILOS_DAEMON = 'hilos_daemon';
 

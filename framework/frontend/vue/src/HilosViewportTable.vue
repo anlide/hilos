@@ -51,6 +51,7 @@ import {
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
+  hilosTableRowMessageCells,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -59,6 +60,8 @@ import type {
   HilosTableColumn,
   // Aliased because the component drawing one of these carries the same name.
   HilosTableProgress as TableProgressBar,
+  HilosTableRowMessage,
+  HilosTableRowMessageCell,
   TableSort,
   TableViewportController,
   TableViewportRow,
@@ -201,6 +204,19 @@ const detailFields = computed(() => hilosTableDetailFields(frameColumns.value))
 const rowColumns = computed(() =>
   frameColumns.value.filter((column) => column.detail !== true),
 )
+const columnMap = computed(
+  () => new Map(frameColumns.value.map((column) => [column.key, column])),
+)
+
+function columnByKey(key: string): HilosTableColumn | undefined {
+  return columnMap.value.get(key)
+}
+
+function rowCells(
+  message: HilosTableRowMessage | null,
+): readonly HilosTableRowMessageCell[] {
+  return hilosTableRowMessageCells(frameColumns.value, message)
+}
 
 // Which sources went quiet anywhere in the shown window, and which declared columns
 // are built from them — the columns whose headers and row cells carry the mark. The
@@ -343,12 +359,72 @@ function hasCell(column: HilosTableColumn | null): boolean {
   return column !== null && slots[`cell-${column.key}`] !== undefined
 }
 
+interface HilosTableCardField {
+  readonly key: string
+  readonly label: string
+  readonly heightContent?: HilosTableColumn['heightContent']
+  readonly column?: HilosTableColumn
+  readonly text?: string | null
+}
+
 // The labelled lines of a card: the fields of the layout the page actually drew
-// into. A function rather than a computed, because what it reads is the slots and
-// those are settled per render — a computed would hold the answer from the render
-// the page passed other slots in.
-function cardFields(): readonly HilosTableColumn[] {
-  return card.value.fields.filter(hasCell)
+// into, or the merged tail message when the row carries one. A function rather than
+// a computed, because what it reads is the slots and those are settled per render —
+// a computed would hold the answer from the render the page passed other slots in.
+function cardFields(
+  rowOrMessage?: TableViewportRow<R> | HilosTableRowMessage | null,
+): readonly HilosTableCardField[] {
+  const message =
+    rowOrMessage &&
+    typeof rowOrMessage === 'object' &&
+    'rowMessage' in rowOrMessage
+      ? rowOrMessage.rowMessage
+      : (rowOrMessage as HilosTableRowMessage | null | undefined)
+
+  const declaredFields = card.value.fields.filter(hasCell)
+  if (!message) {
+    return declaredFields.map((column) => ({
+      key: column.key,
+      label: column.label,
+      heightContent: column.heightContent,
+      column,
+      text: null,
+    }))
+  }
+
+  const cells = hilosTableRowMessageCells(frameColumns.value, message)
+  const messageCell = cells.find((cell) => cell.text !== null)
+  if (!messageCell) {
+    return declaredFields.map((column) => ({
+      key: column.key,
+      label: column.label,
+      heightContent: column.heightContent,
+      column,
+      text: null,
+    }))
+  }
+
+  const ordinaryKeys = new Set(
+    cells.filter((cell) => cell.text === null).map((cell) => cell.key),
+  )
+
+  const result: HilosTableCardField[] = declaredFields
+    .filter((column) => ordinaryKeys.has(column.key))
+    .map((column) => ({
+      key: column.key,
+      label: column.label,
+      heightContent: column.heightContent,
+      column,
+      text: null,
+    }))
+
+  result.push({
+    key: messageCell.key,
+    label: '',
+    text: messageCell.text,
+  })
+
+  return result
 }
 
 // The id of one row's panel, which the control above it points at through
@@ -746,46 +822,58 @@ function onSelectPage(event: Event): void {
                 </div>
               </td>
               <template v-else>
-                <!-- The cell stands even where the page filled no slot: a row one
-                cell short is a row narrower than its header (Flow F3). -->
-                <td
-                  v-for="column in rowColumns"
-                  :key="column.key"
-                  :class="column.cellClass"
+                <!-- Ordinary cells before the tail and the merged tail starting from
+                fromColumn when the row carries a message (mockups/admin/maintenance). -->
+                <template
+                  v-for="cell in rowCells(view.rowMessage)"
+                  :key="cell.key"
                 >
-                  <span
-                    v-if="column.key === HILOS_TABLE_ACTIONS_KEY"
-                    class="d-inline-flex align-items-center gap-1"
+                  <td
+                    v-if="cell.text !== null"
+                    :colspan="cell.span"
+                    class="text-body-secondary fst-italic"
+                    data-id="hilos-table-row-message"
                   >
-                    <slot
-                      :name="`cell-${column.key}`"
-                      :row="view.row"
-                      :row-key="view.rowKey"
-                    />
-                  </span>
-                  <HilosTableValue
-                    v-else-if="hasCell(column)"
-                    :key="column.heightContent"
-                    :controller="props.controller"
-                    :read-record="
-                      geometry.recordReader(
-                        view.rowKey,
-                        view.occurrence,
-                        'wide',
-                      )
-                    "
-                    :column-key="column.key"
-                    :label="column.label"
-                    :height-content="column.heightContent"
-                    projection="wide"
+                    {{ cell.text }}
+                  </td>
+                  <td
+                    v-else-if="columnByKey(cell.key)"
+                    :class="columnByKey(cell.key)!.cellClass"
                   >
-                    <slot
-                      :name="`cell-${column.key}`"
-                      :row="view.row"
-                      :row-key="view.rowKey"
-                    />
-                  </HilosTableValue>
-                </td>
+                    <span
+                      v-if="cell.key === HILOS_TABLE_ACTIONS_KEY"
+                      class="d-inline-flex align-items-center gap-1"
+                    >
+                      <slot
+                        :name="`cell-${cell.key}`"
+                        :row="view.row"
+                        :row-key="view.rowKey"
+                      />
+                    </span>
+                    <HilosTableValue
+                      v-else-if="hasCell(columnByKey(cell.key)!)"
+                      :key="columnByKey(cell.key)!.heightContent"
+                      :controller="props.controller"
+                      :read-record="
+                        geometry.recordReader(
+                          view.rowKey,
+                          view.occurrence,
+                          'wide',
+                        )
+                      "
+                      :column-key="cell.key"
+                      :label="columnByKey(cell.key)!.label"
+                      :height-content="columnByKey(cell.key)!.heightContent"
+                      projection="wide"
+                    >
+                      <slot
+                        :name="`cell-${cell.key}`"
+                        :row="view.row"
+                        :row-key="view.rowKey"
+                      />
+                    </HilosTableValue>
+                  </td>
+                </template>
               </template>
               <td
                 v-if="!view.placeholder && view.row !== null"
@@ -1264,35 +1352,51 @@ function onSelectPage(event: Event): void {
 
             <!-- What a column becomes on a narrow screen is a pair of a label
             and a value, and a description list is the one markup that says so
-            to a screen reader (Flow F10). -->
-            <dl v-if="cardFields().length > 0" class="row mb-2 small g-0">
-              <template v-for="field in cardFields()" :key="field.key">
-                <dt class="col-5 fw-normal text-body-secondary">
-                  {{ field.label }}
-                </dt>
-                <dd class="col-7 mb-0">
-                  <HilosTableValue
-                    :key="field.heightContent"
-                    :controller="props.controller"
-                    :read-record="
-                      geometry.recordReader(
-                        view.rowKey,
-                        view.occurrence,
-                        'card',
-                      )
-                    "
-                    :column-key="field.key"
-                    :label="field.label"
-                    :height-content="field.heightContent"
-                    projection="card"
-                  >
-                    <slot
-                      :name="`cell-${field.key}`"
-                      :row="view.row"
-                      :row-key="view.rowKey"
-                    />
-                  </HilosTableValue>
-                </dd>
+            to a screen reader (Flow F10). A merged tail message replaces tail
+            fields with a single phrase (mockups/admin/maintenance). -->
+            <dl
+              v-if="cardFields(view.rowMessage).length > 0"
+              class="row mb-2 small g-0"
+            >
+              <template
+                v-for="field in cardFields(view.rowMessage)"
+                :key="field.key"
+              >
+                <div
+                  v-if="field.text !== null && field.text !== undefined"
+                  class="col-12 text-body-secondary fst-italic"
+                  data-id="hilos-table-row-message"
+                >
+                  {{ field.text }}
+                </div>
+                <template v-else-if="field.column">
+                  <dt class="col-5 fw-normal text-body-secondary">
+                    {{ field.label }}
+                  </dt>
+                  <dd class="col-7 mb-0">
+                    <HilosTableValue
+                      :key="field.heightContent"
+                      :controller="props.controller"
+                      :read-record="
+                        geometry.recordReader(
+                          view.rowKey,
+                          view.occurrence,
+                          'card',
+                        )
+                      "
+                      :column-key="field.key"
+                      :label="field.label"
+                      :height-content="field.heightContent"
+                      projection="card"
+                    >
+                      <slot
+                        :name="`cell-${field.key}`"
+                        :row="view.row"
+                        :row-key="view.rowKey"
+                      />
+                    </HilosTableValue>
+                  </dd>
+                </template>
               </template>
             </dl>
 

@@ -568,6 +568,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who will check the system after an operation.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
         ],
+        HilosPageConstants::HILOS_MAINTENANCE_WORDS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Words',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The words used to announce maintenance.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
+        ],
 
         HilosPageConstants::HILOS_STATUS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Status',

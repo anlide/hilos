@@ -21,6 +21,7 @@ import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
 import * as logs from '../../src/admin/logs/index.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
+import * as maintenanceWords from '../../src/admin/maintenance/hilosMaintenanceWords.js'
 import * as moderation from '../../src/admin/moderation/index.js'
 import * as moderationKind from '../../src/admin/moderation/hilosModerationKind.js'
 import * as moderationRuleAdd from '../../src/admin/moderation/hilosModerationRuleAdd.js'
@@ -244,6 +245,12 @@ const tableTextTypes = [
   'HilosTableTextRem',
   'HilosTableRowHeight',
 ]
+/** Table row message additions, shared by root and base. */
+const tableRowMessageValues = ['hilosTableRowMessageCells']
+const tableRowMessageTypes = [
+  'HilosTableRowMessage',
+  'HilosTableRowMessageCell',
+]
 /** Explicit table focus return additions, with one DOM owner for root and base. */
 const tableFocusReturnValues = ['captureTableFocusReturnTarget']
 const tableFocusReturnTypes = ['TableFocusReturnRow']
@@ -425,6 +432,24 @@ const adminModerationTypes = [
   'HilosModerationKindRow',
   'HilosModerationKindsTable',
 ]
+/** Maintenance Words APIs stay exclusive to their lazy section. */
+const maintenanceWordsValues = [
+  'HILOS_MAINTENANCE_WORDS_COLUMNS',
+  'HILOS_MAINTENANCE_WORDS_COPY',
+  'HILOS_MAINTENANCE_WORDS_SLOT',
+  'HILOS_MAINTENANCE_WORDS_TABLE',
+  'MAINTENANCE_WORDS_BANNER_MESSAGE_FIELD',
+  'MAINTENANCE_WORDS_MESSAGE_FIELD',
+  'MAINTENANCE_WORDS_OPERATION_FIELD',
+  'MAINTENANCE_WORDS_TITLE_FIELD',
+  'MAINTENANCE_WORDS_USES_DEFAULT_FIELD',
+  'createHilosMaintenanceWordsTable',
+  'resolveHilosMaintenanceWordsRow',
+]
+const maintenanceWordsTypes = [
+  'HilosMaintenanceWordsRow',
+  'HilosMaintenanceWordsTable',
+]
 /** Detail APIs stay exclusive to their lazy section. */
 const adminModerationKindValues = ['createHilosModerationKind']
 const adminModerationKindTypes = ['HilosModerationKind']
@@ -475,6 +500,7 @@ const expectedValues = [
   ...profileNameStateValues,
   ...profileRenameMemoryValues,
   ...tableTextValues,
+  ...tableRowMessageValues,
   ...tableFocusReturnValues,
   ...moderationValues,
   ...adminModerationValues,
@@ -711,6 +737,19 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/maintenance' &&
+          maintenanceWordsValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              maintenanceWords[name as keyof typeof maintenanceWords],
+            ),
+            name,
+          ).toBe(true)
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
@@ -728,6 +767,7 @@ describe('core public entries', () => {
         ...letterFrameEditValues,
         ...adminModerationKindValues,
         ...adminModerationRulesValues,
+        ...maintenanceWordsValues,
         ...adminModerationRuleAddValues,
       ].sort(),
     )
@@ -748,6 +788,7 @@ describe('core public entries', () => {
       ...profileNameStateValues,
       ...profileRenameMemoryValues,
       ...tableTextValues,
+      ...tableRowMessageValues,
       ...tableFocusReturnValues,
       ...moderationValues,
       ...connectionInteractionValues,
@@ -938,6 +979,7 @@ describe('core public entries', () => {
         ...profileRenameMemoryTypes,
         ...rowEditTypes,
         ...tableTextTypes,
+        ...tableRowMessageTypes,
         ...tableFocusReturnTypes,
         ...connectionInteractionTypes,
         ...statusTypes,
@@ -965,6 +1007,8 @@ describe('core public entries', () => {
       ...rowEditTypes,
       ...tableTextTypes,
       ...tableTextValues,
+      ...tableRowMessageTypes,
+      ...tableRowMessageValues,
       ...tableFocusReturnTypes,
       ...tableFocusReturnValues,
       ...connectionInteractionTypes,
@@ -1048,6 +1092,8 @@ describe('core public entries', () => {
       ...adminModerationKindValues,
       ...adminModerationKindTypes,
     ]
+    const wordsExports = exportsOf('admin/maintenance/hilosMaintenanceWords.ts')
+    const wordsNames = [...maintenanceWordsValues, ...maintenanceWordsTypes]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (
@@ -1120,6 +1166,13 @@ describe('core public entries', () => {
           expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(kindExports.get(name))
+        } else if (
+          entry === 'admin/maintenance/index.ts' &&
+          wordsNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -1140,10 +1193,11 @@ describe('core public entries', () => {
         ...frameEditNames,
         ...kindNames,
         ...rulesNames,
+        ...wordsNames,
         ...ruleAddNames,
       ].sort(),
     )
-  })
+  }, 30_000)
 
   it('keeps the entire base runtime closure free of public Status and admin implementations', () => {
     const closure = runtimeClosure('base/index.ts')
@@ -1177,6 +1231,11 @@ describe('core public entries', () => {
     expect(runtimeClosure('table/tableTextExpansion.ts')).toEqual([
       'state/signal.ts',
       'table/tableTextExpansion.ts',
+    ])
+    expect(closure).toContain('table/tableRowMessage.ts')
+    expect(runtimeClosure('table/tableRowMessage.ts')).toEqual([
+      'table/hilosTableColumn.ts',
+      'table/tableRowMessage.ts',
     ])
     for (const module of [
       'legalPublicDocument',
@@ -1228,6 +1287,7 @@ describe('core public entries', () => {
     'table/TableViewportController.ts',
     'table/hilosTableColumn.ts',
     'table/tableFrame.ts',
+    'table/tableRowMessage.ts',
     'table/tableTextExpansion.ts',
     'table/tableTextHeight.ts',
     'table/tableViewportGeometry.ts',

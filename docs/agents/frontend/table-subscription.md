@@ -282,6 +282,18 @@ grey border). A fresh update highlights green for 2 seconds before returning to
 red refusal, clearing the refusal removes the danger tint, and pending changes
 outrank both.
 
+A table whose rows may replace trailing cells with an informative phrase —
+such as an operation falling back to the default stub in the maintenance words
+table — declares the `rowMessage: (row: R) => HilosTableRowMessage | null` option
+in `TableViewportControllerOptions`. The controller evaluates it reactively for each
+live row and exposes the reactive `rowMessage` property on `TableViewportRow`
+(`null` by default, and always `null` for placeholders and departed rows). View
+layers project cells through `hilosTableRowMessageCells(columns, view.rowMessage)`,
+which preserves ordinary cells before `fromColumn` and merges trailing columns into
+a single cell with `colspan` across the tail in a wide table, or renders a single
+italic line in a card view without misleading `<dt>` labels, carrying
+`data-id="hilos-table-row-message"`.
+
 Three things follow from the declaration and are read off the controller's
 `frame` getter rather than recomputed per view layer — the card a row projects to
 on a narrow screen is a fourth and has its own section below:

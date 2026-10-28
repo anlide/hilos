@@ -94,6 +94,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
@@ -188,6 +189,7 @@ use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18nPage;
@@ -436,6 +438,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+            MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
@@ -480,11 +483,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         ], Hilos::PAGES);
     }
 
-    /** Circle alone binds the verifier table and its mutations; Overview keeps the manual actions. */
+    /** Circle alone binds the verifier table and its mutations; Words binds the words table without actions; Overview keeps the manual actions. */
     public function testMaintenanceCircleUsesTheIndexAgentAndOwnsTheTableBinding(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame([], MaintenanceWordsPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -500,6 +506,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }
@@ -875,6 +885,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             BackupPage::class,
             MaintenancePage::class,
             MaintenanceCirclePage::class,
+            MaintenanceWordsPage::class,
             SettingsPage::class,
             AppearancePage::class,
             UsersPage::class,
@@ -937,8 +948,16 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::TABLES[BinanceBtcTrackerTableContext::hilosVerifierCircle],
         );
         $this->assertSame(
+            HilosMaintenanceWordsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosMaintenanceWords],
+        );
+        $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,

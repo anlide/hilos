@@ -8,6 +8,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
@@ -118,6 +119,7 @@ use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
@@ -855,11 +857,15 @@ final class ChatTopologyRegistryTest extends TestCase
         parent::tearDown();
     }
 
-    /** Circle alone binds the verifier table and its mutations; Overview keeps the manual actions. */
+    /** Circle alone binds the verifier table and its mutations; Words binds the words table without actions; Overview keeps the manual actions. */
     public function testMaintenanceCircleUsesTheIndexAgentAndOwnsTheTableBinding(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame(HilosMaintenanceWordsTable::class, Hilos::TABLES[ChatTableContext::hilosMaintenanceWords]);
+        $this->assertSame([], MaintenanceWordsPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -875,6 +881,10 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(
             [ChatTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [ChatTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }

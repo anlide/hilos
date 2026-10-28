@@ -93,6 +93,7 @@ import {
   hilosTableRowHeight,
   type HilosTableRowHeight,
 } from './tableTextHeight.js'
+import { type HilosTableRowMessage } from './tableRowMessage.js'
 import {
   TableViewportGeometry,
   type TableGeometryRecord,
@@ -333,6 +334,12 @@ export interface TableViewportRow<R> {
    * could be spoken of.
    */
   readonly staleSources: readonly string[]
+  /**
+   * The optional row message merging the row's visible tail columns into a single
+   * message cell, or null when the row renders ordinary cells. Always null for a
+   * removed placeholder or departed row.
+   */
+  readonly rowMessage: HilosTableRowMessage | null
 }
 
 /**
@@ -478,6 +485,18 @@ export interface TableViewportControllerOptions<R> {
    * @param row The resolved row.
    */
   refused?(row: R): boolean
+  /**
+   * Whether one resolved live row displays a row message merging its visible
+   * tail columns into a single text cell starting from `fromColumn`. Absent or
+   * returning null means the row renders ordinary cells. Placeholder rows are
+   * never passed to this callback.
+   *
+   * Declared as an optional method rather than a function-typed field to preserve
+   * controller variance (for the same reason as {@link expandable}).
+   *
+   * @param row The resolved row.
+   */
+  rowMessage?(row: R): HilosTableRowMessage | null
   /**
    * Send the current viewport descriptor to the backend — typically
    * `HilosConnection.sendTableViewport` bound to this table's page and key. The
@@ -1053,6 +1072,10 @@ export class TableViewportController<R> implements TableWindowSink {
         const row = raw.kind === 'live' ? options.resolve(raw.row) : null
         const expandable = row !== null && (options.expandable?.(row) ?? true)
         const refused = row !== null && (options.refused?.(row) ?? false)
+        const rowMessage =
+          !placeholder && row !== null && options.rowMessage !== undefined
+            ? (options.rowMessage(row) ?? null)
+            : null
 
         return {
           rowKey: raw.rowKey,
@@ -1071,6 +1094,7 @@ export class TableViewportController<R> implements TableWindowSink {
           expanded: expandable && expandedKeys.has(raw.rowKey),
           expandable,
           refused,
+          rowMessage,
           staleSources: placeholder
             ? NO_STALE_SOURCES
             : (raw.row.staleSources ?? NO_STALE_SOURCES),

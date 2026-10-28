@@ -44,3 +44,18 @@ export {
   maintenanceStateSchema,
   type HilosMaintenanceState,
 } from '../../protocol/maintenanceSignals.js'
+export {
+  resolveHilosMaintenanceWordsRow,
+  createHilosMaintenanceWordsTable,
+  HILOS_MAINTENANCE_WORDS_COPY,
+  HILOS_MAINTENANCE_WORDS_TABLE,
+  HILOS_MAINTENANCE_WORDS_SLOT,
+  HILOS_MAINTENANCE_WORDS_COLUMNS,
+  MAINTENANCE_WORDS_OPERATION_FIELD,
+  MAINTENANCE_WORDS_TITLE_FIELD,
+  MAINTENANCE_WORDS_MESSAGE_FIELD,
+  MAINTENANCE_WORDS_BANNER_MESSAGE_FIELD,
+  MAINTENANCE_WORDS_USES_DEFAULT_FIELD,
+  type HilosMaintenanceWordsRow,
+  type HilosMaintenanceWordsTable,
+} from './hilosMaintenanceWords.js'

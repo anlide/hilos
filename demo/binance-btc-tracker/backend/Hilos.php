@@ -73,6 +73,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusComponentsPage;
@@ -175,6 +176,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -273,6 +275,7 @@ class Hilos extends HilosFacade
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
@@ -460,6 +463,7 @@ class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        BinanceBtcTrackerTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         BinanceBtcTrackerTableContext::settings => HilosSettingsTable::class,
         BinanceBtcTrackerTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         BinanceBtcTrackerTableContext::hilosUsers => HilosUsersTable::class,
@@ -547,6 +551,9 @@ class Hilos extends HilosFacade
         ],
         MaintenanceCirclePage::PAGE => [
             BinanceBtcTrackerTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenanceWordsPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosMaintenanceWords => [],
         ],
         SettingsPage::PAGE => [
             BinanceBtcTrackerTableContext::settings => [],

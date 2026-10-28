@@ -129,6 +129,7 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
@@ -196,6 +197,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -589,11 +591,14 @@ final class TasksTopologyRegistryTest extends TestCase
         }
     }
 
-    /** Both addresses keep the table until the view moves, while Circle alone owns its mutations. */
+    /** Both addresses keep the table until the view moves, Words binds the words table without actions, while Circle alone owns its mutations. */
     public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame([], MaintenanceWordsPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -609,6 +614,10 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [TasksTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertSame(
             [TasksTableContext::hilosVerifierCircle => []],
@@ -1213,6 +1222,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosUsers => HilosUsersTable::class,
             TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
             TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+            TasksTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
             TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
             TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -1271,6 +1281,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 BackupPage::PAGE,
                 MaintenancePage::PAGE,
                 MaintenanceCirclePage::PAGE,
+                MaintenanceWordsPage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -1433,6 +1444,10 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [TasksTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,

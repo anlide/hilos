@@ -45,6 +45,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -69,6 +70,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosSettingsTable $settings
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
+ * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
  * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
@@ -122,6 +124,7 @@ final class ChatTableContext extends TableContext
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
+    public const string hilosMaintenanceWords = HilosMaintenanceWordsTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
     public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;

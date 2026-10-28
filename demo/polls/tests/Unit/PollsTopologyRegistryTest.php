@@ -105,6 +105,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceRestoreCloseActionDTO;
@@ -176,6 +177,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -541,11 +543,14 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
     }
 
-    /** Both addresses keep the table until the view moves, while Circle alone owns its mutations. */
+    /** Both addresses keep the table until the view moves, Words binds the words table without actions, while Circle alone owns its mutations. */
     public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
+        $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame([], MaintenanceWordsPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -561,6 +566,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [PollsTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenanceCirclePage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertSame(
             [PollsTableContext::hilosVerifierCircle => []],
@@ -1153,6 +1162,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
             PollsTableContext::hilosUsers => HilosUsersTable::class,
             PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+            PollsTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
             PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
             PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -1210,6 +1220,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 AppearancePage::PAGE,
                 MaintenancePage::PAGE,
                 MaintenanceCirclePage::PAGE,
+                MaintenanceWordsPage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -1353,6 +1364,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [PollsTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosMaintenanceWords => []],
+            Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
         );
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,

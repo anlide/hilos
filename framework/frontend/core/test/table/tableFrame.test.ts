@@ -800,6 +800,7 @@ describe('TableViewportController frame body', () => {
         expanded: false,
         expandable: false,
         refused: false,
+        rowMessage: null,
         staleSources: [],
       },
     ])

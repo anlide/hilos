@@ -687,8 +687,16 @@ final class PageCatalogResolverTest extends TestCase
             'label' => 'Circle',
             'lead' => 'Who will check the system after an operation.',
         ], PageCatalogResolver::identity(HilosPageConstants::HILOS_MAINTENANCE_CIRCLE));
+        self::assertSame([
+            'label' => 'Words',
+            'lead' => 'The words used to announce maintenance.',
+        ], PageCatalogResolver::identity(HilosPageConstants::HILOS_MAINTENANCE_WORDS));
         $heads = [];
-        foreach ([HilosPageConstants::HILOS_MAINTENANCE, HilosPageConstants::HILOS_MAINTENANCE_CIRCLE] as $page) {
+        foreach ([
+            HilosPageConstants::HILOS_MAINTENANCE,
+            HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
+            HilosPageConstants::HILOS_MAINTENANCE_WORDS,
+        ] as $page) {
             self::assertSame(HilosPageConstants::HILOS_MAINTENANCE, PageCatalogResolver::rowOwner($page));
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -712,16 +720,21 @@ final class PageCatalogResolverTest extends TestCase
                 'pageTabs' => [
                     ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Overview'],
                     ['page' => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE, 'label' => 'Circle'],
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE_WORDS, 'label' => 'Words'],
                 ],
                 'pageChildren' => [],
             ], $head->toArray());
         }
         self::assertNotSame($heads[0], $heads[1]);
+        self::assertNotSame($heads[1], $heads[2]);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
                 'label' => 'Circle', 'lead' => 'Who will check the system after an operation.'],
+            ['page' => HilosPageConstants::HILOS_MAINTENANCE_WORDS,
+                'label' => 'Words', 'lead' => 'The words used to announce maintenance.'],
         ], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE));
         self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE_CIRCLE));
+        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE_WORDS));
     }
 
     public function testAnUnregisteredCircleDoesNotBecomeAMaintenanceTab(): void
@@ -1708,6 +1721,7 @@ abstract class MaintenancePageHeadTestHilos extends MaintenanceOverviewHeadTestH
     public const array PAGES = [
         ...parent::PAGES,
         HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_MAINTENANCE_WORDS => PageHeadTestPage::class,
     ];
 }
 
