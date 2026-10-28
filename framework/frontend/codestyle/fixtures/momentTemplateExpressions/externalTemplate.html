@@ -1,0 +1,14 @@
+<!-- An Angular component's external template. {{ created | date }} in a
+     comment is not a pipe, and neither is the word date in plain text. -->
+<section class="card {{ tone }}" [attr.aria-label]="heading">
+  @let stamp = created | date: 'short' : 'UTC';
+  <h2 bind-title="stamp">{{ heading }}</h2>
+  @for (moment of moments; track moment.label) {
+  <time [title]="(moment.at | date) + ' (' + zone + ')'">
+    {{ moment.at | date: (long ? 'full' : 'short') | uppercase }}
+  </time>
+  }
+  <p *ngIf="created" (click)="open('{{ not read }}')">
+    {{ shown || 'date | never a pipe' }}
+  </p>
+</section>

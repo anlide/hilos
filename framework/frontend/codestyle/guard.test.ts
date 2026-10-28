@@ -30,6 +30,7 @@ import { checkRepository as checkE2eLightDesktop } from './e2eDisplay.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkIconNameExists } from './iconNameExists.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
+import { checkRepository as checkMomentFormat } from './momentFormat.js'
 import { checkRepository as checkShellParity } from './shellParity.js'
 import { checkRepository as checkUnbuiltPages } from './unbuiltPages.js'
 import { checkRepository as checkSpelling } from './spelling.js'
@@ -62,6 +63,7 @@ const RULES = [
   checkE2ePageGoto,
   checkIconNameExists,
   checkModalFocus,
+  checkMomentFormat,
   checkShellParity,
   checkUnbuiltPages,
   checkSpelling,
@@ -101,12 +103,22 @@ const EXPLANATION =
  *
  * Since TYPE-CHECK the scan also compiles the codestyle roots: about twenty
  * seconds on the line, and 36.5 at seven lanes on a busy host, which a half
- * minute ceiling turned into a red run with no violation (2026-10-19). What a
- * minute still catches is the failure worth catching — a rule that stopped
- * terminating or a walk that left the repository — and the cure for that is
- * the rule that hangs, not a larger number written here.
+ * minute ceiling turned into a red run with no violation (2026-10-19).
+ *
+ * Since MOMENT-FORMAT it also builds a typed program for every SDK and demo
+ * source root (2026-10-28). On an idle host the guard went from 7.3 seconds to
+ * about 13, once each declaration file was parsed once per scan, and inside
+ * the full frontend cycle it took 27 to 32. The twelve Verify runs before it
+ * spent 19 to 30 seconds on the guard without the rule, three to four times
+ * its idle time; the same factor puts the guard with it at 40 to 55, and a
+ * narrow run beside a full one had crossed the minute before the declarations
+ * were shared. Ninety keeps over that the margin a minute kept over 36.5.
+ *
+ * What a minute and a half still catches is the failure worth catching — a
+ * rule that stopped terminating or a walk that left the repository — and the
+ * cure for that is the rule that hangs, not a larger number written here.
  */
-const GUARD_TIMEOUT_MS = 60_000
+const GUARD_TIMEOUT_MS = 90_000
 
 it(
   'carries no code-style violation the baseline does not already own',

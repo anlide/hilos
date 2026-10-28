@@ -671,14 +671,54 @@ The existing account-deletion countdown keeps its clock correction inside
 
 ### Guard The Display Boundary
 
-The machine guard must forbid bypassing the core formatter for date output
-through `toLocale*String`, `Intl.DateTimeFormat`, or manual assembly from
-`Date.get*` in TS/TSX and Vue/Angular templates. Numeric `toLocaleString` is
-allowed: formatting a number is not formatting a date. Reading
-`Intl.DateTimeFormat().resolvedOptions().timeZone` is also allowed: it discovers
-browser metadata and does not display a moment. The guard and formatter are
-specified here, not implemented by this documentation leaf.
-(not in the code yet — HIL-1576)
+A moment reaches a reader through `formatMoment()` and never through a printer
+of the engine's own: not `toLocale*String`, not `Intl.DateTimeFormat`, not text
+assembled from `Date.get*`, in TS/TSX and in Vue and Angular templates. The
+frontend guard enforces this over the SDK packages and every demo's frontend.
+Checked automatically: `MOMENT-FORMAT`, see
+[automated-checks.md](../code-style/automated-checks.md#moment-format-what-it-reads-and-what-it-leaves-to-review)
+for the forms it reads, the roots it walks and what stays with review. Every
+report line names the file and line, says why, and sends back to this section.
+
+Two uses are not display and stay allowed. Numeric `toLocaleString` formats a
+number, not a date, and passes only when the receiver is proven a `number` or a
+`bigint`. Reading `Intl.DateTimeFormat().resolvedOptions().timeZone` discovers
+browser metadata and prints no moment; the chain is allowed wherever it is
+written.
+
+The guard reads types, not names. A receiver typed `any` or `unknown`, or a type
+that did not resolve, proves nothing, and the guard does not guess in the code's
+favor: `toLocaleString()` on such a receiver is reported, and so is any method
+the standard library gives to `Date` alone. A Vue or Angular template has no
+type-checker here, so every name a template reads is unknown. In a template
+`toLocaleString()` passes only on a literal, `Number(…)` or `BigInt(…)`; print a
+count through a typed TypeScript helper and call the helper from the template.
+
+Five exceptions are made by address. The engine file is left out whole. Each of
+the others names a file, the function in it and the one form allowed there, and
+lets exactly one site through, so a second formatter beside it is reported:
+
+- the engine, [`format/moment.ts`](../../../framework/frontend/core/src/format/moment.ts),
+  whole: its `Intl` and `getUTC*` calls are `formatMoment()` itself;
+- `usableTimeZone()` in
+  [`timeZoneRule.ts`](../../../framework/frontend/core/src/timeZone/timeZoneRule.ts),
+  which constructs a formatter with a `timeZone` option only to validate the name
+  and prints nothing;
+- `calendarFormatter()` and `localCoordinate()` in
+  [`calendarPeriods.ts`](../../../framework/frontend/core/src/timeZone/calendarPeriods.ts):
+  the first constructs a numeric Gregorian formatter without printing with it,
+  the second reads its parts as a numeric coordinate (see
+  [Analytics Calendar Period Starts](#analytics-calendar-period-starts));
+- `formatHilosLegalDate()` in
+  [`legalAgreements.ts`](../../../framework/frontend/core/src/legal/legalAgreements.ts):
+  the explicit-UTC formatter of a revision's calendar date (see
+  [A Calendar Date Or Duration Is Not A Moment](#a-calendar-date-or-duration-is-not-a-moment)).
+  The acceptance timestamp beside it goes through `formatMoment()`.
+
+Text assembled from `Date` getters has no exception of its own. A green run does
+not prove that no way around the rule is left: a detached method, a moment
+carried through helpers, and the template forms the guard does not read are
+review work, and the lists are in the document linked above.
 
 ## People: Activity And Account-Zone Reads
 

@@ -53,6 +53,7 @@ rule.
 | `SHELL-PARITY` | A surface represented in Vue has a counterpart in React and Angular. One traversal of each framework SDK `src` reads `.vue`, `.ts`, `.tsx` and `.html`, excluding tests, specs, dependency/build directories and the checker's exact fixture path; demos are outside the scan. It compares static `data-id`, Vue `:data-id` / `v-bind:data-id`, Angular `[attr.data-id]` and React `data-id={…}` sites, and the `dataId` prop through which React and Angular hand a name to an SDK component that Vue passes as a `data-id` attribute — static `dataId="…"`, Angular `[dataId]="…"`, React `dataId={…}` — preserving exact literals and reducing a template or Angular concatenation with a literal prefix to `prefix-*`; opaque expressions and a template beginning with interpolation are skipped. It also compares UpperCamelCase value exports from each package's root `index.ts`, ignoring type and lowercase exports. Vue is the one-way reference, so a surface first added outside Vue is invisible, and every unmatched Vue occurrence is reported separately. A page's own files — its Vue view, every file under `vue/src/admin/` that view reaches by relative import without leaving `admin/`, and a root export resolving to one of them — are not compared in a layer where `HILOS_UNBUILT_PAGES` lists every page reaching them; the registry and page keys are read from `core/src/routing`, and views are recognized the way `UNBUILT-PAGE` recognizes them. Everything outside `vue/src/admin/` is always compared. Other declared blind spots are Angular `templateUrl`, opaque handles, behavioral drift behind equal handles, a dynamic `import()`, which is not followed and so leaves the file compared, an SDK file placed under `vue/src/admin/`, which is judged as a page file, and a name handed over as a `dataId` prop, which is taken on trust: nothing checks that the component renders it. TypeScript only. | [multiframework-core.md](../frontend/multiframework-core.md) |
 | `UNBUILT-PAGE` | Unbuilt admin pages are listed per view layer: a listed page has no built view, an absent view or bare leaf/section with only unbuilt children is listed, and every child of a listed section is listed; entries name admin keys and nonempty, distinct Vue/React/Angular layers. A built child stays under an unbuilt parent only through a row of `STAGED_CHILDREN` (`framework/frontend/codestyle/stagedChildren.ts`) naming its layer, parent, child and leaf; a row excusing nothing — the parent built in that layer, or the child listed unbuilt again — is reported as spent, and a row naming no catalog child of an admin page, an unknown layer or no `HIL-<n>` leaf is reported as malformed. Reads the registry and view sources of all three SDK layers, `STAGED_CHILDREN`, and the PHP catalog text as tree data; the built `HilosSettingPresetsPage` wrapper counts as content. Views outside the recognized shell-template shapes and project views/`projectViews` are not judged. | [page-module-structure.md](../frontend/page-module-structure.md) |
 | `TYPE-CHECK` | Type errors in the roots of `framework/frontend/codestyle`. The config `framework/frontend/codestyle/tsconfig.json` extends `../tsconfig.base.json`, sets `noEmit` and `types: ['node']`, includes the `*.ts` and `*.mts` files of the `codestyle` directory itself, and excludes `fixtures`. A new file in that directory is included by those globs. `framework/frontend/scripts`, the SDK sources and the demos are outside these roots. One `ts.Program` per run, the compiler's syntactic and semantic diagnostics, and no emit. `transpileModule` is not the mechanism, and neither is a parse that only calls `createSourceFile`. A setup refusal — a missing or unreadable tsconfig, an empty root set, an unresolved required type, or a diagnostic with no checked file — is thrown and never becomes a baseline record. `skipLibCheck` is inherited from the base config, and this config does not relax `strict`. The report line is `TYPE-CHECK <path>:<line> — TS<code>: <message> (see docs/agents/code-style/automated-checks.md)`. The ordinary entry is the `fe-checks` step, `composer run test:framework:frontend`: its unit half is `npm run test`, which runs `framework/frontend/codestyle/guard.test.ts`. The check has no target of its own, and `npm run check` of the other SDK packages is unchanged. | [automated-checks.md](automated-checks.md) |
+| `MOMENT-FORMAT` | A moment is displayed through `formatMoment()` and never through a printer of the engine's own. Reported: `toLocaleDateString`, `toLocaleTimeString`, `toDateString`, `toTimeString` and `toUTCString` on any receiver; `toLocaleString` unless the receiver is proven `number` or `bigint`; `toString` on a proven `Date`; an `Intl.DateTimeFormat` call or `new`, and `format`, `formatToParts`, `formatRange` and `formatRangeToParts` on a typed `DateTimeFormat`; text built from `Date` getters; the Angular `date` pipe. Judged by type through the compiler, not by name: `any`, `unknown` and a type that did not resolve prove nothing and are reported, and in a Vue or Angular template every name is unknown, so only a literal, `Number(…)` or `BigInt(…)` passes as a number — print a count through a typed TypeScript helper. The chain `….resolvedOptions().timeZone` is allowed. Exceptions are five addresses, each letting one site of its own form through. Reads the five SDK `src` roots and every demo's `frontend/src`; interprocedural paths and the template forms it does not read stay with review. The subsection below lists roots, forms, exceptions and limits. Frontend only. | [time-zones.md](../architecture/time-zones.md#guard-the-display-boundary) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SKILL-HEADER` | Only the header of `skills/*/SKILL.md` is judged. Non-empty `name` and `description` are required. An unquoted value must not carry `: ` or ` #`, must not end with a colon, and must not open with a YAML indicator. Quoted values and block scalars are legal and are not judged inside. Extra keys are not forbidden. No baseline. | [rule-authoring.md](../rule-authoring.md) |
@@ -438,6 +439,98 @@ The checker is not a second source of truth. Each rule points back at the
 document that owns it, and the failure line carries that path. Change the rule in
 the document first; the check follows.
 
+### MOMENT-FORMAT: what it reads, and what it leaves to review
+
+The rule lives in `framework/frontend/codestyle/momentFormat.ts`, with the
+template reader beside it in `momentTemplateExpressions.ts`; the header of each
+module is the exact statement of what it reads. The owning document is
+[time-zones.md](../architecture/time-zones.md#guard-the-display-boundary), and
+every report line ends with `(see docs/agents/architecture/time-zones.md)`.
+
+**Roots.** The source roots of `framework/frontend/{core,vue,react,angular,prerender}`
+and the `frontend/src` of every demo the walk of `demo/` finds, so a new demo
+arrives with no list to extend and a demo without one is skipped without an
+error. Each root is one `ts.Program` with one checker, built with the options of
+the config that owns it: the `tsconfig.json` beside the root when the files it
+compiles reach into the root, otherwise the first config in its `references` that
+does, which is how an Angular demo's solution config hands its app over. A root
+no config owns is a setup failure, not a skip. Inside a root the walk skips
+`node_modules`, `.angular`, `dist`, `dist-pack`, `dist-prerender`, `__tests__`
+and `__fixtures__`, and the files `*.test.*`, `*.spec.*` and `*.d.ts`. It reads
+`.ts`, `.tsx`, `.vue` and `.html`; an `.html` file is read as an Angular
+template wherever it stands. A config, the standard library, a source or a
+template that does not parse is thrown, never returned as an empty report.
+
+**Forms.** A receiver is judged by its type. The five methods that only `Date`
+has in the standard library — `toLocaleDateString`, `toLocaleTimeString`,
+`toDateString`, `toTimeString`, `toUTCString` — are reported on any receiver.
+`toLocaleString` prints a number as well as a date, so it passes only on a
+receiver proven `number` or `bigint`; `any`, `unknown` and an unresolved name are
+reported, with a hint to print a number through a typed helper. `toString` is
+reported on a proven `Date` only. `Intl.DateTimeFormat` is reported as a call or
+`new`, a chain finished by `.format()` counting as the one site; `format`,
+`formatToParts`, `formatRange` and `formatRangeToParts` are reported on a typed
+`DateTimeFormat` held elsewhere. The chain `….resolvedOptions().timeZone` is
+metadata and passes wherever it is written.
+
+Text built by hand is read from `Date` getters, `getFullYear()` down to
+`getMilliseconds()` and their UTC twins. The getter is read off a `Date` or off a
+receiver whose type proves nothing; a type of one's own that declares one, a
+duration say, is not a `Date`. A component shifted by a literal, as
+`getMonth() + 1`, is still a component; other arithmetic gives a plain number. A
+component becomes text in a template literal, a string `+`, `String()`,
+`toString()`, `padStart()`, `padEnd()`, `join()` over an array literal, or among
+the children of one JSX element. One finished text is one site: `${year}-${month}`
+over getters is one hit at the template, and `<time>{hours}:{minutes}</time>` one
+at the element. A conditional hands on both branches. The one alias followed is a
+`const` of the same function or the top level.
+
+**Templates.** The expressions of a Vue or Angular template are judged in a module
+of their own with the standard library and nothing else; no template
+type-checker is built, so every name a template reads is unknown. An
+interpolation prints text, and the interpolations of one run of text or one
+attribute value are one site. A bound attribute hands its value over, like a JSX
+attribute. Angular's built-in `date` pipe is a site at its name; any other pipe
+is a helper — its arguments are judged and its result proves nothing. The script
+blocks of a single-file component are judged as TypeScript of the same program,
+at the file's own offsets.
+
+**Exceptions.** The engine file is left out whole, by exact path. Every other
+exception is an address — file, function, form — and lets one site of that form
+through, so a second formatter beside it is reported.
+
+| File | Function | Form allowed |
+|---|---|---|
+| `framework/frontend/core/src/format/moment.ts` | the engine, whole file | its `Intl` and `getUTC*` calls |
+| `framework/frontend/core/src/timeZone/timeZoneRule.ts` | `usableTimeZone` | a bare construction with a `timeZone` option, only to validate the name |
+| `framework/frontend/core/src/timeZone/calendarPeriods.ts` | `calendarFormatter` | the construction, handed out without printing |
+| `framework/frontend/core/src/timeZone/calendarPeriods.ts` | `localCoordinate` | `formatToParts`, read as a numeric coordinate |
+| `framework/frontend/core/src/legal/legalAgreements.ts` | `formatHilosLegalDate` | the explicit-UTC formatter of a calendar date, finished by `format()` |
+
+A second site beside an allowed one, or a site of another form at the same
+address, is reported. Text built from `Date` getters has no exception. The
+neighbour `formatHilosLegalAcceptanceDate` goes through `formatMoment()` and
+needs none.
+
+**Limits, left to review.** A green run does not mean no way around the rule is
+left. Not followed: a detached method, a helper chain, a moment carried through a
+`let`, a parameter, a destructured name, a field or a closure; a computed member
+name or reflection; a call of the constructor without `new` through an alias.
+In a template: event handlers, conditions and loops, two-way bindings, slots,
+custom directives, Vue's `:id` shorthand, a date component handed through a bound
+attribute or another pipe, and an inline template that is not a literal — that
+one is a limit of the file, neither a site nor an error. A `@Component` under
+another name, custom Vue delimiters, ICU messages, and `v-pre` or `ngNonBindable`
+subtrees, which are read as if executable, are blind spots too.
+
+The rule builds a program per root and so costs more than the lexical checks. A
+declaration file the roots share — the standard library, a dependency's types —
+is parsed once per scan and handed to every program that reads it, and a call is
+resolved only when its callee carries a standard `Intl.DateTimeFormat`
+signature. The rule runs inside the shared guard test, whose ceiling
+(`GUARD_TIMEOUT_MS` in `guard.test.ts`) was raised for it; the comment above
+the constant keeps the measurements behind the number.
+
 ## How to run it
 
 The guard lives in the ordinary framework unit suite, so it runs in the coding
@@ -593,6 +686,18 @@ removes the record. Subsequent updates remain shrink-only, and
 count is per file, so one error replaced by another in the same file at the
 same count is invisible to this baseline; review must refuse that substitution
 and enforce payoff when the file is touched.
+
+For `MOMENT-FORMAT`, HIL-1576 allowed a one-time initial freeze of the rule's
+report, to be labeled with the leaves that still owed screens when it landed,
+`# HIL-1594` and `# HIL-1595`. Both had merged and removed their direct date
+prints by then, so the full scan of the SDK and demo roots found no site,
+`framework/frontend/codestyle/baseline.txt` carries no `MOMENT-FORMAT` record,
+and this paragraph is the policy, not a list of owed files. Updates stay
+shrink-only: `CODESTYLE_BASELINE_UPDATE=1` lowers a count or drops a record and
+never adds one, so a site that appears later is fixed or argued, not frozen. The
+count is per file, so one site replaced by another in the same file at the same
+count is invisible to this baseline; review must refuse that substitution and
+enforce payoff when the file is touched.
 
 ## Adding a rule
 

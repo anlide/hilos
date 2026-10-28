@@ -175,7 +175,7 @@ function tagBodies(
  * @param text Text to index
  * @returns Offset of the first character of every line, in order
  */
-function lineStarts(text: string): number[] {
+export function lineStarts(text: string): number[] {
   const starts = [0]
 
   for (let index = 0; index < text.length; index += 1) {
@@ -192,7 +192,7 @@ function lineStarts(text: string): number[] {
  * @param offset Offset whose line is wanted
  * @returns Its one-based line number
  */
-function lineAt(starts: number[], offset: number): number {
+export function lineAt(starts: number[], offset: number): number {
   let low = 0
   let high = starts.length - 1
 

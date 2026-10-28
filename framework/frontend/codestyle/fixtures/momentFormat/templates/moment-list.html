@@ -1,0 +1,17 @@
+<!-- An Angular component's external template. {{ created | date }} in a
+     comment is not a pipe, and neither is the word date in plain text. -->
+<section [title]="created | date: 'short'" class="card">
+  <h2>{{ created | date }} and {{ created | uppercase }}</h2>
+  <p>{{ shown || 'created | date' }} {{ count.toLocaleString() }}</p>
+  <p title="{{ created.getHours() }}:{{ created.getMinutes() }}">
+    {{ created.getHours() | number: '2.0' }}
+  </p>
+  <p>{{ `${created.getMinutes()}` | lowercase }}</p>
+  <p>
+    {{ list.map((at) => at.toLocaleTimeString({ hour: '2-digit' })).join('}}')
+    }}
+  </p>
+  @if (created) {
+  <time>{{ created | date: zone.toLocaleString() }}</time>
+  }
+</section>
