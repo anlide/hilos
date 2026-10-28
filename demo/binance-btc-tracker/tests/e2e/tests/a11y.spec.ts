@@ -20,10 +20,12 @@ import {
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
   expectPageReady,
+  expectMaintenancePageHead,
   gotoPage,
   gotoPublicStatus,
   PAGE_READY,
   grantAdminToSelf,
+  sessionToken,
   watchDeliveryFrames,
   clickSubmit,
   typeInto,
@@ -53,6 +55,11 @@ import {
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
+import {
+  enterProtectedMode,
+  leaveProtectedMode,
+  openProtectedModeIfAny,
+} from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 const statusExpect = expect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
 const pausedExpect = statusExpect.configure({
@@ -62,6 +69,62 @@ const pausedExpect = statusExpect.configure({
 // Status's two pages and incident modal over the real socket. The framework's
 // broader shell/table audit stays with its existing representative demos.
 test.use({ colorScheme: 'light' })
+
+test('Backups names its table from one heading and exposes both Maintenance links to the keyboard', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
+  const head = page.getByTestId('hilos-page-head')
+  const heading = head.getByRole('heading', { level: 1 })
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Backups')
+  await expect(heading).toHaveAttribute('id', /\S+/)
+  const headingId = (await heading.getAttribute('id'))!
+  const table = page.getByTestId('hilos-viewport-table').getByRole('table')
+  await expect(table).toHaveAttribute('aria-labelledby', headingId)
+  await expect(table).toHaveAccessibleName('Backups')
+  const icon = head.locator('[aria-hidden="true"]:has(> .bi-safe2)')
+  await expect(icon).toHaveCount(1)
+  await expect(icon).toBeVisible()
+  await expect(head.getByRole('img')).toHaveCount(0)
+
+  const circle = page.getByTestId('hilos-backup-circle-pointer-open')
+  await expect(circle).toHaveRole('link')
+  await expect(circle).toHaveAccessibleName('Open Maintenance')
+  await expect(circle).toHaveAttribute('href', '/hilos/maintenance/circle')
+  await circle.focus()
+  await expect(circle).toBeFocused()
+  await circle.press('Enter')
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
+
+  // The personal link exists only in a verification window. A test freeze is
+  // enough for keyboard navigation; the restore ladder has its own real replay.
+  try {
+    expect(
+      await enterProtectedMode('e2e-freeze', '', await sessionToken(page)),
+    ).toBe('active')
+    expect(await leaveProtectedMode()).toBe('verifying')
+    await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
+    const reopen = page.getByTestId('hilos-backup-reopen')
+    await expect(reopen).toHaveRole('link')
+    await expect(reopen).toHaveAccessibleName('Open the system')
+    await expect(reopen).toHaveAttribute('href', '/hilos/maintenance')
+    await reopen.focus()
+    await expect(reopen).toBeFocused()
+    await reopen.press('Enter')
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expect(page.getByTestId('hilos-backup-reopen-modal')).toHaveCount(0)
+  } finally {
+    await openProtectedModeIfAny()
+  }
+})
 
 test('Analytics Person has one entity heading naming its table and a decorative avatar without tabs', async ({
   page,

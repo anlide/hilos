@@ -579,6 +579,17 @@ const changeLogTableMetadataTypes = [
   'HilosChangeLogTableTriggersRow',
   'HilosChangeLogTableTriggersTable',
 ]
+/** Explicit backup run identity and Maintenance navigation additions. */
+const backupRunValues = [
+  'BACKUP_RUN_PROGRESS_DETAIL_BACKUP_ID',
+  'BACKUP_RUN_PROGRESS_DETAIL_ENV',
+  'BACKUP_RUN_PROGRESS_DETAIL_SCOPE',
+  'HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY',
+  'HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH',
+  'HILOS_BACKUP_MAINTENANCE_PATH',
+  'HILOS_BACKUP_VERIFICATION_COPY',
+  'formatBackupRunTitle',
+]
 const expectedValues = [
   ...daemonNodeValues,
   ...changeLogNoisyValues,
@@ -610,6 +621,7 @@ const expectedValues = [
   ...maintenanceFrameValues,
   ...maintenanceRestoreActionValues,
   ...maintenanceRestoreCopyValues,
+  ...backupRunValues,
   'hilosAnalyticsPerson',
   'PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD',
   'hilosProfileDeviceKind',

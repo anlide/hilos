@@ -57,6 +57,10 @@ defineSlots<{
   'table-progress'?: (props: { progress: TableProgressBar }) => unknown
   /** The project's own control for that work, standing where a button stands. */
   'table-progress-action'?: (props: { progress: TableProgressBar }) => unknown
+  /** The project's own sentence about that work in the existing live region. */
+  'table-progress-announcement'?: (props: {
+    progress: TableProgressBar
+  }) => unknown
   /**
    * The human name of one row a run left untouched; the key is printed where the
    * page fills nothing, because the row itself has left the window by then.
@@ -205,8 +209,8 @@ const pendingSuffix = computed(() =>
     : 'rows will move or leave',
 )
 
-// What the hidden region says: the sentence of the message on the line, then the
-// others by name. The track of running work is not in it — it moves every second.
+// The sentence of the message on the line. The track of running work is not in
+// it — it moves every second. A page may supply its own sentence for table work.
 const announcement = computed(() => {
   const top = live.value.top
   if (top === null) {
@@ -221,11 +225,15 @@ const announcement = computed(() => {
     stale: staleLabel.value ?? '',
     progress: 'Work is running on this table.',
   }
+
+  return sentences[top]
+})
+
+// The other live messages follow either the generic sentence or the page's slot.
+const announcementSuffix = computed(() => {
   const rest = live.value.rest.map((kind) => REST_WORDS[kind])
 
-  return rest.length === 0
-    ? sentences[top]
-    : `${sentences[top]} Also: ${rest.join(', ')}.`
+  return rest.length === 0 ? '' : ` Also: ${rest.join(', ')}.`
 })
 
 const detailsOpen = ref(false)
@@ -402,7 +410,14 @@ function openDetails(): void {
       class="visually-hidden"
       role="status"
       data-id="hilos-table-live-status"
-      >{{ announcement }}</span
     >
+      <slot
+        v-if="live.top === 'progress' && tableProgress"
+        name="table-progress-announcement"
+        :progress="tableProgress"
+        >{{ announcement }}</slot
+      ><template v-else>{{ announcement }}</template
+      >{{ announcementSuffix }}
+    </span>
   </div>
 </template>

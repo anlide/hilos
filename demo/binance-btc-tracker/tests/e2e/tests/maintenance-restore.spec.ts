@@ -107,9 +107,12 @@ test('a real restore lets the initiating browser open the system from Maintenanc
     const backupId = await captureFullBackup(page)
     await replayBackup(page, backupId)
 
-    // The window is open. The section is a navigation of its own: the backup
-    // page is what the freeze covered, and the ladder lives on Maintenance.
-    await gotoPage(expect, page, MAINTENANCE_PATH)
+    // The window is open. Backups points the initiator to the Maintenance ladder.
+    const reopen = page.getByTestId('hilos-backup-reopen')
+    await expect(reopen).toHaveAttribute('href', MAINTENANCE_PATH)
+    await reopen.click()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectInitiatorLadder(page)
 
     const code = await mintRestoreCode(page)
@@ -171,7 +174,11 @@ test('closing the restore window from Maintenance takes the page and the dialog 
     await gotoPage(expect, page, BACKUP_PATH)
     const backupId = await captureFullBackup(page)
     await replayBackup(page, backupId)
-    await gotoPage(expect, page, MAINTENANCE_PATH)
+    const reopen = page.getByTestId('hilos-backup-reopen')
+    await expect(reopen).toHaveAttribute('href', MAINTENANCE_PATH)
+    await reopen.click()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectInitiatorLadder(page)
 
     const code = await mintRestoreCode(page)

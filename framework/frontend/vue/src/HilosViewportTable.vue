@@ -483,6 +483,12 @@ function onSelectPage(event: Event): void {
       <template #table-progress-action="progressProps">
         <slot name="table-progress-action" v-bind="progressProps" />
       </template>
+      <template
+        v-if="$slots['table-progress-announcement']"
+        #table-progress-announcement="progressProps"
+      >
+        <slot name="table-progress-announcement" v-bind="progressProps" />
+      </template>
       <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
         <slot name="bulk-untouched" v-bind="untouched" />
       </template>

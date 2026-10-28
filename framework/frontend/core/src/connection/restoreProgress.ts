@@ -298,9 +298,9 @@ export function formatRestorePhaseLine(status: HilosRestoreStatus): string {
  *
  * The failure wording carries the two facts a shuttered tab cannot find anywhere else
  * — whether the database was already being replaced, and whether the node stays closed
- * because not every process re-read it. Neither is actionable from this screen, and
- * that is precisely why they are said here: the person reading it is the one who will
- * have to act from a terminal.
+ * because not every process re-read it. The closed-state explanation names both exits:
+ * the Maintenance section and the CLI command. The placeholder only explains them;
+ * it does not offer an action of its own.
  *
  * The success wording names no button, deliberately. This line is shown on the
  * maintenance placeholder as well as on the backup page, and the placeholder has no
@@ -324,7 +324,8 @@ export function formatRestoreOutcomeLine(status: HilosRestoreStatus): string {
   }
   if (!status.rehydrateComplete) {
     sentences.push(
-      'The system stays closed until an operator reopens it from the CLI.',
+      'The system stays closed: not every process reloaded the replaced database. ' +
+        'Open it in Maintenance (/hilos/maintenance) or from the CLI with php cli.php protected-mode:open.',
     )
   }
 

@@ -689,6 +689,44 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
+    /** Chat and Binance adopt Backups; the framework facade and the other four providers stay legacy. */
+    public function testVueProvidersAdoptTheBackupsHeadWithOnlyOverviewServed(): void
+    {
+        BackupsPageHeadTestHilos::initBrowser();
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_BACKUP, new PageRouteParams([])));
+        foreach ([TasksPageCatalog::class, EcommercePageCatalog::class, PollsPageCatalog::class, OnlineTestingPageCatalog::class] as $provider) {
+            self::assertArrayNotHasKey(HilosPageConstants::HILOS_BACKUP, $provider::pages());
+        }
+
+        foreach ([ChatBackupsPageHeadTestHilos::class, BinanceBackupsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_BACKUP],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_BACKUP]);
+            self::assertSame(HilosPageConstants::HILOS_BACKUP,
+                PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_BACKUP));
+            $head = PageCatalogResolver::head(HilosPageConstants::HILOS_BACKUP, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_BACKUP,
+                    'label' => 'Backups',
+                    'lead' => 'Database and file backup jobs and their history.',
+                    'icon' => 'bi-safe2',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_BACKUP, 'label' => 'Backups'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_BACKUP, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $head->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_BACKUP));
+            self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_BACKUP));
+        }
+    }
+
     /** Future children share the user owner and follow catalog order regardless of registration order. */
     public function testServedUserTabsShareTheSameHeadInBothVueProviders(): void
     {
@@ -1736,6 +1774,26 @@ abstract class ChatAppearancePageHeadTestHilos extends AppearancePageHeadTestHil
 
 /** The Binance provider opts Appearance in independently of the chat provider. */
 abstract class BinanceAppearancePageHeadTestHilos extends AppearancePageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** A legacy project serves Backups without adopting its head. */
+abstract class BackupsPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_BACKUP => PageHeadTestPage::class,
+    ];
+}
+
+/** The chat provider opts Backups into the shared head. */
+abstract class ChatBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** The Binance provider opts Backups into the shared head independently. */
+abstract class BinanceBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = BinancePageCatalog::class;
 }

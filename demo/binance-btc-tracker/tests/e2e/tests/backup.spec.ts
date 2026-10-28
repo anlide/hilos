@@ -1,13 +1,15 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Expect, type Page } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { createLegacyBackupFixture } from '../../../../../framework/frontend/scripts/backupFixture.mjs'
 import {
   signUp,
   dismissToasts,
+  deliveryObject,
   enterCalendarDate,
   expectBackupMoments,
   expectDataFreeDeparture,
   expectMaintenancePageHead,
+  expectPageReady,
   leaveSecondAdmin,
   shownByTestId,
   watchDeliveryFrames,
@@ -47,6 +49,42 @@ async function openBackups(
   await gotoPage(expect, page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expectBackupHead(expect, page)
+}
+
+/**
+ * The Backups section's frame, including its solitary page without a tab row.
+ *
+ * @param expect The spec's expect.
+ * @param page The ready Backups page.
+ */
+async function expectBackupHead(expect: Expect, page: Page): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toHaveCount(1)
+  await expect(head).toBeVisible()
+  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
+  await expect(heading).toHaveText('Backups')
+  await expect(head.locator('.bi-safe2')).toBeVisible()
+  await expect(head.locator('p')).toHaveText(
+    'Database and file backup jobs and their history.',
+  )
+  const crumbs = head.getByTestId('hilos-breadcrumb')
+  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expect(crumbs.getByRole('listitem')).toHaveText(['Hilos', 'Backups'])
+  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
+    'href',
+    '/hilos',
+  )
+  const current = crumbs.locator('[aria-current]')
+  await expect(current).toHaveCount(1)
+  await expect(current).toHaveAttribute('aria-current', 'page')
+  await expect(current.locator('a')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
 }
 
 /**
@@ -533,19 +571,26 @@ test('opens the refused backup page the moment admin is granted', async ({
 
 test('points to the verifier circle in Maintenance', async ({ page }) => {
   await openBackups(page)
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expectBackupHead(expect, page)
   await expect(page.getByTestId('hilos-backup-circle-panel')).toHaveCount(0)
   await expect(page.getByTestId('hilos-backup-circle-pointer')).toBeVisible()
 
+  await expect(
+    page.getByTestId('hilos-backup-circle-pointer-open'),
+  ).toHaveAttribute('href', '/hilos/maintenance/circle')
   await page.getByTestId('hilos-backup-circle-pointer-open').click()
-  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
-  await expect(page.getByTestId('hilos-maintenance-circle-table')).toHaveCount(
-    0,
-  )
-  await page.getByTestId('hilos-page-tab-hilos_maintenance_circle').click()
+  await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
   await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await page.goBack()
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/hilos\/backup$/)
+  await expectBackupHead(expect, page)
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 })
 
 test('creates a backup, shows it as a completed row, and deletes it', async ({
@@ -556,7 +601,6 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
     tableKey: 'hilosBackups',
   })
   await openBackups(page)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Backups')
 
   // Storage survives DB resets. Remove old archives through this stand's real
   // controls, then take a NEW empty mount before observing the first arrival.
@@ -608,6 +652,38 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
         cells.map((cell) => cell.getAttribute('data-id') ?? ''),
       )
     const keysBefore = new Set(await keysOf())
+
+    // Record the real rendered caption before starting the short dump. Its hidden
+    // status can disappear between runner assertions when the archive finishes.
+    await page.evaluate(() => {
+      const samples: Array<{
+        title: string
+        caption: string
+        announcement: string
+      }> = []
+      Object.assign(window, { __hilosBackupRunCaptions: samples })
+      const observer = new MutationObserver(() => {
+        const bar = document.querySelector('[data-id="hilos-table-progress"]')
+        if (bar === null) {
+          if (samples.length > 0) observer.disconnect()
+          return
+        }
+        const status = document.querySelector(
+          '[data-id="hilos-table-live-status"][role="status"]',
+        )
+        samples.push({
+          title: bar.querySelector('strong')?.textContent?.trim() ?? '',
+          caption:
+            bar.querySelector('.text-truncate')?.textContent?.trim() ?? '',
+          announcement: status?.textContent?.trim() ?? '',
+        })
+      })
+      observer.observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      })
+    })
 
     // Create: the smallest scope, so the dump is quick.
     await askCreate(page)
@@ -664,6 +740,55 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
     const createdKey = await row.getAttribute('data-id')
     expect(createdKey).toBeTruthy()
     const backupId = createdKey!.replace('hilos-table-row-', '')
+    const runFrames = (await windows.read()).frames
+      .filter(
+        (frame) =>
+          frame.direction === 'received' &&
+          frame.wire.type === 'table_progress',
+      )
+      .map((frame) => deliveryObject(frame.wire.data))
+      .filter(
+        (data) =>
+          data.page === 'hilos_backup' &&
+          data.tableKey === 'hilosBackups' &&
+          data.scope === 'table' &&
+          deliveryObject(data.detail).backupId === backupId,
+      )
+    expect(runFrames.length).toBeGreaterThan(0)
+    const detail = deliveryObject(runFrames[0]?.detail)
+    expect(detail).toMatchObject({
+      backupId,
+      env: 'test',
+      scope: 'schema-only',
+    })
+    const runTitle = `Backup ${detail.backupId} · ${detail.env} · ${detail.scope}`
+    const captions = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __hilosBackupRunCaptions: Array<{
+              title: string
+              caption: string
+              announcement: string
+            }>
+          }
+        ).__hilosBackupRunCaptions,
+    )
+    await test.info().attach('backup-real-run-caption', {
+      body: JSON.stringify({ runFrames, captions }, null, 2),
+      contentType: 'application/json',
+    })
+    expect(
+      captions.some(
+        (sample) =>
+          sample.title === runTitle &&
+          sample.caption.startsWith(`${runTitle} — `) &&
+          /In progress|dumping|archiving|digesting|publishing/.test(
+            sample.caption,
+          ) &&
+          sample.announcement === sample.caption,
+      ),
+    ).toBe(true)
     actionIds.push(
       `hilos-backup-restore-${backupId}`,
       `hilos-backup-delete-${backupId}`,
@@ -786,7 +911,6 @@ test('moves the scope counts when a backup lands and when it goes, without a rel
   page,
 }) => {
   await openBackups(page)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Backups')
 
   let fullLoads = 0
   page.on('load', () => {

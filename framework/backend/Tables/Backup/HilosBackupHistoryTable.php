@@ -17,6 +17,7 @@ use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -39,6 +40,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -89,6 +91,21 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /** Order key: status first, the newest copy of each status on top. */
     public const string ORDER_STATUS_THEN_CREATED = 'status_created';
 
+    /** Detail key beside the bar: the phase value the run is in, as the code names it. */
+    public const string PROGRESS_DETAIL_PHASE = 'phase';
+
+    /** Detail key beside the bar: seconds left, negative once the estimate is spent. */
+    public const string PROGRESS_DETAIL_REMAINING_SECONDS = 'remainingSeconds';
+
+    /** Detail key beside the bar: technical id of the backup in progress. */
+    public const string PROGRESS_DETAIL_BACKUP_ID = 'backupId';
+
+    /** Detail key beside the bar: environment of the current installation. */
+    public const string PROGRESS_DETAIL_ENV = 'env';
+
+    /** Detail key beside the bar: scope value of the backup in progress. */
+    public const string PROGRESS_DETAIL_SCOPE = 'scope';
+
     /** Wire slot the row payload rides under; must match the frontend backup slot. */
     private const string ROW_SLOT = 'backup';
 
@@ -101,12 +118,6 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * bar down is built after the runtime row was cleared, and there is no run left to name it by.
      */
     private const string PROGRESS_KEY = 'hilos-backup-run';
-
-    /** Detail key beside the bar: the phase value the run is in, as the code names it. */
-    public const string PROGRESS_DETAIL_PHASE = 'phase';
-
-    /** Detail key beside the bar: seconds left, negative once the estimate is spent. */
-    public const string PROGRESS_DETAIL_REMAINING_SECONDS = 'remainingSeconds';
 
     /** What the run's share is counted out of, the agent having already made it a percentage. */
     private const int PROGRESS_TOTAL = 100;
@@ -283,16 +294,19 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /**
      * Declares the fields of the backup progress bar detail, for a viewer of the admin view mode (HIL-1250).
      *
-     * The progress phase is an enum value from code and the remaining time is an integer estimate (runningBar),
-     * so both carry no personal data and are declared non-personal.
+     * The phase and scope are enum values, the remaining time is an integer estimate, and the
+     * backup id and installation environment are technical labels; all are non-personal.
      *
-     * @return array<string, WireField>
+     * @return array<string, WireField> Non-personal progress detail declarations
      */
     public function progressDetailFields(): array
     {
         return [
             self::PROGRESS_DETAIL_PHASE => WireField::notPersonal(),
             self::PROGRESS_DETAIL_REMAINING_SECONDS => WireField::notPersonal(),
+            self::PROGRESS_DETAIL_BACKUP_ID => WireField::notPersonal(),
+            self::PROGRESS_DETAIL_ENV => WireField::notPersonal(),
+            self::PROGRESS_DETAIL_SCOPE => WireField::notPersonal(),
         ];
     }
 
@@ -706,6 +720,16 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         if ($runtime->remainingSeconds !== null) {
             $detail[self::PROGRESS_DETAIL_REMAINING_SECONDS] = $runtime->remainingSeconds;
         }
+        if ($runtime->currentBackupId !== null) {
+            $detail[self::PROGRESS_DETAIL_BACKUP_ID] = $runtime->currentBackupId;
+        }
+        $env = $this->currentEnv();
+        if ($env !== null) {
+            $detail[self::PROGRESS_DETAIL_ENV] = $env;
+        }
+        if ($runtime->scope !== null) {
+            $detail[self::PROGRESS_DETAIL_SCOPE] = $runtime->scope;
+        }
 
         return new TableProgressDTO(
             TableProgressScope::Table,
@@ -738,6 +762,26 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             return $target !== null && BackupShipperFactory::fromTarget($target) !== null;
         } catch (Throwable) {
             return false;
+        }
+    }
+
+    /**
+     * An unavailable or empty environment leaves the progress detail key absent.
+     *
+     * @return ?string Current installation environment, or null when unknown
+     */
+    protected function currentEnv(): ?string
+    {
+        if (Hilos::$env === null) {
+            return null;
+        }
+
+        try {
+            $env = Hilos::$env[EnvConstants::APP_ENV]->string();
+
+            return $env === '' ? null : $env;
+        } catch (EnvException) {
+            return null;
         }
     }
 

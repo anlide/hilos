@@ -60,6 +60,10 @@ final class PageCatalog implements PageCatalogProviderInterface
                     PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
                 ],
             ),
+            HilosPageConstants::HILOS_BACKUP => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_BACKUP],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
         ];
     }
 

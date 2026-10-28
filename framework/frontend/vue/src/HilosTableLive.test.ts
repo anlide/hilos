@@ -403,6 +403,126 @@ describe('HilosTableLive', () => {
     )
   })
 
+  it('announces the actual table work through the slot, updates it and clears it in the same region', async () => {
+    const controller = makeController()
+    const announce = vi.fn(
+      ({ progress }: { progress: HilosTableProgress }) =>
+        `${String(progress.detail['task'])}: ${progress.current} of ${progress.total}.`,
+    )
+    const wrapper = mountLive(controller, {
+      'table-progress-announcement': announce,
+    })
+    const status = wrapper.get('[data-id="hilos-table-live-status"]')
+    const region = status.element
+    expect(status.text()).toBe('')
+    expect(announce).not.toHaveBeenCalled()
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+      detail: { task: 'Nightly audit' },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(announce.mock.lastCall?.[0].progress).toBe(
+      controller.progress.table.get(),
+    )
+    expect(status.text()).toBe('Nightly audit: 34 of 120.')
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(status.attributes('role')).toBe('status')
+    expect(status.classes()).toContain('visually-hidden')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 78,
+      total: 120,
+      detail: { task: 'Nightly verification' },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(announce.mock.lastCall?.[0].progress).toBe(
+      controller.progress.table.get(),
+    )
+    expect(status.text()).toBe('Nightly verification: 78 of 120.')
+    const calls = announce.mock.calls.length
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 120,
+      total: 120,
+      ended: true,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(status.text()).toBe('')
+    expect(announce).toHaveBeenCalledTimes(calls)
+    expect(wrapper.get('[data-id="hilos-table-live-status"]').element).toBe(
+      region,
+    )
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.find('[data-id="hilos-table-progress"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('keeps the senior announcement, rest and room geometry when a progress slot is supplied', async () => {
+    const controller = makeController()
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    liveThree(controller)
+    const announce = vi.fn(() => 'Nightly audit is running.')
+    const wrapper = mountLive(controller, {
+      'table-progress-announcement': announce,
+    })
+    const twin = wrapper.get('[data-id="hilos-table-live-idle"]')
+    const line = wrapper.get('[data-id="hilos-table-pending-row"]')
+    const status = wrapper.get('[data-id="hilos-table-live-status"]')
+
+    expect(announce).not.toHaveBeenCalled()
+    expect(status.text()).toBe(
+      '1 row will move or leave. Also: new rows, a source is behind, work running.',
+    )
+    expect(layoutClasses(line.classes())).toEqual(layoutClasses(twin.classes()))
+    expect(wrapper.findAll('[data-id="hilos-table-live-idle"]')).toHaveLength(1)
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(line.find('[role]').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('[data-id="hilos-table-live-rest"] i')
+        .map((icon) => icon.classes()),
+    ).toEqual([
+      ['bi', 'flex-shrink-0', 'bi-arrow-down-circle'],
+      ['bi', 'flex-shrink-0', 'bi-snow'],
+      ['bi', 'flex-shrink-0', 'bi-arrow-repeat'],
+    ])
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 120,
+      total: 120,
+      ended: true,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(status.text()).toBe(
+      '1 row will move or leave. Also: new rows, a source is behind.',
+    )
+    expect(wrapper.get('[data-id="hilos-table-pending-row"]').element).toBe(
+      line.element,
+    )
+    expect(layoutClasses(line.classes())).toEqual(layoutClasses(twin.classes()))
+    expect(announce).not.toHaveBeenCalled()
+  })
+
   it('names the running bulk operation on its own bar and stays neutral on another', async () => {
     const controller = makeController()
     controller.runBulk(deleteAction(), { kind: 'rows', rowKeys: ['a'] })

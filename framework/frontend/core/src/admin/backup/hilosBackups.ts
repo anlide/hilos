@@ -321,6 +321,15 @@ export const BACKUP_RUN_PROGRESS_DETAIL_PHASE = 'phase'
 /** Detail key beside the run's bar: seconds left, negative once the estimate is spent. */
 export const BACKUP_RUN_PROGRESS_DETAIL_REMAINING_SECONDS = 'remainingSeconds'
 
+/** Detail key of the archive being created by the current run. */
+export const BACKUP_RUN_PROGRESS_DETAIL_BACKUP_ID = 'backupId'
+
+/** Detail key of the current installation's environment. */
+export const BACKUP_RUN_PROGRESS_DETAIL_ENV = 'env'
+
+/** Detail key of the scope captured by the current run. */
+export const BACKUP_RUN_PROGRESS_DETAIL_SCOPE = 'scope'
+
 /** A selectable backup scope: its wire value and a human-readable label. */
 export interface HilosBackupScopeOption {
   /** The wire scope value sent to the backend. */
@@ -648,6 +657,27 @@ export function formatBackupShipping(row: HilosBackupRow): string {
 }
 
 /**
+ * The current run's identity, or null when the bar does not name its archive.
+ * The archive id is a technical name, kept verbatim rather than formatted as a date.
+ *
+ * @param progress The table's progress bar as the controller holds it.
+ */
+export function formatBackupRunTitle(
+  progress: HilosTableProgress,
+): string | null {
+  const backupId = progress.detail[BACKUP_RUN_PROGRESS_DETAIL_BACKUP_ID]
+  if (typeof backupId !== 'string' || backupId.trim() === '') return null
+
+  const env = progress.detail[BACKUP_RUN_PROGRESS_DETAIL_ENV]
+  const scope = progress.detail[BACKUP_RUN_PROGRESS_DETAIL_SCOPE]
+  const envLabel = typeof env === 'string' && env.trim() !== '' ? env : '—'
+  const scopeLabel =
+    typeof scope === 'string' && scope.trim() !== '' ? scope : '—'
+
+  return `Backup ${backupId} · ${envLabel} · ${scopeLabel}`
+}
+
+/**
  * The caption beside the run's bar above the table, read off the bar itself.
  *
  * The same sentence {@link formatBackupProgressLabel} prints for a restore —
@@ -657,27 +687,30 @@ export function formatBackupShipping(row: HilosBackupRow): string {
  * makes one wording out of two sources honest (HIL-820).
  *
  * @param progress The table's progress bar as the controller holds it.
+ * @param includeTitle Prefix the caption with the run's identity when known.
  */
-export function formatBackupRunCaption(progress: HilosTableProgress): string {
+export function formatBackupRunCaption(
+  progress: HilosTableProgress,
+  includeTitle = true,
+): string {
   const phase = progress.detail[BACKUP_RUN_PROGRESS_DETAIL_PHASE]
   const phaseLabel = typeof phase === 'string' && phase !== '' ? phase : null
-  if (progress.fraction === null) {
-    return phaseLabel ?? 'In progress'
+  const parts = [phaseLabel ?? 'In progress']
+  if (progress.fraction !== null) {
+    parts.push(`${Math.round(progress.fraction * PERCENT_SCALE)}%`)
+    const remaining =
+      progress.detail[BACKUP_RUN_PROGRESS_DETAIL_REMAINING_SECONDS]
+    if (typeof remaining === 'number') {
+      parts.push(
+        remaining > 0 ? `~${remaining}s left` : 'taking longer than usual',
+      )
+    }
   }
 
-  const parts = [
-    phaseLabel ?? 'In progress',
-    `${Math.round(progress.fraction * PERCENT_SCALE)}%`,
-  ]
-  const remaining =
-    progress.detail[BACKUP_RUN_PROGRESS_DETAIL_REMAINING_SECONDS]
-  if (typeof remaining === 'number') {
-    parts.push(
-      remaining > 0 ? `~${remaining}s left` : 'taking longer than usual',
-    )
-  }
+  const tail = parts.join(' · ')
+  const title = includeTitle ? formatBackupRunTitle(progress) : null
 
-  return parts.join(' · ')
+  return title === null ? tail : `${title} — ${tail}`
 }
 
 /**
@@ -983,6 +1016,40 @@ export const HILOS_BACKUP_CIRCLE_POINTER_COPY = {
 /** The Maintenance route shared by all three backup views. */
 export const HILOS_BACKUP_CIRCLE_POINTER_PATH = resolveHilosPath(
   HilosPages.MAINTENANCE,
+)
+
+/** The verification notice linking to the Maintenance controls. */
+export const HILOS_BACKUP_VERIFICATION_COPY = {
+  /** Heading of the open verification window notice. */
+  title: 'Verification window open',
+  /** What to check before ending the window in Maintenance. */
+  body:
+    'The verification window is open and the system remains closed to visitors. ' +
+    'Check the system, then open it in Maintenance. Every connected page reloads when you do.',
+  /** Label of the link to Maintenance. */
+  button: 'Open the system',
+} as const
+
+/** The Maintenance controls used to end the verification window. */
+export const HILOS_BACKUP_MAINTENANCE_PATH = resolveHilosPath(
+  HilosPages.MAINTENANCE,
+)
+
+/** The pointer for views that have adopted the dedicated verifier circle tab. */
+export const HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY = {
+  /** The pointer heading. */
+  title: HILOS_BACKUP_CIRCLE_POINTER_COPY.title,
+  /** Where to prepare the circle and when its members enter the verification window. */
+  body:
+    'The verifier circle is kept at /hilos/maintenance/circle. Set it up before you press Restore: ' +
+    'only members with a tab open at that moment are let into the verification window.',
+  /** The link label. */
+  open: HILOS_BACKUP_CIRCLE_POINTER_COPY.open,
+} as const
+
+/** The dedicated verifier circle tab, for views that have adopted it. */
+export const HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH = resolveHilosPath(
+  HilosPages.MAINTENANCE_CIRCLE,
 )
 
 /** What the view lends the backup table: the press of its declared main action. */

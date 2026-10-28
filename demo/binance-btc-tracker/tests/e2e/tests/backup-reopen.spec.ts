@@ -4,9 +4,12 @@ import type { Page } from '@playwright/test'
 import {
   gotoMaintenance,
   gotoPage,
+  expectPageReady,
+  expectMaintenancePageHead,
   grantAdminToSelf,
   sessionToken,
   typeInto,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   enterProtectedMode,
@@ -16,7 +19,7 @@ import {
 } from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
 // The backup page's block in the verification window (HIL-676): the operator who
-// started the restore is offered the lever that reopens the system, and nobody
+// started the restore is offered the link to Maintenance, and nobody
 // else is. It lived in chat's protected-mode.spec.ts and stayed in chat when that
 // spec moved here (HIL-1221), because it belongs to the backup area rather than to
 // the freeze; it came to binance-btc-tracker with the backup area itself
@@ -52,6 +55,7 @@ test('the verification window offers the reopen block to the operator, and to no
   await gotoPage(expect, page, BACKUP_URL)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const operatorSession = await sessionToken(page)
+  const frames = watchDeliveryFrames(page)
 
   const verifierContext = await browser.newContext()
   const verifier = await verifierContext.newPage()
@@ -66,10 +70,14 @@ test('the verification window offers the reopen block to the operator, and to no
   )
   expect(await leaveProtectedMode()).toBe('verifying')
 
-  // The operator, back on the page. The block is there and it carries its button.
+  // The operator, back on the page. The block carries an ordinary link.
   await gotoPage(expect, page, BACKUP_URL)
   await expect(page.getByTestId('hilos-backup-reopen-panel')).toBeVisible()
-  await expect(page.getByTestId('hilos-backup-reopen')).toBeVisible()
+  const reopen = page.getByTestId('hilos-backup-reopen')
+  await expect(reopen).toBeVisible()
+  await expect(reopen).toHaveRole('link')
+  await expect(reopen).toHaveAttribute('href', '/hilos/maintenance')
+  await expect(page.getByTestId('hilos-backup-reopen-modal')).toHaveCount(0)
 
   // The verifier, admitted by the code the operator read out. They get the product -
   // that is what the window is for - and they do not get the lever: the pass names a
@@ -80,10 +88,19 @@ test('the verification window offers the reopen block to the operator, and to no
   await expect(verifier.getByTestId('maintenance')).toBeHidden()
   await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(verifier.getByTestId('hilos-backup-reopen-panel')).toHaveCount(0)
+  await expect(verifier.getByTestId('hilos-backup-reopen')).toHaveCount(0)
 
-  // The click is not driven here and cannot be: the row of a test freeze names the test
-  // driver's carrier as its initiator, so BackupAgent would rightly refuse a reopen it
-  // did not start. What the button does is held by the framework tests instead.
+  // This is a test freeze, not a restore. Following the link is valid, while a
+  // restore initiator's ladder belongs to the real restore scenario.
+  await reopen.click()
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expect(page.getByTestId('hilos-backup-reopen-modal')).toHaveCount(0)
+  expect(frames.sent.some((frame) => frame.raw.includes('backup_reopen'))).toBe(
+    false,
+  )
+  frames.stop()
   await verifierContext.close()
 })
 

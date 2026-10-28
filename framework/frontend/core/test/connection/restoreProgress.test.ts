@@ -8,6 +8,7 @@ import {
   elapsedSecondsSince,
   formatBackupEta,
   formatBackupProgressLabel,
+  formatRestoreOutcomeLine,
   formatRestorePhaseLine,
   type HilosRestoreStatus,
   type WebSocketLike,
@@ -56,6 +57,69 @@ const status: HilosRestoreStatus = {
   rehydrateProblems: [],
   databaseTouched: true,
 }
+
+describe('formatRestoreOutcomeLine', () => {
+  it.each([true, false])(
+    'names both exits after failed rehydration with databaseTouched=%s',
+    (databaseTouched) => {
+      expect(
+        formatRestoreOutcomeLine({
+          ...status,
+          running: false,
+          outcome: 'error',
+          failureReason: 'The archive could not be restored.',
+          databaseTouched,
+        }),
+      ).toBe(
+        'The archive could not be restored. ' +
+          (databaseTouched
+            ? 'The database was already being replaced when this failed. '
+            : '') +
+          'The system stays closed: not every process reloaded the replaced database. ' +
+          'Open it in Maintenance (/hilos/maintenance) or from the CLI with php cli.php protected-mode:open.',
+      )
+    },
+  )
+
+  it.each([true, false])(
+    'omits the closed-state warning after completed rehydration with databaseTouched=%s',
+    (databaseTouched) => {
+      expect(
+        formatRestoreOutcomeLine({
+          ...status,
+          running: false,
+          outcome: 'error',
+          rehydrateComplete: true,
+          databaseTouched,
+        }),
+      ).toBe(
+        'The restore failed.' +
+          (databaseTouched
+            ? ' The database was already being replaced when this failed.'
+            : ''),
+      )
+    },
+  )
+
+  it.each([true, false])(
+    'keeps success and ongoing wording with rehydrateComplete=%s',
+    (rehydrateComplete) => {
+      expect(formatRestoreOutcomeLine({ ...status, rehydrateComplete })).toBe(
+        '',
+      )
+      expect(
+        formatRestoreOutcomeLine({
+          ...status,
+          running: false,
+          outcome: 'success',
+          rehydrateComplete,
+        }),
+      ).toBe(
+        'Restored. The system stays closed to everyone but this browser until it is reopened.',
+      )
+    },
+  )
+})
 
 afterEach(() => {
   vi.useRealTimers()

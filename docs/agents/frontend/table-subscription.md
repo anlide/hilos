@@ -1558,6 +1558,12 @@ a **bar**, and there are exactly three:
    `detail` itself: `detail` is the project's arbitrary payload, so a view
    reading keys from it would invent a naming contract nobody declared and oblige
    every other view layer to repeat it letter for letter.
+   Vue also exposes the optional `table-progress-announcement` scoped slot with
+   `{ progress: HilosTableProgress }`. It replaces only the generic sentence in
+   the existing hidden `role="status"` region when progress is the top message
+   and the table has current progress data. Without the slot, the generic sentence
+   remains; other top messages are unchanged, and any remaining messages still
+   follow the sentence after “Also”. This slot is not provided by React or Angular.
 3. **The bulk-action bar** — is a live message of that same room above the table
    (`bulk`), with its own caption from the framework (`label: current of total`, or
    `Working on the marked rows`), drawn with a thin progress line along the bottom edge

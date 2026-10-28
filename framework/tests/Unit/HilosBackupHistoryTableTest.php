@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
+use Hilos\AdminViewMode\WireField;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -22,6 +24,7 @@ use Hilos\Backup\BackupShipState;
 use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Pages\Backup\DTO\BackupBulkDeleteActionDTO;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
@@ -94,7 +97,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             $table->buildMutationForSourceEvent(
                 SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
             ),
-            'A run has no archive and no id, so the set it would be a row of holds nothing for it',
+            'A run has a technical id but no stored archive to represent as a row',
         );
     }
 
@@ -122,6 +125,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertNotNull($progress);
         $this->assertSame(self::PROGRESS_KEY, $progress->progressKey);
         $this->assertTrue($progress->ended, 'The run is over and its bar has to come down with it');
+        $this->assertSame([], $progress->detail);
     }
 
     public function testAnotherSourceReportsNoWork(): void
@@ -212,13 +216,17 @@ final class HilosBackupHistoryTableTest extends TestCase
             runtime: $this->runningRuntime(),
         );
 
+        $snapshot = $table->getFullSnapshot();
         $keys = [];
-        foreach ($table->getFullSnapshot()->rows as $row) {
+        foreach ($snapshot->rows as $row) {
             $this->assertInstanceOf(HilosBackupTableRow::class, $row);
             $keys[] = $row->getRowKey();
         }
 
         $this->assertSame(['b1'], $keys, 'A bar does not live among the rows, so it is not counted with them');
+        $this->assertSame(1, $snapshot->totalCount);
+        $this->assertTrue($table->containsRow('b1', new TableQueryDTO()));
+        $this->assertFalse($table->containsRow('b9', new TableQueryDTO()), 'The run cannot enter the selected set');
     }
 
     public function testTheSnapshotCarriesTheBarWithItsFiguresAndItsPhase(): void
@@ -240,9 +248,18 @@ final class HilosBackupHistoryTableTest extends TestCase
             [
                 HilosBackupHistoryTable::PROGRESS_DETAIL_PHASE => 'archiving',
                 HilosBackupHistoryTable::PROGRESS_DETAIL_REMAINING_SECONDS => 40,
+                HilosBackupHistoryTable::PROGRESS_DETAIL_BACKUP_ID => 'b9',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_ENV => 'prod',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_SCOPE => 'full',
             ],
             $progress[0]->detail,
         );
+
+        $live = $table->buildProgressForSourceEvent(
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        );
+        $this->assertNotNull($live);
+        $this->assertSame($progress[0]->toArray(), $live->toArray());
     }
 
     public function testARunWithNothingToEstimateFromDrawsABarWithNoShare(): void
@@ -257,10 +274,104 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertNull($progress[0]->total, 'No total is what says the work has no estimate at all');
         $this->assertSame(0, $progress[0]->current);
         $this->assertSame(
-            [HilosBackupHistoryTable::PROGRESS_DETAIL_PHASE => 'dumping'],
+            [
+                HilosBackupHistoryTable::PROGRESS_DETAIL_PHASE => 'dumping',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_BACKUP_ID => 'b9',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_ENV => 'prod',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_SCOPE => 'full',
+            ],
             $progress[0]->detail,
             'A run with no estimate has no time left to name either',
         );
+    }
+
+    public function testAnOverrunKeepsItsIdentityAndNegativeRemainingTime(): void
+    {
+        $progress = $this->table(runtime: $this->runningRuntime([
+            StateBackupRuntime::phase => 'publishing',
+            StateBackupRuntime::percent => 99,
+            StateBackupRuntime::remainingSeconds => -12,
+        ]))->progressSnapshot();
+
+        $this->assertCount(1, $progress);
+        $this->assertSame(99, $progress[0]->current);
+        $this->assertSame(100, $progress[0]->total);
+        $this->assertFalse($progress[0]->ended);
+        $this->assertSame([
+            'phase' => 'publishing',
+            'remainingSeconds' => -12,
+            'backupId' => 'b9',
+            'env' => 'prod',
+            'scope' => 'full',
+        ], $progress[0]->detail);
+    }
+
+    /**
+     * @param ?string $backupId Known runtime backup id
+     * @param ?string $scope Known runtime scope
+     * @param ?string $env Known installation environment
+     * @param array<string, string> $expected Detail containing only known identity fields
+     */
+    #[DataProvider('unknownIdentityFields')]
+    public function testUnknownIdentityFieldsAreOmitted(?string $backupId, ?string $scope, ?string $env, array $expected): void
+    {
+        $table = $this->table(runtime: $this->runningRuntime([
+            StateBackupRuntime::currentBackupId => $backupId,
+            StateBackupRuntime::scope => $scope,
+        ]), env: $env);
+
+        $progress = $table->progressSnapshot();
+        $this->assertCount(1, $progress);
+        $this->assertSame($expected, $progress[0]->detail);
+        $live = $table->buildProgressForSourceEvent(
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        );
+        $this->assertNotNull($live);
+        $this->assertSame($progress[0]->toArray(), $live->toArray());
+    }
+
+    /**
+     * @return array<string, array{?string, ?string, ?string, array<string, string>}> Independently unknown identity fields
+     */
+    public static function unknownIdentityFields(): array
+    {
+        return [
+            'all unknown' => [null, null, null, []],
+            'backup id only' => ['b9', null, null, ['backupId' => 'b9']],
+            'environment only' => [null, null, 'prod', ['env' => 'prod']],
+            'scope only' => [null, 'data', null, ['scope' => 'data']],
+        ];
+    }
+
+    public function testAnEndedRunDropsItsIdentityEvenWhenRuntimeAndHistoryRetainIt(): void
+    {
+        $state = StateBackupRuntime::fromRow([
+            StateBackupRuntime::running => true,
+            StateBackupRuntime::currentBackupId => 'b9',
+            StateBackupRuntime::scope => 'full',
+        ]);
+        $table = $this->table(
+            histories: $this->historiesWith(BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'b9',
+            ]))),
+            runtime: new BackupRuntime($state),
+        );
+        $this->assertSame('b9', $table->progressSnapshot()[0]->detail['backupId']);
+
+        $state->running = false;
+
+        $this->assertSame([], $table->progressSnapshot());
+        $ended = $table->buildProgressForSourceEvent(
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        );
+        $this->assertNotNull($ended);
+        $this->assertSame([
+            'scope' => 'table',
+            'progressKey' => self::PROGRESS_KEY,
+            'current' => 0,
+            'ended' => true,
+        ], $ended->toArray());
+        $this->assertSame([], $ended->detail);
     }
 
     public function testAnIdleSubsystemDeclaresNoBar(): void
@@ -1346,7 +1457,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         }
     }
 
-    public function testAViewerReceivesTheProgressBarDetailWithItsPhaseAndRemainingSeconds(): void
+    public function testAViewerReceivesEveryDeclaredProgressDetailField(): void
     {
         $table = $this->table(runtime: $this->runningRuntime([
             StateBackupRuntime::phase => 'archiving',
@@ -1359,8 +1470,23 @@ final class HilosBackupHistoryTableTest extends TestCase
         $progress = $table->progressSnapshot();
 
         $this->assertCount(1, $progress);
+        $expected = [
+            'phase' => 'archiving',
+            'remainingSeconds' => 40,
+            'backupId' => 'b9',
+            'env' => 'prod',
+            'scope' => 'full',
+        ];
+        $this->assertEquals([
+            'phase' => WireField::notPersonal(),
+            'remainingSeconds' => WireField::notPersonal(),
+            'backupId' => WireField::notPersonal(),
+            'env' => WireField::notPersonal(),
+            'scope' => WireField::notPersonal(),
+        ], $table->progressDetailFields());
+        $this->assertSame($expected, $progress[0]->detail);
         $this->assertSame(
-            $progress[0]->detail,
+            $expected,
             ViewerFields::hide(
                 $progress[0]->detail,
                 $table->progressDetailFields(),
@@ -1370,24 +1496,104 @@ final class HilosBackupHistoryTableTest extends TestCase
     }
 
     /**
+     * @param string|EnvException|null $source Environment value, failed read, or absent accessor
+     * @param ?string $expected Known non-empty environment or null
+     */
+    #[DataProvider('environmentSources')]
+    public function testCurrentEnvironmentUsesTheCatalogAndOmitsUnknownValues(string|EnvException|null $source, ?string $expected): void
+    {
+        $previous = Hilos::$env;
+        Hilos::$env = $source === null ? null : new class($source) extends EnvAccessor {
+            /**
+             * @param string|EnvException $source Fixed value or read failure
+             */
+            public function __construct(private readonly string|EnvException $source)
+            {
+                parent::__construct(EnvCatalogStub::class);
+            }
+
+            /**
+             * @param string $key Catalog key being read
+             * @return mixed Fixed installation environment
+             */
+            public function effectiveValueFor(string $key): mixed
+            {
+                TestCase::assertSame(EnvConstants::APP_ENV->name, $key);
+                if ($this->source instanceof EnvException) {
+                    throw $this->source;
+                }
+
+                return $this->source;
+            }
+        };
+
+        try {
+            $table = new class extends HilosBackupHistoryTable {
+                /**
+                 * @return ?string Framework environment read exposed for the test
+                 */
+                public function currentEnv(): ?string
+                {
+                    return parent::currentEnv();
+                }
+            };
+
+            $this->assertSame($expected, $table->currentEnv());
+        } finally {
+            Hilos::$env = $previous;
+        }
+    }
+
+    /**
+     * @return array<string, array{string|EnvException|null, ?string}> Known and unavailable installation environments
+     */
+    public static function environmentSources(): array
+    {
+        return [
+            'known' => ['prod', 'prod'],
+            'empty' => ['', null],
+            'unmounted' => [null, null],
+            'failed read' => [new EnvException('Environment unavailable'), null],
+        ];
+    }
+
+    /**
      * Builds a backup table bound to in-memory runtime sources.
      *
      * @param ?BackupHistories $histories Stored backup index view, or null when unmounted
      * @param ?BackupRuntime $runtime In-progress runtime singleton, or null when idle
+     * @param ?RestoreRuntime $restore Restore runtime singleton, or null when idle
+     * @param ?string $env Known installation environment, or null when unknown
      * @return HilosBackupHistoryTable Table over the bound sources
      */
     private function table(
         ?BackupHistories $histories = null,
         ?BackupRuntime $runtime = null,
         ?RestoreRuntime $restore = null,
+        ?string $env = 'prod',
     ): HilosBackupHistoryTable {
-        return new class($histories, $runtime, $restore) extends HilosBackupHistoryTable {
+        return new class($histories, $runtime, $restore, $env) extends HilosBackupHistoryTable {
+            /**
+             * @param ?BackupHistories $historiesFixture Stored archive index
+             * @param ?BackupRuntime $runtimeFixture Current backup run
+             * @param ?RestoreRuntime $restoreFixture Current restore
+             * @param ?string $envFixture Known installation environment
+             */
             public function __construct(
                 private readonly ?BackupHistories $historiesFixture,
                 private readonly ?BackupRuntime $runtimeFixture,
                 private readonly ?RestoreRuntime $restoreFixture,
+                private readonly ?string $envFixture,
             ) {
                 parent::__construct();
+            }
+
+            /**
+             * @return ?string Fixed installation environment, or null when unknown
+             */
+            protected function currentEnv(): ?string
+            {
+                return $this->envFixture;
             }
 
             protected function histories(): ?BackupHistories

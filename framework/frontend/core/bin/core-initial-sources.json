@@ -168,8 +168,8 @@
     "outputSha256": "82b2052dfa000c0626452c7e5bec5d424246ae688128201f33dc850deb44891a"
   },
   "src/connection/restoreProgress.ts": {
-    "sourceSha256": "c5d3b6db0459a4a86640ad6b6bb366f30b8aa63e93b7b98423e27bae9f7a7ac4",
-    "outputSha256": "fe5a5f2ea74862b33f9655ba4b71e8b32d5e32c69fee0d3c2b828ae173d080ea"
+    "sourceSha256": "2ec4c67549f9c3733b2091ae257c97f315ffb878b95dbb757936e803d66f6c98",
+    "outputSha256": "ad769b267576a95dfbca624f72b379cc7351a11233a62ed546628257784dcb78"
   },
   "src/dom/applyTheme.ts": {
     "sourceSha256": "6f5262ffeab6c1108e7769d392c37b66f30f7cb496da207416f84e75903a9d92",

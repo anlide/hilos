@@ -476,11 +476,12 @@ automatically, the human path out has to actually work.
   with the reason named — reading a damaged freeze as "no freeze" opens the node
   on the strength of a parse failure. A missing file is the ordinary startup.
   Every accept key is dropped: it was minted on a 101 that died with the daemon.
-  `restoreFromDisk()` keeps the restore initiator's session hash: Backups' reopen button
-  uses `belongsToInitiator()`, which refuses null, so losing it would lock out
-  the restore operator. Passes, admitted sessions and the circle are cleared by
-  choice: a code lasts minutes, and a verifier asks for a new one. The restored
-  window admits only the initiating browser. A restored row is still frozen even
+  `restoreFromDisk()` keeps the restore initiator's session hash: the legacy
+  Backups reopen button in React and Angular uses `belongsToInitiator()`, which
+  refuses null, so losing it would lock out the restore operator. Vue now sends
+  restore control from Maintenance. Passes, admitted sessions and the circle
+  are cleared by choice: a code lasts minutes, and a verifier asks for a new
+  one. The restored window admits only the initiating browser. A restored row is still frozen even
   before this node remembers its leader. It accepts the current leader's frames
   and refuses a fresh quiesce outside the verification window. Manual
   maintenance alone clears that hash too, by operation rather than phase,
@@ -1181,8 +1182,9 @@ connection takes the Maintenance page and the modal on it together. Open's
 lift can reload the browser before the action ack, as a manual disable already
 does.
 
-Vue draws the ladder. React is HIL-1681 and Angular is HIL-1682. The older
-`backup_reopen` on Backups remains until HIL-1673.
+Vue draws the ladder and sends the reopen control from Maintenance. React is
+HIL-1681 and Angular is HIL-1682; their legacy Backups reopen action still uses
+`backup_reopen` until those frontends move to Maintenance.
 
 ## This Node's Live Hold (HIL-1679)
 

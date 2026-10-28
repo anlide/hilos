@@ -12,11 +12,18 @@ import {
   formatBackupEta,
   formatBackupProgressLabel,
   formatBackupRunCaption,
+  formatBackupRunTitle,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
   createHilosBackupsActions,
   HILOS_BACKUP_CIRCLE_POINTER_PATH,
+  HILOS_BACKUP_CIRCLE_POINTER_COPY,
+  HILOS_BACKUP_REOPEN_COPY,
+  HILOS_BACKUP_VERIFICATION_COPY,
+  HILOS_BACKUP_MAINTENANCE_PATH,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH,
   createHilosBackupsReopenGate,
   createHilosBackupsTable,
   hasBackupFailureDetail,
@@ -237,7 +244,13 @@ function restoreStatus(
  */
 function runBar(
   percent: number | null,
-  detail: { phase?: string; remainingSeconds?: number },
+  detail: {
+    phase?: string
+    remainingSeconds?: number
+    backupId?: unknown
+    env?: unknown
+    scope?: unknown
+  },
 ): HilosTableProgress {
   return {
     progressKey: 'hilos-backup-run',
@@ -674,6 +687,25 @@ describe('formatBackupProgressLabel', () => {
 })
 
 describe('formatBackupRunCaption', () => {
+  it.each([
+    [62, 40, 'archiving · 62% · ~40s left'],
+    [99, -8, 'archiving · 99% · taking longer than usual'],
+    [null, 40, 'archiving'],
+  ])('prefixes the run identity with share %s', (share, remaining, tail) => {
+    const progress = runBar(share, {
+      backupId: '2026-09-11_14-20-00',
+      env: 'prod',
+      scope: 'full',
+      phase: 'archiving',
+      remainingSeconds: remaining,
+    })
+
+    expect(formatBackupRunCaption(progress)).toBe(
+      `Backup 2026-09-11_14-20-00 · prod · full — ${tail}`,
+    )
+    expect(formatBackupRunCaption(progress, false)).toBe(tail)
+  })
+
   it('names the phase, the share and the time left of the run', () => {
     expect(
       formatBackupRunCaption(
@@ -701,6 +733,67 @@ describe('formatBackupRunCaption', () => {
   it('keeps the old wording for a run that has announced no phase', () => {
     expect(formatBackupRunCaption(runBar(null, {}))).toBe('In progress')
   })
+})
+
+describe('formatBackupRunTitle', () => {
+  it('keeps a technical archive name verbatim', () => {
+    expect(
+      formatBackupRunTitle(
+        runBar(null, {
+          backupId: 'archive-name',
+          env: 'local',
+          scope: 'schema-only',
+        }),
+      ),
+    ).toBe('Backup archive-name · local · schema-only')
+  })
+
+  it.each([undefined, null, '', '  ', 123, false, [], {}])(
+    'falls back to the legacy caption for an invalid archive id %j',
+    (backupId) => {
+      const progress = runBar(62, {
+        backupId,
+        env: 'prod',
+        scope: 'full',
+        phase: 'archiving',
+        remainingSeconds: 40,
+      })
+
+      expect(formatBackupRunTitle(progress)).toBeNull()
+      expect(formatBackupRunCaption(progress)).toBe(
+        'archiving · 62% · ~40s left',
+      )
+      expect(formatBackupRunCaption(progress, false)).toBe(
+        'archiving · 62% · ~40s left',
+      )
+    },
+  )
+
+  it('uses dashes for identity parts the bar has not announced', () => {
+    const progress = runBar(null, { backupId: 'b1' })
+
+    expect(formatBackupRunTitle(progress)).toBe('Backup b1 · — · —')
+    expect(formatBackupRunCaption(progress)).toBe(
+      'Backup b1 · — · — — In progress',
+    )
+    expect(formatBackupRunCaption(progress, false)).toBe('In progress')
+  })
+
+  it.each([undefined, null, '', '  ', 123, false, [], {}])(
+    'uses a dash for a malformed environment or scope %j',
+    (value) => {
+      expect(
+        formatBackupRunTitle(
+          runBar(null, { backupId: 'b1', env: value, scope: 'full' }),
+        ),
+      ).toBe('Backup b1 · — · full')
+      expect(
+        formatBackupRunTitle(
+          runBar(null, { backupId: 'b1', env: 'prod', scope: value }),
+        ),
+      ).toBe('Backup b1 · prod · —')
+    },
+  )
 })
 
 describe('isBackupSubsystemBusy', () => {
@@ -1369,5 +1462,53 @@ describe('hasBackupFailureDetail', () => {
 describe('HILOS_BACKUP_CIRCLE_POINTER_PATH', () => {
   it('resolves the Maintenance address from the Hilos route map', () => {
     expect(HILOS_BACKUP_CIRCLE_POINTER_PATH).toBe('/hilos/maintenance')
+  })
+})
+
+describe('backup verification and circle pointers', () => {
+  it('offers the verification exit through Maintenance', () => {
+    expect(HILOS_BACKUP_MAINTENANCE_PATH).toBe('/hilos/maintenance')
+    expect(HILOS_BACKUP_VERIFICATION_COPY).toEqual({
+      title: 'Verification window open',
+      body:
+        'The verification window is open and the system remains closed to visitors. ' +
+        'Check the system, then open it in Maintenance. Every connected page reloads when you do.',
+      button: 'Open the system',
+    })
+  })
+
+  it('points adopted views directly to the circle tab before Restore', () => {
+    expect(HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH).toBe(
+      '/hilos/maintenance/circle',
+    )
+    expect(HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY).toEqual({
+      title: 'Who can check the system after a restore',
+      body:
+        'The verifier circle is kept at /hilos/maintenance/circle. Set it up before you press Restore: ' +
+        'only members with a tab open at that moment are let into the verification window.',
+      open: 'Open Maintenance',
+    })
+  })
+
+  it('retains the legacy pointer and reopen confirmation for other views', () => {
+    expect(HILOS_BACKUP_CIRCLE_POINTER_COPY).toEqual({
+      title: 'Who can check the system after a restore',
+      body:
+        'The verifier circle is kept in the Maintenance section. Set it up before you press Restore: ' +
+        'only members with a tab open at that moment are let into the verification window.',
+      open: 'Open Maintenance',
+    })
+    expect(HILOS_BACKUP_REOPEN_COPY).toEqual({
+      title: 'Verification window open',
+      body:
+        'The restore finished and this installation is closed to everyone but this browser. ' +
+        'Check what you need to check, then reopen it - every open page reloads itself when you do.',
+      button: 'Reopen the system',
+      modalTitle: 'Reopen the system',
+      refusalTitle: "Couldn't reopen the system",
+      modalBody:
+        'This ends the verification window and lets everyone back in. Every connected page ' +
+        'reloads itself, this one included. Closing the system again is a CLI command.',
+    })
   })
 })

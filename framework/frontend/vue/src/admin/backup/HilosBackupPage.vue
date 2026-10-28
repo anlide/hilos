@@ -11,10 +11,10 @@ destructive one: it is offered as a button only where the backend says so
 (everywhere but production), it confirms by typing the archive id, and while it
 runs the addressed progress frames are the only live thing on the page — the
 node is frozen and the table sends nothing. Once it ends, the node stands in a
-verification window, and the one browser that started the restore is offered the
-block that closes it — the backend answers that personally in the page-data
-section, so a second admin looking at the same page sees nothing. A pointer leads
-to the verifier circle in Maintenance. All table logic,
+verification window, and the one browser that started the restore is offered a
+link to the Maintenance controls — the backend answers that personally in the
+page-data section, so a second admin looking at the same page sees nothing. A
+separate pointer leads to the verifier circle tab in Maintenance. All table logic,
 the row view-model, and what the list declares about its frame — columns, search,
 the scope and period filters, the create button as its main action, empty state —
 are the core headless's too; this view owns only the markup (and the create dialog
@@ -37,14 +37,16 @@ import {
   formatBackupDuration,
   formatBackupProgressLabel,
   formatBackupRunCaption,
+  formatBackupRunTitle,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
   hasBackupFailureDetail,
   hasRestoreOutcome,
-  HILOS_BACKUP_CIRCLE_POINTER_COPY,
-  HILOS_BACKUP_CIRCLE_POINTER_PATH,
-  HILOS_BACKUP_REOPEN_COPY,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH,
+  HILOS_BACKUP_MAINTENANCE_PATH,
+  HILOS_BACKUP_VERIFICATION_COPY,
   HILOS_BACKUP_SCOPES,
   isBackupChecksumMismatch,
   isBackupShipFailed,
@@ -112,7 +114,6 @@ const {
   sendBackupDelete,
   sendBackupSetKeep,
   sendBackupRestore,
-  sendBackupReopen,
 } = createHilosBackupsActions(props.context)
 
 // What this installation offers for restoring, and the live frames a restore this
@@ -356,35 +357,6 @@ async function submitRestore(): Promise<void> {
   }
 }
 
-// Reopen dialog: ending the verification window. Confirmation is the modal itself and
-// nothing more — typing the archive id guards restore against picking the WRONG target,
-// and reopening has no target to miss; the only mistake left is the click.
-const reopenOpen = ref(false)
-const reopenAction = useTrackedAction()
-const {
-  busy: reopenBusy,
-  run: runReopenAction,
-  clearError: clearReopenError,
-} = reopenAction
-
-function openReopen(): void {
-  clearReopenError()
-  reopenOpen.value = true
-}
-
-function closeReopen(): void {
-  reopenOpen.value = false
-}
-
-async function submitReopen(): Promise<void> {
-  if (reopenBusy.value) {
-    return
-  }
-  if (await runReopenAction(sendBackupReopen())) {
-    closeReopen()
-  }
-}
-
 // CLI instruction dialog: what the production surface offers instead of a button.
 const cliOpen = ref(false)
 const cliRow = ref<HilosBackupRow | null>(null)
@@ -410,7 +382,7 @@ function openOutcome(row: HilosBackupRow): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.BACKUP">
+  <HilosAdminPage :page="HilosPages.BACKUP" head-kind="section">
     <div
       v-if="restoreStatus"
       class="alert"
@@ -437,8 +409,10 @@ function openOutcome(row: HilosBackupRow): void {
         </div>
         <div v-if="!restoreStatus.rehydrateComplete">
           The system stays closed: not every process re-read the replaced
-          database. Reopen it from the CLI with
-          <code>php cli.php protected-mode:open</code>.
+          database. Open it in Maintenance (<code>{{
+            HILOS_BACKUP_MAINTENANCE_PATH
+          }}</code
+          >) or from the CLI with <code>php cli.php protected-mode:open</code>.
         </div>
       </div>
       <template v-else>
@@ -472,16 +446,16 @@ function openOutcome(row: HilosBackupRow): void {
       role="status"
       data-id="hilos-backup-reopen-panel"
     >
-      <div class="fw-semibold">{{ HILOS_BACKUP_REOPEN_COPY.title }}</div>
-      <div class="small">{{ HILOS_BACKUP_REOPEN_COPY.body }}</div>
-      <button
-        type="button"
+      <div class="fw-semibold">{{ HILOS_BACKUP_VERIFICATION_COPY.title }}</div>
+      <div class="small">{{ HILOS_BACKUP_VERIFICATION_COPY.body }}</div>
+      <HilosLink
+        :to="HILOS_BACKUP_MAINTENANCE_PATH"
         class="btn btn-warning btn-sm mt-2"
         data-id="hilos-backup-reopen"
-        @click="openReopen"
       >
-        {{ HILOS_BACKUP_REOPEN_COPY.button }}
-      </button>
+        {{ HILOS_BACKUP_VERIFICATION_COPY.button }}
+        <i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i>
+      </HilosLink>
     </div>
 
     <div class="card mb-3" data-id="hilos-backup-circle-pointer">
@@ -489,24 +463,33 @@ function openOutcome(row: HilosBackupRow): void {
         <i class="bi bi-people fs-3 text-body-secondary" aria-hidden="true"></i>
         <div class="flex-grow-1">
           <div class="fw-semibold">
-            {{ HILOS_BACKUP_CIRCLE_POINTER_COPY.title }}
+            {{ HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY.title }}
           </div>
           <div class="small text-body-secondary">
-            {{ HILOS_BACKUP_CIRCLE_POINTER_COPY.body }}
+            {{ HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY.body }}
           </div>
         </div>
         <HilosLink
-          :to="HILOS_BACKUP_CIRCLE_POINTER_PATH"
+          :to="HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH"
           class="btn btn-outline-primary btn-sm text-nowrap"
           data-id="hilos-backup-circle-pointer-open"
-          >{{ HILOS_BACKUP_CIRCLE_POINTER_COPY.open
+          >{{ HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY.open
           }}<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i
         ></HilosLink>
       </div>
     </div>
 
     <HilosViewportTable :controller="backupsTable">
-      <template #table-progress="{ progress }">{{
+      <template #table-progress="{ progress }">
+        <template v-if="formatBackupRunTitle(progress)">
+          <strong>{{ formatBackupRunTitle(progress) }}</strong
+          >{{ ` — ${formatBackupRunCaption(progress, false)}` }}
+        </template>
+        <template v-else>{{
+          formatBackupRunCaption(progress, false)
+        }}</template>
+      </template>
+      <template #table-progress-announcement="{ progress }">{{
         formatBackupRunCaption(progress)
       }}</template>
       <template #cell-createdAt="{ row }">
@@ -740,41 +723,6 @@ function openOutcome(row: HilosBackupRow): void {
           @click="submitDelete"
         >
           Delete
-        </LoadingButton>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="reopenOpen"
-      :title="HILOS_BACKUP_REOPEN_COPY.modalTitle"
-      :busy="reopenBusy"
-      initial-focus="dialog"
-      @cancel="closeReopen"
-    >
-      <HilosActionError
-        :action="reopenAction"
-        :details-title="HILOS_BACKUP_REOPEN_COPY.refusalTitle"
-      />
-      <p class="mb-0 text-body-secondary">
-        {{ HILOS_BACKUP_REOPEN_COPY.modalBody }}
-      </p>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="reopenBusy"
-          data-id="hilos-backup-reopen-cancel"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-warning"
-          :loading="reopenBusy"
-          data-id="hilos-backup-reopen-confirm"
-          @click="submitReopen"
-        >
-          Reopen
         </LoadingButton>
       </template>
     </HilosModal>

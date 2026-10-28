@@ -1069,6 +1069,13 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Appearance',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_BACKUP],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_BACKUP],
+        );
         self::assertSame([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
@@ -1079,6 +1086,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_APPEARANCE,
+            HilosPageConstants::HILOS_BACKUP,
             PageConstants::ADMIN_BOTS,
         ], array_keys($pages));
         self::assertSame([

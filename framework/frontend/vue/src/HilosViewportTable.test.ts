@@ -2111,6 +2111,8 @@ describe('HilosViewportTable drawing work in progress', () => {
     expect(block.get('[role="progressbar"]').attributes('aria-valuenow')).toBe(
       '28',
     )
+    const status = wrapper.get('[data-id="hilos-table-live-status"]')
+    expect(status.text()).toBe('Work is running on this table.')
 
     controller.ingestProgress({
       scope: 'table',
@@ -2122,6 +2124,73 @@ describe('HilosViewportTable drawing work in progress', () => {
     await wrapper.vm.$nextTick()
 
     // Nothing is left behind — not a finished bar, not an empty block.
+    expect(wrapper.find('[data-id="hilos-table-progress"]').exists()).toBe(
+      false,
+    )
+    expect(status.text()).toBe('')
+    expect(wrapper.get('[data-id="hilos-table-live-status"]').element).toBe(
+      status.element,
+    )
+  })
+
+  it('forwards the optional announcement slot with the current progress and clears it when work ends', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const announce = vi.fn(
+      ({ progress }: { progress: HilosTableProgress }) =>
+        `${String(progress.detail['task'])}: ${progress.current} of ${progress.total}.`,
+    )
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller },
+      slots: { 'table-progress-announcement': announce },
+    })
+    const status = wrapper.get('[data-id="hilos-table-live-status"]')
+    expect(status.text()).toBe('')
+    expect(announce).not.toHaveBeenCalled()
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+      detail: { task: 'Nightly audit' },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(announce.mock.lastCall?.[0].progress).toBe(
+      controller.progress.table.get(),
+    )
+    expect(status.text()).toBe('Nightly audit: 34 of 120.')
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 78,
+      total: 120,
+      detail: { task: 'Nightly verification' },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(announce.mock.lastCall?.[0].progress).toBe(
+      controller.progress.table.get(),
+    )
+    expect(status.text()).toBe('Nightly verification: 78 of 120.')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 120,
+      total: 120,
+      ended: true,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(status.text()).toBe('')
+    expect(wrapper.get('[data-id="hilos-table-live-status"]').element).toBe(
+      status.element,
+    )
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
     expect(wrapper.find('[data-id="hilos-table-progress"]').exists()).toBe(
       false,
     )
