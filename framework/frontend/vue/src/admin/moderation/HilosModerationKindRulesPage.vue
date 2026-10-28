@@ -2,8 +2,10 @@
 import {
   createHilosModerationKind,
   createHilosModerationRuleAdd,
+  createHilosModerationRuleDelete,
   createHilosModerationRules,
   HILOS_MODERATION_COPY,
+  HILOS_MODERATION_RULE_DELETE_COPY,
   type HilosModerationRulesContext,
 } from '@hilos/core/admin/moderation'
 import {
@@ -20,6 +22,7 @@ import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import HilosModerationRuleAdd from './HilosModerationRuleAdd.vue'
+import HilosModerationRuleDelete from './HilosModerationRuleDelete.vue'
 
 const props = defineProps<{ context: HilosModerationRulesContext }>()
 const router = inject(hilosRouterKey)
@@ -42,6 +45,7 @@ const add = createHilosModerationRuleAdd(
   detail.row,
   rules.current,
 )
+const remove = createHilosModerationRuleDelete(props.context, detail.row, rules)
 const row = useSignal(detail.row)
 const unavailable = useSignal(detail.unavailable)
 const columns = useSignal(detail.controller.frame.columns)
@@ -63,10 +67,12 @@ onMounted(() => {
   detail.start()
   rules.start()
   add.start()
+  remove.start()
 })
 onUnmounted(() => {
   unbindName()
   add.dispose()
+  remove.dispose()
   detail.dispose()
   rules.dispose()
 })
@@ -114,6 +120,21 @@ onUnmounted(() => {
         data-id="hilos-moderation-rules-table"
       >
         <template #cell-rule="{ row: rule }">{{ rule.rule }}</template>
+        <template #cell-actions="{ row: rule }">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-danger"
+            :title="HILOS_MODERATION_RULE_DELETE_COPY.open"
+            :aria-label="HILOS_MODERATION_RULE_DELETE_COPY.open"
+            :data-id="`hilos-moderation-rule-delete-open-${rule.id}`"
+            @click="remove.open(String(rule.id))"
+          >
+            <i class="bi bi-trash" aria-hidden="true"></i>
+            <span class="d-md-none ms-1">{{
+              HILOS_MODERATION_RULE_DELETE_COPY.confirm
+            }}</span>
+          </button>
+        </template>
         <template #empty>
           <div class="text-center py-4" role="status">
             <i
@@ -163,5 +184,6 @@ onUnmounted(() => {
       <span class="placeholder col-4 d-block"></span>
     </div>
     <HilosModerationRuleAdd :add="add" />
+    <HilosModerationRuleDelete :remove="remove" />
   </HilosAdminPage>
 </template>

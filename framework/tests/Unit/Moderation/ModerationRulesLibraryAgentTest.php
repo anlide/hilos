@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Moderation;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
+use Hilos\Moderation\DTO\ModerationRuleDeleteSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -54,6 +55,7 @@ final class ModerationRulesLibraryAgentTest extends TestCase
     {
         self::assertSame([
             HilosSignalConstants::MODERATION_RULE_ADD => ModerationRuleAddSignalData::class,
+            HilosSignalConstants::MODERATION_RULE_DELETE => ModerationRuleDeleteSignalData::class,
         ], ModerationRulesLibraryAgent::AGENT_SIGNALS);
         self::assertSame([], ModerationRulesLibraryAgent::AGENT_ACTIONS);
         self::assertSame([], ModerationRulesLibraryAgent::AUTH_ACTIONS);

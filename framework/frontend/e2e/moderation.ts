@@ -95,8 +95,8 @@ export async function expectModerationOwnRules(
   const table = page.getByTestId('hilos-moderation-rules-table')
   await expect(table).toBeVisible()
   await expect(table.getByRole('table')).toHaveCount(1)
-  // One data column plus the SDK's permanent row-state column; no actions stub.
-  await expect(table.locator('thead th')).toHaveCount(2)
+  // Rule, its Delete action and the SDK's permanent row-state column.
+  await expect(table.locator('thead th')).toHaveCount(3)
   await expect(table.getByTestId('hilos-table-sort-rule')).toHaveText('Rule')
   await expect(table.locator(ROWS).locator('.hilos-table-text[id]')).toHaveText(
     [...rules],
@@ -121,7 +121,15 @@ export async function expectModerationOwnRules(
   await expect(add).toHaveRole('button')
   await expect(add).toHaveAccessibleName('Add rule')
   await expect(add).toBeEnabled()
-  await expect(table.locator(ROWS).getByRole('button')).toHaveCount(0)
+  const buttons = table.locator(ROWS).getByRole('button')
+  await expect(buttons).toHaveCount(rules.length)
+  await expect(
+    table.locator(ROWS).getByTestId(/^hilos-moderation-rule-delete-open-/),
+  ).toHaveCount(rules.length)
+  for (const button of await buttons.all()) {
+    await expect(button).toHaveAccessibleName('Delete rule')
+    await expect(button).toBeEnabled()
+  }
   await expect(table.getByTestId('hilos-table-next')).toHaveCount(0)
   await expect(table.getByTestId('hilos-table-prev')).toHaveCount(0)
 }

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -194,6 +195,7 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         ], ModerationKindRulesTestPage::BROWSER);
         self::assertSame([
             HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
         ], ModerationKindRulesTestPage::ACTIONS);
         self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
             HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
@@ -447,6 +449,7 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         $this->subscribe('rules', ['kind' => 'test_note']);
         self::assertSame([
             HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
         ], ModerationKindRulesPageIntegrationTestHilos::getActionDtoRoutes());
         $page = new ModerationKindRulesTestPage(new ModerationKindRulesPageTestAgent());
         $this->expectException(AgentUnknownActionException::class);

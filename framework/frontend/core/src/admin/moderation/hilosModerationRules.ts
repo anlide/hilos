@@ -10,7 +10,10 @@ import {
 } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type TableViewportDescriptor } from '../../connection/HilosConnection.js'
 import { type HilosModerationContext } from './hilosModeration.js'
@@ -68,6 +71,17 @@ const RULES_COLUMNS: readonly HilosTableColumnOf<HilosModerationRuleRow>[] = [
     card: 'title',
     heightContent: 'text',
     reads: [HilosModerationRuleRowKey.id, HilosModerationRuleRowKey.kind],
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    reads: [
+      HilosModerationRuleRowKey.id,
+      HilosModerationRuleRowKey.kind,
+      HilosModerationRuleRowKey.rule,
+    ],
+    headerClass: 'text-end',
+    cellClass: 'text-end text-nowrap',
   },
 ]
 
@@ -196,6 +210,12 @@ export function createHilosModerationRules(
           HilosPages.MODERATION_KIND_RULES,
           HILOS_MODERATION_RULES_TABLE,
           rendered,
+        ),
+      sendFocus: (rowKey) =>
+        context.connection.sendTableRowFocus(
+          HilosPages.MODERATION_KIND_RULES,
+          HILOS_MODERATION_RULES_TABLE,
+          rowKey,
         ),
     },
     (descriptor) => (current.get() ? withKind(descriptor) : null),

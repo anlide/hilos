@@ -36,3 +36,11 @@ export {
   type HilosModerationRulesContext,
   type HilosModerationRuleAdd,
 } from './hilosModerationRuleAdd.js'
+
+export {
+  HILOS_MODERATION_RULE_DELETE_ACTION,
+  HILOS_MODERATION_RULE_DELETE_COPY,
+  createHilosModerationRuleDelete,
+  type HilosModerationRuleDeleteTarget,
+  type HilosModerationRuleDelete,
+} from './hilosModerationRuleDelete.js'

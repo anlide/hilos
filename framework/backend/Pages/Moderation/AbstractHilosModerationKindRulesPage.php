@@ -30,8 +30,10 @@ use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
+use Hilos\Moderation\DTO\ModerationRuleDeleteSignalData;
 use Hilos\Pages\Moderation\DTO\HilosModerationKindSubscribeParams;
 use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
 use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use Hilos\Tables\Moderation\HilosModerationKindTableRow;
 use Hilos\Tables\Moderation\HilosModerationRulesTable;
@@ -48,6 +50,7 @@ abstract class AbstractHilosModerationKindRulesPage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+        HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -79,6 +82,14 @@ abstract class AbstractHilosModerationKindRulesPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, HilosModerationRuleAddActionDTO::class, $dto);
                 }
                 $this->handleAdd($acceptKey, $dto);
+
+                break;
+
+            case HilosSignalConstants::HILOS_MODERATION_RULE_DELETE:
+                if (!$dto instanceof HilosModerationRuleDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosModerationRuleDeleteActionDTO::class, $dto);
+                }
+                $this->handleDelete($acceptKey, $dto);
 
                 break;
 
@@ -205,6 +216,32 @@ abstract class AbstractHilosModerationKindRulesPage extends AbstractHilosPage
             requestId: $this->currentActionRequestId(),
             action: HilosSignalConstants::HILOS_MODERATION_RULE_ADD,
             successMessage: 'Rule added to "' . $kind->title . '".',
+        ));
+    }
+
+    /**
+     * @param string $acceptKey Initiating connection
+     * @param HilosModerationRuleDeleteActionDTO $dto Captured target and confirmation text
+     * @throws ValidationException When the kind is no longer published
+     * @throws InvalidArgumentException When the directory is invalid or forwarding fails
+     * @throws InvalidFormatException When handover metadata is invalid
+     */
+    private function handleDelete(string $acceptKey, HilosModerationRuleDeleteActionDTO $dto): void
+    {
+        $kind = Hilos::moderationKinds()[$dto->kind] ?? null;
+        if ($kind === null) {
+            throw new ValidationException("Unknown moderation kind: {$dto->kind}");
+        }
+
+        $this->forward(HilosSignalConstants::MODERATION_RULE_DELETE, new ModerationRuleDeleteSignalData(
+            id: $dto->id,
+            kind: $dto->kind,
+            expectedRule: $dto->expectedRule,
+            replySignal: HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: HilosSignalConstants::HILOS_MODERATION_RULE_DELETE,
+            successMessage: 'Rule removed from "' . $kind->title . '".',
         ));
     }
 }

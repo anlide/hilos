@@ -748,7 +748,7 @@ stay with their marked leaves:
    `HILOS_MODERATION_KIND_RULES`.
    Its Add dialog follows.
    Its Edit dialog follows. (not in the code yet — HIL-1633)
-   Its Delete dialog follows. (not in the code yet — HIL-1634)
+   Its Delete dialog follows.
    React/tasks receives the section. (not in the code yet — HIL-1636)
    Angular/polls receives the section. (not in the code yet — HIL-1637)
 

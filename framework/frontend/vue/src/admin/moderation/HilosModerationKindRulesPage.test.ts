@@ -1,13 +1,15 @@
-import { enableAutoUnmount, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, markRaw, nextTick } from 'vue'
 import {
   ActionLifecycle,
+  bindAdminAccess,
   bindPageScope,
   createAppPageRouter,
   createHilosRouter,
   HilosConnection,
   HilosPages,
+  hilosToasts,
   PAGE_SIGNAL_SCHEMAS,
   resolvePageTitle,
   ScopeManager,
@@ -20,6 +22,8 @@ import {
 } from '@hilos/core/admin/moderation'
 
 import HilosModerationKindRulesPage from './HilosModerationKindRulesPage.vue'
+import HilosModerationRuleDelete from './HilosModerationRuleDelete.vue'
+import LoadingButton from '../../LoadingButton.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import HilosView from '../../HilosView.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -28,6 +32,8 @@ enableAutoUnmount(afterEach)
 const releases: Array<() => void> = []
 afterEach(() => {
   for (const release of releases.splice(0)) release()
+  hilosToasts.clear()
+  vi.restoreAllMocks()
 })
 
 const OWNER = HilosPages.MODERATION_KIND
@@ -49,7 +55,12 @@ const initial: HilosModerationKindRow = {
 /** Real protocol, shared shell, head, name and title consumers; only the socket is scripted. */
 async function harness(
   patch: Partial<HilosModerationKindRow> = {},
-  options: { pending?: boolean; outlet?: boolean; empty?: boolean } = {},
+  options: {
+    pending?: boolean
+    outlet?: boolean
+    empty?: boolean
+    viewer?: boolean
+  } = {},
 ) {
   const first = { ...initial, ...patch }
   const listeners = new Map<string, (event: { data?: unknown }) => void>()
@@ -65,6 +76,10 @@ async function harness(
     projectSchemas: PAGE_SIGNAL_SCHEMAS,
   })
   const scopes = new ScopeManager()
+  if (options.viewer) {
+    scopes.session.data.set('adminViewMode', true)
+    releases.push(bindAdminAccess(scopes))
+  }
   const pages = bindPageScope(connection, scopes)
   const navigation = createHilosRouter(
     createAppPageRouter({}),
@@ -170,8 +185,12 @@ async function harness(
     scopes,
     actions: new ActionLifecycle(connection),
   })
+  const root = document.createElement('div')
+  document.body.append(root)
+  releases.push(() => root.remove())
   const view = options.outlet
     ? mount(HilosView, {
+        attachTo: root,
         props: {
           pages: {
             [PAGE]: markRaw(
@@ -184,6 +203,7 @@ async function harness(
         global: { provide: { [hilosRouterKey as symbol]: navigation } },
       })
     : mount(HilosModerationKindRulesPage, {
+        attachTo: root,
         props: { context },
         global: { provide: { [hilosRouterKey as symbol]: navigation } },
       })
@@ -199,6 +219,21 @@ async function harness(
     answer,
     update,
     sent,
+    reply(requestId: string, success = true) {
+      listeners.get('message')?.({
+        data: JSON.stringify({
+          type: success ? 'action_success' : 'action_error',
+          requestId,
+          outcome: success ? 'success' : 'fail',
+          data: {
+            action: 'hilos_moderation_rule_delete',
+            ...(success
+              ? { message: 'Rule removed from "Profile name".' }
+              : { reason: 'The rule changed. Confirm again.' }),
+          },
+        }),
+      })
+    },
     ruleAnswer(rules: string[], requestId?: string) {
       receive('table_window', {
         page: PAGE,
@@ -250,11 +285,8 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
     ).toBe(false)
-    expect(
-      view
-        .find('button[aria-label*="Edit"], button[aria-label*="Delete"]')
-        .exists(),
-    ).toBe(false)
+    expect(view.find('button[aria-label*="Edit"]').exists()).toBe(false)
+    expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(2)
     expect(
       view
         .findAll('thead th')
@@ -289,6 +321,169 @@ describe('HilosModerationKindRulesPage', () => {
     await nextTick()
     expect(
       document.querySelector('[data-id="hilos-moderation-rule-add"]'),
+    ).toBeNull()
+  })
+
+  it.each(['hilos-table-row-1', 'hilos-table-card-1'])(
+    'opens one confirmation from %s, takes fresh focus and releases it on Cancel and navigation',
+    async (projection) => {
+      const { view, sent, receive, first, navigation } = await harness()
+      receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: RULES,
+        kind: 'row_moved',
+        rowKey: '1',
+        position: 0,
+        row: {
+          rowKey: '1',
+          slots: { rule: { id: 1, kind: first.kind, rule: 'Fresh rule' } },
+        },
+      })
+      await nextTick()
+      const opener = view.get(
+        `[data-id="${projection}"] [data-id="hilos-moderation-rule-delete-open-1"]`,
+      )
+      expect(opener.attributes('type')).toBe('button')
+      expect(opener.attributes('aria-label')).toBe('Delete rule')
+      expect(opener.get('i').attributes('aria-hidden')).toBe('true')
+      expect(opener.get('span').text()).toBe('Delete')
+      expect(opener.get('span').classes()).toContain('d-md-none')
+      await opener.trigger('click')
+      await flushPromises()
+      expect(
+        document.querySelectorAll('[data-id="hilos-moderation-rule-delete"]'),
+      ).toHaveLength(1)
+      expect(
+        document.querySelector('[data-id="hilos-moderation-rule-delete-rule"]')
+          ?.textContent,
+      ).toBe('Fresh rule')
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-id="modal"]'),
+      )
+      expect(
+        sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+      ).toEqual({
+        type: 'table_row_focus',
+        page: PAGE,
+        tableKey: RULES,
+        rowKey: '1',
+      })
+      const cancel = document.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-moderation-rule-delete-cancel"]',
+      )!
+      cancel.click()
+      await flushPromises()
+      expect(
+        document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
+      ).toBeNull()
+      expect(
+        sent.filter((frame) => frame.type === 'table_row_focus').at(-1),
+      ).toMatchObject({ rowKey: '' })
+      await opener.trigger('click')
+      await flushPromises()
+      navigation.navigate('/hilos/moderation/second/rules')
+      await flushPromises()
+      expect(
+        document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
+      ).toBeNull()
+      expect(sent.filter((frame) => frame.type === 'action')).toEqual([])
+    },
+  )
+
+  it('closes on the ack and returns focus to the table when source fan-out removed the opener', async () => {
+    const { view, sent, receive, reply, update, first } = await harness()
+    // The DOM emulator has no layout; the stock fallback needs visible boxes.
+    for (const selector of [
+      'hilos-moderation-rules-table',
+      'hilos-table-search',
+    ]) {
+      vi.spyOn(
+        view.get(`[data-id="${selector}"]`).element,
+        'getBoundingClientRect',
+      ).mockReturnValue(new DOMRect(0, 0, 500, 40))
+    }
+    const opener = view.get<HTMLButtonElement>(
+      'tbody [data-id="hilos-moderation-rule-delete-open-1"]',
+    )
+    opener.element.focus()
+    await opener.trigger('click')
+    await flushPromises()
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-moderation-rule-delete-confirm"]',
+      )!
+      .click()
+    const request = sent.filter((frame) => frame.type === 'action').at(-1)!
+    expect(request).toMatchObject({
+      action: 'hilos_moderation_rule_delete',
+      data: { id: 1, kind: first.kind, expectedRule: 'Own rule' },
+    })
+    receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: RULES,
+      kind: 'row_removed',
+      rowKey: '1',
+      reason: 'deleted',
+      own: true,
+    })
+    update({ ...first, ownRuleCount: 0 })
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
+    ).not.toBeNull()
+    expect(
+      view.find('[data-id="hilos-moderation-rule-delete-open-1"]').exists(),
+    ).toBe(false)
+    reply(String(request.requestId))
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
+    ).toBeNull()
+    expect(
+      view.get('[data-id="hilos-moderation-rules-built-in"]').text(),
+    ).toContain('Allow polite names.')
+    expect(view.get('[data-id="hilos-table-search"]').element).toBe(
+      document.activeElement,
+    )
+    expect(
+      hilosToasts.toasts
+        .get()
+        .map(({ message, severity, repeats }) => [message, severity, repeats]),
+    ).toEqual([['Rule removed from "Profile name".', 'success', 1]])
+    expect(sent.filter((frame) => frame.type === 'action')).toHaveLength(1)
+  })
+
+  it('lets a viewer open and read from the card, with Delete and a forged click guarded inside the admin shell', async () => {
+    const { view, sent } = await harness({}, { viewer: true })
+    const opener = view.get<HTMLButtonElement>(
+      '[data-id="hilos-table-card-1"] [data-id="hilos-moderation-rule-delete-open-1"]',
+    )
+    expect(opener.element.disabled).toBe(false)
+    await opener.trigger('click')
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-delete-rule"]')
+        ?.textContent,
+    ).toBe('Own rule')
+    const remove = view.getComponent(HilosModerationRuleDelete)
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-moderation-rule-delete-confirm"]',
+    )!
+    expect(button.disabled).toBe(true)
+    button.click()
+    remove
+      .getComponent(LoadingButton)
+      .vm.$emit('click', new MouseEvent('click'))
+    await flushPromises()
+    expect(sent.filter((frame) => frame.type === 'action')).toEqual([])
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-moderation-rule-delete-cancel"]',
+      )!
+      .click()
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
     ).toBeNull()
   })
 

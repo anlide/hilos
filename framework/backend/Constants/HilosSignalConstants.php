@@ -2437,6 +2437,12 @@ final class HilosSignalConstants
     /** Rules gatekeeper → rules library: create a rule and report its outcome. */
     public const string MODERATION_RULE_ADD = 'moderation_rule_add';
 
+    /** Remove an own moderation rule through the ADMIN Rules page. */
+    public const string HILOS_MODERATION_RULE_DELETE = 'hilos_moderation_rule_delete';
+
+    /** Internal confirmed removal for the single rules writer. */
+    public const string MODERATION_RULE_DELETE = 'moderation_rule_delete';
+
     /** Rules library → Rules page: outcome of the handed-over write. */
     public const string HILOS_MODERATION_RULE_WRITE_DONE = 'hilos_moderation_rule_write_done';
 

@@ -12,12 +12,14 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\ModerationRules;
 use Hilos\Hilos;
 use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
+use Hilos\Moderation\DTO\ModerationRuleDeleteSignalData;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -33,8 +35,8 @@ use Throwable;
  *
  * Concrete and registered without a project subclass, as the settings and i18n libraries are: the
  * table, its ORM and the kind directory are the framework's, and nothing here waits for a project
- * hook. The Rules page hands additions here; edit and delete asks arrive with their dialogs
- * (HIL-1633, HIL-1634).
+ * hook. The Rules page hands additions and confirmed removals here; edit asks arrive with their dialog
+ * (HIL-1633).
  */
 final class ModerationRulesLibraryAgent extends AbstractHilosAgent
 {
@@ -54,6 +56,7 @@ final class ModerationRulesLibraryAgent extends AbstractHilosAgent
 
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::MODERATION_RULE_ADD => ModerationRuleAddSignalData::class,
+        HilosSignalConstants::MODERATION_RULE_DELETE => ModerationRuleDeleteSignalData::class,
     ];
 
     /**
@@ -72,6 +75,14 @@ final class ModerationRulesLibraryAgent extends AbstractHilosAgent
                     throw new InvalidAgentSignalPayloadException($name, ModerationRuleAddSignalData::class, $data->data);
                 }
                 $this->handleAdd($data->data);
+
+                break;
+
+            case HilosSignalConstants::MODERATION_RULE_DELETE:
+                if (!$data->data instanceof ModerationRuleDeleteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleDeleteSignalData::class, $data->data);
+                }
+                $this->handleDelete($data->data);
 
                 break;
 
@@ -96,6 +107,40 @@ final class ModerationRulesLibraryAgent extends AbstractHilosAgent
         }
         if ($refusal?->isInternal()) {
             $this->logAgentError('Adding a moderation rule failed: ' . $refusal->errorDetail);
+        }
+
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+    }
+
+    /**
+     * @param ModerationRuleDeleteSignalData $ask Captured rule, confirmation and gatekeeper correlation
+     * @throws InvalidArgumentException When the answer cannot be queued
+     */
+    private function handleDelete(ModerationRuleDeleteSignalData $ask): void
+    {
+        $refusal = null;
+        try {
+            if (!isset(Hilos::moderationKinds()[$ask->kind])) {
+                throw new ValidationException("Unknown moderation kind: {$ask->kind}");
+            }
+            $rule = Hilos::$db->moderationRules[$ask->id] ?? null;
+            if ($rule === null) {
+                throw new ValidationException('The rule no longer exists.');
+            }
+            if ($rule->kind !== $ask->kind) {
+                throw new ValidationException('The rule does not belong to this kind.');
+            }
+            if ($rule->rule !== $ask->expectedRule) {
+                throw new ValidationException('The rule changed. Close this window and confirm again.');
+            }
+            $rule->actions->delete();
+        } catch (WiringRefusal $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+        } catch (Throwable $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+        }
+        if ($refusal?->isInternal()) {
+            $this->logAgentError('Removing a moderation rule failed: ' . $refusal->errorDetail);
         }
 
         $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));

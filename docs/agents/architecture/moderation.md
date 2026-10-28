@@ -519,11 +519,23 @@ continues to receive the project's base context through Chat's lazy
 `ModerationKind.vue` wrapper. The Rules view receives the extended context
 through Chat's lazy `Rules.vue` wrapper.
 
-The remaining rule actions and their dialog validation belong to separate
-leaves:
+The remaining rule action and its dialog validation belong to a separate leaf:
 
 - Edit a custom rule. (not in the code yet — HIL-1633)
-- Delete a custom rule. (not in the code yet — HIL-1634)
+
+Delete is available from the Rules row action and opens one confirmation dialog
+for the selected rule. The dialog keeps the displayed rule text as its
+confirmation snapshot and enables submission only while the focused row still
+has the same id, kind and exact text. If the row disappears or changes, the
+dialog stays readable, reports the condition and refuses submission. The Rules
+page hands the typed request to the rules library, whose writer checks the
+published kind, id, matching kind and exact expected text before deleting that
+item. The existing write-done reply carries the correlated success or refusal;
+the page reports success only after deletion completes. In view mode the dialog
+can be inspected and canceled, while both the browser submission guard and the
+server `ADMIN` gate refuse mutation. Existing source-change fan-out updates the
+table and related views; after success, focus returns through the existing
+table or page fallback if the removed row action no longer exists.
 
 Apply [admin-features.md](admin-features.md) and
 [admin-view-mode.md](admin-view-mode.md) to each page, table and action: the
@@ -552,10 +564,10 @@ There is no verdict journal and no per-kind on/off switch in this design.
 queue and its signals, the moderator, its profiles and settings, the profile
 photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), the
 kinds/rules browser tables registered by Chat (HIL-1628), and the section pages
-with the Vue Rules Add flow and its focused e2e coverage.
+with the Vue Rules Add and Delete flows and their focused e2e coverage.
 
-**Not built yet:** chat as a consumer (HIL-1627); Edit and Delete
-(HIL-1633/HIL-1634); React/tasks and Angular/polls SDK mounts
+**Not built yet:** chat as a consumer (HIL-1627); Edit (HIL-1633);
+React/tasks and Angular/polls SDK mounts
 (HIL-1636/HIL-1637); the broader moderation e2e coverage and cluster coverage
 (HIL-1638/HIL-1639); enabling profile photos in tasks/polls (HIL-1644/HIL-1645).
 

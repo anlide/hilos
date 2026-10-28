@@ -3,6 +3,7 @@ import {
   HilosConnection,
   type WebSocketLike,
 } from '../../../src/connection/HilosConnection.js'
+import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
@@ -13,6 +14,7 @@ import {
 import {
   createHilosModerationKind,
   createHilosModerationRules,
+  createHilosModerationRuleDelete,
   moderationKindRulesPath,
   resolveHilosModerationRuleRow,
 } from '../../../src/admin/moderation/index.js'
@@ -221,6 +223,13 @@ describe('moderation Rules', () => {
           heightContent: 'text',
           reads: ['id', 'kind'],
         },
+        {
+          key: 'actions',
+          label: '',
+          reads: ['id', 'kind', 'rule'],
+          headerClass: 'text-end',
+          cellClass: 'text-end text-nowrap',
+        },
       ])
       for (const key of [
         'title',
@@ -368,6 +377,84 @@ describe('moderation Rules', () => {
     expect(c.rows.get()[0].placeholder).toBe(true)
     expect(h.rules.current.get()).toBe(true)
   })
+
+  it('follows normalized rule values outside the window and releases focus on close', () => {
+    const h = setup()
+    h.start()
+    h.answer()
+    const remove = createHilosModerationRuleDelete(
+      { ...h, actions: new ActionLifecycle(h.connection) },
+      h.detail.row,
+      h.rules,
+    )
+    cleanups.push(remove.dispose)
+    remove.start()
+    remove.open('1')
+    expect(remove.target.get()).toEqual({
+      id: 1,
+      kind: 'first',
+      title: 'Title first',
+      expectedRule: 'Rule 1',
+    })
+    expect(h.sent.at(-1)).toEqual({
+      type: 'table_row_focus',
+      page: PAGE,
+      tableKey: TABLE,
+      rowKey: '1',
+    })
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_removed',
+      rowKey: '1',
+      reason: 'left_set',
+      row: wireRule(1, 'first', 'Changed outside'),
+    })
+    expect(remove.notice.get()?.kind).toBe('conflict')
+    expect(remove.target.get()?.expectedRule).toBe('Rule 1')
+    expect(remove.canSubmit.get()).toBe(false)
+    expect(h.rules.controller.rows.get()[0].pending).toBe('remove')
+    h.rules.controller.apply()
+    expect(h.rules.controller.rows.get()[0].placeholder).toBe(true)
+    expect(h.rules.controller.focusedRow.get()?.rule).toBe('Changed outside')
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_removed',
+      rowKey: '1',
+      reason: 'deleted',
+    })
+    expect(remove.notice.get()?.kind).toBe('deleted')
+    expect(remove.openState.get()).toBe(true)
+    remove.close()
+    expect(h.rules.controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it.each([true, false])(
+    'applies an own deletion immediately (%s) and gates a foreign deletion',
+    (own) => {
+      const h = setup()
+      h.start()
+      h.answer()
+      const c = h.rules.controller
+      c.focusRow('1')
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: 'row_removed',
+        rowKey: '1',
+        reason: 'deleted',
+        own,
+      })
+      expect(c.focusedRow.get()).toBeUndefined()
+      expect(c.pendingCount.get()).toBe(own ? 0 : 1)
+      expect(c.rows.get()[0].placeholder).toBe(own)
+      if (!own) c.apply()
+      expect(c.rows.get()[0].placeholder).toBe(true)
+      expect(h.rules.current.get()).toBe(true)
+      expect(h.viewports()).toEqual([])
+    },
+  )
 
   it('keeps refusals and freeze distinct from an empty success, including cold refusal', () => {
     const h = setup()
