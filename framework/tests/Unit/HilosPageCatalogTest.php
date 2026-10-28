@@ -300,9 +300,16 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Browser sessions seen in the selected period.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS]);
-        self::assertSame(
-            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
-            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-window',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION]);
+        self::assertArrayNotHasKey(
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION],
         );
         foreach (HilosPageCatalog::DASHBOARD_SECTIONS as $section) {
             self::assertNotContains(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, $section[PageCatalogConstants::SECTION_ITEMS]);

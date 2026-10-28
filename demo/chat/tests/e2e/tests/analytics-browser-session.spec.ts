@@ -8,6 +8,7 @@ import {
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
   expectAnalyticsActionsOnPage,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsPersonSession,
   expectAnalyticsSessionFrames,
   expectAnalyticsSessionHeader,
@@ -111,6 +112,11 @@ test('shows real session actions in source order without bodies or another sessi
       ),
     )
     await expectPageReady(expect, admin)
+    await expectAnalyticsBrowserSessionHead(
+      expect,
+      admin,
+      `Browser session #${userSession.browserSessionId}`,
+    )
     await expectAnalyticsSessionHeader(
       expect,
       admin,
@@ -147,6 +153,8 @@ test('shows real session actions in source order without bodies or another sessi
       admin,
       `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
     )
+    const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
+    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
     await expectOtherAnalyticsSession(
       expect,
       admin,
@@ -154,6 +162,11 @@ test('shows real session actions in source order without bodies or another sessi
       adminId,
       ascending,
     )
+    const adminSessionUrl = admin.url()
+    await admin.reload()
+    await expect(admin).toHaveURL(adminSessionUrl)
+    await expectPageReady(expect, admin)
+    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
   } finally {
     await adminContext.close()
   }

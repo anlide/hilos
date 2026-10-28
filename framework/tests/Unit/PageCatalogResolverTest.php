@@ -883,8 +883,8 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
-    /** Vue opts in only Person; the neighboring BrowserSession stays on its legacy head. */
-    public function testVueProvidersAdoptTheAnalyticsPersonHeadWithOnlyOverview(): void
+    /** Vue opts both Analytics entities into their own Overview-only heads. */
+    public function testVueProvidersAdoptBothAnalyticsEntityHeadsWithOnlyOverview(): void
     {
         foreach ([ChatAnalyticsPageHeadTestHilos::class, BinanceAnalyticsPageHeadTestHilos::class] as $hilos) {
             $hilos::initBrowser();
@@ -913,9 +913,34 @@ final class PageCatalogResolverTest extends TestCase
                 'pageChildren' => [],
             ], $head->toArray());
             self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($page));
-            self::assertNull(PageCatalogResolver::head(
-                HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, new PageRouteParams(['browserSessionId' => '58']),
-            ));
+            $sessionPage = HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION;
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[$sessionPage],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[$sessionPage]);
+            self::assertSame($sessionPage, PageCatalogResolver::rowOwner($sessionPage));
+            $sessionHead = PageCatalogResolver::head(
+                $sessionPage,
+                new PageRouteParams(['browserSessionId' => '58']),
+            );
+            self::assertNotNull($sessionHead);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => $sessionPage,
+                    'label' => 'Browser session',
+                    'lead' => 'Actions recorded in one browser session, in source-time order.',
+                    'icon' => 'bi-window',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
+                    ['page' => $sessionPage, 'label' => 'Browser session'],
+                ],
+                'pageTabs' => [['page' => $sessionPage, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $sessionHead->toArray());
+            self::assertSame($sessionHead->pageBreadcrumb, PageCatalogResolver::breadcrumb($sessionPage));
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
@@ -1740,13 +1765,13 @@ abstract class AnalyticsOverviewOnlyHeadTestHilos extends Hilos
     ];
 }
 
-/** Chat's real catalog supplies the Vue Analytics Person opt-in. */
+/** Chat's real catalog supplies the Vue Analytics entity opt-ins. */
 abstract class ChatAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = ChatPageCatalog::class;
 }
 
-/** Binance's real catalog supplies the Vue Analytics Person opt-in. */
+/** Binance's real catalog supplies the Vue Analytics entity opt-ins. */
 abstract class BinanceAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = BinancePageCatalog::class;

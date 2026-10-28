@@ -28,6 +28,13 @@ afterEach(() => {
 
 const PAGE = HilosPages.ANALYTICS_BROWSER_SESSION
 const TABLE = 'hilosAnalyticsActions'
+const LEAD = 'Actions recorded in one browser session, in source-time order.'
+const OWNER = {
+  page: PAGE,
+  label: 'Browser session',
+  lead: LEAD,
+  icon: 'bi-window',
+}
 const BREADCRUMB = [
   { page: HilosPages.DASHBOARD, label: 'Hilos' },
   { page: HilosPages.ANALYTICS, label: 'Analytics' },
@@ -122,13 +129,18 @@ function harness(param: string | undefined = '57') {
     navigate(id: string) {
       router.navigate(`/hilos/analytics/browser-sessions/${id}`)
     },
-    header(value: unknown, label = 'Browser session #57') {
+    header(
+      value: unknown,
+      label = 'Browser session #57',
+      owner: typeof OWNER | null = OWNER,
+    ) {
       subscription.ingestPageResponse(PAGE, {
         data: {
           pageLabel: label,
-          pageLead:
-            'Actions recorded in one browser session, in source-time order.',
+          pageLead: LEAD,
+          pageHeadOwner: owner ?? undefined,
           pageBreadcrumb: BREADCRUMB,
+          pageTabs: owner ? [{ page: PAGE, label: 'Overview' }] : undefined,
           pageChildren: [],
           browserSession: value,
         },
@@ -180,6 +192,80 @@ function harness(param: string | undefined = '57') {
   }
 }
 
+/**
+ * The adopted identity stays ready independently of the body and table window.
+ *
+ * @param h The mounted page and its live subscription.
+ * @param label The permitted instance name.
+ * @param owner The catalog metadata from the current answer.
+ */
+function expectHead(
+  h: ReturnType<typeof harness>,
+  label: string,
+  owner = OWNER,
+) {
+  expect(h.view.findAll('h1')).toHaveLength(1)
+  const title = h.view.find('[data-id="hilos-page-head-title"]')
+  expect(title.element.tagName).toBe('H1')
+  expect(title.text()).toBe(label)
+  expect(h.router.pageIdentity.get()?.pageHeadOwner).toEqual({
+    ...owner,
+    label,
+  })
+  const icon = h.view.find('[data-id="analytics-browser-session-head-icon"]')
+  expect(icon.classes()).toContain('rounded-circle')
+  expect(icon.attributes('aria-hidden')).toBe('true')
+  expect(icon.find('i').classes()).toEqual(['bi', owner.icon])
+  expect(
+    h.view
+      .find('[data-id="analytics-browser-session-head-description"]')
+      .text(),
+  ).toBe(owner.lead)
+  for (const id of [
+    'hilos-admin-title',
+    'hilos-admin-title-skeleton',
+    'hilos-admin-children',
+    'hilos-page-tabs',
+    'hilos-page-head-skeleton',
+  ]) {
+    expect(h.view.find(`[data-id="${id}"]`).exists()).toBe(false)
+  }
+}
+
+/**
+ * A pending identity has only a blank circle and the shared head's two bars.
+ *
+ * @param h The mounted page and its live subscription.
+ */
+function expectHeadSkeleton(h: ReturnType<typeof harness>) {
+  const skeleton = h.view.find('[data-id="hilos-page-head-skeleton"]')
+  expect(skeleton.attributes('aria-hidden')).toBe('true')
+  const icon = skeleton.find(
+    '[data-id="analytics-browser-session-head-skeleton-icon"]',
+  )
+  expect(icon.classes()).toEqual([
+    'hilos-avatar-md',
+    'rounded-circle',
+    'bg-secondary-subtle',
+    'flex-shrink-0',
+  ])
+  expect(icon.text()).toBe('')
+  expect(icon.element.children).toHaveLength(0)
+  expect(skeleton.findAll('.placeholder')).toHaveLength(2)
+  expect(h.view.find('h1').exists()).toBe(false)
+  expect(h.view.find('nav').exists()).toBe(false)
+  expect(h.view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+  expect(
+    h.view.find('[data-id="analytics-browser-session-head-icon"]').exists(),
+  ).toBe(false)
+  expect(
+    h.view
+      .find('[data-id="analytics-browser-session-head-description"]')
+      .exists(),
+  ).toBe(false)
+  expect(h.view.text()).not.toContain(LEAD)
+}
+
 describe('HilosAnalyticsBrowserSessionPage', () => {
   it('draws the received identity, header and real cells in the shared table', async () => {
     const h = harness()
@@ -196,8 +282,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     h.window([ACTION])
     await nextTick()
 
-    expect(h.view.findAll('h1')).toHaveLength(1)
-    expect(h.view.find('h1').text()).toBe('Browser session #57')
+    expectHead(h, 'Browser session #57')
     const breadcrumb = h.view.find('[data-id="hilos-breadcrumb"]')
     expect(breadcrumb.findAll('li').map((crumb) => crumb.text())).toEqual([
       'Hilos',
@@ -216,7 +301,6 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       'Browser session #57',
     )
     expect(breadcrumb.find('[aria-current="page"] a').exists()).toBe(false)
-    expect(h.router.pageIdentity.get()?.pageHeadOwner).toBeUndefined()
     expect(h.scopes.page()!.data.signal('pageBreadcrumb').get()).toEqual(
       BREADCRUMB,
     )
@@ -248,7 +332,47 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
         .find('[data-id="hilos-analytics-actions-table"] table')
         .attributes('aria-labelledby'),
     ).toBe(h.view.find('h1').attributes('id'))
+    expect(h.view.find('h1').attributes('id')).toBeTruthy()
     expect(h.view.findAll('h2')).toHaveLength(0)
+  })
+
+  it('takes the icon and description from the owner identity', async () => {
+    const h = harness()
+    const owner = {
+      ...OWNER,
+      lead: 'Catalog description for this browser session.',
+      icon: 'bi-browser-firefox',
+    }
+    h.header(HEADER, 'Permitted label', owner)
+    await nextTick()
+    expectHead(h, 'Permitted label', owner)
+    expect(h.view.text()).not.toContain(LEAD)
+    expect(h.view.find('.bi-window').exists()).toBe(false)
+  })
+
+  it('keeps the legacy shell for an answer without an adopted owner', async () => {
+    const h = harness()
+    h.header(HEADER, 'Browser session #57', null)
+    h.coldWindow()
+    h.window([ACTION])
+    await nextTick()
+    expect(h.view.findAll('h1')).toHaveLength(1)
+    expect(h.view.find('[data-id="hilos-admin-title"]').text()).toBe(
+      'Browser session #57',
+    )
+    expect(h.view.text()).toContain(LEAD)
+    expect(h.view.find('[data-id="hilos-page-head"]').exists()).toBe(false)
+    expect(
+      h.view.find('[data-id="analytics-browser-session-head-icon"]').exists(),
+    ).toBe(false)
+    expect(
+      h.view
+        .find('[data-id="analytics-browser-session-head-description"]')
+        .exists(),
+    ).toBe(false)
+    expect(h.view.find('[data-id="hilos-analytics-action-name"]').text()).toBe(
+      'rename',
+    )
   })
 
   it('shows the guest sentence only for the received null account and a dash for no browser', async () => {
@@ -260,6 +384,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       lastSignedInUserLabel: null,
     })
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(
       h.view.find('[data-id="hilos-analytics-browser-session-browser"]').text(),
     ).toBe('—')
@@ -274,6 +399,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     await nextTick()
     h.header({ ...HEADER, lastSignedInUserLabel: 'Deleted user #7' })
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(
       h.view.find('[data-id="hilos-analytics-browser-session-person"]').text(),
     ).toBe('Last signed in: Deleted user #7')
@@ -288,6 +414,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(sessionUserName(h.scopes).get()).toBe('Session owner')
     h.header(HEADER)
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(
       h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
     ).toBe('Browser session #57')
@@ -301,7 +428,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       },
     ])
     await nextTick()
-    expect(h.view.find('h1').text()).toBe('Browser session')
+    expectHead(h, 'Browser session')
     expect(
       h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
     ).toBe('Browser session')
@@ -310,6 +437,8 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     )
     expect(h.view.html()).not.toContain('Browser session #57')
     expect(h.view.html()).not.toContain('Session owner')
+    expect(h.view.html()).not.toContain('Ada')
+    expect(h.view.html()).not.toContain(HEADER.browser)
     expect(
       h.view.find('[data-id="hilos-analytics-browser-session-header"]').text(),
     ).toBe('Hidden')
@@ -319,9 +448,9 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
         .exists(),
     ).toBe(false)
     for (const cell of ['when', 'page', 'name']) {
-      for (const node of h.view.findAll(
-        `[data-id="hilos-analytics-action-${cell}"]`,
-      )) {
+      const nodes = h.view.findAll(`[data-id="hilos-analytics-action-${cell}"]`)
+      expect(nodes.length).toBeGreaterThan(0)
+      for (const node of nodes) {
         expect(node.text()).toBe('Hidden')
       }
     }
@@ -329,6 +458,25 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(h.view.html()).not.toContain('1970')
     expect(h.view.html()).not.toContain('No one has signed in')
     expect(h.view.html()).not.toContain('_hidden')
+  })
+
+  it('shows a blank circle and two head bars with the two body bars before identity arrives', async () => {
+    const h = harness()
+    await nextTick()
+    expectHeadSkeleton(h)
+    const body = h.view.find(
+      '[data-id="hilos-analytics-browser-session-header"] [data-id="hilos-skeleton"]',
+    )
+    const bars = body.findAll('.placeholder')
+    expect(bars).toHaveLength(2)
+    expect(bars[0]!.classes()).toContain('col-6')
+    expect(bars[1]!.classes()).toContain('col-8')
+    expect(bars.every((bar) => bar.attributes('aria-hidden') === 'true')).toBe(
+      true,
+    )
+    expect(h.view.text()).not.toContain('Browser session')
+    expect(h.view.text()).not.toContain(HEADER.browser)
+    expect(h.view.text()).not.toContain('Ada')
   })
 
   it('keeps absent and malformed headers as skeletons and uses the table loading, empty and refusal states', async () => {
@@ -344,6 +492,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     h.header({ id: 57 })
     h.coldWindow()
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(
       h.view
         .find('[data-id="hilos-analytics-browser-session-person"]')
@@ -356,15 +505,20 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
         )
         .exists(),
     ).toBe(true)
+    expect(
+      h.view.find('[data-id="hilos-table-loading"]').attributes('aria-busy'),
+    ).toBe('true')
     expect(h.view.text()).not.toContain('No actions recorded')
     h.header(HEADER)
     h.window([])
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(h.view.text()).toContain(
       'No actions recorded in this browser session yet',
     )
     h.refuseWindow()
     await nextTick()
+    expectHead(h, 'Browser session #57')
     expect(h.view.text()).toContain('List unavailable')
     expect(h.view.text()).not.toContain('No actions recorded')
   })
@@ -403,6 +557,8 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
     expect(h.router.pageIdentity.get()).toBeUndefined()
     expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+    expectHeadSkeleton(h)
+    expect(h.view.text()).not.toContain('Browser session #57')
     h.header({ ...HEADER, id: 58 }, 'Browser session #58')
     previousScope.data.set('pageLabel', 'Old scope label')
     h.coldWindow()
@@ -413,6 +569,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     )
     h.window([{ ...ACTION, actionName: 'open' }], '10')
     await nextTick()
+    expectHead(h, 'Browser session #58')
     expect(h.view.find('[data-id="hilos-analytics-action-name"]').text()).toBe(
       'open',
     )
@@ -429,8 +586,14 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
       'Browser session',
     )
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'Browser session',
+    )
     h.header({ ...HEADER, id: 58 }, 'Changed after unmount')
     expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
+      'Browser session',
+    )
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
       'Browser session',
     )
   })
@@ -439,16 +602,19 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     const h = harness()
     h.header(HEADER, 'Permitted label')
     await nextTick()
+    expectHead(h, 'Permitted label')
     expect(
       h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
     ).toBe('Permitted label')
     h.scopes.page()!.data.set('pageLabel', 'Updated permitted label')
     await nextTick()
+    expectHead(h, 'Updated permitted label')
     expect(
       h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
     ).toBe('Updated permitted label')
     h.scopes.page()!.data.set('pageLabel', '')
     await nextTick()
+    expectHead(h, '')
     expect(
       h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
     ).toBe('')
@@ -464,8 +630,10 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       await nextTick()
       expect(h.router.pageIdentity.get()).toBeUndefined()
       expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+      expectHeadSkeleton(h)
       h.header(HEADER, 'Browser session')
       await nextTick()
+      expectHead(h, 'Browser session')
       expect(
         h.view
           .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
@@ -480,6 +648,8 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     first.header(HEADER)
     second.header({ ...HEADER, id: 58 }, 'Browser session #58')
     await nextTick()
+    expectHead(first, 'Browser session #57')
+    expectHead(second, 'Browser session #58')
     expect(
       first.view
         .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
@@ -500,7 +670,10 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     const data = h.scopes.page()!.data
     data.set('pageLabel', 'Another page label')
     data.set('pageBreadcrumb', BREADCRUMB)
+    data.set('pageHeadOwner', OWNER)
+    data.set('pageTabs', [{ page: PAGE, label: 'Overview' }])
     await nextTick()
+    expectHead(h, 'Browser session')
     expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
       'Browser session',
     )
@@ -511,6 +684,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     await nextTick()
     expect(h.router.pageIdentity.get()).toBeUndefined()
     expect(h.view.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
+    expectHeadSkeleton(h)
   })
 
   it('releases the existing controller when the route loses its session number', async () => {

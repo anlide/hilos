@@ -29,10 +29,15 @@ Analytics owner, alongside Overview and People. Its browser-session detail page
 is a child of the list in the catalog, so the list appears among the session's
 ancestors whether the detail page is opened from the list, from Person, or
 directly. Chat and Binance expose the list tab in Vue. The Vue session page
-binds its permitted `pageLabel` to the matching final breadcrumb entry through
-the existing `bindPageInstanceName`; it keeps the legacy entity block pending
-HIL-1742. This records the shipped list and breadcrumb binding only; it does not
-adopt an entity head or icon.
+adopts the shared entity head through each project's complete provider entry.
+Its circular visual uses the shared catalog's `bi-window` icon, and its
+description comes from the owner lead. The existing `bindPageInstanceName`
+projects the permitted live `pageLabel` to the head, final breadcrumb entry and
+document title. With only Overview eligible, the tab row is hidden while the
+shared head remains; the existing two-line session header and actions table
+stay in the body. The framework default and other providers keep their legacy
+presentation. React's session head remains legacy until HIL-1743; Angular's
+until HIL-1744.
 Logs is opted in by the complete Chat and Binance project provider entries for
 Vue. Its six pages share Hilos › Logs, the Logs section title, catalog icon and
 lead, and the Overview / By key / By worker / Rotations / Settings / Viewer row.

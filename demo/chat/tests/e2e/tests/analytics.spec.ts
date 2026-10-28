@@ -16,6 +16,7 @@ import {
   analyticsPeopleViewports,
   analyticsPersonLink,
   deliveryObject,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
   expectAnalyticsOverviewTiles,
@@ -708,9 +709,7 @@ test('Browser sessions viewer receives hidden personal values with only public s
       `${ANALYTICS_SESSION_LIST_PATH}/${session.browserSessionId}`,
     )
     await expectPageReady(expect, viewer)
-    await expect(viewer.getByTestId('hilos-admin-title')).toHaveText(
-      'Browser session',
-    )
+    await expectAnalyticsBrowserSessionHead(expect, viewer, 'Browser session')
     await expect(
       viewer.getByTestId('hilos-breadcrumb').locator('li'),
     ).toHaveText(['Hilos', 'Analytics', 'Browser sessions', 'Browser session'])

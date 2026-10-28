@@ -368,15 +368,17 @@ export async function expectAnalyticsSessionListRow(
   )
 }
 
-/** The legacy session title and return link, independent of entity-head adoption. */
+/** The session title and return link across legacy and shared page heads. */
 export async function expectAnalyticsSessionReturn(
   expect: Expect,
   page: Page,
   sessionId: number,
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
-    `Browser session #${sessionId}`,
-  )
+  const sessionTitle = page
+    .getByTestId('hilos-admin-title')
+    .or(page.getByTestId('hilos-page-head-title'))
+  await expect(sessionTitle).toHaveCount(1)
+  await expect(sessionTitle).toHaveText(`Browser session #${sessionId}`)
   await expect(
     page.getByTestId('hilos-breadcrumb').getByRole('link'),
   ).toHaveText(['Hilos', 'Analytics', 'Browser sessions'])
@@ -1042,6 +1044,76 @@ export async function expectNoAnalyticsPersonSession(
 }
 
 /**
+ * The adopted browser-session head names the page and its real actions table.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing a browser session.
+ * @param label The served session label, masked for an admin-view-mode viewer.
+ */
+export async function expectAnalyticsBrowserSessionHead(
+  expect: Expect,
+  page: Page,
+  label: string,
+): Promise<void> {
+  const head = page.getByTestId('hilos-page-head')
+  await expect(head).toHaveCount(1)
+  await expect(head).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
+  const title = head
+    .getByTestId('hilos-page-head-title')
+    .and(head.locator('h1'))
+  await expect(title).toHaveCount(1)
+  await expect(title).toBeVisible()
+  await expect(title).toHaveText(label)
+  await expect(title).toHaveAttribute('id', /\S+/)
+  const titleId = await title.getAttribute('id')
+
+  const visual = head
+    .getByTestId('analytics-browser-session-head-icon')
+    .and(head.locator('span'))
+  await expect(visual).toBeVisible()
+  await expect(visual).toHaveClass(/\brounded-circle\b/)
+  await expect(visual).toHaveAttribute('aria-hidden', 'true')
+  await expect(visual.locator('i')).toHaveCount(1)
+  await expect(visual.locator('i')).toBeVisible()
+  await expect(visual.locator('i')).toHaveClass('bi bi-window')
+  const description = head.getByTestId(
+    'analytics-browser-session-head-description',
+  )
+  await expect(description).toBeVisible()
+  await expect(description).toHaveText(
+    'Actions recorded in one browser session, in source-time order.',
+  )
+  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
+  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
+
+  const breadcrumb = head.getByTestId('hilos-breadcrumb')
+  await expect(breadcrumb).toBeVisible()
+  await expect(breadcrumb.locator('li')).toHaveText([
+    'Hilos',
+    'Analytics',
+    'Browser sessions',
+    label,
+  ])
+  const current = breadcrumb.locator('li:last-child')
+  await expect(current).toBeVisible()
+  await expect(current).toHaveText(label)
+  await expect(current).toHaveAttribute('aria-current', 'page')
+  await expect(current.getByRole('link')).toHaveCount(0)
+  await expect(breadcrumb.locator('[aria-current]')).toHaveCount(1)
+
+  const table = page
+    .getByTestId('hilos-analytics-actions-table')
+    .locator('table')
+  await expect(table).toHaveCount(1)
+  await expect(table).toBeVisible()
+  await expect(table).toHaveAttribute('aria-labelledby', titleId!)
+  await expect(table).toHaveAccessibleName(label)
+}
+
+/**
  * The session page names the session, who last signed in on it, and its browser.
  *
  * @param expect The spec's expect.
@@ -1057,9 +1129,11 @@ export async function expectAnalyticsSessionHeader(
   person: { userId: number; name: string },
   browserMajor: string,
 ): Promise<void> {
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
-    `Browser session #${browserSessionId}`,
-  )
+  const sessionTitle = page
+    .getByTestId('hilos-admin-title')
+    .or(page.getByTestId('hilos-page-head-title'))
+  await expect(sessionTitle).toHaveCount(1)
+  await expect(sessionTitle).toHaveText(`Browser session #${browserSessionId}`)
   await expect(page.getByTestId(SESSION_PERSON)).toHaveText(
     `Last signed in: ${person.name} (#${person.userId})`,
   )

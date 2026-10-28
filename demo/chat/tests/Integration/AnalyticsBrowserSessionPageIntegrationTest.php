@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
@@ -26,7 +27,6 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -65,7 +65,7 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
     {
         parent::setUp();
         Hilos::initBrowser();
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new ChatSignalRouter();
         $this->store = new AnalyticsStore();
         $this->router = new PageSignalRouter(new HilosPageFactory(new DemoHilosAnalyticsAgent(), Hilos::class), new ActionRouteConfig());
         foreach (self::CLEANUP_ORDER as $table) {
@@ -131,6 +131,16 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
             ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
             ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
         ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+        self::assertSame([
+            'page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
+            'label' => 'Browser session',
+            'lead' => 'Actions recorded in one browser session, in source-time order.',
+            'icon' => 'bi-window',
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Overview'],
+        ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_TABS]);
+        self::assertSame([], $response->payload->data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
         self::assertSame([
             'id' => $id, 'browser' => 'Chrome 128 · Windows',
             'lastSignedInUserId' => $userId, 'lastSignedInUserLabel' => 'Last signed in',
@@ -202,6 +212,22 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
         foreach (['analytics-viewer', 'analytics-anonymous'] as $acceptKey) {
             $response = $this->subscribe($acceptKey, $id);
             self::assertSame('Browser session', $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
+            ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
+                'label' => 'Browser session',
+                'lead' => 'Actions recorded in one browser session, in source-time order.',
+                'icon' => 'bi-window',
+            ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Overview'],
+            ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_TABS]);
+            self::assertSame([], $response->payload->data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
             self::assertTrue(HiddenValue::isMark($response->payload->data[BrowserSessionPage::SECTION]));
             self::assertSame([], $response->payload->toArray()[PagePayload::windows][ChatTableContext::hilosAnalyticsActions]['rows']);
             $window = $this->window($acceptKey, $id);

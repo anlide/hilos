@@ -232,6 +232,7 @@ export {
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
   expectAnalyticsActionsOnPage,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
   expectAnalyticsOverviewTiles,

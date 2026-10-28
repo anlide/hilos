@@ -1011,6 +1011,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_CHANGE_LOG,
             HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
             HilosPageConstants::HILOS_ANALYTICS_PERSON,
+            HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosPageConstants::HILOS_APPEARANCE,

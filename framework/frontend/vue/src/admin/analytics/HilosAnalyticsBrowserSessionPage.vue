@@ -60,6 +60,7 @@ const browserSessionId = computed(() =>
   ),
 )
 const header = useSignal(hilosAnalyticsBrowserSession(props.context.scopes))
+const identity = useSignal(router.pageIdentity)
 const actions = shallowRef<HilosAnalyticsActionsTable | null>(null)
 
 const timeZone = useSignal(hilosTimeZone)
@@ -88,7 +89,33 @@ onUnmounted(() => actions.value?.dispose())
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.ANALYTICS_BROWSER_SESSION">
+  <HilosAdminPage
+    :page="HilosPages.ANALYTICS_BROWSER_SESSION"
+    head-kind="entity"
+  >
+    <template #head-visual>
+      <span
+        class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+        aria-hidden="true"
+        data-id="analytics-browser-session-head-icon"
+      >
+        <i :class="['bi', identity?.pageHeadOwner?.icon]"></i>
+      </span>
+    </template>
+    <template #head-description>
+      <p
+        class="text-body-secondary mb-0"
+        data-id="analytics-browser-session-head-description"
+      >
+        {{ identity?.pageHeadOwner?.lead }}
+      </p>
+    </template>
+    <template #head-skeleton-visual>
+      <span
+        class="hilos-avatar-md rounded-circle bg-secondary-subtle flex-shrink-0"
+        data-id="analytics-browser-session-head-skeleton-icon"
+      ></span>
+    </template>
     <div
       data-id="hilos-analytics-browser-session-header"
       class="mb-4 text-break"

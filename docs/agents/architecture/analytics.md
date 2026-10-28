@@ -420,8 +420,18 @@ layer that has built the section, which all three layers have.
   `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
   `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
-  with `data.pageLabel` naming the session. A view-mode viewer receives a hidden
-  header and the catalog label `Browser session`, without the personal number.
+  with `data.pageLabel` naming the session. Chat and Binance opt the Vue detail
+  page into the shared entity head through their complete project provider
+  entries. Its circular visual uses the shared catalog's `bi-window` icon, its
+  description is the owner lead, and the existing `bindPageInstanceName` sends
+  the permitted live label to the head, final breadcrumb entry and document
+  title. Only Overview is eligible, so the shared head remains while its tab
+  row is hidden. Before identity arrives, Vue shows a circular head skeleton
+  with two bars and no breadcrumb, `h1` or tabs; the body keeps its existing
+  two-line header skeleton. The existing two-line browser/last-signed-in header
+  and actions table remain in the body. A view-mode viewer gets the generic
+  label `Browser session`; personal header values are `Hidden`, without the
+  personal number.
 - The People list has key `hilos_analytics_people` and route
   `/hilos/analytics/people`. It is a thin subscription served by the existing
   Analytics agent: its page payload is empty, and one `page_response` carries
@@ -530,14 +540,16 @@ layer that has built the section, which all three layers have.
   Overview, Browser sessions and People tabs. React and Angular have not yet
   built this list (HIL-1743 and HIL-1744); the existing browser-session detail
   child route remains available through `STAGED_CHILDREN`. This list adds no
-  separate Analytics feature requirement. The session catalog entry has
-  Browser sessions as its parent. Vue binds the permitted session `pageLabel`
-  through the existing `bindPageInstanceName` to the matching final breadcrumb
-  entry, guarded by the current page scope and disposed on unmount. This does
-  not adopt the entity head or icon; that remains HIL-1742. A viewer sees the
-  generic `Browser session` label, and the ancestors include Browser sessions
-  whether opened from the list, from Person, or directly. The session payload
-  is unchanged.
+  separate Analytics feature requirement. The session catalog entry remains a
+  child of Browser sessions, so that ancestor is present whether the detail is
+  opened from the list, from Person, or directly (the list, period and parent
+  breadcrumb behavior is HIL-1741). In Chat and Binance, the complete Vue
+  provider entries opt the detail into the shared entity head. React's session
+  detail keeps its legacy head until HIL-1743; Angular's until HIL-1744.
+  The first existing `page_response` supplies the head identity with
+  the page data. No DB/RT field, signal, DTO, route, request, payload key or URL
+  was added for this head. The existing two-line session header, actions table
+  and missing-session 404 lifecycle are unchanged.
 
 The sessions-based People list above is Phase 1. Visits, visit-based lists and
 reports, cubes, retention and live updates remain Phase-2 work under HIL-1402.
@@ -600,7 +612,18 @@ through the same bounded reader. It writes nothing and exposes no browser
 endpoint; e2e polls it to observe journal rotation and writer loading before
 opening the page. The browser-session E2E remains mirrored in chat, tasks and
 polls; its shared checks live in `framework/frontend/e2e/analytics.ts`
-(HIL-1422). Chat also has a People flow in
+(HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
+label)` checks one `h1` with the exact label, the circular icon and owner lead,
+the breadcrumb, no tab row or legacy title/child cards, and the real actions
+  table's accessible name from that `h1`. Chat's
+`demo/chat/tests/e2e/tests/analytics-browser-session.spec.ts` checks user and
+administrator sessions and reloads the current address; its
+`demo/chat/tests/e2e/tests/analytics.spec.ts` checks the viewer's list-to-session
+path, generic head and `Hidden` values. The existing
+`expectAnalyticsSessionReturn` and `expectAnalyticsSessionHeader` keep their
+`locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion for the
+  older React and Angular carriers. The mirrored order, privacy and body/frame
+  assertions remain unchanged. Chat also has a People flow in
 `demo/chat/tests/e2e/tests/analytics.spec.ts`; People navigation and table
 accessibility checks are not implied for the other demos.
 Every action of the registered person's session stands on `main`, checked by
