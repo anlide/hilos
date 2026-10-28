@@ -22,8 +22,10 @@ import {
   viewChild,
 } from '@angular/core'
 import {
+  formatMoment,
   ActionError,
   HilosPages,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
   type HilosMaintenanceState,
@@ -37,6 +39,7 @@ import {
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
+  hilosMaintenanceElapsed,
   hilosMaintenanceCard,
   hilosMaintenancePosition,
   type HilosMaintenanceCircleRow,
@@ -54,6 +57,7 @@ import {
   HilosViewportTable,
   LoadingButton,
   createHilosTrackedAction,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /**
@@ -145,7 +149,9 @@ function describeManualError(
                 @if (card.position === 'manual') {
                   <dt class="col-sm-3">{{ stateCopy.closedSince }}</dt>
                   <dd class="col-sm-9">
-                    <code>{{ card.startedAt ?? '—' }}</code>
+                    <code data-id="hilos-maintenance-started-at">{{
+                      formatTime(card.startedAt)
+                    }}</code>
                     <span class="text-body-secondary ms-2">{{
                       card.elapsed
                     }}</span>
@@ -159,7 +165,28 @@ function describeManualError(
                   </dd>
                   <dt class="col-sm-3">{{ stateCopy.started }}</dt>
                   <dd class="col-sm-9">
-                    <code>{{ card.startedAt ?? '—' }}</code>
+                    <code data-id="hilos-maintenance-started-at">{{
+                      formatTime(card.startedAt)
+                    }}</code>
+                  </dd>
+                  <dt class="col-sm-3">{{ stateCopy.frozen }}</dt>
+                  <dd class="col-sm-9">
+                    <code data-id="hilos-maintenance-activated-at">{{
+                      formatTime(card.activatedAt)
+                    }}</code>
+                  </dd>
+                  <dt class="col-sm-3">{{ stateCopy.lastMovement }}</dt>
+                  <dd class="col-sm-9">
+                    <code data-id="hilos-maintenance-progress-at">{{
+                      formatTime(card.progressAt)
+                    }}</code>
+                    @if (hasProgressMoment(card.progressAt)) {
+                      <span
+                        class="text-body-secondary ms-2"
+                        data-id="hilos-maintenance-progress-elapsed"
+                        >{{ progressElapsed(card.progressAt) }}</span
+                      >
+                    }
                   </dd>
                 }
 
@@ -506,6 +533,7 @@ export class HilosMaintenancePage {
   protected readonly enableCopy = HILOS_MAINTENANCE_ENABLE_COPY
   protected readonly disableCopy = HILOS_MAINTENANCE_DISABLE_COPY
   protected readonly passCopy = HILOS_MAINTENANCE_PASS_COPY
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   private readonly injector = inject(Injector)
   private readonly stateHandle = computed(() =>
@@ -519,6 +547,27 @@ export class HilosMaintenancePage {
   protected readonly stateCard = computed(() =>
     hilosMaintenanceCard(this.maintenanceState(), this.nowMs()),
   )
+
+  /** Format an absolute maintenance moment in the reader's current time zone. */
+  protected formatTime(moment: string | null): string {
+    this.timeZone()
+
+    return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
+  }
+
+  /** Whether a progress mark is present and can be shown as an elapsed time. */
+  protected hasProgressMoment(moment: string | null): boolean {
+    return moment !== null && moment !== '' && this.formatTime(moment) !== '—'
+  }
+
+  /** The elapsed time since the latest progress mark, when it is valid. */
+  protected progressElapsed(moment: string | null): string {
+    if (!this.hasProgressMoment(moment)) {
+      return '—'
+    }
+
+    return hilosMaintenanceElapsed(moment, this.nowMs())
+  }
 
   // A state push may replace the open banner while this action still awaits its ack.
   protected readonly enableOpen = signal(false)

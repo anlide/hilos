@@ -26,11 +26,13 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
+  hilosTimeZone,
 } from '@hilos/core/base'
 import {
   HilosAdminPage,
   HilosLink,
   HILOS_ROUTER,
+  hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 
@@ -127,6 +129,7 @@ export class HilosDaemonNodeShell {
   readonly page = input.required<string>()
 
   private readonly router = inject(HILOS_ROUTER)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly body = contentChild<TemplateRef<unknown>>('pageBody')
   // Reprojection alone keeps the caller’s injector, outside HilosAdminPage.
   // Instantiate the caller’s template under that real shell’s providers so
@@ -155,6 +158,7 @@ export class HilosDaemonNodeShell {
       : undefined
   })
   protected readonly silentSince = computed(() => {
+    this.timeZone()
     const heading = this.current()?.heading
     return heading?.clustered
       ? formatDaemonNodeSilentSince(heading, Date.now())

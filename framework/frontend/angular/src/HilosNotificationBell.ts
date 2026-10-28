@@ -25,7 +25,9 @@ import {
   signal,
 } from '@angular/core'
 import {
+  formatMoment,
   hilosNotifications,
+  hilosTimeZone,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
@@ -124,7 +126,10 @@ let bellMenuSeq = 0
                         {{ row.body }}
                       </div>
                     }
-                    <div class="small text-body-tertiary">
+                    <div
+                      class="small text-body-tertiary"
+                      [attr.data-id]="'hilos-notification-time-' + row.id"
+                    >
                       {{ formatTime(row) }}
                     </div>
                   </div>
@@ -173,6 +178,7 @@ export class HilosNotificationBell {
   private readonly boundStore = this.store()
   protected readonly notifications = hilosSignal(this.boundStore.notifications)
   protected readonly unreadCount = hilosSignal(this.boundStore.unreadCount)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   // The badge caps its label so a runaway count never breaks the bell's layout.
   protected readonly badgeLabel = computed(() =>
     this.unreadCount() > 99 ? '99+' : String(this.unreadCount()),
@@ -242,9 +248,14 @@ export class HilosNotificationBell {
   }
 
   // A notification's timestamp, formatted for the reader's locale; the wire value
-  // is an ISO string, absent only on a malformed row.
+  // is UTC epoch milliseconds, absent only on a malformed row.
   protected formatTime(row: HilosNotification): string {
-    return row.createdAt ? new Date(row.createdAt).toLocaleString() : ''
+    this.timeZone()
+    if (row.createdAt == null) {
+      return ''
+    }
+
+    return formatMoment(row.createdAt, { kind: 'dateTime' }) ?? ''
   }
 
   // The per-row mark-read buttons the arrow keys rove over; the header/footer

@@ -63,8 +63,10 @@ import {
   backupProgressPercent,
   createBackupProgressClock,
   createHilosRestoreProgress,
+  formatMoment,
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
+  hilosTimeZone,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -92,6 +94,7 @@ import {
   HilosViewportTable,
   LoadingButton,
   createHilosTrackedAction,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** The framework backup admin page: the searchable list with create / delete / keep. */
@@ -216,8 +219,11 @@ import {
         carries its own color, and a wrapper around them would fold the controls a
         card stacks full width into a single item. -->
         <ng-template hilosTableCell="createdAt" let-row>
-          <span [class.text-body-secondary]="isOutOfReach(row)">
-            {{ row.createdAt || '—' }}
+          <span
+            [class.text-body-secondary]="isOutOfReach(row)"
+            data-id="hilos-backup-created-at"
+          >
+            {{ formatTime(row.createdAt) }}
             @if (isOutOfReach(row)) {
               <span
                 class="badge text-bg-secondary"
@@ -245,12 +251,20 @@ import {
         </ng-template>
         <ng-template hilosTableCell="checksumState" let-row>
           <span [class.text-body-secondary]="isOutOfReach(row)">
-            <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
+            <span
+              [class]="checksumClass(row)"
+              data-id="hilos-backup-checksum"
+              >{{ formatChecksum(row) }}</span
+            >
           </span>
         </ng-template>
         <ng-template hilosTableCell="shipState" let-row>
           <span [class.text-body-secondary]="isOutOfReach(row)">
-            <span [class]="shippingClass(row)">{{ formatShipping(row) }}</span>
+            <span
+              [class]="shippingClass(row)"
+              data-id="hilos-backup-shipping"
+              >{{ formatShipping(row) }}</span
+            >
             @if (isShipFailed(row) && row.shipError !== null) {
               <button
                 type="button"
@@ -695,8 +709,8 @@ import {
         [title]="outcomeTitle()"
         initialFocus="dialog"
       >
-        <p class="mb-2">
-          Finished {{ outcomeRow()?.restoreFinishedAt || '—' }} ·
+        <p class="mb-2" data-id="hilos-backup-restore-outcome-finished">
+          Finished {{ formatTime(outcomeRow()?.restoreFinishedAt) }} ·
           <span class="fw-semibold">{{ outcomeRow()?.restoreOutcome }}</span>
         </p>
         @if (outcomeRow()?.restoreDatabaseTouched) {
@@ -783,6 +797,7 @@ export class HilosBackupPage {
   readonly context = input.required<HilosBackupsContext>()
 
   protected readonly page = HilosPages.BACKUP
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly circlePointerCopy = HILOS_BACKUP_CIRCLE_POINTER_COPY
   protected readonly circlePointerPath = HILOS_BACKUP_CIRCLE_POINTER_PATH
   protected readonly scopes = HILOS_BACKUP_SCOPES
@@ -796,6 +811,13 @@ export class HilosBackupPage {
   protected readonly isOutOfReach = isBackupOutOfReach
   protected readonly formatOutOfReach = formatBackupOutOfReach
   protected readonly formatBackupRunCaption = formatBackupRunCaption
+
+  /** Format an absolute backup moment in the reader's current time zone. */
+  protected formatTime(moment: string | null | undefined): string {
+    this.timeZone()
+
+    return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
+  }
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context(), {
@@ -1220,6 +1242,8 @@ export class HilosBackupPage {
 
   /** The checksum cell text, shared with the other view layers. */
   protected formatChecksum(row: HilosBackupRow): string {
+    this.timeZone()
+
     return formatBackupChecksum(row)
   }
 
@@ -1230,6 +1254,8 @@ export class HilosBackupPage {
 
   /** The copy cell text, shared with the other view layers. */
   protected formatShipping(row: HilosBackupRow): string {
+    this.timeZone()
+
     return formatBackupShipping(row)
   }
 

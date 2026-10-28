@@ -36,10 +36,12 @@ import {
   type ProjectSignal,
   type TableViewportDescriptor,
 } from '@hilos/core'
+import { formatMoment } from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosLogsRotationsPage } from '../src/admin/logs/HilosLogsRotationsPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 /** A header as the page answers a subscription with it. */
 function header(
@@ -502,19 +504,47 @@ describe('HilosLogsRotationsPage', () => {
    * has to say so: a promise that nothing will be touched would read as though the
    * click could not be taken back, which is the opposite of what the node does.
    */
-  it('says the confirmation can still be taken back, while the batch is there', () => {
+  it('reformats an open takeout title without closing the dialog', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+
     const { connection, pushHeader, pushWindow } = makeConnection()
     const fixture = mountPage(connection)
+    const batchAt = 1_800_000_000_000
 
     pushHeader(header())
-    pushWindow([batch({ retentionState: 'due' })])
+    pushWindow([batch({ retentionState: 'due', batchAt })])
     fixture.detectChanges()
     clickById(fixture, 'hilos-rotation-takeout')
 
+    const title = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="modal"] .modal-title',
+    )
+    const batchBefore = formatMoment(batchAt, { kind: 'dateTime' }) ?? '—'
+    expect(title?.textContent?.trim()).toBe(
+      `Carrying off the batch of ${batchBefore}`,
+    )
     expect(screenText(fixture)).toContain('but not straight away')
     expect(screenText(fixture)).not.toContain(
       'until then it will not be touched',
     )
+
+    timeZone.receive('America/Los_Angeles')
+    await fixture.whenStable()
+    fixture.detectChanges()
+
+    const batchAfter = formatMoment(batchAt, { kind: 'dateTime' }) ?? '—'
+    expect(batchAfter).not.toBe(batchBefore)
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-id="modal"] .modal-title',
+      ),
+    ).toBe(title)
+    expect(title?.textContent?.trim()).toBe(
+      `Carrying off the batch of ${batchAfter}`,
+    )
+    expect(byId(fixture, 'hilos-rotation-takeout-confirm')).not.toBeNull()
   })
 
   it('keeps the opened remote copy command when the header loses its node list', () => {
@@ -643,22 +673,57 @@ describe('HilosLogsRotationsPage', () => {
    * The deadline is the node's own promise, and the screen has to say it out loud:
    * somebody reading this modal is deciding whether they still have time.
    */
-  it('names the instant the batch stops being safe from the cleaner', () => {
+  it('reformats the batch and undo deadline without closing the dialog', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+
     const { connection, pushHeader, pushWindow } = makeConnection()
     const fixture = mountPage(connection)
+    const batchAt = 1_800_000_000_000
+    const pruneNotBefore = 1_800_086_400_000
 
     pushHeader(header())
-    pushWindow([
-      batch({ retentionState: 'taken', pruneNotBefore: 1800086400000 }),
-    ])
+    pushWindow([batch({ retentionState: 'taken', batchAt, pruneNotBefore })])
     fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    const row = root.querySelector('[data-id^="hilos-table-row-"]')
+    const rowId = row?.getAttribute('data-id')
+    const batchBefore = formatMoment(batchAt, { kind: 'dateTime' }) ?? '—'
+    expect(row?.textContent).toContain(batchBefore)
+
     clickById(fixture, 'hilos-rotation-undo')
 
-    expect(
-      byId(fixture, 'hilos-rotation-undo-deadline')?.textContent,
-    ).toContain(
-      `The cleaner may delete this batch after ${new Date(1800086400000).toLocaleString()}.`,
+    const deadline = byId(fixture, 'hilos-rotation-undo-deadline')
+    const deadlineBefore =
+      formatMoment(pruneNotBefore, { kind: 'dateTime' }) ?? '—'
+    expect(deadline?.textContent?.trim()).toBe(
+      `The cleaner may delete this batch after ${deadlineBefore}.`,
     )
+
+    timeZone.receive('America/Los_Angeles')
+    await fixture.whenStable()
+    fixture.detectChanges()
+
+    const batchAfter = formatMoment(batchAt, { kind: 'dateTime' }) ?? '—'
+    const deadlineAfter =
+      formatMoment(pruneNotBefore, { kind: 'dateTime' }) ?? '—'
+    expect(batchAfter).not.toBe(batchBefore)
+    expect(
+      root.querySelector('[data-id^="hilos-table-row-"]')?.textContent,
+    ).toContain(batchAfter)
+    expect(
+      root
+        .querySelector('[data-id^="hilos-table-row-"]')
+        ?.getAttribute('data-id'),
+    ).toBe(rowId)
+    expect(deadlineAfter).not.toBe(deadlineBefore)
+    expect(byId(fixture, 'hilos-rotation-undo-deadline')).toBe(deadline)
+    expect(deadline?.textContent?.trim()).toBe(
+      `The cleaner may delete this batch after ${deadlineAfter}.`,
+    )
+    expect(byId(fixture, 'hilos-rotation-undo-cancel')).not.toBeNull()
+    expect(byId(fixture, 'hilos-rotation-undo-confirm')).not.toBeNull()
   })
 
   /**

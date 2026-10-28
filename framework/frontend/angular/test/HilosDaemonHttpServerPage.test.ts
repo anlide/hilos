@@ -5,10 +5,11 @@ import {
   HilosPages,
   ScopeManager,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonHttpServerPage } from '../src/admin/daemon/HilosDaemonHttpServerPage.js'
 import { daemonHarness } from './helpers/hilosDaemon.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const summary = {
   host: '::',
@@ -36,6 +37,38 @@ function harness() {
 }
 
 describe('HilosDaemonHttpServerPage', () => {
+  it('reformats the retained-report notice after a reader-zone change', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = harness()
+    try {
+      timeZone.receive('UTC')
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered: true,
+        role: null,
+        state: 'silent',
+        silentSince: 1_700_000_000_000,
+      })
+      h.scope.data.set(DAEMON_HTTP_DATA, summary)
+      h.detect()
+      const line = h.el('hilos-daemon-http-status')!
+      const initialLabel = line.textContent
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(line.textContent).not.toBe(initialLabel)
+      expect(h.el('hilos-daemon-http-status')).toBe(line)
+      expect(h.register).toHaveBeenCalledTimes(1)
+      expect(h.unregister).not.toHaveBeenCalled()
+    } finally {
+      h.fixture.destroy()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
+    }
+  })
+
   it('distinguishes missing metrics from known zeros and a retained silent report', () => {
     const h = harness()
     expect(h.el('hilos-daemon-http-address')?.textContent?.trim()).toBe('—')

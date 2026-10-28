@@ -69,6 +69,7 @@ export async function expectProfileSessionMoments(
   timeZone: string,
   selfAcceptKey: string,
   tabCount: number,
+  browserTimeZone = timeZone,
 ): Promise<void> {
   expect(snapshot.frame.failure).toBeUndefined()
   expect(snapshot.frame.raw).toEqual(expect.any(String))
@@ -76,7 +77,7 @@ export async function expectProfileSessionMoments(
   expect(snapshot.connections).toHaveLength(tabCount)
   const session = snapshot.sessions[0]!
   expect(session.id).toEqual(expect.any(Number))
-  expect(session.browserTimeZone).toBe(timeZone)
+  expect(session.browserTimeZone).toBe(browserTimeZone)
   expect(session.impersonatorUserId).toBeNull()
   const createdAt = expectMillisecondMoment(expect, session.createdAt)
   expectMillisecondMoment(expect, session.lastSeenAt)
@@ -90,7 +91,7 @@ export async function expectProfileSessionMoments(
   await expect(row).toHaveCount(1)
   await expect(row.getByTestId('profile-session-this')).toHaveText('this one')
   await expect(row.getByTestId('profile-session-device')).toHaveText(
-    `${session.deviceName ?? 'Unknown device'} · ${timeZone}`,
+    `${session.deviceName ?? 'Unknown device'} · ${browserTimeZone}`,
   )
   await expect(row).toContainText(
     `created ${await format(createdAt)} · last seen now · expires ${expiresAt === null ? 'never' : await format(expiresAt)}`,
@@ -113,13 +114,30 @@ export async function expectProfileSessionMoments(
   expect(
     connections.filter(({ acceptKey }) => acceptKey === selfAcceptKey),
   ).toHaveLength(1)
+  const shortKey = (acceptKey: string) =>
+    acceptKey.length <= 8
+      ? acceptKey
+      : `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`
   const tabs = await Promise.all(
     connections
       .sort((left, right) => right.connectedAt - left.connectedAt)
-      .map(
-        async ({ acceptKey, connectedAt }) =>
-          `${acceptKey.length <= 8 ? acceptKey : `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`} opened ${await format(connectedAt)}${acceptKey === selfAcceptKey ? ' this tab' : ''}`,
-      ),
+      .map(async ({ acceptKey, connectedAt }) => ({
+        key: shortKey(acceptKey),
+        opened: `opened ${await format(connectedAt)}`,
+      })),
   )
-  await expect(row.getByTestId('profile-session-tab')).toHaveText(tabs)
+  const tabRows = row.getByTestId('profile-session-tab')
+  await expect(tabRows).toHaveCount(tabCount)
+  await expect(tabRows.locator('code')).toHaveText(tabs.map((tab) => tab.key))
+  await expect(tabRows.locator(':scope > span:not([data-id])')).toHaveText(
+    tabs.map((tab) => tab.opened),
+  )
+  const currentTab = tabRows.filter({
+    has: page.getByTestId('profile-session-tab-this'),
+  })
+  await expect(currentTab).toHaveCount(1)
+  await expect(currentTab.locator('code')).toHaveText(shortKey(selfAcceptKey))
+  await expect(currentTab.getByTestId('profile-session-tab-this')).toHaveText(
+    'this tab',
+  )
 }

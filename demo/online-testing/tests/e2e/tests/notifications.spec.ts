@@ -10,6 +10,8 @@ import {
   signUp,
   clearCustomSetting,
   enableEmailChannel,
+  deliveryObject,
+  expectReaderMillisecondMoment,
   openBell,
   setCustomSetting,
   shownByTestId,
@@ -17,6 +19,7 @@ import {
   typeInto,
   gotoPage,
   grantAdminToSelf,
+  watchSocketFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
@@ -109,6 +112,58 @@ test('an emitted notification reaches the bell as an unread row', async ({
   await expect(row).toContainText('Deploy finished')
   await expect(row).toContainText('The nightly deploy completed.')
   await expect(page.getByTestId('hilos-notification-empty')).toHaveCount(0)
+})
+
+test.describe('notification time in a non-UTC browser zone', () => {
+  test.use({ timezoneId: 'Pacific/Honolulu' })
+
+  test('shows the emitted notification moment in the reader zone', async ({
+    page,
+  }) => {
+    const timeZone = 'Pacific/Honolulu'
+    const notifications: Array<{ id: unknown; createdAt: unknown }> = []
+    const socketFrames = watchSocketFrames(page, ({ wire }) => {
+      const signal = deliveryObject(wire)
+      if (signal.type !== 'notification_created') return
+
+      const payload = deliveryObject(signal.data)
+      notifications.push({ id: payload.id, createdAt: payload.createdAt })
+    })
+
+    try {
+      expect(
+        await page.evaluate(
+          () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ),
+      ).toBe(timeZone)
+
+      const userId = await openJoined(page)
+      const title = 'Notification in the reader zone'
+      const { notificationId } = await emitNotification(userId, {
+        type: 'e2e_notification_time_zone',
+        title,
+      })
+
+      await expect
+        .poll(() => notifications.find(({ id }) => id === notificationId))
+        .toBeDefined()
+      await expect(unreadBadge(page)).toHaveText(/^1\b/)
+
+      await openBell(page)
+      const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
+      await expect(row).toBeVisible()
+      await expect(row).toContainText(title)
+      const notification = notifications.find(({ id }) => id === notificationId)
+      await expectReaderMillisecondMoment(
+        expect,
+        page.getByTestId(`hilos-notification-time-${notificationId}`),
+        notification?.createdAt,
+        timeZone,
+      )
+    } finally {
+      socketFrames.stop()
+    }
+  })
 })
 
 test('marking a row read clears the badge', async ({ page }) => {

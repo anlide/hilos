@@ -5,10 +5,11 @@ import {
   HilosPages,
   ScopeManager,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonWorkersPage } from '../src/admin/daemon/HilosDaemonWorkersPage.js'
 import { daemonHarness } from './helpers/hilosDaemon.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 function harness() {
   return daemonHarness(HilosDaemonWorkersPage, HilosPages.DAEMON_WORKERS)
@@ -81,6 +82,38 @@ describe('HilosDaemonWorkersPage', () => {
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
     expect(h.unregister).toHaveBeenCalledTimes(1)
+  })
+
+  it('reformats the silent notice after a reader-zone change', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = harness()
+    try {
+      timeZone.receive('UTC')
+      h.window('hilosDaemonWorkers', [worker])
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered: true,
+        role: null,
+        state: 'silent',
+        silentSince: 1_700_000_000_000,
+      })
+      h.detect()
+      const line = h.el('hilos-daemon-workers-silent')!
+      const initialLabel = line.textContent
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(line.textContent).not.toBe(initialLabel)
+      expect(h.el('hilos-daemon-workers-silent')).toBe(line)
+      expect(h.register).toHaveBeenCalledTimes(1)
+      expect(h.unregister).not.toHaveBeenCalled()
+    } finally {
+      h.fixture.destroy()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
+    }
   })
 
   it('rebinds the table to a changed node address and tears it down on context swap', () => {

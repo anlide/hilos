@@ -25,12 +25,13 @@ import {
   formatDaemonWorkerName,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import {
   HilosAdminPage,
   HilosLink,
   HILOS_ROUTER,
   HilosSkeleton,
+  hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 import type {
@@ -433,6 +434,7 @@ import type {
 })
 export class HilosDaemonPage {
   protected readonly router = inject(HILOS_ROUTER)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly pages = HilosPages
   protected readonly daemonMonopolisticCount = daemonMonopolisticCount
   protected readonly daemonPercentage = daemonPercentage
@@ -476,6 +478,7 @@ export class HilosDaemonPage {
   }
   /** The silent node's own last-known silence boundary. */
   protected formatSilentSince(node: HilosDaemonOverviewNode): string | null {
+    this.timeZone()
     return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
   }
 }

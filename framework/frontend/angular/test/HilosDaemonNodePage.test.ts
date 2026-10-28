@@ -8,6 +8,7 @@ import {
   nodeOverview,
   openNodePage,
 } from './helpers/hilosDaemonNode.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const el = (name: string) =>
   document.querySelector<HTMLElement>(`[data-id="hilos-daemon-${name}"]`)
@@ -261,6 +262,38 @@ describe('HilosDaemonNodePage', () => {
       expect(h.send).not.toHaveBeenCalled()
     } finally {
       clock.mockRestore()
+    }
+  })
+
+  it('reformats the report notice and shared head after a reader-zone change', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = nodeHarness()
+    try {
+      timeZone.receive('UTC')
+      h.act(() =>
+        h.answer(
+          nodeOverview({ online: false }),
+          nodeHeading({ state: 'silent', silentSince: 1_700_000_000_000 }),
+        ),
+      )
+      const reportNotice = el('report-notice')!
+      const initialNotice = reportNotice.textContent
+      const silentLine = el('node-silent')!
+      const initialSilent = silentLine.textContent
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(reportNotice.textContent).not.toBe(initialNotice)
+      expect(silentLine.textContent).not.toBe(initialSilent)
+      expect(el('report-notice')).toBe(reportNotice)
+      expect(el('node-silent')).toBe(silentLine)
+    } finally {
+      h.view.unmount()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
     }
   })
 

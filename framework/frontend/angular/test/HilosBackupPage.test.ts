@@ -31,9 +31,17 @@ import type {
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core'
+import { formatMoment } from '@hilos/core/base'
 
 import { HilosBackupPage } from '../src/admin/backup/HilosBackupPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
+
+const timeZoneReleases: (() => void)[] = []
+
+afterEach(() => {
+  for (const release of timeZoneReleases.splice(0)) release()
+})
 
 const BACKUPS_TABLE = 'hilosBackups'
 const ARCHIVE_ID = '2026-09-10_03-00-00'
@@ -85,7 +93,7 @@ interface BackupFixture {
 const ARCHIVE_FIXTURE: BackupFixture = {
   id: ARCHIVE_ID,
   backup: {
-    createdAt: '2026-09-10T03:00:00+00:00',
+    createdAt: '2026-09-10T03:00:00.000Z',
     env: 'dev',
     scope: 'full',
     sizeBytes: 1048576,
@@ -776,5 +784,88 @@ describe('HilosBackupPage in the admin view mode', () => {
       action: 'backup_delete',
       payload: { backupId: ARCHIVE_ID },
     })
+  })
+})
+
+describe('HilosBackupPage moments', () => {
+  it('reformats archive and restore moments in the reader zone while the outcome stays open', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    timeZoneReleases.push(timeZone.release)
+    timeZone.receive('UTC')
+
+    const createdAt = '2026-09-10T00:30:00.000Z'
+    const verifiedAt = '2026-09-10T00:10:00.000Z'
+    const shippedAt = '2026-09-10T00:20:00.000Z'
+    const restoreFinishedAt = '2026-09-10T00:30:00.000Z'
+    const backup: BackupFixture = {
+      ...ARCHIVE_FIXTURE,
+      backup: {
+        ...ARCHIVE_FIXTURE.backup,
+        createdAt,
+        verifiedAt,
+        shipState: 'shipped',
+        shippedAt,
+        restoreOutcome: 'success',
+        restoreFinishedAt,
+      },
+    }
+    const { context } = seededContext([backup])
+    const fixture = mountPage(context)
+    const row = document.querySelector<HTMLElement>(
+      `table [data-id="hilos-table-row-${ARCHIVE_ID}"]`,
+    )
+
+    const createdBefore = formatMoment(createdAt, { kind: 'dateTime' }) ?? '—'
+    const verifiedBefore = formatMoment(verifiedAt, { kind: 'date' }) ?? '—'
+    const shippedBefore = formatMoment(shippedAt, { kind: 'date' }) ?? '—'
+    expect(
+      row?.querySelector('[data-id="hilos-backup-created-at"]')?.textContent,
+    ).toContain(createdBefore)
+    expect(
+      row?.querySelector('[data-id="hilos-backup-checksum"]')?.textContent,
+    ).toBe(`✓ ${verifiedBefore}`)
+    expect(
+      row?.querySelector('[data-id="hilos-backup-shipping"]')?.textContent,
+    ).toBe(`✓ ${shippedBefore}`)
+
+    click(fixture, inTable(`hilos-backup-restore-outcome-${ARCHIVE_ID}`))
+    const finished = byId('hilos-backup-restore-outcome-finished')
+    const dialog = finished?.closest('[role="dialog"]')
+    const restoreBefore = formatMoment(restoreFinishedAt, { kind: 'dateTime' })
+    expect(finished?.textContent?.trim()).toBe(
+      `Finished ${restoreBefore} · success`,
+    )
+    expect(dialog).not.toBeNull()
+
+    timeZone.receive('America/Los_Angeles')
+    await fixture.whenStable()
+    fixture.detectChanges()
+
+    const createdAfter = formatMoment(createdAt, { kind: 'dateTime' }) ?? '—'
+    const verifiedAfter = formatMoment(verifiedAt, { kind: 'date' }) ?? '—'
+    const shippedAfter = formatMoment(shippedAt, { kind: 'date' }) ?? '—'
+    const restoreAfter = formatMoment(restoreFinishedAt, { kind: 'dateTime' })
+    const rowAfter = document.querySelector<HTMLElement>(
+      `table [data-id="hilos-table-row-${ARCHIVE_ID}"]`,
+    )
+    expect(createdAfter).not.toBe(createdBefore)
+    expect(verifiedAfter).not.toBe(verifiedBefore)
+    expect(shippedAfter).not.toBe(shippedBefore)
+    expect(restoreAfter).not.toBe(restoreBefore)
+    expect(
+      rowAfter?.querySelector('[data-id="hilos-backup-created-at"]')
+        ?.textContent,
+    ).toContain(createdAfter)
+    expect(
+      rowAfter?.querySelector('[data-id="hilos-backup-checksum"]')?.textContent,
+    ).toBe(`✓ ${verifiedAfter}`)
+    expect(
+      rowAfter?.querySelector('[data-id="hilos-backup-shipping"]')?.textContent,
+    ).toBe(`✓ ${shippedAfter}`)
+    expect(finished?.textContent?.trim()).toBe(
+      `Finished ${restoreAfter} · success`,
+    )
+    expect(byId('hilos-backup-restore-outcome-finished')).toBe(finished)
+    expect(finished?.closest('[role="dialog"]')).toBe(dialog)
   })
 })

@@ -4,6 +4,7 @@ import { HilosLegalAcceptancesPage } from '../src/admin/legal/HilosLegalAcceptan
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import {
   createSignal,
+  formatMoment,
   HIDDEN_VALUE,
   HilosPages,
   ScopeManager,
@@ -13,6 +14,13 @@ import {
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
+import {
+  bindTestTimeZone,
+  type TimeZoneTestBinding,
+} from './timeZoneTestHarness.js'
+
+const ACCEPTED_AT = Date.parse('2026-09-27T00:30:00.000Z')
+let timeZoneBinding: TimeZoneTestBinding | null = null
 
 /** The live window is real; only its transport is replaced, and the rows arrive by `push`. */
 function harness() {
@@ -76,7 +84,7 @@ function harness() {
                     document: 'terms',
                     revisionId: 'current',
                     declared: true,
-                    acceptedAt: '2026-09-27 12:00:00',
+                    acceptedAt: ACCEPTED_AT,
                   },
                 },
               },
@@ -92,6 +100,21 @@ function harness() {
   }
 }
 
+/** Mount the page with its live acceptance table before a window arrives. */
+async function mountTable() {
+  const h = harness()
+  await TestBed.configureTestingModule({
+    imports: [HilosLegalAcceptancesPage],
+    providers: [{ provide: HILOS_ROUTER, useValue: h.router }],
+  }).compileComponents()
+  const fixture = TestBed.createComponent(HilosLegalAcceptancesPage)
+  fixture.componentRef.setInput('context', h.context)
+  fixture.detectChanges()
+  await fixture.whenStable()
+
+  return { fixture, h }
+}
+
 /**
  * Mount the page over one acceptance record and return its drawn person cell.
  *
@@ -102,23 +125,22 @@ async function mountOver(
   name: HilosLegalAcceptanceRow['name'],
   email: HilosLegalAcceptanceRow['email'],
 ): Promise<HTMLElement> {
-  const h = harness()
-  await TestBed.configureTestingModule({
-    imports: [HilosLegalAcceptancesPage],
-    providers: [{ provide: HILOS_ROUTER, useValue: h.router }],
-  }).compileComponents()
-  const fixture = TestBed.createComponent(HilosLegalAcceptancesPage)
-  fixture.componentRef.setInput('context', h.context)
-  fixture.detectChanges()
-  await fixture.whenStable()
-  h.push(name, email)
-  fixture.detectChanges()
-  return (fixture.nativeElement as HTMLElement).querySelector(
+  const mounted = await mountTable()
+  mounted.h.push(name, email)
+  mounted.fixture.detectChanges()
+  return (mounted.fixture.nativeElement as HTMLElement).querySelector(
     '[data-id="legal-acceptance-row"]',
   ) as HTMLElement
 }
 
-afterEach(() => TestBed.resetTestingModule())
+afterEach(() => {
+  if (timeZoneBinding !== null) {
+    timeZoneBinding.receive(null)
+    timeZoneBinding.release()
+    timeZoneBinding = null
+  }
+  TestBed.resetTestingModule()
+})
 describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
   it('draws the mark for a hidden name and a hidden email, and says nothing about email', async () => {
     const record = await mountOver(HIDDEN_VALUE, HIDDEN_VALUE)
@@ -133,6 +155,44 @@ describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
     expect(record.querySelector('strong')?.textContent?.trim()).toBe('Reader')
     expect(record.textContent).toContain('No verified email')
     expect(record.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+  })
+
+  it('draws Accepted from the UTC timestamp delivered in the table window', async () => {
+    const { fixture, h } = await mountTable()
+    h.push('Reader', null)
+    fixture.detectChanges()
+
+    const acceptedAt = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="legal-acceptance-accepted-at"]',
+    )
+
+    expect(acceptedAt?.textContent?.trim()).toBe(
+      formatMoment(ACCEPTED_AT, { kind: 'dateTime' }),
+    )
+    expect(acceptedAt?.textContent?.trim()).not.toBe('—')
+  })
+
+  it('reformats the open Accepted cell when the reader zone changes', async () => {
+    timeZoneBinding = bindTestTimeZone('UTC')
+    timeZoneBinding.receive('America/Los_Angeles')
+    const { fixture, h } = await mountTable()
+    h.push('Reader', null)
+    fixture.detectChanges()
+
+    const page = fixture.componentInstance
+    const acceptedAt = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="legal-acceptance-accepted-at"]',
+    )
+    const before = acceptedAt?.textContent?.trim()
+
+    timeZoneBinding.receive('Asia/Tokyo')
+    fixture.detectChanges()
+
+    expect(acceptedAt?.textContent?.trim()).toBe(
+      formatMoment(ACCEPTED_AT, { kind: 'dateTime' }),
+    )
+    expect(acceptedAt?.textContent?.trim()).not.toBe(before)
+    expect(fixture.componentInstance).toBe(page)
   })
 })
 

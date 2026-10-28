@@ -8,10 +8,12 @@ import {
 import {
   endableProfileSessionCount,
   formatProfileDateTime,
+  hilosTimeZone,
   type HilosProfileSession as ProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
 
+import { hilosSignal } from '../hilosSignal.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
@@ -66,6 +68,11 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
                   </h3>
                   <div data-id="profile-session-device">
                     {{ session.deviceName ?? 'Unknown device' }}
+                    @if (session.browserTimeZone !== null) {
+                      <span class="text-body-secondary"
+                        >· {{ session.browserTimeZone }}</span
+                      >
+                    }
                   </div>
                   <div class="small text-body-secondary">
                     created {{ date(session.createdAt) }} · last seen
@@ -267,12 +274,15 @@ export class HilosProfileSessions {
   protected readonly endTitle = computed(
     () => `End session #${this.endingSessionId() ?? ''}`,
   )
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   protected date(value: number | null): string {
+    this.timeZone()
     return formatProfileDateTime(value)
   }
 
   protected tabDate(connectedAt: number): string {
+    this.timeZone()
     return formatProfileDateTime(connectedAt)
   }
 

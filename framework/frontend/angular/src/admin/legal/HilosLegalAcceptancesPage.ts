@@ -143,6 +143,11 @@ import {
               <span class="badge text-bg-warning">Not in code</span>
             }
           </ng-template>
+          <ng-template [hilosTableCell]="keys.acceptedAt" let-row
+            ><span data-id="legal-acceptance-accepted-at">{{
+              row.acceptedAt
+            }}</span></ng-template
+          >
           <ng-template [hilosTableCell]="actionsKey" let-row
             ><a
               [hilosLink]="path(userPage, { userId: '' + row.userId })"

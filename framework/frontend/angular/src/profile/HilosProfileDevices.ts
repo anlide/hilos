@@ -11,6 +11,7 @@ import {
   formatProfileDateTime,
   hilosProfileDeviceKind,
   hilosPushSubscription,
+  hilosTimeZone,
   subscribeSignal,
   type HilosConnection,
   type HilosProfileDevice,
@@ -20,6 +21,7 @@ import {
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
 
+import { hilosSignal } from '../hilosSignal.js'
 import { HilosPushDeviceToggle } from '../HilosPushDeviceToggle.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
@@ -144,6 +146,7 @@ export class HilosProfileDevices implements OnInit {
       this.supported() &&
       this.permission() !== 'denied',
   )
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   constructor() {
     effect((onCleanup) => {
@@ -177,6 +180,7 @@ export class HilosProfileDevices implements OnInit {
   }
 
   protected date(value: number): string {
+    this.timeZone()
     return formatProfileDateTime(value)
   }
 

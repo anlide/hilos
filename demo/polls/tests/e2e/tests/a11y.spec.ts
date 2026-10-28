@@ -27,6 +27,7 @@ import {
   gotoPage,
   grantAdminToSelf,
   watchProfileRenameStatus,
+  expectProfileTimeZone,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -522,6 +523,73 @@ test('the profile name dialog exposes accessible focus and dirty-close behavior'
   await clickSubmit(expect, discard)
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
+})
+
+test.describe('Profile time zone accessibility', () => {
+  test.use({ timezoneId: 'Europe/Warsaw', colorScheme: 'light' })
+
+  test('names the picker, supports keyboard search, choice and Close, and returns focus', async ({
+    page,
+  }) => {
+    await signUp(expect, page)
+    await gotoPage(expect, page, '/profile')
+    const opener = page.getByTestId('profile-time-zone-change')
+    await expect(opener).toHaveAccessibleName('Change')
+    await opener.focus()
+    await opener.press('Enter')
+    const dialog = page.getByTestId('modal')
+    const search = page.getByTestId('profile-time-zone-search')
+    await expect(dialog).toHaveRole('dialog')
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+    await expect(dialog).toHaveAccessibleName('Time zone')
+    await expect(search).toHaveRole('searchbox')
+    await expect(search).toHaveAccessibleName('Search time zones')
+    await expect(search).toBeFocused()
+    const automatic = page.getByTestId('profile-time-zone-automatic')
+    await expect(automatic).toHaveAttribute('aria-current', 'true')
+    await expect(automatic).toContainText('Automatic')
+    await expect(automatic).toContainText('Europe/Warsaw — from this browser')
+    await expect(page.getByTestId('profile-time-zone')).toHaveText(
+      'Europe/Warsaw · automatic',
+    )
+
+    await typeInto(search, 'new york')
+    const choice = page.getByTestId('profile-time-zone-option-America/New_York')
+    await search.press('Tab')
+    await expect(choice).toBeFocused()
+    await expect(choice).toHaveAccessibleName(/^America\/New_York /)
+    await choice.press('Enter')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+    await expectProfileTimeZone(
+      expect,
+      page,
+      'America/New_York',
+      'Europe/Warsaw',
+    )
+
+    await opener.press('Enter')
+    await expect(search).toBeFocused()
+    await typeInto(search, 'new york')
+    await expect(choice).toHaveAttribute('aria-current', 'true')
+    await expect(choice.locator('i')).toBeVisible()
+    await expect(choice.locator('i')).toHaveAttribute('aria-hidden', 'true')
+    const headerClose = dialog.getByTestId('modal-close')
+    const close = page.getByTestId('profile-time-zone-close')
+    await expect(close).toHaveAccessibleName('Close')
+    await headerClose.focus()
+    await headerClose.press('Shift+Tab')
+    await expect(close).toBeFocused()
+    await close.press('Tab')
+    await expect(headerClose).toBeFocused()
+    await headerClose.press('Shift+Tab')
+    await close.press('Enter')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+    await expect(page.getByTestId('profile-time-zone')).toHaveText(
+      'America/New_York',
+    )
+  })
 })
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({

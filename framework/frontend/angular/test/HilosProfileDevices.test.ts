@@ -2,6 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createHilosPushSubscriptionStore,
   createSignal,
+  formatProfileDateTime,
   type ActionHandle,
   type HilosConnection,
   type HilosProfileDevice,
@@ -14,8 +15,20 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosProfileDevices } from '../src/profile/HilosProfileDevices.js'
+import {
+  bindTestTimeZone,
+  type TimeZoneTestBinding,
+} from './timeZoneTestHarness.js'
+
+const BROWSER_TIME_ZONE = new Intl.DateTimeFormat().resolvedOptions().timeZone
+let timeZoneBinding: TimeZoneTestBinding | null = null
 
 afterEach(() => {
+  if (timeZoneBinding !== null) {
+    timeZoneBinding.receive(null)
+    timeZoneBinding.release()
+    timeZoneBinding = null
+  }
   document.body.innerHTML = ''
   vi.restoreAllMocks()
 })
@@ -30,6 +43,11 @@ function createStubConnection(): HilosConnection {
     on: () => () => {},
     sendAction: vi.fn(() => true),
   } as unknown as HilosConnection
+}
+
+function bindReaderTimeZone(): TimeZoneTestBinding {
+  timeZoneBinding = bindTestTimeZone(BROWSER_TIME_ZONE)
+  return timeZoneBinding
 }
 
 describe('HilosProfileDevices (Angular)', () => {
@@ -210,6 +228,57 @@ describe('HilosProfileDevices (Angular)', () => {
     expect(
       root.querySelector('[data-id="profile-device-none-this"]'),
     ).toBeNull()
+  })
+
+  it('reformats a device moment in the reader zone without replacing its row', async () => {
+    const timeZone = bindReaderTimeZone()
+    timeZone.receive('Asia/Tokyo')
+    const store: HilosPushSubscriptionStore = {
+      supported: createSignal(false),
+      permission: createSignal<HilosPushPermission>('denied'),
+      subscribed: createSignal(false),
+      endpointHash: createSignal<string | null>(null),
+      refreshed: createSignal(true),
+      busy: createSignal(false),
+      refresh: vi.fn(async () => {}),
+      enable: vi.fn(async () => true),
+      disable: vi.fn(async () => true),
+      clear: vi.fn(),
+    }
+    const device: HilosProfileDevice = {
+      id: 1,
+      deviceName: 'Chrome on macOS',
+      createdAt: 0,
+      current: false,
+      expired: false,
+    }
+    const fixture = TestBed.createComponent(HilosProfileDevices)
+    fixture.componentRef.setInput('devices', [device])
+    fixture.componentRef.setInput('actions', { removeDevice: vi.fn() })
+    fixture.componentRef.setInput('connection', createStubConnection())
+    fixture.componentRef.setInput('pushChannel', null)
+    fixture.componentRef.setInput('store', store)
+    fixture.detectChanges()
+    await settle(fixture)
+
+    const root = fixture.nativeElement as HTMLElement
+    const row = root.querySelector('[data-id="profile-device-row"]')!
+    const date = row.querySelector('.small.text-body-secondary')!
+    const removeButton = row.querySelector('[data-id="profile-device-remove"]')!
+    const initialDate = date.textContent
+    expect(date.textContent).toContain(`added ${formatProfileDateTime(0)}`)
+    expect(date.textContent).not.toContain('never')
+
+    timeZone.receive('America/Los_Angeles')
+    await settle(fixture)
+
+    expect(root.querySelector('[data-id="profile-device-row"]')).toBe(row)
+    expect(row.querySelector('.small.text-body-secondary')).toBe(date)
+    expect(date.textContent).not.toBe(initialDate)
+    expect(date.textContent).toContain(`added ${formatProfileDateTime(0)}`)
+    expect(row.querySelector('[data-id="profile-device-remove"]')).toBe(
+      removeButton,
+    )
   })
 
   it('handles the Remove action lifecycle and disables button before refresh', async () => {

@@ -5,13 +5,14 @@ import {
   ScopeManager,
   pageIdentity,
 } from '@hilos/core/base'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   nodeHarness,
   nodeHeading,
   nodeOverview,
   nodeTabs,
 } from './helpers/hilosDaemonNode.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const el = (name: string) =>
   document.querySelector<HTMLElement>(`[data-id="${name}"]`)
@@ -185,6 +186,35 @@ describe('HilosDaemonNodeShell', () => {
       }
     },
   )
+
+  it('reformats the shared silent node head in the reader zone', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = nodeHarness({ shell: true, page: HilosPages.DAEMON_AGENTS })
+    try {
+      timeZone.receive('UTC')
+      h.act(() =>
+        h.answer(
+          null,
+          nodeHeading({ state: 'silent', silentSince: 1_700_000_000_000 }),
+        ),
+      )
+      const line = node('silent')!
+      const initialLabel = line.textContent
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(line.textContent).not.toBe(initialLabel)
+      expect(node('silent')).toBe(line)
+      expect(text('h1')).toEqual(['n1'])
+    } finally {
+      h.view.unmount()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
+    }
+  })
 
   it('uses Environment’s own nullable state and declared role through silence and recovery', () => {
     const h = nodeHarness({ shell: true, page: HilosPages.DAEMON_ENV })

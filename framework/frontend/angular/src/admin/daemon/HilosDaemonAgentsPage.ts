@@ -30,7 +30,7 @@ import {
   type HilosDaemonAgentRow,
   type HilosDaemonAgentsContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import {
   HilosLink,
   HilosViewportTable,
@@ -256,6 +256,7 @@ export class HilosDaemonAgentsPage {
 
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
@@ -264,9 +265,10 @@ export class HilosDaemonAgentsPage {
   protected readonly emptyState = computed(() =>
     daemonProcessesEmptyState(this.heading(), this.reported()),
   )
-  protected readonly silentSince = computed(() =>
-    formatDaemonNodeSilentSince(this.heading(), Date.now()),
-  )
+  protected readonly silentSince = computed(() => {
+    this.timeZone()
+    return formatDaemonNodeSilentSince(this.heading(), Date.now())
+  })
 
   protected readonly agents = computed(() =>
     createHilosDaemonAgentsTable(this.context(), this.nodeId()),

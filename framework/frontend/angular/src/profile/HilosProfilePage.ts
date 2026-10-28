@@ -13,12 +13,14 @@ import {
   createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
+  createHilosTimeZonePicker,
   hilosChildLinks,
   HilosPages,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_ROOT_COPY,
   HILOS_PROFILE_PHOTO_COPY,
   hilosImpersonation,
+  hilosSignedIn,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   subscribeSignal,
@@ -36,10 +38,11 @@ import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
 import { HilosProfilePhoto } from './HilosProfilePhoto.js'
 import { HilosProfileTheme } from './HilosProfileTheme.js'
+import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
 
 /**
  * The profile root (HIL-1169): the person's own line, the Account rows (Name,
- * Email, Theme), a row per catalog section with its live summary, and the
+ * Email, Time zone, Theme), a row per catalog section with its live summary, and the
  * danger zone.
  */
 @Component({
@@ -54,6 +57,7 @@ import { HilosProfileTheme } from './HilosProfileTheme.js'
     HilosProfileRename,
     HilosProfilePhoto,
     HilosProfileTheme,
+    HilosProfileTimeZone,
     LoadingButton,
   ],
   template: `
@@ -153,6 +157,34 @@ import { HilosProfileTheme } from './HilosProfileTheme.js'
                 </button>
               </div>
             }
+            <div
+              class="d-flex align-items-center gap-3 py-3 border-bottom"
+              data-id="profile-time-zone-row"
+            >
+              <i
+                class="bi bi-clock fs-5 text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <div class="flex-grow-1 text-break">
+                <div class="fw-semibold small">{{ copy.timeZone }}</div>
+                <div
+                  class="small text-body-secondary"
+                  data-id="profile-time-zone"
+                >
+                  {{ timeZone() }}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm"
+                [disabled]="impersonation() !== null"
+                [attr.aria-describedby]="impersonation() ? stripTextId : null"
+                data-id="profile-time-zone-change"
+                (click)="openTimeZone()"
+              >
+                {{ copy.change }}
+              </button>
+            </div>
             @if (theme() !== null) {
               <div class="d-flex align-items-center gap-3 py-3 border-bottom">
                 <i
@@ -242,6 +274,10 @@ import { HilosProfileTheme } from './HilosProfileTheme.js'
         }
         <hilos-profile-email-change [flow]="email()" />
         <hilos-profile-theme [(open)]="themeOpen" />
+        <hilos-profile-time-zone
+          [picker]="timeZonePicker()"
+          [(open)]="timeZoneOpen"
+        />
       </section>
     } @else {
       <!-- Nobody signed in, or the session is not known yet: a placeholder,
@@ -289,6 +325,9 @@ export class HilosProfilePage {
   protected readonly email = computed(() =>
     createHilosProfileEmailChangeFlow(this.context()),
   )
+  protected readonly timeZonePicker = computed(() =>
+    createHilosTimeZonePicker(this.context()),
+  )
   protected readonly photoFlow = computed(() =>
     createHilosProfilePhotoFlow(this.context(), this.root().photo),
   )
@@ -301,9 +340,11 @@ export class HilosProfilePage {
   protected readonly verifiedEmail = signal<string | null>(null)
   protected readonly passkeyOnly = signal(false)
   protected readonly theme = signal<string | null>(null)
+  protected readonly timeZone = signal('')
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly stripTextId = HILOS_IMPERSONATION_STRIP_TEXT_ID
   protected readonly themeOpen = signal(false)
+  protected readonly timeZoneOpen = signal(false)
   protected readonly signInPage = HilosPages.PROFILE_SIGN_IN
   protected readonly renameOpening = signal(false)
   protected readonly emailOpening = signal(false)
@@ -329,6 +370,7 @@ export class HilosProfilePage {
       this.verifiedEmail.set(root.verifiedEmail.get())
       this.passkeyOnly.set(root.passkeyOnly.get())
       this.theme.set(root.theme.get())
+      this.timeZone.set(root.timeZone.get())
       const off = [
         subscribeSignal(root.signedIn, (value) => this.signedIn.set(value)),
         subscribeSignal(root.photoEnabled, (value) =>
@@ -346,6 +388,7 @@ export class HilosProfilePage {
           this.passkeyOnly.set(value),
         ),
         subscribeSignal(root.theme, (value) => this.theme.set(value)),
+        subscribeSignal(root.timeZone, (value) => this.timeZone.set(value)),
       ]
       const stopRenameOpening =
         rename === null
@@ -363,7 +406,16 @@ export class HilosProfilePage {
     // A sign-out takes the Theme window away with the page; it must not come
     // back by itself with the next sign-in.
     effect(() => {
-      if (!this.signedIn()) untracked(() => this.themeOpen.set(false))
+      if (!this.signedIn()) {
+        untracked(() => {
+          this.themeOpen.set(false)
+          this.timeZoneOpen.set(false)
+        })
+      }
+    })
+    effect((onCleanup) => {
+      const picker = this.timeZonePicker()
+      onCleanup(() => picker.dispose())
     })
     effect((onCleanup) => {
       const name = this.binding().name
@@ -385,5 +437,11 @@ export class HilosProfilePage {
       const flow = this.photoFlow()
       onCleanup(() => flow.dispose())
     })
+  }
+
+  protected openTimeZone(): void {
+    if (hilosSignedIn.get() && hilosImpersonation.get() === null) {
+      this.timeZoneOpen.set(true)
+    }
   }
 }

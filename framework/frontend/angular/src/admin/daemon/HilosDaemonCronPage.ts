@@ -36,7 +36,11 @@ import {
   type HilosDaemonNodeHeading,
   type HilosDaemonCronRow,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, type TableViewportRow } from '@hilos/core/base'
+import {
+  HilosPages,
+  hilosTimeZone,
+  type TableViewportRow,
+} from '@hilos/core/base'
 
 /** Angular view of the Daemon CronPage. */
 @Component({
@@ -51,6 +55,7 @@ import { HilosPages, type TableViewportRow } from '@hilos/core/base'
     @let holdsNotice = this.holdsNotice();
     @let silentSince = this.silentSince();
     @let clustered = this.clustered();
+    @let runTimes = this.runTimes();
 
     <hilos-daemon-node-shell [context]="context()" [page]="page">
       <ng-template #pageBody>
@@ -99,6 +104,18 @@ import { HilosPages, type TableViewportRow } from '@hilos/core/base'
             }
           </div>
         }
+        <p
+          class="small text-body-secondary mb-2"
+          data-id="hilos-daemon-cron-time-zone"
+        >
+          <i class="bi bi-clock me-1" aria-hidden="true"></i>Expressions are
+          evaluated in the project's time zone —
+          <span
+            class="font-monospace text-break"
+            data-id="hilos-daemon-cron-project-time-zone"
+            >{{ projectTimeZone() ?? '—' }}</span
+          >. Run times are shown in your time zone.
+        </p>
         <hilos-viewport-table [controller]="cron.controller">
           <ng-template [hilosTableCell]="DAEMON_CRON_NAME_FIELD" let-row>
             <code class="fw-semibold text-break">{{ row.name }}</code>
@@ -129,7 +146,7 @@ import { HilosPages, type TableViewportRow } from '@hilos/core/base'
                 'text-body-secondary':
                   row.idleReason !== null || row.lastRunAt === null,
               }"
-              >{{ formatDaemonCronLastRun(row, now()) }}</span
+              >{{ runTimes.get(row.rowKey)?.lastRun ?? '—' }}</span
             >
           </ng-template>
           <ng-template [hilosTableCell]="DAEMON_CRON_NEXT_RUN_FIELD" let-row>
@@ -139,7 +156,7 @@ import { HilosPages, type TableViewportRow } from '@hilos/core/base'
                 'text-body-secondary':
                   row.idleReason !== null || row.nextRunAt === null,
               }"
-              >{{ formatDaemonCronNextRun(row, now()) }}</span
+              >{{ runTimes.get(row.rowKey)?.nextRun ?? '—' }}</span
             >
           </ng-template>
           <ng-template #empty>
@@ -173,13 +190,14 @@ import { HilosPages, type TableViewportRow } from '@hilos/core/base'
 export class HilosDaemonCronPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
-  protected readonly now = Date.now
 
   readonly context = input.required<HilosDaemonCronContext>()
   protected readonly page = HilosPages.DAEMON_CRON
+  protected readonly projectTimeZone = signal<string | undefined>(undefined)
   protected readonly heading = signal<HilosDaemonNodeHeading | null>(null)
   protected readonly reported = signal(false)
   protected readonly cron = computed(() =>
@@ -200,13 +218,38 @@ export class HilosDaemonCronPage {
   protected readonly holdsNotice = computed(() =>
     daemonCronHoldsIdleNotice(this.rules(), this.heading()),
   )
-  protected readonly silentSince = computed(() =>
-    formatDaemonNodeSilentSince(this.heading(), Date.now()),
-  )
+  protected readonly silentSince = computed(() => {
+    void this.timeZone()
+    return formatDaemonNodeSilentSince(this.heading(), Date.now())
+  })
+  protected readonly runTimes = computed(() => {
+    void this.timeZone()
+    const now = Date.now()
+    return new Map(
+      this.rules().map(
+        (row) =>
+          [
+            row.rowKey,
+            {
+              lastRun: formatDaemonCronLastRun(row, now),
+              nextRun: formatDaemonCronNextRun(row, now),
+            },
+          ] as const,
+      ),
+    )
+  })
   protected readonly clustered = computed(
     () => this.heading()?.clustered === true,
   )
   constructor() {
+    effect((onCleanup) => {
+      const connection = this.context().connection
+      const updateProjectTimeZone = (): void =>
+        this.projectTimeZone.set(connection.projectTimeZone)
+      updateProjectTimeZone()
+      const stopHandshake = connection.on('handshake', updateProjectTimeZone)
+      onCleanup(stopHandshake)
+    })
     effect((onCleanup) => {
       const cron = this.cron()
       const scopes = this.context().scopes
@@ -228,6 +271,4 @@ export class HilosDaemonCronPage {
   protected readonly DAEMON_CRON_LAST_RUN_FIELD = DAEMON_CRON_LAST_RUN_FIELD
   protected readonly DAEMON_CRON_NEXT_RUN_FIELD = DAEMON_CRON_NEXT_RUN_FIELD
   protected readonly formatDaemonCronExecutor = formatDaemonCronExecutor
-  protected readonly formatDaemonCronLastRun = formatDaemonCronLastRun
-  protected readonly formatDaemonCronNextRun = formatDaemonCronNextRun
 }

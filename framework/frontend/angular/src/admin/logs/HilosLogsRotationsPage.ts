@@ -29,8 +29,10 @@ import {
   signal,
 } from '@angular/core'
 import {
+  formatMoment,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosTimeZone,
   subscribeSignal,
 } from '@hilos/core/base'
 import {
@@ -73,6 +75,7 @@ import {
   LoadingButton,
   HILOS_ROUTER,
   createHilosTrackedAction,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
@@ -504,6 +507,7 @@ export class HilosLogsRotationsPage {
       ? null
       : rotationUndoNotice(this.focusedRow()),
   )
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   protected readonly legendOpen = signal(false)
 
@@ -554,11 +558,17 @@ export class HilosLogsRotationsPage {
   // installation that told it not to wait, and that is said in words too: a blank
   // would read as "we do not know" rather than "at any moment".
   protected readonly undoDeadline = computed(() => {
+    this.timeZone()
     const pruneNotBefore = this.undoRow()?.pruneNotBefore
 
-    return pruneNotBefore == null
-      ? 'The cleaner may delete this batch as soon as it next runs.'
-      : `The cleaner may delete this batch after ${new Date(pruneNotBefore).toLocaleString()}.`
+    if (pruneNotBefore == null) {
+      return 'The cleaner may delete this batch as soon as it next runs.'
+    }
+
+    const moment = formatMoment(pruneNotBefore, { kind: 'dateTime' })
+    return moment === null
+      ? 'The cleaner may delete this batch after —.'
+      : `The cleaner may delete this batch after ${moment}.`
   })
 
   constructor() {
@@ -607,7 +617,8 @@ export class HilosLogsRotationsPage {
   // The batch's own name is its rotation time; the archive directory under it is
   // what an operator types into scp, so both are in the cell.
   protected batchTime(row: HilosLogRotationRow): string {
-    return new Date(row.batchAt).toLocaleString()
+    this.timeZone()
+    return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
   }
 
   protected retentionClass(row: HilosLogRotationRow): string {

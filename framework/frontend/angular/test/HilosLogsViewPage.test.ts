@@ -20,10 +20,12 @@ import {
   type PageRouteMatch,
   type ProjectSignal,
 } from '@hilos/core'
+import { formatMoment } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLogsViewPage } from '../src/admin/logs/HilosLogsViewPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const releases: (() => void)[] = []
 
@@ -364,6 +366,71 @@ describe('HilosLogsViewPage', () => {
   })
 })
 
+describe('HilosLogsViewPage moments', () => {
+  it('reformats entry time in the reader zone and keeps its stack open', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+
+    const h = mountPage({
+      nodeId: '-',
+      source: 'live',
+      stream: 'worker-0.log',
+    })
+    h.pushCatalog()
+    h.fixture.detectChanges()
+    const followId = h.sent
+      .filter((entry) => entry.action === LOGS_FOLLOW_START_ACTION)
+      .at(-1)?.requestId
+    h.answer(followId, {
+      readable: true,
+      lines: [
+        {
+          time: '2026-09-06T10:00:02.250Z',
+          text: 'DatabaseException: failed',
+          level: 'ERROR',
+          isContinuation: false,
+        },
+        {
+          time: null,
+          text: '#0 /app/worker.php(10): run()',
+          level: 'ERROR',
+          isContinuation: true,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled(h.fixture)
+
+    const root = h.fixture.nativeElement as HTMLElement
+    const entry = root.querySelector('[data-id="hilos-log-entry"]')
+    const time = entry?.querySelector('[data-id="hilos-log-entry-time"]')
+    const toggle = entry?.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-log-stack-toggle"]',
+    )
+    expect(time?.textContent?.trim()).toBe('10:00:02.250')
+    expect(toggle).not.toBeNull()
+
+    toggle?.click()
+    await settled(h.fixture)
+    const stack = root.querySelector('[data-id="hilos-log-stack"]')
+    expect(stack).not.toBeNull()
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+
+    const sentCount = h.sent.length
+    timeZone.receive('America/Los_Angeles')
+    await settled(h.fixture)
+
+    expect(time?.textContent?.trim()).toBe('03:00:02.250')
+    expect(root.querySelector('[data-id="hilos-log-stack"]')).toBe(stack)
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    selected(h.fixture, 'hilos-log-source', 'live')
+    selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    expect(h.sent).toHaveLength(sentCount)
+  })
+})
+
 describe('HilosLogsViewPage native selections', () => {
   it.each<{
     name: string
@@ -541,6 +608,9 @@ describe('HilosLogsViewPage missing selections', () => {
   it.each([false, true])(
     'opens the latest batch only on a link click (view mode: %s)',
     async (viewMode) => {
+      const timeZone = bindTestTimeZone('UTC')
+      releases.push(timeZone.release)
+      timeZone.receive('UTC')
       if (viewMode) bindViewerSession()
       const h = mountPage(ARCHIVED_LIVE_FILE)
       const livePath = '/hilos/logs/view/beta/live/worker-0.log'
@@ -586,7 +656,7 @@ describe('HilosLogsViewPage missing selections', () => {
         String(latestBatch),
       )
       expect(source.selectedOptions[0].textContent?.trim()).toBe(
-        `Batch — ${new Date(latestBatch).toLocaleString()}`,
+        `Batch — ${formatMoment(latestBatch, { kind: 'dateTime' }) ?? '—'}`,
       )
       expect(h.sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
       expect(h.sent.at(-1)?.data).toMatchObject({
@@ -918,6 +988,9 @@ describe('HilosLogsViewPage missing selections', () => {
   })
 
   it('marks a vanished selected batch unavailable until it returns without duplicates', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
     const h = mountPage({ ...ARCHIVED_LIVE_FILE, source: String(BATCH) })
     h.pushCatalog(archivedStreamCatalog())
     await settled(h.fixture)
@@ -939,8 +1012,25 @@ describe('HilosLogsViewPage missing selections', () => {
     selected(h.fixture, 'hilos-log-source', String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0]?.textContent?.trim()).toBe(
-      `Batch — ${new Date(BATCH).toLocaleString()} (unavailable)`,
+      `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'} (unavailable)`,
     )
+
+    const unavailableLabel = source.selectedOptions[0]?.textContent?.trim()
+    const pathBeforeZoneChange = h.address.currentPath.get()
+    const requestsBeforeZoneChange = h.sent.length
+    timeZone.receive('America/Los_Angeles')
+    await settled(h.fixture)
+
+    const selectedBatch = selected(h.fixture, 'hilos-log-source', String(BATCH))
+    expect(selectedBatch.selectedOptions[0]?.textContent?.trim()).toBe(
+      `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'} (unavailable)`,
+    )
+    expect(selectedBatch.selectedOptions[0]?.textContent?.trim()).not.toBe(
+      unavailableLabel,
+    )
+    expect(h.address.currentPath.get()).toBe(pathBeforeZoneChange)
+    expect(h.sent).toHaveLength(requestsBeforeZoneChange)
+
     selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
     const root = h.fixture.nativeElement as HTMLElement
     expect(
@@ -954,7 +1044,7 @@ describe('HilosLogsViewPage missing selections', () => {
     selected(h.fixture, 'hilos-log-source', String(BATCH))
     expect(source.querySelectorAll(`option[value="${BATCH}"]`)).toHaveLength(1)
     expect(source.selectedOptions[0]?.textContent?.trim()).toBe(
-      `Batch — ${new Date(BATCH).toLocaleString()}`,
+      `Batch — ${formatMoment(BATCH, { kind: 'dateTime' }) ?? '—'}`,
     )
   })
 

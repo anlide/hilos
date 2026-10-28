@@ -66,6 +66,7 @@ import {
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
+  HILOS_USER_OVERVIEW_COPY,
   HILOS_PRESENCE_WIDEST_LABEL,
   hilosPresenceBadge,
   hilosStandingBadge,
@@ -235,6 +236,14 @@ function focusWindow(body: HTMLElement | undefined): void {
                   {{ detail.lastActivity }}
                 </dd>
               }
+              <dt class="col-sm-3">{{ overviewCopy.timeZone }}</dt>
+              <dd class="col-sm-9" data-id="hilos-user-time-zone">
+                <hilos-hideable [value]="detail.timeZone">
+                  <ng-template let-timeZone>{{
+                    timeZone ?? overviewCopy.automaticTimeZone
+                  }}</ng-template>
+                </hilos-hideable>
+              </dd>
             </dl>
           </div>
         </div>
@@ -1060,6 +1069,7 @@ export class HilosUserPage {
     hilosUserMergedNotice(this.standing()),
   )
   protected readonly mergedCopy = HILOS_USER_MERGED_COPY
+  protected readonly overviewCopy = HILOS_USER_OVERVIEW_COPY
   protected readonly lifecycleSections = computed<
     readonly HilosUserLifecycleSection[]
   >(() =>

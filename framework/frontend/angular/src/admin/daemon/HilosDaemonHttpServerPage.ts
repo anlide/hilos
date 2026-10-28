@@ -36,7 +36,7 @@ import {
   type HilosDaemonNodeHeading,
   type HilosDaemonHttpSummary,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 
 /** Angular view of the Daemon HttpServerPage. */
 @Component({
@@ -231,6 +231,7 @@ import { HilosPages } from '@hilos/core/base'
 export class HilosDaemonHttpServerPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
@@ -249,9 +250,10 @@ export class HilosDaemonHttpServerPage {
   protected readonly silent = computed(
     () => this.heading()?.state === DAEMON_NODE_STATE_SILENT,
   )
-  protected readonly silentSince = computed(() =>
-    formatDaemonNodeSilentSince(this.heading(), Date.now()),
-  )
+  protected readonly silentSince = computed(() => {
+    this.timeZone()
+    return formatDaemonNodeSilentSince(this.heading(), Date.now())
+  })
   protected readonly period = computed(() => {
     const summary = this.summary()
     return summary === null ? '—' : formatDaemonHttpPeriod(summary)

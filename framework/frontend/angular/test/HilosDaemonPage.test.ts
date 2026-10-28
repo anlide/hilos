@@ -13,6 +13,7 @@ import {
   daemonNode,
   daemonPicture,
 } from './helpers/hilosDaemon.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 function harness() {
   return daemonHarness(HilosDaemonPage, HilosPages.DAEMON)
@@ -103,6 +104,42 @@ describe('HilosDaemonPage', () => {
     expect(box().textContent).toContain('150%')
     expect(h.el('hilos-daemon-inspector')).toBeNull()
     h.fixture.destroy()
+  })
+
+  it('updates a mounted silent node in the reader zone without replacing its card', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = harness()
+    try {
+      const silentSince = 1_700_000_000_000
+      h.scope.data.set(
+        DAEMON_OVERVIEW_DATA,
+        daemonPicture([
+          daemonNode('n1', {
+            online: false,
+            state: 'silent',
+            silentSince,
+          }),
+        ]),
+      )
+      timeZone.receive('UTC')
+      h.detect()
+      const line = h.el('hilos-daemon-silent-n1')!
+      const initialLabel = line.textContent
+      const card = h.el('hilos-daemon-node-n1')!
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(line.textContent).not.toBe(initialLabel)
+      expect(h.el('hilos-daemon-silent-n1')).toBe(line)
+      expect(h.el('hilos-daemon-node-n1')).toBe(card)
+    } finally {
+      h.fixture.destroy()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
+    }
   })
 
   it('keeps unknown, empty and zero distinct and encodes a standalone node address', () => {

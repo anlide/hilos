@@ -30,13 +30,19 @@ import {
   type HilosDaemonNodeHeading,
   type HilosDaemonNodeOverviewData,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages, subscribeSignal } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosTimeZone,
+  subscribeSignal,
+} from '@hilos/core/base'
 import {
   HilosLink,
   HilosLongText,
   HilosModal,
   HilosSkeleton,
   HILOS_ROUTER,
+  hilosSignal,
 } from '@hilos/angular/base'
 import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 
@@ -474,6 +480,7 @@ export class HilosDaemonNodePage {
   readonly context = input.required<HilosDaemonContext>()
   protected readonly page = HilosPages.DAEMON_NODE
   private readonly router = inject(HILOS_ROUTER)
+  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly current = signal<{
     node: HilosDaemonNodeOverviewData
     heading: HilosDaemonNodeHeading
@@ -510,6 +517,7 @@ export class HilosDaemonNodePage {
   )
   protected readonly noticeOpen = signal(false)
   protected readonly reportNotice = computed(() => {
+    this.timeZone()
     const current = this.current()
     if (!current) return null
     const { node, heading } = current

@@ -50,8 +50,10 @@ import {
   readLogViewerAddress,
 } from '@hilos/core/admin/logs'
 import {
+  formatMoment,
   HilosPages,
   createSignal,
+  hilosTimeZone,
   hilosAdminAccess,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   subscribeSignal,
@@ -474,9 +476,12 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                   >
                     {{ row.level }}
                   </span>
-                  <span class="text-body-secondary text-nowrap">{{
-                    row.time
-                  }}</span>
+                  <span
+                    class="text-body-secondary text-nowrap"
+                    data-id="hilos-log-entry-time"
+                  >
+                    {{ row.time }}
+                  </span>
                   <span class="flex-grow-1"
                     ><hilos-hideable [value]="row.text"
                   /></span>
@@ -532,6 +537,7 @@ export class HilosLogsViewPage {
   // HilosAdminPage is this component's child; its provider is not visible here.
   private readonly adminAccess = hilosSignal(hilosAdminAccess)
   protected readonly viewMode = computed(() => this.adminAccess() === 'view')
+  private readonly timeZone = hilosSignal(hilosTimeZone)
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
@@ -697,7 +703,8 @@ export class HilosLogsViewPage {
   }
 
   protected batchLabel(batch: number): string {
-    return new Date(batch).toLocaleString()
+    this.timeZone()
+    return formatMoment(batch, { kind: 'dateTime' }) ?? '—'
   }
 
   protected onNode(event: Event): void {

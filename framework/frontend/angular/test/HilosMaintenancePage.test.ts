@@ -28,11 +28,15 @@ import type {
   ProjectSignal,
   WritableSignal,
 } from '@hilos/core'
+import { hilosMaintenanceElapsed } from '@hilos/core/admin/maintenance'
+import { formatMoment } from '@hilos/core/base'
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 const CIRCLE_TABLE = 'hilosVerifierCircle'
+const timeZoneReleases: (() => void)[] = []
 
 function router(): HilosRouter {
   return {
@@ -280,6 +284,7 @@ function mark(identifier: string): HTMLElement | null {
 
 afterEach(() => {
   hilosToasts.clear()
+  for (const release of timeZoneReleases.splice(0)) release()
 })
 
 /** Let a settled action reach the dialog through Angular's render. */
@@ -569,12 +574,13 @@ describe('HilosMaintenancePage', () => {
   it('renders only the planned operation lines in the frozen card', async () => {
     const { context, pushState } = seededContext([])
     const fixture = mountPage(context)
+    const startedAt = '2026-10-10T10:00:00.000Z'
 
     pushState(
       maintenanceState({
         phase: 'verifying',
         operation: 'restore',
-        startedAt: '2026-10-10T10:00:00+00:00',
+        startedAt,
         passCount: 2,
       }),
     )
@@ -588,7 +594,10 @@ describe('HilosMaintenancePage', () => {
       HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
     )
     expect(card.textContent).toContain('restore')
-    expect(card.textContent).toContain('2026-10-10T10:00:00+00:00')
+    expect(
+      card.querySelector('[data-id="hilos-maintenance-started-at"]')
+        ?.textContent,
+    ).toBe(formatMoment(startedAt, { kind: 'dateTime' }))
     expect(card.textContent).not.toContain('Initiator')
     expect(card.querySelector('button')).toBeNull()
   })
@@ -1582,5 +1591,142 @@ describe('HilosMaintenancePage code result', () => {
     expect(document.body.textContent).not.toContain('orphan-code')
     expect(byId('hilos-maintenance-pass-result')).toBeNull()
     expect(dispatched).toHaveLength(1)
+  })
+})
+
+describe('HilosMaintenancePage moments', () => {
+  it('reformats the manual start without closing its pass dialog', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    timeZoneReleases.push(timeZone.release)
+    timeZone.receive('UTC')
+
+    const startedAt = '2026-09-10T00:30:00.000Z'
+    const { context, pushState } = seededContext([])
+    const fixture = mountPage(context)
+    pushState(manualState({ startedAt }))
+    await settled(fixture)
+
+    const started = byId('hilos-maintenance-started-at')
+    const card = byId('hilos-maintenance-state-manual')
+    const before = formatMoment(startedAt, { kind: 'dateTime' })
+    expect(started?.textContent).toBe(before)
+
+    byId('hilos-maintenance-pass')?.click()
+    await settled(fixture)
+    const dialog = dialogOf('hilos-maintenance-pass-modal')
+    expect(dialog).not.toBeNull()
+
+    timeZone.receive('America/Los_Angeles')
+    await fixture.whenStable()
+    fixture.detectChanges()
+
+    const after = formatMoment(startedAt, { kind: 'dateTime' })
+    expect(after).not.toBe(before)
+    expect(started?.textContent).toBe(after)
+    expect(byId('hilos-maintenance-state-manual')).toBe(card)
+    expect(dialogOf('hilos-maintenance-pass-modal')).toBe(dialog)
+  })
+
+  it('reformats operation moments in the reader zone and keeps its dialog draft', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-09-10T00:45:00.000Z'))
+    const timeZone = bindTestTimeZone('UTC')
+    timeZoneReleases.push(timeZone.release)
+    timeZone.receive('UTC')
+
+    const startedAt = '2026-09-10T00:30:00.000Z'
+    const activatedAt = '2026-09-10T00:10:00.000Z'
+    const progressAt = '2026-09-10T00:20:00.000Z'
+
+    try {
+      const { context, pushState } = seededContext([])
+      const fixture = mountPage(context)
+      pushState(
+        maintenanceState({
+          phase: 'verifying',
+          operation: 'restore',
+          startedAt,
+          activatedAt,
+          progressAt,
+        }),
+      )
+      await settled(fixture)
+
+      const card = byId('hilos-maintenance-state-operation')
+      const started = byId('hilos-maintenance-started-at')
+      const activated = byId('hilos-maintenance-activated-at')
+      const progress = byId('hilos-maintenance-progress-at')
+      const elapsed = byId('hilos-maintenance-progress-elapsed')
+      const expectedStarted = formatMoment(startedAt, { kind: 'dateTime' })
+      const expectedActivated = formatMoment(activatedAt, { kind: 'dateTime' })
+      const expectedProgress = formatMoment(progressAt, { kind: 'dateTime' })
+
+      expect(started?.textContent).toBe(expectedStarted)
+      expect(activated?.textContent).toBe(expectedActivated)
+      expect(progress?.textContent).toBe(expectedProgress)
+      expect(elapsed?.textContent).toBe(
+        hilosMaintenanceElapsed(progressAt, Date.now()),
+      )
+
+      const panel = byId('hilos-maintenance-circle-panel')
+      const opener = panel?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-table-main-action"]',
+      )
+      opener?.click()
+      fixture.detectChanges()
+      const draft = byId<HTMLInputElement>('hilos-maintenance-circle-add-field')
+      expect(draft).not.toBeNull()
+      if (draft === null) return
+      draft.value = 'draft@example.test'
+      draft.dispatchEvent(new Event('input', { bubbles: true }))
+      fixture.detectChanges()
+
+      timeZone.receive('America/Los_Angeles')
+      await fixture.whenStable()
+      fixture.detectChanges()
+
+      const expectedStartedAfter =
+        formatMoment(startedAt, { kind: 'dateTime' }) ?? '—'
+      const expectedActivatedAfter =
+        formatMoment(activatedAt, { kind: 'dateTime' }) ?? '—'
+      const expectedProgressAfter =
+        formatMoment(progressAt, { kind: 'dateTime' }) ?? '—'
+      expect(expectedStartedAfter).not.toBe(expectedStarted)
+      expect(expectedActivatedAfter).not.toBe(expectedActivated)
+      expect(expectedProgressAfter).not.toBe(expectedProgress)
+      expect(started?.textContent).toBe(expectedStartedAfter)
+      expect(activated?.textContent).toBe(expectedActivatedAfter)
+      expect(progress?.textContent).toBe(expectedProgressAfter)
+      expect(elapsed?.textContent).toBe(
+        hilosMaintenanceElapsed(progressAt, Date.now()),
+      )
+      expect(byId('hilos-maintenance-state-operation')).toBe(card)
+      expect(byId<HTMLInputElement>('hilos-maintenance-circle-add-field')).toBe(
+        draft,
+      )
+      expect(draft.value).toBe('draft@example.test')
+
+      pushState(
+        maintenanceState({
+          phase: 'verifying',
+          operation: 'restore',
+          startedAt: 'not-a-moment',
+          activatedAt: 'not-a-moment',
+          progressAt: null,
+        }),
+      )
+      await settled(fixture)
+
+      expect(started?.textContent).toBe('—')
+      expect(activated?.textContent).toBe('—')
+      expect(progress?.textContent).toBe('—')
+      expect(byId('hilos-maintenance-progress-elapsed')).toBeNull()
+      expect(document.body.textContent).not.toContain('1970')
+      expect(draft.value).toBe('draft@example.test')
+      fixture.destroy()
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
   })
 })

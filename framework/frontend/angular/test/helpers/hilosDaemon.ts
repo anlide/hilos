@@ -80,11 +80,13 @@ export function daemonHarness<T>(
   component: Type<T>,
   page: string,
   actions?: ActionLifecycle,
+  projectTimeZone?: string,
 ) {
   const scopes = new ScopeManager()
   const isNodePage = nodeTabs.some((tab) => tab.page === page)
   const scope = isNodePage ? openNodePage(scopes, page) : scopes.openPage(page)
   const listeners = new Map<string, Set<(value: never) => void>>()
+  let currentProjectTimeZone = projectTimeZone
   const emit = (event: string, value: unknown): void => {
     for (const listener of listeners.get(event) ?? []) listener(value as never)
   }
@@ -92,6 +94,9 @@ export function daemonHarness<T>(
   const unregister = vi.fn()
   const sendViewport = vi.fn()
   const connection = {
+    get projectTimeZone() {
+      return currentProjectTimeZone
+    },
     on(event: string, listener: (value: never) => void) {
       const group = listeners.get(event) ?? new Set()
       listeners.set(event, group)
@@ -170,14 +175,19 @@ export function daemonHarness<T>(
     router,
     route,
     connection,
+    setProjectTimeZone: (timeZone: string | undefined) => {
+      currentProjectTimeZone = timeZone
+    },
     register,
     unregister,
     sendViewport,
     emit,
     detect: () => fixture.detectChanges(),
     el: (id: string) => root.querySelector<HTMLElement>(`[data-id="${id}"]`),
-    listeners: () =>
-      [...listeners.values()].reduce((sum, group) => sum + group.size, 0),
+    listeners: (event?: string) =>
+      event === undefined
+        ? [...listeners.values()].reduce((sum, group) => sum + group.size, 0)
+        : (listeners.get(event)?.size ?? 0),
     window(tableKey: string, rows: readonly TableRow[]) {
       emit('tableWindow', {
         data: {

@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonAgentsPage } from '../src/admin/daemon/HilosDaemonAgentsPage.js'
 import { daemonHarness } from './helpers/hilosDaemon.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 function harness(clustered = false, placement = 'node') {
   let resolve: (value: ActionResult) => void = () => {}
@@ -87,6 +88,38 @@ afterEach(() => {
 })
 
 describe('HilosDaemonAgentsPage', () => {
+  it('reformats the silent notice after a reader-zone change', () => {
+    const timeZone = bindTestTimeZone('UTC')
+    const h = harness(true)
+    try {
+      timeZone.receive('UTC')
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered: true,
+        role: null,
+        state: 'silent',
+        silentSince: 1_700_000_000_000,
+      })
+      h.detect()
+      const line = h.el('hilos-daemon-agents-silent')!
+      const initialLabel = line.textContent
+
+      timeZone.receive('Pacific/Honolulu')
+      h.detect()
+
+      expect(line.textContent).not.toBe(initialLabel)
+      expect(h.el('hilos-daemon-agents-silent')).toBe(line)
+      expect(h.register).toHaveBeenCalledTimes(1)
+      expect(h.unregister).not.toHaveBeenCalled()
+      expect(h.dispatch).not.toHaveBeenCalled()
+    } finally {
+      h.fixture.destroy()
+      vi.restoreAllMocks()
+      timeZone.receive(null)
+      timeZone.release()
+      expect(timeZone.listenerCount()).toBe(0)
+    }
+  })
+
   it.each([
     [false, 'node'],
     [true, 'policy'],

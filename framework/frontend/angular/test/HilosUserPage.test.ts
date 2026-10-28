@@ -86,6 +86,8 @@ function userContext(
     candidateUnverifiedPasswordAddress?: string | null
     candidateNameHidden?: boolean
     candidateIdentitiesHidden?: boolean
+    detailTimeZone?: string | null
+    detailTimeZoneHidden?: boolean
     impersonation?: Record<string, unknown>
     currentUserId?: number
   } = {},
@@ -114,7 +116,16 @@ function userContext(
   }
   page.entities.upsert(
     { type: 'user', id: 1 },
-    { id: 1, name: 'Alice', lastActivity: null },
+    {
+      id: 1,
+      name: 'Alice',
+      lastActivity: null,
+      ...(options.detailTimeZoneHidden
+        ? { timeZone: { _hidden: true } }
+        : options.detailTimeZone !== undefined
+          ? { timeZone: options.detailTimeZone }
+          : {}),
+    },
   )
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
@@ -2566,5 +2577,54 @@ describe('HilosUserPage presence (HIL-1566)', () => {
     ).toBe(true)
     expect(presence(fixture).twin?.textContent?.trim()).toBe('probably offline')
     expect(sessions()).toBe('0')
+  })
+})
+
+describe('HilosUserPage read-only time zone', () => {
+  afterEach(() => TestBed.resetTestingModule())
+
+  function mountCard(
+    options: {
+      detailTimeZone?: string | null
+      detailTimeZoneHidden?: boolean
+    } = {},
+  ): ComponentFixture<HilosUserPage> {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput(
+      'context',
+      userContext(false, 'skip', options).context,
+    )
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  it("shows the person's own zone without an edit control", () => {
+    const fixture = mountCard({ detailTimeZone: 'Europe/Warsaw' })
+    const row = el(fixture, 'hilos-user-time-zone')
+
+    expect(row?.textContent?.trim()).toBe('Europe/Warsaw')
+    expect(row?.querySelector('button, input, select, textarea, a')).toBeNull()
+  })
+
+  it('shows Automatic only when the visible own zone is null', () => {
+    const fixture = mountCard({ detailTimeZone: null })
+    const row = el(fixture, 'hilos-user-time-zone')
+
+    expect(row?.textContent?.trim()).toBe('Automatic — follows the browser')
+    expect(row?.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+  })
+
+  it('keeps a hidden own zone hidden instead of showing Automatic', () => {
+    const fixture = mountCard({ detailTimeZoneHidden: true })
+    const row = el(fixture, 'hilos-user-time-zone')
+
+    expect(row?.querySelector('[data-id="hilos-hidden"]')?.textContent).toBe(
+      'Hidden',
+    )
+    expect(row?.textContent).not.toContain('Automatic — follows the browser')
   })
 })

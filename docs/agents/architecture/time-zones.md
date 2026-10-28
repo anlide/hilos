@@ -40,6 +40,12 @@ zone-less sidecar moment makes the
 maintenance page projects its `startedAt` as UTC-Z while protected-mode runtime
 state remains epoch seconds. Durations, progress and ETA remain separate values.
 
+The Angular [backup page](../../../framework/frontend/angular/src/admin/backup/HilosBackupPage.ts)
+and [maintenance page](../../../framework/frontend/angular/src/admin/maintenance/HilosMaintenancePage.ts)
+format those absolute moments with `formatMoment()` in the current reader zone.
+Each reads `hilosTimeZone` through Angular's `hilosSignal()` bridge, so an open
+view redraws its labels when the reader zone changes.
+
 The existing [TimeHelper](../../../framework/backend/Utils/Helpers/TimeHelper.php)
 already supplies `nowMs()` and `sqlToMs()` for the millisecond wire rule of
 HIL-486. Their presence does not mean every payload has been migrated. In
@@ -69,6 +75,12 @@ On the client, [HilosNotificationBell](../../../framework/frontend/vue/src/Hilos
 and the [deliveries journal](../../../framework/frontend/vue/src/admin/communications/HilosCommunicationsDeliveriesPage.vue)
 use `formatMoment()` and display moments in the reader's time zone
 (`hilosTimeZone`).
+
+The Angular [notification bell](../../../framework/frontend/angular/src/HilosNotificationBell.ts)
+formats its timestamp through the same core entry. The Angular [deliveries
+journal](../../../framework/frontend/angular/src/admin/communications/HilosCommunicationsDeliveriesPage.ts)
+draws the `createdAt` and `deliveredAt` strings already formatted by the
+[core delivery reader](../../../framework/frontend/core/src/admin/communications/hilosDeliveries.ts).
 
 ## Server UTC And The Project Zone
 
@@ -452,6 +464,21 @@ The existing table, controller, rows, viewport windows and subscriptions stay
 in place; the update adds no timer, request or action. See the
 [Cron page](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonCronPage.vue).
 
+Angular's [Cron page](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonCronPage.ts)
+reads the project zone from `connection.projectTimeZone` and refreshes it on
+each handshake. It shows that zone beside run times from the shared
+[cron browser formatter](../../../framework/frontend/core/src/admin/daemon/hilosDaemonCron.ts);
+those times use the current reader zone. The page tracks `hilosTimeZone` through
+`hilosSignal()`, so its open cells and silent label redraw without replacing the
+report rows. The same reader signal feeds all seven Angular Daemon silent-time
+readers: [overview](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonPage.ts),
+[node shell](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonNodeShell.ts),
+[agents](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonAgentsPage.ts),
+[workers](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonWorkersPage.ts),
+[Cron](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonCronPage.ts),
+[HTTP server](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonHttpServerPage.ts)
+and [node detail](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonNodePage.ts).
+
 On disk, a log line's timestamp is `[YYYY-MM-DDTHH:mm:ss.SSSZ]`.
 `TimeHelper::getTimestampWithMs()` writes it in explicit UTC, and
 `LogLineReader` parses it in UTC without dropping its milliseconds. A rotation
@@ -461,6 +488,13 @@ localized. The Vue log screen renders line timestamps, batch labels and undo
 deadlines with `formatMoment` in the reader's zone. Rotation batches do not use
 the project zone (owner's decision, 2026-10-17, HIL-1589:26749); the rotation
 schedule remains in the project zone.
+
+The Angular [logs overview](../../../framework/frontend/angular/src/admin/logs/HilosLogsPage.ts),
+[log view](../../../framework/frontend/angular/src/admin/logs/HilosLogsViewPage.ts)
+and [rotation page](../../../framework/frontend/angular/src/admin/logs/HilosLogsRotationsPage.ts)
+use the same reader-zone formatting for line moments, batch labels and undo
+deadlines. Their `hilosSignal(hilosTimeZone)` dependencies redraw the labels
+when the reader zone changes.
 
 ## One Core Formatter
 
@@ -549,6 +583,15 @@ action is pending. A session echo moves the selected mark without closing the
 modal or clearing the query; a successful reply closes only the opening that
 sent it.
 
+The Angular [profile page](../../../framework/frontend/angular/src/profile/HilosProfilePage.ts)
+mounts its internal [time-zone window](../../../framework/frontend/angular/src/profile/HilosProfileTimeZone.ts)
+against the same profile context. The window starts and stops the core preview
+with its open lifecycle, and the profile disposes the picker when its context
+ends. Angular [session](../../../framework/frontend/angular/src/profile/HilosProfileSessions.ts)
+and [device](../../../framework/frontend/angular/src/profile/HilosProfileDevices.ts)
+moments follow reader-zone changes through `hilosSignal(hilosTimeZone)`; the
+session row shows its stored `browserTimeZone` beside the device name.
+
 The picker previews every row from one shared `Date.now() + offsetMs()` sample,
 refreshed on minute boundaries, focus and when the document becomes visible
 while its window is open. Its internal
@@ -616,6 +659,11 @@ A calendar date names a day, not a point in time. A legal document revision's
 the reader's zone. A recorded acceptance timestamp is an absolute moment and
 uses the core formatter in the reader's zone.
 
+In Angular's [legal acceptances table](../../../framework/frontend/angular/src/admin/legal/HilosLegalAcceptancesPage.ts),
+the core [legal row resolver](../../../framework/frontend/core/src/admin/legal/hilosLegal.ts)
+prepares `acceptedAt` as a `formatMoment()` string or `—`. The page renders that
+value directly, without formatting the accepted moment a second time.
+
 A duration, a countdown and an ordinary number are not moments either. Do not
 feed them to a moment formatter merely because their representation is numeric.
 The existing account-deletion countdown keeps its clock correction inside
@@ -663,6 +711,11 @@ places its read-only **Time zone** row after **Display name** and shows the exac
 name, **Automatic — follows the browser**, or **Hidden**. The target person's
 zone is descriptive; dates on the card still use the reader's `hilosTimeZone`.
 
+The Angular [user page](../../../framework/frontend/angular/src/admin/users/HilosUserPage.ts)
+also shows the target's zone in a read-only hideable row: the exact saved name,
+`Automatic — follows the browser`, or `Hidden`. Dates on that page continue to
+follow the administrator's reader zone.
+
 The optional `--time-zone` on the test-only
 [UserTestSeedCommand](../../../framework/backend/Core/CLI/Commands/UserTestSeedCommand.php)
 accepts only an exact IANA identifier, validates it before fixture writes, and
@@ -682,11 +735,10 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; internal SQL row in UTC string; Vue uses the reader zone. |
 | React | `HIL-1594` done: the Profile Time zone row opens the picker immediately; previews load only while it is open, and the selection indicator follows the authoritative session echo. Session dates follow the reader zone while the stored browser zone remains descriptive and expanded tabs and confirmation dialogs stay open. The user detail shows the read-only account zone (exact, Automatic, or Hidden); activity moments in user detail, lists and merge candidates follow the reader zone. Reader-zone changes refresh notification-bell and Legal Accepted dates, delivery moments, Logs batch labels, undo deadlines and overview moments, Backup and Maintenance moments, and Cron run times. Cron expressions still use the project zone; the shared Daemon node head's Silent since follows its own reader subscription. Core-formatted strings are not reparsed, and durations and ETA are unchanged. Component tests and focused profile/Cron/accessibility e2e cover these paths. |
-| Angular | (not in the code yet — HIL-1595) |
+| Angular | `HIL-1595` done: profile, session/device, notification, acceptance, Logs, Backup, Maintenance and Cron readers use shared presentation paths in the reader zone; Cron also shows the project zone and all seven Daemon silent-time readers follow the reader zone. No direct date-format bypass was found in the Angular SDK or the Polls and Online-testing Angular apps. |
 
 The leaf that lands a mechanism or migration removes its markers in the same
 commit, following [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
-This documentation leaf does not clear them on the strength of a plan.
 
 ## Outside This Rule
 

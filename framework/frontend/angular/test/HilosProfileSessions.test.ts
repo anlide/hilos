@@ -9,8 +9,21 @@ import {
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
+import {
+  bindTestTimeZone,
+  type TimeZoneTestBinding,
+} from './timeZoneTestHarness.js'
+
+const BROWSER_TIME_ZONE = new Intl.DateTimeFormat().resolvedOptions().timeZone
+let timeZoneBinding: TimeZoneTestBinding | null = null
 
 afterEach(() => {
+  if (timeZoneBinding !== null) {
+    timeZoneBinding.receive(null)
+    timeZoneBinding.release()
+    timeZoneBinding = null
+  }
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -51,12 +64,16 @@ function makeTab(
 
 function makeSession(
   id: number,
-  options: { current?: boolean; impersonated?: boolean } = {},
+  options: {
+    current?: boolean
+    impersonated?: boolean
+    browserTimeZone?: string | null
+  } = {},
 ): HilosProfileSession {
   return {
     id,
     deviceName: `Device ${id}`,
-    browserTimeZone: null,
+    browserTimeZone: options.browserTimeZone ?? null,
     createdAt: 1790762400000,
     lastSeenAt: 1790762400000,
     expiresAt: 1793354400000,
@@ -64,6 +81,11 @@ function makeSession(
     impersonated: options.impersonated ?? false,
     tabs: [],
   }
+}
+
+function bindReaderTimeZone(): TimeZoneTestBinding {
+  timeZoneBinding = bindTestTimeZone(BROWSER_TIME_ZONE)
+  return timeZoneBinding
 }
 
 function makeHandle(promise: Promise<unknown>): ActionHandle {
@@ -120,6 +142,90 @@ describe('HilosProfileSessions (Angular)', () => {
     expect(
       tab.querySelector('span.small.text-body-secondary')?.textContent,
     ).toBe(`opened ${formatProfileDateTime(1710000000123)}`)
+  })
+
+  it('shows a stored browser time zone only when the session has one', () => {
+    setup([makeSession(1, { browserTimeZone: 'Europe/Kyiv' }), makeSession(2)])
+
+    const firstDevice = sessionRows()[0]!.querySelector(
+      '[data-id="profile-session-device"]',
+    )!
+    expect(firstDevice.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+    expect(firstDevice.querySelector('span')?.className).toBe(
+      'text-body-secondary',
+    )
+
+    const secondDevice = sessionRows()[1]!.querySelector(
+      '[data-id="profile-session-device"]',
+    )!
+    expect(secondDevice.textContent?.trim()).toBe('Device 2')
+    expect(secondDevice.querySelector('span')).toBeNull()
+  })
+
+  it('reformats session and tab moments when the reader zone changes with UI open', async () => {
+    const timeZone = bindReaderTimeZone()
+    timeZone.receive('Asia/Tokyo')
+    const session = {
+      ...makeSession(2, { browserTimeZone: 'Europe/Kyiv' }),
+      createdAt: 0,
+      expiresAt: null,
+      tabs: [makeTab('tab-zone', { connectedAt: 0 })],
+    }
+    const { fixture } = setup([makeSession(1, { current: true }), session])
+    const row = sessionRows()[1]!
+    const tabsButton = row.querySelector<HTMLButtonElement>(
+      '[data-id="profile-session-tabs"]',
+    )!
+    tabsButton.click()
+    await settle(fixture)
+
+    const sessionDate = row.querySelector(
+      '.flex-grow-1 > .small.text-body-secondary',
+    )!
+    const tab = row.querySelector('[data-id="profile-session-tab"]')!
+    const tabDate = tab.querySelector('span.small.text-body-secondary')!
+    const device = row.querySelector('[data-id="profile-session-device"]')!
+    const deviceZone = device.querySelector('span')!
+    const initialSessionDate = sessionDate.textContent
+    const initialTabDate = tabDate.textContent
+    expect(sessionDate.textContent).toContain(
+      `created ${formatProfileDateTime(0)}`,
+    )
+    expect(sessionDate.textContent).toContain('expires never')
+    expect(tabDate.textContent).toContain(`opened ${formatProfileDateTime(0)}`)
+
+    row
+      .querySelector<HTMLButtonElement>('[data-id="profile-session-revoke"]')!
+      .click()
+    await settle(fixture)
+    const confirm = byId('profile-session-end-confirm')
+    const dialog = confirm.closest('[role="dialog"]')!
+    expect(dialog).not.toBeNull()
+
+    timeZone.receive('America/Los_Angeles')
+    await settle(fixture)
+
+    expect(sessionRows()[1]).toBe(row)
+    expect(row.querySelector('.flex-grow-1 > .small.text-body-secondary')).toBe(
+      sessionDate,
+    )
+    expect(sessionDate.textContent).not.toBe(initialSessionDate)
+    expect(sessionDate.textContent).toContain(
+      `created ${formatProfileDateTime(0)}`,
+    )
+    expect(sessionDate.textContent).toContain('expires never')
+    expect(row.querySelector('[data-id="profile-session-tab"]')).toBe(tab)
+    expect(tab.querySelector('span.small.text-body-secondary')).toBe(tabDate)
+    expect(tabDate.textContent).not.toBe(initialTabDate)
+    expect(tabDate.textContent).toContain(`opened ${formatProfileDateTime(0)}`)
+    expect(tabsButton.getAttribute('aria-expanded')).toBe('true')
+    expect(row.querySelector('[data-id="profile-session-device"]')).toBe(device)
+    expect(device.querySelector('span')).toBe(deviceZone)
+    expect(deviceZone.textContent).toBe('· Europe/Kyiv')
+    expect(byId('profile-session-end-confirm')).toBe(confirm)
+    expect(confirm.closest('[role="dialog"]')).toBe(dialog)
   })
 
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {
