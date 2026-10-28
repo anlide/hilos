@@ -242,9 +242,20 @@ describe('React language locales page', () => {
     act(() => h.card())
     expect(el('i18n-locale-submit').textContent).toBe('Deleted')
     click('i18n-locale-cancel')
+    expect(el('modal-confirm').getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(el('i18n-locale-window')).not.toBeNull()
+    expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+      'YYYY-MM-DD',
+    )
+    expect(h.calls).toHaveLength(0)
+    click('modal-confirm-discard')
+    expect(el('i18n-locale-window')).toBeNull()
     click('i18n-locales-edit-uk')
     change('i18n-locale-field-date', 'YYYY-MM-DD')
     click('i18n-locale-submit')
+    expect(h.calls).toHaveLength(1)
     act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE_LOCALES,

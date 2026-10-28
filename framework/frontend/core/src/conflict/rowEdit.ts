@@ -66,7 +66,11 @@ export interface RowEditState<T extends object> {
   readonly fields: { readonly [K in keyof T]: RowEditField<T[K]> }
   /** True while at least one field conflicts and the row is still there. */
   readonly conflict: boolean
-  /** True when the draft differs from the live row in at least one field. */
+  /**
+   * True when the draft differs from the live row in at least one field, or
+   * from the last accepted snapshot when the row is gone. Does not imply
+   * that saving is available.
+   */
   readonly dirty: boolean
   /**
    * The move the view applies as soon as it sees one: a field only the other
@@ -136,7 +140,7 @@ export function resolveRowEdit<T extends object>(
       gone: true,
       fields,
       conflict: false,
-      dirty: false,
+      dirty: keys.some((key) => !Object.is(draft[key], baseline.values[key])),
       settle: null,
       notice: { kind: 'deleted', fields: [] },
     }

@@ -154,10 +154,69 @@ describe('resolveRowEdit', () => {
     expect(state).toMatchObject({
       gone: true,
       conflict: false,
-      dirty: false,
+      dirty: true,
       settle: null,
       notice: { kind: 'deleted', fields: [] },
     })
+  })
+
+  it('keeps a gone row clean when unchanged or restored to the snapshot', () => {
+    expect(
+      resolveRowEdit(undefined, opened, { overrideValue: 'en' }).dirty,
+    ).toBe(false)
+    expect(
+      resolveRowEdit(undefined, opened, { overrideValue: 'mine' }).dirty,
+    ).toBe(true)
+    expect(
+      resolveRowEdit(undefined, opened, { overrideValue: 'en' }).dirty,
+    ).toBe(false)
+  })
+
+  it.each([
+    { name: 'a', note: 'x', dirty: false },
+    { name: 'b', note: 'x', dirty: true },
+    { name: 'a', note: 'y', dirty: true },
+    { name: 'b', note: 'y', dirty: true },
+  ])(
+    'reads gone fields $name / $note as dirty=$dirty',
+    ({ name, note, dirty }) => {
+      const baseline = openRowEdit<Pair>({ name: 'a', note: 'x' })
+      expect(resolveRowEdit(undefined, baseline, { name, note }).dirty).toBe(
+        dirty,
+      )
+    },
+  )
+
+  it.each(['silent take', 'Take theirs'] as const)(
+    'compares a gone draft against the snapshot advanced by %s',
+    (choice) => {
+      const draft = { overrideValue: choice === 'silent take' ? 'en' : 'mine' }
+      const state = field('de', draft.overrideValue)
+      const step =
+        choice === 'silent take'
+          ? state.settle!
+          : takeTheirsRowEdit(state, opened)
+      const accepted = { ...draft, ...step.take }
+      expect(step.baseline.values).toEqual({ overrideValue: 'de' })
+      expect(resolveRowEdit(undefined, step.baseline, accepted).dirty).toBe(
+        false,
+      )
+      expect(
+        resolveRowEdit(undefined, step.baseline, { overrideValue: 'mine' })
+          .dirty,
+      ).toBe(true)
+    },
+  )
+
+  it.each([
+    { saved: NaN, draft: NaN, dirty: false },
+    { saved: 0, draft: -0, dirty: true },
+    { saved: -0, draft: -0, dirty: false },
+  ])('uses Object.is for gone values: %o', ({ saved, draft, dirty }) => {
+    const baseline = openRowEdit({ value: saved })
+    expect(resolveRowEdit(undefined, baseline, { value: draft }).dirty).toBe(
+      dirty,
+    )
   })
 
   it('ranks deleted over conflict over updated', () => {

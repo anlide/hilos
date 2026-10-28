@@ -466,7 +466,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
   })
 
   it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', () => {
-    const { context, pushRemove, focus } = seededContext('Iv1.a')
+    const { context, pushRemove, focus, sent } = seededContext('Iv1.a')
     const fixture = openModal(context, 'client_id')
     typeDraft(fixture, 'Iv1.mine')
     pushRemove(CLIENT_ID_KEY)
@@ -476,11 +476,37 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     expect(saveButton(fixture).textContent?.trim()).toBe('Deleted')
     expect(saveButton(fixture).disabled).toBe(true)
     expect(valueInput(fixture).value).toBe('Iv1.mine')
+    const field = valueInput(fixture)
+    saveButton(fixture).click()
+    field.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    fixture.detectChanges()
+    expect(sent).toHaveLength(0)
 
     el(fixture, 'modal-close')?.click()
     fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm')?.getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(valueInput(fixture)).toBe(field)
+    expect(valueInput(fixture).value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    el(fixture, 'modal-confirm-cancel')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(valueInput(fixture)).toBe(field)
+    expect(valueInput(fixture).value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+
+    el(fixture, 'modal-close')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm-discard')).not.toBeNull()
+    el(fixture, 'modal-confirm-discard')?.click()
+    fixture.detectChanges()
     expect(el(fixture, 'modal')).toBeNull()
     expect(focus).toEqual([CLIENT_ID_KEY, ''])
+    expect(sent).toHaveLength(0)
   })
 })
 

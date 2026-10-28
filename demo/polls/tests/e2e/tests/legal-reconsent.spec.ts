@@ -12,6 +12,7 @@ import {
   gotoPage,
   PAGE_READY,
   grantAdminToSelf,
+  expectSessionRotation,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // "The terms have changed" (HIL-500). Polls's second terms revision is substantial
@@ -31,7 +32,7 @@ const HELD_TERMS = '2026-09-17'
  * @param value 'freeze' or 'remind'.
  */
 async function setRefusal(admin: Page, value: string): Promise<void> {
-  await gotoPage(expect, admin, '/hilos/legal/settings')
+  await gotoPage(expect, admin, '/hilos/legal/settings', PAGE_READY)
   await clickSubmit(
     expect,
     shownByTestId(admin, 'legal-setting-edit-legal.refusal_after_deadline'),
@@ -159,7 +160,11 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
         await logout(expect, cleanup)
       }
       await openSignIn(expect, cleanup)
-      await login(expect, cleanup, admin.email)
+      // The auth surface closes before the rotated session cookie lands.
+      // Navigating then can lose the sign-in and leave settings refused.
+      await expectSessionRotation(expect, cleanup, async () => {
+        await login(expect, cleanup, admin.email)
+      })
       await setRefusal(cleanup, 'freeze')
     } finally {
       await cleanup.close()

@@ -336,6 +336,10 @@ open**, save is **blocked**, and the primary button reads **"Deleted"**. The
 user's draft stays visible and **extractable** so unsaved input can be copied out
 — it is never silently discarded.
 
+For a user-requested close, show the standard unsaved-changes confirmation when
+any projected draft field is not `Object.is`-equal to its value in the last
+accepted snapshot (`baseline.values`). If every field matches, close immediately.
+
 This includes a value removed from a known place while it is being edited, even
 if its carrier row survives. Do not turn deletion under an open edit back into
 creation. A place that was empty on open is a different case; deletion of its

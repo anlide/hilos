@@ -440,7 +440,7 @@ describe('HilosSecurity2faPage setting modal', () => {
   })
 
   it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', async () => {
-    const { context, pushRemove, focus } = seededContext()
+    const { context, pushRemove, focus, sent } = seededContext()
     await openModal(context, REQUIRED)
     await typeDraft('everyone')
     pushRemove(REQUIRED)
@@ -450,10 +450,37 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(saveButton().disabled).toBe(true)
     expect(valueInput().value).toBe('everyone')
+    const field = valueInput()
+    saveButton().click()
+    field.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    expect(sent).toHaveLength(0)
 
     modalEl('modal-close')?.click()
     await nextTick()
+    expect(modalEl('modal-confirm')?.getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(modalEl('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('everyone')
+    expect(focus).toEqual([REQUIRED])
+    modalEl('modal-confirm-cancel')?.click()
+    await nextTick()
+    expect(modalEl('modal-confirm')).toBeNull()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('everyone')
+    expect(focus).toEqual([REQUIRED])
+
+    modalEl('modal-close')?.click()
+    await nextTick()
+    expect(modalEl('modal-confirm-discard')).not.toBeNull()
+    modalEl('modal-confirm-discard')?.click()
+    await nextTick()
+    expect(modalEl('modal')).toBeNull()
     expect(focus).toEqual([REQUIRED, ''])
+    expect(sent).toHaveLength(0)
   })
 
   it('asks before discarding a changed draft, and closes a pristine one on Save without a request', async () => {

@@ -417,7 +417,7 @@ describe('HilosSecurity2faPage setting modal', () => {
   })
 
   it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', () => {
-    const { context, pushRemove, focus } = seededContext()
+    const { context, pushRemove, focus, sent } = seededContext()
     const fixture = openModal(context, REQUIRED)
     typeDraft(fixture, 'everyone')
     pushRemove(REQUIRED)
@@ -427,10 +427,37 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(saveButton(fixture).textContent?.trim()).toBe('Deleted')
     expect(saveButton(fixture).disabled).toBe(true)
     expect(valueInput(fixture).value).toBe('everyone')
+    const field = valueInput(fixture)
+    saveButton(fixture).click()
+    field.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    fixture.detectChanges()
+    expect(sent).toHaveLength(0)
 
     el(fixture, 'modal-close')?.click()
     fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm')?.getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(valueInput(fixture)).toBe(field)
+    expect(valueInput(fixture).value).toBe('everyone')
+    expect(focus).toEqual([REQUIRED])
+    el(fixture, 'modal-confirm-cancel')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(valueInput(fixture)).toBe(field)
+    expect(valueInput(fixture).value).toBe('everyone')
+    expect(focus).toEqual([REQUIRED])
+
+    el(fixture, 'modal-close')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm-discard')).not.toBeNull()
+    el(fixture, 'modal-confirm-discard')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
     expect(focus).toEqual([REQUIRED, ''])
+    expect(sent).toHaveLength(0)
   })
 
   it('asks before discarding a changed draft, and closes a pristine one on Save without a request', () => {

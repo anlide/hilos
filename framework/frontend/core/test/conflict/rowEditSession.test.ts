@@ -208,19 +208,79 @@ describe('row-edit session: the live row', () => {
     expect(edit.canSave.get()).toBe(false)
   })
 
-  it('keeps the draft on screen when the row is removed under the window', () => {
-    const { edit, table } = tableHarness()
-    edit.open('legal.consent_form')
-    edit.setForm({ value: 'line' })
-    table.controller.ingestDelta({
-      kind: 'row_removed',
-      rowKey: 'legal.consent_form',
-      reason: 'deleted',
-    })
-    expect(edit.state.get().gone).toBe(true)
-    expect(edit.form.get()).toEqual({ value: 'line' })
-    expect(edit.row.get()?.rowKey).toBe('legal.consent_form')
+  it.each(['save', 'saveLanded'] as const)(
+    'keeps the deleted draft and focus when %s is attempted',
+    async (method) => {
+      const { edit, table, focus } = tableHarness()
+      edit.open('legal.consent_form')
+      edit.setForm({ value: 'line' })
+      table.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'legal.consent_form',
+        reason: 'deleted',
+      })
+      expect(edit.state.get()).toMatchObject({ gone: true, dirty: true })
+      expect(edit.saveAvailable.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(false)
+      expect(edit.saveLabel.get()).toBe(HILOS_ROW_EDIT_COPY.gone)
+      const send = vi.fn(() => true)
+      if (method === 'save') {
+        await edit.save(() => Promise.resolve(send()))
+      } else {
+        edit.saveLanded(send, createSignal<string | null>(null))
+      }
+      expect(send).not.toHaveBeenCalled()
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(false)
+      expect(edit.form.get()).toEqual({ value: 'line' })
+      expect(edit.row.get()?.rowKey).toBe('legal.consent_form')
+      expect(focus).toEqual(['legal.consent_form'])
+      edit.close()
+      expect(edit.opened.get()).toBe(false)
+      expect(focus).toEqual(['legal.consent_form', ''])
+    },
+  )
+
+  it('keeps a pristine deleted row clean and open when Save is attempted', async () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    live.set(undefined)
+    expect(edit.state.get()).toMatchObject({ gone: true, dirty: false })
+    const send = vi.fn(() => Promise.resolve(true))
+    await edit.save(send)
+    expect(send).not.toHaveBeenCalled()
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get()).toEqual({ hidden: false, name: 'Ann', note: '' })
   })
+
+  it.each(['opening', 'silent take', 'Take theirs'] as const)(
+    'clears deleted dirty when the draft returns to the %s snapshot',
+    (choice) => {
+      const { edit, live } = signalHarness()
+      edit.open()
+      if (choice === 'Take theirs') {
+        edit.patchForm({ name: 'Bob' })
+      }
+      if (choice !== 'opening') {
+        live.set({ id: 1, name: 'Carl', note: null })
+      }
+      if (choice === 'Take theirs') {
+        edit.takeTheirs()
+      }
+      const accepted = edit.form.get()
+      expect(accepted.name).toBe(choice === 'opening' ? 'Ann' : 'Carl')
+      live.set(undefined)
+      expect(edit.state.get()).toMatchObject({ gone: true, dirty: false })
+      edit.patchForm({ name: 'mine' })
+      expect(edit.state.get().dirty).toBe(true)
+      edit.setForm(accepted)
+      expect(edit.state.get()).toMatchObject({ gone: true, dirty: false })
+      expect(edit.saveAvailable.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(false)
+      expect(edit.saveLabel.get()).toBe(HILOS_ROW_EDIT_COPY.gone)
+      expect(edit.opened.get()).toBe(true)
+    },
+  )
 
   it('lands a field only the other side changed in the form and says so, until typed over', () => {
     const { edit, live } = signalHarness()
@@ -281,7 +341,10 @@ describe('row-edit session: can save and the one door of the send', () => {
     edit.keepMine()
     expect(edit.canSave.get()).toBe(true)
     live.set(undefined)
+    expect(edit.state.get()).toMatchObject({ gone: true, dirty: true })
+    expect(edit.saveAvailable.get()).toBe(false)
     expect(edit.canSave.get()).toBe(false)
+    expect(edit.saveLabel.get()).toBe(HILOS_ROW_EDIT_COPY.gone)
     live.set({ id: 1, name: 'Carl', note: null })
     let release: (saved: boolean) => void = () => undefined
     const pending = edit.save(
@@ -310,7 +373,10 @@ describe('row-edit session: can save and the one door of the send', () => {
     edit.keepMine()
     expect(edit.saveAvailable.get()).toBe(true)
     live.set(undefined)
+    expect(edit.state.get()).toMatchObject({ gone: true, dirty: true })
     expect(edit.saveAvailable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(false)
+    expect(edit.saveLabel.get()).toBe(HILOS_ROW_EDIT_COPY.gone)
     live.set({ id: 1, name: 'Carl', note: null })
     expect(edit.saveAvailable.get()).toBe(true)
     edit.close()
@@ -375,6 +441,8 @@ describe('row-edit session: can save and the one door of the send', () => {
     await edit.save(send)
     expect(send).not.toHaveBeenCalled()
     expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get()).toEqual({ hidden: false, name: 'Bob', note: '' })
+    expect(edit.state.get()).toMatchObject({ gone: true, dirty: true })
 
     live.set({ id: 1, name: 'Carl', note: null })
     let release: (saved: boolean) => void = () => undefined

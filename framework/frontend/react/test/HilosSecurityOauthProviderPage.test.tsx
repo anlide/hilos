@@ -822,7 +822,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
   })
 
   it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', () => {
-    const { context, pushRemove, focus } = seededContext('Iv1.a')
+    const { context, pushRemove, focus, sent } = seededContext('Iv1.a')
     openModal(context, 'client_id')
     typeDraft('Iv1.mine')
     act(() => {
@@ -833,10 +833,32 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(saveButton().disabled).toBe(true)
     expect(valueInput().value).toBe('Iv1.mine')
+    const field = valueInput()
+    fireEvent.click(saveButton())
+    fireEvent.submit(field.form as HTMLFormElement)
+    expect(sent).toHaveLength(0)
 
     fireEvent.click(byId('modal-close') as Element)
+    expect(byId('modal-confirm')?.getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(byId('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    fireEvent.click(byId('modal-confirm-cancel') as Element)
+    expect(byId('modal-confirm')).toBeNull()
+    expect(byId('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+
+    fireEvent.click(byId('modal-close') as Element)
+    expect(byId('modal-confirm-discard')).not.toBeNull()
+    fireEvent.click(byId('modal-confirm-discard') as Element)
     expect(byId('modal')).toBeNull()
     expect(focus).toEqual([CLIENT_ID_KEY, ''])
+    expect(sent).toHaveLength(0)
   })
 })
 

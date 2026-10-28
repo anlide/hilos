@@ -484,7 +484,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
   })
 
   it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', async () => {
-    const { context, pushRemove, focus } = seededContext('Iv1.a')
+    const { context, pushRemove, focus, sent } = seededContext('Iv1.a')
     await openModal(context, 'client_id')
     await typeDraft('Iv1.mine')
     pushRemove(CLIENT_ID_KEY)
@@ -494,11 +494,37 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(saveButton().disabled).toBe(true)
     expect(valueInput().value).toBe('Iv1.mine')
+    const field = valueInput()
+    saveButton().click()
+    field.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    expect(sent).toHaveLength(0)
 
     modalEl('modal-close')?.click()
     await nextTick()
+    expect(modalEl('modal-confirm')?.getAttribute('aria-label')).toBe(
+      'Discard changes?',
+    )
+    expect(modalEl('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    modalEl('modal-confirm-cancel')?.click()
+    await nextTick()
+    expect(modalEl('modal-confirm')).toBeNull()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(valueInput()).toBe(field)
+    expect(valueInput().value).toBe('Iv1.mine')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+
+    modalEl('modal-close')?.click()
+    await nextTick()
+    expect(modalEl('modal-confirm-discard')).not.toBeNull()
+    modalEl('modal-confirm-discard')?.click()
+    await nextTick()
     expect(modalEl('modal')).toBeNull()
     expect(focus).toEqual([CLIENT_ID_KEY, ''])
+    expect(sent).toHaveLength(0)
   })
 
   it('holds the dialog and locks its body while the save is in flight, and frees the same field after a refusal', async () => {

@@ -123,7 +123,7 @@ describe('legal setting edit sessions', () => {
     })
     expect(h.editor.row.get()?.rowKey).toBe('legal.consent_form')
     expect(h.editor.state.get().gone).toBe(true)
-    expect(h.editor.state.get().dirty).toBe(false)
+    expect(h.editor.state.get().dirty).toBe(true)
     expect(h.editor.form.get().value).toBe('line')
     expect(h.editor.noticeText.get()).toBe(
       'Deleted elsewhere — your choice stays visible.',
