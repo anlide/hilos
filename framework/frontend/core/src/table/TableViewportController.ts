@@ -541,10 +541,12 @@ export interface TableViewportControllerOptions<R> {
    * Initial filter map — a preset the page puts on its table, such as the channel
    * a route names; empty by default.
    *
-   * The window that arrives with the page's own answer is built without it: the
-   * backend serves a cold entry by the table's declaration alone and knows nothing
-   * of a route's param. So a table opening with a preset does not show that
-   * window's rows; it keeps the order and the size it says, and asks for its own.
+   * The window that arrives with the page's own answer is built from the table's
+   * declaration alone: its size, its order and the route preset the table declares
+   * (`defaultFilter()`, empty unless it names one). That window does not say which
+   * filter it ran at, so a table opening with a preset does not show its rows; it
+   * keeps the order and the size it says, and asks for its own — even where the
+   * backend has already applied the same preset.
    */
   initialFilter?: Record<string, unknown>
   /**
@@ -2220,7 +2222,9 @@ export class TableViewportController<R> implements TableWindowSink {
       this.orderSignal.set(sort)
       const firstWindow = !this.loadedSignal.get()
       if (firstWindow && this.opensWithPreset()) {
-        // The rows of this window are the whole set, the preset unknown to whoever served it.
+        // The rows of this window may be the whole set: a table that declares no preset of
+        // its own on the backend (defaultFilter()) was served without this one, and the
+        // window does not say which filter it ran at.
         // Showing them first and the preset's own rows a moment later would flash a table of
         // everything under a page about one thing, so the skeleton stands until the right ones
         // come — asked for at the size the backend declared.
