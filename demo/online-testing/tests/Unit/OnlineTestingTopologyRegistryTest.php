@@ -158,6 +158,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -1207,6 +1208,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             OnlineTestingTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
             OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
+            OnlineTestingTableContext::hilosLogNodes => HilosLogNodesTable::class,
             OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
@@ -1248,6 +1250,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             MaintenancePage::PAGE,
             MaintenanceCirclePage::PAGE,
             MaintenanceWordsPage::PAGE,
+            LogsOverviewPage::PAGE,
             LogsKeysPage::PAGE,
             LogsRotationsPage::PAGE,
             LogsWorkersPage::PAGE,
@@ -1466,6 +1469,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(LogStoreAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_STORE]));
         $this->assertSame(LogCarrierAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_CARRIER]));
         $this->assertSame(LogAggregatorAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_AGGREGATOR]));
+        $this->assertSame([OnlineTestingTableContext::hilosLogNodes => []], Hilos::PAGE_TABLES[LogsOverviewPage::PAGE]);
+        $this->assertSame(HilosLogNodesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosLogNodes]);
         $this->assertSame([OnlineTestingTableContext::hilosLogKeys => []], Hilos::PAGE_TABLES[LogsKeysPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosLogRotations => []], Hilos::PAGE_TABLES[LogsRotationsPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosLogWorkers => []], Hilos::PAGE_TABLES[LogsWorkersPage::PAGE]);

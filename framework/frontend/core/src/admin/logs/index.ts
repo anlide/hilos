@@ -46,6 +46,7 @@ export {
   formatLogsOverviewGrowth,
   logsOverviewGrowthNote,
   logsOverviewForecastNote,
+  logsOverviewThresholdPassed,
   logsOverviewBatchesNote,
   logsOverviewTakeoutHeadline,
   logsOverviewRecent,
@@ -88,6 +89,19 @@ export {
   type HilosLogsOverviewNode,
   type HilosLogsOverviewRecentEntry,
 } from '../../protocol/logsSignals.js'
+export {
+  createHilosLogNodesTable,
+  resolveHilosLogNodeRow,
+  NODE_ID_FIELD,
+  NODE_LAST_ROTATION_AT_FIELD,
+  NODE_LIVE_BYTES_FIELD,
+  NODE_ARCHIVE_BYTES_FIELD,
+  NODE_GROWTH_BYTES_PER_DAY_FIELD,
+  NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD,
+  type HilosLogNodeRow,
+  type HilosLogNodesContext,
+  type HilosLogNodesTable,
+} from './hilosLogNodes.js'
 export {
   resolveHilosLogWorkerRow,
   createHilosLogWorkersTable,

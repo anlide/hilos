@@ -14,6 +14,8 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
@@ -30,7 +32,8 @@ use Hilos\Log\LogRecentEntry;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
-use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
+use Hilos\Tables\Logs\HilosLogNodesTableRow;
 use JsonException;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -38,8 +41,8 @@ use Hilos\Core\Page\PageRouteParams;
  * Abstract Hilos admin page: logs overview (rotation batch metrics under the daemon log archive).
  *
  * Reads the CLUSTER's figures out of {@see ClusterLogIndexMirror} and keeps only what the overview
- * draws from them (HIL-756): the tiles' scalars, and a row per named node for the table beneath
- * them. It walks no directory itself: a walk in the page worker would block it
+ * draws from them (HIL-756): the tiles' scalars and the full compatibility list of named nodes.
+ * The node table receives its own bounded window of the same row projection. A directory walk would block it
  * on file I/O and could only ever see the node it happens to run on, which is one node's logs shown as
  * though they were the whole installation. The caching around the projection stays — a ~100ms throttle
  * plus a payload fingerprint so an unchanged picture is not rebroadcast. Live updates are pushed while
@@ -171,7 +174,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @var list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}>
-     *     Rows of the per-node table, named nodes only; empty in a single-node installation
+     *     Full compatibility node list, independent of the table window; empty on standalone
      */
     private static array $logsOverviewNodes = [];
 
@@ -216,6 +219,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @param PageAgentInterface $agent Hilos logs agent (for {@see PageAgentInterface::getAgentSignalSource()} when broadcasting)
      * @throws InvalidArgumentException When the overview signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws LogicException When the overview cannot be fingerprinted
+     * @throws InvalidFormatException When a table-window request id is malformed
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -238,6 +243,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
         self::$lastOverviewFingerprint = $fp;
         self::broadcastOverviewToSubscribers($agent);
+        self::resendWindows();
     }
 
     /**
@@ -261,12 +267,16 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the overview signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws LogicException When the overview cannot be fingerprinted
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $this->logAgentInfo("hilos_logs onSubscribe acceptKey={$acceptKey}");
         self::refreshOverview();
-        self::$lastOverviewFingerprint = self::overviewFingerprint();
+        // A newcomer must not mark a change as broadcast to viewers who still hold the old picture.
+        if (self::$logsOverviewSubscribers === []) {
+            self::$lastOverviewFingerprint = self::overviewFingerprint();
+        }
 
         $frame = static::frameForViewer($acceptKey, self::buildLogsOverviewSignalData(), HilosLogsOverviewSignalData::wireFields());
         if ($frame === null) {
@@ -314,7 +324,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * The takeout figure is the one not taken out of {@see ClusterLogTotals}, because it is not a
      * total over the picture but a per-node verdict added up: each node judges its own archive and
      * reports the answer with its index (HIL-871), so this counter adds up those lists, less the
-     * batches an operator already confirmed taking out ({@see self::batchesDueOf()}), and moves
+     * batches an operator already confirmed taking out, using the shared node projection, and moves
      * when a node re-reports, not when this page next looks at a clock.
      */
     private static function refreshOverview(): void
@@ -359,16 +369,16 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewFreeSpaceThresholdPercent = null;
         $clusterEnabled = Hilos::$cluster?->isEnabled() === true;
         foreach ($index->nodes() as $slot) {
-            $due = self::batchesDueOf($slot->index);
+            $row = HilosLogNodesTableRow::fromNode($slot);
             // Summed over every slot: a single-node installation draws no table, and the banner
             // above it still has to say the batches are waiting.
-            $batchesDueForTakeout += $due;
+            $batchesDueForTakeout += $row->batchesDueForTakeout ?? 0;
             if (!$clusterEnabled) {
                 self::fillFreeSpaceHeader($slot->index);
 
                 continue;
             }
-            $nodes[] = self::nodeRow($slot->nodeId, $slot->index, $due);
+            $nodes[] = self::nodeRow($slot, $row);
         }
         self::$logsOverviewBatchesDueForTakeout = $batchesDueForTakeout;
         self::$logsOverviewNodes = $nodes;
@@ -400,169 +410,31 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Lays out one named node's row: when it last rotated, what it is holding, and what is due.
+     * Adapts the shared node projection to the full compatibility header, including its disk figures.
      *
-     * A node whose store could not be read carries null in every figure rather than zeros. The row
-     * stays in the table saying "no data", because a node silently missing from it would read as a
-     * node that never reported at all - and a zero there would be a measurement nobody took.
-     *
-     * @param string $nodeId Cluster node the row speaks for
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @param int $batchesDue Batches this node reported as past their retention, counted by the caller
+     * @param ClusterLogNodeSlot $slot Node whose disk figures accompany the projection
+     * @param HilosLogNodesTableRow $row Shared measurements with an epoch-millisecond rotation
      * @return array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}
-     *     Row of the table
+     *     Full header entry with the existing ISO rotation format
      */
-    private static function nodeRow(string $nodeId, NodeLogIndex $index, int $batchesDue): array
+    private static function nodeRow(ClusterLogNodeSlot $slot, HilosLogNodesTableRow $row): array
     {
-        if (!$index->available) {
-            return [
-                HilosLogsOverviewSignalData::nodeId => $nodeId,
-                HilosLogsOverviewSignalData::available => false,
-                HilosLogsOverviewSignalData::lastRotationAt => null,
-                HilosLogsOverviewSignalData::liveBytes => null,
-                HilosLogsOverviewSignalData::archiveBytes => null,
-                HilosLogsOverviewSignalData::growthBytesPerDay => null,
-                HilosLogsOverviewSignalData::batchesDueForTakeout => null,
-                HilosLogsOverviewSignalData::filesystemFreeBytes => null,
-                HilosLogsOverviewSignalData::filesystemTotalBytes => null,
-                HilosLogsOverviewSignalData::freeSpaceThresholdPercent => null,
-            ];
-        }
-
-        $archiveBytes = self::archiveBytesOf($index);
-
         return [
-            HilosLogsOverviewSignalData::nodeId => $nodeId,
-            HilosLogsOverviewSignalData::available => true,
-            HilosLogsOverviewSignalData::lastRotationAt => self::rotationAt(self::lastRotationOf($index)),
-            HilosLogsOverviewSignalData::liveBytes => self::liveBytesOf($index, $archiveBytes),
-            HilosLogsOverviewSignalData::archiveBytes => $archiveBytes,
-            HilosLogsOverviewSignalData::growthBytesPerDay => self::growthOf($index),
-            HilosLogsOverviewSignalData::batchesDueForTakeout => $batchesDue,
-            HilosLogsOverviewSignalData::filesystemFreeBytes => $index->filesystemFreeBytes,
-            HilosLogsOverviewSignalData::filesystemTotalBytes => $index->filesystemTotalBytes,
-            HilosLogsOverviewSignalData::freeSpaceThresholdPercent => $index->freeSpaceThresholdPercent,
+            HilosLogsOverviewSignalData::nodeId => $row->nodeId,
+            HilosLogsOverviewSignalData::available => $row->available,
+            HilosLogsOverviewSignalData::lastRotationAt => self::rotationAt(
+                $row->lastRotationAt === null ? null : intdiv($row->lastRotationAt, TimeConstants::MS_PER_SECOND),
+            ),
+            HilosLogsOverviewSignalData::liveBytes => $row->liveBytes,
+            HilosLogsOverviewSignalData::archiveBytes => $row->archiveBytes,
+            HilosLogsOverviewSignalData::growthBytesPerDay => $row->growthBytesPerDay,
+            HilosLogsOverviewSignalData::batchesDueForTakeout => $row->batchesDueForTakeout,
+            HilosLogsOverviewSignalData::filesystemFreeBytes => $row->available ? $slot->index->filesystemFreeBytes : null,
+            HilosLogsOverviewSignalData::filesystemTotalBytes => $row->available ? $slot->index->filesystemTotalBytes : null,
+            HilosLogsOverviewSignalData::freeSpaceThresholdPercent => $row->available ? $slot->index->freeSpaceThresholdPercent : null,
         ];
-    }
-
-    /**
-     * How many of one node's batches that node says are past their retention and nobody has taken out.
-     *
-     * Counted rather than judged (HIL-871): the rule is applied on the machine holding the
-     * directory, and this figure reads the list that arrived. It stays per node for the reason it
-     * was always per node - archives do not travel, so a batch ages out where it lies, and the
-     * cluster figure is the sum of these counts rather than a verdict over a pile nobody holds.
-     *
-     * The list alone is not the count (HIL-903): the verdict judges a confirmed batch too, and the
-     * rotations screen answers a confirmation ahead of the rule ({@see HilosLogRotationsTable}), so
-     * a batch confirmed and waiting for the pruner is "taken" there and must not be "awaiting" here
-     * - the banner links to the awaiting filter, and both have to name the same batches. A verdict
-     * whose batch is missing from the index is not counted either: the screen draws a row only
-     * from a batch, so nothing would answer the number there.
-     *
-     * A node that could not be read reports no batches and therefore no verdicts; the column
-     * still shows it a null rather than this zero, which {@see self::nodeRow()} decides.
-     *
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @return int Batches of this node awaiting takeout
-     */
-    private static function batchesDueOf(NodeLogIndex $index): int
-    {
-        $due = array_flip($index->dueBatchTimestamps);
-        $count = 0;
-        foreach ($index->batches as $batch) {
-            if ($batch->takenAt === null && isset($due[$batch->timestamp])) {
-                $count++;
-            }
-        }
-
-        return $count;
-    }
-
-    /**
-     * When one node last rotated.
-     *
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @return ?int Unix timestamp of its newest batch, null when it holds none
-     */
-    private static function lastRotationOf(NodeLogIndex $index): ?int
-    {
-        $last = null;
-        foreach ($index->batches as $batch) {
-            if ($last === null || $batch->timestamp > $last) {
-                $last = $batch->timestamp;
-            }
-        }
-
-        return $last;
-    }
-
-    /**
-     * What one node's archive weighs.
-     *
-     * Every class of stream, the daemon's own included: this is what the archive costs, which is
-     * the same sum the rotations history charges a batch with ({@see HilosLogRotationsTable}).
-     *
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @return int Summed size in bytes of every batch it holds
-     */
-    private static function archiveBytesOf(NodeLogIndex $index): int
-    {
-        $bytes = 0;
-        foreach ($index->batches as $batch) {
-            $bytes += $batch->agentBytes + $batch->workerBytes + $batch->workerMonopolisticBytes + $batch->daemonBytes;
-        }
-
-        return $bytes;
-    }
-
-    /**
-     * What one node's live files weigh.
-     *
-     * Nothing measures the live weight on its own: a {@see LogKeySummary} carries the live file AND
-     * every batch occurrence of that stream in one number, so the live weight is that sum with the
-     * archive taken back out. Both sides count all four stream classes, which is why the
-     * subtraction meets.
-     *
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @param int $archiveBytes What its archive weighs, already summed
-     * @return int Summed size in bytes of its live files
-     */
-    private static function liveBytesOf(NodeLogIndex $index, int $archiveBytes): int
-    {
-        $bytes = 0;
-        foreach ($index->keys as $key) {
-            $bytes += $key->totalBytes;
-        }
-
-        return $bytes - $archiveBytes;
-    }
-
-    /**
-     * How much one node wrote over the last day.
-     *
-     * The rule {@see ClusterLogTotals} applies to the cluster, applied to one node: a stream whose
-     * day window has not filled contributes nothing rather than a zero, and a node where none of
-     * them has filled answers null - it has not been measured long enough, which is not the same
-     * as not growing.
-     *
-     * @param NodeLogIndex $index That node's index, as it last reported it
-     * @return ?int Bytes written over the last day, null while no window of its has filled
-     */
-    private static function growthOf(NodeLogIndex $index): ?int
-    {
-        $growth = null;
-        foreach ($index->growthBytesPerDay as $bytes) {
-            if ($bytes === null) {
-                continue;
-            }
-
-            $growth = ($growth ?? 0) + $bytes;
-        }
-
-        return $growth;
     }
 
     /**
@@ -745,10 +617,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Reset overview scalars when the log store cannot be read or env is missing.
      *
-     * The per-node table empties with them. Both states this leads to are states of the whole
-     * picture - nobody has reported, or nobody could be read - so there is no node left that
-     * answers for itself, and a table of rows all saying "no data" would repeat once per row what
-     * the screen already says once.
+     * The compatibility header keeps its existing empty node list in this state. The windowed
+     * table still projects every reported node, including unreadable stores.
      */
     private static function setUnavailableState(): void
     {
@@ -781,14 +651,25 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * point of it: a field left out of here is a field whose change never wakes a broadcast, so
      * the picture moves while the screen holds the old one and goes on looking alive. Nothing
      * fails in that case - which is why the fingerprint is built from the payload itself.
+     * Node identities are included separately: when every store is unreadable, the compatibility
+     * header clears its node list but the table still has rows whose membership can change.
      *
-     * @return string JSON object string
-     *
-     * @throws JsonException From {@see json_encode()} with {@see JSON_THROW_ON_ERROR}
+     * @return string JSON fingerprint of the header and the node set
+     * @throws EnvException When the cluster mode flag cannot be read
+     * @throws LogicException When the overview contains a value JSON cannot encode
      */
     private static function overviewFingerprint(): string
     {
-        return json_encode(self::buildLogsOverviewSignalData()->toArray(), JSON_THROW_ON_ERROR);
+        try {
+            return json_encode([
+                self::buildLogsOverviewSignalData()->toArray(),
+                Hilos::$cluster?->isEnabled() === true
+                    ? array_map(static fn(ClusterLogNodeSlot $slot): string => $slot->nodeId, ClusterLogIndexMirror::index()?->nodes() ?? [])
+                    : [],
+            ], JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new LogicException('Cannot fingerprint the logs overview picture', previous: $exception);
+        }
     }
 
     /**
@@ -830,6 +711,24 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         $dto = self::buildLogsOverviewSignalData();
         foreach (array_keys(self::$logsOverviewSubscribers) as $acceptKey) {
             self::queueOverviewToUser($agent, $acceptKey, $dto);
+        }
+    }
+
+    /**
+     * Re-serves each subscriber's held node window; no viewport means nothing is requested.
+     *
+     * @throws InvalidArgumentException When the table-window signal cannot be named
+     * @throws InvalidFormatException When a table-window request id is malformed
+     */
+    private static function resendWindows(): void
+    {
+        foreach (array_keys(self::$logsOverviewSubscribers) as $acceptKey) {
+            $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosLogNodesTable::TABLE);
+            if ($viewport === null) {
+                continue;
+            }
+
+            Hilos::$browser?->sendTableWindow(HilosPageConstants::HILOS_LOGS, $acceptKey, $viewport);
         }
     }
 

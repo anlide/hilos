@@ -9,6 +9,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -17,7 +18,11 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -32,7 +37,9 @@ use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use JsonException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -65,6 +72,8 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
     private const string REFUSED_ACCEPT_KEY = 'ak-logs-refused';
 
+    private const string SECOND_ACCEPT_KEY = 'ak-logs-2';
+
     /** Comfortably past the ~100ms throttle {@see AbstractHilosLogsPage::onAgentTick()} keeps. */
     private const int PAST_THE_TICK_THROTTLE_MICROSECONDS = 150_000;
 
@@ -83,10 +92,13 @@ final class HilosLogsPageSubscribeTest extends TestCase
     /** How many bytes the fixture node's one key holds; each move of it moves the fingerprint */
     private int $keyBytes = 0;
 
+    private ?TableContext $previousTable = null;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->previousCluster = Hilos::$cluster;
+        $this->previousTable = Hilos::$table;
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
@@ -109,10 +121,12 @@ final class HilosLogsPageSubscribeTest extends TestCase
         // nobody for the rest of the suite. The mirror is static for the same reason.
         AbstractHilosLogsPage::removeSubscriber(self::ACCEPT_KEY);
         AbstractHilosLogsPage::removeSubscriber(self::REFUSED_ACCEPT_KEY);
+        AbstractHilosLogsPage::removeSubscriber(self::SECOND_ACCEPT_KEY);
         $this->emptyTheMirror();
 
         Hilos::$sr = null;
-        Hilos::$browser = null;
+        Hilos::initBrowser();
+        Hilos::$table = $this->previousTable;
 
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
@@ -906,6 +920,216 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertSame([], $this->tickRecipients());
     }
 
+    public function testTheStandardSubscribeIncludesABoundedWindowAndTheFullCompatibilityHeader(): void
+    {
+        $this->mountNodeTable();
+        $slots = [];
+        for ($number = 30; $number >= 1; $number--) {
+            $slots[] = self::nodeSlot(sprintf('node-%02d', $number), batches: [self::batch(1767227405)]);
+        }
+        $this->fileThePicture(...$slots);
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertCount(30, $overview->nodes, 'The compatibility header is not cut to the window');
+        $this->assertSame('2026-01-01T00:30:05.000Z', $overview->nodes[0]['lastRotationAt']);
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal?->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $window = $signal->data->data->toArray()['payload']['windows']['hilosLogNodes'];
+        $this->assertCount(25, $window['rows']);
+        $this->assertSame(25, $window['limit']);
+        $this->assertSame(30, $window['totalCount']);
+        $this->assertTrue($window['totalExact']);
+        $this->assertSame([['field' => 'nodeId', 'direction' => 'asc']], $window['sort']);
+        $this->assertSame('node-01', $window['rows'][0]['rowKey']);
+        $this->assertSame('node-25', $window['rows'][24]['rowKey']);
+        $this->assertSame(1_767_227_405_000, $window['rows'][0]['slots']['node']['lastRotationAt']);
+        $this->assertArrayNotHasKey('id', $window['rows'][0]['slots']['node']);
+        $this->assertNotNull(Hilos::$sr?->getTableViewport(self::ACCEPT_KEY, HilosLogNodesTable::TABLE));
+        $this->assertSame([], $this->queuedSignalNames(), 'No extra request or table frame starts the window');
+    }
+
+    public function testAnUnencodablePictureFailsWithinTheFrameworkExceptionContract(): void
+    {
+        $this->fileThePicture(self::nodeSlot("node-\xB1"));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        try {
+            $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            $this->fail('An unencodable picture must refuse the subscription.');
+        } catch (LogicException $exception) {
+            $this->assertInstanceOf(JsonException::class, $exception->getPrevious());
+        }
+
+        $this->assertSame([], $this->queuedSignalNames());
+        $this->assertSame(0, ClusterLogIndexMirror::viewerCount());
+    }
+
+    public function testAChangedPictureResendsEverySubscribersOwnWindow(): void
+    {
+        $this->mountNodeTable();
+        $this->fileThePicture(self::nodeSlot('node-a'), self::nodeSlot('node-b'));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $page->onSubscribe(self::SECOND_ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+        Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(
+            HilosLogNodesTable::TABLE,
+            sort: new HilosLogNodesTable()->defaultSort(),
+            limit: 1,
+        ));
+        Hilos::$sr?->setTableViewport(self::SECOND_ACCEPT_KEY, new TableViewportSubscription(
+            HilosLogNodesTable::TABLE,
+            sort: new HilosLogNodesTable()->defaultSort(),
+            limit: 1,
+            anchor: new TableAnchorDTO(['nodeId' => 'node-a']),
+        ));
+        $this->fileThePicture(
+            self::nodeSlot('node-a'),
+            self::nodeSlot('node-b', keys: [new LogKeySummary('daemon.log', LogKeySummary::CLASS_DAEMON, true, [], 900)]),
+        );
+
+        $windows = $this->tickNodeWindows();
+
+        $this->assertSame([self::ACCEPT_KEY, self::SECOND_ACCEPT_KEY], array_keys($windows));
+        $this->assertSame('node-a', $windows[self::ACCEPT_KEY]->rows[0]['rowKey']);
+        $this->assertSame('node-b', $windows[self::SECOND_ACCEPT_KEY]->rows[0]['rowKey']);
+        $this->assertSame(900, $windows[self::SECOND_ACCEPT_KEY]->rows[0]['slots']['node']['liveBytes']);
+        foreach ($windows as $window) {
+            $this->assertSame(HilosPageConstants::HILOS_LOGS, $window->page);
+            $this->assertSame(HilosLogNodesTable::TABLE, $window->tableKey);
+            $this->assertSame(2, $window->totalCount);
+            $this->assertSame(1, $window->limit);
+            $this->assertNull($window->requestId);
+        }
+    }
+
+    public function testANewSubscriberDoesNotCancelTheWindowUpdateOwedToExistingSubscribers(): void
+    {
+        $this->mountNodeTable();
+        $this->fileThePicture(self::nodeSlot('node-a'));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+        $this->fileThePicture(self::nodeSlot(
+            'node-a',
+            keys: [new LogKeySummary('daemon.log', LogKeySummary::CLASS_DAEMON, true, [], 900)],
+        ));
+        $page->onSubscribe(self::SECOND_ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $windows = $this->tickNodeWindows();
+
+        $this->assertSame([self::ACCEPT_KEY, self::SECOND_ACCEPT_KEY], array_keys($windows));
+        $this->assertSame(900, $windows[self::ACCEPT_KEY]->rows[0]['slots']['node']['liveBytes']);
+    }
+
+    public function testAnUnchangedPictureDoesNotResendTheHeaderOrTheWindow(): void
+    {
+        $this->mountNodeTable();
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+        $this->assertSame([], $this->queuedSignalNames());
+    }
+
+    public function testAChangedPictureDoesNotInventAMissingViewport(): void
+    {
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $this->assertSame([self::ACCEPT_KEY], $this->tickRecipients());
+        $this->assertNull(Hilos::$sr?->getTableViewport(self::ACCEPT_KEY, HilosLogNodesTable::TABLE));
+    }
+
+    public function testTheWindowFollowsChangesInEveryNodeMeasurementAndItsMembership(): void
+    {
+        $this->mountNodeTable();
+        $this->fileThePicture(self::nodeSlot('node-a'));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $pictures = [
+            [self::nodeSlot('node-a', batches: [self::batch(self::T0)])],
+            [self::nodeSlot('node-a', batches: [self::batch(self::T0, agentBytes: 10)])],
+            [self::nodeSlot('node-a', growthBytesPerDay: ['daemon.log' => 100])],
+            [self::nodeSlot('node-a', batches: [self::batch(self::T0)], due: [self::T0])],
+            [self::nodeSlot('node-a', available: false)],
+            [self::nodeSlot('node-a', available: false), self::nodeSlot('node-b', available: false)],
+            [self::nodeSlot('node-b', available: false)],
+            [],
+        ];
+        foreach ($pictures as $slots) {
+            $this->fileThePicture(...$slots);
+            $windows = $this->tickNodeWindows();
+            $this->assertSame([self::ACCEPT_KEY], array_keys($windows));
+            $this->assertSame(count($slots), $windows[self::ACCEPT_KEY]->totalCount);
+            $this->assertSame(
+                array_map(static fn(ClusterLogNodeSlot $slot): string => $slot->nodeId, $slots),
+                array_column($windows[self::ACCEPT_KEY]->rows, 'rowKey'),
+            );
+        }
+    }
+
+    public function testUnsubscribeAndConnectionCloseStopWindowUpdatesEvenWithAHeldViewport(): void
+    {
+        $this->mountNodeTable();
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $page->onSubscribe(self::SECOND_ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $page->onUnsubscribe(self::ACCEPT_KEY);
+        // The connection-close handler reaches this same cleanup entry.
+        AbstractHilosLogsPage::removeSubscriber(self::SECOND_ACCEPT_KEY);
+        $this->growTheClusterPicture();
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+
+        $this->assertSame([], $this->queuedSignalNames());
+        $this->assertSame(0, ClusterLogIndexMirror::viewerCount());
+        $this->assertNotNull(Hilos::$sr?->getTableViewport(self::ACCEPT_KEY, HilosLogNodesTable::TABLE));
+        $this->assertNotNull(Hilos::$sr?->getTableViewport(self::SECOND_ACCEPT_KEY, HilosLogNodesTable::TABLE));
+    }
+
+    /** Mounts the actual framework table through a test-only page/table topology. */
+    private function mountNodeTable(): void
+    {
+        Hilos::$table = new LogsPageSubscribeTestTableContext();
+        Hilos::$table->configure();
+        LogsPageSubscribeTestHilos::initBrowser(new IdentityTestBrowser(userId: 1, admin: true));
+    }
+
+    /** @return array<string, TableWindowSignalData> One re-served node window per connection */
+    private function tickNodeWindows(): array
+    {
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+
+        $windows = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            if ($signal->signalName->getName() === SignalTypeConstants::TABLE_WINDOW) {
+                $this->assertInstanceOf(TableWindowSignalData::class, $signal->data->data);
+                $this->assertArrayNotHasKey($signal->data->targetAcceptKey, $windows);
+                $windows[$signal->data->targetAcceptKey] = $signal->data->data;
+            } else {
+                $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS, $signal->signalName->getName());
+            }
+        }
+
+        return $windows;
+    }
+
     /**
      * Runs one tick past its throttle, with the log store changed underneath so the overview
      * fingerprint really differs and a push has a reason to go out. An empty result therefore
@@ -1136,6 +1360,25 @@ final class HilosLogsPageSubscribeTest extends TestCase
  */
 final class LogsPageSubscribeTestPage extends AbstractHilosLogsPage
 {
+}
+
+/** Test-only activation of the node table on the existing Logs page. */
+abstract class LogsPageSubscribeTestHilos extends Hilos
+{
+    public const array PAGES = [LogsPageSubscribeTestPage::PAGE => LogsPageSubscribeTestPage::class];
+
+    public const array TABLES = [HilosLogNodesTable::TABLE => HilosLogNodesTable::class];
+
+    public const array PAGE_TABLES = [LogsPageSubscribeTestPage::PAGE => [HilosLogNodesTable::TABLE => []]];
+}
+
+final class LogsPageSubscribeTestTableContext extends TableContext
+{
+    /** Registers the framework node table under its canonical key. */
+    public function configure(): void
+    {
+        $this->register(HilosLogNodesTable::TABLE, new HilosLogNodesTable());
+    }
 }
 
 /**

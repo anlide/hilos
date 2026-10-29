@@ -191,6 +191,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -1283,6 +1284,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         ));
         $this->assertTrue((new DemoHilosLogsAgentDaemon())->requiresMonopolisticProcess());
 
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosLogNodes => []],
+            Hilos::PAGE_TABLES[LogsOverviewPage::PAGE],
+        );
+        $this->assertSame(
+            HilosLogNodesTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogNodes],
+        );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosLogKeys => []],
             Hilos::PAGE_TABLES[LogsKeysPage::PAGE],

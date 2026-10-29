@@ -262,14 +262,14 @@ test.describe('backup moments and Period in the reader zone', () => {
         legacy,
       )
       expect(JSON.parse(fixture.beforePublish).createdAt).toBe(legacy)
-      // Discovery is the real filesystem-watch/scan path. A new opening takes
-      // the current index; it never writes a timestamp or injects a frame.
-      await expect
-        .poll(async () => {
-          await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
-          return page.getByTestId(`hilos-table-row-${fixture!.id}`).count()
-        })
-        .toBe(1)
+      // Keep the live window until the filesystem watch/scan appends this older
+      // archive. Reloading on each poll races the table's window request: the
+      // page can be ready while the table still shows its loading skeleton.
+      await expect(
+        page.getByTestId(`hilos-table-row-${fixture.id}`),
+      ).toHaveCount(1)
+      // Read fresh snapshots of the discovered archive for both moment checks.
+      await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
       await gotoPage(expect, other, '/hilos/backup', PAGE_READY)
       for (const [reader, log, zone] of [
         [page, warsaw, 'Europe/Warsaw'],

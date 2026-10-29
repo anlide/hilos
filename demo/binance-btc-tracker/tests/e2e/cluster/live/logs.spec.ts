@@ -11,6 +11,9 @@ import {
   logBatchDirectory,
   gotoPage,
   PAGE_READY,
+  expectPageReady,
+  markDocument,
+  expectDocumentUnchanged,
   grantAdminToSelf,
   tableRowKeys,
   typeInto,
@@ -44,13 +47,79 @@ test(
       await grantAdminToSelf(expect, page)
       await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
       for (const node of [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]) {
-        await expect(page.getByTestId(`hilos-logs-node-${node}`)).toBeVisible()
+        await expect(
+          shownByTestId(page, `hilos-table-row-${node}`),
+        ).toBeVisible()
       }
     } finally {
       await page.context().close()
     }
   },
 )
+
+test('the log nodes window updates slave Live bytes on a follower master and survives reload', async ({
+  browser,
+}) => {
+  const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
+  const frames = watchLogFrames(page)
+  const members = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES].sort()
+  const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB']
+  try {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
+    await expect
+      .poll(() => tableRowKeys(page), { timeout: TAIL_ARRIVAL_TIMEOUT_MS })
+      .toEqual(members)
+    for (const node of members) {
+      await expect(shownByTestId(page, `hilos-table-row-${node}`)).toBeVisible()
+    }
+
+    const slave = CLUSTER_SLAVES[0]
+    const live = shownByTestId(
+      shownByTestId(page, `hilos-table-row-${slave}`),
+      `hilos-logs-node-live-${slave}`,
+    )
+    await expect(live).toHaveText(/^\d+(?:\.\d+)? (?:B|KB|MB|GB|TB)$/)
+    const [beforeValue, beforeUnit] = (await live.innerText())
+      .trim()
+      .split(/\s+/)
+    const beforeBytes =
+      Number(beforeValue) * 1024 ** byteUnits.indexOf(beforeUnit)
+    await markDocument(page)
+
+    // Make growth visible even when the byte label rounds to one decimal place.
+    const marker = `${logMarker('cluster-node-live')} ${'x'.repeat(1024)}`
+    const lines = 128
+    expect(await appendLogLines(marker, lines, nodeHost(slave))).toBe(lines)
+    await expect
+      .poll(
+        async () => {
+          const [value, unit] = (await live.innerText()).trim().split(/\s+/)
+          return Number(value) * 1024 ** byteUnits.indexOf(unit)
+        },
+        { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+      )
+      .toBeGreaterThan(beforeBytes)
+    await expectDocumentUnchanged(expect, page)
+
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect
+      .poll(() => tableRowKeys(page), { timeout: TAIL_ARRIVAL_TIMEOUT_MS })
+      .toEqual(members)
+    for (const node of members) {
+      await expect(shownByTestId(page, `hilos-table-row-${node}`)).toBeVisible()
+    }
+    await expect(live).toHaveText(/^\d+(?:\.\d+)? (?:B|KB|MB|GB|TB)$/)
+  } finally {
+    frames.stop()
+    await test.info().attach('log-nodes-window-frames', {
+      body: JSON.stringify({ packets: frames.packets, sent: frames.sent }),
+      contentType: 'application/json',
+    })
+    await page.context().close()
+  }
+})
 
 test('a slave live file followed from a follower master receives a line appended on that slave', async ({
   browser,

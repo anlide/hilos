@@ -171,6 +171,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -480,6 +481,7 @@ class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         BinanceBtcTrackerTableContext::hilosUsers => HilosUsersTable::class,
         BinanceBtcTrackerTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        BinanceBtcTrackerTableContext::hilosLogNodes => HilosLogNodesTable::class,
         BinanceBtcTrackerTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         BinanceBtcTrackerTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
@@ -584,6 +586,9 @@ class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        LogsOverviewPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosLogNodes => [],
         ],
         LogsKeysPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosLogKeys => [],

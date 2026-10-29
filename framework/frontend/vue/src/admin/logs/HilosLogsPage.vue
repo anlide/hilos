@@ -1,18 +1,17 @@
 <!-- HilosLogsPage — the framework Hilos logs page (HilosPages.LOGS): the root of the
 section and its overview. It answers two questions at once, "is anything wrong with
-the journals" and "where do I go from here", so it keeps the shell's cards to its
-child pages and puts its own figures underneath them.
-Everything on it arrives in ONE frame of the page's own signal and refreshes itself
-by push; there is no table viewport, because the per-node rows are one per node that
-reported and fit in that frame whole. The screen commands nothing: the takeout banner
+the journals" and "where do I go from here". The overview frame carries the tiles,
+forecast and takeout banner; the per-node rows use the ordinary page-scoped table
+window. Both refresh by push. The screen commands nothing: the takeout banner
 and the per-node badge are ordinary links into the rotations history, at the
 address that opens it on the awaiting filter (HIL-903) — the batches the counter
 names. Which of the two empty states it is in, and the wording of every figure,
 are the core headless's (hilosLogsOverview); this view owns only the markup, so a
-project mounts it by passing its HilosLogsOverviewContext. Bootstrap classes only
+project mounts it by passing its HilosLogNodesContext. Bootstrap classes only
 (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosLogNodesTable,
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
@@ -39,25 +38,35 @@ import {
   logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
+  logsOverviewThresholdPassed,
+  NODE_ID_FIELD,
+  NODE_LAST_ROTATION_AT_FIELD,
+  NODE_LIVE_BYTES_FIELD,
+  NODE_ARCHIVE_BYTES_FIELD,
+  NODE_GROWTH_BYTES_PER_DAY_FIELD,
+  NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD,
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
-  type HilosLogsOverviewContext,
+  type HilosLogNodesContext,
   type HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { formatMoment, HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{
-  /** The project context: the connection the screen's frames arrive on. */
-  context: HilosLogsOverviewContext
+  /** The project context: the connection and page-scoped table stores. */
+  context: HilosLogNodesContext
 }>()
 
 const handle = createHilosLogsOverview(props.context)
+const nodesHandle = createHilosLogNodesTable(props.context)
+const nodesTable = nodesHandle.controller
 const overview = useSignal(handle.overview)
 
 const timeZone = useSignal(hilosTimeZone)
@@ -69,17 +78,31 @@ function recentAt(moment: string): string {
   void timeZone.value
   return formatLogsOverviewRecentAt(moment)
 }
+function nodeRotationAt(moment: number | null): string {
+  void timeZone.value
+  return moment === null
+    ? '—'
+    : (formatMoment(moment, { kind: 'dateTime' }) ?? '—')
+}
 
-// The frame arrives once as the answer to the subscription and again on every tick
-// where the cluster picture moved; nothing is ever re-requested.
-onMounted(() => handle.start())
-onUnmounted(() => handle.dispose())
+// The subscription supplies the first overview and table window. Bind both push
+// paths on mount without requesting a second window.
+onMounted(() => {
+  handle.start()
+  nodesHandle.start()
+})
+onUnmounted(() => {
+  nodesHandle.dispose()
+  handle.dispose()
+})
 
 // The per-node table exists only where nodes have names: in a single-node
 // installation the whole idea of a node is absent, and a table of one row about
 // "this machine" would be furniture for a distinction that does not exist.
 const clustered = computed(() => hasLogsOverviewNodes(overview.value))
-const nodes = computed(() => overview.value?.nodes ?? [])
+const thresholdPassed = computed(() =>
+  logsOverviewThresholdPassed(overview.value),
+)
 
 // Which of the two empty states the screen is in — the discrimination is the
 // headless's, because it is the same question in all three view frameworks.
@@ -139,10 +162,18 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
       </div>
 
       <div class="col">
-        <div class="border rounded-3 p-3 h-100">
-          <div class="d-flex align-items-center gap-2 text-body-secondary mb-1">
-            <i class="bi bi-graph-up-arrow" aria-hidden="true"></i>
-            <span class="small">Written per day</span>
+        <div
+          class="border rounded-3 p-3 h-100"
+          :class="{ 'border-danger': thresholdPassed }"
+          data-id="hilos-logs-growth-tile"
+        >
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i
+              class="bi bi-graph-up-arrow"
+              :class="thresholdPassed ? 'text-danger' : 'text-body-secondary'"
+              aria-hidden="true"
+            ></i>
+            <span class="small text-body-secondary">Written per day</span>
           </div>
           <div class="fs-4 lh-1 mb-1" data-id="hilos-logs-tile-growth">
             {{ formatLogsOverviewGrowth(overview) }}
@@ -154,15 +185,21 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
           >
             {{ logsOverviewGrowthNote(overview) }}
           </div>
-          <!-- Last of the three on purpose: the note above qualifies the figure,
-          and this line says what the figure MEANS for the disk. The consequence
-          is read after the caveat, and it is shown even while the caveat
-          stands - the rate is there to divide by either way. -->
+          <!-- The disk consequence follows the caveat about the measured rate.
+          A reached threshold remains a warning even before a rate is known. -->
           <div
             v-if="logsOverviewForecastNote(overview)"
-            class="small text-body-secondary"
+            class="small"
+            :class="
+              thresholdPassed ? 'text-danger-emphasis' : 'text-body-secondary'
+            "
             data-id="hilos-logs-growth-forecast"
           >
+            <i
+              v-if="thresholdPassed"
+              class="bi bi-exclamation-triangle me-1"
+              aria-hidden="true"
+            ></i>
             <HilosHideable :value="logsOverviewForecastNote(overview)" />
           </div>
         </div>
@@ -388,103 +425,43 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
       </div>
     </template>
 
-    <template v-if="clustered">
-      <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
-        <h2 class="h6 text-uppercase text-body-secondary mb-0">By node</h2>
+    <HilosViewportTable v-if="clustered" :controller="nodesTable" class="mt-4">
+      <template #[`cell-${NODE_ID_FIELD}`]="{ row }">
         <span
-          class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
+          class="badge bg-body-tertiary text-body-emphasis border"
+          :data-id="`hilos-logs-node-${row.nodeId}`"
         >
-          <i class="bi bi-broadcast me-1" aria-hidden="true"></i>
-          Updates itself
+          {{ row.nodeId }}
         </span>
-      </div>
-      <p class="small text-body-secondary">
-        A journal is written on the node the event happened on and stays there.
-        The tiles above add every node together; here you can see whose journal
-        is growing faster.
-      </p>
-      <!-- An ordinary table and not the viewport one: the rows are one per node
-      that reported and ride the same frame as the tiles, so a descriptor, a
-      pager and a busy state would all be paid for a list that never pages. -->
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">Node</th>
-              <th scope="col">Last rotation</th>
-              <th scope="col" class="text-end d-none d-lg-table-cell">Live</th>
-              <th scope="col" class="text-end d-none d-lg-table-cell">
-                Archive
-              </th>
-              <th scope="col" class="text-end d-none d-lg-table-cell">
-                Per day
-              </th>
-              <th scope="col">To take out</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="node in nodes"
-              :key="node.nodeId"
-              :data-id="`hilos-logs-node-${node.nodeId}`"
-            >
-              <td>
-                <span class="badge bg-body-tertiary text-body-emphasis border">
-                  {{ node.nodeId }}
-                </span>
-                <!-- The sub-line carries whatever the hidden columns were
-                carrying, so a narrow screen loses the layout and not the
-                figures. -->
-                <div
-                  v-if="node.available"
-                  class="small text-body-secondary d-lg-none"
-                >
-                  {{ formatLogsOverviewBytes(node.liveBytes) }} ·
-                  {{ formatLogsOverviewBytes(node.archiveBytes) }} ·
-                  {{ formatLogsOverviewBytes(node.growthBytesPerDay) }}
-                </div>
-              </td>
-              <!-- A node that could not read its own store says so once, in
-              place of its figures. Dashes across every column would read as
-              six separate unknowns instead of one node that did not answer. -->
-              <td
-                v-if="!node.available"
-                colspan="5"
-                class="small text-body-secondary"
-                :data-id="`hilos-logs-node-nodata-${node.nodeId}`"
-              >
-                No data — this node could not read its log store
-              </td>
-              <template v-else>
-                <td class="small">
-                  {{ rotationAt(node.lastRotationAt) }}
-                </td>
-                <td class="text-end d-none d-lg-table-cell">
-                  {{ formatLogsOverviewBytes(node.liveBytes) }}
-                </td>
-                <td class="text-end d-none d-lg-table-cell">
-                  {{ formatLogsOverviewBytes(node.archiveBytes) }}
-                </td>
-                <td class="text-end d-none d-lg-table-cell">
-                  {{ formatLogsOverviewBytes(node.growthBytesPerDay) }}
-                </td>
-                <td>
-                  <HilosLink
-                    v-if="(node.batchesDueForTakeout ?? 0) > 0"
-                    :to="rotationsPath"
-                    class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none"
-                    :data-id="`hilos-logs-node-due-${node.nodeId}`"
-                  >
-                    {{ node.batchesDueForTakeout }}
-                  </HilosLink>
-                  <span v-else class="text-body-secondary small">—</span>
-                </td>
-              </template>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </template>
+      </template>
+      <template #[`cell-${NODE_LAST_ROTATION_AT_FIELD}`]="{ row }">
+        <span :data-id="`hilos-logs-node-rotation-${row.nodeId}`">
+          {{ nodeRotationAt(row.lastRotationAt) }}
+        </span>
+      </template>
+      <template #[`cell-${NODE_LIVE_BYTES_FIELD}`]="{ row }">
+        <span :data-id="`hilos-logs-node-live-${row.nodeId}`">
+          {{ formatLogsOverviewBytes(row.liveBytes) }}
+        </span>
+      </template>
+      <template #[`cell-${NODE_ARCHIVE_BYTES_FIELD}`]="{ row }">
+        {{ formatLogsOverviewBytes(row.archiveBytes) }}
+      </template>
+      <template #[`cell-${NODE_GROWTH_BYTES_PER_DAY_FIELD}`]="{ row }">
+        {{ formatLogsOverviewBytes(row.growthBytesPerDay) }}
+      </template>
+      <template #[`cell-${NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD}`]="{ row }">
+        <HilosLink
+          v-if="(row.batchesDueForTakeout ?? 0) > 0"
+          :to="rotationsPath"
+          class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none"
+          :data-id="`hilos-logs-node-due-${row.nodeId}`"
+        >
+          {{ row.batchesDueForTakeout }}
+        </HilosLink>
+        <span v-else class="text-body-secondary small">—</span>
+      </template>
+    </HilosViewportTable>
 
     <div
       v-if="state === 'unknown'"

@@ -182,6 +182,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -536,6 +537,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         TasksTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        TasksTableContext::hilosLogNodes => HilosLogNodesTable::class,
         TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         TasksTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
@@ -655,6 +657,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceWordsPage::PAGE => [
             TasksTableContext::hilosMaintenanceWords => [],
+        ],
+        LogsOverviewPage::PAGE => [
+            TasksTableContext::hilosLogNodes => [],
         ],
         LogsKeysPage::PAGE => [
             TasksTableContext::hilosLogKeys => [],

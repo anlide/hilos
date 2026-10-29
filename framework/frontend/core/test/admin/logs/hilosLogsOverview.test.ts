@@ -3,6 +3,7 @@ import { hilosTimeZone } from '../../../src/timeZone/timeZoneState.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
   formatLogsOverviewGrowth,
@@ -25,6 +26,7 @@ import {
   logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
+  logsOverviewThresholdPassed,
   LOGS_OVERVIEW_SIGNAL_SCHEMAS,
   OVERVIEW_SIGNAL,
   RECENT_TAB_ERRORS,
@@ -33,7 +35,15 @@ import {
   type HilosLogsOverviewNode,
   type HilosLogsOverviewRecentEntry,
 } from '../../../src/admin/logs/hilosLogsOverview.js'
+import { createHilosLogNodesTable } from '../../../src/admin/logs/hilosLogNodes.js'
+import { Emitter } from '../../../src/connection/events.js'
+import {
+  type HilosConnection,
+  type HilosConnectionEventMap,
+} from '../../../src/connection/HilosConnection.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 
 function node(
   overrides: Partial<HilosLogsOverviewNode> = {},
@@ -643,7 +653,7 @@ describe('logsOverviewForecastNote', () => {
           ],
         }),
       ),
-    ).toBe('Free space is already below the 20% threshold on node-2')
+    ).toBe('Free space is already below the 20% threshold on node-2 — 10% free')
   })
 
   it('says the disk is full when no reserve is kept and none is left', () => {
@@ -661,7 +671,7 @@ describe('logsOverviewForecastNote', () => {
           ],
         }),
       ),
-    ).toBe('The log disk is full on node-2')
+    ).toBe('The log disk is full on node-2 — 0% free')
   })
 
   // The line is about the machine in trouble, not about the fleet: a cluster answers
@@ -714,7 +724,7 @@ describe('logsOverviewForecastNote', () => {
           ],
         }),
       ),
-    ).toBe('Free space is already below the 20% threshold on node-3')
+    ).toBe('Free space is already below the 20% threshold on node-3 — 9% free')
   })
 
   it('leaves an unreadable node out of the choice', () => {
@@ -807,6 +817,317 @@ describe('logsOverviewForecastNote', () => {
         }),
       ),
     ).toBe('At this rate the 20% threshold is 34 days away')
+  })
+})
+
+describe('logsOverviewThresholdPassed and its note', () => {
+  it.each([null, 0, 100])(
+    'reports a reached threshold with growth %j',
+    (growthBytesPerDay) => {
+      const screen = overview({
+        growthBytesPerDay,
+        filesystemFreeBytes: 1400,
+        filesystemTotalBytes: 10000,
+        freeSpaceThresholdPercent: 20,
+      })
+      expect(logsOverviewThresholdPassed(screen)).toBe(true)
+      expect(logsOverviewForecastNote(screen)).toBe(
+        'Free space is already below the 20% threshold — 14% free',
+      )
+    },
+  )
+
+  it.each([null, 0, 100])(
+    'reports a full disk with growth %j and no reserve',
+    (growthBytesPerDay) => {
+      const screen = overview({
+        growthBytesPerDay,
+        filesystemFreeBytes: 0,
+        filesystemTotalBytes: 10000,
+        freeSpaceThresholdPercent: 0,
+      })
+      expect(logsOverviewThresholdPassed(screen)).toBe(true)
+      expect(logsOverviewForecastNote(screen)).toBe(
+        'The log disk is full — 0% free',
+      )
+    },
+  )
+
+  it('says reached at the exact boundary without claiming it is below', () => {
+    const screen = overview({
+      nodes: [
+        node({
+          nodeId: 'node-2',
+          filesystemFreeBytes: 2000,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+          growthBytesPerDay: null,
+        }),
+      ],
+    })
+    expect(logsOverviewThresholdPassed(screen)).toBe(true)
+    expect(logsOverviewForecastNote(screen)).toBe(
+      'The 20% threshold has been reached on node-2 — 20% free',
+    )
+  })
+
+  it('compares bytes with the floored threshold before rounding the displayed percent', () => {
+    const screen = overview({
+      filesystemFreeBytes: 2000,
+      filesystemTotalBytes: 10001,
+      freeSpaceThresholdPercent: 20,
+      growthBytesPerDay: 1,
+    })
+    expect(logsOverviewThresholdPassed(screen)).toBe(true)
+    expect(logsOverviewForecastNote(screen)).toBe(
+      'The 20% threshold has been reached — 20% free',
+    )
+    const above = { ...screen, filesystemFreeBytes: 2001 }
+    expect(logsOverviewThresholdPassed(above)).toBe(false)
+    expect(logsOverviewForecastNote(above)).toBe(
+      'At this rate the 20% threshold is 1 day away',
+    )
+  })
+
+  it.each([
+    [0, '0%'],
+    [1, '<0.1%'],
+    [9, '<0.1%'],
+    [10, '0.1%'],
+    [1423, '14.2%'],
+    [1999, '20%'],
+  ])(
+    'formats %i free bytes as %s without changing the byte verdict',
+    (freeBytes, percent) => {
+      const screen = overview({
+        filesystemFreeBytes: freeBytes,
+        filesystemTotalBytes: 10000,
+        freeSpaceThresholdPercent: 20,
+        growthBytesPerDay: null,
+      })
+      expect(logsOverviewThresholdPassed(screen)).toBe(true)
+      expect(logsOverviewForecastNote(screen)).toBe(
+        `Free space is already below the 20% threshold — ${percent} free`,
+      )
+    },
+  )
+
+  it.each([
+    { filesystemTotalBytes: 0 },
+    { filesystemTotalBytes: null },
+    { filesystemFreeBytes: null },
+    { freeSpaceThresholdPercent: null },
+    { available: null },
+    { available: false },
+  ])('keeps unknown or unreadable figures silent: %j', (fields) => {
+    const screen = overview({
+      filesystemFreeBytes: 0,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+      ...fields,
+    })
+    expect(logsOverviewThresholdPassed(screen)).toBe(false)
+    expect(logsOverviewForecastNote(screen)).toBeNull()
+  })
+
+  it('has no warning before the first frame or while the threshold is ahead', () => {
+    expect(logsOverviewThresholdPassed(null)).toBe(false)
+    const screen = overview({
+      filesystemFreeBytes: 5400,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+    })
+    expect(logsOverviewThresholdPassed(screen)).toBe(false)
+    for (const growthBytesPerDay of [null, 0]) {
+      expect(
+        logsOverviewForecastNote({ ...screen, growthBytesPerDay }),
+      ).toBeNull()
+      expect(
+        logsOverviewThresholdPassed({ ...screen, growthBytesPerDay }),
+      ).toBe(false)
+    }
+  })
+
+  it('never leaks a hidden threshold through the warning flag, even if another node is already past it', () => {
+    const passed = node({
+      filesystemFreeBytes: 1400,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+      growthBytesPerDay: null,
+    })
+    for (const screen of [
+      overview({ ...passed, freeSpaceThresholdPercent: HIDDEN_VALUE }),
+      overview({
+        nodes: [
+          passed,
+          node({ nodeId: 'node-2', freeSpaceThresholdPercent: HIDDEN_VALUE }),
+        ],
+      }),
+      overview({ freeSpaceThresholdPercent: HIDDEN_VALUE, nodes: [passed] }),
+    ]) {
+      expect(logsOverviewForecastNote(screen)).toBe(HIDDEN_VALUE)
+      expect(logsOverviewThresholdPassed(screen)).toBe(false)
+    }
+  })
+
+  it('chooses a passed node before a future of less than a day, using that node free percent', () => {
+    const screen = overview({
+      nodes: [
+        node({
+          nodeId: 'node-1',
+          filesystemFreeBytes: 2001,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+          growthBytesPerDay: 100,
+        }),
+        node({
+          nodeId: 'node-2',
+          filesystemFreeBytes: 1400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+          growthBytesPerDay: null,
+        }),
+      ],
+    })
+    expect(logsOverviewThresholdPassed(screen)).toBe(true)
+    expect(logsOverviewForecastNote(screen)).toBe(
+      'Free space is already below the 20% threshold on node-2 — 14% free',
+    )
+  })
+
+  it('keeps the first node among equal whole-day forecasts and among passed nodes', () => {
+    const first = node({
+      nodeId: 'node-1',
+      filesystemFreeBytes: 3190,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+      growthBytesPerDay: 100,
+    })
+    const second = node({
+      ...first,
+      nodeId: 'node-2',
+      filesystemFreeBytes: 3100,
+    })
+    expect(logsOverviewForecastNote(overview({ nodes: [first, second] }))).toBe(
+      'At this rate the 20% threshold is 11 days away on node-1',
+    )
+    first.filesystemFreeBytes = 1400
+    second.filesystemFreeBytes = 1000
+    expect(logsOverviewForecastNote(overview({ nodes: [first, second] }))).toBe(
+      'Free space is already below the 20% threshold on node-1 — 14% free',
+    )
+  })
+
+  it('does not combine missing disk figures and growth across nodes or use the fleet totals', () => {
+    const screen = overview({
+      filesystemFreeBytes: 0,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+      nodes: [
+        node({
+          nodeId: 'node-1',
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+          growthBytesPerDay: null,
+        }),
+        node({ nodeId: 'node-2', growthBytesPerDay: 100 }),
+        node({
+          nodeId: 'node-3',
+          available: false,
+          filesystemFreeBytes: 0,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ],
+    })
+    expect(logsOverviewForecastNote(screen)).toBeNull()
+    expect(logsOverviewThresholdPassed(screen)).toBe(false)
+  })
+
+  it('uses the complete header even when the ordinary table holds only another node', () => {
+    const emitter = new Emitter<HilosConnectionEventMap>()
+    const connection = {
+      on: emitter.on.bind(emitter),
+      registerTableWindow: vi.fn(),
+      unregisterTableWindow: vi.fn(),
+      sendTableViewport: vi.fn(),
+      sendTableRendered: vi.fn(),
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.LOGS)
+    const header = createHilosLogsOverview({ connection })
+    const table = createHilosLogNodesTable({ connection, scopes })
+    header.start()
+    table.start()
+    const screen = overview({
+      nodes: [
+        node(),
+        node({
+          nodeId: 'node-2',
+          filesystemFreeBytes: 1400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+          growthBytesPerDay: null,
+        }),
+      ],
+    })
+    emitter.emit('projectSignal', {
+      kind: 'project',
+      type: OVERVIEW_SIGNAL,
+      data: screen,
+      envelope: { type: OVERVIEW_SIGNAL, data: screen },
+    })
+    emitter.emit('projectSignal', {
+      kind: 'project',
+      type: 'page_response',
+      envelope: { type: 'page_response', data: {} },
+      data: {
+        page: HilosPages.LOGS,
+        payload: {
+          windows: {
+            hilosLogNodes: {
+              rows: [
+                {
+                  rowKey: 'node-1',
+                  slots: {
+                    node: {
+                      nodeId: 'node-1',
+                      available: true,
+                      lastRotationAt: 1800000000000,
+                      liveBytes: 1024,
+                      archiveBytes: 4096,
+                      growthBytesPerDay: 512,
+                      batchesDueForTakeout: 0,
+                    },
+                  },
+                },
+              ],
+              limit: 1,
+              totalCount: 2,
+              totalExact: true,
+              firstAnchor: { nodeId: 'node-1' },
+              lastAnchor: { nodeId: 'node-1' },
+              sort: [{ field: 'nodeId', direction: 'asc' }],
+            },
+          },
+        },
+      },
+    })
+    expect(table.controller.rows.get().map((view) => view.row?.nodeId)).toEqual(
+      ['node-1'],
+    )
+    expect(header.overview.get()?.nodes).toHaveLength(2)
+    expect(header.overview.get()?.nodes[0].lastRotationAt).toBe(
+      '2026-09-02T03:00:00.000Z',
+    )
+    expect(logsOverviewThresholdPassed(header.overview.get())).toBe(true)
+    expect(logsOverviewForecastNote(header.overview.get())).toBe(
+      'Free space is already below the 20% threshold on node-2 — 14% free',
+    )
+    expect(connection.sendTableViewport).not.toHaveBeenCalled()
+    table.dispose()
+    header.dispose()
   })
 })
 

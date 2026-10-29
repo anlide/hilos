@@ -55,6 +55,7 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogNoisyPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
@@ -76,6 +77,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
@@ -2801,6 +2803,16 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (Hilos::TABLES as $table => $tableClass) {
             $this->assertInstanceOf($tableClass, $context->get($table));
         }
+    }
+
+    public function testLogsOverviewBindsTheRegisteredNodeTable(): void
+    {
+        $this->assertSame(LogsOverviewPage::class, Hilos::PAGES[LogsOverviewPage::PAGE]);
+        $this->assertSame(HilosLogNodesTable::class, Hilos::TABLES[ChatTableContext::hilosLogNodes]);
+        $this->assertSame(
+            [ChatTableContext::hilosLogNodes => []],
+            Hilos::PAGE_TABLES[LogsOverviewPage::PAGE],
+        );
     }
 
     public function testTimeZoneChoiceRequiresAuthentication(): void

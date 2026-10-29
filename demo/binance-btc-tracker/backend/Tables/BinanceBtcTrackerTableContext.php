@@ -28,6 +28,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -68,6 +69,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosLogKeysTable $hilosLogKeys
+ * @property-read HilosLogNodesTable $hilosLogNodes
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
@@ -106,6 +108,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
+    public const string hilosLogNodes = HilosLogNodesTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;

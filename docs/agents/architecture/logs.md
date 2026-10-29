@@ -335,26 +335,38 @@ This is a known exception to
 by extending `AbstractHilosLogsAgent` with an empty subclass, and it is a
 separate agent from the aggregator on purpose: where the picture **comes from**
 must not be the same object as what **shows** it, and nothing above the
-aggregator ever talks to a node-local owner. The overview projects the tiles and
-one row per node into a single header frame; keys, workers and rotations ride
-ordinary viewport tables whose window is re-sent whole rather than patched,
-because a table delta is built from a `SourceChange`, the mirror is neither a
-DB nor a runtime source, and it raises none
-([browser-source-fanout.md](browser-source-fanout.md)). Every subscribe to any
-page of the section also counts the connection as a viewer of the **section**;
-without that the aggregator would send nothing and the screens would be empty
-forever rather than merely new. Viewers are reconciled against the connection
-roster on the agent's tick: only a connection that this worker's roster carried
-and then lost is removed (HIL-1232). Absence alone cannot disqualify a viewer on
-another node. Unsubscribe and connection-close signals release those viewers.
+aggregator ever talks to a node-local owner. The overview header keeps the full
+`nodes[]` list for its summary, forecast and takeout banner, and for React and
+Angular until their HIL-1718 and HIL-1719 migrations. **By node** is the fourth
+ordinary viewport table, alongside keys, workers and rotations; Vue reads its
+usual bounded window. The first window arrives in `page_response.windows`, and
+later viewport requests use `table_viewport` and `table_window`. When the
+overview fingerprint changes, the page agent re-sends each subscriber's
+existing node window at its current position. Header rows and table rows are
+projections of the same `ClusterLogIndexMirror` picture, so this table adds no
+state or owner. Windows are re-sent whole rather than patched: table deltas
+require a `SourceChange`, which the mirror does not produce
+([browser-source-fanout.md](browser-source-fanout.md)). The table follows the
+existing partial first snapshot behavior. Every subscribe to any page of the
+section also counts the connection as a viewer of the **section**; without that
+the aggregator would send nothing and the screens would be empty forever rather
+than merely new. Viewers are reconciled against the connection roster on the
+agent's tick: only a connection that this worker's roster carried and then lost
+is removed (HIL-1232). Absence alone cannot disqualify a viewer on another node.
+Unsubscribe and connection-close signals release those viewers; By node adds no
+separate viewer list or update channel.
 
 The six pages are `hilos_logs`, `hilos_logs_keys`, `hilos_logs_workers`,
 `hilos_logs_rotations`, `hilos_logs_view` and `hilos_logs_settings`. Their
-headless halves in `@hilos/core` are `admin/logs/hilosLogsOverview.ts`,
+headless page modules in `@hilos/core` are `admin/logs/hilosLogsOverview.ts`,
 `hilosLogKeys.ts`, `hilosLogWorkers.ts`, `hilosLogRotations.ts`,
-`hilosLogViewer.ts` and `hilosLogSettings.ts`; each per-framework view renders
-from its module and nothing else. How those modules and views are laid out is
-not this document's: see
+`hilosLogViewer.ts` and `hilosLogSettings.ts`. The overview module continues
+to manage its header and summary; the additional
+`admin/logs/hilosLogNodes.ts` factory supplies the ordinary By node table
+window. Vue uses both modules on this page, while React and Angular continue to
+use the full overview header until their migrations. Each per-framework view
+renders through the headless module or modules it needs and nothing else. How
+those modules and views are laid out is not this document's: see
 [../frontend/page-module-structure.md](../frontend/page-module-structure.md) and
 [../frontend/multiframework-core.md](../frontend/multiframework-core.md).
 
@@ -821,10 +833,12 @@ cluster and its collection is shared by every node
 ([../runtime/rt-context.md](../runtime/rt-context.md)); a node's log index or
 the cluster picture put there would spill a full replica onto every node,
 duplicate the one agent that owns it, and hand the writes to a second owner.
-Hold it in the owner, hand it on by signal — whole, so a lost frame is repaired
-by the next — and keep a copy in the process that reads it (the mirror), never
-a second source. Runtime state is for rows that need a truth source and a
-sync, not for a derived view somebody already owns.
+The By node window is another projection of that same `ClusterLogIndexMirror`
+in the reader process, and needs no additional state. Hold the picture in the
+owner, hand it on by signal — whole, so a lost frame is repaired by the next —
+and keep a copy in the process that reads it (the mirror), never a second
+source. Runtime state is for rows that need a truth source and a sync, not for
+a derived view somebody already owns.
 
 **Unavailability is a state, not an exception, and never a zero.** A directory
 that could not be read produces an index with `available` false and empty

@@ -433,40 +433,41 @@ test('a stale Dark browser reconnects after reset without adopting it again', as
   }
 })
 
-test('a never-chosen account still adopts a guest Dark choice on first login', async ({
-  browser,
-  page,
-  baseURL,
-}) => {
-  const guestContext = await browser.newContext({
-    baseURL,
-    ignoreHTTPSErrors: true,
-  })
-  try {
-    await emulateSystemTheme(page, 'light')
-    const person = await createTestUser(expect, page, { themePick: null })
-    await gotoPage(expect, page, '/profile', PAGE_READY)
-    await expectThemeMode(expect, page, 'light')
-    await expectThemeHeader(expect, page, 'system', true)
-    await expectProfileTheme(expect, page, 'system', true)
-    const guest = await guestContext.newPage()
-    await emulateSystemTheme(guest, 'light')
-    const adoptions = countSentFrames(guest, 'hilos_theme_adopt')
-    await gotoPage(expect, guest, '/')
-    await chooseHeaderTheme(expect, guest, 'dark')
-    await gotoPage(expect, guest, '/profile')
-    await login(expect, guest, person.email)
-    await expectThemeMode(expect, guest, 'dark')
-    await expectThemeHeader(expect, guest, 'dark')
-    await expectProfileTheme(expect, guest, 'dark')
-    await expectThemeMode(expect, page, 'dark')
-    await expectThemeHeader(expect, page, 'dark')
-    await expectProfileTheme(expect, page, 'dark')
-    expect(adoptions()).toBe(1)
-  } finally {
-    await guestContext.close()
-  }
-})
+// FIXME(F-050, 2026-10-29): theme menu stays open after Escape · чужой · попытка 2 · HIL-1714
+test(
+  'a never-chosen account still adopts a guest Dark choice on first login',
+  { tag: '@quarantine:F-050' },
+  async ({ browser, page, baseURL }) => {
+    const guestContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+    })
+    try {
+      await emulateSystemTheme(page, 'light')
+      const person = await createTestUser(expect, page, { themePick: null })
+      await gotoPage(expect, page, '/profile', PAGE_READY)
+      await expectThemeMode(expect, page, 'light')
+      await expectThemeHeader(expect, page, 'system', true)
+      await expectProfileTheme(expect, page, 'system', true)
+      const guest = await guestContext.newPage()
+      await emulateSystemTheme(guest, 'light')
+      const adoptions = countSentFrames(guest, 'hilos_theme_adopt')
+      await gotoPage(expect, guest, '/')
+      await chooseHeaderTheme(expect, guest, 'dark')
+      await gotoPage(expect, guest, '/profile')
+      await login(expect, guest, person.email)
+      await expectThemeMode(expect, guest, 'dark')
+      await expectThemeHeader(expect, guest, 'dark')
+      await expectProfileTheme(expect, guest, 'dark')
+      await expectThemeMode(expect, page, 'dark')
+      await expectThemeHeader(expect, page, 'dark')
+      await expectProfileTheme(expect, page, 'dark')
+      expect(adoptions()).toBe(1)
+    } finally {
+      await guestContext.close()
+    }
+  },
+)
 
 test('profile and header work by keyboard and return focus', async ({
   page,

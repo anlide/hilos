@@ -24,6 +24,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -66,6 +67,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosChangeLogNoisyColumnsTable $hilosChangeLogNoisyColumns
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosLogKeysTable $hilosLogKeys
+ * @property-read HilosLogNodesTable $hilosLogNodes
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
@@ -113,6 +115,7 @@ final class PollsTableContext extends TableContext
     public const string hilosChangeLogNoisyColumns = HilosChangeLogNoisyColumnsTable::TABLE;
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
+    public const string hilosLogNodes = HilosLogNodesTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;

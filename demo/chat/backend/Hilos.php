@@ -276,6 +276,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use Hilos\Tables\Moderation\HilosModerationRulesTable;
@@ -717,6 +718,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         ChatTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
         ChatTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        ChatTableContext::hilosLogNodes => HilosLogNodesTable::class,
         ChatTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         ChatTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         ChatTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
@@ -971,6 +973,9 @@ final class Hilos extends HilosFacade
         ],
         LegalSettingsPage::PAGE => [
             ChatTableContext::hilosLegalSettings => [],
+        ],
+        LogsOverviewPage::PAGE => [
+            ChatTableContext::hilosLogNodes => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

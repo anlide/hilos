@@ -194,6 +194,7 @@ use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
@@ -1341,6 +1342,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             TasksTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
             TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
+            TasksTableContext::hilosLogNodes => HilosLogNodesTable::class,
             TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             TasksTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
@@ -1401,6 +1403,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 MaintenancePage::PAGE,
                 MaintenanceCirclePage::PAGE,
                 MaintenanceWordsPage::PAGE,
+                LogsOverviewPage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -1682,6 +1685,11 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::AGENTS[AgentType::HILOS_LOGS],
         ));
 
+        $this->assertSame(
+            [TasksTableContext::hilosLogNodes => []],
+            Hilos::PAGE_TABLES[LogsOverviewPage::PAGE],
+        );
+        $this->assertSame(HilosLogNodesTable::class, Hilos::TABLES[TasksTableContext::hilosLogNodes]);
         $this->assertSame(
             [TasksTableContext::hilosLogKeys => []],
             Hilos::PAGE_TABLES[LogsKeysPage::PAGE],

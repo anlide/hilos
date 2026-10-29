@@ -30,8 +30,8 @@ use Hilos\Log\LogSettingsCatalog;
  * were no rotation folders yet. Key metrics (logKeys*, totalWeight*) are null unless available is
  * true.
  *
- * {@see $nodes} carries the per-node table only in cluster mode. A standalone installation
- * keeps the list empty even though its one node has an effective ID.
+ * The full compatibility node list travels in cluster mode independently of the windowed table.
+ * A standalone installation keeps the list empty even though its one node has an effective ID.
  */
 final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -298,10 +298,10 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     }
 
     /**
-     * Reads the per-node table back, refusing a row that is not one.
+     * Reads the full compatibility node list back, refusing an entry that is not a node row.
      *
      * The name and the readability are required, because a row without either is not a node the
-     * table could draw: an unnamed row belongs to a single-node installation, which sends no rows
+     * overview could draw: an unnamed row belongs to a single-node installation, which sends no rows
      * at all. The figures are optional in the same sense the top-level ones are - a node that
      * could not be read carries null in every one of them, and reading an absent number as zero
      * would report a measurement nobody took.
@@ -309,7 +309,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param array<string, mixed> $data Wire form of the overview
      * @return list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
-     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> Rows of the table
+     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> Full header node entries
      * @throws InvalidFormatException When the list is absent, holds a row that is not an object,
      *     or a row omits its name or its readability
      */

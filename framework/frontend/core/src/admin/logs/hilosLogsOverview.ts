@@ -1,14 +1,12 @@
 // The framework Hilos logs-overview admin headless: the header view-model, the two
 // empty states, the takeout verdict, and the wording of every figure the four tiles
-// and the per-node table draw. It is framework-agnostic (imports no UI framework)
+// draw. It is framework-agnostic (imports no UI framework)
 // and reads only @hilos/core primitives, so the Vue/React/Angular overview views
 // stay thin (multiframework-core.md).
 //
-// Everything arrives in ONE frame — the page's own header signal, sent ahead of the
-// frame that releases the page and again on the agent's tick. There is no table
-// viewport here and no second wire: the rows are one per node that reported, they
-// fit in the header whole, and a viewport for three rows would cost a descriptor, a
-// pager and a busy state for a list that never needs paging.
+// The page's header signal carries the full picture for tiles, banners and the
+// forecast, including nodes outside the visible table window. The node table uses
+// its own ordinary viewport binding (hilosLogNodes.ts).
 //
 // The screen answers "is anything wrong with the logs, and where do I go from here".
 // It commands nothing: every way off it is ordinary navigation.
@@ -76,9 +74,8 @@ export type HilosLogsRecentTab =
 /**
  * The project-supplied context the logs-overview admin reads from.
  *
- * One field, where the three neighbouring log screens carry two: they each own a
- * table window that normalizes into a page scope, and this screen has no window at
- * all. A scope manager here would be a promise that something needs it.
+ * The header only needs a connection. The node table's HilosLogNodesContext adds
+ * the scope manager, leaving header-only consumers with this smaller contract.
  */
 export interface HilosLogsOverviewContext {
   /** The connection the screen's frames arrive on. */
@@ -339,9 +336,8 @@ export function logsOverviewGrowthNote(
 /**
  * One installation's — or one node's — answer to "how long until the room runs out".
  *
- * `daysAway` null is not "unknown": a candidate exists only where all three figures
- * and a rate were there, so null is the case the arithmetic actually reached — the
- * threshold is already behind us.
+ * `daysAway` null means the threshold has already been reached, independently of
+ * whether a growth rate is known. A future forecast needs a positive rate.
  */
 interface LogsOverviewForecast {
   /** The node the figures belong to, null in an installation that names no nodes. */
@@ -353,15 +349,17 @@ interface LogsOverviewForecast {
    * settings row written two nodes of one cluster can honestly hold two.
    */
   readonly thresholdPercent: number
+  /** Unrounded free share of this same filesystem, in percent. */
+  readonly freePercent: number
+  /** Whether the free bytes are exactly at the computed threshold boundary. */
+  readonly atThreshold: boolean
 }
 
 /**
  * The forecast for one set of figures, or null when there is nothing to forecast.
  *
- * Three of the four cases are silence, and each is the honest answer. No rate yet:
- * the tile already says it is still measuring, and a second line would say it twice.
- * A rate of exactly zero: there is nothing to divide by, and "never" is not news.
- * No room figures: a guess costs more than a blank.
+ * Known free/total/threshold figures can already establish a reached threshold.
+ * Before it is reached, an unknown or nonpositive rate gives no future forecast.
  *
  * @param nodeId The node these figures belong to, null when the installation names none.
  * @param freeBytes Free bytes on that filesystem, null when it is not known.
@@ -380,18 +378,26 @@ function logsOverviewForecastOf(
     freeBytes === null ||
     totalBytes === null ||
     thresholdPercent === null ||
-    growthBytesPerDay === null ||
-    growthBytesPerDay <= 0
+    totalBytes <= 0
   ) {
     return null
   }
 
   const room = freeBytes - Math.floor((totalBytes * thresholdPercent) / 100)
+  let daysAway: number | null = null
+  if (room > 0) {
+    if (growthBytesPerDay === null || growthBytesPerDay <= 0) {
+      return null
+    }
+    daysAway = Math.floor(room / growthBytesPerDay)
+  }
 
   return {
     nodeId,
-    daysAway: room > 0 ? Math.floor(room / growthBytesPerDay) : null,
+    daysAway,
     thresholdPercent,
+    freePercent: (freeBytes / totalBytes) * 100,
+    atThreshold: room === 0,
   }
 }
 
@@ -403,14 +409,23 @@ function logsOverviewForecastOf(
  * machine in trouble rather than the average of the fleet. An unreadable node has no
  * figures and no right to speak for the cluster, so it is not a candidate.
  *
- * The single-node installation has no rows and answers from the header, which is the
- * same shape the per-node table itself takes (HIL-869).
+ * The complete header supplies every candidate, regardless of the visible node
+ * table window. A hidden threshold hides the result for the whole picture.
  *
  * @param overview The latest screen, or null before the first frame arrives.
  */
 function logsOverviewWorstForecast(
   overview: HilosLogsOverview | null,
-): LogsOverviewForecast | null {
+): Hideable<LogsOverviewForecast> | null {
+  if (
+    overview !== null &&
+    (isHiddenValue(overview[OVERVIEW_NODE_THRESHOLD_FIELD]) ||
+      overview.nodes.some((node) =>
+        isHiddenValue(node[OVERVIEW_NODE_THRESHOLD_FIELD]),
+      ))
+  ) {
+    return HIDDEN_VALUE
+  }
   if (overview === null || logsOverviewState(overview) !== 'figures') {
     return null
   }
@@ -487,6 +502,31 @@ function logsOverviewForecastWhen(daysAway: number): string {
   return daysAway === 1 ? '1 day' : `${daysAway} days`
 }
 
+/** Format a measured free share without rounding a positive remainder to zero. */
+function logsOverviewFreePercent(percent: number): string {
+  if (percent > 0 && percent < 0.1) {
+    return '<0.1%'
+  }
+
+  return `${percent.toFixed(1).replace(/\.0$/, '')}%`
+}
+
+/**
+ * Whether the complete overview has a reached threshold. Hidden or unknown
+ * figures never expose a warning state to a viewer.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+export function logsOverviewThresholdPassed(
+  overview: HilosLogsOverview | null,
+): boolean {
+  const forecast = logsOverviewWorstForecast(overview)
+
+  return (
+    forecast !== null && !isHiddenValue(forecast) && forecast.daysAway === null
+  )
+}
+
 /**
  * The third line of the growth tile: what the rate means for the room that is left.
  *
@@ -507,26 +547,24 @@ function logsOverviewForecastWhen(daysAway: number): string {
 export function logsOverviewForecastNote(
   overview: HilosLogsOverview | null,
 ): Hideable<string> | null {
-  if (
-    overview !== null &&
-    (isHiddenValue(overview[OVERVIEW_NODE_THRESHOLD_FIELD]) ||
-      overview.nodes.some((node) =>
-        isHiddenValue(node[OVERVIEW_NODE_THRESHOLD_FIELD]),
-      ))
-  ) {
+  const forecast = logsOverviewWorstForecast(overview)
+  if (isHiddenValue(forecast)) {
     return HIDDEN_VALUE
   }
-
-  const forecast = logsOverviewWorstForecast(overview)
   if (forecast === null) {
     return null
   }
 
   const on = forecast.nodeId === null ? '' : ` on ${forecast.nodeId}`
   if (forecast.daysAway === null) {
-    return forecast.thresholdPercent === 0
-      ? `The log disk is full${on}`
-      : `Free space is already below the ${forecast.thresholdPercent}% threshold${on}`
+    const message =
+      forecast.thresholdPercent === 0
+        ? `The log disk is full${on}`
+        : forecast.atThreshold
+          ? `The ${forecast.thresholdPercent}% threshold has been reached${on}`
+          : `Free space is already below the ${forecast.thresholdPercent}% threshold${on}`
+
+    return `${message} — ${logsOverviewFreePercent(forecast.freePercent)} free`
   }
 
   const when = logsOverviewForecastWhen(forecast.daysAway)

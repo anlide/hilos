@@ -20,6 +20,8 @@ import * as daemon from '../../src/admin/daemon/index.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
 import * as logs from '../../src/admin/logs/index.js'
+import * as logNodes from '../../src/admin/logs/hilosLogNodes.js'
+import { logsOverviewThresholdPassed } from '../../src/admin/logs/hilosLogsOverview.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
 import * as maintenanceWords from '../../src/admin/maintenance/hilosMaintenanceWords.js'
 import * as moderation from '../../src/admin/moderation/index.js'
@@ -522,6 +524,23 @@ const maintenanceWordsTypes = [
   'HilosMaintenanceWordsRow',
   'HilosMaintenanceWordsTable',
 ]
+/** The node table and threshold verdict stay exclusive to the lazy Logs section. */
+const logNodesValues = [
+  'createHilosLogNodesTable',
+  'resolveHilosLogNodeRow',
+  'NODE_ID_FIELD',
+  'NODE_LAST_ROTATION_AT_FIELD',
+  'NODE_LIVE_BYTES_FIELD',
+  'NODE_ARCHIVE_BYTES_FIELD',
+  'NODE_GROWTH_BYTES_PER_DAY_FIELD',
+  'NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD',
+  'logsOverviewThresholdPassed',
+]
+const logNodesTypes = [
+  'HilosLogNodeRow',
+  'HilosLogNodesContext',
+  'HilosLogNodesTable',
+]
 /** Detail APIs stay exclusive to their lazy section. */
 const adminModerationKindValues = ['createHilosModerationKind']
 const adminModerationKindTypes = ['HilosModerationKind']
@@ -904,6 +923,14 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (entry === './admin/logs' && logNodesValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            name === 'logsOverviewThresholdPassed'
+              ? logsOverviewThresholdPassed
+              : logNodes[name as keyof typeof logNodes],
+          )
         } else if (
           entry === './admin/security' &&
           securityOverviewValues.includes(name)
@@ -948,6 +975,7 @@ describe('core public entries', () => {
         ...adminModerationKindValues,
         ...adminModerationRulesValues,
         ...maintenanceWordsValues,
+        ...logNodesValues,
         ...adminModerationRuleAddValues,
         ...adminModerationRuleDeleteValues,
         ...adminModerationRuleEditValues,
@@ -1319,6 +1347,11 @@ describe('core public entries', () => {
     ]
     const wordsExports = exportsOf('admin/maintenance/hilosMaintenanceWords.ts')
     const wordsNames = [...maintenanceWordsValues, ...maintenanceWordsTypes]
+    const logNodesExports = new Map([
+      ...exportsOf('admin/logs/hilosLogNodes.ts'),
+      ...exportsOf('admin/logs/hilosLogsOverview.ts'),
+    ])
+    const logNodesNames = [...logNodesValues, ...logNodesTypes]
     const securityOverviewExports = exportsOf(
       'admin/security/hilosSecurityOverview.ts',
     )
@@ -1427,6 +1460,13 @@ describe('core public entries', () => {
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
         } else if (
+          entry === 'admin/logs/index.ts' &&
+          logNodesNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(logNodesExports.get(name))
+        } else if (
           entry === 'admin/security/index.ts' &&
           securityOverviewNames.includes(name)
         ) {
@@ -1465,6 +1505,7 @@ describe('core public entries', () => {
         ...kindNames,
         ...rulesNames,
         ...wordsNames,
+        ...logNodesNames,
         ...ruleAddNames,
         ...ruleDeleteNames,
         ...ruleEditNames,
