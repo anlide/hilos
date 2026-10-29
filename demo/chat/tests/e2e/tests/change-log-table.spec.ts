@@ -79,8 +79,15 @@ test('follows a block receipt to the history of its record and back to the whole
     // The registration's receipt also carries the zone the browser named at
     // sign-up, a second update of this record, so the block is found by its change.
     await expectRegistrationHistory(expect, page)
-    const editKey = await tableRowKeyByText(expect, page, 'block: 0 → 1')
+    const editKey = await tableRowKeyByText(expect, page, 'block')
     const edit = shownByTestId(page, `hilos-table-row-${editKey}`)
+    const block = edit.getByRole('cell').filter({
+      has: page.locator('code').filter({ hasText: /^block$/ }),
+    })
+    await expect(block.locator('span').filter({ hasText: /^0$/ })).toHaveText(
+      '0',
+    )
+    await expect(block.locator('strong')).toHaveText('1')
     await expect(edit).toContainText(`#${person.userId}`)
     await expect(edit).toContainText('updated')
     await expect(edit).toContainText('Web')
@@ -112,10 +119,16 @@ test('follows a block receipt to the history of its record and back to the whole
       `${CHANGE_LOG_TABLES_PATH}/hilos_user/history`,
     )
     await expectRegistrationHistory(expect, page)
-    const directEditKey = await tableRowKeyByText(expect, page, 'block: 0 → 1')
+    const directEditKey = await tableRowKeyByText(expect, page, 'block')
+    const directEdit = shownByTestId(page, `hilos-table-row-${directEditKey}`)
+    const directBlock = directEdit.getByRole('cell').filter({
+      has: page.locator('code').filter({ hasText: /^block$/ }),
+    })
     await expect(
-      shownByTestId(page, `hilos-table-row-${directEditKey}`),
-    ).toContainText(`#${person.userId}`)
+      directBlock.locator('span').filter({ hasText: /^0$/ }),
+    ).toHaveText('0')
+    await expect(directBlock.locator('strong')).toHaveText('1')
+    await expect(directEdit).toContainText(`#${person.userId}`)
 
     await page.reload()
     await expectTrackedTableRecord(

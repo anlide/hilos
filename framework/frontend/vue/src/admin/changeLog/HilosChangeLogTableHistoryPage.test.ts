@@ -53,7 +53,15 @@ describe('HilosChangeLogTableHistoryPage', () => {
       '/hilos/change-log/tables/bot/history/57',
     )
     expect(row.text()).toContain('updated')
-    expect(row.text()).toContain('description: before → after')
+    const field = row
+      .findAll('code')
+      .find((field) => field.text() === 'description')!
+    const change = field.element.parentElement!
+    expect(
+      change.querySelector('span:not(.visually-hidden)')?.textContent,
+    ).toBe('before')
+    expect(change.querySelector('strong')?.textContent).toBe('after')
+    expect(change.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
     expect(row.text()).toContain('Ada')
     expect(row.text()).toContain('Web')
     expect(
@@ -74,6 +82,104 @@ describe('HilosChangeLogTableHistoryPage', () => {
     expect(
       masked.find('[data-id="hilos-change-log-history-receipt-102"]').exists(),
     ).toBe(false)
+  })
+
+  it('renders operations and field kinds through the real viewport without personal or long bodies', async () => {
+    const h = harness()
+    const { wrapper } = await mountPage(h)
+    h.pushWindow([
+      {
+        rowKey: '201',
+        slots: {
+          history: historySlot({
+            changes: [
+              {
+                field: 'name',
+                kind: 'inline',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: '<b>before</b>',
+                newValue: '<img src=x>',
+                bodyOmitted: false,
+              },
+              {
+                field: 'email',
+                kind: 'fact',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: 'private old',
+                newValue: 'private new',
+                bodyOmitted: false,
+              },
+              {
+                field: 'description',
+                kind: 'long',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: 'long old body',
+                newValue: 'long new body',
+                bodyOmitted: false,
+              },
+            ],
+          }),
+        },
+      },
+      {
+        rowKey: '202',
+        slots: { history: historySlot({ mutation: 'create' }) },
+      },
+      {
+        rowKey: '203',
+        slots: { history: historySlot({ mutation: 'delete' }) },
+      },
+    ])
+    await nextTick()
+    const update = wrapper.get('table [data-id="hilos-table-row-201"]')
+    const fields = update.findAll('code')
+    expect(fields.map((field) => field.text())).toEqual([
+      'name',
+      'email',
+      'description',
+    ])
+    const inline = fields[0]!.element.parentElement!
+    expect(
+      inline.querySelector('span:not(.visually-hidden)')?.textContent,
+    ).toBe('<b>before</b>')
+    expect(inline.querySelector('strong')?.textContent).toBe('<img src=x>')
+    expect(
+      [...inline.querySelectorAll('.visually-hidden')].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Was', 'Now'])
+    const fact = fields[1]!.element.parentElement!
+    expect(fact.textContent).toContain('changed')
+    expect(fact.textContent).toContain('Personal — no value')
+    expect(fact.querySelector('strong')).toBeNull()
+    expect(fact.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(fields[2]!.element.parentElement!.textContent).toContain(
+      'long text changed',
+    )
+    for (const value of [
+      'private old',
+      'private new',
+      'long old body',
+      'long new body',
+    ])
+      expect(update.text()).not.toContain(value)
+    expect(update.find('b, img, pre').exists()).toBe(false)
+    for (const [key, label, message] of [
+      ['201', 'updated', null],
+      ['202', 'created', 'Created as a fact'],
+      ['203', 'deleted', 'Row snapshot — in the receipt'],
+    ]) {
+      const row = wrapper.get(`table [data-id="hilos-table-row-${key}"]`)
+      const operation = row
+        .findAll('span')
+        .find((span) => span.text() === label)!
+      expect(operation.text()).toBe(label)
+      expect(operation.get('i').attributes('aria-hidden')).toBe('true')
+      if (message) expect(row.text()).toContain(message)
+    }
   })
 
   it('narrows to the address record behind a plate whose × leaves the record', async () => {

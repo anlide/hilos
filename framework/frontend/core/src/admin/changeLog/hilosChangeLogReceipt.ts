@@ -180,6 +180,8 @@ export const CHANGE_LOG_RECEIPT_COPY = {
   created: 'Created as a fact; values belong to the record itself.',
   deleted: 'Snapshot before deletion:',
   personal: 'Personal — no value',
+  changed: 'changed',
+  longChanged: 'long text changed',
   absent: 'Absent',
   nullValue: 'NULL',
   emptyString: 'Empty string',

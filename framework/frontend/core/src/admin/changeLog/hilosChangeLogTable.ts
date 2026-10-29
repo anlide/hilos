@@ -1,7 +1,11 @@
 import { z } from 'zod'
 
 import { type HilosChangeLogHistoryRow } from './hilosChangeLogHistory.js'
-import { changeLogFieldValue } from './hilosChangeLogReceipt.js'
+import {
+  CHANGE_LOG_RECEIPT_COPY,
+  changeLogFieldValue,
+  type HilosChangeLogValueSide,
+} from './hilosChangeLogReceipt.js'
 import { CHANGE_LOG_COLUMN_MODES } from './hilosChangeLogTablePolicies.js'
 import { type HilosChangeLogColumnCounts } from './hilosChangeLogTables.js'
 
@@ -258,4 +262,56 @@ export function formatChangeLogHistoryChanges(
           : `${change.field}: ${before.text} → ${after.text}`
       })
   }
+}
+
+/** One history line; only inline fields carry value sides. */
+export type HilosChangeLogHistoryChangeLine =
+  | { readonly kind: 'message'; readonly text: string }
+  | {
+      readonly kind: 'inline'
+      readonly field: string
+      readonly oldValue: HilosChangeLogValueSide
+      readonly newValue: HilosChangeLogValueSide
+    }
+  | { readonly kind: 'fact'; readonly field: string; readonly text: string }
+  | { readonly kind: 'long'; readonly field: string; readonly text: string }
+
+/**
+ * Project history changes in field order, keeping personal values and long
+ * bodies out of the history cell.
+ *
+ * @param row Resolved history row.
+ */
+export function changeLogHistoryChangeLines(
+  row: HilosChangeLogHistoryRow,
+): readonly HilosChangeLogHistoryChangeLine[] {
+  if (row.mutation !== 'update') {
+    return formatChangeLogHistoryChanges(row).map((text) => ({
+      kind: 'message',
+      text,
+    }))
+  }
+  return row.changes.map((change) => {
+    switch (change.kind) {
+      case 'inline':
+        return {
+          kind: 'inline',
+          field: change.field,
+          oldValue: changeLogFieldValue(change, 'old'),
+          newValue: changeLogFieldValue(change, 'new'),
+        }
+      case 'fact':
+        return {
+          kind: 'fact',
+          field: change.field,
+          text: CHANGE_LOG_RECEIPT_COPY.personal,
+        }
+      case 'long':
+        return {
+          kind: 'long',
+          field: change.field,
+          text: CHANGE_LOG_RECEIPT_COPY.longChanged,
+        }
+    }
+  })
 }

@@ -418,11 +418,11 @@ export async function expectRegistrationHistory(
   const zoneKey = await tableRowKeyByText(
     expect,
     page,
-    'last_browser_time_zone: Personal — no value',
+    'last_browser_time_zone',
   )
-  await expect(shownByTestId(page, `hilos-table-row-${zoneKey}`)).toContainText(
-    'updated',
-  )
+  const zone = shownByTestId(page, `hilos-table-row-${zoneKey}`)
+  await expect(zone).toContainText('Personal — no value')
+  await expect(zone).toContainText('updated')
   const creation = shownByTestId(
     page,
     `hilos-change-log-history-receipt-${creationKey}`,

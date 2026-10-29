@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import {
   CHANGE_LOG_ON_BEHALF_OF_TEXT,
+  CHANGE_LOG_RECEIPT_COPY,
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_COPY as copy,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
   changeLogChannelBadge,
+  changeLogHistoryChangeLines,
+  changeLogMutationBadge,
   changeLogRecordRouteParam,
   createHilosChangeLogHistoryTable,
   createHilosChangeLogReceiptReader,
-  formatChangeLogHistoryChanges,
-  formatChangeLogMutation,
   formatChangeLogOnBehalfOf,
   formatChangeLogRecordKey,
   formatChangeLogTime,
@@ -194,17 +195,60 @@ onUnmounted(() => {
             <span v-else>{{ formatChangeLogRecordKey(row.recordKey) }}</span>
           </template>
           <template #cell-mutation="{ row }">
-            <span class="badge bg-body-secondary text-body border">{{
-              formatChangeLogMutation(row.mutation)
-            }}</span>
+            <span
+              class="badge text-wrap"
+              :class="changeLogMutationBadge(row.mutation).tone"
+            >
+              <i
+                :class="`bi ${changeLogMutationBadge(row.mutation).icon} me-1`"
+                aria-hidden="true"
+              ></i>
+              {{ changeLogMutationBadge(row.mutation).label }}
+            </span>
           </template>
           <template #cell-changes="{ row }">
             <div
-              v-for="(line, index) in formatChangeLogHistoryChanges(row)"
+              v-for="(line, index) in changeLogHistoryChangeLines(row)"
               :key="index"
               class="small text-break"
             >
-              {{ line }}
+              <span
+                v-if="line.kind === 'message'"
+                class="text-body-secondary"
+                >{{ line.text }}</span
+              >
+              <template v-else>
+                <code>{{ line.field }}</code>
+                {{ ' ' }}
+                <template v-if="line.kind === 'inline'">
+                  <span class="visually-hidden">{{
+                    CHANGE_LOG_RECEIPT_COPY.oldValue
+                  }}</span>
+                  <span class="text-body-secondary">{{
+                    line.oldValue.text
+                  }}</span>
+                  {{ ' ' }}
+                  <i
+                    class="bi bi-arrow-right text-body-secondary"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    CHANGE_LOG_RECEIPT_COPY.newValue
+                  }}</span>
+                  {{ ' ' }}
+                  <strong>{{ line.newValue.text }}</strong>
+                </template>
+                <template v-else-if="line.kind === 'fact'">
+                  {{ CHANGE_LOG_RECEIPT_COPY.changed }}
+                  <span
+                    class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap text-start"
+                  >
+                    <i class="bi bi-incognito me-1" aria-hidden="true"></i>
+                    {{ line.text }}
+                  </span>
+                </template>
+                <span v-else class="text-body-secondary">{{ line.text }}</span>
+              </template>
             </div>
           </template>
           <template #cell-actorLabel="{ row }">

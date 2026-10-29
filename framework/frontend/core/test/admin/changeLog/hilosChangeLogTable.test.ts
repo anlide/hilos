@@ -20,6 +20,10 @@ import {
 } from '../../../src/admin/changeLog/hilosChangeLogTable.js'
 import { formatChangeLogColumnCounts } from '../../../src/admin/changeLog/hilosChangeLogTables.js'
 import {
+  changeLogHistoryChangeLines,
+  type HilosChangeLogHistoryChangeLine,
+} from '../../../src/admin/changeLog/index.js'
+import {
   HilosPages,
   HILOS_ROUTE_DECLARATIONS,
 } from '../../../src/routing/hilosPages.js'
@@ -433,5 +437,183 @@ describe('change-log history changes cell', () => {
         historyRow({ mutation: 'delete', receiptId: null }),
       ),
     ).toEqual(['Row snapshot'])
+  })
+})
+
+describe('typed change-log history lines', () => {
+  it('keeps field order and both inline sides, regardless of text length', () => {
+    const before = 'Before\n<em>plain text</em>'
+    const after = 'A long inline value '.repeat(100)
+    const row = historyRow({
+      changes: [
+        {
+          field: 'body',
+          kind: 'long',
+          oldPresent: true,
+          newPresent: true,
+          oldValue: 'a',
+          newValue: 'b',
+          bodyOmitted: false,
+        },
+        {
+          field: 'name',
+          kind: 'inline',
+          oldPresent: true,
+          newPresent: true,
+          oldValue: before,
+          newValue: after,
+          bodyOmitted: false,
+        },
+        {
+          field: 'email',
+          kind: 'fact',
+          oldPresent: true,
+          newPresent: true,
+          oldValue: 'old@example.test',
+          newValue: 'new@example.test',
+          bodyOmitted: false,
+        },
+      ],
+    })
+    const lines: readonly HilosChangeLogHistoryChangeLine[] =
+      changeLogHistoryChangeLines(row)
+    expect(lines).toEqual([
+      { kind: 'long', field: 'body', text: 'long text changed' },
+      {
+        kind: 'inline',
+        field: 'name',
+        oldValue: { kind: 'value', text: before },
+        newValue: { kind: 'value', text: after },
+      },
+      { kind: 'fact', field: 'email', text: 'Personal — no value' },
+    ])
+  })
+
+  it.each([false, true])(
+    'omits raw fact values when bodyOmitted is %s',
+    (bodyOmitted) => {
+      expect(
+        changeLogHistoryChangeLines(
+          historyRow({
+            changes: [
+              {
+                field: 'email',
+                kind: 'fact',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: 'private old value',
+                newValue: 'private new value',
+                bodyOmitted,
+              },
+            ],
+          }),
+        ),
+      ).toEqual([{ kind: 'fact', field: 'email', text: 'Personal — no value' }])
+    },
+  )
+
+  it.each([false, true])(
+    'omits long bodies when bodyOmitted is %s',
+    (bodyOmitted) => {
+      expect(
+        changeLogHistoryChangeLines(
+          historyRow({
+            changes: [
+              {
+                field: 'prompt',
+                kind: 'long',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: 'Full old body\n<em>literal markup</em>',
+                newValue: 'Full new body\nwith indentation',
+                bodyOmitted,
+              },
+            ],
+          }),
+        ),
+      ).toEqual([{ kind: 'long', field: 'prompt', text: 'long text changed' }])
+    },
+  )
+
+  it.each([
+    { present: false, value: 'ignored', kind: 'absent', text: 'Absent' },
+    { present: true, value: null, kind: 'null', text: 'NULL' },
+    { present: true, value: '', kind: 'empty', text: 'Empty string' },
+    {
+      present: true,
+      value: 'not shown',
+      bodyOmitted: true,
+      kind: 'omitted',
+      text: 'Value omitted',
+    },
+    {
+      present: false,
+      value: null,
+      bodyOmitted: true,
+      kind: 'absent',
+      text: 'Absent',
+    },
+  ])(
+    'distinguishes inline sides: $kind, present=$present, bodyOmitted=$bodyOmitted',
+    ({ present, value, bodyOmitted = false, kind, text }) => {
+      expect(
+        changeLogHistoryChangeLines(
+          historyRow({
+            changes: [
+              {
+                field: 'note',
+                kind: 'inline',
+                oldPresent: present,
+                newPresent: present,
+                oldValue: value,
+                newValue: value,
+                bodyOmitted,
+              },
+            ],
+          }),
+        ),
+      ).toEqual([
+        {
+          kind: 'inline',
+          field: 'note',
+          oldValue: { kind, text },
+          newValue: { kind, text },
+        },
+      ])
+    },
+  )
+
+  it.each([
+    { mutation: 'create', receiptId: 7, text: 'Created as a fact' },
+    { mutation: 'create', receiptId: null, text: 'Created as a fact' },
+    { mutation: 'delete', receiptId: 7, text: 'Row snapshot — in the receipt' },
+    { mutation: 'delete', receiptId: null, text: 'Row snapshot' },
+  ] as const)(
+    'summarizes $mutation with receipt $receiptId as a message',
+    ({ mutation, receiptId, text }) => {
+      expect(
+        changeLogHistoryChangeLines(
+          historyRow({
+            mutation,
+            receiptId,
+            changes: [
+              {
+                field: 'name',
+                kind: 'inline',
+                oldPresent: true,
+                newPresent: true,
+                oldValue: 'snapshot stays in the receipt',
+                newValue: 'creation values stay in the record',
+                bodyOmitted: false,
+              },
+            ],
+          }),
+        ),
+      ).toEqual([{ kind: 'message', text }])
+    },
+  )
+
+  it('has no lines for an update without changed fields', () => {
+    expect(changeLogHistoryChangeLines(historyRow({}))).toEqual([])
   })
 })

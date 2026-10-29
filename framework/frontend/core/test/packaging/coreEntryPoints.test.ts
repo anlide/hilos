@@ -12,6 +12,8 @@ import * as analyticsSessionList from '../../src/admin/analytics/hilosAnalyticsB
 import * as appearance from '../../src/admin/appearance/index.js'
 import * as backup from '../../src/admin/backup/index.js'
 import * as changeLog from '../../src/admin/changeLog/index.js'
+import { changeLogMutationBadge } from '../../src/admin/changeLog/hilosChangeLog.js'
+import { changeLogHistoryChangeLines } from '../../src/admin/changeLog/hilosChangeLogTable.js'
 import * as communications from '../../src/admin/communications/index.js'
 import * as channelSummary from '../../src/admin/communications/hilosCommunicationsChannel.js'
 import * as letterFrame from '../../src/admin/communications/hilosCommunicationsChannelFrame.js'
@@ -628,6 +630,16 @@ const changeLogTableMetadataTypes = [
   'HilosChangeLogTableTriggersRow',
   'HilosChangeLogTableTriggersTable',
 ]
+/** Additive presentation APIs belong only to the lazy Change Log section. */
+const changeLogPresentationValues = [
+  'changeLogMutationBadge',
+  'changeLogHistoryChangeLines',
+]
+const changeLogPresentationTypes = ['HilosChangeLogHistoryChangeLine']
+const changeLogPresentation = {
+  changeLogMutationBadge,
+  changeLogHistoryChangeLines,
+}
 /** Explicit backup run identity and Maintenance navigation additions. */
 const backupRunValues = [
   'BACKUP_RUN_PROGRESS_DETAIL_BACKUP_ID',
@@ -977,6 +989,15 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/change-log' &&
+          changeLogPresentationValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            changeLogPresentation[name as keyof typeof changeLogPresentation],
+          )
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
@@ -1002,6 +1023,7 @@ describe('core public entries', () => {
         ...adminModerationRuleEditValues,
         ...securityOverviewValues,
         ...oauthProviderHeadValues,
+        ...changeLogPresentationValues,
       ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
@@ -1412,6 +1434,14 @@ describe('core public entries', () => {
       ...oauthProviderHeadValues,
       ...oauthProviderHeadTypes,
     ]
+    const changeLogPresentationExports = new Map([
+      ...exportsOf('admin/changeLog/hilosChangeLog.ts'),
+      ...exportsOf('admin/changeLog/hilosChangeLogTable.ts'),
+    ])
+    const changeLogPresentationNames = [
+      ...changeLogPresentationValues,
+      ...changeLogPresentationTypes,
+    ]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (
@@ -1537,6 +1567,15 @@ describe('core public entries', () => {
           expect(symbol, `${entry}:${name}`).toBe(
             oauthProviderHeadExports.get(name),
           )
+        } else if (
+          entry === 'admin/changeLog/index.ts' &&
+          changeLogPresentationNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            changeLogPresentationExports.get(name),
+          )
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -1565,6 +1604,7 @@ describe('core public entries', () => {
         ...ruleEditNames,
         ...securityOverviewNames,
         ...oauthProviderHeadNames,
+        ...changeLogPresentationNames,
       ].sort(),
     )
   }, 30_000)

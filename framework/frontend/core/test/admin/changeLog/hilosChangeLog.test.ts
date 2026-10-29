@@ -15,6 +15,7 @@ import {
   formatChangeLogWho,
   type HilosChangeLogPersonFields,
 } from '../../../src/admin/changeLog/hilosChangeLog.js'
+import { changeLogMutationBadge } from '../../../src/admin/changeLog/index.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 function person(
@@ -110,6 +111,24 @@ describe('change-log attribution and labels', () => {
         },
       ]),
     ).toBe('bot #? · updated · 1 field')
+  })
+
+  it('provides badge metadata for every mutation without changing its label', () => {
+    expect(changeLogMutationBadge('create')).toEqual({
+      label: 'created',
+      icon: 'bi-plus-circle',
+      tone: 'bg-success-subtle text-success-emphasis border border-success-subtle',
+    })
+    expect(changeLogMutationBadge('update')).toEqual({
+      label: 'updated',
+      icon: 'bi-pencil',
+      tone: 'bg-primary-subtle text-primary-emphasis border border-primary-subtle',
+    })
+    expect(changeLogMutationBadge('delete')).toEqual({
+      label: 'deleted',
+      icon: 'bi-trash',
+      tone: 'bg-danger-subtle text-danger-emphasis border border-danger-subtle',
+    })
   })
 
   it('offers only the agreed channels and periods', () => {

@@ -9,6 +9,7 @@ import {
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   changeLogEntryDetails,
+  changeLogMutationBadge,
   changeLogReceiptAttribution,
   changeLogReceiptPagination,
   changeLogRecordRouteParam,
@@ -55,6 +56,7 @@ const entries = computed(() =>
   (props.dialog?.entries ?? []).map((entry) => ({
     entryId: entry.entryId,
     details: changeLogEntryDetails(entry),
+    operation: changeLogMutationBadge(entry.mutation),
     recordPath: recordPath(entry),
   })),
 )
@@ -238,9 +240,13 @@ async function hide(): Promise<void> {
               }}</code></HilosLink
             >
             <code v-else class="text-break">{{ entry.details.record }}</code>
-            <span class="badge bg-body-secondary text-body border">{{
-              entry.details.mutation
-            }}</span>
+            <span class="badge text-wrap" :class="entry.operation.tone">
+              <i
+                :class="`bi ${entry.operation.icon} me-1`"
+                aria-hidden="true"
+              ></i>
+              {{ entry.operation.label }}
+            </span>
           </h3>
           <p
             v-if="entry.details.explanation"
@@ -248,18 +254,52 @@ async function hide(): Promise<void> {
           >
             {{ entry.details.explanation }}
           </p>
-          <ul class="list-unstyled mb-0 d-flex flex-column gap-3">
-            <li v-for="field in entry.details.fields" :key="field.field">
+          <ul class="list-unstyled mb-0 d-flex flex-column gap-1">
+            <li
+              v-for="field in entry.details.fields"
+              :key="field.field"
+              class="small text-break"
+            >
               <code class="text-break">{{ field.field }}</code>
-              <span
-                v-if="field.kind === 'fact'"
-                class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap"
-              >
-                {{ field.oldValue.text }}
-              </span>
-              <div v-else class="row g-2 mt-1">
+              <template v-if="field.kind === 'fact'">
+                <span v-if="field.newValue"> {{ copy.changed }}</span>
+                <span
+                  class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap text-start"
+                >
+                  <i class="bi bi-incognito me-1" aria-hidden="true"></i>
+                  {{ field.oldValue.text }}
+                </span>
+              </template>
+              <template v-else-if="field.kind === 'inline'">
+                <span v-if="field.newValue" class="visually-hidden">{{
+                  copy.oldValue
+                }}</span>
+                {{ ' ' }}
+                <span
+                  class="text-body-secondary"
+                  :data-id="`hilos-change-log-value-${entry.entryId}-${field.field}-old`"
+                  >{{ field.oldValue.text }}</span
+                >
+                <template v-if="field.newValue">
+                  {{ ' ' }}
+                  <i
+                    class="bi bi-arrow-right text-body-secondary"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{ copy.newValue }}</span>
+                  {{ ' ' }}
+                  <strong
+                    :data-id="`hilos-change-log-value-${entry.entryId}-${field.field}-new`"
+                    >{{ field.newValue.text }}</strong
+                  >
+                </template>
+              </template>
+              <div v-else class="row g-2 mt-1 p-2">
                 <div :class="field.newValue ? 'col-sm-6' : 'col-12'">
-                  <div class="small text-body-secondary mb-1">
+                  <div
+                    v-if="field.newValue"
+                    class="small text-body-secondary mb-1"
+                  >
                     {{ copy.oldValue }}
                   </div>
                   <HilosLongText

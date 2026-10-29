@@ -164,6 +164,41 @@ export function formatChangeLogMutation(
 }
 
 /**
+ * Describe a mutation badge with a label, icon, and theme-aware tone.
+ *
+ * @param mutation Mutation kind carried by the journal.
+ */
+export function changeLogMutationBadge(
+  mutation: 'create' | 'update' | 'delete',
+): {
+  readonly label: 'created' | 'updated' | 'deleted'
+  readonly icon: string
+  readonly tone: string
+} {
+  const label = formatChangeLogMutation(mutation)
+  switch (mutation) {
+    case 'create':
+      return {
+        label,
+        icon: 'bi-plus-circle',
+        tone: 'bg-success-subtle text-success-emphasis border border-success-subtle',
+      }
+    case 'update':
+      return {
+        label,
+        icon: 'bi-pencil',
+        tone: 'bg-primary-subtle text-primary-emphasis border border-primary-subtle',
+      }
+    case 'delete':
+      return {
+        label,
+        icon: 'bi-trash',
+        tone: 'bg-danger-subtle text-danger-emphasis border border-danger-subtle',
+      }
+  }
+}
+
+/**
  * Summarize a receipt's touched tables in first-touch order.
  *
  * @param touched Reader summaries in receipt order.
