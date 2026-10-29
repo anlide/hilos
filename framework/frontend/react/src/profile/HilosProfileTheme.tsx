@@ -98,73 +98,80 @@ export function HilosProfileTheme({ open, onClose }: HilosProfileThemeProps) {
       title={THEME_COPY.menu}
       initialFocus="dialog"
       onClose={onClose}
+      busy={busy}
+      body={({ busy: modalBusy }) => (
+        <div data-id="profile-theme-modal">
+          <fieldset className="m-0 p-0 border-0" disabled={modalBusy}>
+            <HilosActionError
+              action={action}
+              detailsTitle="Couldn't change theme"
+            />
+            <div className="list-group">
+              {THEME_POSITIONS.map((row) => {
+                const current = row.value === choice?.position
+                const pending = loading && submitted === row.value
+
+                return (
+                  <button
+                    key={row.value}
+                    type="button"
+                    className={`list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative${current ? ' active' : ''}`}
+                    aria-current={current ? 'true' : undefined}
+                    disabled={busy}
+                    aria-busy={
+                      busy && submitted === row.value ? true : undefined
+                    }
+                    data-id={`profile-theme-option-${row.value}`}
+                    onClick={() => void choose(row.value)}
+                  >
+                    <i className={`bi ${row.icon}`} aria-hidden="true" />
+                    <span className="flex-grow-1">{row.label}</span>
+                    {current && choice?.isDefault && (
+                      <span className="badge rounded-pill bg-body-tertiary text-body-emphasis border">
+                        {THEME_COPY.default}
+                      </span>
+                    )}
+                    <i
+                      className={`bi bi-check2${!current || pending ? ' invisible' : ''}`}
+                      aria-hidden="true"
+                    />
+                    {pending && (
+                      <span
+                        className="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
+                        role="status"
+                        data-id="profile-theme-loading"
+                      >
+                        <span className="visually-hidden">Loading…</span>
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+          <hr />
+          <LoadingButton
+            className="btn-outline-secondary w-100"
+            loading={busy && submitted === null}
+            disabled={busy && submitted !== null}
+            data-id="profile-theme-default"
+            onClick={() => void choose(null)}
+          >
+            {THEME_COPY.siteDefault}
+          </LoadingButton>
+        </div>
+      )}
       actions={({ requestClose }) => (
         <button
           type="button"
           className="btn btn-outline-secondary"
           data-id="profile-theme-close"
+          disabled={busy}
           onClick={requestClose}
         >
           Close
         </button>
       )}
-    >
-      <div data-id="profile-theme-modal">
-        <HilosActionError
-          action={action}
-          detailsTitle="Couldn't change theme"
-        />
-        <div className="list-group">
-          {THEME_POSITIONS.map((row) => {
-            const current = row.value === choice?.position
-            const pending = loading && submitted === row.value
-
-            return (
-              <button
-                key={row.value}
-                type="button"
-                className={`list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative${current ? ' active' : ''}`}
-                aria-current={current ? 'true' : undefined}
-                disabled={busy}
-                aria-busy={busy && submitted === row.value ? true : undefined}
-                data-id={`profile-theme-option-${row.value}`}
-                onClick={() => void choose(row.value)}
-              >
-                <i className={`bi ${row.icon}`} aria-hidden="true" />
-                <span className="flex-grow-1">{row.label}</span>
-                {current && choice?.isDefault && (
-                  <span className="badge rounded-pill bg-body-tertiary text-body-emphasis border">
-                    {THEME_COPY.default}
-                  </span>
-                )}
-                <i
-                  className={`bi bi-check2${!current || pending ? ' invisible' : ''}`}
-                  aria-hidden="true"
-                />
-                {pending && (
-                  <span
-                    className="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
-                    role="status"
-                    data-id="profile-theme-loading"
-                  >
-                    <span className="visually-hidden">Loading…</span>
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-        <hr />
-        <LoadingButton
-          className="btn-outline-secondary w-100"
-          loading={busy && submitted === null}
-          disabled={busy && submitted !== null}
-          data-id="profile-theme-default"
-          onClick={() => void choose(null)}
-        >
-          {THEME_COPY.siteDefault}
-        </LoadingButton>
-      </div>
-    </HilosModal>
+    />
   )
 }

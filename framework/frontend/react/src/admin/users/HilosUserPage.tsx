@@ -1163,6 +1163,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
       <HilosModal
         open={editing}
+        busy={loading}
         confirmOnClose={dirty}
         onClose={closeEdit}
         header={<ConflictHeader title={editTitle} conflict={live.conflict} />}

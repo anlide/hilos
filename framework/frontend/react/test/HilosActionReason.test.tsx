@@ -74,9 +74,12 @@ describe('HilosActionReason', () => {
     expect(document.activeElement).toBe(dialog)
     expect(element('hilos-action-reason-body').textContent?.trim()).toBe(reason)
     expect(dialog.querySelectorAll('.modal-body > *')).toHaveLength(1)
-    expect(dialog.querySelector('.modal-body > p')?.textContent?.trim()).toBe(
-      reason,
+    expect(dialog.querySelectorAll('.modal-body > fieldset > *')).toHaveLength(
+      1,
     )
+    expect(
+      dialog.querySelector('.modal-body > fieldset > p')?.textContent?.trim(),
+    ).toBe(reason)
     expect(dialog.querySelectorAll('.modal-footer button')).toHaveLength(1)
     expect(element('hilos-action-reason-close').textContent?.trim()).toBe(
       'Close',

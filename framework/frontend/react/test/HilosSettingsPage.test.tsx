@@ -308,6 +308,24 @@ function editSave(): HTMLButtonElement {
   ) as HTMLButtonElement
 }
 
+function editInput(): HTMLInputElement {
+  return document.querySelector(
+    '[data-id="hilos-settings-edit-value"]',
+  ) as HTMLInputElement
+}
+
+function editCancel(): HTMLButtonElement {
+  return document.querySelector(
+    '[data-id="hilos-settings-edit-cancel"]',
+  ) as HTMLButtonElement
+}
+
+function editBodyFieldset(): HTMLFieldSetElement {
+  return document.querySelector(
+    '[data-id="modal"] .modal-body > fieldset',
+  ) as HTMLFieldSetElement
+}
+
 // What the edit window's Save tells a sighted person and a screen reader now.
 function saveState() {
   const save = editSave()
@@ -963,16 +981,35 @@ describe('HilosSettingsPage Save in flight', () => {
     const { context, sent, answer } = seededContext([OWN])
     openAndType(context, 'Mine')
     expect(saveState()).toEqual(SAVE_RESTING)
+    const input = editInput()
+    const form = input.form
+    const fieldset = editBodyFieldset()
+    const cancel = editCancel()
 
     fireEvent.click(editSave())
     expect(sent.map((entry) => entry.action)).toEqual(['setting_add'])
     expect(saveState()).toEqual(SAVE_LOCKED)
+    expect(editBodyFieldset()).toBe(fieldset)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    fireEvent.click(cancel)
+    fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(editSave())
     enterInEdit()
     expect(sent).toHaveLength(1)
+    expect(document.querySelector('[data-id="modal-confirm-discard"]')).toBe(
+      null,
+    )
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(editInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('Mine')
 
     wait(299)
     expect(saveState()).toEqual(SAVE_LOCKED)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
     wait(1)
     expect(saveState()).toEqual(SAVE_SPINNING)
     fireEvent.click(editSave())
@@ -986,19 +1023,46 @@ describe('HilosSettingsPage Save in flight', () => {
   it('returns Save to rest on a refusal and lets the next press send', async () => {
     const { context, sent, answer } = seededContext([OWN])
     openAndType(context, 'Mine')
+    const input = editInput()
+    const form = input.form
+    const fieldset = editBodyFieldset()
+    const cancel = editCancel()
     fireEvent.click(editSave())
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
     wait(300)
     expect(saveState()).toEqual(SAVE_SPINNING)
 
     await reply(answer, 'fail')
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(editInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.value).toBe('Mine')
     expect(
       document.querySelector('[data-id="hilos-action-error"]'),
     ).not.toBeNull()
     expect(saveState()).toEqual(SAVE_RESTING)
 
-    fireEvent.click(editSave())
+    const custom = document.querySelector(
+      '[data-id="hilos-settings-edit-custom"]',
+    ) as HTMLInputElement
+    fireEvent.click(custom)
+    expect(fieldset.disabled).toBe(false)
+    expect(input.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    fireEvent.click(custom)
+    expect(input.disabled).toBe(false)
+    expect(input.value).toBe('Mine')
+
+    enterInEdit()
     expect(sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    await reply(answer, 'success')
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
   it('turns Save off at once for a draft with nothing to save', () => {

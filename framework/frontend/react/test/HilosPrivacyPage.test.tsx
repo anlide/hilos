@@ -179,6 +179,10 @@ describe('HilosPrivacyPage', () => {
     const confirm = byId('privacy-erase-confirm') as HTMLButtonElement
     const spinner = (): Element | null =>
       confirm.querySelector('[data-id="loading-button-spinner"]')
+    const list = byId('privacy-erase-list')!
+    const body = list.closest('fieldset')!
+    const labels = list.textContent
+    expect(body.disabled).toBe(false)
 
     await act(async () => {
       fireEvent.click(confirm)
@@ -191,13 +195,23 @@ describe('HilosPrivacyPage', () => {
     expect(confirm.getAttribute('aria-busy')).toBe('true')
     expect(confirm.getAttribute('aria-disabled')).toBe('true')
     expect(confirm.disabled).toBe(false)
+    expect(confirm.matches(':disabled')).toBe(false)
     expect(confirm.classList.contains('disabled')).toBe(false)
     expect(spinner()).toBeNull()
+    expect(byId('privacy-erase-list')).toBe(list)
+    expect(list.closest('fieldset')).toBe(body)
+    expect(body.disabled).toBe(true)
+    expect(list.textContent).toBe(labels)
 
     await act(async () => {
+      fireEvent.click(byId('privacy-erase-cancel')!)
+      fireEvent.click(byId('modal-close')!)
+      fireEvent.click(byId('modal')!)
+      fireEvent.keyDown(byId('modal')!, { key: 'Escape' })
       fireEvent.click(confirm)
       vi.advanceTimersByTime(299)
     })
+    expect(byId('privacy-erase-list')).toBe(list)
     expect(spinner()).toBeNull()
     expect(confirm.classList.contains('disabled')).toBe(false)
     await act(async () => {
@@ -600,6 +614,10 @@ it('holds every comparison close gesture while accepting and closes on success b
     })),
   )
   await policyUpdate(() => policyNode('legal-document-changes-open')!.click())
+  const comparison = policyNode('privacy-changes-modal')!
+  const body = comparison.closest('fieldset')!
+  const text = comparison.textContent
+  expect(body.disabled).toBe(false)
   await policyUpdate(() => policyNode('privacy-changes-accept')!.click())
   expect(policyNode('privacy-changes-accept')!.getAttribute('aria-busy')).toBe(
     'true',
@@ -611,10 +629,16 @@ it('holds every comparison close gesture while accepting and closes on success b
     (policyNode('privacy-changes-close') as HTMLButtonElement).disabled,
   ).toBe(true)
   expect((policyNode('modal-close') as HTMLButtonElement).disabled).toBe(true)
+  expect(policyNode('privacy-changes-modal')).toBe(comparison)
+  expect(comparison.closest('fieldset')).toBe(body)
+  expect(body.disabled).toBe(true)
+  expect(comparison.textContent).toBe(text)
+  expect(policyNode('privacy-changes-accept')!.matches(':disabled')).toBe(false)
   await policyUpdate(() => {
     policyNode('privacy-changes-close')!.click()
     policyNode('modal-close')!.click()
-    document.dispatchEvent(
+    policyNode('modal')!.click()
+    policyNode('modal')!.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     )
     policyNode('privacy-changes-accept')!.click()
@@ -652,14 +676,23 @@ it('keeps a refused acceptance in the comparison body and reserves its room', as
   const slot = policyNode('privacy-changes-refusal-slot')!
   expect(slot.textContent?.trim()).toBe('')
   expect(slot.closest('.modal-body')).not.toBeNull()
+  const body = slot.closest('fieldset')!
+  expect(body.disabled).toBe(false)
   await policyUpdate(() => policyNode('privacy-changes-accept')!.click())
+  expect(body.disabled).toBe(true)
   await policyUpdate(() =>
     reject(
       new ActionError('hilos_legal_accept', 'fail', 'This policy has changed.'),
     ),
   )
   expect(policyNode('privacy-changes-modal')).not.toBeNull()
+  expect(slot.closest('fieldset')).toBe(body)
+  expect(body.disabled).toBe(false)
   expect(slot.textContent).toContain('This policy has changed.')
+  expect(
+    policyNode('privacy-changes-refusal-details')!.matches(':disabled'),
+  ).toBe(false)
+  expect(policyNode('privacy-changes-close')!.matches(':disabled')).toBe(false)
   expect(policyNode('legal-document-accept-refusal')).toBeNull()
   await policyUpdate(() => world.answer(POLICY_DUE))
   expect(slot.textContent).toContain('This policy has changed.')

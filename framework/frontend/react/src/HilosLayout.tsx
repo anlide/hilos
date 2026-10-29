@@ -946,24 +946,26 @@ export function HilosLayout({
             aria-label={LEGAL_RECONSENT_COPY.heading}
             initialFocus="dialog"
             onClose={closeLegalReconsent}
-          >
-            <div data-id="legal-reconsent-modal">
-              <HilosLegalReconsent
-                variant="window"
-                content={reconsentContent}
-                view={reconsentView}
-                loading={reconsentLoading}
-                error={reconsentError}
-                busy={reconsentBusy}
-                person={reconsentPerson}
-                now={reconsentNow}
-                onAccept={() => void hilosLegalReconsent.accept()}
-                onLater={closeLegalReconsent}
-                onRetry={() => void hilosLegalReconsent.load()}
-                onShow={hilosLegalReconsent.show}
-              />
-            </div>
-          </HilosModal>
+            busy={reconsentBusy}
+            body={({ busy }) => (
+              <div data-id="legal-reconsent-modal">
+                <HilosLegalReconsent
+                  variant="window"
+                  content={reconsentContent}
+                  view={reconsentView}
+                  loading={reconsentLoading}
+                  error={reconsentError}
+                  busy={busy}
+                  person={reconsentPerson}
+                  now={reconsentNow}
+                  onAccept={() => void hilosLegalReconsent.accept()}
+                  onLater={closeLegalReconsent}
+                  onRetry={() => void hilosLegalReconsent.load()}
+                  onShow={hilosLegalReconsent.show}
+                />
+              </div>
+            )}
+          />
         </div>
       )}
     </HilosConnectionInteractionContext.Provider>

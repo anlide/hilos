@@ -668,6 +668,60 @@ describe('HilosUserPage', () => {
     expect(input.value).toBe('Alice')
   })
 
+  it('locks the rename modal until its save lands, keeps a refused draft, and closes on retry', () => {
+    const context = userContext(true)
+    openModal(context)
+    fireEvent.change(nameInput(), { target: { value: 'Alicia' } })
+
+    const input = nameInput()
+    const form = input.form as HTMLFormElement
+    const modal = byId('modal') as HTMLElement
+    const fieldset = modal.querySelector(
+      '.modal-body > fieldset',
+    ) as HTMLFieldSetElement
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = byId('hilos-user-cancel') as HTMLButtonElement
+
+    fireEvent.submit(form)
+    expect(
+      context.sent.filter((entry) => entry.action === 'hilos_user_update'),
+    ).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    fireEvent.submit(form)
+    fireEvent.click(cancel)
+    fireEvent.click(close)
+    fireEvent.keyDown(modal, { key: 'Escape' })
+    fireEvent.click(modal)
+    expect(
+      context.sent.filter((entry) => entry.action === 'hilos_user_update'),
+    ).toHaveLength(1)
+    expect(byId('modal')).toBe(modal)
+    expect(nameInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('Alicia')
+
+    act(() => context.failRename())
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.value).toBe('Alicia')
+    expect(byId('hilos-user-rename-error')?.textContent).toContain(
+      'Could not rename the user. Please try again.',
+    )
+
+    fireEvent.submit(form)
+    expect(
+      context.sent.filter((entry) => entry.action === 'hilos_user_update'),
+    ).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    act(() => context.renameElsewhere('Alicia'))
+    expect(byId('modal')).toBeNull()
+  })
+
   // The rename modal on the shared row-edit helper (HIL-1050), under the same
   // case names as vue/src/admin/users/HilosUserPage.test.ts.
   it('opens on the committed name with save locked and the message line empty', () => {

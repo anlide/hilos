@@ -248,6 +248,7 @@ export function HilosProfileSessions({
         title={`End session #${endingSessionId ?? ''}`}
         initialFocus="dialog"
         onClose={() => setEndingSessionId(null)}
+        busy={endAction.busy}
         actions={(args) => (
           <>
             <button
@@ -287,6 +288,7 @@ export function HilosProfileSessions({
         title="Sign out everywhere else"
         initialFocus="dialog"
         onClose={() => setEndOthersOpen(false)}
+        busy={endOthersAction.busy}
         actions={(args) => (
           <>
             <button

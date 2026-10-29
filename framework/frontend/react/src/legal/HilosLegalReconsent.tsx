@@ -14,7 +14,7 @@
 // takeover the acceptance is not offered at all. The state lives in the core
 // store; the component draws it and reports what was pressed. Bootstrap classes
 // only (styling-rules.md).
-import { useId } from 'react'
+import { useId, type MouseEvent } from 'react'
 import {
   describeHilosLegalReconsentAccepted,
   describeHilosLegalReconsentAddress,
@@ -117,8 +117,20 @@ export function HilosLegalReconsent({
     content === null ||
     sections.length === 0 ||
     loading
+  const held = variant === 'window' && busy
+  const show = (next: HilosLegalReconsentView): void => {
+    if (!held) onShow?.(next)
+  }
+  const later = (): void => {
+    if (!held) onLater?.()
+  }
+  const holdLinks = (event: MouseEvent<HTMLDivElement>): void => {
+    if (!held) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
   const onSignOut = (): void => {
-    if (signOutAction.busy) return
+    if (held || signOutAction.busy) return
     void signOutAction.run(signOut())
   }
   const onKeepAccount = (): void => {
@@ -133,251 +145,272 @@ export function HilosLegalReconsent({
       data-variant={variant}
       aria-labelledby={headingId}
     >
-      {variant !== 'preview' && person !== null && (
-        <div
-          className="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
-          data-id="legal-reconsent-person"
-        >
-          <i
-            className="bi bi-person-circle text-body-secondary"
-            aria-hidden="true"
-          />
-          <div className="lh-sm text-break">
-            <div className="fw-semibold">{person.name}</div>
-            {address !== null && (
-              <div
-                className="text-body-secondary small"
-                data-id="legal-reconsent-address"
-              >
-                {address}
-              </div>
-            )}
-          </div>
-          {!person.impersonated && (
-            <LoadingButton
-              className="btn-link btn-sm p-0 ms-auto"
-              data-id="legal-reconsent-not-you"
-              loading={signOutAction.busy}
-              onClick={onSignOut}
-            >
-              {COPY.notYou}
-            </LoadingButton>
-          )}
-        </div>
-      )}
-      <h2 id={headingId} className="h5 mb-3" data-id="legal-reconsent-heading">
-        {variant === 'frozen' ? COPY.frozenHeading : COPY.heading}
-      </h2>
-      <div className="visually-hidden" role="status" aria-live="polite">
-        {error ?? (loading ? 'Loading terms…' : '')}
-      </div>
-      {loading && (
-        <div
-          className="placeholder-glow mb-3"
-          data-id="legal-reconsent-loading"
-          aria-busy="true"
-        >
-          <span className="placeholder col-12" aria-hidden="true" />
-          <span className="placeholder col-9" aria-hidden="true" />
-          <span className="placeholder col-10" aria-hidden="true" />
-        </div>
-      )}
-      {firstRevision ? (
-        <p
-          className="text-body-secondary mb-0"
-          data-id="legal-reconsent-preview-first"
-        >
-          {COPY.previewFirst}
-        </p>
-      ) : content !== null && view.kind === 'changes' ? (
-        <>
-          {rows.map((row) => (
-            <section
-              key={row.section.document}
-              className="mb-3"
-              data-id="legal-reconsent-document"
-              data-document={row.section.document}
-            >
-              <h3 className="h6 mb-2">
-                {hilosLegalDocumentLabel(row.section.document)}
-              </h3>
-              {row.plate !== null && (
+      <fieldset className="m-0 p-0 border-0" disabled={held}>
+        {variant !== 'preview' && person !== null && (
+          <div
+            className="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
+            data-id="legal-reconsent-person"
+          >
+            <i
+              className="bi bi-person-circle text-body-secondary"
+              aria-hidden="true"
+            />
+            <div className="lh-sm text-break">
+              <div className="fw-semibold">{person.name}</div>
+              {address !== null && (
                 <div
-                  className={`d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small bg-${row.plate.tone}-subtle text-${row.plate.tone}-emphasis`}
-                  data-id="legal-reconsent-badge"
-                  data-tone={row.plate.tone}
+                  className="text-body-secondary small"
+                  data-id="legal-reconsent-address"
                 >
-                  <i className={`bi ${row.plate.icon}`} aria-hidden="true" />
-                  <strong>{row.plate.text}</strong>
-                  {row.plate.detail !== null && <span>{row.plate.detail}</span>}
+                  {address}
                 </div>
               )}
-              <p className="small text-body-secondary mb-2">{row.accepted}</p>
-              <ul className="list-unstyled mb-2">
-                {row.changes.map((change) => (
-                  <li
-                    key={change.clauseKey}
-                    className="d-flex gap-2 py-2 border-bottom text-break"
-                    data-id="legal-reconsent-change"
-                    data-clause={change.clauseKey}
+            </div>
+            {!person.impersonated && (
+              <LoadingButton
+                className="btn-link btn-sm p-0 ms-auto"
+                data-id="legal-reconsent-not-you"
+                loading={signOutAction.busy}
+                onClick={onSignOut}
+              >
+                {COPY.notYou}
+              </LoadingButton>
+            )}
+          </div>
+        )}
+        <h2
+          id={headingId}
+          className="h5 mb-3"
+          data-id="legal-reconsent-heading"
+        >
+          {variant === 'frozen' ? COPY.frozenHeading : COPY.heading}
+        </h2>
+        <div className="visually-hidden" role="status" aria-live="polite">
+          {error ?? (loading ? 'Loading terms…' : '')}
+        </div>
+        {loading && (
+          <div
+            className="placeholder-glow mb-3"
+            data-id="legal-reconsent-loading"
+            aria-busy="true"
+          >
+            <span className="placeholder col-12" aria-hidden="true" />
+            <span className="placeholder col-9" aria-hidden="true" />
+            <span className="placeholder col-10" aria-hidden="true" />
+          </div>
+        )}
+        {firstRevision ? (
+          <p
+            className="text-body-secondary mb-0"
+            data-id="legal-reconsent-preview-first"
+          >
+            {COPY.previewFirst}
+          </p>
+        ) : content !== null && view.kind === 'changes' ? (
+          <>
+            {rows.map((row) => (
+              <section
+                key={row.section.document}
+                className="mb-3"
+                data-id="legal-reconsent-document"
+                data-document={row.section.document}
+              >
+                <h3 className="h6 mb-2">
+                  {hilosLegalDocumentLabel(row.section.document)}
+                </h3>
+                {row.plate !== null && (
+                  <div
+                    className={`d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small bg-${row.plate.tone}-subtle text-${row.plate.tone}-emphasis`}
+                    data-id="legal-reconsent-badge"
+                    data-tone={row.plate.tone}
                   >
-                    <i
-                      className={`bi text-body-secondary mt-1 ${change.icon}`}
-                      aria-hidden="true"
-                    />
-                    <div className="flex-grow-1">
-                      <div className="small fw-semibold">
-                        {change.statement}{' '}
-                        <span
-                          className="badge bg-body-tertiary text-body-emphasis border ms-1"
-                          data-id="legal-reconsent-change-kind"
-                        >
-                          {change.kind}
-                        </span>
-                      </div>
-                      {change.before !== null && (
-                        <div className="small text-body-secondary">
-                          {change.before}
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div className="small">
-                <button
-                  type="button"
-                  className="btn btn-link btn-sm p-0"
-                  data-id="legal-reconsent-full-text"
-                  data-document={row.section.document}
-                  onClick={() =>
-                    onShow?.({ kind: 'text', document: row.section.document })
-                  }
-                >
-                  {COPY.fullText}
-                </button>
-                {row.section.held !== null && (
-                  <>
-                    {' · '}
-                    <button
-                      type="button"
-                      className="btn btn-link btn-sm p-0"
-                      data-id="legal-reconsent-compare"
-                      data-document={row.section.document}
-                      onClick={() =>
-                        onShow?.({
-                          kind: 'compare',
-                          document: row.section.document,
-                        })
-                      }
-                    >
-                      {COPY.compare}
-                    </button>
-                  </>
+                    <i className={`bi ${row.plate.icon}`} aria-hidden="true" />
+                    <strong>{row.plate.text}</strong>
+                    {row.plate.detail !== null && (
+                      <span>{row.plate.detail}</span>
+                    )}
+                  </div>
                 )}
-              </div>
-            </section>
-          ))}
-          {variant === 'frozen' && (
-            <section
-              className="border rounded px-3 py-2 mb-3"
-              data-id="legal-reconsent-exits"
-            >
-              <h3 className="h6">{COPY.freezeKeeps}</h3>
-              <div className="d-flex flex-wrap gap-2">
-                <HilosLink
-                  to={DATA_HREF}
-                  className="btn btn-sm btn-outline-secondary"
-                  data-id="legal-reconsent-data-link"
-                >
-                  <i className="bi bi-download me-1" aria-hidden="true" />
-                  {COPY.dataLink}
-                </HilosLink>
-                {deletionScheduled && !impersonated && (
+                <p className="small text-body-secondary mb-2">{row.accepted}</p>
+                <ul className="list-unstyled mb-2">
+                  {row.changes.map((change) => (
+                    <li
+                      key={change.clauseKey}
+                      className="d-flex gap-2 py-2 border-bottom text-break"
+                      data-id="legal-reconsent-change"
+                      data-clause={change.clauseKey}
+                    >
+                      <i
+                        className={`bi text-body-secondary mt-1 ${change.icon}`}
+                        aria-hidden="true"
+                      />
+                      <div className="flex-grow-1">
+                        <div className="small fw-semibold">
+                          {change.statement}{' '}
+                          <span
+                            className="badge bg-body-tertiary text-body-emphasis border ms-1"
+                            data-id="legal-reconsent-change-kind"
+                          >
+                            {change.kind}
+                          </span>
+                        </div>
+                        {change.before !== null && (
+                          <div className="small text-body-secondary">
+                            {change.before}
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="small">
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm p-0"
+                    data-id="legal-reconsent-full-text"
+                    data-document={row.section.document}
+                    onClick={() =>
+                      show({ kind: 'text', document: row.section.document })
+                    }
+                  >
+                    {COPY.fullText}
+                  </button>
+                  {row.section.held !== null && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm p-0"
+                        data-id="legal-reconsent-compare"
+                        data-document={row.section.document}
+                        onClick={() =>
+                          show({
+                            kind: 'compare',
+                            document: row.section.document,
+                          })
+                        }
+                      >
+                        {COPY.compare}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </section>
+            ))}
+            {variant === 'frozen' && (
+              <section
+                className="border rounded px-3 py-2 mb-3"
+                data-id="legal-reconsent-exits"
+              >
+                <h3 className="h6">{COPY.freezeKeeps}</h3>
+                <div className="d-flex flex-wrap gap-2">
+                  <HilosLink
+                    to={DATA_HREF}
+                    className="btn btn-sm btn-outline-secondary"
+                    data-id="legal-reconsent-data-link"
+                  >
+                    <i className="bi bi-download me-1" aria-hidden="true" />
+                    {COPY.dataLink}
+                  </HilosLink>
+                  {deletionScheduled && !impersonated && (
+                    <LoadingButton
+                      className="btn-sm btn-outline-secondary"
+                      data-id="legal-reconsent-keep-account"
+                      loading={keepAction.busy}
+                      onClick={onKeepAccount}
+                    >
+                      {COPY.keepAccount}
+                    </LoadingButton>
+                  )}
                   <LoadingButton
                     className="btn-sm btn-outline-secondary"
-                    data-id="legal-reconsent-keep-account"
-                    loading={keepAction.busy}
-                    onClick={onKeepAccount}
+                    data-id="legal-reconsent-sign-out"
+                    loading={signOutAction.busy}
+                    onClick={onSignOut}
                   >
-                    {COPY.keepAccount}
+                    {COPY.signOut}
                   </LoadingButton>
-                )}
-                <LoadingButton
-                  className="btn-sm btn-outline-secondary"
-                  data-id="legal-reconsent-sign-out"
-                  loading={signOutAction.busy}
-                  onClick={onSignOut}
-                >
-                  {COPY.signOut}
-                </LoadingButton>
-              </div>
-            </section>
-          )}
-          {variant === 'frozen' && impersonated && person !== null && (
-            <p
-              className="small text-body-secondary"
-              data-id="legal-reconsent-impersonated"
-            >
-              {COPY.onlyPerson.replace('{name}', person.name)}
-            </p>
-          )}
-        </>
-      ) : viewed !== null && view.kind === 'text' ? (
-        <div>
-          <h3 className="h6">{hilosLegalDocumentLabel(viewed.document)}</h3>
-          <HilosLegalRevisionText clauses={[...viewed.clauses]} />
-        </div>
-      ) : viewed !== null && view.kind === 'compare' ? (
-        <div>
-          <h3 className="h6">{hilosLegalDocumentLabel(viewed.document)}</h3>
-          <HilosLegalChanges
-            changes={[...viewed.changes]}
-            fromLabel={viewed.held?.revisionId ?? ''}
-            toLabel={viewed.current.revisionId}
-          />
-        </div>
-      ) : content !== null && view.kind === 'refuse' ? (
-        <div data-id="legal-reconsent-refuse-step">
-          <p>{refusal}</p>
-          <div className="d-flex flex-wrap gap-3 small mb-3">
-            <HilosLink
-              to={DATA_HREF}
-              data-id="legal-reconsent-data-link"
-              onClick={() => onLater?.()}
-            >
-              {COPY.dataLink}
-            </HilosLink>
-            <HilosLink
-              to={PROFILE_HREF}
-              className="link-danger"
-              data-id="legal-reconsent-delete-link"
-              onClick={() => onLater?.()}
-            >
-              {COPY.deleteLink}
-            </HilosLink>
+                </div>
+              </section>
+            )}
+            {variant === 'frozen' && impersonated && person !== null && (
+              <p
+                className="small text-body-secondary"
+                data-id="legal-reconsent-impersonated"
+              >
+                {COPY.onlyPerson.replace('{name}', person.name)}
+              </p>
+            )}
+          </>
+        ) : viewed !== null && view.kind === 'text' ? (
+          <div>
+            <h3 className="h6">{hilosLegalDocumentLabel(viewed.document)}</h3>
+            <HilosLegalRevisionText clauses={[...viewed.clauses]} />
           </div>
-        </div>
-      ) : null}
-      {viewed !== null && (
-        <button
-          type="button"
-          className="btn btn-link btn-sm px-0 mb-3"
-          data-id="legal-reconsent-back"
-          onClick={() => onShow?.({ kind: 'changes' })}
-        >
-          {COPY.backToChanges}
-        </button>
-      )}
-      <HilosFormError message={error} dataId="legal-reconsent-error" />
+        ) : viewed !== null && view.kind === 'compare' ? (
+          <div>
+            <h3 className="h6">{hilosLegalDocumentLabel(viewed.document)}</h3>
+            <HilosLegalChanges
+              changes={[...viewed.changes]}
+              fromLabel={viewed.held?.revisionId ?? ''}
+              toLabel={viewed.current.revisionId}
+            />
+          </div>
+        ) : content !== null && view.kind === 'refuse' ? (
+          <div data-id="legal-reconsent-refuse-step">
+            <p>{refusal}</p>
+            <div
+              className="d-flex flex-wrap gap-3 small mb-3"
+              onClickCapture={holdLinks}
+              onAuxClickCapture={holdLinks}
+            >
+              <HilosLink
+                to={DATA_HREF}
+                data-id="legal-reconsent-data-link"
+                aria-disabled={held || undefined}
+                tabIndex={held ? -1 : undefined}
+                onClick={later}
+              >
+                {COPY.dataLink}
+              </HilosLink>
+              <HilosLink
+                to={PROFILE_HREF}
+                className="link-danger"
+                data-id="legal-reconsent-delete-link"
+                aria-disabled={held || undefined}
+                tabIndex={held ? -1 : undefined}
+                onClick={later}
+              >
+                {COPY.deleteLink}
+              </HilosLink>
+            </div>
+          </div>
+        ) : null}
+        {viewed !== null && (
+          <button
+            type="button"
+            className="btn btn-link btn-sm px-0 mb-3"
+            data-id="legal-reconsent-back"
+            onClick={() => show({ kind: 'changes' })}
+          >
+            {COPY.backToChanges}
+          </button>
+        )}
+        <HilosFormError message={error} dataId="legal-reconsent-error" />
+      </fieldset>
+      {/* The fieldset retains the refusal row's margin, so this row needs no
+      top margin of its own. Accept stays outside the disabled fieldset. */}
       {!firstRevision && (
-        <div className="d-flex flex-wrap justify-content-end gap-2 mt-2">
+        <div className="d-flex flex-wrap justify-content-end gap-2">
           {error !== null && content === null && (
             <button
               type="button"
               className="btn btn-outline-primary"
               data-id="legal-reconsent-retry"
-              onClick={() => onRetry?.()}
+              disabled={held}
+              onClick={() => {
+                if (!held) onRetry?.()
+              }}
             >
               {COPY.retry}
             </button>
@@ -388,7 +421,8 @@ export function HilosLegalReconsent({
                 type="button"
                 className="btn btn-outline-secondary"
                 data-id="legal-reconsent-back"
-                onClick={() => onShow?.({ kind: 'changes' })}
+                disabled={held}
+                onClick={() => show({ kind: 'changes' })}
               >
                 {COPY.back}
               </button>
@@ -396,7 +430,8 @@ export function HilosLegalReconsent({
                 type="button"
                 className="btn btn-secondary"
                 data-id="legal-reconsent-close"
-                onClick={() => onLater?.()}
+                disabled={held}
+                onClick={later}
               >
                 {COPY.close}
               </button>
@@ -408,8 +443,8 @@ export function HilosLegalReconsent({
                   type="button"
                   className="btn btn-outline-danger"
                   data-id="legal-reconsent-refuse"
-                  disabled={variant === 'preview' || content === null}
-                  onClick={() => onShow?.({ kind: 'refuse' })}
+                  disabled={variant === 'preview' || content === null || held}
+                  onClick={() => show({ kind: 'refuse' })}
                 >
                   {COPY.refuse}
                 </button>
@@ -419,8 +454,8 @@ export function HilosLegalReconsent({
                   type="button"
                   className="btn btn-outline-secondary"
                   data-id="legal-reconsent-later"
-                  disabled={variant === 'preview'}
-                  onClick={() => onLater?.()}
+                  disabled={variant === 'preview' || held}
+                  onClick={later}
                 >
                   {COPY.later}
                 </button>

@@ -457,6 +457,7 @@ export function HilosProfileSignInPage({
         onClose={flow.close}
         title={onStepUp ? HILOS_STEP_UP_COPY.title : 'Add a way to sign in'}
         initialFocus="dialog"
+        busy={busy || stepUpBusy}
         confirmOnClose={
           Object.values(draft).some((value) => value !== '') ||
           asksBeforeClosing
@@ -466,6 +467,7 @@ export function HilosProfileSignInPage({
             <button
               type="button"
               className="btn btn-secondary"
+              disabled={busy || stepUpBusy}
               data-id="profile-sign-in-add-cancel"
               onClick={requestClose}
             >
@@ -486,7 +488,7 @@ export function HilosProfileSignInPage({
                 <button
                   type="button"
                   className="btn btn-outline-secondary"
-                  disabled={busy}
+                  disabled={busy || stepUpBusy}
                   data-id="profile-sign-in-add-back"
                   onClick={flow.back}
                 >
@@ -508,139 +510,54 @@ export function HilosProfileSignInPage({
             ) : null}
           </>
         )}
-      >
-        <div ref={addBody} data-id="profile-sign-in-add-modal">
-          <div
-            className="visually-hidden"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            data-id="profile-sign-in-add-live"
-          >
-            {step === 'step-up' ? stepUpRefusal : refusal}
-          </div>
-          <div className="hilos-stack">
-            <div className="invisible" aria-hidden="true" inert>
-              <div className={SEND_PROGRESS_ROW_CLASS}>
-                <i
-                  className="bi bi-hourglass-split flex-shrink-0"
-                  aria-hidden="true"
-                ></i>
-                <span className="flex-grow-1 text-truncate">&nbsp;</span>
-                <span className={SEND_PROGRESS_DETAILS_CLASS}>
-                  <i className="bi bi-info-circle" aria-hidden="true"></i>
-                </span>
-              </div>
-              <div className="mb-3">
-                <span className="btn btn-link btn-sm p-0">
-                  {SEND_AGAIN_LABEL}
-                </span>
-              </div>
-              {['Code', 'New password', 'Confirm new password'].map((label) => (
-                <div key={label} className="mb-3">
-                  <div className="form-label">{label}</div>
-                  <div className="form-control">&nbsp;</div>
-                </div>
-              ))}
-              <div className="form-text">
-                {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
-              </div>
-            </div>
+        body={({ busy: modalBusy }) => (
+          <div ref={addBody} data-id="profile-sign-in-add-modal">
             <div
-              className="invisible d-flex flex-column gap-2"
-              aria-hidden="true"
-              inert
+              className="visually-hidden"
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
+              data-id="profile-sign-in-add-live"
             >
-              {ways.map((way) =>
-                way.kind === 'password' ? (
-                  <span key="password" className="btn btn-outline-secondary">
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i className="bi bi-lock fs-5" aria-hidden="true"></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          Password
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
-                        </span>
-                      </span>
-                    </span>
-                  </span>
-                ) : way.kind === 'phone' ? (
-                  <span key="phone" className="btn btn-outline-secondary">
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i className="bi bi-phone fs-5" aria-hidden="true"></i>
-                      <span>
-                        <span className="d-block fw-semibold small">Phone</span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
-                        </span>
-                      </span>
-                    </span>
-                  </span>
-                ) : way.kind === 'provider' ? (
-                  <span key={way.key} className="btn btn-outline-secondary">
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i
-                        className={`${hilosAuthMethodIcon(way.key)} fs-5`}
-                        aria-hidden="true"
-                      ></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          {way.label}
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
-                        </span>
-                      </span>
-                    </span>
-                  </span>
-                ) : (
-                  <span key="passkey" className="btn btn-outline-secondary">
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i
-                        className="bi bi-fingerprint fs-5"
-                        aria-hidden="true"
-                      ></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          Passkey
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
-                        </span>
-                      </span>
-                    </span>
-                  </span>
-                ),
-              )}
+              {step === 'step-up' ? stepUpRefusal : refusal}
             </div>
-            {step === 'step-up' ? (
-              <form
-                id={`${baseId}-step-up`}
-                className="align-self-start"
-                data-id="profile-sign-in-add-step-up"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void flow.confirmStepUp()
-                }}
+            <div className="hilos-stack">
+              <div className="invisible" aria-hidden="true" inert>
+                <div className={SEND_PROGRESS_ROW_CLASS}>
+                  <i
+                    className="bi bi-hourglass-split flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                  <span className="flex-grow-1 text-truncate">&nbsp;</span>
+                  <span className={SEND_PROGRESS_DETAILS_CLASS}>
+                    <i className="bi bi-info-circle" aria-hidden="true"></i>
+                  </span>
+                </div>
+                <div className="mb-3">
+                  <span className="btn btn-link btn-sm p-0">
+                    {SEND_AGAIN_LABEL}
+                  </span>
+                </div>
+                {['Code', 'New password', 'Confirm new password'].map(
+                  (label) => (
+                    <div key={label} className="mb-3">
+                      <div className="form-label">{label}</div>
+                      <div className="form-control">&nbsp;</div>
+                    </div>
+                  ),
+                )}
+                <div className="form-text">
+                  {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
+                </div>
+              </div>
+              <div
+                className="invisible d-flex flex-column gap-2"
+                aria-hidden="true"
+                inert
               >
-                <HilosStepUpStep controller={flow.stepUp} />
-              </form>
-            ) : step === 'refused' ? (
-              <div className="align-self-start"></div>
-            ) : step === 'choose' ? (
-              <div className="d-flex flex-column gap-2 align-self-start">
                 {ways.map((way) =>
                   way.kind === 'password' ? (
-                    <button
-                      key="password"
-                      type="button"
-                      className="btn btn-outline-secondary"
-                      disabled={busy}
-                      data-id="profile-sign-in-choose-password"
-                      onClick={flow.choosePassword}
-                    >
+                    <span key="password" className="btn btn-outline-secondary">
                       <span className="d-flex align-items-center gap-3 text-start">
                         <i className="bi bi-lock fs-5" aria-hidden="true"></i>
                         <span>
@@ -652,16 +569,9 @@ export function HilosProfileSignInPage({
                           </span>
                         </span>
                       </span>
-                    </button>
+                    </span>
                   ) : way.kind === 'phone' ? (
-                    <button
-                      key="phone"
-                      type="button"
-                      className="btn btn-outline-secondary"
-                      disabled={busy}
-                      data-id="profile-sign-in-choose-phone"
-                      onClick={flow.choosePhone}
-                    >
+                    <span key="phone" className="btn btn-outline-secondary">
                       <span className="d-flex align-items-center gap-3 text-start">
                         <i className="bi bi-phone fs-5" aria-hidden="true"></i>
                         <span>
@@ -673,16 +583,9 @@ export function HilosProfileSignInPage({
                           </span>
                         </span>
                       </span>
-                    </button>
+                    </span>
                   ) : way.kind === 'provider' ? (
-                    <LoadingButton
-                      key={way.key}
-                      className="btn btn-outline-secondary"
-                      loading={busy && pendingProvider === way.key}
-                      disabled={busy && pendingProvider !== way.key}
-                      data-id={`profile-oauth-link-${way.key}`}
-                      onClick={() => void flow.chooseProvider(way.key)}
-                    >
+                    <span key={way.key} className="btn btn-outline-secondary">
                       <span className="d-flex align-items-center gap-3 text-start">
                         <i
                           className={`${hilosAuthMethodIcon(way.key)} fs-5`}
@@ -697,16 +600,9 @@ export function HilosProfileSignInPage({
                           </span>
                         </span>
                       </span>
-                    </LoadingButton>
+                    </span>
                   ) : (
-                    <LoadingButton
-                      key="passkey"
-                      className="btn btn-outline-secondary"
-                      loading={busy && pendingProvider === null}
-                      disabled={busy && pendingProvider !== null}
-                      data-id="profile-passkey-add"
-                      onClick={() => void flow.choosePasskey()}
-                    >
+                    <span key="passkey" className="btn btn-outline-secondary">
                       <span className="d-flex align-items-center gap-3 text-start">
                         <i
                           className="bi bi-fingerprint fs-5"
@@ -721,75 +617,196 @@ export function HilosProfileSignInPage({
                           </span>
                         </span>
                       </span>
-                    </LoadingButton>
+                    </span>
                   ),
                 )}
               </div>
-            ) : (
-              <form
-                id={`${baseId}-add`}
-                className="align-self-start"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void submitAdd()
-                }}
-              >
-                {fields.map((field, index) => (
-                  <div key={field.key} className="mb-3">
-                    {field.key === 'code' ? (
-                      <HilosSendProgress
-                        progress={sendProgress}
-                        to={step === 'phone-code' ? sentPhone : sentEmail}
-                        resendAt={resendAt}
-                        busy={busy}
-                        dataId={
-                          step === 'phone-code'
-                            ? 'profile-add-sms-send'
-                            : 'profile-add-password-send'
-                        }
-                        onSendAgain={sendAgainAdd}
-                      />
+              {step === 'step-up' ? (
+                <form
+                  id={`${baseId}-step-up`}
+                  className="align-self-start"
+                  data-id="profile-sign-in-add-step-up"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void flow.confirmStepUp()
+                  }}
+                >
+                  <fieldset className="m-0 p-0 border-0" disabled={modalBusy}>
+                    <HilosStepUpStep controller={flow.stepUp} />
+                  </fieldset>
+                </form>
+              ) : step === 'refused' ? (
+                <div className="align-self-start"></div>
+              ) : step === 'choose' ? (
+                <div className="d-flex flex-column gap-2 align-self-start">
+                  {ways.map((way) =>
+                    way.kind === 'password' ? (
+                      <button
+                        key="password"
+                        type="button"
+                        className="btn btn-outline-secondary"
+                        disabled={modalBusy}
+                        data-id="profile-sign-in-choose-password"
+                        onClick={flow.choosePassword}
+                      >
+                        <span className="d-flex align-items-center gap-3 text-start">
+                          <i className="bi bi-lock fs-5" aria-hidden="true"></i>
+                          <span>
+                            <span className="d-block fw-semibold small">
+                              Password
+                            </span>
+                            <span className="d-block small text-body-secondary">
+                              {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    ) : way.kind === 'phone' ? (
+                      <button
+                        key="phone"
+                        type="button"
+                        className="btn btn-outline-secondary"
+                        disabled={modalBusy}
+                        data-id="profile-sign-in-choose-phone"
+                        onClick={flow.choosePhone}
+                      >
+                        <span className="d-flex align-items-center gap-3 text-start">
+                          <i
+                            className="bi bi-phone fs-5"
+                            aria-hidden="true"
+                          ></i>
+                          <span>
+                            <span className="d-block fw-semibold small">
+                              Phone
+                            </span>
+                            <span className="d-block small text-body-secondary">
+                              {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    ) : way.kind === 'provider' ? (
+                      <LoadingButton
+                        key={way.key}
+                        className="btn btn-outline-secondary"
+                        loading={busy && pendingProvider === way.key}
+                        disabled={busy && pendingProvider !== way.key}
+                        data-id={`profile-oauth-link-${way.key}`}
+                        onClick={() => void flow.chooseProvider(way.key)}
+                      >
+                        <span className="d-flex align-items-center gap-3 text-start">
+                          <i
+                            className={`${hilosAuthMethodIcon(way.key)} fs-5`}
+                            aria-hidden="true"
+                          ></i>
+                          <span>
+                            <span className="d-block fw-semibold small">
+                              {way.label}
+                            </span>
+                            <span className="d-block small text-body-secondary">
+                              {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
+                            </span>
+                          </span>
+                        </span>
+                      </LoadingButton>
+                    ) : (
+                      <LoadingButton
+                        key="passkey"
+                        className="btn btn-outline-secondary"
+                        loading={busy && pendingProvider === null}
+                        disabled={busy && pendingProvider !== null}
+                        data-id="profile-passkey-add"
+                        onClick={() => void flow.choosePasskey()}
+                      >
+                        <span className="d-flex align-items-center gap-3 text-start">
+                          <i
+                            className="bi bi-fingerprint fs-5"
+                            aria-hidden="true"
+                          ></i>
+                          <span>
+                            <span className="d-block fw-semibold small">
+                              Passkey
+                            </span>
+                            <span className="d-block small text-body-secondary">
+                              {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
+                            </span>
+                          </span>
+                        </span>
+                      </LoadingButton>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <form
+                  id={`${baseId}-add`}
+                  className="align-self-start"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void submitAdd()
+                  }}
+                >
+                  <fieldset className="m-0 p-0 border-0" disabled={modalBusy}>
+                    {fields.map((field, index) => (
+                      <div key={field.key} className="mb-3">
+                        {field.key === 'code' ? (
+                          <HilosSendProgress
+                            progress={sendProgress}
+                            to={step === 'phone-code' ? sentPhone : sentEmail}
+                            resendAt={resendAt}
+                            busy={busy}
+                            dataId={
+                              step === 'phone-code'
+                                ? 'profile-add-sms-send'
+                                : 'profile-add-password-send'
+                            }
+                            onSendAgain={sendAgainAdd}
+                          />
+                        ) : null}
+                        <label
+                          htmlFor={`${baseId}-add-${field.key}`}
+                          className="form-label"
+                        >
+                          {field.label}
+                        </label>
+                        <input
+                          id={`${baseId}-add-${field.key}`}
+                          value={draft[field.key]}
+                          onChange={(event) =>
+                            setDraft({
+                              ...draft,
+                              [field.key]: event.target.value,
+                            })
+                          }
+                          type={field.type}
+                          autoComplete={field.autocomplete}
+                          className="form-control"
+                          data-id={field.dataId}
+                          aria-describedby={
+                            field.type === 'password'
+                              ? `${baseId}-add-password-hint`
+                              : undefined
+                          }
+                          data-autofocus={index === 0 ? '' : undefined}
+                        />
+                      </div>
+                    ))}
+                    {step === 'password-new' || step === 'password-code' ? (
+                      <div
+                        id={`${baseId}-add-password-hint`}
+                        className="form-text"
+                        data-id="profile-add-password-hint"
+                      >
+                        {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
+                      </div>
                     ) : null}
-                    <label
-                      htmlFor={`${baseId}-add-${field.key}`}
-                      className="form-label"
-                    >
-                      {field.label}
-                    </label>
-                    <input
-                      id={`${baseId}-add-${field.key}`}
-                      value={draft[field.key]}
-                      onChange={(event) =>
-                        setDraft({ ...draft, [field.key]: event.target.value })
-                      }
-                      type={field.type}
-                      autoComplete={field.autocomplete}
-                      className="form-control"
-                      data-id={field.dataId}
-                      aria-describedby={
-                        field.type === 'password'
-                          ? `${baseId}-add-password-hint`
-                          : undefined
-                      }
-                      data-autofocus={index === 0 ? '' : undefined}
-                    />
-                  </div>
-                ))}
-                {step === 'password-new' || step === 'password-code' ? (
-                  <div
-                    id={`${baseId}-add-password-hint`}
-                    className="form-text"
-                    data-id="profile-add-password-hint"
-                  >
-                    {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
-                  </div>
-                ) : null}
-              </form>
-            )}
+                  </fieldset>
+                </form>
+              )}
+            </div>
+            <HilosFormError message={refusal} dataId={errorId} />
           </div>
-          <HilosFormError message={refusal} dataId={errorId} />
-        </div>
-      </HilosModal>
+        )}
+      />
     </section>
   )
 }

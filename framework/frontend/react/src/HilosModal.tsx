@@ -5,6 +5,13 @@
 // guard). The footer exists exactly when `actions` is given or a `copyText` is:
 // a dialog with neither gets no footer element — neither buttons nor the
 // bordered strip — and there is no default footer to opt out of.
+// Busy disables the default body's permanent fieldset and the modal's own Copy
+// button. A body with its own submitting LoadingButton uses `body({ busy })`
+// instead, keeping that button outside its disabled field groups. The owner
+// disables ordinary actions; submitting buttons keep their own loading. Once
+// busy clears in an open dialog with no confirm, initial focus returns only
+// from the dialog, document body or no active element. Another focus choice
+// stays put, and the trap, layers and scroll lock stay live.
 // The shell connection lock is independent of busy: permanent fieldsets cover
 // the whole dialog and its confirm layer, including custom content. Core binds
 // the real roots without restarting the focus trap or scroll lock.
@@ -120,11 +127,16 @@ export interface HilosModalProps {
   closeOnBackdrop?: boolean
   /**
    * The dialog's request is in flight: the header close button turns natively
-   * disabled, and neither Escape, a backdrop click, nor the `requestClose` the
+   * disabled, as do Copy and the default body's fields through a permanent
+   * fieldset. Custom `body` content owns its field groups; ordinary `actions`
+   * buttons use this same flag, while submitting buttons keep their own loading.
+   * Neither Escape, a backdrop click, nor the `requestClose` the
    * `actions` slot receives closes the dialog or raises the confirm step.
    * Outranks `closeOnEsc` and `closeOnBackdrop`; a gesture refused while busy
    * is not replayed once it clears. The parent setting `open` to false still
-   * closes the dialog. Defaults to false.
+   * closes the dialog. On true to false, initial focus returns only if focus
+   * is on the dialog, document body or nowhere, while the dialog is still open
+   * and no confirm is open. Defaults to false.
    */
   busy?: boolean
   /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -147,7 +159,14 @@ export interface HilosModalProps {
   onClose?: () => void
   /** Replace the header (defaults to the title). */
   header?: ReactNode
-  /** The dialog body. */
+  /**
+   * Replace the default body inside `modal-body`, taking priority over children.
+   * Receives the current busy flag; disable field groups with it and keep a
+   * submitting LoadingButton outside those groups so it retains its own focus
+   * and loading behavior. The footer is unchanged.
+   */
+  body?: (args: { busy: boolean }) => ReactNode
+  /** The default body, inside a permanent fieldset disabled while busy. */
   children?: ReactNode
   /** Replace the footer; receives `requestClose` to close through the guard. */
   actions?: (args: { requestClose: () => void }) => ReactNode
@@ -177,6 +196,7 @@ export function HilosModal({
   copyText = '',
   onClose,
   header,
+  body,
   children,
   actions,
 }: HilosModalProps) {
@@ -189,6 +209,7 @@ export function HilosModal({
   const connectionDescriptionId = `hilos-modal-connection-${useId()}`
   const confirmConnectionDescriptionId = `${connectionDescriptionId}-confirm`
   const trap = useRef(new FocusTrap()).current
+  const previousBusy = useRef(busy)
   const scrollLockOwner = useRef<ScrollLockOwner>({}).current
   const modalLayerOwner = useRef<ModalLayerOwner>({}).current
   // The layer this modal stands on: 0 over the page, 1 over another modal.
@@ -306,6 +327,20 @@ export function HilosModal({
     return () => leaveModalLayer(confirmLayerOwner)
   }, [open, confirmVisible, confirmLayerOwner])
 
+  // Read focus after the fieldset's disabled state has reached the DOM. A step
+  // may have left focus on the root while its next field was still locked;
+  // another control or an upper modal keeps its chosen focus.
+  useEffect(() => {
+    const wasBusy = previousBusy.current
+    previousBusy.current = busy
+    if (busy || !wasBusy || !open || confirmVisible) return
+    const root = dialogRef.current
+    if (!root?.isConnected) return
+    const { activeElement: active, body: documentBody } = root.ownerDocument
+    if (active && active !== root && active !== documentBody) return
+    trap.refocus(root, trapPlacement(initialFocus))
+  }, [busy, open, confirmVisible, initialFocus, trap])
+
   if (!open) {
     return null
   }
@@ -388,7 +423,15 @@ export function HilosModal({
                 onClick={() => modal.requestClose()}
               />
             </div>
-            <div className="modal-body">{children}</div>
+            <div className="modal-body">
+              {body ? (
+                body({ busy })
+              ) : (
+                <fieldset className="m-0 p-0 border-0" disabled={busy}>
+                  {children}
+                </fieldset>
+              )}
+            </div>
             {actions || showCopy ? (
               <div className="modal-footer hilos-button-row">
                 {/* Copy comes first in the markup so the main action stands on
@@ -398,6 +441,7 @@ export function HilosModal({
                     type="button"
                     className="btn btn-outline-secondary"
                     data-id="modal-copy"
+                    disabled={busy}
                     onClick={() => void onCopy()}
                   >
                     <i className="bi bi-clipboard me-1" aria-hidden="true" />

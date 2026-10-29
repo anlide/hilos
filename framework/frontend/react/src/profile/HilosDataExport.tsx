@@ -125,12 +125,14 @@ export function HilosDataExport({
         open={open}
         title={HILOS_STEP_UP_COPY.title}
         initialFocus="inner"
+        busy={busy}
         onClose={() => flow.close()}
         actions={({ requestClose }) => (
           <>
             <button
               type="button"
               className="btn btn-outline-secondary"
+              disabled={busy}
               onClick={requestClose}
             >
               {HILOS_STEP_UP_COPY.cancel}

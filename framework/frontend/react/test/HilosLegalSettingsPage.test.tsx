@@ -20,6 +20,10 @@ import {
 function harness() {
   const listeners: Array<(frame: never) => void> = []
   const calls: Array<{ action: string; payload: unknown }> = []
+  const pending: Array<{
+    resolve: (result: { message?: string }) => void
+    reject: (error: ActionError) => void
+  }> = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.LEGAL_SETTINGS)
   const context = {
@@ -38,16 +42,13 @@ function harness() {
     actions: {
       dispatch(action: string, payload: unknown) {
         calls.push({ action, payload })
+        const done = new Promise<{ message?: string }>((resolve, reject) => {
+          pending.push({ resolve, reject })
+        })
         return {
-          requestId: '1',
+          requestId: String(calls.length),
           loading: createSignal(false),
-          done: Promise.reject(
-            new ActionError(
-              'legal_setting_set',
-              'fail',
-              'Server refused this choice',
-            ),
-          ),
+          done,
         }
       },
     },
@@ -65,6 +66,21 @@ function harness() {
     context,
     router,
     calls,
+    answer(outcome: 'success' | 'fail') {
+      const action = pending[pending.length - 1]
+      if (!action) throw new Error('No legal settings action is pending.')
+      if (outcome === 'success') {
+        action.resolve({ message: 'Legal setting saved.' })
+        return
+      }
+      action.reject(
+        new ActionError(
+          'legal_setting_set',
+          'fail',
+          'Server refused this choice',
+        ),
+      )
+    },
     push(value: unknown) {
       for (const listener of listeners)
         listener({
@@ -98,6 +114,16 @@ function save(): HTMLButtonElement {
     '[data-id="legal-setting-save"]',
   ) as HTMLButtonElement
 }
+function cancel(): HTMLButtonElement {
+  return document.querySelector(
+    '[data-id="legal-setting-cancel"]',
+  ) as HTMLButtonElement
+}
+function bodyFieldset(): HTMLFieldSetElement {
+  return document.querySelector(
+    '[data-id="modal"] .modal-body > fieldset',
+  ) as HTMLFieldSetElement
+}
 afterEach(cleanup)
 describe('legal setting React modal', () => {
   it('merges a pristine incoming value, locks an unchanged save and keeps a refused draft', async () => {
@@ -123,6 +149,9 @@ describe('legal setting React modal', () => {
     ).toContain('Updated just now')
     fireEvent.change(input(), { target: { value: 'checkbox' } })
     expect(save().disabled).toBe(false)
+    const field = input()
+    const fieldset = bodyFieldset()
+    const cancelButton = cancel()
     await act(async () => {
       fireEvent.click(save())
     })
@@ -132,10 +161,81 @@ describe('legal setting React modal', () => {
         payload: { key: 'legal.consent_form', value: 'checkbox' },
       },
     ])
+    expect(fieldset.disabled).toBe(true)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(cancelButton.matches(':disabled')).toBe(true)
+    await act(async () => {
+      h.answer('fail')
+      await Promise.resolve()
+    })
+    expect(fieldset.disabled).toBe(false)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(cancelButton.matches(':disabled')).toBe(false)
     expect(input().value).toBe('checkbox')
     expect(
       document.querySelector('[data-id="hilos-action-error"]')?.textContent,
     ).toContain('Server refused this choice')
+  })
+
+  it('blocks every edit exit while saving, keeps the refused draft, and closes on a successful retry', async () => {
+    const h = harness()
+    const view = render(
+      <HilosRouterContext.Provider value={h.router}>
+        <HilosLegalSettingsPage context={h.context} />
+      </HilosRouterContext.Provider>,
+    )
+    act(() => h.push('checkbox'))
+    fireEvent.click(
+      view.container.querySelector(
+        '[data-id="legal-setting-edit-legal.consent_form"]',
+      ) as Element,
+    )
+    fireEvent.change(input(), { target: { value: 'line' } })
+    const field = input()
+    const form = field.form
+    const fieldset = bodyFieldset()
+    const close = document.querySelector(
+      '[data-id="modal-close"]',
+    ) as HTMLButtonElement
+
+    fireEvent.click(save())
+    expect(h.calls).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(cancel().matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+    fireEvent.click(save())
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.click(cancel())
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(h.calls).toHaveLength(1)
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(input()).toBe(field)
+    expect(field.form).toBe(form)
+    expect(field.value).toBe('line')
+
+    await act(async () => {
+      h.answer('fail')
+      await Promise.resolve()
+    })
+    expect(fieldset.disabled).toBe(false)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(cancel().matches(':disabled')).toBe(false)
+    expect(input()).toBe(field)
+    expect(field.form).toBe(form)
+    expect(field.value).toBe('line')
+    expect(
+      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
+    ).toContain('Server refused this choice')
+
+    fireEvent.submit(form as HTMLFormElement)
+    expect(h.calls).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    await act(async () => {
+      h.answer('success')
+      await Promise.resolve()
+    })
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 })
 

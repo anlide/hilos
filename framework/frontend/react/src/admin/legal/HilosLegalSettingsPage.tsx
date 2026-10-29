@@ -56,7 +56,8 @@ export function HilosLegalSettingsPage({
     state = useSignal(editor.state),
     noticeText = useSignal(editor.noticeText),
     saveAvailable = useSignal(editor.saveAvailable),
-    saveLabel = useSignal(editor.saveLabel)
+    saveLabel = useSignal(editor.saveLabel),
+    saving = useSignal(editor.saving)
   const action = useTrackedAction({ toast: false })
   const inputId = useId()
   useEffect(() => {
@@ -176,6 +177,7 @@ export function HilosLegalSettingsPage({
       </section>
       <HilosModal
         open={opened}
+        busy={saving}
         title={
           row
             ? (HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey)
@@ -194,7 +196,7 @@ export function HilosLegalSettingsPage({
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={action.busy}
+                disabled={saving}
                 data-id="legal-setting-cancel"
                 onClick={requestClose}
               >

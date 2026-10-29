@@ -44,6 +44,7 @@ import type {
 } from '@hilos/core'
 
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
+import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
 import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { HilosView } from '../src/HilosView.js'
@@ -134,12 +135,14 @@ class ReplyingSource implements ActionLifecycleSource {
   succeed(
     requestId: string | undefined,
     action = IMPERSONATION_ACTION_STOP,
+    reply?: unknown,
   ): void {
     for (const listener of this.success) {
       listener({
         kind: 'actionSuccess',
         action,
         requestId,
+        reply,
         envelope: { type: 'action_success', data: {} },
       } as ActionSuccessSignal)
     }
@@ -1531,6 +1534,171 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
       fireEvent.click(surface(container, 'legal-reconsent-icon')!)
     })
     expect(windowShown()).toBe(true)
+  })
+
+  it.each(['header', 'escape', 'backdrop', 'later'] as const)(
+    'allows %s close while the reconsent text is loading',
+    async (gesture) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(reconsentHandshake(null))
+      renderShell(shellConnection())
+      await act(async () => session.handshake(reconsentHandshake(inWindow)))
+      expect(windowShown()).toBe(true)
+      const one = (id: string): HTMLElement =>
+        document.body.querySelector(`[data-id="${id}"]`)!
+      expect(one('legal-reconsent-loading')).not.toBeNull()
+      expect(one('legal-reconsent-accept').matches(':disabled')).toBe(true)
+      expect(one('modal-close').matches(':disabled')).toBe(false)
+      await act(async () => {
+        if (gesture === 'escape')
+          fireEvent.keyDown(one('modal'), { key: 'Escape' })
+        else if (gesture === 'backdrop') fireEvent.click(one('modal'))
+        else
+          fireEvent.click(
+            one(gesture === 'header' ? 'modal-close' : 'legal-reconsent-later'),
+          )
+      })
+      expect(windowShown()).toBe(false)
+      expect(session.source.sent.map(({ action }) => action)).toEqual([
+        'hilos_legal_reconsent',
+      ])
+    },
+  )
+
+  it('holds the real acceptance window immediately, releases a refusal for retry and closes on success', async () => {
+    vi.useFakeTimers()
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    renderShell(shellConnection())
+    const one = (id: string): HTMLElement =>
+      document.body.querySelector(`[data-id="${id}"]`)!
+    await act(async () => session.handshake(reconsentHandshake(inWindow)))
+    await act(async () =>
+      session.source.succeed(
+        session.source.sent.at(-1)!.requestId,
+        'hilos_legal_reconsent',
+        reconsentContent(),
+      ),
+    )
+    await act(async () => fireEvent.click(one('legal-reconsent-compare')))
+    const modal = one('legal-reconsent-modal')
+    const body = modal.querySelector('fieldset')!
+    const comparison = one('legal-changes')
+    const accept = one('legal-reconsent-accept')
+    accept.focus()
+    await act(async () => fireEvent.click(accept))
+    const attempt = session.source.sent.at(-1)!
+    expect(attempt.action).toBe('hilos_legal_accept')
+    expect(attempt.data).toEqual({
+      acceptedRevisions: { terms: '2026-09-27', privacy: '2026-09-27' },
+    })
+    expect(accept.getAttribute('aria-busy')).toBe('true')
+    expect(accept.getAttribute('aria-disabled')).toBe('true')
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
+    expect(accept.classList.contains('disabled')).toBe(false)
+    expect(one('legal-reconsent-modal')).toBe(modal)
+    expect(modal.querySelector('fieldset')).toBe(body)
+    expect(one('legal-changes')).toBe(comparison)
+    for (const id of [
+      'modal-close',
+      'legal-reconsent-later',
+      'legal-reconsent-refuse',
+      'legal-reconsent-back',
+    ]) {
+      expect(one(id).matches(':disabled')).toBe(true)
+    }
+    await act(async () => {
+      for (const id of [
+        'modal-close',
+        'legal-reconsent-later',
+        'legal-reconsent-refuse',
+        'legal-reconsent-back',
+        'legal-reconsent-accept',
+        'modal',
+      ])
+        fireEvent.click(one(id))
+      fireEvent.keyDown(one('modal'), { key: 'Escape' })
+      vi.advanceTimersByTime(299)
+    })
+    expect(windowShown()).toBe(true)
+    expect(one('legal-changes')).toBe(comparison)
+    expect(session.source.sent).toHaveLength(2)
+    expect(
+      accept.querySelector('[data-id="loading-button-spinner"]'),
+    ).toBeNull()
+    expect(document.activeElement).toBe(accept)
+    await act(async () => vi.advanceTimersByTime(1))
+    expect(
+      accept.querySelector('[data-id="loading-button-spinner"]'),
+    ).not.toBeNull()
+
+    await act(async () =>
+      session.source.refuse(
+        attempt.requestId,
+        'The terms moved.',
+        'hilos_legal_accept',
+      ),
+    )
+    expect(windowShown()).toBe(true)
+    expect(one('legal-reconsent-error').textContent).toContain(
+      'The terms moved.',
+    )
+    expect(body.disabled).toBe(true)
+    const refusal = one('legal-reconsent-error')
+    expect(one('legal-reconsent-error-details').matches(':disabled')).toBe(true)
+    await act(async () =>
+      session.source.succeed(
+        session.source.sent.at(-1)!.requestId,
+        'hilos_legal_reconsent',
+        reconsentContent(),
+      ),
+    )
+    expect(one('legal-reconsent-modal')).toBe(modal)
+    expect(modal.querySelector('fieldset')).toBe(body)
+    expect(one('legal-reconsent-error')).toBe(refusal)
+    expect(body.disabled).toBe(false)
+    expect(one('legal-reconsent-error-details').matches(':disabled')).toBe(
+      false,
+    )
+    expect(one('modal-close').matches(':disabled')).toBe(false)
+    expect(one('legal-reconsent-later').matches(':disabled')).toBe(false)
+    expect(one('legal-reconsent-document')).not.toBeNull()
+    expect(session.source.sent).toHaveLength(3)
+    await act(async () => fireEvent.click(one('legal-reconsent-accept')))
+    expect(session.source.sent).toHaveLength(4)
+    await act(async () =>
+      session.source.succeed(
+        session.source.sent.at(-1)!.requestId,
+        'hilos_legal_accept',
+      ),
+    )
+    expect(windowShown()).toBe(false)
+  })
+
+  it('removes the busy legal window when the session leaves', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    renderShell(shellConnection())
+    await act(async () => session.handshake(reconsentHandshake(inWindow)))
+    await act(async () =>
+      session.source.succeed(
+        session.source.sent.at(-1)!.requestId,
+        'hilos_legal_reconsent',
+        reconsentContent(),
+      ),
+    )
+    await act(async () =>
+      fireEvent.click(
+        document.body.querySelector('[data-id="legal-reconsent-accept"]')!,
+      ),
+    )
+    expect(windowShown()).toBe(true)
+    await act(async () => session.handshake(reconsentHandshake(null)))
+    expect(windowShown()).toBe(false)
   })
 
   it('puts the freeze screen in place of the content with no icon', async () => {

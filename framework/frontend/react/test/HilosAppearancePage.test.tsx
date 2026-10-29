@@ -245,6 +245,12 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+function modalBodyFieldset(): HTMLFieldSetElement {
+  return document.querySelector(
+    '[data-id="modal"] .modal-body > fieldset',
+  ) as HTMLFieldSetElement
+}
+
 function tableText(id: string): string | null | undefined {
   return document.querySelector(`table [data-id="${id}"]`)?.textContent
 }
@@ -456,6 +462,10 @@ describe('HilosAppearancePage Theme switching window', () => {
     const h = harness()
     openSwitching(h)
     fireEvent.click(switchingInput())
+    const input = switchingInput()
+    const form = input.form
+    const fieldset = modalBodyFieldset()
+    const cancel = byId('appearance-switching-cancel') as HTMLButtonElement
     expect(switchingInput().checked).toBe(false)
     expect(switchingSave().disabled).toBe(false)
 
@@ -470,6 +480,19 @@ describe('HilosAppearancePage Theme switching window', () => {
     ])
     expect(byId('modal')).not.toBeNull()
     expect(switchingSave().getAttribute('aria-disabled')).toBe('true')
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    fireEvent.click(cancel)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.click(switchingSave())
+    await settle()
+    expect(h.sent).toHaveLength(1)
+    expect(byId('modal')).not.toBeNull()
+    expect(switchingInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.checked).toBe(false)
     expect(tableText('appearance-setting-value-theme.switching_enabled')).toBe(
       'On',
     )
@@ -487,17 +510,37 @@ describe('HilosAppearancePage Theme switching window', () => {
     const h = harness()
     openSwitching(h)
     fireEvent.click(switchingInput())
+    const input = switchingInput()
+    const form = input.form
+    const fieldset = modalBodyFieldset()
+    const cancel = byId('appearance-switching-cancel') as HTMLButtonElement
     fireEvent.click(switchingSave())
     await settle()
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(h.sent).toHaveLength(1)
 
     h.answer('fail', 'The setting could not be saved.')
     await settle()
     expect(byId('modal')).not.toBeNull()
-    expect(switchingInput().checked).toBe(false)
+    expect(switchingInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.checked).toBe(false)
     expect(byId('hilos-action-error')?.textContent).toContain(
       'The setting could not be saved.',
     )
     expect(switchingSave().disabled).toBe(false)
+
+    fireEvent.click(switchingSave())
+    await settle()
+    expect(h.sent).toHaveLength(2)
+    h.answer('success', 'Theme switching saved.')
+    await settle()
+    expect(byId('modal')).toBeNull()
   })
 
   it('follows a pristine update from another administrator through the focused row', () => {
@@ -574,6 +617,10 @@ describe('HilosAppearancePage Default theme window', () => {
     const h = harness()
     const button = openDefaultTheme(h)
     fireEvent.click(themeRadio('dark'))
+    const dark = themeRadio('dark')
+    const form = dark.form
+    const fieldset = modalBodyFieldset()
+    const cancel = byId('appearance-default-theme-cancel') as HTMLButtonElement
     expect(themeRadio('dark').checked).toBe(true)
     expect(themeSave().disabled).toBe(false)
 
@@ -587,6 +634,25 @@ describe('HilosAppearancePage Default theme window', () => {
       },
     ])
     expect(byId('modal')).not.toBeNull()
+    expect(fieldset.disabled).toBe(true)
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLInputElement>(
+          'input[data-id^="appearance-default-theme-"]',
+        ),
+      ).every((radio) => radio.matches(':disabled')),
+    ).toBe(true)
+    expect(dark.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    fireEvent.click(cancel)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.click(themeSave())
+    await settle()
+    expect(h.sent).toHaveLength(1)
+    expect(byId('modal')).not.toBeNull()
+    expect(themeRadio('dark')).toBe(dark)
+    expect(dark.checked).toBe(true)
     expect(tableText('appearance-setting-value-theme.default')).toBe('System')
 
     h.change(HilosAppearanceSettingKey.defaultTheme, 'dark', 'system')
@@ -606,17 +672,38 @@ describe('HilosAppearancePage Default theme window', () => {
     const h = harness()
     openDefaultTheme(h)
     fireEvent.click(themeRadio('dark'))
+    const dark = themeRadio('dark')
+    const form = dark.form
+    const fieldset = modalBodyFieldset()
+    const cancel = byId('appearance-default-theme-cancel') as HTMLButtonElement
     fireEvent.click(themeSave())
     await settle()
+    expect(fieldset.disabled).toBe(true)
+    expect(dark.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(h.sent).toHaveLength(1)
 
     h.answer('fail', 'The setting could not be saved.')
     await settle()
     expect(byId('modal')).not.toBeNull()
-    expect(themeRadio('dark').checked).toBe(true)
+    expect(themeRadio('dark')).toBe(dark)
+    expect(dark.form).toBe(form)
+    expect(fieldset.disabled).toBe(false)
+    expect(dark.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(dark.checked).toBe(true)
     expect(byId('hilos-action-error')?.textContent).toContain(
       'The setting could not be saved.',
     )
     expect(themeSave().disabled).toBe(false)
+
+    fireEvent.submit(form as HTMLFormElement)
+    await settle()
+    expect(h.sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    h.answer('success', 'Default theme saved.')
+    await settle()
+    expect(byId('modal')).toBeNull()
   })
 
   it.each(['mine', 'theirs'] as const)(

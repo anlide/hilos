@@ -114,6 +114,7 @@ export function HilosSecurityOauthPage({
   const redirectRow = redirectRows[0]?.row ?? null
 
   const editOpen = useSignal(editor.opened)
+  const editSaving = useSignal(editor.saving)
   const editForm = useSignal(editor.form)
   const live = useSignal(editor.state)
   const editNoticeText = useSignal(editor.noticeText)
@@ -309,6 +310,7 @@ export function HilosSecurityOauthPage({
 
       <HilosModal
         open={editOpen}
+        busy={editSaving}
         confirmOnClose={live.dirty}
         aria-label="Edit · Return address"
         onClose={closeEdit}
@@ -330,7 +332,7 @@ export function HilosSecurityOauthPage({
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={edit.busy}
+                disabled={editSaving}
                 onClick={requestClose}
               >
                 Cancel

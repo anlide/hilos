@@ -7,7 +7,7 @@
 // state. The state, the actions and the window's steps are the core's
 // (createHilosAccountDeletionStore / createHilosAccountDeletionFlow); this view
 // owns only the markup. Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
   accountDeletionDaysLeft,
@@ -128,6 +128,12 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
       )
   }
 
+  function holdDataLink(event: MouseEvent<HTMLParagraphElement>): void {
+    if (!flow.busy.get()) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
   return (
     <section className="mt-5" data-id="account-deletion">
       {deletion !== null ? (
@@ -177,6 +183,7 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
         title={step === 'in-progress' ? COPY.progressTitle : COPY.title}
         initialFocus="inner"
         onClose={() => flow.close()}
+        busy={busy}
         actions={({ requestClose }) =>
           step === 'in-progress' ? (
             <>
@@ -184,6 +191,7 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
                 type="button"
                 className="btn btn-outline-secondary"
                 data-id="account-deletion-close"
+                disabled={busy}
                 onClick={requestClose}
               >
                 {COPY.close}
@@ -203,6 +211,7 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
                 type="button"
                 className="btn btn-outline-secondary"
                 data-id="account-deletion-cancel"
+                disabled={busy}
                 onClick={requestClose}
               >
                 {COPY.cancel}
@@ -318,11 +327,15 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
                   <p
                     className="small mb-0 mt-2"
                     data-id="account-deletion-data-link"
+                    onClickCapture={holdDataLink}
+                    onAuxClickCapture={holdDataLink}
                   >
                     {HILOS_DATA_EXPORT_COPY.deleteHint}{' '}
                     <HilosLink
                       to={HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]}
                       onClick={() => flow.close()}
+                      aria-disabled={busy || undefined}
+                      tabIndex={busy ? -1 : undefined}
                     >
                       {HILOS_DATA_EXPORT_COPY.deleteLink}
                     </HilosLink>

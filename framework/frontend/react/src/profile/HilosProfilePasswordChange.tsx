@@ -59,6 +59,7 @@ export function HilosProfilePasswordChange({
       title={title}
       initialFocus="inner"
       confirmOnClose={asksBeforeClosing}
+      busy={busy}
       actions={({ requestClose }) =>
         step === 'done' ? (
           <>
@@ -74,6 +75,7 @@ export function HilosProfilePasswordChange({
               type="button"
               className="btn btn-primary"
               data-id="profile-password-done"
+              disabled={busy}
               onClick={requestClose}
             >
               {COPY.done}
@@ -85,6 +87,7 @@ export function HilosProfilePasswordChange({
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-password-cancel"
+              disabled={busy}
               onClick={requestClose}
             >
               {COPY.cancel}

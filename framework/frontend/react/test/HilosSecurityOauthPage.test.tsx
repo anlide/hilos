@@ -447,6 +447,65 @@ describe('HilosSecurityOauthPage return-address modal', () => {
     expect(sent).toHaveLength(0)
     expect(byId('modal')).toBeNull()
   })
+
+  it('locks the edit modal until the address save settles, then retries after refusal', async () => {
+    const { context, sent, answer } = seededContext('https://a.example/cb')
+    openModal(context)
+    typeDraft('https://mine.example/cb')
+
+    const input = valueInput()
+    const form = input.form as HTMLFormElement
+    const fieldset = document.querySelector(
+      '[data-id="modal"] .modal-body > fieldset',
+    ) as HTMLFieldSetElement
+    const modal = byId('modal') as HTMLElement
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+
+    fireEvent.click(saveButton())
+    expect(sent).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    fireEvent.click(saveButton())
+    fireEvent.submit(form)
+    fireEvent.click(cancel)
+    fireEvent.click(close)
+    fireEvent.keyDown(modal, { key: 'Escape' })
+    fireEvent.click(modal)
+    expect(sent).toHaveLength(1)
+    expect(byId('modal')).toBe(modal)
+    expect(valueInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('https://mine.example/cb')
+
+    await act(async () => {
+      answer('fail')
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+    })
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.value).toBe('https://mine.example/cb')
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The address refused the reset.',
+    )
+
+    fireEvent.submit(form)
+    expect(sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    await act(async () => {
+      answer('success')
+      for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
+    })
+    expect(byId('modal')).toBeNull()
+  })
 })
 
 describe('HilosSecurityOauthPage return-address reset dialog', () => {

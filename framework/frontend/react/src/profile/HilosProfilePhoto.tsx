@@ -40,6 +40,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
   const checking = useSignal(flow.checking)
   const refusal = useSignal(flow.refusal)
   const voice = useSignal(flow.voice)
+  const inFlight = busy || checking
   const input = useRef<HTMLInputElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const dragging = useRef<{ id: number; x: number; y: number } | null>(null)
@@ -50,17 +51,27 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
     }
   }, [preview, step])
 
+  // File selection and the canvas also read a lock raised before React renders.
+  function isHeld(): boolean {
+    return flow.busy.get() || flow.checking.get()
+  }
+  function choose(): void {
+    if (isHeld()) return
+    input.current?.click()
+  }
   function picked(event: ChangeEvent<HTMLInputElement>): void {
     const file = event.target.files?.[0]
-    if (file) void flow.pick(file)
+    if (file && !isHeld()) void flow.pick(file)
     event.target.value = ''
   }
   function dropped(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault()
+    if (isHeld()) return
     const file = event.dataTransfer.files[0]
     if (file) void flow.pick(file)
   }
   function startDrag(event: PointerEvent<HTMLCanvasElement>): void {
+    if (isHeld()) return
     dragging.current = {
       id: event.pointerId,
       x: event.clientX,
@@ -72,8 +83,9 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
     const previous = dragging.current
     if (!previous || previous.id !== event.pointerId) return
     const side = canvas.current?.getBoundingClientRect().width ?? 0
-    if (side > 0)
+    if (side > 0 && !isHeld())
       flow.move(event.clientX - previous.x, event.clientY - previous.y, side)
+    // Follow a held pointer without moving the crop or accumulating a jump.
     dragging.current = {
       id: event.pointerId,
       x: event.clientX,
@@ -81,6 +93,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
     }
   }
   function arrow(event: KeyboardEvent<HTMLCanvasElement>): void {
+    if (isHeld()) return
     const motion = ARROW_MOVE[event.key]
     const side = canvas.current?.getBoundingClientRect().width ?? 0
     if (!motion || side <= 0) return
@@ -102,6 +115,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
         open={step !== 'closed'}
         onClose={() => flow.close()}
         title={COPY.title}
+        busy={inFlight}
         initialFocus="dialog"
         actions={({ requestClose }) => (
           <>
@@ -109,6 +123,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-photo-cancel"
+              disabled={inFlight}
               onClick={requestClose}
             >
               {COPY.cancel}
@@ -160,7 +175,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
                   type="button"
                   className="btn btn-link btn-sm p-0 align-baseline"
                   data-id="profile-photo-choose"
-                  onClick={() => input.current?.click()}
+                  onClick={choose}
                 >
                   {COPY.choose}
                 </button>
@@ -177,7 +192,8 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
               className="hilos-photo-crop rounded-circle mx-auto d-block"
               role="img"
               aria-label={COPY.position}
-              tabIndex={0}
+              aria-disabled={inFlight || undefined}
+              tabIndex={inFlight ? -1 : 0}
               data-id="profile-photo-preview"
               onPointerDown={startDrag}
               onPointerMove={drag}
@@ -205,7 +221,9 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
               value={zoom}
               disabled={busy || checking}
               data-id="profile-photo-zoom"
-              onChange={(event) => flow.setZoom(Number(event.target.value))}
+              onChange={(event) => {
+                if (!isHeld()) flow.setZoom(Number(event.target.value))
+              }}
             />
             <p className="small text-body-secondary mb-0">{COPY.cropNote}</p>
             {checking ? (
@@ -231,7 +249,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
                   className="btn btn-outline-secondary btn-sm"
                   disabled={busy || checking}
                   data-id="profile-photo-upload-another"
-                  onClick={() => input.current?.click()}
+                  onClick={choose}
                 >
                   {COPY.uploadAnother}
                 </button>
@@ -258,7 +276,7 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
                 className="btn btn-outline-secondary btn-sm"
                 disabled={busy}
                 data-id="profile-photo-upload-another"
-                onClick={() => input.current?.click()}
+                onClick={choose}
               >
                 {COPY.uploadAnother}
               </button>

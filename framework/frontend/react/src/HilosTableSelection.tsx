@@ -191,6 +191,7 @@ export function HilosTableSelection<R>({
         open={confirmOpen}
         title={confirmAction?.label}
         initialFocus="dialog"
+        busy={bulkTracked.busy}
         onClose={closeConfirm}
         actions={({ requestClose }) => (
           <>

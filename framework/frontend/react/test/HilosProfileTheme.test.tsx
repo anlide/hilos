@@ -7,6 +7,7 @@ import {
   bindSessionScope,
   bindSignOut,
   bindThemeState,
+  createConnectionInteractionState,
   hilosThemePick,
   hilosToasts,
   ScopeManager,
@@ -21,6 +22,7 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_PICK_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
+import { HilosConnectionInteractionContext } from '../src/hilosConnectionInteraction.js'
 import { HilosProfileTheme } from '../src/profile/HilosProfileTheme.js'
 
 const releases: (() => void)[] = []
@@ -47,12 +49,13 @@ function maybe(id: string): HTMLElement | null {
 }
 
 /** What the page that owns the window holds: whether it asked for it. */
-const page = { shown: false }
+const page = { shown: false, close: () => {} }
 
 /** The profile row's Change and the window it opens, as the page wires them. */
 function ThemeRow() {
   const [shown, setShown] = useState(false)
   page.shown = shown
+  page.close = () => setShown(false)
 
   return (
     <>
@@ -93,6 +96,7 @@ function setup(
   >(() => true)
   const connection = {
     sendAction,
+    state: 'connected' as ConnectionState,
     on(event: string, listener: (payload: never) => void): () => void {
       const callbacks = listeners.get(event) ?? new Set()
       callbacks.add(listener)
@@ -111,6 +115,10 @@ function setup(
   releases.push(
     bindThemeState(connection as unknown as HilosConnection, scopes, actions),
   )
+  const interaction = createConnectionInteractionState(
+    connection as unknown as HilosConnection,
+  )
+  releases.push(() => interaction.dispose())
 
   function handshake(
     themePick: ThemePick,
@@ -136,7 +144,11 @@ function setup(
     })
   }
   handshake(pick)
-  render(<ThemeRow />)
+  render(
+    <HilosConnectionInteractionContext.Provider value={interaction}>
+      <ThemeRow />
+    </HilosConnectionInteractionContext.Provider>,
+  )
 
   return {
     sendAction,
@@ -147,7 +159,10 @@ function setup(
       act(() =>
         scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 }),
       ),
-    state: (next: ConnectionState) => emit('state', next),
+    state(next: ConnectionState): void {
+      connection.state = next
+      emit('state', next)
+    },
     async reply(
       outcome: 'success' | 'fail',
       requestId = sendAction.mock.lastCall?.[2],
@@ -181,6 +196,23 @@ function dialog(): HTMLElement {
   if (!element) throw new Error('Missing theme dialog')
 
   return element
+}
+
+/** Every user close path stays locked while requests or connection block it. */
+function expectCloseBlocked(): void {
+  const root = dialog()
+  expect(byId('profile-theme-close').matches(':disabled')).toBe(true)
+  expect(byId('modal-close').matches(':disabled')).toBe(true)
+  for (const dismiss of [
+    () => click('profile-theme-close'),
+    () => click('modal-close'),
+    () => fireEvent.keyDown(root, { key: 'Escape' }),
+    () => fireEvent.click(root),
+  ]) {
+    dismiss()
+    expect(page.shown).toBe(true)
+    expect(dialog()).toBe(root)
+  }
 }
 
 describe('HilosProfileTheme', () => {
@@ -299,8 +331,20 @@ describe('HilosProfileTheme', () => {
   it('resets only on the account frame, keeps the default mark live and allows repeated reset', async () => {
     const server = setup('dark')
     server.open()
+    const body = byId('profile-theme-modal')
+    const fieldset = body.querySelector('fieldset')!
+    const room = byId('hilos-action-error-slot')
+    const reset = byId('profile-theme-default')
+    const idleClass = reset.className
+    const label = reset.firstElementChild!
+    expect(fieldset.disabled).toBe(false)
+    expect(fieldset.className).toBe('m-0 p-0 border-0')
+    expect(fieldset.contains(room)).toBe(true)
+    expect(fieldset.contains(reset)).toBe(false)
+    expect(reset.previousElementSibling?.tagName).toBe('HR')
+    reset.focus()
     act(() => {
-      byId('profile-theme-default').click()
+      reset.click()
       byId('profile-theme-option-light').click()
     })
     expect(server.sendAction).toHaveBeenCalledExactlyOnceWith(
@@ -312,25 +356,43 @@ describe('HilosProfileTheme', () => {
     expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
     // The reset is locked by its own flight at once and keeps its look; the
     // rows are off natively by a flight that is not theirs.
-    const reset = byId('profile-theme-default')
     const spinner = (): Element | null =>
       reset.querySelector('[data-id="loading-button-spinner"]')
-    expect(reset.disabled).toBe(false)
-    expect(reset.getAttribute('aria-disabled')).toBe('true')
-    expect(reset.getAttribute('aria-busy')).toBe('true')
-    for (const pick of ['light', 'dark', 'system'])
-      expect(byId(`profile-theme-option-${pick}`).disabled).toBe(true)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(299)
-    })
-    expect(reset.classList.contains('disabled')).toBe(false)
-    expect(spinner()).toBeNull()
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1)
-    })
-    expect(spinner()).not.toBeNull()
-    expect(reset.classList.contains('disabled')).toBe(true)
-    expect(reset.disabled).toBe(false)
+    for (const elapsed of [0, 299, 1]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(elapsed)
+      })
+      expect(byId('profile-theme-modal')).toBe(body)
+      expect(body.querySelector('fieldset')).toBe(fieldset)
+      expect(fieldset.disabled).toBe(true)
+      expect(byId('hilos-action-error-slot')).toBe(room)
+      expect(byId('profile-theme-default')).toBe(reset)
+      expect(reset.firstElementChild).toBe(label)
+      expect(document.activeElement).toBe(reset)
+      expect(reset.disabled).toBe(false)
+      expect(reset.matches(':disabled')).toBe(false)
+      expect(reset.getAttribute('aria-disabled')).toBe('true')
+      expect(reset.getAttribute('aria-busy')).toBe('true')
+      expect(reset.className).toBe(
+        elapsed === 1 ? `${idleClass} disabled` : idleClass,
+      )
+      expect(label.classList.contains('invisible')).toBe(elapsed === 1)
+      expect(spinner() !== null).toBe(elapsed === 1)
+      for (const pick of ['light', 'dark', 'system']) {
+        const option = byId(`profile-theme-option-${pick}`)
+        expect(fieldset.contains(option)).toBe(true)
+        expect(option.disabled).toBe(true)
+        expect(option.matches(':disabled')).toBe(true)
+        click(`profile-theme-option-${pick}`)
+      }
+      expectCloseBlocked()
+      expect(fireEvent.click(reset)).toBe(false)
+      expect(server.sendAction).toHaveBeenCalledOnce()
+      expect(hilosThemePick.get()).toBe('dark')
+      expect(
+        byId('profile-theme-option-dark').getAttribute('aria-current'),
+      ).toBe('true')
+    }
     // The rows keep their own deferred indicator, and none of them shows it.
     expect(maybe('profile-theme-loading')).toBeNull()
     for (const pick of ['light', 'dark', 'system'])
@@ -361,9 +423,17 @@ describe('HilosProfileTheme', () => {
   it('keeps a refused reset retryable and does not close a later opening on its success', async () => {
     const server = setup('dark')
     server.open()
+    const body = byId('profile-theme-modal')
+    const fieldset = body.querySelector('fieldset')!
+    const room = byId('hilos-action-error-slot')
     click('profile-theme-default')
+    expect(fieldset.disabled).toBe(true)
     await server.reply('fail')
     expect(page.shown).toBe(true)
+    expect(byId('profile-theme-modal')).toBe(body)
+    expect(body.querySelector('fieldset')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(false)
+    expect(byId('hilos-action-error-slot')).toBe(room)
     expect(hilosThemePick.get()).toBe('dark')
     expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
     expect(byId('hilos-action-error').textContent).toContain(
@@ -372,8 +442,19 @@ describe('HilosProfileTheme', () => {
     expect(byId('profile-theme-default').hasAttribute('aria-disabled')).toBe(
       false,
     )
+    expect(byId('profile-theme-default').matches(':disabled')).toBe(false)
+    expect(byId('profile-theme-close').matches(':disabled')).toBe(false)
+    expect(byId('modal-close').matches(':disabled')).toBe(false)
+    for (const pick of ['light', 'dark', 'system'])
+      expect(byId(`profile-theme-option-${pick}`).matches(':disabled')).toBe(
+        false,
+      )
     click('profile-theme-default')
-    click('profile-theme-close')
+    expect(server.sendAction).toHaveBeenCalledTimes(2)
+    expect(maybe('hilos-action-error')).toBeNull()
+    expect(body.querySelector('fieldset')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(true)
+    act(() => page.close())
     expect(page.shown).toBe(false)
     server.open()
     expect(byId('profile-theme-default').getAttribute('aria-disabled')).toBe(
@@ -414,6 +495,8 @@ describe('HilosProfileTheme', () => {
   it('blocks a double click before React re-renders and places deferred loading only on the submitted position', async () => {
     const server = setup()
     server.open()
+    const body = byId('profile-theme-modal')
+    const fieldset = body.querySelector('fieldset')!
     act(() => {
       byId('profile-theme-option-dark').click()
       byId('profile-theme-option-system').click()
@@ -434,13 +517,30 @@ describe('HilosProfileTheme', () => {
       false,
     )
     expect(byId('profile-theme-default').hasAttribute('aria-busy')).toBe(false)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(299)
-    })
-    expect(maybe('profile-theme-loading')).toBeNull()
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1)
-    })
+    for (const elapsed of [0, 299, 1]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(elapsed)
+      })
+      expect(byId('profile-theme-modal')).toBe(body)
+      expect(body.querySelector('fieldset')).toBe(fieldset)
+      expect(fieldset.disabled).toBe(true)
+      for (const pick of ['light', 'dark', 'system']) {
+        expect(byId(`profile-theme-option-${pick}`).matches(':disabled')).toBe(
+          true,
+        )
+        click(`profile-theme-option-${pick}`)
+      }
+      expect(byId('profile-theme-default').disabled).toBe(true)
+      expect(byId('profile-theme-default').matches(':disabled')).toBe(true)
+      click('profile-theme-default')
+      expectCloseBlocked()
+      expect(server.sendAction).toHaveBeenCalledOnce()
+      expect(maybe('profile-theme-loading') !== null).toBe(elapsed === 1)
+      expect(
+        byId('profile-theme-option-light').getAttribute('aria-current'),
+      ).toBe('true')
+      expect(hilosThemePick.get()).toBe('light')
+    }
     expect(byId('profile-theme-loading').parentElement).toBe(
       byId('profile-theme-option-dark'),
     )
@@ -463,6 +563,8 @@ describe('HilosProfileTheme', () => {
     async (outcome) => {
       const server = setup()
       server.open()
+      const body = byId('profile-theme-modal')
+      const fieldset = body.querySelector('fieldset')!
       const room = byId('hilos-action-error-slot')
       expect(
         byId('hilos-action-error-idle').classList.contains('invisible'),
@@ -478,6 +580,9 @@ describe('HilosProfileTheme', () => {
         await vi.advanceTimersByTimeAsync(0)
       })
       expect(page.shown).toBe(true)
+      expect(byId('profile-theme-modal')).toBe(body)
+      expect(body.querySelector('fieldset')).toBe(fieldset)
+      expect(fieldset.disabled).toBe(false)
       expect(byId('hilos-action-error-slot')).toBe(room)
       expect(room.getAttribute('role')).toBe('alert')
       expect(room.getAttribute('aria-live')).toBe('assertive')
@@ -494,6 +599,15 @@ describe('HilosProfileTheme', () => {
         { message: messages[outcome], severity: 'error' },
       ])
       expect(byId('profile-theme-option-dark').disabled).toBe(false)
+      for (const id of [
+        'profile-theme-option-light',
+        'profile-theme-option-dark',
+        'profile-theme-option-system',
+        'profile-theme-default',
+        'profile-theme-close',
+        'modal-close',
+      ])
+        expect(byId(id).matches(':disabled')).toBe(outcome === 'disconnected')
       expect(hilosThemePick.get()).toBe('light')
       expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('light')
       expect(document.documentElement.getAttribute('data-bs-theme')).toBe(
@@ -502,6 +616,9 @@ describe('HilosProfileTheme', () => {
       server.state('connected')
       await server.reply('success', '1')
       expect(page.shown).toBe(true)
+      expect(body.querySelector('fieldset')).toBe(fieldset)
+      expect(byId('profile-theme-default').matches(':disabled')).toBe(false)
+      expect(byId('profile-theme-close').matches(':disabled')).toBe(false)
       expect(hilosThemePick.get()).toBe('light')
       click('profile-theme-option-system')
       expect(maybe('hilos-action-error')).toBeNull()
@@ -510,6 +627,48 @@ describe('HilosProfileTheme', () => {
       expect(page.shown).toBe(false)
     },
   )
+
+  it('keeps the connection lock independent of the custom body and request busy', async () => {
+    const server = setup('dark')
+    server.open()
+    const body = byId('profile-theme-modal')
+    const fieldset = body.querySelector('fieldset')!
+    const reset = byId('profile-theme-default')
+    click('profile-theme-default')
+    expect(fieldset.disabled).toBe(true)
+    expect(reset.matches(':disabled')).toBe(false)
+    await server.reply('fail')
+    expect(fieldset.disabled).toBe(false)
+    server.state('reconnecting')
+    expect(byId('profile-theme-modal')).toBe(body)
+    expect(body.querySelector('fieldset')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(false)
+    expect(reset.disabled).toBe(false)
+    expect(reset.matches(':disabled')).toBe(true)
+    expect(reset.hasAttribute('aria-busy')).toBe(false)
+    for (const pick of ['light', 'dark', 'system']) {
+      expect(byId(`profile-theme-option-${pick}`).disabled).toBe(false)
+      expect(byId(`profile-theme-option-${pick}`).matches(':disabled')).toBe(
+        true,
+      )
+      act(() => byId(`profile-theme-option-${pick}`).click())
+    }
+    act(() => reset.click())
+    expectCloseBlocked()
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    server.state('connected')
+    expect(body.querySelector('fieldset')).toBe(fieldset)
+    expect(fieldset.disabled).toBe(false)
+    expect(reset.matches(':disabled')).toBe(false)
+    expect(page.shown).toBe(true)
+    expect(server.sendAction).toHaveBeenCalledOnce()
+    click('profile-theme-default')
+    expect(fieldset.disabled).toBe(true)
+    expect(reset.matches(':disabled')).toBe(false)
+    expect(server.sendAction).toHaveBeenCalledTimes(2)
+    await server.reply('success')
+    expect(page.shown).toBe(false)
+  })
 
   it('keeps marks live while open, following the default and then a server pick', () => {
     const server = setup(null)
@@ -552,7 +711,7 @@ describe('HilosProfileTheme', () => {
     },
   )
 
-  it.each(['off', 'signout', 'impersonation', 'close'] as const)(
+  it.each(['off', 'signout', 'impersonation', 'parent close'] as const)(
     'keeps an admitted write pending after %s and ignores its late success locally',
     async (change) => {
       const server = setup()
@@ -562,7 +721,7 @@ describe('HilosProfileTheme', () => {
         server.settings({ switchingEnabled: false, defaultTheme: 'light' })
       else if (change === 'signout') server.handshake('light', null)
       else if (change === 'impersonation') server.impersonate()
-      else click('profile-theme-close')
+      else act(() => page.close())
       expect(page.shown).toBe(false)
       await server.reply('success')
       expect(server.sendAction).toHaveBeenCalledOnce()
@@ -575,7 +734,7 @@ describe('HilosProfileTheme', () => {
     const server = setup()
     server.open()
     click('profile-theme-option-dark')
-    click('profile-theme-close')
+    act(() => page.close())
     server.open()
     expect(byId('profile-theme-option-light').disabled).toBe(true)
     server.handshake('system')

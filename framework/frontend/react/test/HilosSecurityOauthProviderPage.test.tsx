@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  ActionError,
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -136,6 +137,7 @@ interface Dispatched {
   action: string
   payload: Record<string, unknown>
   settle: (result: ActionResult) => void
+  fail: (error: ActionError) => void
 }
 
 /**
@@ -151,10 +153,12 @@ function makeActions(): {
   const actions = {
     dispatch(action: string, payload: Record<string, unknown>): ActionHandle {
       let settle: (result: ActionResult) => void = () => {}
-      const done = new Promise<ActionResult>((resolve) => {
+      let fail: (error: ActionError) => void = () => {}
+      const done = new Promise<ActionResult>((resolve, reject) => {
         settle = resolve
+        fail = reject
       })
-      dispatched.push({ action, payload, settle })
+      dispatched.push({ action, payload, settle, fail })
 
       return {
         requestId: String(dispatched.length),
@@ -407,6 +411,90 @@ describe('HilosSecurityOauthProviderPage', () => {
       expect(text).toBe('Set')
     }
     expect(document.body.textContent).not.toContain('s3cret')
+  })
+
+  it('locks the edit modal until its save settles, keeps a refused draft, and closes on retry', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions)
+    pushWindow(PROVIDERS_TABLE, 'provider', [providerRow()])
+    pushWindow(FIELDS_TABLE, 'field', [clientIdRow(), secretRow()])
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-oauth-field-edit-client_id"]',
+      ) as HTMLElement,
+    )
+    const input = document.querySelector(
+      '[data-id="hilos-oauth-field-input"]',
+    ) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Client ID draft' } })
+
+    const form = input.form as HTMLFormElement
+    const modal = byId('modal') as HTMLElement
+    const fieldset = modal.querySelector(
+      '.modal-body > fieldset',
+    ) as HTMLFieldSetElement
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+    fireEvent.click(byId('hilos-oauth-field-save') as Element)
+    await settled()
+
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0]).toMatchObject({
+      action: 'security_oauth_provider_set',
+      payload: {
+        providerKey: PROVIDER,
+        field: 'client_id',
+        value: 'Client ID draft',
+      },
+    })
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    fireEvent.click(byId('hilos-oauth-field-save') as Element)
+    fireEvent.submit(form)
+    fireEvent.click(cancel)
+    fireEvent.click(close)
+    fireEvent.keyDown(modal, { key: 'Escape' })
+    fireEvent.click(modal)
+    await settled()
+    expect(dispatched).toHaveLength(1)
+    expect(byId('modal')).toBe(modal)
+    expect(document.querySelector('[data-id="hilos-oauth-field-input"]')).toBe(
+      input,
+    )
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('Client ID draft')
+
+    dispatched[0]?.fail(
+      new ActionError(
+        'security_oauth_provider_set',
+        'fail',
+        'The provider refused the update.',
+      ),
+    )
+    await settled()
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.value).toBe('Client ID draft')
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The provider refused the update.',
+    )
+
+    fireEvent.submit(form)
+    await settled()
+    expect(dispatched).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    dispatched[1]?.settle({})
+    await settled()
+    expect(byId('modal')).toBeNull()
   })
 })
 

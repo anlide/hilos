@@ -98,6 +98,163 @@ function setup(
 }
 
 describe('HilosProfileSessions (React)', () => {
+  it.each(['one', 'others'] as const)(
+    'holds the %s session dialog through pending and refusal, then closes on retry success',
+    async (kind) => {
+      let resolve!: (value: { reply: null }) => void
+      let reject!: (error: unknown) => void
+      const result = () =>
+        new Promise<{ reply: null }>((yes, no) => {
+          resolve = yes
+          reject = no
+        })
+      const { endSession, endOtherSessions } = setup(
+        [makeSession(1, { current: true }), makeSession(2)],
+        result,
+        result,
+      )
+      const confirmId =
+        kind === 'one'
+          ? 'profile-session-end-confirm'
+          : 'profile-sessions-end-others-confirm'
+      const errorId =
+        kind === 'one'
+          ? 'profile-session-end-error'
+          : 'profile-sessions-end-others-error'
+      const action = kind === 'one' ? endSession : endOtherSessions
+      const actionName =
+        kind === 'one' ? 'hilos_sessions_end' : 'hilos_sessions_end_others'
+      await act(async () => {
+        fireEvent.click(
+          byId(
+            kind === 'one'
+              ? 'profile-session-revoke'
+              : 'profile-sessions-end-others',
+          ),
+        )
+      })
+      const dialog = byId('modal')
+      const confirm = byId(confirmId)
+      const cancel = dialog.querySelector<HTMLButtonElement>(
+        '.modal-footer .btn-secondary',
+      )!
+      const slot = byId(`${errorId}-slot`)
+      await act(async () => {
+        fireEvent.click(confirm)
+      })
+      expect(cancel.matches(':disabled')).toBe(true)
+      expect(byId('modal-close').matches(':disabled')).toBe(true)
+      expect(confirm.closest('fieldset:disabled')).toBeNull()
+      expect(confirm.getAttribute('aria-busy')).toBe('true')
+      await act(async () => {
+        fireEvent.click(confirm)
+        fireEvent.keyDown(confirm, { key: 'Enter' })
+        fireEvent.click(cancel)
+        fireEvent.click(byId('modal-close'))
+        fireEvent.keyDown(dialog, { key: 'Escape' })
+        fireEvent.click(dialog)
+      })
+      expect(action).toHaveBeenCalledTimes(1)
+      expect(byId('modal')).toBe(dialog)
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+      await act(async () => {
+        reject(
+          new ActionError(
+            actionName,
+            'fail',
+            'Please try ending the session again',
+          ),
+        )
+      })
+      expect(byId('modal')).toBe(dialog)
+      expect(byId(confirmId)).toBe(confirm)
+      expect(byId(errorId).textContent).toContain(
+        'Please try ending the session again',
+      )
+      expect(byId(`${errorId}-slot`)).toBe(slot)
+      expect(slot.getAttribute('role')).toBe('alert')
+      expect(cancel.matches(':disabled')).toBe(false)
+      expect(byId('modal-close').matches(':disabled')).toBe(false)
+      expect(confirm.matches(':disabled')).toBe(false)
+      await act(async () => {
+        fireEvent.click(confirm)
+      })
+      expect(action).toHaveBeenCalledTimes(2)
+      expect(byId(`${errorId}-slot`)).toBe(slot)
+      expect(cancel.matches(':disabled')).toBe(true)
+      await act(async () => {
+        resolve({ reply: null })
+      })
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    },
+  )
+
+  it.each(['one', 'others'] as const)(
+    'preserves the independent missing-session prohibition after a pending %s refusal',
+    async (kind) => {
+      let reject!: (error: unknown) => void
+      const result = () =>
+        new Promise<never>((_resolve, no) => {
+          reject = no
+        })
+      const { actions, view, endSession, endOtherSessions } = setup(
+        [makeSession(1, { current: true }), makeSession(2)],
+        result,
+        result,
+      )
+      const confirmId =
+        kind === 'one'
+          ? 'profile-session-end-confirm'
+          : 'profile-sessions-end-others-confirm'
+      const action = kind === 'one' ? endSession : endOtherSessions
+      await act(async () => {
+        fireEvent.click(
+          byId(
+            kind === 'one'
+              ? 'profile-session-revoke'
+              : 'profile-sessions-end-others',
+          ),
+        )
+      })
+      const confirm = byId(confirmId)
+      await act(async () => {
+        fireEvent.click(confirm)
+      })
+      view.rerender(
+        <HilosProfileSessions
+          sessions={[makeSession(1, { current: true })]}
+          actions={actions}
+        />,
+      )
+      await act(async () => {
+        reject(
+          new ActionError(
+            'hilos_sessions_end',
+            'fail',
+            'Session ended elsewhere',
+          ),
+        )
+      })
+      expect(byId(confirmId)).toBe(confirm)
+      expect(confirm.matches(':disabled')).toBe(true)
+      expect(byId('modal-close').matches(':disabled')).toBe(false)
+      expect(
+        document
+          .querySelector('.modal-footer .btn-secondary')!
+          .matches(':disabled'),
+      ).toBe(false)
+      await act(async () => {
+        fireEvent.click(confirm)
+        fireEvent.keyDown(confirm, { key: 'Enter' })
+      })
+      expect(action).toHaveBeenCalledTimes(1)
+      await act(async () => {
+        fireEvent.click(byId('modal-close'))
+      })
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    },
+  )
+
   it.each([
     ['Europe/Kyiv', 'Device 1 · Europe/Kyiv'],
     [null, 'Device 1'],

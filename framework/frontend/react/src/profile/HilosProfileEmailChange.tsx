@@ -85,6 +85,7 @@ export function HilosProfileEmailChange({
       title={title}
       confirmOnClose={asksBeforeClosing}
       initialFocus="inner"
+      busy={busy}
       actions={({ requestClose }) =>
         step === 'step-up' ? (
           <>
@@ -92,6 +93,7 @@ export function HilosProfileEmailChange({
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-email-cancel"
+              disabled={busy}
               onClick={requestClose}
             >
               {COPY.cancel}
@@ -114,6 +116,7 @@ export function HilosProfileEmailChange({
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-email-cancel"
+              disabled={busy}
               onClick={requestClose}
             >
               {COPY.cancel}
@@ -166,6 +169,7 @@ export function HilosProfileEmailChange({
               type="button"
               className="btn btn-outline-secondary"
               data-id="profile-email-again"
+              disabled={busy}
               onClick={() => void flow.again()}
             >
               {COPY.again}
@@ -175,6 +179,7 @@ export function HilosProfileEmailChange({
               className="btn btn-primary"
               data-autofocus
               data-id="profile-email-done"
+              disabled={busy}
               onClick={requestClose}
             >
               {COPY.done}

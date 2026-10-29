@@ -5,6 +5,8 @@ import {
   ActionError,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
   bindProfileFlows,
+  cancelOAuthTrip,
+  createConnectionInteractionState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   PROFILE_UNLINK_IDENTITY_ACTION,
@@ -12,6 +14,7 @@ import {
   ScopeManager,
   SIGNAL_PROFILE_FLOWS,
   resolveHilosProfileSignInMethods,
+  type ConnectionInteractionState,
   type HilosAuthContext,
   type HilosConnection,
   type HilosProfileSignInMethod,
@@ -20,6 +23,7 @@ import {
 } from '@hilos/core'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { HilosConnectionInteractionContext } from '../src/hilosConnectionInteraction.js'
 
 afterEach(cleanup)
 
@@ -262,6 +266,7 @@ function setup(
   opening: object = NO_STEP,
   methods = MAGIC_LINK,
   offered: readonly object[] = OFFERED,
+  interaction: ConnectionInteractionState | null = null,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const emit = (type: string, data: unknown) => {
@@ -340,9 +345,11 @@ function setup(
   } as unknown as HilosRouter
   const page = (
     <StrictMode>
-      <HilosRouterContext.Provider value={router}>
-        <HilosProfileSignInPage context={context} />
-      </HilosRouterContext.Provider>
+      <HilosConnectionInteractionContext.Provider value={interaction}>
+        <HilosRouterContext.Provider value={router}>
+          <HilosProfileSignInPage context={context} />
+        </HilosRouterContext.Provider>
+      </HilosConnectionInteractionContext.Provider>
     </StrictMode>
   )
   const { unmount: unmountPage } = render(page)
@@ -854,5 +861,410 @@ describe('profile sign-in page locks a pressed button at once and the others by 
       fireEvent.click(save)
     })
     expect(sends()).toHaveLength(1)
+  })
+})
+
+/**
+ * Try all user close paths without taking a dirty dialog to Discard.
+ *
+ * @param node The mounted page's data-id reader.
+ */
+function tryClosingAdd(node: (id: string) => HTMLElement): void {
+  fireEvent.click(node('modal-close'))
+  fireEvent.click(node('profile-sign-in-add-cancel'))
+  fireEvent.keyDown(node('modal'), { key: 'Escape' })
+  fireEvent.click(node('modal'))
+  expect(node('profile-sign-in-add-modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+}
+
+describe('profile sign-in add modal busy body', () => {
+  afterEach(() => {
+    cancelOAuthTrip()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it.each([
+    {
+      way: 'provider',
+      pressedId: 'profile-oauth-link-oauth:github',
+      otherId: 'profile-passkey-add',
+      action: 'hilos_link_oauth_start',
+    },
+    {
+      way: 'passkey',
+      pressedId: 'profile-passkey-add',
+      otherId: 'profile-oauth-link-oauth:github',
+      action: AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+    },
+  ])(
+    'holds the $way chooser and keeps its sending button focused through 0/299/300 ms',
+    async ({ pressedId, otherId, action }) => {
+      ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+        class {}
+      Object.defineProperty(navigator, 'credentials', {
+        configurable: true,
+        value: { create: vi.fn(), get: vi.fn() },
+      })
+      vi.spyOn(window, 'open').mockReturnValue({
+        closed: false,
+        close: vi.fn(),
+        location: { replace: vi.fn() },
+      } as unknown as Window)
+      const { dispatch, node } = setup(NO_STEP, MAGIC_LINK, [
+        ...OFFERED,
+        { key: 'oauth:google', name: 'Google' },
+        { key: 'passkey', name: null },
+      ])
+      await act(async () => fireEvent.click(node('profile-sign-in-add')))
+      const pending = held()
+      dispatch.mockImplementationOnce(() => pending.answer)
+      const pressed = node(pressedId) as HTMLButtonElement
+      const others = [
+        otherId,
+        'profile-oauth-link-oauth:google',
+        'profile-sign-in-choose-password',
+        'profile-sign-in-choose-phone',
+      ].map((id) => node(id) as HTMLButtonElement)
+      const chooser = pressed.parentElement
+      const content = pressed.innerHTML
+      const sends = () => dispatch.mock.calls.filter(([key]) => key === action)
+      pressed.focus()
+      vi.useFakeTimers()
+      await act(async () => fireEvent.click(pressed))
+      expect(sends()).toHaveLength(1)
+      const sent = dispatch.mock.calls.length
+
+      for (const elapsed of [0, 299, 1]) {
+        await act(async () => vi.advanceTimersByTimeAsync(elapsed))
+        expect(node(pressedId)).toBe(pressed)
+        expect(pressed.parentElement).toBe(chooser)
+        expect(document.activeElement).toBe(pressed)
+        expect(pressed.matches(':disabled')).toBe(false)
+        expect(pressed.closest('fieldset[disabled]')).toBeNull()
+        expect(pressed.getAttribute('aria-busy')).toBe('true')
+        expect(pressed.getAttribute('aria-disabled')).toBe('true')
+        expect(spinnerOf(pressed) !== null).toBe(elapsed === 1)
+        expect(pressed.classList.contains('disabled')).toBe(elapsed === 1)
+        if (elapsed !== 1) expect(pressed.innerHTML).toBe(content)
+        for (const other of others) {
+          expect(other.disabled).toBe(true)
+          expect(other.matches(':disabled')).toBe(true)
+          expect(other.hasAttribute('aria-busy')).toBe(false)
+          expect(spinnerOf(other)).toBeNull()
+        }
+        expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(
+          true,
+        )
+        expect(node('modal-close').matches(':disabled')).toBe(true)
+        await act(async () => {
+          fireEvent.click(pressed)
+          for (const other of others) fireEvent.click(other)
+          tryClosingAdd(node)
+        })
+        expect(dispatch).toHaveBeenCalledTimes(sent)
+      }
+      expect(document.querySelectorAll('[inert] [data-id]')).toHaveLength(0)
+      expect(node('profile-sign-in-add-live').getAttribute('role')).toBe(
+        'alert',
+      )
+      expect(
+        node('profile-sign-in-add-modal').closest(
+          '[inert], [aria-hidden="true"]',
+        ),
+      ).toBeNull()
+
+      await act(async () => {
+        pending.reject(
+          new ActionError(action, 'fail', 'This way is unavailable.'),
+        )
+      })
+      expect(node(pressedId)).toBe(pressed)
+      expect(document.activeElement).toBe(pressed)
+      expect(pressed.innerHTML).toBe(content)
+      expect(pressed.hasAttribute('aria-busy')).toBe(false)
+      expect(others.map((other) => other.disabled)).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ])
+      expect(node('profile-sign-in-add-error').textContent).toContain(
+        'This way is unavailable.',
+      )
+      expect(node('modal-confirm')).toBeNull()
+      expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(
+        false,
+      )
+      if (action === 'hilos_link_oauth_start') {
+        await act(async () => fireEvent.click(pressed))
+        expect(sends()).toHaveLength(2)
+        expect(pressed.getAttribute('aria-busy')).toBe('true')
+        act(() => cancelOAuthTrip())
+        expect(pressed.hasAttribute('aria-busy')).toBe(false)
+        expect(node('profile-sign-in-add-error')).toBeNull()
+        expect(node('profile-sign-in-add-live').textContent).toBe('')
+        expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(
+          false,
+        )
+      }
+      fireEvent.click(node('profile-sign-in-add-cancel'))
+      expect(node('profile-sign-in-add-modal')).toBeNull()
+    },
+  )
+
+  it('keeps the password draft and nodes through refusal and closes on the successful retry signal', async () => {
+    const { dispatch, emit, node } = setup()
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    fireEvent.click(node('profile-sign-in-choose-password'))
+    const password = node('profile-add-password-new') as HTMLInputElement
+    const confirm = node('profile-add-password-confirm') as HTMLInputElement
+    const fields = password.closest('fieldset')
+    const save = node('profile-add-password-save') as HTMLButtonElement
+    const back = node('profile-sign-in-add-back') as HTMLButtonElement
+    fireEvent.change(password, { target: { value: 'new-secret' } })
+    fireEvent.change(confirm, { target: { value: 'new-secret' } })
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    await act(async () => fireEvent.click(save))
+    expect(fields?.className).toBe('m-0 p-0 border-0')
+    expect(password.matches(':disabled')).toBe(true)
+    expect(confirm.matches(':disabled')).toBe(true)
+    expect(save.matches(':disabled')).toBe(false)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(back.disabled).toBe(true)
+    await act(async () => {
+      fireEvent.click(save)
+      fireEvent.submit(password.form!)
+      fireEvent.click(back)
+      tryClosingAdd(node)
+    })
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_set_password'),
+    ).toHaveLength(1)
+    await act(async () =>
+      pending.reject(
+        new ActionError(
+          'profile_set_password',
+          'fail',
+          'Choose another password.',
+        ),
+      ),
+    )
+    expect(node('profile-add-password-new')).toBe(password)
+    expect(node('profile-add-password-confirm')).toBe(confirm)
+    expect(password.closest('fieldset')).toBe(fields)
+    expect([password.value, confirm.value]).toEqual([
+      'new-secret',
+      'new-secret',
+    ])
+    expect(password.matches(':disabled')).toBe(false)
+    expect(back.disabled).toBe(false)
+    expect(node('modal-close').matches(':disabled')).toBe(false)
+    expect(node('profile-add-password-error').textContent).toContain(
+      'Choose another password.',
+    )
+    expect(node('modal-confirm')).toBeNull()
+    fireEvent.change(confirm, { target: { value: '' } })
+    expect(save.disabled).toBe(true)
+    await act(async () => fireEvent.submit(password.form!))
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_set_password'),
+    ).toHaveLength(1)
+    fireEvent.change(confirm, { target: { value: 'new-secret' } })
+    await act(async () => fireEvent.click(save))
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_set_password'),
+    ).toHaveLength(2)
+    expect(node('profile-sign-in-add-modal')).not.toBeNull()
+    expect(password.matches(':disabled')).toBe(true)
+    act(() => emit('profile_password_updated', { mode: 'added' }))
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+  })
+
+  it('holds the phone request, retains a refused number and completes its code step on retry', async () => {
+    const { dispatch, node } = setup()
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    const phone = node('profile-add-sms-phone') as HTMLInputElement
+    fireEvent.change(phone, { target: { value: '+15557654321' } })
+    const request = held()
+    dispatch.mockImplementationOnce(() => request.answer)
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    expect(phone.matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-back').matches(':disabled')).toBe(true)
+    await act(async () => {
+      fireEvent.submit(phone.form!)
+      tryClosingAdd(node)
+    })
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_add_sms_request'),
+    ).toHaveLength(1)
+    await act(async () =>
+      request.reject(
+        new ActionError(
+          'profile_add_sms_request',
+          'fail',
+          'That number cannot get codes.',
+        ),
+      ),
+    )
+    expect(node('profile-add-sms-phone')).toBe(phone)
+    expect(phone.value).toBe('+15557654321')
+    expect(phone.matches(':disabled')).toBe(false)
+    expect(node('profile-add-sms-error').textContent).toContain(
+      'That number cannot get codes.',
+    )
+    expect(node('profile-sign-in-add-back').matches(':disabled')).toBe(false)
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_add_sms_request'),
+    ).toHaveLength(2)
+    const code = node('profile-add-sms-code') as HTMLInputElement
+    expect(code.matches(':disabled')).toBe(false)
+    fireEvent.change(code, { target: { value: '123456' } })
+    await act(async () => fireEvent.click(node('profile-add-sms-confirm')))
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+  })
+
+  it('holds step-up confirmation, preserves its refused proof and reaches the chooser on retry', async () => {
+    const { dispatch, node } = setup(PASSWORD_STEP)
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    const proof = node('step-up-password') as HTMLInputElement
+    const fields = proof.closest('fieldset')
+    fireEvent.change(proof, { target: { value: 'secret' } })
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    await act(async () => fireEvent.submit(proof.form!))
+    expect(proof.matches(':disabled')).toBe(true)
+    expect(
+      node('profile-sign-in-add-step-up-confirm').matches(':disabled'),
+    ).toBe(false)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(true)
+    expect(node('modal-close').matches(':disabled')).toBe(true)
+    await act(async () => {
+      fireEvent.submit(proof.form!)
+      fireEvent.click(node('profile-sign-in-add-step-up-confirm'))
+      tryClosingAdd(node)
+    })
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'hilos_step_up_confirm'),
+    ).toHaveLength(1)
+    await act(async () =>
+      pending.reject(
+        new ActionError(
+          'hilos_step_up_confirm',
+          'fail',
+          'That password is not right.',
+        ),
+      ),
+    )
+    expect(node('step-up-password')).toBe(proof)
+    expect(proof.closest('fieldset')).toBe(fields)
+    expect(proof.value).toBe('secret')
+    expect(proof.matches(':disabled')).toBe(false)
+    expect(node('step-up-error').textContent).toContain(
+      'That password is not right.',
+    )
+    expect(node('profile-sign-in-add-live').textContent).toBe(
+      'That password is not right.',
+    )
+    expect(node('modal-confirm')).toBeNull()
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(false)
+    await act(async () => fireEvent.submit(proof.form!))
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'hilos_step_up_confirm'),
+    ).toHaveLength(2)
+    expect(node('profile-sign-in-choose-password')).not.toBeNull()
+    fireEvent.click(node('profile-sign-in-add-cancel'))
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+  })
+
+  it('holds the dialog for a step-up resend independently of the main request', async () => {
+    const opening = {
+      required: true,
+      purpose: 'add a way to sign in',
+      method: 'email_code',
+      destination: 'a@example.test',
+      send: { sent: true, resendAt: Date.now() - 60_000, expiresAt: null },
+    }
+    const { dispatch, node } = setup(opening)
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    const code = node('step-up-code') as HTMLInputElement
+    const fields = code.closest('fieldset')
+    const resend = node('step-up-send-again') as HTMLButtonElement
+    expect(resend.matches(':disabled')).toBe(false)
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    await act(async () => fireEvent.click(resend))
+    expect(code.matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(true)
+    expect(node('modal-close').matches(':disabled')).toBe(true)
+    await act(async () => {
+      fireEvent.click(resend)
+      fireEvent.submit(code.form!)
+      tryClosingAdd(node)
+    })
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    await act(async () =>
+      pending.resolve({
+        reply: {
+          ...opening,
+          send: { ...opening.send, resendAt: Date.now() + 60_000 },
+        },
+      }),
+    )
+    expect(node('step-up-code')).toBe(code)
+    expect(code.closest('fieldset')).toBe(fields)
+    expect(code.matches(':disabled')).toBe(false)
+    expect(resend.matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(false)
+    expect(node('modal-close').matches(':disabled')).toBe(false)
+    expect(node('modal-confirm')).toBeNull()
+  })
+
+  it('keeps the connection lock after busy clears and releases it only on reconnect', async () => {
+    const connection = (state: string) =>
+      ({ state, on: () => () => {} }) as unknown as HilosConnection
+    const interaction = createConnectionInteractionState(
+      connection('connected'),
+    )
+    const { dispatch, node } = setup(NO_STEP, MAGIC_LINK, OFFERED, interaction)
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    const phone = node('profile-add-sms-phone') as HTMLInputElement
+    const fields = phone.closest('fieldset')
+    fireEvent.change(phone, { target: { value: '+15557654321' } })
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    act(() => interaction.setConnection(connection('reconnecting')))
+    await act(async () =>
+      pending.reject(
+        new ActionError(
+          'profile_add_sms_request',
+          'fail',
+          'Try this number again.',
+        ),
+      ),
+    )
+    expect(node('profile-add-sms-phone')).toBe(phone)
+    expect(phone.closest('fieldset')).toBe(fields)
+    expect(phone.value).toBe('+15557654321')
+    expect(fields?.disabled).toBe(false)
+    expect(phone.matches(':disabled')).toBe(true)
+    expect(node('profile-add-sms-request').getAttribute('aria-busy')).toBeNull()
+    expect(node('profile-add-sms-request').matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(true)
+    act(() => tryClosingAdd(node))
+    act(() => interaction.setConnection(connection('connected')))
+    expect(phone.matches(':disabled')).toBe(false)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(false)
+    expect(node('modal-confirm')).toBeNull()
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    interaction.dispose()
   })
 })

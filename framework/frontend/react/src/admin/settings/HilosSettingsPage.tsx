@@ -116,6 +116,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const editNoticeText = useSignal(editor.noticeText)
   const editSaveLabel = useSignal(editor.saveLabel)
   const saveAvailable = useSignal(editor.saveAvailable)
+  const editSaving = useSignal(editor.saving)
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)
   const editHidden = editForm.hidden
@@ -299,6 +300,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
       <HilosModal
         open={editOpen}
+        busy={editSaving}
         confirmOnClose={editDirty}
         onClose={closeEdit}
         header={
@@ -329,7 +331,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                 type="button"
                 className="btn btn-secondary"
                 data-id="hilos-settings-edit-cancel"
-                disabled={edit.busy}
+                disabled={editSaving}
                 onClick={requestClose}
               >
                 Cancel

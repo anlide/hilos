@@ -172,6 +172,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   }
 
   const editOpen = useSignal(editor.opened)
+  const editSaving = useSignal(editor.saving)
   const editRow = useSignal(editor.row)
   const editForm = useSignal(editor.form)
   const live = useSignal(editor.state)
@@ -274,6 +275,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
 
       <HilosModal
         open={editOpen}
+        busy={editSaving}
         confirmOnClose={live.dirty}
         aria-label={editTitle}
         onClose={closeEdit}
@@ -290,7 +292,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={edit.busy}
+                disabled={editSaving}
                 onClick={requestClose}
               >
                 Cancel

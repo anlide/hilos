@@ -839,29 +839,51 @@ describe('Configuration head and resource lifetime', () => {
     view.unmount()
   })
 
-  it('holds the edit open and Cancel locked while the session is saving, then keeps a refused draft', async () => {
+  it('holds the edit fields and every close path through refusal, retry and success', async () => {
     const h = seededContext([fromField('+1000')])
     openModal(h.context)
     fireEvent.change(valueInput(), { target: { value: 'pending draft' } })
-    fireEvent.click(saveButton())
-    fireEvent.click(saveButton())
-    expect(h.sent).toHaveLength(1)
-    expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    const input = valueInput()
+    const form = input.form
+    const fieldset = document.querySelector(
+      '[data-id="modal"] .modal-body > fieldset',
+    ) as HTMLFieldSetElement
     const cancel = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
     ).find((button) => button.textContent?.trim() === 'Cancel')!
-    expect(cancel.disabled).toBe(true)
+    fireEvent.click(saveButton())
+    fireEvent.click(saveButton())
+    expect(h.sent).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.click(cancel)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(byId('modal')).not.toBeNull()
-    expect(valueInput().value).toBe('pending draft')
+    expect(h.sent).toHaveLength(1)
+    expect(valueInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('pending draft')
     await act(async () => {
       h.answer('fail')
       await Promise.resolve()
     })
-    expect(valueInput().value).toBe('pending draft')
-    expect(cancel.disabled).toBe(false)
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(valueInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('pending draft')
     expect(byId('hilos-action-error')?.textContent).toContain(
       'The channel refused the reset.',
     )
+
+    fireEvent.submit(form as HTMLFormElement)
+    expect(h.sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    await reply(h.answer, 'success')
+    expect(byId('modal')).toBeNull()
   })
 })

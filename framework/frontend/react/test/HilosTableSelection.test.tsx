@@ -48,6 +48,21 @@ function refused(): ActionHandle<HilosTableBulkAccepted> {
   }
 }
 
+/** A real tracked handle whose acceptance or refusal the test controls. */
+function pendingBulk() {
+  let resolve!: (result: { reply: HilosTableBulkAccepted }) => void
+  let reject!: (error: ActionError) => void
+  const handle: ActionHandle<HilosTableBulkAccepted> = {
+    requestId: 'bulk-pending',
+    loading: createSignal(false),
+    done: new Promise((yes, no) => {
+      resolve = yes
+      reject = no
+    }),
+  }
+  return { handle, resolve, reject }
+}
+
 /**
  * One declared operation that records what it was asked to run over.
  *
@@ -220,6 +235,91 @@ describe('HilosTableSelection', () => {
 
     expect(byId('modal')).not.toBeNull()
     expect(document.body.textContent).toContain('The node is frozen')
+  })
+
+  it('holds every exit until acceptance, keeps a refused confirmation, and closes on ack while progress continues', async () => {
+    const asked: HilosTableSelectionTarget[] = []
+    let pending = pendingBulk()
+    const controller = makeController([
+      deleteAction(asked, () => pending.handle),
+    ])
+    controller.selectRow('a', true)
+    const view = renderPanel(controller)
+    fireEvent.click(byId('hilos-table-bulk-delete')!)
+    const modal = byId('modal')!
+    const body = modal.querySelector('fieldset .modal-body > fieldset')!
+    const room = byId('hilos-action-error-slot')
+    const cancel = [...modal.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Cancel',
+    )!
+    const close = byId('modal-close')!
+    const confirm = byId('hilos-table-bulk-confirm')!
+    expect(body.matches(':disabled')).toBe(false)
+
+    fireEvent.click(confirm)
+    expect(pending.handle.loading.get()).toBe(false)
+    expect(controller.progress.bulk.get()).toBeNull()
+    expect(body.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.matches(':disabled')).toBe(true)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.closest('fieldset:disabled')).toBeNull()
+    for (const gesture of [
+      () => fireEvent.click(cancel),
+      () => fireEvent.click(close),
+      () => fireEvent.keyDown(modal, { key: 'Escape' }),
+      () => fireEvent.click(modal),
+    ]) {
+      gesture()
+      expect(byId('modal')).toBe(modal)
+    }
+    fireEvent.click(confirm)
+    fireEvent.keyDown(confirm, { key: 'Enter' })
+    fireEvent.click(confirm)
+    expect(asked).toEqual([{ kind: 'rows', rowKeys: ['a'] }])
+
+    // The strip can disappear while the confirmation is still waiting.
+    view.rerender(panel(controller, { shown: false }))
+    expect(byId('modal')).toBe(modal)
+    await act(async () => {
+      pending.reject(
+        new ActionError('backups_delete', 'fail', 'The node is frozen'),
+      )
+    })
+    expect(byId('modal')).toBe(modal)
+    expect(modal.querySelector('.modal-body > fieldset')).toBe(body)
+    expect(byId('hilos-action-error-slot')).toBe(room)
+    expect(document.body.textContent).toContain('The node is frozen')
+    expect(body.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(close.matches(':disabled')).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBeNull()
+    expect(byId('modal-confirm')).toBeNull()
+
+    pending = pendingBulk()
+    fireEvent.click(confirm)
+    expect(asked).toHaveLength(2)
+    act(() => {
+      controller.ingestProgress({
+        scope: 'bulk',
+        progressKey: 'run-1',
+        current: 1,
+        total: 4,
+      })
+    })
+    await act(async () => {
+      pending.resolve({ reply: { progressKey: 'run-1', total: 4 } })
+    })
+    expect(byId('modal')).toBeNull()
+    expect(controller.progress.bulk.get()).toEqual({
+      progressKey: 'run-1',
+      current: 1,
+      total: 4,
+      fraction: 0.25,
+      detail: {},
+    })
+    expect(byId('hilos-table-bulk-delete')?.matches(':disabled')).toBe(true)
+    expect(document.body.classList.contains('modal-open')).toBe(false)
   })
 
   it('heads the refusal details with what the refused operation failed to do', async () => {

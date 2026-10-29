@@ -668,6 +668,7 @@ export function HilosProfileSecurityPage({
 
       <HilosModal
         open={enrollOpen}
+        busy={enrollSubmitBusy}
         title={
           enrollStep === 'step-up' || enrollStep === 'refused'
             ? HILOS_STEP_UP_COPY.title
@@ -684,7 +685,7 @@ export function HilosProfileSecurityPage({
             <button
               type="button"
               className="btn btn-secondary"
-              disabled={enrollAction.busy}
+              disabled={enrollSubmitBusy}
               onClick={requestClose}
             >
               {enrollStep === 'more' ? 'Not now' : 'Cancel'}
@@ -809,6 +810,7 @@ export function HilosProfileSecurityPage({
 
       <HilosModal
         open={codesOpen}
+        busy={codesAction.busy}
         title="Backup codes"
         confirmOnClose={codesStep === 'new' && !renewedSaved}
         confirmTitle="Close before saving the codes?"
@@ -900,6 +902,7 @@ export function HilosProfileSecurityPage({
 
       <HilosModal
         open={removeOpen}
+        busy={removeAction.busy}
         title={removeTarget ? `Remove ${removeTarget.label}` : 'Remove app'}
         initialFocus="inner"
         onClose={() => setRemoveOpen(false)}
@@ -956,6 +959,7 @@ export function HilosProfileSecurityPage({
 
       <HilosModal
         open={waitOpen}
+        busy={waitAction.busy}
         title="Wait before removal"
         onClose={() => setWaitOpen(false)}
         actions={({ requestClose }) => (
@@ -1017,6 +1021,7 @@ export function HilosProfileSecurityPage({
 
       <HilosModal
         open={resetOpen}
+        busy={resetAction.busy}
         title="Request removal"
         initialFocus="dialog"
         onClose={() => setResetOpen(false)}

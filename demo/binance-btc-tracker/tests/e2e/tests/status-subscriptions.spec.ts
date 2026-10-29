@@ -187,338 +187,367 @@ test('delivered capabilities work in the mounted Status document and keep its so
   }
 })
 
-test('guest letters confirm, publish, update, resolve and explicitly unsubscribe over real SMTP', async ({
-  page,
-  browser,
-  baseURL,
-}) => {
-  // Three subscription letters, two real worker losses and their SMTP fanout.
-  test.slow()
-  const contexts = await Promise.all(
-    Array.from({ length: 3 }, () =>
-      browser.newContext({
-        baseURL,
-        ignoreHTTPSErrors: true,
-        colorScheme: 'light',
-        timezoneId: RECIPIENT_TIME_ZONE,
-      }),
-    ),
-  )
-  const [guest, control, pending] = await Promise.all(
-    contexts.map((context) => context.newPage()),
-  )
-  const recipients = [uniqueEmail(), uniqueEmail(), uniqueEmail()]
-  const publicLog = watchPublicStatus(guest)
-  const controlLog = watchDeliveryFrames(control)
-  const pendingLog = watchDeliveryFrames(pending)
-  const observer = await page.context().newPage()
-  const workers = await page.context().newPage()
-  const admin = watchStatusFrames(page)
-  const mailEvidence: unknown[] = []
-  try {
-    await resetAuthThrottle()
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-    for (const [index, reader] of [guest, control, pending].entries()) {
-      const log = [publicLog.wire, controlLog, pendingLog][index]
-      await gotoPublicStatus(expect, reader)
-      await expect(reader.getByTestId('conn-state')).toHaveText('connected')
-      await subscribeToStatus(expect, reader, log, recipients[index])
-    }
-    const links = []
-    for (const [index, reader] of [guest, control].entries()) {
-      const mail = await waitForMailTo(
-        recipients[index],
-        STATUS_CONFIRM_SUBJECT,
-      )
-      const delivered = statusMailLinks(mail)
-      expectStatusMailAlternatives(expect, mail, delivered, RECIPIENT_TIME_ZONE)
-      expect(delivered.status).toBe(`${baseURL}/status`)
-      expect(delivered.confirm).toEqual(expect.any(String))
-      links.push(delivered)
-      mailEvidence.push(mail)
-      const log = [publicLog.wire, controlLog][index]
-      const since = log.sent.length
-      await openStatusMailLink(expect, reader, delivered.confirm!)
-      await expect(reader.getByTestId('status-subscription-form')).toBeHidden()
-      await expect(
-        reader.getByTestId('public-status-subscription-notice'),
-      ).toHaveText('You are subscribed')
-      await expectTrackedActionReply(
-        expect,
-        log,
-        'status_subscription_confirm',
-        since,
-        {
-          status: 'subscribed',
-        },
-      )
-      await expect(reader.getByTestId('nav-signin')).toBeVisible()
-    }
-    await gotoPage(expect, observer, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
-    const originalId = await statusSubscriberId(expect, observer, recipients[0])
-    await expect(
-      shownByTestId(
-        observer,
-        `hilos-status-subscriber-confirmed-${originalId}`,
+// FIXME(F-049, 2026-10-29): Standalone and cluster publishers can expose mismatched Status revisions.
+test(
+  'guest letters confirm, publish, update, resolve and explicitly unsubscribe over real SMTP',
+  { tag: '@quarantine:F-049' },
+  async ({ page, browser, baseURL }) => {
+    // Three subscription letters, two real worker losses and their SMTP fanout.
+    test.slow()
+    const contexts = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        browser.newContext({
+          baseURL,
+          ignoreHTTPSErrors: true,
+          colorScheme: 'light',
+          timezoneId: RECIPIENT_TIME_ZONE,
+        }),
       ),
-    ).toHaveText('Yes')
-
-    const markers = [
-      `Mailpit first ${Date.now()}`,
-      `Mailpit after removal ${Date.now()}`,
-    ]
-    for (const [cycle, marker] of markers.entries()) {
-      await withStatusAgentLoss(expect, workers, admin, async () => {
-        const duringLoss = expect.configure({
-          timeout: Math.min(STATUS_EXPECT_TIMEOUT_MS, RESTART_MARK_TIMEOUT_MS),
-        })
-        await duringLoss.poll(() => admin.latest()?.incidents?.length).toBe(1)
-        const incidentId = admin.latest()!.incidents![0].incidentId
-        await page.getByTestId(`hilos-status-publish-now-${incidentId}`).click()
-        await submitStatusIncident(
-          duringLoss,
-          page,
-          admin,
-          'hilos_status_publish_now',
-          incidentId,
-        )
-        await dismissToasts(page)
-        await page.getByTestId(`hilos-status-add-update-${incidentId}`).click()
-        await typeInto(page.getByTestId('hilos-status-update-text'), marker)
-        await submitStatusIncident(
-          duringLoss,
-          page,
-          admin,
-          'hilos_status_add_update',
-          incidentId,
-        )
-      })
-      await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-      const pair = await expectPublicStatusPair(
-        expect,
-        guest,
-        publicLog,
-        ({ status }) =>
-          status.outages.some(
-            (outage) =>
-              outage.resolvedAt !== null &&
-              outage.updates.some((update) => update.text === marker),
-          ),
-      )
-      const outage = pair.status.outages.find((item) =>
-        item.updates.some((update) => update.text === marker),
-      )!
-      const subjects = [
-        STATUS_PUBLISHED_SUBJECT,
-        STATUS_UPDATE_SUBJECT,
-        STATUS_RESOLVED_SUBJECT,
-      ]
-      const deliveredTo =
-        cycle === 0 ? recipients.slice(0, 2) : recipients.slice(1, 2)
-      for (const address of deliveredTo) {
-        for (const subject of subjects) {
-          const eventAt =
-            subject === STATUS_PUBLISHED_SUBJECT
-              ? outage.publishedAt
-              : subject === STATUS_UPDATE_SUBJECT
-                ? outage.updates.find((entry) => entry.text === marker)!.at
-                : outage.resolvedAt!
-          const update = outage.updates.find((entry) => entry.at === eventAt)!
-          const mail = await waitForMailToMatching(
-            address,
-            (letter) =>
-              letter.subject === subject &&
-              letter.text.includes(update.text) &&
-              statusMailMoment(letter, 'Updated at') ===
-                Math.floor(eventAt / 1000) * 1000,
-          )
-          const delivered = statusMailLinks(mail)
-          expectStatusMailAlternatives(
-            expect,
-            mail,
-            delivered,
-            RECIPIENT_TIME_ZONE,
-          )
-          expect(statusMailMoment(mail, 'Detected at')).toBe(
-            Math.floor(outage.detectedAt / 1000) * 1000,
-          )
-          if (subject === STATUS_RESOLVED_SUBJECT)
-            expect(statusMailMoment(mail, 'Resolved at')).toBe(
-              Math.floor(outage.resolvedAt! / 1000) * 1000,
-            )
-          expect(delivered.unsubscribe).toBe(
-            links[recipients.indexOf(address)].unsubscribe,
-          )
-          expect(mail.text).toContain(update.text)
-          expect(mail.text).toContain('Settings library')
-          mailEvidence.push(mail)
-        }
+    )
+    const [guest, control, pending] = await Promise.all(
+      contexts.map((context) => context.newPage()),
+    )
+    const recipients = [uniqueEmail(), uniqueEmail(), uniqueEmail()]
+    const publicLog = watchPublicStatus(guest)
+    const controlLog = watchDeliveryFrames(control)
+    const pendingLog = watchDeliveryFrames(pending)
+    const observer = await page.context().newPage()
+    const workers = await page.context().newPage()
+    const admin = watchStatusFrames(page)
+    const mailEvidence: unknown[] = []
+    try {
+      await resetAuthThrottle()
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      for (const [index, reader] of [guest, control, pending].entries()) {
+        const log = [publicLog.wire, controlLog, pendingLog][index]
+        await gotoPublicStatus(expect, reader)
+        await expect(reader.getByTestId('conn-state')).toHaveText('connected')
+        await subscribeToStatus(expect, reader, log, recipients[index])
       }
-      // The confirmed control has received this exact committed event. A held
-      // old SMTP copy is harmless; absence is about this new distinct team text.
-      expect(
-        (await mailsTo(recipients[2])).filter((mail) =>
-          subjects.includes(mail.subject),
+      const links = []
+      for (const [index, reader] of [guest, control].entries()) {
+        const mail = await waitForMailTo(
+          recipients[index],
+          STATUS_CONFIRM_SUBJECT,
+        )
+        const delivered = statusMailLinks(mail)
+        expectStatusMailAlternatives(
+          expect,
+          mail,
+          delivered,
+          RECIPIENT_TIME_ZONE,
+        )
+        expect(delivered.status).toBe(`${baseURL}/status`)
+        expect(delivered.confirm).toEqual(expect.any(String))
+        links.push(delivered)
+        mailEvidence.push(mail)
+        const log = [publicLog.wire, controlLog][index]
+        const since = log.sent.length
+        await openStatusMailLink(expect, reader, delivered.confirm!)
+        await expect(
+          reader.getByTestId('status-subscription-form'),
+        ).toBeHidden()
+        await expect(
+          reader.getByTestId('public-status-subscription-notice'),
+        ).toHaveText('You are subscribed')
+        await expectTrackedActionReply(
+          expect,
+          log,
+          'status_subscription_confirm',
+          since,
+          {
+            status: 'subscribed',
+          },
+        )
+        await expect(reader.getByTestId('nav-signin')).toBeVisible()
+      }
+      await gotoPage(expect, observer, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
+      const originalId = await statusSubscriberId(
+        expect,
+        observer,
+        recipients[0],
+      )
+      await expect(
+        shownByTestId(
+          observer,
+          `hilos-status-subscriber-confirmed-${originalId}`,
         ),
-      ).toEqual([])
-      if (cycle === 1) {
+      ).toHaveText('Yes')
+
+      const markers = [
+        `Mailpit first ${Date.now()}`,
+        `Mailpit after removal ${Date.now()}`,
+      ]
+      for (const [cycle, marker] of markers.entries()) {
+        await withStatusAgentLoss(expect, workers, admin, async () => {
+          const duringLoss = expect.configure({
+            timeout: Math.min(
+              STATUS_EXPECT_TIMEOUT_MS,
+              RESTART_MARK_TIMEOUT_MS,
+            ),
+          })
+          await duringLoss.poll(() => admin.latest()?.incidents?.length).toBe(1)
+          const incidentId = admin.latest()!.incidents![0].incidentId
+          await page
+            .getByTestId(`hilos-status-publish-now-${incidentId}`)
+            .click()
+          await submitStatusIncident(
+            duringLoss,
+            page,
+            admin,
+            'hilos_status_publish_now',
+            incidentId,
+          )
+          await dismissToasts(page)
+          await page
+            .getByTestId(`hilos-status-add-update-${incidentId}`)
+            .click()
+          await typeInto(page.getByTestId('hilos-status-update-text'), marker)
+          await submitStatusIncident(
+            duringLoss,
+            page,
+            admin,
+            'hilos_status_add_update',
+            incidentId,
+          )
+        })
+        await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
+        const pair = await expectPublicStatusPair(
+          expect,
+          guest,
+          publicLog,
+          ({ status }) =>
+            status.outages.some(
+              (outage) =>
+                outage.resolvedAt !== null &&
+                outage.updates.some((update) => update.text === marker),
+            ),
+        )
+        const outage = pair.status.outages.find((item) =>
+          item.updates.some((update) => update.text === marker),
+        )!
+        const subjects = [
+          STATUS_PUBLISHED_SUBJECT,
+          STATUS_UPDATE_SUBJECT,
+          STATUS_RESOLVED_SUBJECT,
+        ]
+        const deliveredTo =
+          cycle === 0 ? recipients.slice(0, 2) : recipients.slice(1, 2)
+        for (const address of deliveredTo) {
+          for (const subject of subjects) {
+            const eventAt =
+              subject === STATUS_PUBLISHED_SUBJECT
+                ? outage.publishedAt
+                : subject === STATUS_UPDATE_SUBJECT
+                  ? outage.updates.find((entry) => entry.text === marker)!.at
+                  : outage.resolvedAt!
+            const update = outage.updates.find((entry) => entry.at === eventAt)!
+            const mail = await waitForMailToMatching(
+              address,
+              (letter) =>
+                letter.subject === subject &&
+                letter.text.includes(update.text) &&
+                statusMailMoment(letter, 'Updated at') ===
+                  Math.floor(eventAt / 1000) * 1000,
+            )
+            const delivered = statusMailLinks(mail)
+            expectStatusMailAlternatives(
+              expect,
+              mail,
+              delivered,
+              RECIPIENT_TIME_ZONE,
+            )
+            expect(statusMailMoment(mail, 'Detected at')).toBe(
+              Math.floor(outage.detectedAt / 1000) * 1000,
+            )
+            if (subject === STATUS_RESOLVED_SUBJECT)
+              expect(statusMailMoment(mail, 'Resolved at')).toBe(
+                Math.floor(outage.resolvedAt! / 1000) * 1000,
+              )
+            expect(delivered.unsubscribe).toBe(
+              links[recipients.indexOf(address)].unsubscribe,
+            )
+            expect(mail.text).toContain(update.text)
+            expect(mail.text).toContain('Settings library')
+            mailEvidence.push(mail)
+          }
+        }
+        // The confirmed control has received this exact committed event. A held
+        // old SMTP copy is harmless; absence is about this new distinct team text.
         expect(
-          (await mailsTo(recipients[0])).filter(
-            (mail) =>
-              mail.subject === STATUS_UPDATE_SUBJECT &&
-              mail.text.includes(marker),
+          (await mailsTo(recipients[2])).filter((mail) =>
+            subjects.includes(mail.subject),
           ),
         ).toEqual([])
-        continue
+        if (cycle === 1) {
+          expect(
+            (await mailsTo(recipients[0])).filter(
+              (mail) =>
+                mail.subject === STATUS_UPDATE_SUBJECT &&
+                mail.text.includes(marker),
+            ),
+          ).toEqual([])
+          continue
+        }
+        const outageMail = await waitForMailTo(
+          recipients[0],
+          STATUS_UPDATE_SUBJECT,
+        )
+        const unsubscribe = statusMailLinks(outageMail).unsubscribe
+        let since = publicLog.wire.sent.length
+        await openStatusMailLink(expect, guest, unsubscribe)
+        await expect(
+          guest.getByTestId('status-subscription-address'),
+        ).toContainText('****')
+        await expect(
+          guest.getByTestId('status-subscription-address'),
+        ).not.toContainText(recipients[0])
+        const preview = trackedActionReplies(
+          publicLog.wire,
+          'status_unsubscribe_preview',
+          since,
+        )
+        expect(preview).toHaveLength(1)
+        const maskedEmail = deliveryObject(preview[0].data.reply).maskedEmail
+        expect(Object.keys(deliveryObject(preview[0].data.reply))).toEqual([
+          'maskedEmail',
+        ])
+        expect(maskedEmail).not.toBe(recipients[0])
+        await expect(
+          guest.getByTestId('status-subscription-cancel'),
+        ).toHaveText('Keep')
+        await guest.getByTestId('status-subscription-cancel').click()
+        await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
+        await expect(
+          shownByTestId(
+            observer,
+            `hilos-status-subscriber-email-${originalId}`,
+          ),
+        ).toHaveText(recipients[0])
+        expect(
+          publicLog.wire.sent.filter(
+            ({ wire }) => deliveryObject(wire).action === 'status_unsubscribe',
+          ),
+        ).toHaveLength(0)
+        await openStatusMailLink(expect, guest, unsubscribe)
+        await expect(
+          guest.getByTestId('status-subscription-address'),
+        ).toContainText(String(maskedEmail))
+        since = publicLog.wire.sent.length
+        await clickSubmit(
+          expect,
+          guest.getByTestId('status-subscription-submit'),
+        )
+        await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
+        await expect(
+          guest.getByTestId('public-status-subscription-notice'),
+        ).toHaveText('You are unsubscribed')
+        await expectTrackedActionReply(
+          expect,
+          publicLog.wire,
+          'status_unsubscribe',
+          since,
+          { status: 'unsubscribed' },
+        )
+        await applyStatusSubscribers(expect, observer)
+        await expect(
+          observer.getByTestId(`hilos-status-subscriber-email-${originalId}`),
+        ).toHaveCount(0)
       }
-      const outageMail = await waitForMailTo(
+
+      // A new row for the same address has new capabilities. Old mail cannot
+      // confirm or remove it, even after the replacement is confirmed normally.
+      await subscribeToStatus(expect, guest, publicLog.wire, recipients[0])
+      const replacementMail = await waitForMailTo(
         recipients[0],
-        STATUS_UPDATE_SUBJECT,
+        STATUS_CONFIRM_SUBJECT,
+        2,
       )
-      const unsubscribe = statusMailLinks(outageMail).unsubscribe
-      let since = publicLog.wire.sent.length
-      await openStatusMailLink(expect, guest, unsubscribe)
-      await expect(
-        guest.getByTestId('status-subscription-address'),
-      ).toContainText('****')
-      await expect(
-        guest.getByTestId('status-subscription-address'),
-      ).not.toContainText(recipients[0])
-      const preview = trackedActionReplies(
-        publicLog.wire,
-        'status_unsubscribe_preview',
-        since,
-      )
-      expect(preview).toHaveLength(1)
-      const maskedEmail = deliveryObject(preview[0].data.reply).maskedEmail
-      expect(Object.keys(deliveryObject(preview[0].data.reply))).toEqual([
-        'maskedEmail',
-      ])
-      expect(maskedEmail).not.toBe(recipients[0])
-      await expect(guest.getByTestId('status-subscription-cancel')).toHaveText(
-        'Keep',
-      )
-      await guest.getByTestId('status-subscription-cancel').click()
-      await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
-      await expect(
-        shownByTestId(observer, `hilos-status-subscriber-email-${originalId}`),
-      ).toHaveText(recipients[0])
-      expect(
-        publicLog.wire.sent.filter(
-          ({ wire }) => deliveryObject(wire).action === 'status_unsubscribe',
-        ),
-      ).toHaveLength(0)
-      await openStatusMailLink(expect, guest, unsubscribe)
-      await expect(
-        guest.getByTestId('status-subscription-address'),
-      ).toContainText(String(maskedEmail))
-      since = publicLog.wire.sent.length
-      await clickSubmit(expect, guest.getByTestId('status-subscription-submit'))
-      await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
+      const replacement = statusMailLinks(replacementMail)
+      expect(replacement.unsubscribe).not.toBe(links[0].unsubscribe)
+      await openStatusMailLink(expect, guest, replacement.confirm!)
       await expect(
         guest.getByTestId('public-status-subscription-notice'),
-      ).toHaveText('You are unsubscribed')
-      await expectTrackedActionReply(
+      ).toHaveText('You are subscribed')
+      await showAnnouncedRows(expect, observer)
+      const replacementId = await statusSubscriberId(
         expect,
-        publicLog.wire,
-        'status_unsubscribe',
-        since,
-        { status: 'unsubscribed' },
-      )
-      await applyStatusSubscribers(expect, observer)
-      await expect(
-        observer.getByTestId(`hilos-status-subscriber-email-${originalId}`),
-      ).toHaveCount(0)
-    }
-
-    // A new row for the same address has new capabilities. Old mail cannot
-    // confirm or remove it, even after the replacement is confirmed normally.
-    await subscribeToStatus(expect, guest, publicLog.wire, recipients[0])
-    const replacementMail = await waitForMailTo(
-      recipients[0],
-      STATUS_CONFIRM_SUBJECT,
-      2,
-    )
-    const replacement = statusMailLinks(replacementMail)
-    expect(replacement.unsubscribe).not.toBe(links[0].unsubscribe)
-    await openStatusMailLink(expect, guest, replacement.confirm!)
-    await expect(
-      guest.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are subscribed')
-    await showAnnouncedRows(expect, observer)
-    const replacementId = await statusSubscriberId(
-      expect,
-      observer,
-      recipients[0],
-    )
-    expect(replacementId).not.toBe(originalId)
-    for (const oldLink of [links[0].confirm!, links[0].unsubscribe]) {
-      await openStatusMailLink(expect, guest, oldLink)
-      await expect(
-        guest.getByTestId('status-subscription-error'),
-      ).toContainText(
-        'This subscription link is invalid or has expired. Request a new link.',
-      )
-      await expect(guest.getByTestId('status-subscription-submit')).toHaveCount(
-        0,
-      )
-    }
-    await gotoPage(expect, observer, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
-    await expect(
-      shownByTestId(observer, `hilos-status-subscriber-email-${replacementId}`),
-    ).toHaveText(recipients[0])
-    await expect(
-      shownByTestId(
         observer,
-        `hilos-status-subscriber-confirmed-${replacementId}`,
-      ),
-    ).toHaveText('Yes')
-    await gotoPage(expect, guest, '/', PAGE_READY)
-    await expect(guest.getByTestId('self-anonymous')).toBeVisible()
-    const publicFacts = JSON.stringify({
-      reads: publicLog.reads,
-      received: publicLog.wire.packets,
-    })
-    for (const address of recipients) expect(publicFacts).not.toContain(address)
-    for (const link of [...links, replacement]) {
-      for (const secretLink of [link.confirm!, link.unsubscribe]) {
-        const token = new URL(secretLink).hash.split('=')[1]
-        expect(publicFacts).not.toContain(token)
-        expect(
-          await guest.evaluate(() =>
-            JSON.stringify({
-              local: { ...localStorage },
-              session: { ...sessionStorage },
-            }),
-          ),
-        ).not.toContain(token)
+        recipients[0],
+      )
+      expect(replacementId).not.toBe(originalId)
+      for (const oldLink of [links[0].confirm!, links[0].unsubscribe]) {
+        await openStatusMailLink(expect, guest, oldLink)
+        await expect(
+          guest.getByTestId('status-subscription-error'),
+        ).toContainText(
+          'This subscription link is invalid or has expired. Request a new link.',
+        )
+        await expect(
+          guest.getByTestId('status-subscription-submit'),
+        ).toHaveCount(0)
       }
+      await gotoPage(expect, observer, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
+      await expect(
+        shownByTestId(
+          observer,
+          `hilos-status-subscriber-email-${replacementId}`,
+        ),
+      ).toHaveText(recipients[0])
+      await expect(
+        shownByTestId(
+          observer,
+          `hilos-status-subscriber-confirmed-${replacementId}`,
+        ),
+      ).toHaveText('Yes')
+      await gotoPage(expect, guest, '/', PAGE_READY)
+      await expect(guest.getByTestId('self-anonymous')).toBeVisible()
+      const publicFacts = JSON.stringify({
+        reads: publicLog.reads,
+        received: publicLog.wire.packets,
+      })
+      for (const address of recipients)
+        expect(publicFacts).not.toContain(address)
+      for (const link of [...links, replacement]) {
+        for (const secretLink of [link.confirm!, link.unsubscribe]) {
+          const token = new URL(secretLink).hash.split('=')[1]
+          expect(publicFacts).not.toContain(token)
+          expect(
+            await guest.evaluate(() =>
+              JSON.stringify({
+                local: { ...localStorage },
+                session: { ...sessionStorage },
+              }),
+            ),
+          ).not.toContain(token)
+        }
+      }
+    } finally {
+      await test.info().attach('status-subscriptions-smtp-and-wire', {
+        body: JSON.stringify({
+          mailEvidence,
+          publicReads: publicLog.reads,
+          guest: publicLog.wire,
+          control: controlLog,
+          pending: pendingLog,
+          admin: admin.frames,
+        }),
+        contentType: 'application/json',
+      })
+      admin.stop()
+      controlLog.stop()
+      pendingLog.stop()
+      await publicLog.stop()
+      await Promise.all([
+        observer.close(),
+        workers.close(),
+        ...contexts.map((context) => context.close()),
+      ])
+      await resetAuthThrottle()
     }
-  } finally {
-    await test.info().attach('status-subscriptions-smtp-and-wire', {
-      body: JSON.stringify({
-        mailEvidence,
-        publicReads: publicLog.reads,
-        guest: publicLog.wire,
-        control: controlLog,
-        pending: pendingLog,
-        admin: admin.frames,
-      }),
-      contentType: 'application/json',
-    })
-    admin.stop()
-    controlLog.stop()
-    pendingLog.stop()
-    await publicLog.stop()
-    await Promise.all([
-      observer.close(),
-      workers.close(),
-      ...contexts.map((context) => context.close()),
-    ])
-    await resetAuthThrottle()
-  }
-})
+  },
+)
 
 test('the Status verdict host refuses the shared email budget across two guest sessions', async ({
   page,

@@ -159,6 +159,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
   const switchingNoticeText = useSignal(switchingEditor.noticeText)
   const switchingSaveLabel = useSignal(switchingEditor.saveLabel)
   const switchingSaveAvailable = useSignal(switchingEditor.saveAvailable)
+  const switchingSaving = useSignal(switchingEditor.saving)
 
   const defaultThemeOpen = useSignal(defaultThemeEditor.opened)
   const defaultThemeRow = useSignal(defaultThemeEditor.row)
@@ -167,6 +168,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
   const defaultThemeNoticeText = useSignal(defaultThemeEditor.noticeText)
   const defaultThemeSaveLabel = useSignal(defaultThemeEditor.saveLabel)
   const defaultThemeSaveAvailable = useSignal(defaultThemeEditor.saveAvailable)
+  const defaultThemeSaving = useSignal(defaultThemeEditor.saving)
 
   function openSwitching(row: HilosAppearanceSettingRow): void {
     switchingAction.clearError()
@@ -243,6 +245,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
 
       <HilosModal
         open={switchingOpen}
+        busy={switchingSaving}
         aria-label="Edit · Theme switching"
         confirmOnClose={switchingState.dirty}
         onClose={() => switchingEditor.close()}
@@ -264,7 +267,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={switchingAction.busy}
+                disabled={switchingSaving}
                 data-id="appearance-switching-cancel"
                 onClick={requestClose}
               >
@@ -345,6 +348,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
 
       <HilosModal
         open={defaultThemeOpen}
+        busy={defaultThemeSaving}
         aria-label="Edit · Default theme"
         confirmOnClose={defaultThemeState.dirty}
         onClose={() => defaultThemeEditor.close()}
@@ -366,7 +370,7 @@ export function HilosAppearancePage({ context }: HilosAppearancePageProps) {
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={defaultThemeAction.busy}
+                disabled={defaultThemeSaving}
                 data-id="appearance-default-theme-cancel"
                 onClick={requestClose}
               >

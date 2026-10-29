@@ -25,6 +25,7 @@ afterEach(() => {
   setClipboard(realClipboard)
   written.length = 0
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 function byId(id: string): HTMLElement | null {
@@ -583,7 +584,7 @@ describe('HilosModal', () => {
     expect(closes).toBe(2)
   })
 
-  it('keeps the draft, the focus and an open confirm step when busy flips', () => {
+  it('keeps the draft nodes and an open confirm step when busy flips', () => {
     const modal = (busy: boolean) => (
       <HilosModal open confirmOnClose busy={busy}>
         <input data-autofocus data-id="field" />
@@ -594,9 +595,12 @@ describe('HilosModal', () => {
     field.value = 'draft'
 
     view.rerender(modal(true))
-    expect(document.activeElement).toBe(field)
+    expect(byId('field')).toBe(field)
+    expect(field.matches(':disabled')).toBe(true)
+    // jsdom does not reproduce the browser's focus fixup on disabling a field.
     view.rerender(modal(false))
-    expect(document.activeElement).toBe(field)
+    expect(byId('field')).toBe(field)
+    expect(field.matches(':disabled')).toBe(false)
     expect((byId('field') as HTMLInputElement).value).toBe('draft')
 
     fireEvent.click(closeButton() as Element)
@@ -612,7 +616,7 @@ describe('HilosModal', () => {
     expect((byId('field') as HTMLInputElement).value).toBe('draft')
   })
 
-  it('leaves the disabled close button out of the Tab cycle', () => {
+  it('leaves the disabled close button and body out of the Tab cycle', () => {
     const modal = (busy: boolean) => (
       <HilosModal
         open
@@ -627,7 +631,6 @@ describe('HilosModal', () => {
       </HilosModal>
     )
     const view = render(modal(false))
-    const field = byId('field') as HTMLElement
     const save = byId('save') as HTMLElement
 
     save.focus()
@@ -637,9 +640,9 @@ describe('HilosModal', () => {
     view.rerender(modal(true))
     save.focus()
     fireEvent.keyDown(save, { key: 'Tab' })
-    expect(document.activeElement).toBe(field)
+    expect(document.activeElement).toBe(save)
 
-    fireEvent.keyDown(field, { key: 'Tab', shiftKey: true })
+    fireEvent.keyDown(save, { key: 'Tab', shiftKey: true })
     expect(document.activeElement).toBe(save)
   })
 
@@ -654,7 +657,7 @@ describe('HilosModal', () => {
       </HilosModal>
     )
     const view = render(modal(true))
-    expect(document.activeElement).toBe(byId('field'))
+    expect(document.activeElement).toBe(byId('modal'))
     expect(document.body.classList.contains('modal-open')).toBe(true)
 
     view.rerender(modal(false))
@@ -665,6 +668,422 @@ describe('HilosModal', () => {
     expect(document.activeElement).toBe(opener)
     opener.remove()
   })
+})
+
+describe('HilosModal busy body', () => {
+  it('keeps Tab on the root when busy leaves no available controls', () => {
+    render(
+      <HilosModal open busy>
+        <input data-autofocus />
+        <select defaultValue="a">
+          <option value="a">A</option>
+        </select>
+      </HilosModal>,
+    )
+    const root = byId('modal')!
+    expect(document.activeElement).toBe(root)
+    for (const shiftKey of [false, true]) {
+      expect(fireEvent.keyDown(root, { key: 'Tab', shiftKey })).toBe(false)
+      expect(document.activeElement).toBe(root)
+    }
+  })
+
+  it('keeps a permanent fieldset and every field draft through idle, busy and refusal', () => {
+    const modal = (busy: boolean) => (
+      <HilosModal open busy={busy}>
+        <p data-id="readable">The draft stays readable.</p>
+        <form data-id="draft-form">
+          <input data-id="text" defaultValue="Original" />
+          <select data-id="select" defaultValue="a">
+            <option value="a">A</option>
+            <option value="b">B</option>
+          </select>
+          <textarea data-id="textarea" defaultValue="Original" />
+          <input data-id="check" type="checkbox" />
+          <input data-id="radio-a" type="radio" name="choice" />
+          <input data-id="radio-b" type="radio" name="choice" />
+          <input data-id="independent" disabled defaultValue="Unchanged" />
+        </form>
+      </HilosModal>
+    )
+    const view = render(modal(false))
+    const root = byId('modal')!
+    const scope = byId('modal-interaction-scope')!
+    const body = root.querySelector('.modal-body')!
+    const fieldset = body.querySelector('fieldset')!
+    const form = byId('draft-form')!
+    const text = byId('text') as HTMLInputElement
+    const select = byId('select') as HTMLSelectElement
+    const textarea = byId('textarea') as HTMLTextAreaElement
+    const check = byId('check') as HTMLInputElement
+    const radios = ['radio-a', 'radio-b'].map(
+      (id) => byId(id) as HTMLInputElement,
+    )
+    const fields = [text, select, textarea, check, ...radios]
+    expect(fieldset.className).toBe('m-0 p-0 border-0')
+    expect(fieldset.parentElement).toBe(body)
+    expect(scope.contains(fieldset)).toBe(true)
+    fields.forEach((field) => expect(field.matches(':disabled')).toBe(false))
+    fireEvent.change(text, { target: { value: 'Keep my draft' } })
+    text.setSelectionRange(2, 6)
+    fireEvent.change(select, { target: { value: 'b' } })
+    fireEvent.change(textarea, { target: { value: 'Keep my notes' } })
+    fireEvent.click(check)
+    fireEvent.click(radios[1]!)
+
+    for (const busy of [true, false]) {
+      view.rerender(modal(busy))
+      expect(byId('modal')).toBe(root)
+      expect(byId('modal-interaction-scope')).toBe(scope)
+      expect(body.querySelector('fieldset')).toBe(fieldset)
+      expect(byId('draft-form')).toBe(form)
+      for (const field of fields) {
+        expect(byId(field.dataset.id!)).toBe(field)
+        expect(field.matches(':disabled')).toBe(busy)
+        expect(field.disabled).toBe(false)
+      }
+      expect(byId('independent')?.matches(':disabled')).toBe(true)
+      expect(text.value).toBe('Keep my draft')
+      expect([text.selectionStart, text.selectionEnd]).toEqual([2, 6])
+      expect(select.value).toBe('b')
+      expect(textarea.value).toBe('Keep my notes')
+      expect(check.checked).toBe(true)
+      expect(radios.map((radio) => radio.checked)).toEqual([false, true])
+      expect(byId('readable')?.textContent).toBe('The draft stays readable.')
+      expect(root.querySelector('[inert], [aria-hidden="true"]')).toBeNull()
+    }
+  })
+
+  it('disables Copy and owner-bound ordinary actions without wrapping the footer', async () => {
+    recordingClipboard()
+    const cancel = vi.fn()
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        copyText="Draft to copy"
+        actions={() => (
+          <>
+            <button data-id="cancel" disabled={busy} onClick={cancel}>
+              Cancel
+            </button>
+            <LoadingButton data-id="save" loading={busy}>
+              Save
+            </LoadingButton>
+          </>
+        )}
+      />
+    )
+    const view = render(modal(false))
+    const footer = document.querySelector('.modal-footer')!
+    const copy = byId('modal-copy')!
+    const save = byId('save')!
+    view.rerender(modal(true))
+    expect(document.querySelector('.modal-footer')).toBe(footer)
+    for (const button of [copy, byId('cancel')!]) {
+      expect(button.matches(':disabled')).toBe(true)
+      fireEvent.click(button)
+    }
+    await settled()
+    expect(written).toEqual([])
+    expect(cancel).not.toHaveBeenCalled()
+    expect(save.matches(':disabled')).toBe(false)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    view.rerender(modal(false))
+    expect(copy.matches(':disabled')).toBe(false)
+    expect(byId('cancel')?.matches(':disabled')).toBe(false)
+    fireEvent.click(copy)
+    fireEvent.click(byId('cancel')!)
+    await settled()
+    expect(written).toEqual(['Draft to copy'])
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('gives body priority and live busy without restarting the dialog lifecycle', () => {
+    const activate = vi.spyOn(FocusTrap.prototype, 'activate')
+    const release = vi.spyOn(FocusTrap.prototype, 'release')
+    const values: boolean[] = []
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        header={<h2 data-id="header">Custom header</h2>}
+        body={({ busy: bodyBusy }) => {
+          values.push(bodyBusy)
+          return (
+            <>
+              <fieldset disabled={bodyBusy}>
+                <input data-id="body-field" defaultValue="Draft" />
+              </fieldset>
+              <LoadingButton data-id="body-save" loading={bodyBusy}>
+                Save
+              </LoadingButton>
+            </>
+          )
+        }}
+        actions={() => <button data-id="footer">Footer</button>}
+      >
+        <span data-id="fallback">Unused fallback</span>
+      </HilosModal>
+    )
+    const view = render(modal(false))
+    const root = byId('modal')!
+    const body = root.querySelector('.modal-body')!
+    const header = byId('header')!
+    const footer = byId('footer')!
+    const input = byId('body-field')!
+    const layers = layerDepths('.hilos-modal-layer')
+    const activations = activate.mock.calls.length
+    const releases = release.mock.calls.length
+    body.scrollTop = 83
+    expect(byId('fallback')).toBeNull()
+    expect(values.at(-1)).toBe(false)
+    expect(body.querySelectorAll('fieldset')).toHaveLength(1)
+    expect(input.matches(':disabled')).toBe(false)
+    for (const busy of [true, false]) {
+      view.rerender(modal(busy))
+      expect(values.at(-1)).toBe(busy)
+      expect(byId('modal')).toBe(root)
+      expect(byId('header')).toBe(header)
+      expect(byId('footer')).toBe(footer)
+      expect(byId('body-field')).toBe(input)
+      expect(input.matches(':disabled')).toBe(busy)
+      expect(byId('body-save')?.matches(':disabled')).toBe(false)
+      expect(footer.matches(':disabled')).toBe(false)
+      expect(body.scrollTop).toBe(83)
+      expect(layerDepths('.hilos-modal-layer')).toEqual(layers)
+      expect(document.body.classList.contains('modal-open')).toBe(true)
+      expect(activate.mock.calls).toHaveLength(activations)
+      expect(release.mock.calls).toHaveLength(releases)
+    }
+  })
+
+  it('keeps a real body LoadingButton focused and blocks repeats before the 300ms spinner', () => {
+    vi.useFakeTimers()
+    const sends = vi.fn()
+    const modal = (busy: boolean) => (
+      <HilosModal
+        open
+        busy={busy}
+        body={({ busy: bodyBusy }) => (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              sends()
+              view.rerender(modal(true))
+            }}
+          >
+            <fieldset disabled={bodyBusy}>
+              <input data-id="field" defaultValue="Draft" />
+            </fieldset>
+            <LoadingButton type="submit" data-id="send" loading={bodyBusy}>
+              Send
+            </LoadingButton>
+          </form>
+        )}
+      />
+    )
+    const view = render(modal(false))
+    const send = byId('send')!
+    send.focus()
+    fireEvent.click(send)
+    expect(sends).toHaveBeenCalledOnce()
+    for (const elapsed of [0, 299, 1]) {
+      act(() => vi.advanceTimersByTime(elapsed))
+      expect(byId('send')).toBe(send)
+      expect(document.activeElement).toBe(send)
+      expect(send.matches(':disabled')).toBe(false)
+      expect(send.getAttribute('aria-busy')).toBe('true')
+      expect(send.getAttribute('aria-disabled')).toBe('true')
+      expect(byId('field')?.matches(':disabled')).toBe(true)
+      expect(byId('loading-button-spinner') !== null).toBe(elapsed === 1)
+      expect(fireEvent.click(send)).toBe(false)
+      expect(sends).toHaveBeenCalledOnce()
+    }
+    view.rerender(modal(false))
+    expect(document.activeElement).toBe(send)
+    expect(byId('loading-button-spinner')).toBeNull()
+    expect(send.getAttribute('aria-busy')).toBeNull()
+    expect(send.getAttribute('aria-disabled')).toBeNull()
+    expect(byId('field')?.matches(':disabled')).toBe(false)
+    fireEvent.click(send)
+    expect(sends).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('HilosModal focus after busy', () => {
+  it.each([
+    ['', false, 'field'],
+    ['inner', false, 'field'],
+    ['dialog', false, 'modal'],
+    ['', true, 'modal'],
+  ] as const)(
+    'restores %s initial focus after commit with an independently disabled mark: %s',
+    (initialFocus, disabled, target) => {
+      const modal = (busy: boolean) => (
+        <HilosModal open busy={busy} initialFocus={initialFocus}>
+          <input data-id="field" data-autofocus disabled={disabled} />
+        </HilosModal>
+      )
+      const view = render(modal(false))
+      for (const focusFrom of ['root', 'body']) {
+        view.rerender(modal(true))
+        const root = byId('modal')!
+        // Set the starting focus explicitly: browser focus fixup on entering
+        // busy belongs to a separate browser scenario, not this jsdom test.
+        root.focus()
+        if (focusFrom === 'body') root.blur()
+        expect(document.activeElement).toBe(
+          focusFrom === 'root' ? root : document.body,
+        )
+        view.rerender(modal(false))
+        expect(byId('field')?.matches(':disabled')).toBe(disabled)
+        expect(document.activeElement).toBe(byId(target))
+      }
+    },
+  )
+
+  it('refocuses from no active element and skips a disconnected root', () => {
+    const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+    const modal = (busy: boolean) => (
+      <HilosModal open busy={busy}>
+        <input data-id="field" data-autofocus />
+      </HilosModal>
+    )
+    const view = render(modal(true))
+    refocus.mockClear()
+    const active = vi.spyOn(document, 'activeElement', 'get')
+    active.mockReturnValue(null)
+    view.rerender(modal(false))
+    active.mockRestore()
+    expect(refocus).toHaveBeenCalledExactlyOnceWith(byId('modal'), 'marked')
+    expect(document.activeElement).toBe(byId('field'))
+    view.rerender(modal(true))
+    const root = byId('modal')!
+    root.remove()
+    refocus.mockClear()
+    view.rerender(modal(false))
+    expect(refocus).not.toHaveBeenCalled()
+    document.body.appendChild(root)
+  })
+
+  it('does not refocus on idle rerenders or steal another choice inside or outside', () => {
+    const modal = (busy: boolean, initialFocus: '' | 'inner' = '') => (
+      <>
+        <button data-id="outside">Outside</button>
+        <HilosModal
+          open
+          busy={busy}
+          initialFocus={initialFocus}
+          actions={() => <button data-id="other">Other action</button>}
+        >
+          <input data-id="field" data-autofocus />
+        </HilosModal>
+      </>
+    )
+    const view = render(modal(false))
+    const root = byId('modal')!
+    root.focus()
+    view.rerender(modal(false, 'inner'))
+    expect(document.activeElement).toBe(root)
+    for (const id of ['other', 'outside']) {
+      view.rerender(modal(true))
+      const choice = byId(id)!
+      choice.focus()
+      view.rerender(modal(false))
+      expect(document.activeElement).toBe(choice)
+    }
+  })
+
+  it('leaves focus in the upper modal when the lower request settles', () => {
+    const tree = (busy: boolean, upper: boolean) => (
+      <HilosModal open busy={busy} title="Lower">
+        <input data-id="lower-field" data-autofocus />
+        <HilosModal open={upper} title="Upper" initialFocus="dialog" />
+      </HilosModal>
+    )
+    const view = render(tree(false, false))
+    view.rerender(tree(true, true))
+    const upper = document.querySelector<HTMLElement>('[aria-label="Upper"]')!
+    expect(document.activeElement).toBe(upper)
+    const layers = layerDepths('.hilos-modal-layer')
+    view.rerender(tree(false, true))
+    expect(document.activeElement).toBe(upper)
+    expect(layerDepths('.hilos-modal-layer')).toEqual(layers)
+  })
+
+  it('keeps the opener when reopening and clearing a former busy state together', () => {
+    const modal = (open: boolean, busy: boolean) => (
+      <>
+        <button data-id="opener">Open</button>
+        <HilosModal open={open} busy={busy}>
+          <input data-autofocus data-id="field" />
+        </HilosModal>
+      </>
+    )
+    const view = render(modal(false, true))
+    const opener = byId('opener')!
+    opener.focus()
+    view.rerender(modal(true, false))
+    expect(document.activeElement).toBe(byId('field'))
+    view.rerender(modal(false, false))
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it.each(['modal-confirm', 'modal-confirm-cancel', 'modal'])(
+    'does not refocus from %s while a confirm remains open',
+    (id) => {
+      const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+      const modal = (busy: boolean) => (
+        <HilosModal open busy={busy} confirmOnClose>
+          <input data-id="field" data-autofocus />
+        </HilosModal>
+      )
+      const view = render(modal(false))
+      fireEvent.click(closeButton()!)
+      const confirm = byId('modal-confirm')!
+      view.rerender(modal(true))
+      const choice = byId(id)!
+      choice.focus()
+      refocus.mockClear()
+      view.rerender(modal(false))
+      expect(byId('modal-confirm')).toBe(confirm)
+      expect(document.activeElement).toBe(choice)
+      expect(refocus).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['close', 'unmount'])(
+    'does not refocus a departed dialog on %s as busy clears',
+    async (exit) => {
+      const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+      const modal = (open: boolean, busy: boolean) => (
+        <>
+          <button data-id="opener">Open</button>
+          <HilosModal open={open} busy={busy}>
+            <input data-id="field" data-autofocus />
+          </HilosModal>
+        </>
+      )
+      const view = render(modal(false, false))
+      const opener = byId('opener')!
+      opener.focus()
+      view.rerender(modal(true, true))
+      const root = byId('modal')!
+      expect(document.activeElement).toBe(root)
+      refocus.mockClear()
+      if (exit === 'close') view.rerender(modal(false, false))
+      else view.unmount()
+      await settled()
+      expect(root.isConnected).toBe(false)
+      expect(byId('modal')).toBeNull()
+      expect(document.activeElement).toBe(
+        exit === 'close' ? opener : document.body,
+      )
+      expect(refocus).not.toHaveBeenCalled()
+      expect(document.body.classList.contains('modal-open')).toBe(false)
+    },
+  )
 })
 
 /** A live shell source; the real layout owns the availability state and subscriptions. */

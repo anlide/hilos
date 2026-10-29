@@ -194,6 +194,55 @@ describe('React language name window', () => {
       expect(h.focused.get()).toBeUndefined()
     },
   )
+  it.each([null, 'en-GB'])(
+    'inherits the modal body lock at %s and restores the same draft for retry',
+    async (localeCode) => {
+      const h = setup('Original', localeCode)
+      const input = el<HTMLInputElement>('i18n-language-name-input')
+      const fieldset = input.closest('.modal-body')!.querySelector('fieldset')!
+      const form = input.form!
+      const cancel = el('i18n-language-name-cancel')
+      const save = el('i18n-language-name-submit')
+      expect(fieldset).not.toBeNull()
+      expect(fieldset.disabled).toBe(false)
+      expect(input.matches(':disabled')).toBe(false)
+      change('i18n-language-name-input', '  Keep my draft  ')
+      enter()
+      expect(h.calls).toHaveLength(1)
+      expect(fieldset.disabled).toBe(true)
+      expect(input.matches(':disabled')).toBe(true)
+      expect(cancel.matches(':disabled')).toBe(true)
+      expect(save.matches(':disabled')).toBe(false)
+      expect(save.getAttribute('aria-busy')).toBe('true')
+      // Place focus explicitly: jsdom does not emulate disabling focus fixup.
+      el('modal').focus()
+      enter()
+      click('i18n-language-name-submit')
+      click('i18n-language-name-cancel')
+      fireEvent.keyDown(el('modal'), { key: 'Escape' })
+      expect(h.calls).toHaveLength(1)
+      expect(h.window.opened.get()).toBe(true)
+      await settle(() => h.refuse(0, 'Try again'))
+      expect(el('i18n-language-name-input')).toBe(input)
+      expect(input.form).toBe(form)
+      expect(input.closest('.modal-body')!.querySelector('fieldset')).toBe(
+        fieldset,
+      )
+      expect(fieldset.disabled).toBe(false)
+      expect(input.matches(':disabled')).toBe(false)
+      expect(cancel.matches(':disabled')).toBe(false)
+      expect(input.value).toBe('  Keep my draft  ')
+      expect(document.activeElement).toBe(input)
+      expect(el('i18n-language-name-error').textContent).toContain('Try again')
+      expect(save.getAttribute('aria-busy')).toBeNull()
+      enter()
+      expect(h.calls).toHaveLength(2)
+      expect(h.calls[1]?.payload).toMatchObject({ name: '  Keep my draft  ' })
+      await settle(() => h.succeed(1))
+      expect(el('modal')).toBeNull()
+      expect(document.activeElement).toBe(el('name-opener'))
+    },
+  )
   it('takes live text, offers both conflict choices and sends the accepted expectedName', async () => {
     const h = setup()
     act(() => h.focused.set({ ...h.row, name: 'Incoming' }))

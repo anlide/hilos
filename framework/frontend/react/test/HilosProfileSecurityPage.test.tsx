@@ -4,13 +4,16 @@
 // a second app is still asked for a code from the connected one after the name.
 // While the confirmation or the next opening is out the submit is locked at once
 // and keeps its look until its spinner comes, and a repeat sends nothing; an
-// empty code or codes not marked saved turn it off at once (HIL-1767).
+// empty code or codes not marked saved turn it off at once (HIL-1767). Each
+// security window also locks its body and close paths for the request itself
+// (HIL-1764).
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
 // removal that stands, and an open window closes when it turns off.
 import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  ActionError,
   createSignal,
   ScopeManager,
   type HilosRouter,
@@ -119,14 +122,56 @@ function setup(
   return { dispatch, node, push }
 }
 
-/** A reply the test holds out until it settles it. */
-function held(): { reply: Promise<unknown>; settle: (reply: unknown) => void } {
+/** A reply the test holds out until it settles or refuses it. */
+function held(): {
+  reply: Promise<unknown>
+  settle: (reply: unknown) => void
+  refuse: (action: string, reason: string) => void
+} {
   let settle!: (reply: unknown) => void
-  const reply = new Promise<unknown>((resolve) => {
+  let refuse!: (action: string, reason: string) => void
+  const reply = new Promise<unknown>((resolve, reject) => {
     settle = resolve
+    refuse = (action, reason) => reject(new ActionError(action, 'fail', reason))
   })
 
-  return { reply, settle }
+  return { reply, settle, refuse }
+}
+
+function bodyFieldset(): HTMLFieldSetElement | null {
+  return document.querySelector<HTMLFieldSetElement>(
+    '[data-id="modal"] .modal-body > fieldset',
+  )
+}
+
+function expectModalHeld(node: (id: string) => HTMLElement | null): void {
+  const modal = node('modal')!
+  const cancel = document.querySelector<HTMLButtonElement>(
+    '[data-id="modal"] .modal-footer .btn-secondary',
+  )!
+  expect(bodyFieldset()?.disabled).toBe(true)
+  expect(cancel.matches(':disabled')).toBe(true)
+  expect(node('modal-close')?.matches(':disabled')).toBe(true)
+  for (const close of [
+    () => fireEvent.click(cancel),
+    () => fireEvent.click(node('modal-close')!),
+    () => fireEvent.keyDown(modal, { key: 'Escape' }),
+    () => fireEvent.click(modal),
+  ]) {
+    close()
+    expect(node('modal')).toBe(modal)
+    expect(node('modal-confirm')).toBeNull()
+  }
+}
+
+function expectModalFreed(node: (id: string) => HTMLElement | null): void {
+  expect(bodyFieldset()?.disabled).toBe(false)
+  expect(
+    document
+      .querySelector('[data-id="modal"] .modal-footer .btn-secondary')
+      ?.matches(':disabled'),
+  ).toBe(false)
+  expect(node('modal-close')?.matches(':disabled')).toBe(false)
 }
 
 // What a button tells a sighted person and a screen reader now.
@@ -207,10 +252,10 @@ it('opens at the confirmation step for the first app and moves to the name once 
   )
 })
 
-it('keeps Confirm live-looking while the confirmation is out, dims it only with its spinner and sends it once', async () => {
+it('keeps the enrolment body held while confirmation is out and sends it once', async () => {
   vi.useFakeTimers()
   const answer = held()
-  const { dispatch, node } = setup({
+  const replies = {
     ...REPLIES,
     hilos_step_up_start: {
       required: true,
@@ -218,7 +263,8 @@ it('keeps Confirm live-looking while the confirmation is out, dims it only with 
       method: 'password',
     },
     hilos_step_up_confirm: answer.reply,
-  })
+  }
+  const { dispatch, node } = setup(replies)
   await act(async () => {
     fireEvent.click(node('profile-2fa-add')!)
   })
@@ -229,8 +275,13 @@ it('keeps Confirm live-looking while the confirmation is out, dims it only with 
     fireEvent.submit(node('profile-2fa-enroll')!)
   })
   const confirm = node('profile-2fa-enroll-submit')
+  const password = node('step-up-password') as HTMLInputElement
   expect(confirms()).toHaveLength(1)
   expect(buttonState(confirm)).toEqual(LOCKED)
+  expect(password.matches(':disabled')).toBe(true)
+  expect(password.value).toBe('secret')
+  expectModalHeld(node)
+  expect(node('step-up-password')).toBe(password)
 
   wait(299)
   expect(buttonState(confirm)).toEqual(LOCKED)
@@ -246,6 +297,7 @@ it('keeps Confirm live-looking while the confirmation is out, dims it only with 
     answer.settle(undefined)
   })
   expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expectModalFreed(node)
   expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
 })
 
@@ -281,6 +333,7 @@ it('keeps Connect another live-looking while the next opening is out, dims it on
   })
   expect(openings()).toHaveLength(2)
   expect(buttonState(more)).toEqual(LOCKED)
+  expectModalHeld(node)
 
   wait(299)
   expect(buttonState(more)).toEqual(LOCKED)
@@ -296,7 +349,115 @@ it('keeps Connect another live-looking while the next opening is out, dims it on
     answer.settle({ required: false, purpose: 'add an authenticator app' })
   })
   expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expectModalFreed(node)
   expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+})
+
+it('holds the enrollment form through a refusal and lets the same draft retry', async () => {
+  const replies: Record<string, unknown> = { ...REPLIES }
+  const answer = held()
+  replies.profile_second_factor_enroll_start = answer.reply
+  const { dispatch, node } = setup(replies)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  const field = node('profile-2fa-enroll-label') as HTMLInputElement
+  fireEvent.change(field, { target: { value: 'Work phone' } })
+  const form = node('profile-2fa-enroll')!
+
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+
+  const sends = () =>
+    dispatch.mock.calls.filter(
+      ([action]) => action === 'profile_second_factor_enroll_start',
+    )
+  expect(sends()).toHaveLength(1)
+  expect(field.matches(':disabled')).toBe(true)
+  expect(field.value).toBe('Work phone')
+  expectModalHeld(node)
+  expect(node('profile-2fa-enroll-label')).toBe(field)
+  await act(async () => {
+    fireEvent.submit(form)
+    fireEvent.click(node('profile-2fa-enroll-submit')!)
+  })
+  expect(sends()).toHaveLength(1)
+
+  await act(async () => {
+    answer.refuse(
+      'profile_second_factor_enroll_start',
+      'Two-step verification is not available right now',
+    )
+  })
+  expect(node('profile-2fa-enroll-label')).toBe(field)
+  expect(field.matches(':disabled')).toBe(false)
+  expect(field.value).toBe('Work phone')
+  expectModalFreed(node)
+  expect(node('hilos-action-error')?.textContent).toContain(
+    'Two-step verification is not available right now',
+  )
+
+  replies.profile_second_factor_enroll_start =
+    REPLIES.profile_second_factor_enroll_start
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+  expect(node('profile-2fa-enroll-code')).not.toBeNull()
+  expect(sends()).toHaveLength(2)
+})
+
+it('keeps the step-up proof and permits retry after refusal', async () => {
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    hilos_step_up_start: {
+      required: true,
+      purpose: 'add an authenticator app',
+      method: 'password',
+    },
+  }
+  const answer = held()
+  replies.hilos_step_up_confirm = answer.reply
+  const { dispatch, node } = setup(replies)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  const password = node('step-up-password') as HTMLInputElement
+  fireEvent.change(password, { target: { value: 'wrong' } })
+  const form = node('profile-2fa-enroll')!
+
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+  const confirms = () =>
+    dispatch.mock.calls.filter(([action]) => action === 'hilos_step_up_confirm')
+  expect(confirms()).toHaveLength(1)
+  expect(password.matches(':disabled')).toBe(true)
+  expectModalHeld(node)
+  await act(async () => {
+    fireEvent.submit(form)
+    fireEvent.click(node('profile-2fa-enroll-submit')!)
+  })
+  expect(confirms()).toHaveLength(1)
+
+  await act(async () => {
+    answer.refuse('hilos_step_up_confirm', 'That password is not right')
+  })
+  expect(node('step-up-password')).toBe(password)
+  expect(password.value).toBe('wrong')
+  expect(password.matches(':disabled')).toBe(false)
+  expectModalFreed(node)
+  expect(node('step-up-error')?.textContent).toContain(
+    'That password is not right',
+  )
+
+  replies.hilos_step_up_confirm = []
+  fireEvent.change(password, { target: { value: 'secret' } })
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+  expect(confirms()).toHaveLength(2)
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
 })
 
 it('turns the submit off at once for an empty code and for codes not marked saved', async () => {
@@ -337,6 +498,21 @@ it('turns the submit off at once for an empty code and for codes not marked save
 
   fireEvent.click(node('backup-codes-saved')!)
   expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
+  fireEvent.click(node('backup-codes-saved')!)
+  expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(OFF)
+
+  const codes = node('backup-codes')
+  fireEvent.click(node('modal-close')!)
+  expect(node('modal-confirm')).not.toBeNull()
+  expect(node('modal-confirm-cancel')?.textContent).toBe('Back to the codes')
+  fireEvent.click(node('modal-confirm-cancel')!)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('backup-codes')).toBe(codes)
+  expect((node('backup-codes-saved') as HTMLInputElement).checked).toBe(false)
+
+  fireEvent.click(node('modal-close')!)
+  fireEvent.click(node('modal-confirm-discard')!)
+  expect(node('modal')).toBeNull()
 })
 
 it('turns the submit off at once for an empty code from the connected app', async () => {
@@ -354,6 +530,55 @@ it('turns the submit off at once for an empty code from the connected app', asyn
   expect(buttonState(node('profile-2fa-enroll-submit'))).toEqual(RESTING)
 })
 
+it('asks before closing renewed backup codes that are not marked saved', async () => {
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_codes_show: {
+      codes: [{ code: 'abcde-fghjk', used: false }],
+    },
+    profile_second_factor_codes_renew: {
+      backupCodes: ['1111-2222', '3333-4444'],
+    },
+  }
+  const { dispatch, node } = setup(replies, SECTION_ON)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-codes-show')!)
+  })
+  fireEvent.change(node('profile-2fa-proof')!, { target: { value: '123456' } })
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-codes-submit')!)
+  })
+  expect(node('profile-2fa-codes-list')).not.toBeNull()
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-codes-submit')!)
+  })
+  expect(node('profile-2fa-proof')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-codes-submit'))).toEqual(OFF)
+
+  fireEvent.change(node('profile-2fa-proof')!, { target: { value: '654321' } })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-codes')!)
+  })
+  expect(dispatch.mock.calls.map(([action]) => action)).toContain(
+    'profile_second_factor_codes_renew',
+  )
+  expect(node('backup-codes')).not.toBeNull()
+  expect(buttonState(node('profile-2fa-codes-submit'))).toEqual(OFF)
+
+  const codes = node('backup-codes')
+  fireEvent.click(node('modal-close')!)
+  expect(node('modal-confirm')).not.toBeNull()
+  expect(node('modal-confirm-cancel')?.textContent).toBe('Back to the codes')
+  fireEvent.click(node('modal-confirm-cancel')!)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('backup-codes')).toBe(codes)
+  expect((node('backup-codes-saved') as HTMLInputElement).checked).toBe(false)
+
+  fireEvent.click(node('modal-close')!)
+  fireEvent.click(node('modal-confirm-discard')!)
+  expect(node('modal')).toBeNull()
+})
+
 it('asks a second app for a code from the connected one after the name, as before', async () => {
   const { dispatch, node } = setup(REPLIES, SECTION_ON)
   await act(async () => {
@@ -368,6 +593,132 @@ it('asks a second app for a code from the connected one after the name, as befor
   expect(node('profile-2fa-proof')).not.toBeNull()
   expect(dispatch).toHaveBeenCalledTimes(1)
 })
+
+const PENDING_ACTIONS = [
+  {
+    window: 'Backup codes',
+    open: 'profile-2fa-codes-show',
+    fields: [
+      { id: 'profile-2fa-proof', value: '123456' },
+      { id: 'profile-2fa-codes-backup', checked: true },
+    ],
+    action: 'profile_second_factor_codes_show',
+    form: 'profile-2fa-codes',
+    send: 'profile-2fa-codes-submit',
+    reply: { codes: [{ code: 'abcde-fghjk', used: false }] },
+    after: 'profile-2fa-codes-list',
+  },
+  {
+    window: 'Remove',
+    open: 'profile-2fa-remove-1',
+    fields: [
+      { id: 'profile-2fa-proof', value: '123456' },
+      { id: 'profile-2fa-remove-backup', checked: true },
+    ],
+    action: 'profile_second_factor_remove',
+    form: 'profile-2fa-remove',
+    send: 'profile-2fa-remove-submit',
+    reply: [],
+    after: null,
+  },
+  {
+    window: 'Wait before removal',
+    open: 'profile-2fa-wait-edit',
+    fields: [{ id: 'profile-2fa-wait-days', value: '12' }],
+    action: 'profile_second_factor_reset_wait_set',
+    form: 'profile-2fa-wait-form',
+    send: 'profile-2fa-wait-save',
+    reply: [],
+    after: null,
+  },
+  {
+    window: 'Request removal',
+    open: 'profile-2fa-reset-request',
+    fields: [],
+    action: 'profile_second_factor_reset_request',
+    form: null,
+    send: 'profile-2fa-reset-submit',
+    reply: [],
+    after: null,
+  },
+] as const
+
+it.each(PENDING_ACTIONS)(
+  'holds the $window window through refusal and retry',
+  async ({ open, fields, action, form, send, reply, after }) => {
+    const replies: Record<string, unknown> = { ...REPLIES }
+    const { dispatch, node } = setup(replies, SECTION_ON)
+    const inputFor = (id: string): HTMLInputElement =>
+      (node(id) ?? document.getElementById(id)) as HTMLInputElement
+    await act(async () => {
+      fireEvent.click(node(open)!)
+    })
+    const submit = node(send)!
+    expect(submit.matches(':disabled')).toBe(fields.length > 0)
+
+    const inputs = fields.map(({ id }) => inputFor(id))
+    fields.forEach((field) => {
+      const input = inputFor(field.id)
+      if ('value' in field)
+        fireEvent.change(input, { target: { value: field.value } })
+      if ('checked' in field) fireEvent.click(input)
+    })
+    expect(submit.matches(':disabled')).toBe(false)
+    const bodyForm = form === null ? null : node(form)!
+    const answer = held()
+    replies[action] = answer.reply
+
+    await act(async () => {
+      fireEvent.click(submit)
+    })
+    const sends = () => dispatch.mock.calls.filter(([sent]) => sent === action)
+    expect(sends()).toHaveLength(1)
+    expect(submit.getAttribute('aria-busy')).toBe('true')
+    expect(submit.matches(':disabled')).toBe(false)
+    inputs.forEach((input) => expect(input.matches(':disabled')).toBe(true))
+    expectModalHeld(node)
+    expect(node(send)).toBe(submit)
+    if (bodyForm !== null) {
+      expect(node(form!)).toBe(bodyForm)
+      await act(async () => {
+        fireEvent.submit(bodyForm)
+        fireEvent.click(submit)
+      })
+    } else {
+      await act(async () => {
+        fireEvent.click(submit)
+      })
+    }
+    expect(sends()).toHaveLength(1)
+
+    await act(async () => {
+      answer.refuse(action, 'The server is busy, try again')
+    })
+    expectModalFreed(node)
+    inputs.forEach((input, index) => {
+      const field = fields[index]!
+      expect(inputFor(field.id)).toBe(input)
+      expect(input.matches(':disabled')).toBe(false)
+      if ('value' in field) expect(input.value).toBe(field.value)
+      if ('checked' in field) expect(input.checked).toBe(field.checked)
+    })
+    if (bodyForm !== null) expect(node(form!)).toBe(bodyForm)
+    expect(node('hilos-action-error')?.textContent).toContain(
+      'The server is busy, try again',
+    )
+
+    replies[action] = reply
+    await act(async () => {
+      fireEvent.click(node(send)!)
+    })
+    if (after === null) {
+      expect(node('modal')).toBeNull()
+    } else {
+      expect(node(after)).not.toBeNull()
+    }
+    expect(sends()).toHaveLength(2)
+  },
+)
 
 it('switches between the empty paragraph and the apps list when factors change', () => {
   const { node, push } = setup(REPLIES, SECTION_OFF)
@@ -459,17 +810,33 @@ it('keeps a removal that stands beside the plate, with its date and Cancel', () 
   expect(node('profile-2fa-reset-cancel')).not.toBeNull()
 })
 
-it('closes an open window when it turns off, and is the whole page again when it turns back on', () => {
-  const { node, push } = setup(REPLIES, SECTION_ON)
-  act(() => {
+it('closes a pending window when it turns off, then returns when turned back on', async () => {
+  const replies: Record<string, unknown> = { ...REPLIES }
+  const answer = held()
+  replies.profile_second_factor_codes_show = answer.reply
+  const { dispatch, node, push } = setup(replies, SECTION_ON)
+  await act(async () => {
     fireEvent.click(node('profile-2fa-codes-show')!)
   })
-  expect(node('profile-2fa-proof')).not.toBeNull()
+  fireEvent.change(node('profile-2fa-proof')!, { target: { value: '123456' } })
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-codes-submit')!)
+  })
+  expect(
+    dispatch.mock.calls.filter(
+      ([action]) => action === 'profile_second_factor_codes_show',
+    ),
+  ).toHaveLength(1)
+  expectModalHeld(node)
 
   push({ ...SECTION_ON, enabled: false })
 
   expect(node('modal')).toBeNull()
   expect(node('hilos-2fa-turned-off')).not.toBeNull()
+  await act(async () => {
+    answer.settle({ codes: [] })
+  })
+  expect(node('modal')).toBeNull()
 
   push(SECTION_ON)
   expect(node('hilos-2fa-turned-off')).toBeNull()

@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ActionError,
   bindProfileFlows,
   createHilosProfileEmailChangeFlow,
   SIGNAL_PROFILE_FLOWS,
@@ -53,9 +54,20 @@ const SENT = {
   expiresAt: Date.now() + 600_000,
 }
 
+function deferredReply() {
+  let resolve!: (reply?: unknown) => void
+  let reject!: (error: unknown) => void
+  const done = new Promise<{ reply?: unknown }>((yes, no) => {
+    resolve = (reply) => yes({ reply })
+    reject = no
+  })
+  return { done, resolve, reject }
+}
+
 function setup() {
   tell(null)
   const dispatched: Array<{ action: string; payload?: unknown }> = []
+  const pending: Record<string, ReturnType<typeof deferredReply>> = {}
   const answers: Record<string, unknown> = {
     hilos_step_up_start: {
       required: true,
@@ -69,6 +81,7 @@ function setup() {
     actions: {
       dispatch: (action: string, payload?: unknown) => {
         dispatched.push({ action, payload })
+        if (pending[action]) return pending[action]
         if (action === 'profile_change_email_current_request')
           tell('current_sent')
         if (action === 'profile_change_email_new_request')
@@ -86,10 +99,205 @@ function setup() {
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
 
-  return { flow, answers, dispatched, view, node }
+  return {
+    flow,
+    answers,
+    dispatched,
+    view,
+    node,
+    hold(action: string) {
+      const reply = deferredReply()
+      pending[action] = reply
+      return reply
+    },
+  }
 }
 
 describe('HilosProfileEmailChange', () => {
+  it('holds step-up fields and every close path until confirmation settles, then permits retry', async () => {
+    const { flow, node, dispatched, hold } = setup()
+    await act(async () => {
+      await flow.open('old@example.test')
+    })
+    const field = node('step-up-password') as HTMLInputElement
+    const form = node('profile-email-step-up')
+    const live = node('profile-email-live-assertive')
+    fireEvent.change(field, { target: { value: 'secret' } })
+    const pending = hold('hilos_step_up_confirm')
+    await act(async () => {
+      fireEvent.submit(form)
+    })
+
+    expect(field.matches(':disabled')).toBe(true)
+    expect(node('profile-email-cancel').matches(':disabled')).toBe(true)
+    expect(node('modal-close').matches(':disabled')).toBe(true)
+    expect(
+      node('profile-email-step-up-confirm').closest('fieldset:disabled'),
+    ).toBeNull()
+    await act(async () => {
+      fireEvent.click(node('profile-email-step-up-confirm'))
+      fireEvent.submit(form)
+      fireEvent.click(node('profile-email-cancel'))
+      fireEvent.click(node('modal-close'))
+      fireEvent.keyDown(node('modal'), { key: 'Escape' })
+      fireEvent.click(node('modal'))
+    })
+    expect(
+      dispatched.filter((d) => d.action === 'hilos_step_up_confirm'),
+    ).toHaveLength(1)
+    expect(node('step-up-password')).toBe(field)
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    await act(async () => {
+      pending.reject(
+        new ActionError(
+          'hilos_step_up_confirm',
+          'fail',
+          'Password was refused',
+        ),
+      )
+    })
+    expect(node('step-up-password')).toBe(field)
+    expect(field.value).toBe('secret')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(node('profile-email-cancel').matches(':disabled')).toBe(false)
+    expect(node('modal-close').matches(':disabled')).toBe(false)
+    expect(node('profile-email-live-assertive')).toBe(live)
+    expect(live.textContent).toBe('Password was refused')
+    expect(node('step-up-error').textContent).toContain('Password was refused')
+    const retry = hold('hilos_step_up_confirm')
+    await act(async () => {
+      fireEvent.click(node('profile-email-step-up-confirm'))
+    })
+    await act(async () => {
+      retry.resolve()
+    })
+    expect(flow.step.get()).toBe('send-current')
+    await act(async () => {
+      fireEvent.click(node('profile-email-cancel'))
+    })
+    expect(node('modal')).toBeNull()
+    flow.dispose()
+  })
+
+  it('keeps each submitted draft mounted through pending and refusal, then completes the email flow', async () => {
+    const { flow, answers, node, dispatched, hold } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'change your email',
+    }
+    tell('current_sent')
+    await act(async () => {
+      await flow.open('old@example.test')
+    })
+    const live = node('profile-email-live-assertive')
+    for (const scenario of [
+      {
+        field: 'profile-email-code-current',
+        button: 'profile-email-confirm-current',
+        value: '123456',
+        action: 'profile_change_email_current_confirm',
+        next: 'current_proven',
+        reply: undefined,
+      },
+      {
+        field: 'profile-email-new',
+        button: 'profile-email-send-new',
+        value: 'new@example.test',
+        action: 'profile_change_email_new_request',
+        next: 'new_sent',
+        reply: SENT,
+      },
+      {
+        field: 'profile-email-code-new',
+        button: 'profile-email-confirm-new',
+        value: '654321',
+        action: 'profile_change_email_new_confirm',
+        next: null,
+        reply: undefined,
+      },
+    ]) {
+      const field = node(scenario.field) as HTMLInputElement
+      const form = field.closest('form')!
+      expect(node(scenario.button).matches(':disabled')).toBe(true)
+      fireEvent.change(field, { target: { value: scenario.value } })
+      const slot = node('profile-email-error-slot')
+      const pending = hold(scenario.action)
+      await act(async () => {
+        fireEvent.submit(form)
+      })
+      expect(field.matches(':disabled')).toBe(true)
+      expect(node('profile-email-cancel').matches(':disabled')).toBe(true)
+      expect(node('modal-close').matches(':disabled')).toBe(true)
+      expect(node(scenario.button).closest('fieldset:disabled')).toBeNull()
+      expect(node(scenario.button).getAttribute('aria-busy')).toBe('true')
+      await act(async () => {
+        fireEvent.click(node(scenario.button))
+        fireEvent.submit(form)
+        fireEvent.click(node('profile-email-cancel'))
+        fireEvent.click(node('modal-close'))
+        fireEvent.keyDown(node('modal'), { key: 'Escape' })
+        fireEvent.click(node('modal'))
+      })
+      expect(node(scenario.field)).toBe(field)
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+      expect(
+        dispatched.filter((d) => d.action === scenario.action),
+      ).toHaveLength(1)
+      await act(async () => {
+        pending.reject(
+          new ActionError(
+            scenario.action,
+            'fail',
+            'Please try this step again',
+          ),
+        )
+      })
+      expect(node(scenario.field)).toBe(field)
+      expect(field.value).toBe(scenario.value)
+      expect(field.matches(':disabled')).toBe(false)
+      expect(node('profile-email-cancel').matches(':disabled')).toBe(false)
+      expect(node('modal-close').matches(':disabled')).toBe(false)
+      expect(node(scenario.button).matches(':disabled')).toBe(false)
+      expect(node('profile-email-error-slot')).toBe(slot)
+      expect(node('profile-email-error').textContent).toContain(
+        'Please try this step again',
+      )
+      expect(node('profile-email-live-assertive')).toBe(live)
+      expect(live.textContent).toBe('Please try this step again')
+      fireEvent.change(field, { target: { value: '' } })
+      expect(node(scenario.button).matches(':disabled')).toBe(true)
+      await act(async () => {
+        fireEvent.submit(form)
+      })
+      expect(
+        dispatched.filter((d) => d.action === scenario.action),
+      ).toHaveLength(1)
+      fireEvent.change(field, { target: { value: scenario.value } })
+      const retry = hold(scenario.action)
+      await act(async () => {
+        fireEvent.click(node(scenario.button))
+      })
+      expect(node(scenario.field)).toBe(field)
+      await act(async () => {
+        tell(
+          scenario.next,
+          scenario.next === 'new_sent' ? 'new@example.test' : null,
+        )
+        retry.resolve(scenario.reply)
+      })
+      expect(
+        dispatched.filter((d) => d.action === scenario.action),
+      ).toHaveLength(2)
+    }
+    expect(flow.step.get()).toBe('done')
+    expect(node('profile-email-now').textContent).toBe('new@example.test')
+    await act(async () => {
+      fireEvent.click(node('profile-email-done'))
+    })
+    expect(node('modal')).toBeNull()
+    flow.dispose()
+  })
+
   it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {
     const { flow, node, dispatched } = setup()
     await act(async () => {

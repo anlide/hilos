@@ -15,20 +15,30 @@ entered key or a server-assigned id, and running with an option, do not.
 The modal component itself is agnostic — the parent owns the form — but
 every edit session runs through a modal so the merge has one home.
 
-In Vue today the modal also holds the window while its request is in flight
-(`busy`, [`HilosModal`](../../../framework/frontend/vue/src/HilosModal.vue)):
-nothing closes it, and its body is locked. The default slot stands in an
-always-present `fieldset` with no border or spacing, which `busy` disables, so
-its fields turn natively disabled and keep what was typed — the same nodes,
-never remounted. A body with its own submitting `LoadingButton` fills `#body`
-instead; it receives the same `busy` and its owner disables its field groups
-with it; the submitting button keeps its own look and focus until its spinner. The footer is not wrapped: the owner disables
-Cancel and the other `#actions` buttons with the same `busy`, and a footer
-`LoadingButton` keeps its own `loading`, which is not an independent `disabled`
-([accessibility.md](accessibility.md), "Busy state"). Nothing turns `inert` or
-`aria-hidden`, so the text, the draft and the refusal stay readable, and Tab
-and the initial focus skip what is disabled
-([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)).
+In Vue and React the modal also holds the window while its request is in flight
+(`busy`; [Vue `HilosModal`](../../../framework/frontend/vue/src/HilosModal.vue),
+[React `HilosModal`](../../../framework/frontend/react/src/HilosModal.tsx)):
+user close gestures do not dismiss it, and its body is locked; the parent can
+still close it by changing `open`. The Vue default slot and React
+`children` sit in an always-present `fieldset` with no border or spacing, which
+`busy` disables, so their fields turn natively disabled and keep what was typed
+— the same nodes, never remounted. A custom body replaces only that fallback
+inside the same `modal-body`: Vue exposes it as `#body`, and React as
+`body({ busy })`. It receives the same `busy`, and its owner disables its field
+groups with it. When the custom body contains a submitting `LoadingButton`, its
+owner keeps that button outside those groups so it retains its own look and
+focus until its spinner. The footer is not wrapped: the modal disables its own
+Copy button, while the owner disables Cancel and other footer actions with the
+same `busy`. A footer `LoadingButton` keeps its own `loading`, which is not an
+independent `disabled`
+([accessibility.md](accessibility.md), "Busy state").
+Nothing turns `inert` or `aria-hidden`, so the text, the draft and the refusal
+stay readable, and Tab and the initial focus skip what is disabled
+([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)). When
+`busy` changes from true to false while the modal is open and no confirm is
+showing, Vue and React restore initial focus only from the dialog, document
+body or no active element; another focus target stays put. The focus trap,
+modal layers and scroll lock stay live.
 
 That is the ordinary modal busy contract. The standard framework own-name flow
 is a local exception: its `pending` tracks a session-held operation, including
@@ -223,10 +233,12 @@ the check of the input; what the form forgets on close (a provider's secret).
 The view mirrors the session's signals through its bridge (`useSignal`,
 `hilosSignal` / `mirrorHilosSignal`), writes its inputs through `setForm` /
 `patchForm`, and passes `state.dirty` to the modal's confirm-on-close. In Vue
-today the window also passes the modal `busy` from the session's `saving`, not
-from the busy of the tracked action, and disables its footer Cancel with the
-same flag — see `editSaving` in
-[`HilosSettingsPage`](../../../framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue).
+and React the window also passes the modal `busy` from the session's `saving`,
+not from the busy of the tracked action, and disables its footer Cancel with
+the same flag — see `editSaving` in
+[`HilosSettingsPage` (Vue)](../../../framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue)
+and
+[`HilosSettingsPage` (React)](../../../framework/frontend/react/src/admin/settings/HilosSettingsPage.tsx).
 
 - **Merge** is offered only on a surface where splicing two values makes sense
   (`mergeable`); a typed value — a setting, a channel field, a name — has no

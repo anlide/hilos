@@ -308,12 +308,71 @@ it('accepts from the comparison window and closes it on success', async () => {
   await settle()
   fireEvent.click(one('legal-document-changes-open')!)
   await settle()
-  fireEvent.click(one('terms-changes-accept')!)
+  const comparison = one('terms-changes-modal')!
+  const body = comparison.closest('fieldset')!
+  const text = comparison.textContent
+  const accept = one('terms-changes-accept')!
+  expect(body.disabled).toBe(false)
+  accept.focus()
+  fireEvent.click(accept)
+  expect(comparison.closest('fieldset')).toBe(body)
+  expect(body.disabled).toBe(true)
+  expect(comparison.textContent).toBe(text)
+  expect(accept.matches(':disabled')).toBe(false)
+  expect(accept.getAttribute('aria-busy')).toBe('true')
+  expect(document.activeElement).toBe(accept)
+  for (const id of ['terms-changes-close', 'modal-close']) {
+    expect(one(id)!.matches(':disabled')).toBe(true)
+    fireEvent.click(one(id)!)
+  }
+  fireEvent.click(one('modal')!)
+  fireEvent.keyDown(one('modal')!, { key: 'Escape' })
+  fireEvent.click(accept)
+  expect(one('terms-changes-modal')).toBe(comparison)
   expect(dispatch).toHaveBeenCalledTimes(1)
   await act(async () => {
     resolve({})
   })
   await settle()
+  expect(one('terms-changes-modal')).toBeNull()
+})
+
+it('keeps the comparison and refusal after failure, then permits a fresh attempt', async () => {
+  let refuse!: (reason: unknown) => void
+  let answer!: (value: ActionResult) => void
+  const { dispatch } = drawTerms(
+    DUE,
+    { standing: IN_WINDOW },
+    vi.fn(() => ({
+      done: new Promise<ActionResult>((resolve, reject) => {
+        answer = resolve
+        refuse = reject
+      }),
+    })),
+  )
+  await settle()
+  fireEvent.click(one('legal-document-changes-open')!)
+  const comparison = one('terms-changes-modal')!
+  const body = comparison.closest('fieldset')!
+  fireEvent.click(one('terms-changes-accept')!)
+  expect(body.disabled).toBe(true)
+  await act(async () =>
+    refuse(new ActionError('hilos_legal_accept', 'fail', 'The terms moved.')),
+  )
+  expect(one('terms-changes-modal')).toBe(comparison)
+  expect(comparison.closest('fieldset')).toBe(body)
+  expect(body.disabled).toBe(false)
+  expect(one('terms-changes-refusal')!.textContent).toContain(
+    'The terms moved.',
+  )
+  expect(one('terms-changes-refusal-details')!.matches(':disabled')).toBe(false)
+  expect(one('terms-changes-close')!.matches(':disabled')).toBe(false)
+  expect(one('modal-close')!.matches(':disabled')).toBe(false)
+  expect(dispatch).toHaveBeenCalledTimes(1)
+  fireEvent.click(one('terms-changes-accept')!)
+  expect(body.disabled).toBe(true)
+  expect(dispatch).toHaveBeenCalledTimes(2)
+  await act(async () => answer({}))
   expect(one('terms-changes-modal')).toBeNull()
 })
 

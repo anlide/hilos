@@ -451,6 +451,64 @@ describe('HilosSecurityImpersonationPage scope modal', () => {
     expect(scopeRadio('view').checked).toBe(true)
   })
 
+  it('locks the scope edit modal until its save settles and retries a refused draft', async () => {
+    const world = seededContext()
+    openScope(world.context)
+    fireEvent.click(scopeRadio('view'))
+
+    const input = scopeRadio('view')
+    const form = input.form as HTMLFormElement
+    const modal = byId('modal') as HTMLElement
+    const fieldset = modal.querySelector(
+      '.modal-body > fieldset',
+    ) as HTMLFieldSetElement
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+
+    fireEvent.click(saveButton())
+    await settle()
+    expect(world.sent).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    fireEvent.click(saveButton())
+    fireEvent.submit(form)
+    fireEvent.click(cancel)
+    fireEvent.click(close)
+    fireEvent.keyDown(modal, { key: 'Escape' })
+    fireEvent.click(modal)
+    await settle()
+    expect(world.sent).toHaveLength(1)
+    expect(byId('modal')).toBe(modal)
+    expect(scopeRadio('view')).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.checked).toBe(true)
+
+    act(() => world.answer('fail', 'The scope must be view or act'))
+    await settle()
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.checked).toBe(true)
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The scope must be view or act',
+    )
+
+    fireEvent.submit(form)
+    await settle()
+    expect(world.sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    act(() => world.answer('success', 'Impersonation setting saved.'))
+    await settle()
+    expect(byId('modal')).toBeNull()
+  })
+
   it('takes a change made elsewhere into a pristine modal and says so', () => {
     const { context, pushUpdate } = seededContext()
     openScope(context)

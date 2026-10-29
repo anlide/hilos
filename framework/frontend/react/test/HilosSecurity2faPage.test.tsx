@@ -313,6 +313,59 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(focus).toEqual([TRUST_DAYS])
   })
 
+  it('locks the edit modal until its save settles, keeps a refused draft, and closes on retry', async () => {
+    const world = seededContext()
+    openModal(world.context, TRUST_DAYS)
+    typeDraft('14')
+
+    const input = valueInput()
+    const form = input.form as HTMLFormElement
+    const modal = byId('modal') as HTMLElement
+    const fieldset = modal.querySelector(
+      '.modal-body > fieldset',
+    ) as HTMLFieldSetElement
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+
+    fireEvent.click(saveButton())
+    expect(world.sent).toHaveLength(1)
+    expect(fieldset.disabled).toBe(true)
+    expect(input.matches(':disabled')).toBe(true)
+    expect(cancel.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    fireEvent.click(saveButton())
+    fireEvent.submit(form)
+    fireEvent.click(cancel)
+    fireEvent.click(close)
+    fireEvent.keyDown(modal, { key: 'Escape' })
+    fireEvent.click(modal)
+    expect(world.sent).toHaveLength(1)
+    expect(byId('modal')).toBe(modal)
+    expect(valueInput()).toBe(input)
+    expect(input.form).toBe(form)
+    expect(input.value).toBe('14')
+
+    await answered(world, 'fail')
+    expect(fieldset.disabled).toBe(false)
+    expect(input.matches(':disabled')).toBe(false)
+    expect(cancel.matches(':disabled')).toBe(false)
+    expect(input.value).toBe('14')
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The setting refused the write.',
+    )
+
+    fireEvent.submit(form)
+    expect(world.sent).toHaveLength(2)
+    expect(fieldset.disabled).toBe(true)
+    await answered(world, 'success')
+    expect(byId('modal')).toBeNull()
+  })
+
   it('sends nothing on Enter while a conflict stands', () => {
     const { context, pushUpdate, sent } = seededContext()
     openModal(context, REQUIRED)

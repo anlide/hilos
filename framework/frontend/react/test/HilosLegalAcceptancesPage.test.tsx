@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { HilosLegalAcceptancesPage } from '../src/admin/legal/HilosLegalAcceptancesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {
+  ActionError,
+  bindAdminAccess,
   hilosBrowserTimeZone,
   hilosTimeZone,
   createSignal,
   HIDDEN_VALUE,
   HilosPages,
+  ingest,
   ScopeManager,
   type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
@@ -113,7 +116,11 @@ function mountOver(person: PersonFields): HTMLElement {
   ) as HTMLElement
 }
 
-afterEach(cleanup)
+const releases: Array<() => void> = []
+afterEach(() => {
+  cleanup()
+  for (const release of releases.splice(0)) release()
+})
 
 function formatIndependent(moment: number, timeZone: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -246,15 +253,30 @@ const ready = {
   records: 12,
 } as const satisfies HilosLegalAcceptancesExportNode
 
+function deferredReply() {
+  let resolve!: () => void
+  let reject!: (error: ActionError) => void
+  const done = new Promise<{ reply: object }>((yes, no) => {
+    resolve = () => yes({ reply: {} })
+    reject = no
+  })
+  return { done, resolve, reject }
+}
+
 /**
  * Mount the page with its export: the section it opens with, the frames after
- * it, and a confirmation step the server skips.
+ * it, and a confirmation step whose replies the test can hold.
  *
  * @param initial The export the page answer carries, if any.
+ * @param required Whether the server asks for password confirmation.
  */
-function mountExport(initial?: HilosLegalAcceptancesExportNode) {
+function mountExport(
+  initial?: HilosLegalAcceptancesExportNode,
+  required = false,
+) {
   const frames: Array<(signal: ProjectSignal) => void> = []
   const sent: Array<{ name: string; data: unknown }> = []
+  const pending = new Map<string, ReturnType<typeof deferredReply>>()
   const scopes = new ScopeManager()
   const page = scopes.openPage(HilosPages.LEGAL_ACCEPTANCES)
   if (initial !== undefined) page.data.set('legalAcceptancesExport', initial)
@@ -276,12 +298,18 @@ function mountExport(initial?: HilosLegalAcceptancesExportNode) {
       dispatch(name: string, data: unknown) {
         sent.push({ name, data })
         return {
-          done: Promise.resolve({
-            reply:
-              name === 'hilos_step_up_start'
-                ? { required: false, purpose: 'export acceptance records' }
-                : {},
-          }),
+          done:
+            pending.get(name)?.done ??
+            Promise.resolve({
+              reply:
+                name === 'hilos_step_up_start'
+                  ? {
+                      required,
+                      method: 'password',
+                      purpose: 'export acceptance records',
+                    }
+                  : {},
+            }),
         }
       },
     },
@@ -297,6 +325,13 @@ function mountExport(initial?: HilosLegalAcceptancesExportNode) {
   return {
     sent,
     find,
+    scopes,
+    unmount: view.unmount,
+    hold(name: string) {
+      const reply = deferredReply()
+      pending.set(name, reply)
+      return reply
+    },
     button: () => find('legal-acceptances-export') as HTMLButtonElement,
     emit(node: HilosLegalAcceptancesExportNode | null) {
       act(() => {
@@ -308,6 +343,45 @@ function mountExport(initial?: HilosLegalAcceptancesExportNode) {
       })
     },
   }
+}
+
+function byId(id: string): HTMLElement {
+  return document.querySelector(`[data-id="${id}"]`) as HTMLElement
+}
+
+function cancelButton(): HTMLButtonElement {
+  return [...byId('modal').querySelectorAll('button')].find(
+    (button) => button.textContent === 'Cancel',
+  )!
+}
+
+/** User exits and repeat submission cannot finish an unanswered request. */
+function probePending(): void {
+  const modal = byId('modal')
+  const confirm = byId('legal-acceptances-export-confirm')
+  expect(cancelButton().matches(':disabled')).toBe(true)
+  expect(byId('modal-close').matches(':disabled')).toBe(true)
+  expect(confirm.getAttribute('aria-busy')).toBe('true')
+  expect(confirm.closest('fieldset:disabled')).toBeNull()
+  for (const gesture of [
+    () => fireEvent.click(cancelButton()),
+    () => fireEvent.click(byId('modal-close')),
+    () => fireEvent.keyDown(modal, { key: 'Escape' }),
+    () => fireEvent.click(modal),
+    () => fireEvent.click(confirm),
+    // The submit event is the Enter path; jsdom does not synthesize it from a key.
+    () => fireEvent.submit(byId('legal-acceptances-export-step-up')),
+  ]) {
+    gesture()
+    expect(byId('modal')).toBe(modal)
+  }
+  expect(byId('modal-confirm')).toBeNull()
+}
+
+async function confirmExport(): Promise<void> {
+  await act(async () => {
+    fireEvent.click(byId('legal-acceptances-export-confirm'))
+  })
 }
 
 describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
@@ -364,5 +438,187 @@ describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
       revisionId: null,
       search: null,
     })
+  })
+
+  it('locks proof and order through their replies, keeps refused drafts, and releases the window before archive preparation ends', async () => {
+    const w = mountExport(undefined, true)
+    await act(async () => fireEvent.click(w.button()))
+    const modal = byId('modal')
+    const field = byId('step-up-password') as HTMLInputElement
+    const body = field.closest('fieldset')!
+    const room = byId('step-up-error-slot')
+    const orderRoom = byId('legal-acceptances-export-order-error-slot')
+    fireEvent.change(field, { target: { value: 'my proof' } })
+    expect(field.matches(':disabled')).toBe(false)
+    expect(cancelButton().matches(':disabled')).toBe(false)
+
+    const proof = w.hold('hilos_step_up_confirm')
+    await confirmExport()
+    expect(field.matches(':disabled')).toBe(true)
+    probePending()
+    expect(w.sent.map((request) => request.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+    ])
+    await act(async () =>
+      proof.reject(
+        new ActionError('hilos_step_up_confirm', 'fail', 'Proof refused'),
+      ),
+    )
+    expect(byId('modal')).toBe(modal)
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.closest('fieldset')).toBe(body)
+    expect(field.value).toBe('my proof')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(cancelButton().matches(':disabled')).toBe(false)
+    expect(byId('modal-close').matches(':disabled')).toBe(false)
+    expect(byId('step-up-error-slot')).toBe(room)
+    expect(byId('step-up-error').textContent).toContain('Proof refused')
+
+    const retryProof = w.hold('hilos_step_up_confirm')
+    const order = w.hold('legal_acceptances_export')
+    await confirmExport()
+    await act(async () => retryProof.resolve())
+    expect(field.matches(':disabled')).toBe(true)
+    probePending()
+    expect(w.sent.map((request) => request.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+      'hilos_step_up_confirm',
+      'legal_acceptances_export',
+    ])
+    expect(w.sent.at(-1)?.data).toEqual({
+      document: null,
+      revisionId: null,
+      search: null,
+    })
+    await act(async () =>
+      order.reject(
+        new ActionError(
+          'legal_acceptances_export',
+          'fail',
+          'Only one export at a time',
+        ),
+      ),
+    )
+    expect(byId('modal')).toBe(modal)
+    expect(byId('step-up-password')).toBe(field)
+    expect(field.value).toBe('my proof')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(cancelButton().matches(':disabled')).toBe(false)
+    expect(byId('legal-acceptances-export-order-error-slot')).toBe(orderRoom)
+    expect(byId('legal-acceptances-export-order-error').textContent).toContain(
+      'Only one export at a time',
+    )
+    expect(
+      byId('legal-acceptances-export-confirm').getAttribute('aria-busy'),
+    ).toBeNull()
+
+    const finalProof = w.hold('hilos_step_up_confirm')
+    const finalOrder = w.hold('legal_acceptances_export')
+    await confirmExport()
+    await act(async () => finalProof.resolve())
+    await act(async () => finalOrder.resolve())
+    expect(byId('modal')).toBeNull()
+    expect(
+      w.sent.filter((request) => request.name === 'hilos_step_up_confirm'),
+    ).toHaveLength(3)
+    w.emit(preparing)
+    expect(byId('modal')).toBeNull()
+    expect(w.button().matches(':disabled')).toBe(true)
+    expect(w.button().getAttribute('aria-busy')).toBeNull()
+    expect(w.find('legal-acceptances-export-preparing')).not.toBeNull()
+    w.emit(ready)
+    expect(w.button().matches(':disabled')).toBe(false)
+    await act(async () => fireEvent.click(w.button()))
+    expect(byId('step-up-password').matches(':disabled')).toBe(false)
+    expect(cancelButton().matches(':disabled')).toBe(false)
+  })
+
+  it.each(['cancel', 'header', 'Escape', 'backdrop'] as const)(
+    'restores the %s exit after a refusal and does not replay a pending gesture',
+    async (exit) => {
+      const w = mountExport(undefined, true)
+      await act(async () => fireEvent.click(w.button()))
+      fireEvent.change(byId('step-up-password'), {
+        target: { value: 'my proof' },
+      })
+      const proof = w.hold('hilos_step_up_confirm')
+      await confirmExport()
+      probePending()
+      await act(async () =>
+        proof.reject(
+          new ActionError('hilos_step_up_confirm', 'fail', 'Try again'),
+        ),
+      )
+      const modal = byId('modal')
+      expect(modal).not.toBeNull()
+      if (exit === 'cancel') fireEvent.click(cancelButton())
+      else if (exit === 'header') fireEvent.click(byId('modal-close'))
+      else if (exit === 'Escape') fireEvent.keyDown(modal, { key: 'Escape' })
+      else fireEvent.click(modal)
+      expect(byId('modal')).toBeNull()
+      expect(w.sent).toHaveLength(2)
+    },
+  )
+
+  it('closes on an authoritative preparing frame even while confirmation is busy', async () => {
+    const w = mountExport(undefined, true)
+    await act(async () => fireEvent.click(w.button()))
+    fireEvent.change(byId('step-up-password'), {
+      target: { value: 'my proof' },
+    })
+    const proof = w.hold('hilos_step_up_confirm')
+    await confirmExport()
+    expect(byId('step-up-password').matches(':disabled')).toBe(true)
+    w.emit(preparing)
+    expect(byId('modal')).toBeNull()
+    await act(async () => proof.resolve())
+    expect(w.sent.map((request) => request.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+    ])
+    expect(w.button().matches(':disabled')).toBe(true)
+    expect(w.button().getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('releases a busy modal on page unmount and sends no order after its late reply', async () => {
+    const w = mountExport(undefined, true)
+    await act(async () => fireEvent.click(w.button()))
+    fireEvent.change(byId('step-up-password'), {
+      target: { value: 'my proof' },
+    })
+    const proof = w.hold('hilos_step_up_confirm')
+    await confirmExport()
+    w.unmount()
+    expect(byId('modal')).toBeNull()
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+    await act(async () => proof.resolve())
+    expect(w.sent.map((request) => request.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+    ])
+  })
+
+  it('keeps admin view mode independent: fields and Cancel stay live while the export is disabled', async () => {
+    const w = mountExport(undefined, true)
+    await act(async () => fireEvent.click(w.button()))
+    releases.push(bindAdminAccess(w.scopes))
+    act(() => ingest(w.scopes.session, { data: { adminViewMode: true } }))
+    const confirm = byId('legal-acceptances-export-confirm')
+    expect(confirm.matches(':disabled')).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+    expect(confirm.getAttribute('aria-busy')).toBeNull()
+    expect(w.button().matches(':disabled')).toBe(true)
+    expect(byId('step-up-password').matches(':disabled')).toBe(false)
+    expect(cancelButton().matches(':disabled')).toBe(false)
+    fireEvent.click(confirm)
+    expect(w.sent.map((request) => request.name)).toEqual([
+      'hilos_step_up_start',
+    ])
+    fireEvent.click(cancelButton())
+    expect(byId('modal')).toBeNull()
   })
 })

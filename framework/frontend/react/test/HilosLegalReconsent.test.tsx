@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { createSignal, type HilosRouter } from '@hilos/core'
 import {
   RECONSENT_NOW,
   reconsentContent,
@@ -9,6 +10,7 @@ import {
   HilosLegalReconsent,
   type HilosLegalReconsentProps,
 } from '../src/legal/HilosLegalReconsent.js'
+import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 afterEach(() => {
   cleanup()
@@ -133,25 +135,31 @@ describe('React "the terms have changed" screen (HIL-500)', () => {
       now: RECONSENT_NOW,
       onAccept,
     }
-    const { container, rerender } = render(
-      <HilosLegalReconsent {...props} busy />,
-    )
+    const { container, rerender } = render(<HilosLegalReconsent {...props} />)
     const accept = container.querySelector(
       '[data-id="legal-reconsent-accept"]',
     ) as HTMLButtonElement
     const spinner = (): Element | null =>
       accept.querySelector('[data-id="loading-button-spinner"]')
+    accept.focus()
+    rerender(<HilosLegalReconsent {...props} busy />)
     expect(accept.getAttribute('aria-busy')).toBe('true')
     expect(accept.getAttribute('aria-disabled')).toBe('true')
     expect(accept.disabled).toBe(false)
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
     expect(accept.classList.contains('disabled')).toBe(false)
     expect(spinner()).toBeNull()
     fireEvent.click(accept)
     expect(onAccept).not.toHaveBeenCalled()
 
     act(() => {
-      vi.advanceTimersByTime(300)
+      vi.advanceTimersByTime(299)
     })
+    expect(spinner()).toBeNull()
+    expect(accept.classList.contains('disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
+    act(() => vi.advanceTimersByTime(1))
     expect(spinner()).not.toBeNull()
     expect(accept.classList.contains('disabled')).toBe(true)
 
@@ -162,7 +170,276 @@ describe('React "the terms have changed" screen (HIL-500)', () => {
 
     rerender(<HilosLegalReconsent {...props} loading />)
     expect(accept.disabled).toBe(true)
+    expect(accept.matches(':disabled')).toBe(true)
     expect(accept.getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('holds the window content and ordinary actions in place until acceptance settles', () => {
+    const onShow = vi.fn()
+    const onLater = vi.fn()
+    const props: HilosLegalReconsentProps = {
+      variant: 'window',
+      content: reconsentContent(),
+      view: { kind: 'changes' },
+      person: PERSON,
+      error: 'These terms have changed.',
+      now: RECONSENT_NOW,
+      onShow,
+      onLater,
+    }
+    const { container, rerender } = render(<HilosLegalReconsent {...props} />)
+    const fieldset = container.querySelector('fieldset')!
+    const documentSection = container.querySelector(
+      '[data-id="legal-reconsent-document"]',
+    )!
+    const error = container.querySelector('[data-id="legal-reconsent-error"]')!
+    const buttons = [
+      ...container.querySelectorAll<HTMLButtonElement>('button'),
+    ].filter((button) => button.dataset.id !== 'legal-reconsent-accept')
+    expect(buttons).toHaveLength(8)
+    expect(fieldset.disabled).toBe(false)
+
+    rerender(<HilosLegalReconsent {...props} busy />)
+    expect(container.querySelector('fieldset')).toBe(fieldset)
+    expect(
+      container.querySelector('[data-id="legal-reconsent-document"]'),
+    ).toBe(documentSection)
+    expect(container.querySelector('[data-id="legal-reconsent-error"]')).toBe(
+      error,
+    )
+    expect(error.textContent).toContain('These terms have changed.')
+    for (const button of buttons) {
+      expect(button.matches(':disabled')).toBe(true)
+      button.click()
+    }
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(onShow).not.toHaveBeenCalled()
+    expect(onLater).not.toHaveBeenCalled()
+
+    rerender(<HilosLegalReconsent {...props} />)
+    expect(container.querySelector('fieldset')).toBe(fieldset)
+    for (const button of buttons)
+      expect(button.matches(':disabled')).toBe(false)
+    fireEvent.click(
+      buttons.find(
+        (button) => button.dataset.id === 'legal-reconsent-full-text',
+      )!,
+    )
+    fireEvent.click(
+      buttons.find(
+        (button) => button.dataset.id === 'legal-reconsent-compare',
+      )!,
+    )
+    fireEvent.click(
+      buttons.find((button) => button.dataset.id === 'legal-reconsent-refuse')!,
+    )
+    fireEvent.click(
+      buttons.find((button) => button.dataset.id === 'legal-reconsent-later')!,
+    )
+    expect(onShow.mock.calls).toEqual([
+      [{ kind: 'text', document: 'terms' }],
+      [{ kind: 'compare', document: 'terms' }],
+      [{ kind: 'refuse' }],
+    ])
+    expect(onLater).toHaveBeenCalledOnce()
+  })
+
+  it.each(['text', 'compare', 'refuse'] as const)(
+    'holds the %s step and its Back/Close actions without remounting it',
+    (kind) => {
+      const onShow = vi.fn()
+      const onLater = vi.fn()
+      const props: HilosLegalReconsentProps = {
+        variant: 'window',
+        content: reconsentContent(),
+        view: kind === 'refuse' ? { kind } : { kind, document: 'terms' },
+        onShow,
+        onLater,
+      }
+      const { container, rerender } = render(<HilosLegalReconsent {...props} />)
+      const body = container.querySelector('fieldset')!
+      const text = body.textContent
+      const back = container.querySelector('[data-id="legal-reconsent-back"]')!
+      rerender(<HilosLegalReconsent {...props} busy />)
+      expect(container.querySelector('fieldset')).toBe(body)
+      expect(body.textContent).toBe(text)
+      expect(back.matches(':disabled')).toBe(true)
+      fireEvent.click(back)
+      const close = container.querySelector('[data-id="legal-reconsent-close"]')
+      if (close) {
+        expect(close.matches(':disabled')).toBe(true)
+        fireEvent.click(close)
+      }
+      expect(onShow).not.toHaveBeenCalled()
+      expect(onLater).not.toHaveBeenCalled()
+      rerender(<HilosLegalReconsent {...props} />)
+      fireEvent.click(back)
+      expect(onShow).toHaveBeenCalledExactlyOnceWith({ kind: 'changes' })
+      if (close) {
+        fireEvent.click(close)
+        expect(onLater).toHaveBeenCalledOnce()
+      }
+    },
+  )
+
+  it.each([true, false])(
+    'holds refusal links before their callbacks and router (router=%s)',
+    (routed) => {
+      const navigate = vi.fn()
+      const onLater = vi.fn()
+      const router = {
+        currentPath: createSignal('/'),
+        navigate,
+      } as unknown as HilosRouter
+      const props: HilosLegalReconsentProps = {
+        variant: 'window',
+        content: reconsentContent(),
+        view: { kind: 'refuse' },
+        onLater,
+      }
+      const draw = (busy: boolean) => (
+        <HilosRouterContext.Provider value={routed ? router : null}>
+          <HilosLegalReconsent {...props} busy={busy} />
+        </HilosRouterContext.Provider>
+      )
+      const { container, rerender } = render(draw(false))
+      const links = [...container.querySelectorAll('a')]
+      expect(links).toHaveLength(2)
+      rerender(draw(true))
+      for (const link of links) {
+        expect(link.getAttribute('aria-disabled')).toBe('true')
+        expect(link.tabIndex).toBe(-1)
+        for (const gesture of [
+          new MouseEvent('click', { bubbles: true, cancelable: true }),
+          new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: true,
+          }),
+          new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            metaKey: true,
+          }),
+          new MouseEvent('auxclick', {
+            bubbles: true,
+            cancelable: true,
+            button: 1,
+          }),
+        ]) {
+          expect(fireEvent(link, gesture)).toBe(false)
+          expect(gesture.defaultPrevented).toBe(true)
+        }
+      }
+      expect(onLater).not.toHaveBeenCalled()
+      expect(navigate).not.toHaveBeenCalled()
+      rerender(draw(false))
+      for (const link of links) {
+        expect(link.getAttribute('aria-disabled')).toBeNull()
+        expect(link.hasAttribute('tabindex')).toBe(false)
+        if (routed) fireEvent.click(link)
+      }
+      if (routed) {
+        expect(onLater).toHaveBeenCalledTimes(2)
+        expect(navigate.mock.calls).toEqual(
+          links.map((link) => [link.getAttribute('href')]),
+        )
+      }
+    },
+  )
+
+  it('holds retry during acceptance and releases it after busy', () => {
+    const onRetry = vi.fn()
+    const props: HilosLegalReconsentProps = {
+      variant: 'window',
+      content: null,
+      view: { kind: 'changes' },
+      error: 'Read failed.',
+      onRetry,
+    }
+    const { container, rerender } = render(
+      <HilosLegalReconsent {...props} busy />,
+    )
+    const retry = container.querySelector('[data-id="legal-reconsent-retry"]')!
+    expect(retry.matches(':disabled')).toBe(true)
+    fireEvent.click(retry)
+    expect(onRetry).not.toHaveBeenCalled()
+    rerender(<HilosLegalReconsent {...props} />)
+    fireEvent.click(retry)
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(
+      container
+        .querySelector('[data-id="legal-reconsent-accept"]')!
+        .matches(':disabled'),
+    ).toBe(true)
+    expect(
+      container
+        .querySelector('[data-id="legal-reconsent-refuse"]')!
+        .matches(':disabled'),
+    ).toBe(true)
+  })
+
+  it('keeps frozen exits and preview navigation independent of acceptance busy', () => {
+    const onShow = vi.fn()
+    const { container, rerender } = render(
+      <HilosLegalReconsent
+        variant="frozen"
+        content={reconsentContent()}
+        view={{ kind: 'changes' }}
+        person={PERSON}
+        deletionScheduled
+        busy
+        onShow={onShow}
+      />,
+    )
+    for (const id of [
+      'legal-reconsent-not-you',
+      'legal-reconsent-keep-account',
+      'legal-reconsent-sign-out',
+    ]) {
+      expect(
+        container.querySelector(`[data-id="${id}"]`)!.matches(':disabled'),
+      ).toBe(false)
+    }
+    const link = container.querySelector(
+      '[data-id="legal-reconsent-data-link"]',
+    )!
+    expect(link.getAttribute('aria-disabled')).toBeNull()
+    expect(link.hasAttribute('tabindex')).toBe(false)
+    fireEvent.click(
+      container.querySelector('[data-id="legal-reconsent-full-text"]')!,
+    )
+    expect(onShow).toHaveBeenCalledExactlyOnceWith({
+      kind: 'text',
+      document: 'terms',
+    })
+
+    rerender(
+      <HilosLegalReconsent
+        variant="preview"
+        content={reconsentPreview('window')}
+        view={{ kind: 'changes' }}
+        busy
+        onShow={onShow}
+      />,
+    )
+    for (const id of [
+      'legal-reconsent-accept',
+      'legal-reconsent-refuse',
+      'legal-reconsent-later',
+    ]) {
+      expect(
+        container.querySelector(`[data-id="${id}"]`)!.matches(':disabled'),
+      ).toBe(true)
+    }
+    fireEvent.click(
+      container.querySelector('[data-id="legal-reconsent-compare"]')!,
+    )
+    expect(onShow).toHaveBeenLastCalledWith({
+      kind: 'compare',
+      document: 'terms',
+    })
+    expect(container.querySelector('fieldset')!.disabled).toBe(false)
   })
 
   it('holds Accept when nothing is left to accept', () => {
